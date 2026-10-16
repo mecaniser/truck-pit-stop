@@ -1,7 +1,7 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const vm=require('node:vm');
-const {parseRanges,classify,directoryColumns,validateDirectory,validateSummaryIdentity,summaryDomReady,parseSummary,safeReason}=require('./collect.cjs');
+const {parseRanges,classify,directoryColumns,validateDirectory,validateSummaryIdentity,summaryDomReady,parseSummary,readDriverVehicleVin,safeReason}=require('./collect.cjs');
 const ranges=parseRanges('Performance ranges\nFair\nGood\nExcellent\nFair 50 – 84 Good 85 – 95 Excellent 96 – 100');
 const snapshot=()=>({safety_score_texts:['82'],safety_lines:['Safety Score','SEP 28, 2026 - OCT 4, 2026','82','Top behaviors impacting score','Close following','-9','Stop sign violation','-4.7','Speeding','-4'],coaching_annotation:true,fuel_text:'Fuel performance LAST 30 DAYS 41.4% UTILIZATION Summary Active time 68h 14m Idle time 96h 26m',coaching_text:'Driver needs coaching Never coached 4',event_headers:['DATE (MDY EDT) / LOCATION','VEHICLE ID / MMY','STATUS','BEHAVIOR / SEVERITY'],events:[['Oct 9, 2026, 2:29 PM\n—','01\nFRHT 2019','Pending review','Stop sign violation\nN/A']]});
 test('Motive source ranges determine bands, including exact boundaries',()=>{
@@ -148,4 +148,57 @@ test('readiness also waits for the rendered score while its graph initializes',(
  assert.equal(readinessFixture({score:''}),false);
  assert.equal(readinessFixture({score:'0'}),true);
  assert.equal(readinessFixture({graph:false,score:null}),true);
+});
+
+const expectedVin='1XKWD49X03J000001',differentVin='1XKWD49X03J000002';
+function vinReads(values) {
+ const context={},link={href:'#/fleetview/vehicles/summary/123',unit:'Sample unit'},retries=[];
+ let calls=0;
+ return {context,link,retries,get calls(){return calls;},options:{
+  readVin:async(actualContext,actualLink)=>{
+   assert.equal(actualContext,context);assert.equal(actualLink,link);
+   const value=values[calls++];
+   if(value instanceof Error)throw value;
+   return value;
+  },
+  onRetry:attempt=>retries.push(attempt),
+ }};
+}
+test('initial VIN recovers from missing render using the same provider identity',async()=>{
+ const reads=vinReads([null,expectedVin]);
+ assert.equal(await readDriverVehicleVin(reads.context,reads.link,reads.options),expectedVin);
+ assert.equal(reads.calls,2);assert.deepEqual(reads.retries,[{attempt:1,max_attempts:3}]);
+});
+test('an initially absent VIN stays unavailable after the bounded fresh-page attempts',async()=>{
+ const reads=vinReads([null,null,null,expectedVin]);
+ assert.equal(await readDriverVehicleVin(reads.context,reads.link,reads.options),null);
+ assert.equal(reads.calls,3);assert.deepEqual(reads.retries,[{attempt:1,max_attempts:3},{attempt:2,max_attempts:3}]);
+});
+test('post-summary VIN verification tolerates missing render only when the exact VIN returns',async()=>{
+ for(const values of [[expectedVin],[null,expectedVin],[null,null,expectedVin]]) {
+  const reads=vinReads(values);
+  assert.equal(await readDriverVehicleVin(reads.context,reads.link,{...reads.options,expectedVin}),expectedVin);
+  assert.equal(reads.calls,values.length);
+ }
+});
+test('any different VIN aborts verification immediately even if a later read would match',async()=>{
+ for(const values of [[differentVin,expectedVin],[null,differentVin,expectedVin]]) {
+  const reads=vinReads(values);
+  await assert.rejects(readDriverVehicleVin(reads.context,reads.link,{...reads.options,expectedVin}),{message:'vehicle_identity_changed'});
+  assert.equal(reads.calls,values.indexOf(differentVin)+1);
+ }
+});
+test('persistently missing verification fails closed distinctly from changed identity',async()=>{
+ const reads=vinReads([null,null,null,expectedVin]);
+ await assert.rejects(readDriverVehicleVin(reads.context,reads.link,{...reads.options,expectedVin}),{message:'vehicle_identity_unavailable'});
+ assert.equal(reads.calls,3);
+ assert.equal(safeReason(new Error('vehicle_identity_unavailable')),'vehicle_identity_unavailable');
+});
+test('source, ambiguity and navigation errors never trigger an identity retry',async()=>{
+ for(const message of ['vehicle_source_changed','ambiguous_vin','navigation failed with private source content']) {
+  const error=new Error(message),reads=vinReads([error,expectedVin]);
+  await assert.rejects(readDriverVehicleVin(reads.context,reads.link,{...reads.options,expectedVin}),actual=>actual===error);
+  assert.equal(reads.calls,1);assert.deepEqual(reads.retries,[]);
+  assert.equal(safeReason(error),message.startsWith('navigation')?'driver_collection_failed':message);
+ }
 });

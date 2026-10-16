@@ -1,13 +1,15 @@
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { act, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TruckTelemetryLocation, TruckTelemetryValue } from '../TruckTelemetry'
 import type { BoardTruck } from '../types'
 const source = { source: 'motive_dashboard_manual' as const, observed_at: null, captured_at: new Date().toISOString(), freshness: 'unknown' as const, snapshot_id: 'test', source_age_text: '12s ago' }
 const truck = { telemetry: { speed: { ...source, value: 0, unit: 'mph', basis: null }, location: { ...source, lat: null, lng: null, label: 'Test town' }, odometer: { ...source, value: 100, unit: 'mi', basis: 'virtual' } } } as BoardTruck
+afterEach(() => vi.useRealTimers())
 
 describe('truck header readings', () => {
-  it('shows zero and only capture time on tap; Escape and outside pointer dismiss', () => {
-    render(<TruckTelemetryValue truck={truck} field="speed" label="Speed" />)
+  it('shows fresh zero and capture time on tap; Escape and outside pointer dismiss', () => {
+    const fresh = { ...truck, telemetry: { ...truck.telemetry!, speed: { ...truck.telemetry!.speed!, observed_at: new Date().toISOString() } } }
+    render(<TruckTelemetryValue truck={fresh} field="speed" label="Speed" />)
     expect(screen.getByText('0 mph')).toBeInTheDocument()
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
     const button = screen.getByRole('button', { name: 'Speed: reading information' })
@@ -17,6 +19,32 @@ describe('truck header readings', () => {
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
     fireEvent.click(button); fireEvent.pointerDown(document.body)
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+  it.each([null, 'invalid', new Date(Date.now() - 12 * 86400000).toISOString()])('shows unavailable for speed with observation %s', observed_at => {
+    const unknown = { ...truck, telemetry: { ...truck.telemetry!, speed: { ...truck.telemetry!.speed!, value: 10, observed_at } } }
+    render(<><TruckTelemetryValue truck={unknown} field="speed" label="Speed" /><TruckTelemetryLocation truck={unknown} /></>)
+    expect(screen.getByLabelText('Speed unavailable')).toBeInTheDocument()
+    expect(screen.queryByText('10 mph')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Speed: reading information' })).not.toBeInTheDocument()
+    expect(screen.getByText('Test town')).toBeInTheDocument()
+  })
+  it('never infers zero from a missing speed', () => {
+    render(<TruckTelemetryValue truck={{ ...truck, telemetry: { ...truck.telemetry!, speed: null } }} field="speed" label="Speed" />)
+    expect(screen.getByLabelText('Speed unavailable')).toBeInTheDocument()
+    expect(screen.queryByText('0 mph')).not.toBeInTheDocument()
+  })
+  it('expires an open current-speed tooltip when the observation becomes old', () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-15T14:00:00Z'))
+    const fresh = { ...truck, telemetry: { ...truck.telemetry!, speed: { ...truck.telemetry!.speed!, value: 10, observed_at: new Date().toISOString() } } }
+    render(<TruckTelemetryValue truck={fresh} field="speed" label="Speed" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Speed: reading information' }))
+    expect(screen.getByRole('tooltip')).toBeInTheDocument()
+    act(() => vi.advanceTimersByTime(300000))
+    expect(screen.getByText('10 mph')).toBeInTheDocument()
+    act(() => vi.advanceTimersByTime(30000))
+    expect(screen.queryByText('10 mph')).not.toBeInTheDocument()
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Speed unavailable')).toBeInTheDocument()
   })
   it('shows save age without presenting unknown observation time as live', () => {
     render(<TruckTelemetryLocation truck={truck} />)

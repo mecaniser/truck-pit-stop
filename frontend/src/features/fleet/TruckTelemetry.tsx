@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import type { BoardTruck } from './types'
-import { readingCaption, readingSummary, retained, useTelemetryClock, type ReadingProvenance } from './telemetry'
+import { readingCaption, readingSummary, retained, truckCurrentSpeed, useTelemetryClock, type ReadingProvenance } from './telemetry'
 import './telemetry.css'
 
 /** Touch, pointer and keyboard access to the provenance of an individual reading. */
@@ -49,7 +49,8 @@ export function TruckTelemetryLocation({ truck }: { truck: BoardTruck }) {
 
 export function TruckTelemetryValue({ truck, field, label, className = '' }: { truck: BoardTruck; field: 'odometer' | 'speed' | 'fuel' | 'fuel_economy' | 'engine_hours' | 'fault_count'; label: string; className?: string }) {
   const now = useTelemetryClock()
-  const reading = retained(truck.telemetry?.[field], now)
+  const reading = field === 'speed' ? truckCurrentSpeed(truck, now) : retained(truck.telemetry?.[field], now)
+  if (!reading && field === 'speed') return <span className={`truck-reading truck-reading--unavailable ${className}`} aria-label="Speed unavailable"><span className="truck-reading-label">{label}</span><span>Unavailable</span></span>
   if (!reading) return null
   if (field === 'fuel_economy' && (!('period' in reading) || reading.period !== 'last_30_days')) return null
   const value = `${reading.value.toLocaleString(undefined, { maximumFractionDigits: 1 })}${reading.unit === 'percent' ? '%' : reading.unit === 'count' ? '' : ` ${reading.unit === 'mpg' ? 'MPG' : reading.unit}`}`
