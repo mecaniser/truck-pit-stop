@@ -4,7 +4,7 @@ Owner: Backend & Integrations. Worker change; high-risk lane.
 
 ## Evidence and acceptance before implementation
 
-The Oct16 daily run completed fleet1 then failed in fleet2 before_summary with ui_timeout. One same-image recovery completed fleet1 then failed in fleet2 after_summary with ui_timeout on a different vehicle. Fleet2 did not create a journal and fleet3 was skipped. Existing valid records remain intact.
+The Oct16 daily run completed fleet1 then failed in fleet2 before_summary with ui_timeout. One manual recovery of the existing service completed fleet1 then failed in fleet2 after_summary with ui_timeout on a different vehicle. The daily and recovery executions used different image digests; source equivalence was not established. Fleet2 did not create a journal and fleet3 was skipped. Existing valid records remain intact.
 
 The existing readDriverVehicleVin retries missing rendered VIN values but lets a Playwright TimeoutError from the fresh-page reader abort immediately. Narrowly amend the exception rule:
 
