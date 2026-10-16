@@ -84,7 +84,7 @@ def history_snapshot(*, tenant: Tenant, invoice: Invoice, order: RepairOrder,
     # Bound even worst-case escaped Unicode under the receiver body ceiling.
     # Truncation is explicit and forces review, never matching on shortened text.
     uncertain |= any(item.description and len(item.description) > 500 for item in operations)
-    from scripts.easytruck_sync.contact_snapshot import for_history
+    from app.services.account_contact_snapshot import for_history
     from app.services.ets_completed_outcome_source import configured_shops
     source_customer_id = getattr(customer, "ets_external_id", None)
     if not isinstance(source_customer_id, str) or not re.fullmatch(r"[0-9]{1,50}", source_customer_id):
