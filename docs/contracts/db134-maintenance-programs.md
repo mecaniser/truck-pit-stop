@@ -293,6 +293,20 @@ Maintenance idempotency does not claim to make the entire pre-existing finalizat
 | Program archive | Reject occupying links/review; otherwise reversible, targets/history retained. |
 | Template archive/physical delete | New template-dependent work blocked; existing operation snapshots/history usable. Explicit replacement only, no name matching. |
 
+### Removal confirmation carriers (accepted Architecture amendment)
+
+```ts
+type AffectedMaintenanceWork = SafeWork & { program_id: UUID; program_name: string };
+// Both P1Preview role projections gain only this optional extension:
+// maintenance?: { affected_work: AffectedMaintenanceWork[] }
+```
+
+Both DELETE `/repair-orders/{id}/price-build/lines/{line_id}` and DELETE `/repair-orders/{id}/labor/{labor_id}` accept optional query `expected_maintenance_fingerprint?: string`, with no new request body. When removal affects current M1 links, require equality with the freshly recomputed order-maintenance `expected_review_fingerprint`. Authorize the existing deletion/vehicle/order scope first, then lock/recompute and validate before bundled parts/core/stock mutation, checklist archival or link detach. Missing/stale token returns409 `maintenance_preview_changed` without writes. UI refreshes existing GET `/repair-orders/{id}/maintenance`, filters by the removed operation ID and renders all affected programs in the existing confirmation; retry only after confirmation. A valid token does not override completed/pending/disputed-link guards. Unaffected deletion retains tokenless compatibility. Tokens are opaque comparison digests, never permission or private source data.
+
+For PM replacement only, both P1 preview projections optionally include `maintenance:{affected_work:AffectedMaintenanceWork[]}` when removed operations affect M1 links. Return the complete affected list, including a whole legacy cycle detached when one package component is removed. Exclude prices, actors, outside-source notes and extra customer data. Frontend strict parsers must explicitly accept this extension. Existing `PMServicesUpdate.pricing_preview_fingerprint` is the sole PM carrier; no new body field, token or dialog. Set confirmation_required=true and bind removed operation IDs, affected link/program/cycle versions and mapping state into the signed semantic pricing fingerprint, not just stock scope. Recompute under existing order locks before mutation; a new/changed affected link causes hard409 with the fresh normal P1 preview including maintenance. Retained-only service operations do not detach links. Omit the extension entirely when unaffected.
+
+Old clients must fail closed for tokenless linked direct deletion and tokenless/stale PM replacement before stock/claim writes. Test both DELETE routes and P1 projections, shared legacy cycles, newly linked races, completed/pending guards, unlinked compatibility and authorization before metadata.
+
 A small optional recovery command may detach an unperformed link without removing its operation: POST `/vehicles/{vehicle_id}/maintenance-programs/{program_id}/detach-work` with `{channel,expected_version,work_link_id,expected_link_version}` returns `{schema_version:1,program,link,replayed}`. It requires no reason narrative; confirms scope in the existing UI. It cannot detach accepted/pending evidence to escape review. This is the recovery for a stale restored order, not the normal removal flow.
 
 Guard exact existing writers: fleet truck PATCH, recognize-pm, schedule-pm, vehicle PM-package PUT, work-order PM-package PUT, both manager completions, direct labor removal, PriceBuild removal, PM-reseed physical removal, order cancellation/delete/restore/reopen/force-void and source edits. New independent program linking must prevent old `advance_vehicle_pm` from running for that same program/order. Legacy-only paths use the explicit legacy adapter, never a hidden scalar minimum across programs.
