@@ -1,4 +1,4 @@
-import type { Ref } from 'react'
+import { useEffect, useRef, useState, type Ref } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRight, Plus, Search } from 'lucide-react'
@@ -9,12 +9,18 @@ import type { Customer, RepairOrder, Vehicle } from '@/types'
 import { ExternalServiceHistory } from '@/features/external-services/ExternalServiceHistory'
 import VehicleHistoryExport from './VehicleHistoryExport'
 import './customer-workspace.css'
+import MaintenanceSection from '@/features/maintenance/MaintenanceSection'
+import { isPricingScopeCurrent, usePricingScope } from '@/features/parts-pricing/usePricingScope'
 
 type Props = { customer: Customer; vehicle: Vehicle; onOpenOrder: (order: RepairOrder) => void; onCreateOrder?: () => void; createOrderButtonRef?: Ref<HTMLButtonElement> }
 const historyStatuses = ['draft', 'quoted', 'approved', 'declined', 'assigned', 'acknowledged', 'in_progress', 'pending_review', 'completed', 'invoiced', 'paid', 'cancelled'] as const
 const statusLabel = (value: string) => value.replace(/_/g, ' ').replace(/^./, character => character.toUpperCase())
 type HistoryPage = { items: RepairOrder[]; total: number; has_more: boolean }
 function VehicleRecord({ customer, vehicle, onOpenOrder, onCreateOrder, createOrderButtonRef }: Props) {
+  const authScope = usePricingScope()
+  const maintenanceNavigation = useRef(new AbortController()); const [maintenanceOpenError, setMaintenanceOpenError] = useState(false)
+  useEffect(() => { const controller = new AbortController(); maintenanceNavigation.current = controller; setMaintenanceOpenError(false); return () => controller.abort() }, [authScope, vehicle.id])
+  const openMaintenanceOrder = async (id: string) => { const signal = maintenanceNavigation.current.signal; setMaintenanceOpenError(false); try { const result = await api.get<RepairOrder>(`/repair-orders/${id}/workspace`, { signal }); if (signal.aborted || !isPricingScopeCurrent(authScope)) return; if (result.data.vehicle_id !== vehicle.id) throw new Error('Invalid maintenance order'); onOpenOrder(result.data) } catch { if (!signal.aborted && isPricingScopeCurrent(authScope)) setMaintenanceOpenError(true) } }
   const [params, setParams] = useSearchParams()
   const location = useLocation()
   // Keep URL state exact to this customer/truck, separate from directory/queue filters.
@@ -75,6 +81,8 @@ function VehicleRecord({ customer, vehicle, onOpenOrder, onCreateOrder, createOr
       {vehicle.operating_authority_company_name && <div><dt>Operating authority</dt><dd>{vehicle.operating_authority_company_name}</dd></div>}
     </dl>
     {vehicle.notes && <div className="db-customer-record__notes"><h3>Notes</h3><p className="whitespace-pre-wrap">{vehicle.notes}</p></div>}
+    <MaintenanceSection vehicleId={vehicle.id} customerId={customer.id} channel="shop" onOpenOrder={id => void openMaintenanceOrder(id)} />
+    {maintenanceOpenError && <p role="alert">Could not open maintenance work. Try Open work again.</p>}
     <section aria-label="Vehicle repair history">
       <h3>Repair history{history.data && !history.isError && !searchPending ? ` (${history.data.total})` : ''}</h3>
       <div className="db-vehicle-history-filters">

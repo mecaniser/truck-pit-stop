@@ -1,4 +1,7 @@
 import { useAdHocPartCommand } from '@/features/parts-pricing/useAdHocPartCommand'
+import { useMaintenanceFinalization } from '@/features/maintenance/useMaintenanceFinalization'
+import { useMaintenanceRemoval } from '@/features/maintenance/useMaintenanceRemoval'
+import { invalidateMaintenance, MaintenanceCancelled } from '@/features/maintenance/api'
 import { usePricingCommand } from '@/features/parts-pricing/usePricingCommand'
 import { usePricingScope } from '@/features/parts-pricing/usePricingScope'
 import { PricingCancelled, pricingError } from '@/features/parts-pricing/contract'
@@ -287,12 +290,16 @@ export function useUpdateLine(orderId: string) {
 
 export function useRemoveLine(orderId: string) {
   const qc = useQueryClient()
-  return useMutation<unknown, unknown, string>({
-    mutationFn: async (lineId) =>
-      (await api.delete(`/repair-orders/${orderId}/price-build/lines/${lineId}`)).data,
+  const maintenance = useMaintenanceRemoval(orderId)
+  const mutation = useMutation<unknown, unknown, string | { lineId: string; label: string; message?: string }>({
+    mutationFn: async value => {
+      const { lineId, label, message } = typeof value === 'string' ? { lineId: value, label: 'this operation', message: undefined } : value
+      return maintenance.execute(orderId, lineId, label, async fingerprint => (await api.delete(`/repair-orders/${orderId}/price-build/lines/${lineId}`, ...(fingerprint ? [{ params: { expected_maintenance_fingerprint: fingerprint } }] : []))).data, message)
+    },
     onSuccess: () => invalidateOrder(qc, orderId),
-    onError: (error) => toast.error(errorMessage(error, 'Unable to remove this line')),
+    onError: (error) => { if (!(error instanceof MaintenanceCancelled)) toast.error(errorMessage(error, 'Unable to remove this line')) },
   })
+  return { ...mutation, dialog: maintenance.dialog }
 }
 
 /* ---------- parts ---------- */
@@ -418,16 +425,20 @@ export function useStartWork(orderId: string, onDone?: () => void) {
   })
 }
 
-export function useCompleteWork(orderId: string, onDone?: () => void) {
+export function useCompleteWork(orderId: string, onDone?: () => void, vehicleId = '') {
   const qc = useQueryClient()
-  return useMutation<unknown, unknown, number | null>({
+  const maintenance = useMaintenanceFinalization(orderId)
+  const mutation = useMutation<unknown, unknown, number | null>({
     mutationFn: async (mileageOut) =>
+      maintenance.execute(orderId, vehicleId, 'fleet', async review =>
       (await api.post(`/fleet/work-orders/${orderId}/complete`, {
         mileage_out: mileageOut ?? null,
-      })).data,
+        ...(review ? { maintenance_review: review } : {}),
+      })).data),
     onSuccess: () => { toast.success('Repair order completed'); invalidateOrder(qc, orderId); onDone?.() },
-    onError: (error) => { openChecklistOnCompletionError(error, orderId); toast.error(errorMessage(error, 'Unable to complete')) },
+    onError: (error) => { if (error instanceof MaintenanceCancelled) return; openChecklistOnCompletionError(error, orderId); toast.error(errorMessage(error, 'Unable to complete')) },
   })
+  return { ...mutation, dialog: maintenance.dialog }
 }
 
 /**
@@ -461,7 +472,7 @@ export function useSetPmServices(orderId: string) {
   const pricing = usePricingCommand(`fleet:${orderId}:useSetPmServices`)
   const mutation = useMutation<PMServiceEntry[], unknown, string[]>({
     mutationFn: async (serviceIds) => pricing.execute({ context: { kind: 'repair_order', repair_order_id: orderId }, plan: { kind: 'pm_replace', service_ids: serviceIds }, pricing_presentation: 'fleet' }, async (confirmation, options) => (await api.put(`/fleet/work-orders/${orderId}/pm-services`, { service_ids: serviceIds, ...confirmation }, options)).data),
-    onSuccess: () => invalidateOrder(qc, orderId),
+    onSuccess: () => { invalidateOrder(qc, orderId); invalidateMaintenance(qc) },
     onError: (error) => { if (!(error instanceof PricingCancelled)) toast.error(errorMessage(error, 'Unable to update PM services')) },
   })
   return { ...mutation, pricingDialog: pricing.dialog }

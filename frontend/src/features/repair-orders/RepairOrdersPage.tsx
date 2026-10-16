@@ -1,4 +1,7 @@
 import { usePricingCommand } from '@/features/parts-pricing/usePricingCommand'
+import { useMaintenanceFinalization } from '@/features/maintenance/useMaintenanceFinalization'
+import { useMaintenanceRemoval } from '@/features/maintenance/useMaintenanceRemoval'
+import { MaintenanceCancelled } from '@/features/maintenance/api'
 import { PricingCancelled, pricingError } from '@/features/parts-pricing/contract'
 import { formatScheduleDate, overdueSearchParams, scheduleDeadline, scheduleRefreshInterval } from './repairOrderSchedule'
 import { openChecklistOnCompletionError } from '@/features/service-checklists/queries'
@@ -1809,6 +1812,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     },
   })
 
+  const maintenanceFinalization = useMaintenanceFinalization(selectedOrder?.id ?? '')
   const completeWorkOrderMutation = useMutation({
     mutationFn: async ({
       orderId,
@@ -1819,11 +1823,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       mileageOut?: number | null
       reviewNotes?: string
     }) => {
+      return maintenanceFinalization.execute(orderId, selectedOrder?.vehicle_id ?? '', currentUser?.role === 'fleet_manager' ? 'fleet' : 'shop', async maintenanceReview => {
       const response = await api.post(`/fleet/work-orders/${orderId}/complete`, {
         mileage_out: woOut ?? null,
         review_notes: managerNotes || null,
+        ...(maintenanceReview ? { maintenance_review: maintenanceReview } : {}),
       })
       return response.data as { repair_order_id: string; raw_status: RepairOrderStatus }
+      })
     },
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
@@ -1842,6 +1849,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       toast.success('Repair finalized — invoice created and fleet billing contact notified')
     },
     onError: (error: unknown, variables) => {
+      if (error instanceof MaintenanceCancelled) return
       openChecklistOnCompletionError(error, variables.orderId)
       toast.error(getErrorDetail(error, 'Failed to complete work order'))
     },
@@ -1868,11 +1876,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
   const approveCompletionMutation = useMutation({
     mutationFn: async ({ orderId, reviewNotes, mileageOut }: { orderId: string; reviewNotes?: string; mileageOut?: number | null }) => {
+      return maintenanceFinalization.execute(orderId, selectedOrder?.vehicle_id ?? '', currentUser?.role === 'fleet_manager' ? 'fleet' : 'shop', async maintenanceReview => {
       const response = await api.post(`/repair-orders/${orderId}/approve-completion`, {
         review_notes: reviewNotes || null,
         mileage_out: mileageOut ?? null,
+        ...(maintenanceReview ? { maintenance_review: maintenanceReview } : {}),
       })
       return response.data as RepairOrder
+      })
     },
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
@@ -1888,6 +1899,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       }
     },
     onError: (error: unknown, variables) => {
+      if (error instanceof MaintenanceCancelled) return
       openChecklistOnCompletionError(error, variables.orderId)
       toast.error(getErrorDetail(error, 'Failed to finalize repair order'))
     },
@@ -2145,9 +2157,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     },
   })
 
+  const maintenanceRemoval = useMaintenanceRemoval(selectedOrder?.id ?? '')
   const removeLaborMutation = useMutation({
     mutationFn: async ({ orderId, laborId }: { orderId: string; laborId: string }) => {
-      await api.delete(`/repair-orders/${orderId}/labor/${laborId}`)
+      await maintenanceRemoval.execute(orderId, laborId, 'this operation', async fingerprint => { await api.delete(`/repair-orders/${orderId}/labor/${laborId}`, ...(fingerprint ? [{ params: { expected_maintenance_fingerprint: fingerprint } }] : [])) })
     },
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
@@ -2155,6 +2168,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       refetchOrderDetail()
     },
+    onError: error => { if (!(error instanceof MaintenanceCancelled)) toast.error(pricingError(error, 'Unable to remove this operation.')) },
   })
 
   const refreshAuthorizationState = async () => {
@@ -3223,6 +3237,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const pricingNotice = <>{servicePricing.dialog}{legacyPartPricing.dialog}{serviceRecoveryNotice}</>
   return (
     <div className={`db-repair-orders-workspace flex flex-col h-full ${presentationVariant === 'new' ? 'db-repair-orders-workspace--new' : ''} ${presentationVariant === 'new' && isDetailOpen && selectedOrder ? 'db-repair-orders-workspace--detail-open' : ''}`}>
+      {maintenanceFinalization.dialog}
+      {maintenanceRemoval.dialog}
 
       {voidedOrderNumber && (
         <div role="status" className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">

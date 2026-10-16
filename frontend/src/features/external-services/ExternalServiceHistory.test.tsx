@@ -118,6 +118,7 @@ describe('outside-shop history search', () => {
     await user.click(await screen.findByRole('button', { name: 'Next services' }))
     expect(await screen.findByText('Page 2')).toBeVisible()
     const search = screen.getByRole('searchbox', { name: 'Search outside-shop history' })
+    expect(search).toHaveAccessibleDescription('Search all outside-shop records for this vehicle by shop, work performed, or reference.')
     await user.type(search, '  needle  ')
     expect(await screen.findByRole('heading', { name: 'Outside-shop history (1 matching)' })).toBeVisible()
     expect(screen.queryByText('Page 2')).not.toBeInTheDocument()

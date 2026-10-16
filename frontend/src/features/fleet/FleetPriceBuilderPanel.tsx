@@ -71,7 +71,7 @@ function Sheet({ title, onClose, children }: {
   title: string; onClose: () => void; children: React.ReactNode
 }) {
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !event.defaultPrevented) onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
@@ -153,7 +153,7 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
   // put them back on the board rather than leaving them on a builder they are
   // done with, staring at a Complete button they cannot honestly press yet.
   const startWork = useStartWork(repairOrderId, () => { notify(); onClose() })
-  const completeWork = useCompleteWork(repairOrderId, () => { notify(); onClose() })
+  const completeWork = useCompleteWork(repairOrderId, () => { notify(); onClose() }, detail?.vehicle_id ?? '')
   const deleteOrder = useDeleteOrder(repairOrderId, () => { notify(); onClose() })
 
   // Operation search is a POST, so it runs on a settled term rather than on
@@ -221,9 +221,9 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
    * change to work someone may already have done, so that one is confirmed.
    */
   const requestRemoval = (kind: 'line' | 'part', id: string, label: string) => {
+    if (kind === 'line') { removeLine.mutate({ lineId: id, label, ...(started ? { message: `This repair order is in progress. Removing ${label} changes what the shop is working from, and any of it already done will not be recorded.` } : {}) }); return }
     if (!started) {
-      if (kind === 'line') removeLine.mutate(id)
-      else removePart.mutate(id)
+      removePart.mutate(id)
       return
     }
     setPendingRemoval({ kind, id, label })
@@ -548,6 +548,8 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
         />
       )}
 
+      {removeLine.dialog}
+      {completeWork.dialog}
       {completeOpen && (
         <CompleteSheet
           currentMileage={detail.mileage_in}

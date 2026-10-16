@@ -1,3 +1,5 @@
+import { orderMaintenance, program, targetPreview, work } from '@/features/maintenance/__tests__/fixtures'
+import type { TargetRequest } from '@/features/maintenance/contract'
 import { quote } from '@/features/parts-pricing/__tests__/fixtures'
 import type { ResolveRequest } from '@/features/parts-pricing/contract'
 import { useAuthStore } from '@/stores/authStore'
@@ -504,4 +506,30 @@ it('retains a grouped part quantity draft on stale CAS and retries with the refr
   await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledWith(`/repair-orders/${ORDER_ID}/parts/part-1`, { quantity: 3, expected_pricing_version: 4, pricing_presentation: 'fleet' }))
   const conflict = await screen.findByText(/Saved quantity changed. Saved quantity 5/); const retry = within(conflict).getByRole('button', { name: 'Retry' }); expect(screen.getByLabelText('Quantity of Air line fitting')).toHaveValue('3'); await user.click(retry)
   await waitFor(() => expect(apiMocks.patch).toHaveBeenLastCalledWith(`/repair-orders/${ORDER_ID}/parts/part-1`, { quantity: 3, expected_pricing_version: 5, pricing_presentation: 'fleet' }))
+})
+
+
+it('carries one reviewed maintenance block through fleet completion and preserves the mileage sheet on Escape', async () => {
+  useAuthStore.setState({ user: { id: 'user-1', tenant_id: 'tenant-1', role: 'fleet_manager' } as User, authSessionEpoch: 1, logoutInProgress: false })
+  mockQueries({ status: 'in_progress' })
+  const originalGet = apiMocks.get.getMockImplementation()!
+  const item = program('program-1', { vehicle_id: 'veh-1', work: work('link-1', { repair_order_id: ORDER_ID, operation_ids: ['line-1'] }) })
+  apiMocks.get.mockImplementation((url: string) => url.endsWith('/maintenance') ? Promise.resolve({ data: { ...orderMaintenance([item]), repair_order_id: ORDER_ID } }) : originalGet(url))
+  apiMocks.post.mockImplementation((url: string, body: TargetRequest) => Promise.resolve({ data: url.endsWith('/maintenance-target-preview') ? targetPreview(body) : {} }))
+  const user = userEvent.setup(); renderPanel()
+  await user.click(await screen.findByRole('button', { name: 'Complete' }))
+  const sheet = screen.getByRole('dialog', { name: 'Complete repair order' })
+  await user.type(within(sheet).getByLabelText(/Odometer out/), '621566')
+  await user.click(within(sheet).getByRole('button', { name: 'Complete' }))
+  const firstReview = await screen.findByRole('dialog', { name: 'Review maintenance completion' })
+  await waitFor(() => expect(firstReview).toContainElement(document.activeElement as HTMLElement))
+  await user.keyboard('{Escape}')
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Review maintenance completion' })).not.toBeInTheDocument())
+  expect(within(sheet).getByLabelText(/Odometer out/)).toHaveValue('621566')
+  await user.click(within(sheet).getByRole('button', { name: 'Complete' }))
+  const review = await screen.findByRole('dialog', { name: 'Review maintenance completion' })
+  await user.click(within(review).getByText('Review targets'))
+  await screen.findByLabelText('Target review')
+  await user.click(within(review).getByRole('button', { name: 'Finalize & Send Invoice' }))
+  await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith(`/fleet/work-orders/${ORDER_ID}/complete`, expect.objectContaining({ mileage_out: 621566, maintenance_review: expect.objectContaining({ expected_review_fingerprint: 'review-1', expected_target_fingerprint: 'target-1', entries: [expect.objectContaining({ work_link_id: 'link-1', attestation: null })] }) })))
 })

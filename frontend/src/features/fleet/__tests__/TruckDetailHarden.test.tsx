@@ -23,6 +23,7 @@ vi.mock('react-hot-toast', () => ({
 vi.mock('../FleetMap', () => ({ default: () => <div data-testid="fleet-map" /> }))
 
 import TruckDetail from '../TruckDetail'
+import toast from 'react-hot-toast'
 import { driverTruck } from './driverRecordFixture'
 
 const truck: BoardTruck = {
@@ -231,4 +232,39 @@ it('retries an uncertain empty fleet order creation with the same command identi
     const user = userEvent.setup(); renderTruck(); const button = await screen.findByRole('button', { name: /Create repair order/ }); await user.click(button); await waitFor(() => expect(writes).toBe(1)); await waitFor(() => expect(button).toBeEnabled()); await user.click(button); await waitFor(() => expect(writes).toBe(2))
     const commands = apiMocks.post.mock.calls.filter(([url]) => url === `/fleet/trucks/${truck.id}/work-order`); expect(commands[1][2].headers).toEqual(commands[0][2].headers); expect(commands[1][1]).toEqual({ pricing_preview_fingerprint: 'opaque-1', pricing_presentation: 'fleet' }); expect(apiMocks.post.mock.calls.filter(([url]) => url === '/parts-pricing/resolve')).toHaveLength(1)
   } finally { useAuthStore.setState({ user: previous }) }
+})
+
+
+it.each([null, 0])('requires actual PM mileage even when the generic history reading is %s', async odometer => {
+  const user = userEvent.setup()
+  apiMocks.get.mockImplementation((url: string) => {
+    if (url === `/fleet/trucks/${truck.id}`) return Promise.resolve({ data: detail })
+    if (url === `/fleet/trucks/${truck.id}/history`) return Promise.resolve({ data: [{ id: 'historical-pm', kind: 'Repair', date: '2026-10-01', summary: 'Preventive maintenance', odometer }] })
+    return Promise.resolve({ data: [] })
+  })
+  renderTruck()
+  await user.click(await screen.findByRole('button', { name: /Service history/ }))
+  await user.click(await screen.findByRole('button', { name: 'Recognize as PM' }))
+  expect(screen.getByLabelText('Odometer at service')).toHaveValue('')
+  expect(screen.queryByText(/The next PM will be set to/)).not.toBeInTheDocument()
+  await user.type(screen.getByLabelText('Odometer at service'), '0')
+  expect(screen.getByLabelText('Odometer at service')).toHaveValue('0')
+  expect(screen.getByLabelText('Odometer at service')).not.toHaveValue(String(truck.odometer))
+})
+
+
+it.each([
+  ['maintenance_review_required', 'Use this truck’s maintenance programs to edit its service schedule.'],
+  ['maintenance_operation_linked', 'Review the existing maintenance program before changing its legacy schedule.'],
+])('retains actual-service draft and shows the structured %s legacy guard', async (code, message) => {
+  const user = userEvent.setup()
+  apiMocks.get.mockImplementation((url: string) => {
+    if (url === `/fleet/trucks/${truck.id}`) return Promise.resolve({ data: detail })
+    if (url === `/fleet/trucks/${truck.id}/history`) return Promise.resolve({ data: [{ id: 'historical-pm', kind: 'Repair', date: '2026-10-01', summary: 'Preventive maintenance', odometer: 620000 }] })
+    return Promise.resolve({ data: [] })
+  })
+  apiMocks.post.mockRejectedValue({ response: { status: 409, data: { detail: { code, message } } } })
+  renderTruck(); await user.click(await screen.findByRole('button', { name: /Service history/ })); await user.click(await screen.findByRole('button', { name: 'Recognize as PM' })); await user.type(screen.getByLabelText('Odometer at service'), '0'); await user.click(screen.getByRole('button', { name: 'Record PM completion' }))
+  await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message))
+  expect(screen.getByLabelText('Odometer at service')).toHaveValue('0'); expect(screen.getByLabelText('PM performed date')).toHaveValue('2026-10-01'); expect(screen.getByRole('dialog', { name: 'Recognize prior PM' })).toBeInTheDocument()
 })
