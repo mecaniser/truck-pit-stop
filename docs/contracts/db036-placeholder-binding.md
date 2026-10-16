@@ -14,7 +14,7 @@ Driver and telemetry captures reference either a genuine verified VIN or a bindi
 
 ## Compatibility and verification
 
-Existing VIN captures and request digests remain compatible; nullable additive binding fields do not rewrite records. Migration creates no mapping and deletes no history. Downgrade is deliberately blocked when any reviewed binding or bound capture exists; rollback should revoke the mapping and restore application/collector code, retaining the additive schema.
+Existing VIN captures and request digests remain compatible; nullable additive binding fields do not rewrite records. Migration creates no mapping and deletes no history. Downgrade is deliberately blocked when any reviewed binding or bound capture exists; rollback disables this feature and revokes the mapping while retaining the guarded application reader, additive schema and immutable history. Never restore an application image that ignores `dashboard_binding_id`.
 
 Focused negative tests cover wrong tenant/company/provider/membership, duplicates, revoked/expired binding, inactive actor/vehicle, source outside interval, replay after revocation, changed route, ambiguous VIN, timeout versus absence, newly supplied/conflicting real VIN and old-capture projection invalidation. Independent reviewer owns Security/QA approval. Protected CI, migration retention proof, driver/location canary and UI acceptance remain parent release gates. Keep five-minute location and daily driver schedules and existing database storage.
 
@@ -71,7 +71,7 @@ python -m scripts.motive_sync.review_binding --tenant '<confirmed tenant UUID>' 
 
 The source document used for approval predates `effective_from`; do not import it after activation. Run a fresh normal collector after mapping creation. Source location observation intervals must also begin after the binding starts; an older parked location is not newly attributed merely because it is read again. Unknown provider timestamp retains unknown provenance and never invents current speed.
 
-For rollback, disable only the new allowlist entry and revoke the exact returned binding ID, leaving additive schema and history intact:
+For feature rollback, first disable the new allowlist entry and stop new placeholder collection, then revoke the exact returned binding ID. Keep the current guarded Web/API application and workers, additive schema and immutable history intact. Do not use an old unguarded application image: prior-main `0ae7534f` ignores binding identity in telemetry projection and can show revoked historical speed as moving. This is a feature/config rollback, not an application-image rollback:
 
 ```sh
 python -m scripts.motive_sync.review_binding --tenant '<confirmed tenant UUID>' --reviewer '<active tenant admin UUID>' --revoke '<confirmed binding UUID>' --apply
@@ -91,3 +91,10 @@ The parent verified the full corrected snapshot/parser with VIN null and state `
 Independent review of995c19d8 found a commit/readback ordering defect: a bound truck belonging to the primary fleet was correctly excluded in another approved fleet's dry run, but its binding was resolved again before checking that fleet's saved eligible request IDs. The commit then failed instead of retaining the exclusion. Stable request identity is now calculated without resolving the vehicle; saved excluded IDs skip binding/capture work, while eligible requests still require the current binding and all tenant/membership/assignment checks. This changes no request ID or digest formula. Validated genuine-source-VIN observations retain the separate durable revocation path even when no genuine local VIN match exists, so eligibility cannot keep a known-invalid placeholder binding alive.
 
 The regression exercises a single complete source directory across primary bound-vehicle, secondary genuine-VIN and empty local scopes using the actual runner's dry-run, commit, replay and fresh readback. Separate cases revoke the already-eligible binding or replace its local VIN before commit/readback and require rejection. The independent original reproduction is retained under private output/ and passes after correction. Independent re-review is required; owner tests are not gate approval.
+
+
+## Rollback compatibility gate
+
+Independent review reproduced a15mph revoked binding projected as moving by the prior-main0ae7534f telemetry reader. The new guarded reader correctly suppresses that same retained capture. Therefore rollback must preserve `fleet_telemetry.attach`, `fleet_driver_records` and `dashboard_vehicle_bindings.valid_capture_ids` safeguards together with the binding models/schema; do not downgrade Web/API or any read-serving process to a pre-binding build. No snapshot deletion, soft deletion, fabricated VIN or history rewrite is part of rollback.
+
+After disabling the allowlist and revoking the exact binding, verify on a fresh session that truck26 has no bound driver record or bound telemetry selected, and that ordinary genuine-VIN fleet readings remain available. Revocation only suppresses readings from this binding, so independently valid manual/API readings may still exist. Any release that corrects other code must retain these guarded readers and pass binding-revocation/projection regressions. A different history-preserving compatibility strategy requires separate Architecture/Security review before deployment; it is not an approved fallback here.

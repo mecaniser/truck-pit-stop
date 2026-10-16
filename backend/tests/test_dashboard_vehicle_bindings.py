@@ -268,15 +268,16 @@ async def test_driver_worker_requires_exact_binding_and_source_absence(
         import_records.validate(doc, "Synthetic Fleet", "KT123")
 
 
+@pytest.mark.parametrize("speed_mph", [0, 15])
 @pytest.mark.asyncio
 async def test_location_speed_worker_bound_capture_and_manual_boundary(
-    db_session, monkeypatch
+    db_session, monkeypatch, speed_mph
 ):
     actor, vehicle, member, binding, _ = await setup(db_session, monkeypatch)
     doc = source()
     doc.update(company_id="KT123", company_label="Synthetic Fleet")
     row = doc["vehicles"][0]
-    row.update(vin=None, source_vin_state="not_displayed", speed_mph=0)
+    row.update(vin=None, source_vin_state="not_displayed", speed_mph=speed_mph)
     rows = import_locations.parse_document(
         doc, "Synthetic Fleet", "KT123", fleet_telemetry.now()
     )
@@ -286,7 +287,15 @@ async def test_location_speed_worker_bound_capture_and_manual_boundary(
     assert results[0]["created"] is True and results[0]["board_verified"] is True
     captured = (await db_session.execute(select(FleetTelemetrySnapshot))).scalar_one()
     assert captured.verified_vin is None and captured.dashboard_binding_id == binding.id
-    assert captured.speed_mph == 0 and vehicle.vin == "PENDING-26"
+    assert captured.speed_mph == speed_mph and vehicle.vin == "PENDING-26"
+    before_revoke = SimpleNamespace(
+        id=vehicle.id,
+        board_membership_customer_id=member.fleet_customer_id,
+        telemetry=None,
+    )
+    await fleet_telemetry.attach(db_session, [before_revoke], actor.tenant_id)
+    assert before_revoke.telemetry.speed.value == speed_mph
+    assert before_revoke.telemetry.motion == ("moving" if speed_mph else "stopped")
     actor2, plans, _ = await import_locations.prepare(
         db_session, rows, actor.tenant_id, actor.id, "Synthetic Fleet", "KT123"
     )

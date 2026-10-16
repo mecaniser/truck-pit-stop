@@ -141,7 +141,7 @@ def downgrade():
         sa.text("SELECT EXISTS (SELECT 1 FROM dashboard_vehicle_bindings)")
     ).scalar():
         raise RuntimeError(
-            "Reviewed binding history must be retained; revoke binding and roll back application instead"
+            "Reviewed binding history must be retained; revoke binding and keep the guarded application reader"
         )
     for table in ("fleet_driver_record_captures", "fleet_telemetry_snapshots"):
         if bind.execute(
@@ -150,7 +150,7 @@ def downgrade():
             )
         ).scalar():
             raise RuntimeError(
-                "Bound capture history must be retained; revoke binding and roll back application instead"
+                "Bound capture history must be retained; revoke binding and keep the guarded application reader"
             )
     for table, label in [
         ("fleet_driver_record_captures", "driver_record"),
