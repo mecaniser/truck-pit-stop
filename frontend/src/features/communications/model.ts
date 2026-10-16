@@ -1,0 +1,123 @@
+/** Proposed shared inbox contract. No transport or provider dependencies. */
+export type Channel = "sms" | "whatsapp" | "telegram";
+export type DeliveryStatus =
+  | "received"
+  | "pending"
+  | "queued"
+  | "sent"
+  | "delivered"
+  | "undelivered"
+  | "failed"
+  | "unknown";
+export type SendRestriction =
+  | "not_connected"
+  | "opted_out"
+  | "identity_unverified"
+  | "ambiguous_outcome"
+  | "template_required"
+  | "not_started";
+export interface Message {
+  id: string;
+  conversationId: string;
+  channel: Channel;
+  direction: "inbound" | "outbound";
+  source: "customer" | "staff" | "automation";
+  body: string;
+  createdAt: string;
+  deliveryStatus: DeliveryStatus;
+  errorCode?: string;
+  sendOperationId?: string;
+}
+export interface Conversation {
+  id: string;
+  tenantId: string;
+  customerId: string | null;
+  customerName: string;
+  company: string;
+  channel: Channel;
+  channelAccountId: string;
+  contactIdentityId: string;
+  identityLabel: string;
+  status: "open" | "resolved";
+  assigneeId: string | null;
+  unreadCount: number;
+  lastMessageAt: string;
+  preview: string;
+  messages: Message[];
+  sendPolicy: { canSend: boolean; reason: SendRestriction | null };
+  context: {
+    vehicleLabel?: string;
+    repairOrderLabel?: string;
+    repairStatus?: string;
+    concern?: string;
+  };
+}
+export type InboxView = "open" | "unread" | "mine" | "resolved";
+export const channelLabels: Record<Channel, string> = {
+  sms: "SMS",
+  whatsapp: "WhatsApp",
+  telegram: "Telegram",
+};
+export const restrictionLabels: Record<SendRestriction, string> = {
+  not_connected: "This channel is not connected yet.",
+  opted_out: "This contact has opted out of SMS.",
+  identity_unverified: "Verify and link this contact before replying.",
+  ambiguous_outcome:
+    "Delivery is uncertain. Check the provider before sending again.",
+  template_required:
+    "An approved WhatsApp template is required outside the reply window.",
+  not_started: "Ask the customer to start a conversation with the shop bot.",
+};
+export function draftKey(
+  tenantId: string,
+  userId: string,
+  conversation: Conversation,
+): string {
+  return JSON.stringify([
+    tenantId,
+    userId,
+    conversation.id,
+    conversation.channel,
+    conversation.channelAccountId,
+    conversation.contactIdentityId,
+  ]);
+}
+export function filterConversations(
+  rows: Conversation[],
+  tenantId: string,
+  view: InboxView,
+  channel: Channel | "all",
+  search: string,
+  userId: string,
+): Conversation[] {
+  const term = search.trim().toLowerCase();
+  return rows
+    .filter(
+      (row) =>
+        row.tenantId === tenantId &&
+        (channel === "all" || row.channel === channel) &&
+        (view === "resolved"
+          ? row.status === "resolved"
+          : row.status === "open") &&
+        (view !== "unread" || row.unreadCount > 0) &&
+        (view !== "mine" || row.assigneeId === userId) &&
+        (!term ||
+          [
+            row.customerName,
+            row.company,
+            row.identityLabel,
+            row.context.vehicleLabel,
+            row.context.repairOrderLabel,
+            ...row.messages.map((m) => m.body),
+          ].some((value) => value?.toLowerCase().includes(term))),
+    )
+    .sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt));
+}
+export function canCompose(conversation: Conversation, body: string): boolean {
+  return (
+    conversation.sendPolicy.canSend &&
+    conversation.sendPolicy.reason === null &&
+    body.trim().length > 0 &&
+    body.trim().length <= 1600
+  );
+}
