@@ -24,11 +24,12 @@ Last updated: 2026-10-15. Program owner: Product & Delivery Lead. Discovery inve
   - Status: **Done — merged, deployed and production verified**. Board: **DB-131**. Owner: Backend & Integrations.
   - Evidence: [R1 verification receipt](verification/DB131_REPAIR_ORDER_SCHEDULING.md).
 - [ ] **P1 — Cost-based parts markup matrices with minimum price and locked-price rules**
-  - Status: **Production acceptance — PR542 deployed with unchanged prices; mobile preview feedback correction required before Done**. Board: **DB-132**. Owner: Backend & Integrations.
+  - Status: **Production acceptance — PR542 and UI correction PR544 deployed; final corrected UI checks await production sign-in**. Board: **DB-132**. Owner: Backend & Integrations.
   - Evidence: [P1 contract](contracts/db132-parts-pricing-matrix.md); [intake receipt](verification/DB132_PARTS_PRICING_MATRIX.md).
 - [ ] **C1 — Customer-specific labor rates and parts pricing defaults**
-  - Status: **Queued**. Board: **DB-133**. Owner: Backend & Integrations.
-  - Evidence: Not started.
+  - Status: **Queued; read-only preparation complete**. Board: **DB-133**. Owner: Backend & Integrations.
+  - Approved: new external orders use the customer agreed labor rate, otherwise the shop billing rate; existing orders retain saved rates.
+  - Evidence: [C1 readiness notes](verification/DB133_CUSTOMER_PRICING_READINESS.md). Application implementation not started.
 - [ ] **M1 — Multiple recurring maintenance programs per truck**
   - Status: **Queued**. Board: **DB-134**. Owner: Backend & Integrations.
   - Evidence: Not started.
