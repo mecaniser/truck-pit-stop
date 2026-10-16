@@ -2015,3 +2015,8 @@ validation. Internal, unsupported invoice/order sources and malformed history
 amounts now produce holds without exporting excluded history. Added integration
 regressions. Native history retains final invoice face value even when settlement
 is absent/different. Owner's full focused suite now181 passed; re-review pending.
+
+
+> **DB-064 stale-tab recurrence / IN PROGRESS (2026-10-16):** Security & Identity accountable, high-risk auth lane. Active browser verified as legacy with 30-minute access and 30-day refresh. Confirmed stale-tab request-body credential overrides a valid rotated shared cookie and fails after replay grace; exact reported incident correlation pending. Architecture contract and acceptance: `docs/verification/DB064_STALE_TAB_RENEWAL.md`. Branch `codex/session-continuity` from4061aaa8. Preserve durations and reject account/tenant/version crossover; independent Security/QA and runtime/release gates required. Local full-stack runtime blocked by absent approved backend configuration; shared listeners preserved.
+
+> **DB-064 stale-tab recurrence / REVIEW (2026-10-16):** Cookie recovery restricted to matching signed user/tenant/version/remember-me scope; existing revocation checks and durations unchanged. Reproduced stale-tab 401 before fix. Independent Security GO (13 new tests) and QA GO (30 backend tests); 18 frontend renewal tests pass; compile/diff pass. Simulated 24-hour JWT renewal passes, not actual day-long production evidence. Runtime, protected CI, merge and deployment remain pending; no production mutation.
