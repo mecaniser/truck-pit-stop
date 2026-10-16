@@ -196,7 +196,7 @@ async def test_quote_send_does_not_lock_live_order_pricing(db_session, monkeypat
         return None
 
     monkeypatch.setattr(quotes_endpoint, "send_email", _noop_email)
-    monkeypatch.setattr(quotes_endpoint, "send_sms", _noop_sms)
+    monkeypatch.setattr(quotes_endpoint, "enqueue_automated_sms", _noop_sms)
     monkeypatch.setattr(quotes_endpoint, "broadcast_quote_event", _noop_broadcast)
     monkeypatch.setattr(quotes_endpoint, "broadcast_repair_order_update", _noop_broadcast)
 
@@ -321,7 +321,7 @@ async def test_quote_send_uses_discounted_order_total(db_session, monkeypatch):
         return None
 
     monkeypatch.setattr(quotes_endpoint, "send_email", _noop_email)
-    monkeypatch.setattr(quotes_endpoint, "send_sms", _noop_sms)
+    monkeypatch.setattr(quotes_endpoint, "enqueue_automated_sms", _noop_sms)
     monkeypatch.setattr(quotes_endpoint, "broadcast_quote_event", _noop_broadcast)
     monkeypatch.setattr(quotes_endpoint, "broadcast_repair_order_update", _noop_broadcast)
 
@@ -360,7 +360,7 @@ async def test_quote_send_email_uses_tenant_branding(db_session, monkeypatch):
         return None
 
     monkeypatch.setattr(quotes_endpoint, "send_email", _capture_email)
-    monkeypatch.setattr(quotes_endpoint, "send_sms", _noop_sms)
+    monkeypatch.setattr(quotes_endpoint, "enqueue_automated_sms", _noop_sms)
     monkeypatch.setattr(quotes_endpoint, "broadcast_quote_event", _noop_broadcast)
     monkeypatch.setattr(quotes_endpoint, "broadcast_repair_order_update", _noop_broadcast)
 
@@ -402,7 +402,7 @@ async def test_quote_send_queues_email_without_calling_resend(db_session, monkey
 
     monkeypatch.setattr(quotes_endpoint.settings, "PROVIDER_OUTBOX_ENABLED", True)
     monkeypatch.setattr(quotes_endpoint, "send_email", _must_not_send_email)
-    monkeypatch.setattr(quotes_endpoint, "send_sms", _noop_sms)
+    monkeypatch.setattr(quotes_endpoint, "enqueue_automated_sms", _noop_sms)
     monkeypatch.setattr(quotes_endpoint, "broadcast_quote_event", _noop_broadcast)
     monkeypatch.setattr(quotes_endpoint, "broadcast_repair_order_update", _noop_broadcast)
 
@@ -444,7 +444,7 @@ async def test_quote_decline_sms_uses_tenant_shop_name(db_session, monkeypatch):
     async def _noop_broadcast(*_args, **_kwargs):
         return None
 
-    monkeypatch.setattr(quotes_endpoint, "send_sms", _capture_sms)
+    monkeypatch.setattr(quotes_endpoint, "enqueue_automated_sms", _capture_sms)
     monkeypatch.setattr(quotes_endpoint, "broadcast_quote_event", _noop_broadcast)
     monkeypatch.setattr(quotes_endpoint, "broadcast_repair_order_update", _noop_broadcast)
 
@@ -514,7 +514,7 @@ async def test_quote_send_email_includes_customer_savings(db_session, monkeypatc
         return None
 
     monkeypatch.setattr(quotes_endpoint, "send_email", _capture_email)
-    monkeypatch.setattr(quotes_endpoint, "send_sms", _noop_sms)
+    monkeypatch.setattr(quotes_endpoint, "enqueue_automated_sms", _noop_sms)
     monkeypatch.setattr(quotes_endpoint, "broadcast_quote_event", _noop_broadcast)
     monkeypatch.setattr(quotes_endpoint, "broadcast_repair_order_update", _noop_broadcast)
 

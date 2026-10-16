@@ -287,6 +287,8 @@ async def send_sms_with_tracking(
 ) -> tuple[Notification, Optional[SMSMessage], Optional[MessageThread]]:
     tenant_uuid = _coerce_uuid(tenant_id)
     source_enum = _coerce_source(source)
+    if source_enum == SMSMessageSource.AUTOMATED:
+        raise ValueError("Automated SMS requires transactional enqueue_automated_sms with a stable domain event")
     now = datetime.now(timezone.utc)
 
     notification = Notification(
@@ -655,6 +657,8 @@ async def process_twilio_status_callback(
         )
         notifications = result.scalars().all()
         if len(notifications) == 1:
+            from app.services.automated_sms_service import apply_automated_callback
+            await apply_automated_callback(db, message_sid=message_sid, message_status=(message_status or '').strip().lower(), error_code=error_code)
             logger.info("sms_callback_notification_only", message_sid=message_sid)
             await db.commit()
             return None
@@ -726,6 +730,10 @@ async def process_twilio_status_callback(
             customer.sms_opt_out = True
             customer.sms_opted_out_at = now
             customer.sms_opt_out_source = "twilio_callback"
+
+    if sms_message.source == SMSMessageSource.AUTOMATED:
+        from app.services.automated_sms_service import apply_automated_callback
+        await apply_automated_callback(db, message_sid=message_sid, message_status=raw_status, error_code=error_code)
 
     await db.commit()
     if not advances:

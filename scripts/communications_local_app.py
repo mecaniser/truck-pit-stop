@@ -26,6 +26,7 @@ LEDGER = Path(__file__).resolve().parents[1] / '.communications-provider.sqlite'
 
 class SimulatedSMSSender:
     mode = 'simulated'
+    ready = True
 
     async def send(self, *, body, from_number, to_number, status_callback):
         # Separate durable store intentionally survives application rollback and restart.

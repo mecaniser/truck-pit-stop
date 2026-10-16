@@ -8,9 +8,11 @@ import re
 from datetime import datetime, timezone, timedelta
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 from fastapi import HTTPException
-from sqlalchemy import select, and_, or_, func
+from sqlalchemy import select, and_, or_, func, update
+from sqlalchemy.exc import SQLAlchemyError
 from twilio.base.exceptions import TwilioRestException
 from app.db.models.communication import ConversationWorkflow, ConversationReadWatermark, SMSSendOperation
+from app.db.models.automated_sms import AutomatedSMSOperation
 from app.db.models.customer import Customer
 from app.db.models.message_thread import MessageThread
 from app.db.models.sms_message import SMSMessage, SMSMessageDirection, SMSMessageSource, SMSDeliveryStatus
@@ -104,6 +106,8 @@ async def send_policy(db, tenant, thread, sender, *, ignore_operation=None):
         held = held.where(SMSSendOperation.id != ignore_operation)
     if await db.scalar(held.limit(1)):
         reason = 'ambiguous_outcome'
+    if await db.scalar(select(AutomatedSMSOperation.id).where(AutomatedSMSOperation.tenant_id == tenant.id, AutomatedSMSOperation.to_number == phone, AutomatedSMSOperation.state.in_(['unknown', 'dispatching'])).limit(1)):
+        reason = 'ambiguous_outcome'
     return {'can_send': reason is None, 'reason': reason}, account_id, identity_id, from_number, phone, customer
 
 
@@ -134,6 +138,8 @@ async def unread_count(db, thread, user_id):
 
 async def message_json(db, message):
     operation = await db.scalar(select(SMSSendOperation).where(SMSSendOperation.tenant_id == message.tenant_id, SMSSendOperation.message_id == message.id))
+    if operation is None and message.source == SMSMessageSource.AUTOMATED:
+        operation = await db.scalar(select(AutomatedSMSOperation).where(AutomatedSMSOperation.tenant_id == message.tenant_id, AutomatedSMSOperation.message_id == message.id))
     delivery = message.delivery_status.value
     if message.direction == SMSMessageDirection.INBOUND:
         delivery = 'received'
@@ -259,6 +265,7 @@ async def dispatch_operation(db, operation_id, sender):
 async def process_pending_operations(db, sender, limit=50, *, tenant_id=None):
     scope = [SMSSendOperation.tenant_id == tenant_id] if tenant_id else []
     stale = (await db.execute(select(SMSSendOperation).where(*scope, SMSSendOperation.state == 'dispatching', SMSSendOperation.dispatch_started_at < datetime.now(timezone.utc) - DISPATCH_TIMEOUT).with_for_update(skip_locked=True).limit(limit))).scalars().all()
+    counts = dict(examined=0, accepted=0, rejected=0, unknown=len(stale), skipped=0, errors=0)
     for op in stale:
         op.state = 'unknown'
         op.reconciliation_state = 'required'
@@ -266,4 +273,22 @@ async def process_pending_operations(db, sender, limit=50, *, tenant_id=None):
     ids = (await db.execute(select(SMSSendOperation.id).where(*scope, SMSSendOperation.state == 'pending').order_by(SMSSendOperation.created_at).limit(limit))).scalars().all()
     await db.rollback()
     for operation_id in ids:
-        await dispatch_operation(db, operation_id, sender)
+        counts['examined'] += 1
+        try:
+            await dispatch_operation(db, operation_id, sender)
+            state = await db.scalar(select(SMSSendOperation.state).where(SMSSendOperation.id == operation_id))
+            await db.rollback()
+            counts[state if state in ('accepted', 'rejected', 'unknown') else 'skipped'] += 1
+        except SQLAlchemyError:
+            await db.rollback()
+            raise  # Infrastructure failures must not alter dispatch eligibility.
+        except Exception:
+            await db.rollback()
+            await db.execute(update(SMSSendOperation).where(SMSSendOperation.id == operation_id, SMSSendOperation.state.in_(['pending', 'dispatching'])).values(state='unknown', reconciliation_state='required', error_code='internal_recovery_error'))
+            await db.commit()
+            counts['errors'] += 1
+            # Persist a hold so a malformed row cannot starve later batches.
+            # Never retry automatically when its dispatch outcome is uncertain.
+    if counts['errors']:
+        raise RuntimeError(f"Manual SMS recovery failed for {counts['errors']} operations")
+    return counts
