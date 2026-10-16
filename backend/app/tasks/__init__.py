@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import worker_init
 from app.core.config import settings
 
 celery_app = Celery(
@@ -95,3 +96,27 @@ celery_app.conf.update(
 
 # Import tasks to register them
 celery_app.autodiscover_tasks(["app.tasks"])
+
+
+def _require_worker_schema(sender=None, **kwargs):
+    """Block only this worker lifecycle, never Web task imports."""
+    if getattr(sender, "app", None) is not celery_app:
+        return
+    try:
+        from app.commands.worker_schema_readiness import wait_for_worker_schema
+
+        wait_for_worker_schema(settings.DATABASE_URL)
+    except Exception:
+        # Ordinary receiver exceptions are swallowed by Celery's signal
+        # dispatcher. Unexpected gate failures must also stop worker startup.
+        import logging
+
+        logging.getLogger(__name__).error("Worker schema readiness failed; startup aborted")
+        raise SystemExit(78) from None
+
+
+worker_init.connect(
+    _require_worker_schema,
+    weak=False,
+    dispatch_uid="dieselbridge-worker-schema-readiness",
+)

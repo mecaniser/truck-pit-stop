@@ -619,3 +619,75 @@ review any real concurrent business changes, and complete production Light/Night
 desktop/mobile acceptance. Earlier canceled/incomplete CI runs are not passes;
 fresh protected CI on the final integrated head is still mandatory. No production
 release/Done claim follows from this local integration GO.
+
+## Resumed integration and Worker startup gate — 2026-10-16 16:30 UTC
+
+**Local QA/Security GO retained, including the frozen read-only Worker gate.**
+Reviewed baseline HEAD is `e56904603dfa27086d6f3f7bda2d50c62b5c1de0` plus the
+four gate files identified by aggregate SHA256
+`102174f86d7d052cecfce0d3ffcdf6a8786ed3b06239ca2b6007606a1a00783f`.
+This approves the exact reviewed working-tree delta; the release owner must bind
+it to the final committed candidate and protected CI before release.
+
+Prior bounded identity checks retained the C1 gate through `4c85e71e` and
+`8d67c4bb`: pricing code and Alembic tree were unchanged, the customer-return test
+kept its C1 `base(url, options)` forwarding and all original assertions, and the
+only backend integration was the five independently approved PR551 helper,
+import and test files. Incoming fleet changes matched main exactly. The customer
+test now covers immediate and delayed responses, refuses paging while the search
+response is pending, and waits for enabled Next before continuing. Its recorded
+40/40 focused result and lint were reviewed. Superseded or canceled CI runs are
+not final release evidence.
+
+The proposed private controlled migration runner was **not approved**: its DDL
+connection lacked the guard connection's timeouts, and an upgrade exception
+could misreport an uncertain commit as false. Root abandoned that path without
+production execution. It remains prohibited by this gate. Web's normal Alembic
+deployment remains the sole migration owner; the Worker only waits and reads.
+
+Independently inspected the installed Celery 5.3.4 lifecycle: `worker_init` fires
+before pool/blueprint initialization, and its dispatcher catches `Exception`
+but permits `SystemExit` to propagate. The receiver is limited to this app and
+fails closed with exit78, including unexpected gate failures. Importing tasks
+from Web does not invoke the wait. The probe imports no application settings,
+task or provider modules. Its PostgreSQL transaction is read-only, uses a
+non-pooled disposed connection, and applies connect/query/lock limits to the
+actual probe session. The supervised child bounds driver/DNS stalls; its secret
+URL is supplied through stdin, never argv or emitted errors. The monotonic120s
+deadline rejects even a successful result arriving too late. No worker task or
+embedded Beat starts before the gate passes.
+
+Independently reran the exact frozen sources:
+
+- **28 focused tests passed**,2.70s: readiness, existing schema preflight and
+  conversion-worker registration. Actual Celery signal dispatch, a killed/reaped
+  hung child, late success, malformed/sensitive child output and Web import
+  safety are covered. Log: `/tmp/db133-independent-worker-gate-focused.log`.
+- **4 PostgreSQL tests passed**,5.17s, solely on disposable
+  `db133_test_merge_worker_gate_7b63b002`: effective read-only mode rejects writes;
+  statement2s/lock1s limits apply; missing physical C1 columns do not unlock the
+  Worker; a real lock and slow query are bounded. Log:
+  `/tmp/db133-independent-worker-gate-postgres.log`.
+- Captured full normalized10-table fingerprints independently before and after
+  those tests: all identical. All four source hashes also matched before/after.
+  Receipt: `/tmp/db133-independent-worker-gate-result.json`.
+
+Separately reviewed the owner's disposable normal-migration lifecycle evidence:
+contact175 produced `schema_not_ready` with no bootsteps; an independent normal
+Alembic upgrade to176 then produced `ready` and exactly one `bootsteps` event.
+The blueprint is a spy, so this proves startup ordering without consuming real
+tasks or starting Beat. Its ten-table retention checks also passed. That
+transition run was owner-executed; the focused and four PG reruns above were
+reviewer-executed. No reviewer preview/production database connection or browser
+action occurred.
+
+**Remaining release gates:** exact final-source protected CI; normal Web-owned
+migration176 and readiness; exact Web/Worker deployment identity plus actual
+Worker readiness-pass/startup evidence; fresh private v3 pre receipt immediately
+before release and fixed-cohort post comparison; production Light/Night desktop
+and mobile acceptance. Preserve the original05:12 pre receipt and separately
+report changes to a fresh pre baseline; a timestamp never proves authorization.
+The independently reviewed pre-to-pre comparison passed six pure-local cases;
+use a new output path to avoid overwriting either receipt. Worker timeout/exit is
+a failed startup requiring investigation of Web's migration, never permission
+to stamp, bypass the gate, or migrate from Worker. C1 remains not Done.
