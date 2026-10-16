@@ -13,7 +13,7 @@ A vehicle can have multiple named maintenance programs, each with independent el
 
 No automatic orders, notification/scheduling engine, calendar-month/quarter/year arithmetic, new provider integration, customer fees, persistent vehicle-specific parts override system, charge allocation, payroll, financial merge or new access grants. R1 schedule/promised dates remain separate. Existing explicitly requested finalization retains its existing invoice and notification behavior.
 
-P1/C1 remain authoritative: saved rates, charges, cost/pricing origins, matrix revisions, checklist/execution identity and actual stock/core reservations survive attachment/reapply/lifecycle changes. Customer work stays external unless the existing payer classification says otherwise. Imported history stays source-owned and gets no invented C1 policy. A maintenance evidence record never edits the source order's dates, mileage, is_pm flag, financial ownership or outside-service cost.
+P1/C1 remain authoritative: saved rates, charges, cost/pricing origins, matrix revisions, checklist/execution identity and actual stock/core reservations survive attachment/reapply/lifecycle changes. Customer work stays external unless the existing payer classification says otherwise. Imported history stays source-owned and gets no invented C1 policy. All new M1 preview/evidence APIs never edit the source order's dates, mileage, is_pm flag, financial ownership or outside-service cost. The pre-existing explicitly requested legacy recognize-pm reclassification action has only the narrow compatibility exception in section9.
 
 ## 2. Wire conventions and authorization
 
@@ -294,6 +294,16 @@ Maintenance idempotency does not claim to make the entire pre-existing finalizat
 | Outside source update/void/restore | Invalidate controlling attribution via exact source-version hook; immutable snapshots remain, restoration does not reaccept. Older noncontrolling source changes add history without rewinding newer valid targets. |
 | Program archive | Reject occupying links/review; otherwise reversible, targets/history retained. |
 | Template archive/physical delete | New template-dependent work blocked; existing operation snapshots/history usable. Explicit replacement only, no name matching. |
+
+### Legacy recognition and native RO reading provenance (accepted Architecture clarification)
+
+The existing POST `/fleet/trucks/{vehicle_id}/recognize-pm` remains an explicit legacy reclassification action with its existing source/Vehicle changes only when there is no independent program, exactly one eligible legacy adapter (or explicit atomic enrollment by this action), no occupying active/pending/review claim, no controlling review and no existing M1 evidence for that source requiring correction. Otherwise return409 `maintenance_review_required` before any source/scalar change, directing staff to M1 evidence review. This exception does not apply to new M1 APIs.
+
+Its required submitted performed_on/odometer are explicit staff-reported historical attestation, never imported/source_confirmed evidence. No new token/header is required on the old route. Validate current scope, shop-local date, strict reading bounds and regression; preserve date-only observed_on with observed_at=null. Record one immutable legacy recognition/event and synchronize legacy scalars/adapter once in the same transaction as the old source changes. Preserve older-history protection and durable source/program uniqueness; do not independently advance and then call advance_vehicle_pm again. Existing is_pm duplicate conflict may remain. UI requires actual service input with no silent current-mileage,0,arrival or generic-history fallback; any historical reference stays explicitly unverified.
+
+Native RO mileage_out has no persisted provenance and may have been copied from Vehicle.mileage; mileage_in is arrival and may be carried. work_completed_at does not establish a meter observation time. Consequently selected readings with source_kind=repair_order reject422 `maintenance_invalid_reading` for either raw meter field. The RO remains eligible source identity/date context; staff can explicitly confirm an actual manual service reading. Do not add a meter registry, provenance-column backfill, is_pm/status/equality heuristic, or implicit selection of another M1 completion. Raw RO fields remain in source fingerprints for invalidation. Trustworthy manual observations, telemetry and outside-service readings keep their existing rules.
+
+Required regressions: one explicit legacy success/event/advance; duplicate/concurrent retry; independent/occupied/review refusal retaining source/scalars; future/invalid/regressing rollback; older history never rewinds; explicit0; raw fallback/manual-looking historical output and arrival readings rejected as selected evidence; confirmed manual reading succeeds with date precision; new M1 recognition never changes source or Vehicle.
 
 ### Removal confirmation carriers (accepted Architecture amendment)
 

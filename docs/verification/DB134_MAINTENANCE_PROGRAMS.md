@@ -74,3 +74,7 @@ Root rechecked all three hashes and captured fresh read-only preview baseline at
 ## Bounded service gate return — 2026-10-16
 
 Independent Findings4/5 reproduce private outside-service UUIDs exposed via nested Fleet reading provenance despite outer masking, and pre-reset same-day readings selected after rebaseline. Backend owns corrections and regression evidence; reviewer uses ephemeral isolated tests, no preview/production writes. Architecture is clarifying old recognize-pm compatibility and native-RO reading provenance because historical completion can copy Vehicle.mileage into mileage_out. Application acceptance remains open.
+
+## Legacy recognition clarification — 2026-10-16
+
+Architecture and Product/Delivery accepted a narrow backward-compatible old recognize-pm adapter: explicit staff-reported legacy attestation, one atomic scalar/program advance, no independent/occupied/review bypass. New M1 evidence never edits source. Raw native RO output/arrival mileage is not admissible actual service evidence because existing routes can carry/fallback it; require explicit confirmed actual inputs instead, with no provenance backfill. Frontend removes misleading source-reading choices and silent legacy input defaults. Focused owner regressions and independent recheck required.
