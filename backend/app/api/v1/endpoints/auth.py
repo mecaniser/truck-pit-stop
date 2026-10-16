@@ -830,7 +830,10 @@ async def refresh_token_endpoint(
     refresh_token_cookie: Optional[str] = Cookie(None, alias="refresh_token"),
     db: AsyncSession = Depends(get_db),
 ):
-    # Get refresh token from body or cookie
+    # Tabs retain body credentials independently, while the HttpOnly cookie is
+    # shared. A sibling may have rotated the body token long before this tab
+    # wakes. Use the current cookie only for the same signed identity/scope;
+    # never let an old account's tab overwrite a newly signed-in account.
     token_str = token_request.refresh_token if token_request else refresh_token_cookie
     if not token_str:
         raise HTTPException(
@@ -844,6 +847,23 @@ async def refresh_token_endpoint(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid refresh token",
         )
+
+    if token_request and refresh_token_cookie and refresh_token_cookie != token_str:
+        cookie_payload = decode_token(refresh_token_cookie)
+        def refresh_scope(claims: dict) -> tuple:
+            return (claims.get("sub"), claims.get("tid"), claims.get("ver", 0), claims.get("rem", False))
+
+        if (
+            not cookie_payload
+            or cookie_payload.get("type") != "refresh"
+            or not payload.get("sub")
+            or refresh_scope(cookie_payload) != refresh_scope(payload)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh session does not match",
+            )
+        token_str, payload = refresh_token_cookie, cookie_payload
     
     user_id = payload.get("sub")
     jti = payload.get("jti")
