@@ -181,7 +181,7 @@ export function MotiveConnectionCard({ companyId, trucks = [], canManageGrants =
             </select><button className="dbtn dbtn-ghost" disabled={busy || scopedTrucks.isError || scopedTrucks.isPending || selected === (remote.vehicle_id ?? '')} onClick={() => binding.mutate({ remoteId: remote.provider_vehicle_id, vehicleId: selected })}>Save mapping</button></div>
             {remote.vehicle_id && !eligibleTrucks.some((truck) => truck.id === remote.vehicle_id) && <p role="alert">The mapped truck is no longer in this fleet. Remove or update its mapping.</p>}
             {remote.vehicle_id && <p className="motive-muted">{reading
-              ? <>Motive location · {freshness} · {time(reading.location.located_at)}<br />{reading.location.lat.toFixed(5)}, {reading.location.lng.toFixed(5)}{reading.speed_mph != null ? ` · ${reading.speed_mph.toFixed(1)} mph` : ''}</>
+              ? <>Motive location · {freshness} · {time(reading.location.located_at)}<br />{reading.location.lat.toFixed(5)}, {reading.location.lng.toFixed(5)}{reading.speed_mph != null ? ` · Recorded speed: ${reading.speed_mph.toFixed(1)} mph` : ''}</>
               : 'No current reading for this mapping yet.'}</p>}
             {remote.vehicle_id && remote.mapping_state !== 'membership_ended' && <MotiveReadings remote={remote} clock={clock} />}
           </div>

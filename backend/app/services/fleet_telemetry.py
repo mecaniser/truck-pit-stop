@@ -196,8 +196,15 @@ async def capture(db, actor, vehicle_id, body):
         ):
             fail(422, "invalid_observation_time")
     # Preserve legacy exact captures, but never let an uncertain minute interval
-    # replace a location observation anywhere within that interval (or vice versa).
-    if body.observed_at and (body.lat is not None or body.location_label):
+    # replace an observation of the same field inside that interval (or vice versa).
+    overlap_fields = []
+    if body.lat is not None or body.location_label:
+        overlap_fields.append(
+            or_(Snapshot.lat.is_not(None), Snapshot.location_label.is_not(None))
+        )
+    if body.speed_mph is not None:
+        overlap_fields.append(Snapshot.speed_mph.is_not(None))
+    if body.observed_at and overlap_fields:
         start, end = observation_interval(body.observed_at, body.observed_precision)
         previous = (
             (
@@ -210,10 +217,7 @@ async def capture(db, actor, vehicle_id, body):
                         Snapshot.observed_at.is_not(None),
                         Snapshot.observed_at >= start - timedelta(minutes=1),
                         Snapshot.observed_at <= end,
-                        or_(
-                            Snapshot.lat.is_not(None),
-                            Snapshot.location_label.is_not(None),
-                        ),
+                        or_(*overlap_fields),
                     )
                 )
             )

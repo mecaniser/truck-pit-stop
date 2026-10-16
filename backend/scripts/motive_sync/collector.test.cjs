@@ -94,3 +94,47 @@ test('observed nested tooltip wrappers count once but distinct copies still reje
  assert.equal(newTooltip([],leafTooltipTexts([wrapper,leaf])),leaf.innerText);
  assert.throws(()=>newTooltip([],leafTooltipTexts([leaf,{...leaf}])),/unowned_timestamp_tooltip/);
 });
+const {speedFromParts,readSpeed}=require('./collect.cjs');
+test('speed parsing accepts explicit zero and bounded decimals, never status or unsupported units',()=>{
+ assert.deepEqual(speedFromParts(' 0 ',' MPH '),{speed_mph:0,speedText:'0 MPH',speedReason:null});
+ assert.equal(speedFromParts('65.5','mph').speed_mph,65.5);
+ for(const value of ['NaN','Infinity','-1','251','65 mph','60 61','',true])assert.equal(speedFromParts(value,'MPH').speed_mph,null);
+ assert.equal(speedFromParts('65','km/h').speedReason,'speed_unit_unsupported');
+ for(const status of ['Stationary','Parked','In motion'])assert.equal(speedFromParts(status,null).speed_mph,null);
+});
+test('speed selector is scoped to the unique live vehicle panel and rejects ambiguity',async()=>{
+ let sections=1,speeds=1,values=1,units=1;
+ const speed={filter:()=>speed,count:async()=>speeds,locator:s=>({count:async()=>s==='.value'?values:units,innerText:async()=>s==='.value'?'65':'MPH'})};
+ const section={filter:()=>section,count:async()=>sections,locator:s=>{assert.equal(s,'.current-location [data-e2e="speed-info"]');return speed;}};
+ const page={locator:s=>{assert.equal(s,'section.driver-location-info');return section;}};
+ assert.equal((await readSpeed(page)).speed_mph,65);
+ speeds=0;assert.equal((await readSpeed(page)).speedReason,'speed_unavailable');
+ speeds=2;assert.equal((await readSpeed(page)).speedReason,'speed_ambiguous');
+ speeds=1;values=2;assert.equal((await readSpeed(page)).speedReason,'speed_ambiguous');
+ values=1;units=2;assert.equal((await readSpeed(page)).speedReason,'speed_ambiguous');
+ sections=2;assert.equal((await readSpeed(page)).speedReason,'speed_ambiguous');
+});
+test('stable speed shares verified source observation and unknown time drops numeric speed',async()=>{
+ const base={timestamp:async()=>({rawTimestamp:'Oct 7, 2026, 1:49 PM',sourceAge:'1m',timestampReason:null}),point:async()=>[35,-80],verifyVin:async()=>{},address:null,speed:async()=>speedFromParts('0','MPH')};
+ const known=await stableObservation(base);assert.equal(known.speed_mph,0);assert.equal(known.precision,'minute');
+ const unknown=await stableObservation({...base,timestamp:async()=>({rawTimestamp:null,sourceAge:'Stationary',timestampReason:'timestamp_unavailable'})});
+ assert.equal(unknown.speed_mph,null);assert.equal(unknown.speedText,'0 MPH');assert.equal(unknown.speedReason,'speed_timestamp_unavailable');
+ const missing=await stableObservation({...base,speed:async()=>({speed_mph:null,speedText:null,speedReason:'speed_unavailable'})});assert.equal(missing.status,'located');assert.equal(missing.speed_mph,null);
+});
+test('changing speed discards whole observation and never copies it into a retried location',async()=>{
+ let n=0;
+ const base={timestamp:async()=>({rawTimestamp:'Oct 7, 2026, 1:49 PM',sourceAge:'1m',timestampReason:null}),point:async()=>[35,-80],verifyVin:async()=>{},address:null};
+ await assert.rejects(stableObservation({...base,speed:async()=>speedFromParts(String(n++),'MPH')}),/source_changed/);
+ const context={newPage:async()=>({setDefaultTimeout:()=>{},url:()=> 'https://app.gomotive.com/en-US/',close:async()=>{}})};
+ let attempt=0;
+ const row=await collectWithRetries(context,{href:'#/fleetview/vehicles/summary/1',unit:'1'},async(p,l,bind)=>{bind(`VIN ${VIN}`);return stableObservation({...base,point:async()=>[36,-81],speed:attempt++?async()=>speedFromParts('0','MPH'):async()=>speedFromParts(String(n++),'MPH')});});
+ assert.equal(row.speed_mph,0);assert.equal(row.lat,36);assert.equal(attempt,2);
+});
+test('final retry may retain stable location while omitting unstable speed',async()=>{
+ let n=0,verified=0;
+ const base={timestamp:async()=>({rawTimestamp:'Oct 7, 2026, 1:49 PM',sourceAge:'1m',timestampReason:null}),point:async()=>[35,-80],verifyVin:async()=>{verified++;},address:null,speed:async()=>speedFromParts(String(n++),'MPH'),allowUnstableSpeed:true};
+ const location=await stableObservation(base);
+ assert.equal(location.lat,35);assert.equal(location.speed_mph,null);assert.equal(location.speedReason,'speed_ambiguous');assert.equal(verified,1);
+ let point=0;await assert.rejects(stableObservation({...base,point:async()=>[35+point++,-80]}),/source_changed/);
+ await assert.rejects(stableObservation({...base,verifyVin:async()=>{throw new Error('vin_changed');}}),/vin_changed/);
+});
