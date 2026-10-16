@@ -1,10 +1,12 @@
 # ETS source writer activation
 
-Status: prepared, not deployed or accepted. Owner: Backend & Integrations.
+Status: prepared, independently reviewed, not deployed or accepted. Owner: Backend & Integrations.
 
 ## Existing configuration evidence
 
 Read-only Railway service-instance inspection on2026-10-16 confirmed the existing ETS cron is `*/5 * * * *`. Latest successful source image remains9fe12abacd04722e4afbf4c2c6476160a18eca96. The old deployment manifest and repository incorrectly retain `0 0 * * *`; this change reconciles the repository to existing runtime policy so activation does not revert it. Command, image builder, restart policy, environment, capacity and storage are unchanged.
+
+Independent QA/Security reviewer confirmed exact d611ae14 and independently read the live service-instance cadence. Sanitized evidence observed2026-10-16T16:00:29Z: serviceDBN-ets-sync, instancecron`*/5 * * * *`, nextCronRunAt16:05UTC, deployment10764d7a-b975-4a96-9a61-e7be20a9e446/image9fe12ab; old file and deployment manifests both0UTC. PR551 merged as6471943f; runtime acceptance and ordered release handoff remain prerequisites.
 
 ## Frequency and serialization
 
