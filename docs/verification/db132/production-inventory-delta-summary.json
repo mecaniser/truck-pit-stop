@@ -1,0 +1,10 @@
+{
+  "observed_changes_since": "2026-10-16T01:10:36Z",
+  "updated_pre_cutoff_rows": 798,
+  "all_updated_at": "2026-10-16T02:13:49.062899Z",
+  "reimport_stamp_matches": 794,
+  "older_import_stamp": 4,
+  "all_pricing_versions_zero": true,
+  "part_activity_events": 0,
+  "interpretation": "Normal ETS sync writes; independent receipt documents attribution and limits."
+}

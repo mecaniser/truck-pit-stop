@@ -1,6 +1,6 @@
 # DB132 / P1 parts pricing matrix
 
-Accountable: Backend & Integrations. State: **Production acceptance — pricing deployed; mobile preview feedback correction pending**. Selected second in the [parity tracker](../ETS_PARITY_TRACKER.md), after R1 production closure.
+Accountable: Backend & Integrations. State: **Done — merged, deployed and production verified**. Selected second in the [parity tracker](../ETS_PARITY_TRACKER.md), after R1 production closure.
 
 ## Current result
 
@@ -8,7 +8,7 @@ The final full-suite CI return was corrected and independently re-reviewed. Loca
 
 Actual local Light/Night desktop and browser-emulated mobile checks cover matrix configuration, saved-price retention, part policies, manual/List/Stock edits, bundle attachment, create-once service recovery and readable fleet quantity controls. Six synthetic orders were soft-deleted; stock, policies, default and service availability returned to baseline. One zero-stock ad-hoc placeholder remains as recoverable local evidence. Restricted-role and counter-sale journeys have automated coverage; they are not claimed as authenticated UI passes.
 
-PR542 has passed all six CI contexts and is merged/deployed with migration174. **Still required:** protected CI, merge and deployment of the frontend feedback correction, then final authenticated production desktop/mobile acceptance. Production pricing remains inactive unless a shop owner explicitly configures it.
+PR542 has passed all six CI contexts and is merged/deployed with migration174. PR544 also passed protected CI and is deployed. Final authenticated production desktop/mobile acceptance of the correction passed. Independent QA/Security reviewed the concurrent inventory sync attribution and returned production GO. Production pricing remains inactive unless a shop owner explicitly configures it.
 
 ## Scope and acceptance
 [Architecture contract](../contracts/db132-parts-pricing-matrix.md) defines acceptance, writer coverage, privacy, tenant/concurrency boundaries and production verification limits. Reuse existing inventory settings and price controls; preserve compact desktop and complete mobile journeys. No existing prices, inventory valuation, financial records or shop defaults change merely from deployment.
@@ -16,8 +16,8 @@ PR542 has passed all six CI contexts and is merged/deployed with migration174. *
 ## Source and preparation
 Branch `codex/ets-parts-pricing-matrix` begins at R1 merge7b3dc4b3. Preparation reviewed21546789; full application tree is identical. Backend/frontend integration handoffs and later C1/M1/B1/A1 drafts are preserved in `/Users/sergio_m1_promax/Documents/Codex/ets-priority-preparation-20261015/`; those are preparation, not completion receipts. Canonical tracker retains all29 discoveries and selected order.
 
-## Remaining gates
-The full-backend regression correction now has independent QA/Security GO. Fresh exact-final CI, release and production acceptance remain. No invented real-shop pricing activation. P1 remains local and unmerged.
+## Final gate
+Independent production QA GO / Security GO. PR542 and its frontend correction PR544 are merged and deployed; corrected production UI acceptance passed. No real-shop pricing policy has been activated. Production mutation workflows remain covered by local/automated evidence rather than invented shop prices or financial transactions.
 
 ## DB137 prerequisite closure and implementation handoff — 2026-10-15
 Compact controls DB137 are Done after PR539 exact deployment and Light/Night desktop/mobile production acceptance. P1 now continues on `codex/ets-parts-pricing-matrix-implementation` from `fc92c7b9944a0d07db80399b9f6e1eda13840b87`; the older preparation branch is preserved. Architecture owns canonical incorporation of four accepted wire/deletion clarifications before frontend/backend work begins. Backend owns all backend integration writers and migration together; Frontend owns the shared configuration and workflow UI. Independent gates remain separate.
@@ -31,15 +31,15 @@ Entries are updated from actual evidence rather than inferring runtime success f
 
 | Journey | Local Light/Night desktop,390,320,740 landscape | Automated boundary evidence | Production permitted acceptance |
 | --- | --- | --- | --- |
-| Settings entry, empty state, Back/cancel | Night/Light entry, close and Escape focus return passed | Final frontend223 independently pass; scope/role reset covered | Pending deployed read-only entry |
-| Matrix draft preview/save/reload | Night desktop samples20→40/25→37.50/100→130; revision/save/reload/history. Final Light320/740 and Night320/740/1280 readable, no document overflow | Bands/config/tenant/CAS; production-mode PostgreSQL12 pass | Pending draft-only preview |
+| Settings entry, empty state, Back/cancel | Night/Light entry, close and Escape focus return passed | Final frontend223 independently pass; scope/role reset covered | PR544 named Close and Escape pass; focus returns to Catalogue maintenance |
+| Matrix draft preview/save/reload | Night desktop samples20→40/25→37.50/100→130; revision/save/reload/history. Final Light320/740 and Night320/740/1280 readable, no document overflow | Bands/config/tenant/CAS; production-mode PostgreSQL12 pass | PR542 samples20→40/25→37.50/100→130 passed; PR544 Light/Night1280/390/320/740 preview/error/repeated-error/recovery visibility passes |
 | Default, revision, clear, archive/restore | Explicit local default; revision2→3; gap rejection retains draft; clear default and archive verified | ABA/default/archive races and append-only history pass | No guessed activation |
-| Fixed price, pricing-cost floor, minimum sale price | Floor50/min85 on actualcost28 resolves85; manual84 rejected; fixed59 overrides matrix, both-theme320 policy forms pass; baseline reset | Precedence/null/bounds/atomic validation pass | Pending policy read/cancel |
-| RO direct + bundle add; retained price after revision | Direct390 and bundle1280; reload337.75; mobile bundledqty1→2 keeps59/total396.75. Template reapply resets qty to1 with retained59/one operation. New-order cancel/retry creates once | All writers, reservation/core and historical financial snapshots pass | Pending historical reads/cancel only |
-| Manual, List/Stock, discount rejection and409 review | Manual requires reason; minimum rejection retains draft; List39 and Stock26 verified. Actual409 uncovered and fixed production autoflushFalse bug | Explicit409 re-resolution/reacceptance, role/CAS/minimum/rollback pass | Pending editor/cancel only |
+| Fixed price, pricing-cost floor, minimum sale price | Floor50/min85 on actualcost28 resolves85; manual84 rejected; fixed59 overrides matrix, both-theme320 policy forms pass; baseline reset | Precedence/null/bounds/atomic validation pass | Light/Night read/draft Cancel/reopen passed at1280/390/320/740; PR544 contrast accepted: Light white/#115e59; Night white/#0e7490 |
+| RO direct + bundle add; retained price after revision | Direct390 and bundle1280; reload337.75; mobile bundledqty1→2 keeps59/total396.75. Template reapply resets qty to1 with retained59/one operation. New-order cancel/retry creates once | All writers, reservation/core and historical financial snapshots pass | Historical labor75.00/part35.73/order110.73/invoice112.98 retained in desktop/mobile reads; PR544 label contrast accepted at rgb(75,85,99) on its existing white surface |
+| Manual, List/Stock, discount rejection and409 review | Manual requires reason; minimum rejection retains draft; List39 and Stock26 verified. Actual409 uncovered and fixed production autoflushFalse bug | Explicit409 re-resolution/reacceptance, role/CAS/minimum/rollback pass | Production historical order is locked; no real-price edits. Policy drafts/cancel covered; pricing mutations remain local/automated evidence |
 | Internal/external fleet and restricted roles | Owner fleet internal directpart26/qty2total52 passes. Per-line money controls absent. Narrow-name mobile defect returned for correction. External/restricted accounts unavailable; no role alteration | Tenant/assignment/projection/current-role retry negatives, internal actualcost semantics pass | Read-only/cancel where available; no claim of restricted-role UI |
 | Counter-sale retained draft and additions | Counter-sale entry not exposed for local fixture; flag unchanged, no browser claim | Retained snapshots, receptionist manual-price carry-forward, tax/return and scope tests pass | Existing gate respected; no real sale |
-| Legacy/locked history and account/tenant switch | Existing order history reads unchanged; no real financial finalization | Serializer/replay/cache/lock guards covered; CI void-revision regression correction underway | Pending unchanged-value read |
+| Legacy/locked history and account/tenant switch | Existing order history reads unchanged; no real financial finalization | Serializer/replay/cache/lock guards covered; CI void-revision regression correction passed in final full suites | Unchanged-value UI reads and fixed-cutoff saved usage/invoice fingerprints pass; inventory baseline matched after deployment, then changed during recorded ETS sync (see final attribution) |
 
 
 Local database checkpoint before any P1 schema changes: `Documents/Codex/ets-priority-preparation-20261015/db132-local-before-migration.dump`, custom pg_dump,3967918bytes, mode0600. Preserves existing populated local database; do not commit or upload database data. Disposable migration proof precedes a coordinated preview upgrade. No production database checkpoint or production financial mutation performed.
@@ -67,7 +67,7 @@ Observed blockers returned to owners: Review parts pricing panel is clipped by t
 
 Light desktop matrix sample works; Escape correctly restores focus to Catalogue maintenance after the fix. Mobile two-row bands are readable and no horizontal overflow; close target width correction44 and “Under” wording landed but final screenshot recheck remains. Light/Night full matrix and managed workflow acceptance is still incomplete.
 
-## Release acceptance plan — not yet executed
+## Release acceptance plan (original scope; final corrected UI acceptance remains)
 
 - Recheck main ancestry, migration head and open migration-bearing PRs before final candidate. At21:47UTC main remainsfc92c7b9; open PR540/536/534 do not claim migration174. Run protected checks on the final candidate; cancelled or older successful runs do not satisfy the gate.
 - Web pre-deploy already runs `alembic upgrade head` and schema preflight. Verify174 completes before the exact merged application starts; inspect relevant worker overlap for missing-column errors. Preserve additive columns and append-only records on rollback.
@@ -172,3 +172,31 @@ Frontend & UX completed the existing-contract correction on `codex/parts-pricing
 Owner validation: 42 parts-pricing tests across four files, application TypeScript, changed-file ESLint and diff check passed. Actual local signed-in checks passed: Night 320×740 three-band success (feedback top683/bottom732), repeated invalid gap with draft retained, landscape740×400 success (top343/bottom392), Light1280×900 result and390×844 rejection/recovery, named Close and Escape returning focus to Catalogue maintenance. Night desktop retained-price label is rgb(75,85,99), matching its cell. Screenshots retained in `/tmp/db132-local-{night-320-feedback,night-landscape-feedback,light-desktop-feedback,light-390-error,night-desktop-saved-price}.png`. Local Night appearance restored; all matrix drafts were discarded and no pricing configuration or order values changed. Protected CI and production acceptance of this correction remain required.
 
 The production Night policy action also exposed white text on cyan #22d3ee (1.81:1). PR544 now uses the existing action fill/foreground token pair within parts-pricing only. Owner pricing/theme suites: 56 passed; TypeScript and CSS parse passed. The actual local action in both Light and Night computes to #07101d on #0891b2 (5.18:1); desktop Night and390px Light screenshots confirm readable controls. Invalid cost-floor text produces a focused visible error and retains the draft; Cancel leaves saved values unchanged. Production Night policy draft/cancel/reopen and landscape footer checks passed with no saves; historical order labor75.00, part35.73 and total110.73, invoice112.98 remain unchanged across Light/Night desktop and mobile reads. Final corrected production contrast/feedback acceptance remains open.
+
+
+## Feedback correction protected merge — 2026-10-16 01:04:42 UTC
+
+PR544 merged as `70530bda5705b30e27c3f222421b77e9e7ce6341`; tested `9441edf054136fa4f08ad12497e0310f53320819` and merged trees both equal `d72da02d56ec7fa5671d5e784a6781190c00fb91`. All six required contexts passed in run38830933939: 207 critical frontend, 1703 full frontend, 530 critical backend/11 skipped, 3319 full backend/181 skipped and 5 Playwright smoke checks, plus migration/lint/build. The superseded 9cfe8203 run was cancelled and is not a pass. Merge used normal protection with exact-head matching. Production deployment and final UI acceptance remain pending.
+
+
+## Corrected deployment — 2026-10-16 01:10 UTC
+
+Web deployment `ebc872be-cee4-4598-8165-79406459d9cf` is SUCCESS at exact `70530bda5705b30e27c3f222421b77e9e7ce6341`. Public build identity and database/Redis readiness pass; [release receipt](db132/feedback-release.json). Schema174, empty pricing tables, zero configured defaults/policies and unchanged deleted synthetic order confirmed in [final state](db132/production-final.json). [Final financial fingerprints](db132/production-financial-final.json) exactly match the fixed pre-release baseline: 1612 inventory, 2934 saved usages, 2424 invoices. Bounded startup log observation has no 5xx, fatal or schema errors.
+
+Refreshing the production browser for corrected UI acceptance returned to `/login?reason=session_expired` with an explicit session-expired message. User sign-in requested; no authentication bypass, pricing activation or financial mutation. Final Light/Night desktop/mobile correction acceptance is still required; P1 is not Done. C1 user-approved new external-order fallback is preserved in [readiness notes](DB133_CUSTOMER_PRICING_READINESS.md), with implementation still queued.
+
+
+## Corrected production UI acceptance — 2026-10-16 02:20–02:25 UTC
+
+User restored sign-in. PR544 actual production Light/Night checks passed at1280×900 desktop,390×844 and320×740 portrait, and740×400 landscape. Sample100→130 is fully visible and focused; invalid gap26 and a repeated identical rejection retain the draft and reveal the full alert. At390 the error bounds are797–836 inside844; at320 the result bounds are683–732 inside740; landscape result343–392 inside400. Close/Escape dismiss the panel and return focus to Catalogue maintenance. Document width equals each viewport. Screenshots and [measured evidence](db132/production-ui-evidence.json) are retained. Mobile means responsive/touch browser emulation, not physical-device testing.
+
+Policy drafts floor50/min85 were cancelled and reopened in both themes: blank floor/minimum, catalog51.78 and fixedfalse remain. The actual production Save policy colors are white on#115e59 (7.58:1) in Light and white on#0e7490 (5.36:1) in Night, with44px actions contained in portrait and landscape. No policy save or activation was performed. Historical order000055 still shows labor75, part35.73 and total110.73, invoice112.98; Saved price is readable at rgb(75,85,99) in both themes. Original Day Shop was saved/restored, viewport/touch overrides cleared, all drafts discarded. No warning/error console entries were captured in the final bounded QA interval.
+
+The final02:23 read confirms all pricing tables/events empty, no default or configured inventory policies, and the synthetic zero order still deleted. Saved usage and invoice fingerprints remain exact. Inventory no longer matches the01:10 baseline:798 existing rows have the same02:13:49 update timestamp, coincident with the regular ETS sync's recorded parts commit. Independent attribution remains pending; do not claim that all inventory stayed unchanged throughout the later sync. No browser pricing, inventory, order or financial writes were performed during this pass.
+
+
+## Final disposition — Done
+
+[Independent production QA/Security GO](DB132_INDEPENDENT_REVIEW.md) closes P1. A read-only aggregate at02:29:26UTC confirms the regular ETS sync refreshed794 pre-cutoff inventory rows, retired4, and created17 new rows. All updated old rows share its exact02:13:49 timestamp and ETS source; pricing versions remain0. The deployed sync uses the unchanged importer, whose existing SQL writes catalog cost/sale/stock. No P1 policies, revisions, events or defaults exist in production. This supports normal concurrent sync rather than P1-induced repricing.
+
+Evidence limit: the exited sync service has no accessible row-level before-image for reconstructing the old inventory hash. Its log reports795 update loop operations against794 distinct refreshed old rows; repeated canonical input is possible but not proven. No historical inventory-value equality is claimed after that sync. Saved usage/invoice fingerprints remain exact, and the selected historical order is unchanged. No further importer audit is required for P1 closure. All29 discoveries remain tracked; P1 is checked as the second selected outcome, and C1 contract preparation follows.

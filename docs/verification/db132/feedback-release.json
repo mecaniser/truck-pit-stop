@@ -1,0 +1,31 @@
+{
+  "observed_at": "2026-10-16T01:09:55.843424+00:00",
+  "deployment": "ebc872be-cee4-4598-8165-79406459d9cf",
+  "status": "SUCCESS",
+  "build-version": {
+    "http_status": 200,
+    "body": {
+      "sha": "70530bda5705b30e27c3f222421b77e9e7ce6341",
+      "built_at": "2026-10-16T01:07:11.415Z"
+    }
+  },
+  "health/ready": {
+    "http_status": 200,
+    "body": {
+      "status": "ready",
+      "version": "1.0.0",
+      "environment": "production",
+      "uptime_seconds": 72,
+      "checks": {
+        "database": {
+          "status": "ok",
+          "latency_ms": 63.73
+        },
+        "redis": {
+          "status": "ok",
+          "latency_ms": 12.36
+        }
+      }
+    }
+  }
+}
