@@ -18,7 +18,7 @@ from app.db.models.customer import Customer
 from app.db.models.inventory_lifecycle import CounterSale, CounterSaleLine
 from app.db.models.user import UserRole
 from app.schemas.parts_pricing import ResolveRequest
-from app.services import parts_pricing as pricing
+from app.services import parts_pricing as pricing, customer_pricing as account
 from app.services.parts_pricing_rules import PricePolicy, ResolvedPrice, resolve_price, safe_price, cents, fail, line_total, amount
 from app.services.pricing import compute_canonical_order_totals
 from app.services.internal_fleet import uses_internal_fleet_pricing, fleet_labor_uses_customer_rate
@@ -72,6 +72,7 @@ class PricingPlan:
     lines: list[PlannedPart]
     response: dict
     policy: PricePolicy
+    account_snapshot: dict | None = None
 
     def confirm(self, supplied, *, stock_acknowledged=False):
         actual=self.response['pricing_preview_fingerprint']
@@ -141,13 +142,15 @@ async def context(db,actor,request,tenant,lock):
         if actor.role not in pricing.EDITORS: fail('pricing_access_denied','Access denied.',403)
         from app.api.v1.endpoints.fleet import _load_fleet_vehicle_or_404
         vehicle=await _load_fleet_vehicle_or_404(db,actor.tenant_id,c.vehicle_id)
-        payer=await db.scalar(select(Customer).where(Customer.id==(c.bill_to_customer_id or vehicle.customer_id),Customer.tenant_id==actor.tenant_id,Customer.deleted_at.is_(None)))
+        payer=await account.live_customer(db,actor.tenant_id,c.bill_to_customer_id or vehicle.customer_id,lock=lock)
         if payer is None: fail('customer_not_found','Bill-to company not found.',404)
         internal=uses_internal_fleet_pricing(payer,tenant)
-        return SimpleNamespace(id=None,tenant_id=actor.tenant_id,customer_id=payer.id,vehicle_id=vehicle.id,is_internal=internal,
+        snapshot=await account.candidate(db,tenant,payer,lock=lock)
+        return SimpleNamespace(id=None,tenant_id=actor.tenant_id,pricing_policy_snapshot=snapshot,pricing_matrix_revision_id=account.revision_id(snapshot),customer_id=payer.id,vehicle_id=vehicle.id,is_internal=internal,
             bill_labor_at_customer_rate=bool(vehicle.bill_labor_at_customer_rate) if internal else False,parts_usage=[],labor_items=[],labor_discount_amount=Decimal(0),order_discount_amount=Decimal(0),status='draft',pricing_locked_at=None,pricing_lock_reason=None,tenant=tenant),None
     from app.services.counter_sale_service import require_counter_sales_enabled, _tenant_customer, require_counter_sale_role
     await require_counter_sales_enabled(db,actor);require_counter_sale_role(actor)
+    if c.customer_id: await account.live_customer(db,tenant.id,c.customer_id,lock=lock)
     await _tenant_customer(db,tenant.id,c.customer_id)
     sale=None
     if c.sale_id:
@@ -180,6 +183,10 @@ async def _build_plan(db,actor,request:ResolveRequest,*,lock=False):
         fail('invalid_pricing_context','This plan does not belong to the selected workspace.')
     if lock: await pricing.lock_tenant_financials(db,actor.tenant_id)
     order,sale=await context(db,actor,request,tenant,lock)
+    account_snapshot=getattr(order,'pricing_policy_snapshot',None) if order else getattr(sale,'pricing_policy_snapshot',None)
+    if kind=='counter_draft' and (sale is None or sale.customer_id!=request.context.customer_id):
+        payer=await account.live_customer(db,actor.tenant_id,request.context.customer_id,lock=lock) if request.context.customer_id else None
+        account_snapshot=await account.candidate(db,tenant,payer,lock=lock,counter=True)
     legacy = kind == 'service_apply' and request.plan.attachment_path == 'fleet_legacy_service'
     if legacy and order.is_pm:
         fail('invalid_pricing_context', 'Use PM services to change this work order.', 400)
@@ -276,7 +283,9 @@ async def _build_plan(db,actor,request:ResolveRequest,*,lock=False):
                 lines.append(PlannedPart(key,None,Decimal(entry.quantity),reserves=False,intent=entry.pricing_intent,reason=entry.price_override_reason))
     if len([p for p in lines if p.included])>100: fail('plan_too_large','Use no more than 100 resulting parts per command.')
     # Retained-only plans intentionally do not select or fingerprint live policy.
-    if new_inputs: policy=await pricing.selected_policy(db,actor.tenant_id,lock=lock)
+    if new_inputs:
+        subject=order if order is not None else SimpleNamespace(tenant_id=actor.tenant_id,pricing_policy_snapshot=account_snapshot,pricing_matrix_revision_id=account.revision_id(account_snapshot),_pricing_counter=request.context.kind=='counter_sale')
+        policy=await account.policy_for_saved(db,actor.tenant_id,subject,lock=lock)
     if lock and services:
         # All template mutations take the same tenant lock. Select policy before
         # locking these stable service rows, then lock inventory in sorted order.
@@ -291,6 +300,9 @@ async def _build_plan(db,actor,request:ResolveRequest,*,lock=False):
             if kind=='counter_draft' and (p.inventory.is_placeholder or p.inventory.ets_retired_at): fail('part_not_found','This part is unavailable for counter sales.',404)
             p.price=resolve_price(p.inventory,policy,internal=bool(order and order.is_internal),actual_cost_known=not(p.inventory.is_placeholder and not p.inventory.cost),intent=entry.pricing_intent,
                 requested=entry.unit_price,reason=entry.price_override_reason,actor_id=actor.id,can_override=actor.role in (pricing.MANAGERS if kind=='counter_draft' else pricing.EDITORS),quantity=p.quantity,counter=kind=='counter_draft')
+            if order and order.is_internal: p.price.snapshot['policy_source']='internal'
+            elif account_snapshot: p.price.snapshot['policy_source']=account_snapshot['parts']['source']
+            else: p.price.snapshot['policy_source']='legacy'
         else: p.inventory=items[p.inventory.id]
     available={i:max(0,v.stock_quantity or 0) for i,v in items.items()}
     for p in lines:
@@ -311,8 +323,8 @@ async def _build_plan(db,actor,request:ResolveRequest,*,lock=False):
         if p.included and p.reserves: available[inv.id]=max(0,available[inv.id]-need)
         p.availability={'state':state,'requested_packages':math.ceil(p.quantity),'available_packages':max(0,inv.stock_quantity or 0),'reserved_packages':reserved,'included':p.included}
     await pricing.load_overlays(db, actor.tenant_id, [p.existing for p in lines if p.existing], 'parts_usage' if order is not None else 'counter_sale_line')
-    response=await response_for(db,actor,request,order,sale,tenant,lines,services,policy,labor_inputs,mode)
-    return PricingPlan(request,order,sale,services,lines,response,policy)
+    response=await response_for(db,actor,request,order,sale,tenant,lines,services,policy,labor_inputs,mode,account_snapshot)
+    return PricingPlan(request,order,sale,services,lines,response,policy,account_snapshot)
 
 
 def _editable(order):
@@ -320,7 +332,7 @@ def _editable(order):
     return operation_execution.editable(order)
 
 
-async def response_for(db,actor,request,order,sale,tenant,lines,services,policy,labor_inputs,mode):
+async def response_for(db,actor,request,order,sale,tenant,lines,services,policy,labor_inputs,mode,account_snapshot=None):
     kind=request.plan.kind
     legacy = kind == 'service_apply' and request.plan.attachment_path == 'fleet_legacy_service'
     if order is not None:
@@ -330,7 +342,7 @@ async def response_for(db,actor,request,order,sale,tenant,lines,services,policy,
             if kind=='pm_replace':
                 source_ids|=set((await db.scalars(select(RepairOrderPMService.service_id).where(RepairOrderPMService.tenant_id==actor.tenant_id,RepairOrderPMService.repair_order_id==order.id))).all())
             labor=[SimpleNamespace(total_cost=li.total_cost) for li in order.labor_items if li.deleted_at is None and li.source_service_id not in source_ids]
-            rate=Decimal(str((tenant.labor_rate if fleet_labor_uses_customer_rate(order) else tenant.internal_labor_rate) if kind in {'pm_replace','fleet_create'} or legacy else (tenant.internal_labor_rate if order.is_internal and not fleet_labor_uses_customer_rate(order) else tenant.labor_rate)))
+            rate,_=account.labor_default(order,tenant,legacy_fleet=kind in {'pm_replace','fleet_create'} or legacy)
             if kind == 'service_apply' and not legacy:
                 # The existing shop adapter recalculates other opted-in labor.
                 # Include those exact generated hours/rates in preview and token.
@@ -353,14 +365,16 @@ async def response_for(db,actor,request,order,sale,tenant,lines,services,policy,
                             hours = li.hours if li.execution_status == 'completed' else generated
                             recalculated = True
                     if recalculated:
-                        total = (Decimal(str(hours)) * rate).quantize(Decimal('.01'))
+                        total = (Decimal(str(hours)) * Decimal(str(li.hourly_rate))).quantize(Decimal('.01'))
                     labor.append(SimpleNamespace(total_cost=total))
                     labor_inputs.append({'retained_labor_id': str(li.id), 'hours': str(hours),
                                          'total_cost': str(total), 'recalculated': recalculated})
             for entry in labor_inputs:
                 if not entry.get('retained_labor_id'):
-                    labor.append(SimpleNamespace(total_cost=(Decimal(entry['hours'])*rate).quantize(Decimal('.01'))))
-            for entry in labor_inputs: entry['hourly_rate']=str(rate)
+                    parent=next((li for li in order.labor_items if str(li.id)==entry.get('parent_id')),None)
+                    actual_rate=Decimal(str(parent.hourly_rate)) if parent else rate
+                    entry['hourly_rate']=str(actual_rate)
+                    labor.append(SimpleNamespace(total_cost=(Decimal(entry['hours'])*actual_rate).quantize(Decimal('.01'))))
         view=SimpleNamespace(parts_usage=[SimpleNamespace(total_price=line_total(p.unit_price,p.quantity)) for p in lines if p.included],labor_items=labor,labor_discount_amount=order.labor_discount_amount,order_discount_amount=order.order_discount_amount)
         totals=compute_canonical_order_totals(view)
         totals={'kind':'repair_order','parts_subtotal':cents(totals['parts_total']),'labor_subtotal':cents(totals['labor_total']),'labor_discount_amount':cents(order.labor_discount_amount or 0),'order_discount_amount':cents(order.order_discount_amount or 0),'repair_total':cents(totals['total_cost'])}
@@ -402,6 +416,9 @@ async def response_for(db,actor,request,order,sale,tenant,lines,services,policy,
              'sale_version':sale.version if sale else None,
              'labor_total': totals.get('labor_subtotal'),
              'tax_rate': str(sale.tax_rate_snapshot if sale else tenant.sales_tax_rate) if order is None else None}
+    if any(not p.existing for p in lines) or kind in {'fleet_create','counter_draft'}:
+        binding['account_policy']=account.stable_policy(account_snapshot)
+        if order and order.id and account_snapshot: binding['order_policy_snapshot_id']=account_snapshot['snapshot_id']
     # Totals vary with omitted bundle scope; separate that effect from price
     # dependencies, while keeping canonical labor/discount inputs bound above.
     binding.pop('totals')

@@ -169,6 +169,7 @@ class ResolveRequest(StrictInput):
     include_management_details: bool = False
 
 class SafePrice(BaseModel):
+    policy_source: Literal["customer", "shop", "internal", "legacy"] | None = None
     origin_source: Literal['matrix','fixed','catalog','ad_hoc','internal','legacy_unknown']
     current_source: Literal['matrix','fixed','catalog','ad_hoc','internal','legacy_unknown','manual']
     managed: bool

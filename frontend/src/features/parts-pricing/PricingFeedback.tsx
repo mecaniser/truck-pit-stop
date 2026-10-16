@@ -6,7 +6,13 @@ export default function PricingFeedback({ children, revision, role = 'alert' }: 
   useLayoutEffect(() => {
     const feedback = ref.current
     if (!feedback) return
-    const scroller = feedback.closest<HTMLElement>('.db-slide-panel-form__content')
+    let scroller = feedback.closest<HTMLElement>('.db-slide-panel-form__content')
+    // Customer pricing is inline in the existing record, not another dialog.
+    if (!scroller) {
+      for (let parent = feedback.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
+        if (['auto', 'scroll'].includes(getComputedStyle(parent).overflowY) && parent.scrollHeight > parent.clientHeight) { scroller = parent; break }
+      }
+    }
     if (scroller) {
       const viewport = scroller.getBoundingClientRect()
       const bounds = feedback.getBoundingClientRect()

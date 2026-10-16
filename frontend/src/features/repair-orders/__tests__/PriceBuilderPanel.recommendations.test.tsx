@@ -28,6 +28,14 @@ afterAll(() => vi.unstubAllGlobals())
 beforeEach(() => { api.get.mockImplementation(async (url: string) => ({ data: url.endsWith('/price-build') ? summary : url.endsWith('/parts') ? [] : {} })) })
 
 describe('recommendation navigation in repair workspace', () => {
+  it('shows the saved labor source and obeys its rate capability without disabling duration', async () => {
+    api.get.mockImplementation(async (url: string) => ({ data: url.endsWith('/price-build') ? { ...summary, lines: [{ ...line, pricing: { source: 'customer', current_source: 'default', default_hourly_rate: '145.00', charged_hourly_rate: '145.00', can_override: false } }] } : url.endsWith('/parts') ? [] : {} }))
+    setup({ focusedOperationId: 'line-a' })
+    await screen.findByText('Account')
+    expect(screen.getByText('145.00/hr')).toBeVisible()
+    expect(screen.queryByRole('textbox', { name: 'Labor hourly rate' })).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Labor duration' })).toBeEnabled()
+  })
   it('focuses and opens the exact operation and preserves original recommendation after rename', async () => {
     setup({ focusedOperationId: 'line-a' })
     const button = await screen.findByRole('button', { name: /Renamed operation/ })

@@ -1,5 +1,5 @@
-import { useId, useRef, useState, type ReactNode } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { useRef, useState } from 'react'
+import BusinessSettings from './BusinessSettings'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import api from '@/lib/api'
@@ -82,17 +82,6 @@ function TaxSettingForm({ customerId, initial, onSaved, onReload, onEdit }: {
       {save.isPending ? 'Saving…' : save.error ? 'Retry tax setting' : 'Save tax setting'}
     </button>}
   </section>
-}
-
-function BusinessSettings({ children }: { children: ReactNode }) {
-  const [expanded, setExpanded] = useState(false)
-  const settingsId = useId()
-  return <div className="db-customer-business-settings">
-    <button type="button" aria-expanded={expanded} aria-controls={settingsId} onClick={() => setExpanded(value => !value)}>
-      <ChevronDown aria-hidden="true" className={expanded ? 'rotate-180' : ''} />Business settings
-    </button>
-    <section id={settingsId} aria-label="Business settings" hidden={!expanded}>{children}</section>
-  </div>
 }
 
 export default function CustomerTaxExemptionControl({ customerId, collapsible = false }: { customerId: string; collapsible?: boolean }) {

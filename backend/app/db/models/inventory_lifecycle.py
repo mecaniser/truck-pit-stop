@@ -102,9 +102,12 @@ class PartActivityBackfillRun(BaseModel):
 
 class CounterSale(BaseModel):
     __tablename__ = "counter_sales"
+    pricing_policy_snapshot = Column(JSON(none_as_null=True))
+    pricing_matrix_revision_id = Column(UUID(as_uuid=True))
     __table_args__ = (
         UniqueConstraint("tenant_id", "id", name="uq_counter_sales_tenant_id_id"),
         UniqueConstraint("tenant_id", "sale_number", name="uq_counter_sales_tenant_number"),
+        ForeignKeyConstraint(['tenant_id','pricing_matrix_revision_id'],['parts_price_matrix_revisions.tenant_id','parts_price_matrix_revisions.id'],name='fk_counter_sales_account_revision'),
         ForeignKeyConstraint(
             ["tenant_id", "customer_id"], ["customers.tenant_id", "customers.id"],
             name="fk_counter_sales_tenant_customer",
