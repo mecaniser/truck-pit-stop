@@ -15,7 +15,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select, text
 
-from scripts.easytruck_sync.source_evidence import latest_source_evidence
+from app.services.ets_source_evidence import latest_source_evidence
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
