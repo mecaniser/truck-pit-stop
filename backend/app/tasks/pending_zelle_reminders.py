@@ -40,6 +40,7 @@ async def _process_pending_zelle_reminders(tenant_id: str = None):
         invoices = result.scalars().all()
 
         reminders_sent = 0
+        email_alerts = []
         for invoice in invoices:
             from app.services.financial_transaction_lock import lock_tenant_financials
             from app.services.invoice_settlement_service import SettlementDomainError
@@ -78,7 +79,7 @@ async def _process_pending_zelle_reminders(tenant_id: str = None):
                 if customer
                 else "Unknown customer"
             )
-            await send_pending_zelle_reminder_alert(
+            alert_args = dict(
                 db=db,
                 tenant_id=invoice.tenant_id,
                 order_id=order.id,
@@ -87,13 +88,18 @@ async def _process_pending_zelle_reminders(tenant_id: str = None):
                 customer_name=customer_name,
                 amount=invoice.total_amount,
                 reminder_stage_hours=reminder_stage_hours,
+                            domain_event_id=f"invoice:{invoice.id}:zelle-submitted:{invoice.zelle_pending_submitted_at.isoformat()}:reminder:{reminder_stage_hours}",
             )
+            await send_pending_zelle_reminder_alert(**alert_args, phase="enqueue")
+            email_alerts.append(alert_args)
 
             invoice.zelle_pending_last_reminder_at = now
             invoice.zelle_pending_reminder_count = target_reminder_count
             reminders_sent += 1
 
         await db.commit()
+        for alert_args in email_alerts:
+            await send_pending_zelle_reminder_alert(**alert_args, phase="email")
         return reminders_sent
 
 

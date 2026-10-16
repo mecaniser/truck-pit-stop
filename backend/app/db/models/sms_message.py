@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import Column, String, ForeignKey, DateTime, Text, Enum as SQLEnum, Index
+from sqlalchemy import Column, String, ForeignKey, DateTime, Text, Enum as SQLEnum, Index, UniqueConstraint, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -31,8 +31,13 @@ class SMSMessage(BaseModel):
     __tablename__ = "sms_messages"
     __table_args__ = (
         Index("ix_sms_messages_thread_created_at", "thread_id", "created_at"),
+        UniqueConstraint("twilio_account_sid", "twilio_message_sid", name="uq_sms_messages_account_sid"),
+        Index("uq_sms_messages_legacy_sid", "twilio_message_sid", unique=True, postgresql_where=text("twilio_account_sid IS NULL"), sqlite_where=text("twilio_account_sid IS NULL")),
     )
 
+    binding_id = Column(UUID(as_uuid=True), ForeignKey('tenant_sms_bindings.id'), nullable=True)
+    twilio_account_sid = Column(String(34), nullable=True)
+    messaging_service_sid = Column(String(34), nullable=True)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     thread_id = Column(UUID(as_uuid=True), ForeignKey("message_threads.id"), nullable=False, index=True)
     customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=False, index=True)
@@ -59,7 +64,7 @@ class SMSMessage(BaseModel):
     body = Column(Text, nullable=False)
     from_number = Column(String(20), nullable=True)
     to_number = Column(String(20), nullable=True)
-    twilio_message_sid = Column(String(64), nullable=True, unique=True, index=True)
+    twilio_message_sid = Column(String(64), nullable=True, index=True)
 
     delivery_status = Column(
         SQLEnum(

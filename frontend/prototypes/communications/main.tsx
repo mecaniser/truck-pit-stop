@@ -1,8 +1,8 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import CommunicationsPreview from "../../src/features/communications/CommunicationsPreview";
+import ConnectedInbox from "../../src/features/communications/ConnectedInbox";
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <CommunicationsPreview />
+    <ConnectedInbox />
   </React.StrictMode>,
 );

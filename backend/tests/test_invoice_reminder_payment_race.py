@@ -35,7 +35,7 @@ async def test_reminder_rechecks_invoice_after_financial_boundary(monkeypatch, n
     send_email = AsyncMock(side_effect=AssertionError("must not send unpaid email"))
     monkeypatch.setattr(invoice_reminders, "AsyncSessionLocal", Context)
     monkeypatch.setattr("app.services.financial_transaction_lock.lock_tenant_financials", acquire_and_refresh)
-    monkeypatch.setattr(invoice_reminders, "send_sms", send_sms)
+    monkeypatch.setattr(invoice_reminders, "enqueue_automated_sms", send_sms)
     monkeypatch.setattr(invoice_reminders, "send_email", send_email)
     assert await invoice_reminders._process_invoice_reminders() == 0
     assert invoice.status == new_status

@@ -464,7 +464,7 @@ async def test_reassignment_keeps_staff_hold_reason_out_of_customer_websocket(db
     monkeypatch.setattr(websocket.manager, "broadcast_to_tenant", staff_send)
     monkeypatch.setattr(websocket.manager, "send_to_customer", customer_send)
     monkeypatch.setattr(routes, "send_email", AsyncMock())
-    monkeypatch.setattr(routes, "send_sms", AsyncMock())
+    monkeypatch.setattr(routes, "enqueue_automated_sms", AsyncMock())
     a = await seed(db_session)
     held = await routes.staff_hold_repair_order(a.order.id, hold_body(a.order), db_session, a.owner)
     assert customer_send.await_count == 0
