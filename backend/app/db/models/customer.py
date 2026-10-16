@@ -1,4 +1,5 @@
-from sqlalchemy import Column, String, Text, ForeignKey, Numeric, Boolean, DateTime, UniqueConstraint, Integer, BigInteger, CheckConstraint, ForeignKeyConstraint
+from sqlalchemy import Column, String, Text, ForeignKey, Numeric, Boolean, DateTime, UniqueConstraint, Integer, BigInteger, CheckConstraint, ForeignKeyConstraint, JSON
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.base import BaseModel
@@ -46,6 +47,8 @@ class Customer(BaseModel):
     # Stable id of the source record in Easy Truck Shop, set only on imported
     # rows. Lets the resync tool match a re-scrape to this row idempotently.
     ets_external_id = Column(String(50), nullable=True, index=True)
+    # Fresh, account-bound source observation; never copied from legacy contacts.
+    ets_contact_phone_snapshot = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=True)
 
     # Federal motor carrier identifiers (FMCSA). Optional — most owner-operators
     # have a USDOT number; MC (Motor Carrier) number applies to for-hire carriers.
