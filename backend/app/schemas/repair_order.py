@@ -1,3 +1,4 @@
+from app.schemas.maintenance import MaintenanceResult
 from pydantic import AnyHttpUrl, BaseModel, Field, TypeAdapter, field_validator, model_serializer
 from typing import Literal, Optional, List
 from datetime import datetime
@@ -387,6 +388,7 @@ class RepairOrderUpdate(BaseModel):
 
 
 class RepairOrderResponse(RepairOrderBase):
+    maintenance: MaintenanceResult | None = None
     pricing_policy: Optional[dict] = None
     @model_serializer(mode='wrap')
     def omit_private_policy(self, handler):

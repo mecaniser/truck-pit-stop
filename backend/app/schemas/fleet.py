@@ -1,3 +1,4 @@
+from app.schemas.maintenance import MaintenanceReview, MaintenanceResult
 from app.schemas.fleet_driver_record import DriverRecordSummary
 from app.schemas.fleet_telemetry import FleetTelemetry
 from datetime import datetime, date
@@ -5,7 +6,7 @@ from decimal import Decimal
 from typing import Any, Optional, List, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 
 from app.db.models.fleet import (
     InspectionStatus,
@@ -49,6 +50,7 @@ class InspectionComplete(BaseModel):
 
 
 class WorkOrderComplete(BaseModel):
+    maintenance_review: MaintenanceReview | None = None
     # Odometer at completion. Optional: when omitted, mileage_out is taken from
     # the truck's current odometer. Provided as a manual fallback when the
     # vehicle odometer isn't current.
@@ -229,6 +231,7 @@ class PMDayLoad(BaseModel):
 
 
 class BoardWorkOrder(BaseModel):
+    maintenance: MaintenanceResult | None = None
     id: str                 # order_number
     repair_order_id: UUID   # actual RO id, for opening/editing the work order
     status: str             # shop-floor label (In progress, Awaiting parts, …)
@@ -350,9 +353,10 @@ class HistoryEntry(BaseModel):
 
 class RecognizePMRequest(BaseModel):
     """Reclassify an existing closed repair order as preventive maintenance."""
+    model_config = ConfigDict(extra='forbid')
     repair_order_id: UUID
     performed_on: date
-    odometer: int = Field(ge=0)
+    odometer: StrictInt = Field(ge=0, le=99999999)
 
 
 class RecognizePMResponse(BaseModel):

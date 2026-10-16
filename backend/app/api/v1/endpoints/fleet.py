@@ -2454,13 +2454,9 @@ async def recognize_existing_repair_as_pm(
     order, service line, or invoice. The existing VIN-linked service record is
     retained and becomes the source for the truck's next PM schedule.
     """
+    from app.services import maintenance
+    await parts_pricing.lock_tenant_financials(db, current_user.tenant_id)
     vehicle = await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
-    if body.performed_on > date.today():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="PM performed date cannot be in the future",
-        )
-
     repair_order = (await db.execute(
         select(RepairOrder)
         .where(
@@ -2480,6 +2476,9 @@ async def recognize_existing_repair_as_pm(
         )
     if repair_order.is_pm:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This repair order is already recorded as PM")
+
+    vehicle = await maintenance.load_vehicle(db, current_user, 'fleet', vehicle_id, lock=True)
+    legacy, attestation = await maintenance.prepare_legacy_recognition(db, current_user, vehicle, repair_order, body)
 
     repair_order.is_pm = True
     repair_order.mileage_out = body.odometer
@@ -2505,9 +2504,8 @@ async def recognize_existing_repair_as_pm(
         )
     )).scalars().all())
     schedule_advanced = not any(completed.date() > body.performed_on for completed in later_pm_dates)
-    if schedule_advanced:
-        from app.services.internal_fleet import advance_vehicle_pm
-        advance_vehicle_pm(vehicle, body.odometer, body.performed_on)
+    evidence = await maintenance.record_legacy_recognition(db, current_user, vehicle, repair_order, body, legacy, attestation, advance=schedule_advanced)
+    schedule_advanced = evidence.result == 'advanced'
 
     actor_name = f"{current_user.first_name} {current_user.last_name}".strip() or current_user.email
     db.add(RepairOrderHistoryEvent(
@@ -2619,6 +2617,16 @@ async def update_truck(
     current_user: User = Depends(require_fleet_access),
 ):
     vehicle = await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
+    from app.services import maintenance
+    pm_changed = any(getattr(body, key) is not None for key in ('pm_interval_miles', 'next_pm_miles', 'pm_interval_days', 'pm_due_date'))
+    legacy = None
+    if pm_changed:
+        await parts_pricing.lock_tenant_financials(db, current_user.tenant_id)
+        if body.bill_to_customer is not None:
+            await account_pricing.live_customer(db, current_user.tenant_id, body.bill_to_customer.customer_id, lock=True)
+        vehicle = await maintenance.load_vehicle(db, current_user, 'fleet', vehicle_id, lock=True)
+        legacy = await maintenance.guard_legacy_configuration(db, current_user, vehicle)
+
     # Identity edits (make/model are required columns — ignore blanks).
     vin_changed = False
     if body.unit_number is not None:
@@ -2737,6 +2745,8 @@ async def update_truck(
             await sync_vehicle_nhtsa_snapshot(vehicle)
         except Exception:
             pass
+    if pm_changed:
+        await maintenance.sync_legacy_configuration(db, current_user, vehicle, legacy)
     await db.commit()
 
     open_list = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id, [])
@@ -2824,6 +2834,8 @@ async def complete_work_order(
     from app.api.v1.endpoints.repair_orders import _refresh_repair_order_totals
 
     await service_checklist.guard_completion(db, ro)
+    from app.services import maintenance
+    maintenance_prepared = await maintenance.prepare_finalization(db, current_user, ro, body.maintenance_review if body else None, channel='fleet')
     await operation_execution.finish_order(db, ro, current_user)
 
     # Rebuild the invoice source values from the locked canonical children.
@@ -2879,7 +2891,7 @@ async def complete_work_order(
         ro.internal_notes = json.dumps(existing_notes)
     # A completed PM rolls the truck's next PM forward (mileage + date), using
     # the mileage-out we just recorded.
-    if ro.is_pm and veh is not None:
+    if ro.is_pm and veh is not None and maintenance_prepared is None and not await maintenance.has_vehicle_program(db, ro):
         from app.services.internal_fleet import advance_vehicle_pm
         advance_vehicle_pm(veh, ro.mileage_out)
     # Completing a work order clears the truck's dashboard warning lights —
@@ -2926,6 +2938,7 @@ async def complete_work_order(
 
     # Manager review, mileage/PM updates, pricing lock, immutable invoice, and
     # final invoiced status become durable together.
+    maintenance_result = await maintenance.finish_finalization(db, current_user, ro, maintenance_prepared)
     await db.commit()
     await db.refresh(ro)
     await db.refresh(ro, attribute_names=["customer", "vehicle"])
@@ -2947,7 +2960,9 @@ async def complete_work_order(
         logger.exception("complete_work_order: invoice notification failed for order %s", ro_id)
 
     ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
-    return _board_work_order(ro)
+    response = _board_work_order(ro)
+    response.maintenance = maintenance_result
+    return response
 
 
 async def _spawn_internal_ro(
@@ -3177,6 +3192,11 @@ async def _apply_pm_services_to_ro(
         if line.source_service_id in old_by_service:
             raise HTTPException(409, "Duplicate service lines must be resolved before changing PM services.")
         old_by_service[line.source_service_id] = line
+    from app.services import maintenance
+    removed_operations = [line.id for line in old_lines if line.source_service_id not in {service.id for service in services}]
+    if removed_operations:
+        await maintenance.guard_operation_removal(db, actor, ro, removed_operations,
+            channel=pricing_plan.response['projection'], confirmed=True)
     # Validate mappings before any scope mutation. A retained source with no
     # tasks is deliberately retained as an empty historical snapshot.
     for row in existing_rows:
@@ -3413,6 +3433,10 @@ async def set_truck_pm_services(
 ):
     """Replace the truck's default PM service package."""
     await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
+    from app.services import maintenance
+    await parts_pricing.lock_tenant_financials(db, current_user.tenant_id)
+    vehicle = await maintenance.load_vehicle(db, current_user, 'fleet', vehicle_id, lock=True)
+    legacy = await maintenance.guard_legacy_configuration(db, current_user, vehicle)
     services = await _load_pm_services(db, current_user.tenant_id, body.service_ids)
     if len(services) != len(set(body.service_ids)):
         raise HTTPException(
@@ -3421,6 +3445,7 @@ async def set_truck_pm_services(
         )
     _validated_service_work_values(services)
     await _set_vehicle_pm_services(db, current_user.tenant_id, vehicle_id, services)
+    await maintenance.sync_legacy_configuration(db, current_user, vehicle, legacy)
     await db.commit()
     return _pm_service_entries(services)
 
@@ -3790,6 +3815,11 @@ async def schedule_pm(
         plan.confirm(body.pricing_preview_fingerprint)
         services=plan.services
 
+    from app.services import maintenance
+    await parts_pricing.lock_tenant_financials(db, current_user.tenant_id)
+    vehicle = await maintenance.load_vehicle(db, current_user, 'fleet', vehicle_id, lock=True)
+    legacy = await maintenance.guard_legacy_configuration(db, current_user, vehicle)
+
     if body.next_pm_miles is not None:
         vehicle.next_pm_miles = body.next_pm_miles
     # Due date: honor a date the manager explicitly picked (they may know the
@@ -3812,6 +3842,8 @@ async def schedule_pm(
     if body.save_as_default and body.service_ids is not None:
         await _set_vehicle_pm_services(db, current_user.tenant_id, vehicle.id, services)
 
+    legacy = await maintenance.sync_legacy_configuration(db, current_user, vehicle, legacy)
+
     if body.create_work_order:
         # Persist the schedule, work order, service lines, and totals together.
         ro = await _spawn_internal_ro(
@@ -3826,6 +3858,7 @@ async def schedule_pm(
             from app.api.v1.endpoints.repair_orders import _refresh_repair_order_totals
 
             await _refresh_repair_order_totals(db, ro.id)
+        await maintenance.enroll_scheduled_legacy_work(db, current_user, vehicle, legacy, ro, services)
     await db.flush()
 
     open_list = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id, [])

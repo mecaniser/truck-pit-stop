@@ -281,11 +281,26 @@ async def _build_plan(db,actor,request:ResolveRequest,*,lock=False):
                 key='counter:'+str(entry.inventory_id)
                 new_inputs[key]=SimpleNamespace(inventory_id=entry.inventory_id,pricing_intent=entry.pricing_intent,unit_price=entry.charged_unit_price,price_override_reason=entry.price_override_reason)
                 lines.append(PlannedPart(key,None,Decimal(entry.quantity),reserves=False,intent=entry.pricing_intent,reason=entry.price_override_reason))
+    return await resolve_plan_lines(db, actor, request, tenant, order, sale, lines, services, new_inputs,
+                                    labor_inputs, policy, mode, account_snapshot, lock=lock)
+
+
+async def resolve_plan_lines(db, actor, request, tenant, order, sale, lines, services, new_inputs,
+                             labor_inputs, policy, mode, account_snapshot, *, lock=False):
+    """Shared P1 price/availability engine; the caller defines only intended deltas."""
+    kind = request.plan.kind
     if len([p for p in lines if p.included])>100: fail('plan_too_large','Use no more than 100 resulting parts per command.')
     # Retained-only plans intentionally do not select or fingerprint live policy.
     if new_inputs:
         subject=order if order is not None else SimpleNamespace(tenant_id=actor.tenant_id,pricing_policy_snapshot=account_snapshot,pricing_matrix_revision_id=account.revision_id(account_snapshot),_pricing_counter=request.context.kind=='counter_sale')
         policy=await account.policy_for_saved(db,actor.tenant_id,subject,lock=lock)
+    maintenance_info = (None, None)
+    if kind == 'pm_replace' and order and order.id:
+        from app.services import maintenance
+        previous_services = set((await db.scalars(select(RepairOrderPMService.service_id).where(RepairOrderPMService.tenant_id == actor.tenant_id, RepairOrderPMService.repair_order_id == order.id))).all())
+        selected_services = {service.id for service in services}
+        removed_operations = [line.id for line in order.labor_items if line.deleted_at is None and line.source_service_id in previous_services - selected_services]
+        maintenance_info = await maintenance.operation_removal_metadata(db, actor, order, removed_operations, channel=mode, lock=lock)
     if lock and services:
         # All template mutations take the same tenant lock. Select policy before
         # locking these stable service rows, then lock inventory in sorted order.
@@ -319,12 +334,56 @@ async def _build_plan(db,actor,request:ResolveRequest,*,lock=False):
         elif inv.is_placeholder: state='not_stocked'
         elif p.reserves and need>available[inv.id]:
             state='shortage'
-            if p.disposition=='added' and p.source_component_id and kind=='service_apply': p.disposition='omitted';p.included=False
+            if p.disposition=='added' and p.source_component_id and kind in {'service_apply','maintenance_add'}: p.disposition='omitted';p.included=False
         if p.included and p.reserves: available[inv.id]=max(0,available[inv.id]-need)
         p.availability={'state':state,'requested_packages':math.ceil(p.quantity),'available_packages':max(0,inv.stock_quantity or 0),'reserved_packages':reserved,'included':p.included}
     await pricing.load_overlays(db, actor.tenant_id, [p.existing for p in lines if p.existing], 'parts_usage' if order is not None else 'counter_sale_line')
-    response=await response_for(db,actor,request,order,sale,tenant,lines,services,policy,labor_inputs,mode,account_snapshot)
+    response=await response_for(db,actor,request,order,sale,tenant,lines,services,policy,labor_inputs,mode,account_snapshot,maintenance_info=maintenance_info)
     return PricingPlan(request,order,sale,services,lines,response,policy,account_snapshot)
+
+
+@dataclass
+class MaintenancePricingRequest:
+    context: object
+    plan: object
+    pricing_presentation: str
+    include_management_details: bool = False
+
+    def model_dump(self):
+        return {'context': vars(self.context), 'plan': vars(self.plan),
+                'pricing_presentation': self.pricing_presentation, 'include_management_details': False}
+
+
+async def build_maintenance_plan(db, actor, tenant, order, service_ids, *, reserves, channel, lock=False):
+    """Aggregate new maintenance operations without touching any retained scope.
+
+    This is an internal primitive, not a new public P1 plan or PM replacement.
+    Existing operation-only coverage produces no price policy/catalog reads.
+    """
+    await pricing.authorize(db, actor)
+    request = MaintenancePricingRequest(SimpleNamespace(kind='repair_order', repair_order_id=order.id),
+        SimpleNamespace(kind='maintenance_add', service_ids=list(service_ids), legacy_fleet=not reserves), channel)
+    services = await load_services(db, actor.tenant_id, service_ids)
+    if any(line.deleted_at is None and line.source_service_id in service_ids for line in order.labor_items):
+        fail('maintenance_operation_exists', 'This service already has an operation. Select its exact saved operation.', 409)
+    lines = [retained_part(row, row.inventory_item) for row in order.parts_usage if row.deleted_at is None]
+    inputs, labor = {}, []
+    for svc in services:
+        seen = set()
+        for component in svc.service_parts:
+            item = component.inventory_item
+            if item is None or item.deleted_at is not None:
+                continue
+            if item.id in seen:
+                fail('bundle_identity_ambiguous', 'Review duplicate part components before applying this package.', 409)
+            seen.add(item.id)
+            key = 'component:' + str(component.id)
+            quantity = validate_part_quantity(Decimal(str(component.quantity)))
+            inputs[key] = SimpleNamespace(inventory_id=item.id, pricing_intent='default', unit_price=None, price_override_reason=None)
+            lines.append(PlannedPart(key, item, quantity, source_service_id=svc.id, source_component_id=component.id, reserves=reserves))
+        labor.append({'service_id': str(svc.id), 'hours': str(validate_labor_hours(Decimal(svc.duration_minutes or 0) / 60)), 'parent_id': None})
+    return await resolve_plan_lines(db, actor, request, tenant, order, None, lines, services, inputs, labor,
+        PricePolicy(), channel, getattr(order, 'pricing_policy_snapshot', None), lock=lock)
 
 
 def _editable(order):
@@ -332,17 +391,17 @@ def _editable(order):
     return operation_execution.editable(order)
 
 
-async def response_for(db,actor,request,order,sale,tenant,lines,services,policy,labor_inputs,mode,account_snapshot=None):
+async def response_for(db,actor,request,order,sale,tenant,lines,services,policy,labor_inputs,mode,account_snapshot=None,*,maintenance_info=(None,None)):
     kind=request.plan.kind
     legacy = kind == 'service_apply' and request.plan.attachment_path == 'fleet_legacy_service'
     if order is not None:
         labor=[SimpleNamespace(total_cost=li.total_cost) for li in order.labor_items if li.deleted_at is None]
-        if kind in {'service_apply','pm_replace','fleet_create'}:
+        if kind in {'service_apply','pm_replace','fleet_create','maintenance_add'}:
             source_ids=set() if legacy else {UUID(i['service_id']) for i in labor_inputs if i.get('service_id')}
             if kind=='pm_replace':
                 source_ids|=set((await db.scalars(select(RepairOrderPMService.service_id).where(RepairOrderPMService.tenant_id==actor.tenant_id,RepairOrderPMService.repair_order_id==order.id))).all())
             labor=[SimpleNamespace(total_cost=li.total_cost) for li in order.labor_items if li.deleted_at is None and li.source_service_id not in source_ids]
-            rate,_=account.labor_default(order,tenant,legacy_fleet=kind in {'pm_replace','fleet_create'} or legacy)
+            rate,_=account.labor_default(order,tenant,legacy_fleet=kind in {'pm_replace','fleet_create'} or legacy or (kind == 'maintenance_add' and request.plan.legacy_fleet))
             if kind == 'service_apply' and not legacy:
                 # The existing shop adapter recalculates other opted-in labor.
                 # Include those exact generated hours/rates in preview and token.
@@ -419,6 +478,9 @@ async def response_for(db,actor,request,order,sale,tenant,lines,services,policy,
     if any(not p.existing for p in lines) or kind in {'fleet_create','counter_draft'}:
         binding['account_policy']=account.stable_policy(account_snapshot)
         if order and order.id and account_snapshot: binding['order_policy_snapshot_id']=account_snapshot['snapshot_id']
+    maintenance_metadata, maintenance_context = maintenance_info
+    if maintenance_metadata:
+        binding['maintenance'] = maintenance_context[2]
     # Totals vary with omitted bundle scope; separate that effect from price
     # dependencies, while keeping canonical labor/discount inputs bound above.
     binding.pop('totals')
@@ -427,6 +489,9 @@ async def response_for(db,actor,request,order,sale,tenant,lines,services,policy,
     response={'schema_version':1,'plan_kind':kind,'pricing_preview_fingerprint':'v1.'+pricing.signed_digest(binding)+'.'+pricing.signed_digest(scope,'scope'),
       'confirmation_required':required,'currency':'USD','expected_sale_version':sale.version if sale else None,'availability':{'state':'partial_bundle' if omitted else ('requires_stock_acknowledgement' if shortage else 'ready'),'omitted_line_keys':omitted},'warnings':warnings,'projection':mode,'lines':output,
       'totals':{'kind':'repair_order','repair_total':totals['repair_total']} if mode=='fleet' else totals}
+    if maintenance_metadata:
+        response['maintenance'] = maintenance_metadata
+        response['confirmation_required'] = True
     if mode=='shop':
         response['parts_pricing_fingerprint']=pricing.parts_fingerprint(order) if order and order.id else None
         response['management']={'default_generation':policy.generation if any(not p.existing for p in lines) else None,'lines':private} if request.include_management_details else None
