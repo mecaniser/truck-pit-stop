@@ -57,3 +57,6 @@ api_router.include_router(customer_pricing.router, prefix="/customers", tags=["c
 
 from app.api.v1.endpoints import communications
 api_router.include_router(communications.router, prefix='/communications', tags=['communications'])
+
+from app.api.v1.endpoints import sms_onboarding
+api_router.include_router(sms_onboarding.router, prefix='/communications/sms', tags=['communications'])

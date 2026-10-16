@@ -215,6 +215,11 @@ class Settings(BaseSettings):
     TWILIO_PHONE_NUMBER: str = ""
     DEVELOPMENT_PHONE_NUMBER: str = ""
     
+    # Managed multi-shop routing remains dormant until reviewed migration.
+    SMS_TENANT_ROUTING_ENABLED: bool = False
+    # Server-owned opaque reference -> {account_sid, auth_token}; never tenant input.
+    SMS_TENANT_CREDENTIALS_JSON: str = "{}"
+
     # Durable SMS recovery is deployed dormant until real-SMS acceptance.
     SMS_RECOVERY_ENABLED: bool = False
     SMS_RECOVERY_TENANT_IDS: str = ""  # Required explicit allowlist in production.
