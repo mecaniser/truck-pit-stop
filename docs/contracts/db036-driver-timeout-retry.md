@@ -26,3 +26,18 @@ Build only from merged protected source. Preserve existing driver service comman
 ## Candidate verification
 
 Five new focused regressions failed on the prior helper (31 pass,5 fail) and pass with the bounded retry (36 pass,0 fail). They cover initial/post-summary recovery, the shared budget, every mixed timeout/null placement, exact mismatch/source/ambiguity immediate failures, and sanitized retry metadata. Node syntax and diff checks pass. Independent candidate QA/Security GO at adc02f07:36 tests plus686 independent combinations pass; see [gate evidence](../evidence/db036-driver-timeout-independent-gate.md). Final-head CI and deployed three-fleet canary remain pending.
+
+## Coordinated release hold
+
+PR555 head `847e28f21525a67c4572d908fa569aecce63d326` contains the same reviewed
+collector files plus corrected recovery provenance. The release coordinator
+reserved the next slot for PR551/550. PR555's queued run `38926105312` was
+canceled before execution; it is not a passing check. No merge or driver
+deployment occurred. Wait for release clearance, refresh against the resulting
+main and rerun all six required checks before proceeding. Driver settings,
+approved fleet scope and journal hashes were captured privately; the location
+worker's five-minute schedule and image remain unchanged.
+
+## Resumed release preflight
+
+2026-10-16T17:01:52.099943+00:00 UTC: intended branch codex/driver-identity-timeout-retry at847e28f2, only owned board/contract edits plus private output. Frontend5173/PID27324 still serves motive-driver-records/frontend; backend8000 has no listener and this checkout has no approved backend/database environment. Proxy defaults to127.0.0.1:8000. Local full-stack remains blocked/mismatched; unrelated runtime preserved. No source change or local visibility claim. User reauthorized completing deployment and current-score verification; coordinated PR550 release hold still applies. Prior detail-refresh production closure is carried with this branch as documentation only.
