@@ -516,6 +516,7 @@ class WorkOrderPartLineCreate(BaseModel):
 
 
 class WorkOrderCreate(BaseModel):
+    expected_pricing_policy: Optional[str] = None
     pricing_preview_fingerprint: Optional[str] = None
     pricing_presentation: Optional[Literal["shop", "fleet"]] = None
     # Optional description of the work needed; defaults server-side when blank.
@@ -561,6 +562,7 @@ class AddServiceRequest(BaseModel):
 
 
 class SchedulePMRequest(BaseModel):
+    expected_pricing_policy: Optional[str] = None
     pricing_preview_fingerprint: Optional[str] = None
     pricing_presentation: Optional[Literal["shop", "fleet"]] = None
     due_date: Optional[date] = None            # scheduled/next PM date

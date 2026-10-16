@@ -76,3 +76,21 @@ Architecture clarified the separately created truck path: retain the actual cust
 The accepted signed-call amendment reuses existing P1 receipt storage solely for known-success reservation recovery. Current authorization and original customer/vehicle bindings precede reuse; a narrow reservation-only transaction persists the validated provider UUID before final order creation. It does not store raw tokens, alter the provider protocol, send notifications, or promise exactly-once external calls across a crash/network failure before the receipt is durable.
 
 Independent HTTP configuration negatives passed14 cases. Saved-policy validation findings remain with Backend: partial catalog shape, malformed rate and out-of-range rate must all fail with `account_pricing_unverified`, without adopting current defaults. Final source approval remains pending.
+
+## Integrated gate corrections and saved workflow — in progress
+
+Independent saved-policy and signed-call probes now pass 19/19, and the frontend manifest passes 241/241. Review then reproduced a compatibility defect: valid shop rate zero created an order but returned a failed snapshot response. Backend owns the narrow correction; configured customer agreements remain positive, while inherited shop zero remains valid. This is not a release approval.
+
+Root source review also reproduced a recommendation Add again mismatch: the UI retained the completed manual draft while resetting its submission intent. Frontend clears completed hours after success so a new draft initializes the current default, preserving Cancel/Escape unsaved manual drafts. The focused 31 tests, application TypeScript and two-file strict lint pass.
+
+Actual local UI has saved and reloaded a synthetic Performance Carrier 001 agreement of137.50 with an explicit DB133 QA reason. History shows the actor, timestamp and old/new rate. Baseline was no account rate or matrix (shop145/catalog); restore active inheritance during cleanup. Created only local QA order `PERF-295757AF-000012` / `107530d1-52cc-40c8-ac14-64383481d6de`, description DB133 local QA A — retained customer agreement test. New-order preview showed account137.50. Saved-line, changed-agreement, matrix, mobile and cleanup checks remain in progress. No production agreement or order mutation.
+
+## Saved local workflow evidence — 2026-10-16 03:21–03:31 UTC
+
+Light desktop: agreement137.50 saves, reloads, and appears in actor/timestamp/change history. OrderA (`107530d1-52cc-40c8-ac14-64383481d6de`) captures that rate; existing QA PM Add-on service saves0.25h×137.50=34.38. Typed1.5h persists206.25. On390mobile the account changed to151.25, yet returning toA retains137.50. Manual125 onA saves187.50 with Manual source. A newly converted Monitor uneven steer-tire wear recommendation still uses A's pinned137.50; total325.00 with exact source link.
+
+Created local-only matrix `DB133 LOCAL QA customer matrix` (20%markup, no shop default); assigned it to the synthetic account. New orderB `PERF-295757AF-000013` / `582d9f08-2963-4eb2-a66f-f04a59b5fe6e` captures151.25 and the account matrix. Service0.25h saves37.81. Adding Performance replacement part0001 reviews31.20 with Account matrix, confirms the same31.20, total69.01. Attempting to archive the assigned matrix is rejected, leaves it intact, and focuses the clear explanation.
+
+Root independently reproduced the blank-hours manual recommendation draft concern: enter125 before hours, Cancel then reopen displayed137.50. Root now shares frontend implementation ownership for the narrow `!rateEdited` reset guard and two Cancel/Escape regression cases.33 focused tests, application TypeScript and strict two-file lint pass; actual390 UI now preserves125 through both dismissal routes. Independent gate remains separate.
+
+Read-only geometry reports document390/viewport390. Captures: `/tmp/db133-light-desktop-order-a.png`, `db133-light-mobile-agreement-history.png`, `db133-light-mobile-manual-rate.png`. These are local QA, not production evidence. Source HMR during owner corrections reset unsaved forms as expected; no ambiguous saves were resubmitted. Remaining: Night/responsive checks, active-config/stock cleanup, final independent candidate, CI and production.

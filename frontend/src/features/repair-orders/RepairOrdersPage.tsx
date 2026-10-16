@@ -386,6 +386,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const [selectedCustomerOption, setSelectedCustomerOption] = useState<CustomerTypeaheadItem | null>(null)
   const [selectedVehicleOption, setSelectedVehicleOption] = useState<VehicleTypeaheadItem | null>(null)
   const [showNewVehicleForm, setShowNewVehicleForm] = useState(false)
+  const intakePricing = useIntakePricing(selectedCustomerId === 'add_new' ? null : selectedCustomerId, showNewVehicleForm ? null : selectedVehicleId || null, isModalOpen)
   const [description, setDescription] = useState('')
   const [mileageIn, setMileageIn] = useState('')
   // True only while the field still holds exactly the reading we offered. Any
@@ -430,7 +431,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const [addLaborDescription, setAddLaborDescription] = useState('')
   const [addLaborHours, setAddLaborHours] = useState('')
   const [addLaborRate, setAddLaborRate] = useState('100')
-  const laborRateInitialized = useRef(false)
+  const [addLaborRateEdited, setAddLaborRateEdited] = useState(false)
   const [showPartComposer, setShowPartComposer] = useState(false)
   const [customerSectionExpanded, setCustomerSectionExpanded] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -1314,13 +1315,11 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     ),
   })
 
-  // Set default labor rate from tenant settings (only on initial load)
+  // Display the captured order default; untouched input still asks the server to resolve it.
   useEffect(() => {
-    if (taxFeeSettings?.labor_rate !== undefined && !laborRateInitialized.current) {
-      setAddLaborRate(taxFeeSettings.labor_rate.toString())
-      laborRateInitialized.current = true
-    }
-  }, [taxFeeSettings])
+    if (!addLaborRateEdited) setAddLaborRate(String(orderDetail?.pricing_policy?.labor.rate ?? taxFeeSettings?.labor_rate ?? '100'))
+  }, [orderDetail?.pricing_policy?.labor.rate, taxFeeSettings?.labor_rate, addLaborRateEdited])
+  useEffect(() => { setAddLaborRateEdited(false) }, [selectedOrder?.id])
 
   useEffect(() => {
     setInvoiceDueDate('')
@@ -1583,9 +1582,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       mileage_in,
       mileage_in_carried,
       originating_call_reference,
-    }: { originating_call_reference?: string; customer_id: string; vehicle_id: string; description: string; internal_notes?: string | null; mileage_in?: number | null; mileage_in_carried?: boolean | null }) => {
+      expected_pricing_policy,
+      pricing_presentation,
+    }: { expected_pricing_policy?: string; pricing_presentation?: 'shop' | 'fleet'; originating_call_reference?: string; customer_id: string; vehicle_id: string; description: string; internal_notes?: string | null; mileage_in?: number | null; mileage_in_carried?: boolean | null }) => {
       const response = await api.post('/repair-orders', {
         ...(originating_call_reference ? { originating_call_reference } : {}),
+        ...(expected_pricing_policy ? { expected_pricing_policy, pricing_presentation } : {}),
         customer_id,
         vehicle_id,
         description: roDescription || null,
@@ -1594,9 +1596,6 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         mileage_in_carried: mileage_in_carried ?? false,
       })
       return response.data as RepairOrder
-    },
-    onError: (error: unknown) => {
-      setFormErrors((current) => ({ ...current, root: getErrorDetail(error, 'Failed to create repair order') }))
     },
   })
 
@@ -2133,8 +2132,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       description,
       hours,
       hourly_rate,
-    }: { orderId: string; description: string; hours: number; hourly_rate: number }) => {
-      const response = await api.post(`/repair-orders/${orderId}/labor`, { description, hours, hourly_rate })
+      pricing_intent,
+    }: { orderId: string; description: string; hours: number; hourly_rate?: number; pricing_intent: 'default' | 'manual' }) => {
+      const response = await api.post(`/repair-orders/${orderId}/labor`, { description, hours, ...(hourly_rate === undefined ? {} : { hourly_rate }), pricing_intent })
       return response.data as Labor
     },
     onSuccess: (_, vars) => {
@@ -2946,9 +2946,11 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (submittingOrder.current || createdForServices.current || !validateRepairOrderForm()) return
+    if (submittingOrder.current || createdForServices.current || !validateRepairOrderForm() || !intakePricing.ready) return
 
     const pricingOwner = pricingIdentity()
+    const reviewedPricing = intakePricing.confirmation()
+    let submittedPricingContext: { customerId: string; vehicleId: string } | undefined
     submittingOrder.current = true
     setIsSubmitting(true)
 
@@ -2974,6 +2976,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         if (!serviceFlowMounted.current || pricingIdentity() !== pricingOwner) return
         finalCustomerId = createdCustomer.id
         customerForCreatedOrder = createdCustomer
+        setSelectedCustomerId(createdCustomer.id)
+        setSelectedCustomerOption(createdCustomer)
+        setShowNewVehicleForm(true)
       } else if (!finalCustomerId) {
         setFormErrors((current) => ({ ...current, customer: 'Select a customer or add a new one.' }))
         return
@@ -3005,6 +3010,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         finalVehicleId = createdVehicle.id
         finalCustomerId = createdVehicle.customer_id
         vehicleForCreatedOrder = createdVehicle
+        setSelectedVehicleId(createdVehicle.id)
+        setSelectedVehicleOption(createdVehicle)
+        setShowNewVehicleForm(false)
       } else {
         const vehicle = vehicleOptions.find((item) => item.id === selectedVehicleId)
         if (!vehicle) {
@@ -3033,7 +3041,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
       const combinedDescription = [selectedServiceText, description.trim()].filter(Boolean).join(' — ')
 
+      submittedPricingContext = { customerId: finalCustomerId, vehicleId: finalVehicleId }
       const createdOrder = await createRepairOrderMutation.mutateAsync({
+        ...reviewedPricing,
         customer_id: finalCustomerId,
         ...(canSelectOriginatingCall && originatingCallReference ? { originating_call_reference: originatingCallReference } : {}),
         vehicle_id: finalVehicleId,
@@ -3083,6 +3093,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       createdForServices.current = null
     } catch (err: unknown) {
       if (!serviceFlowMounted.current || pricingIdentity() !== pricingOwner) return
+      intakePricing.handleConflict(err, submittedPricingContext)
       if (createdForServices.current) {
         const created = createdForServices.current; createdForServices.current = null
         setIsModalOpen(false); openDetail(created)
@@ -4015,6 +4026,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 )}
 
                 {/* Order details */}
+                {intakePricing.notice}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
@@ -4164,7 +4176,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                   <button
                     type="submit"
                     disabled={
-                      isSubmitting ||
+                      isSubmitting || !intakePricing.ready ||
                       createRepairOrderMutation.isPending ||
                       createCustomerMutation.isPending ||
                       createVehicleMutation.isPending
@@ -5264,6 +5276,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                         ) : (
                                           <span className="text-gray-600">{parseFloat(li.hours)}h × ${parseFloat(li.hourly_rate).toFixed(2)}</span>
                                         )}
+                                        {li.pricing && <small className="ml-1">{laborSourceLabel(li.pricing)}</small>}
                                       </div>
                                       <div className="flex items-center gap-2">
                                         <span className="font-semibold">${parseFloat(li.total_cost).toFixed(2)}</span>
@@ -5308,7 +5321,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                       <span>$</span>
                                       <QuantityStepper
                                         value={parseFloat(addLaborRate) || 0}
-                                        onChange={(n) => setAddLaborRate(String(n))}
+                                        onChange={(n) => { setAddLaborRate(String(n)); setAddLaborRateEdited(true) }}
                                         min={0}
                                         step={1}
                                         unitLabel="/hr"
@@ -5328,11 +5341,13 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                           orderId: selectedOrder.id,
                                           description: addLaborDescription.trim() || '',
                                           hours,
-                                          hourly_rate: rate,
+                                          ...(addLaborRateEdited ? { hourly_rate: rate } : {}),
+                                          pricing_intent: addLaborRateEdited ? 'manual' : 'default',
                                         })
                                         setAddLaborDescription('')
                                         setAddLaborHours('')
                                         setAddLaborRate(taxFeeSettings?.labor_rate?.toString() || '100')
+                                        setAddLaborRateEdited(false)
                                       }}
                                       className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
                                     >
@@ -6918,3 +6933,5 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     </div>
   )
 }
+import { useIntakePricing } from '@/features/customer-pricing/useIntakePricing'
+import { laborSourceLabel } from '@/features/customer-pricing/contract'

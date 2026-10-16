@@ -336,7 +336,10 @@ For quick-create, resolve the actual account from normalized phone first, under
 existing access/identity rules. It must not use a different selected customer's
 token. A supplied mismatch rolls back newly staged customer/vehicle/relationships;
 otherwise capture the actual account's terms and return the resulting order source.
-Do not add a new ambiguous phone-to-account choice or change quick-create semantics.
+Classify the matched account with the existing uses_internal_fleet_pricing helper,
+including when the normalized phone matches an internal account. Do not construct
+an external/no-snapshot order for that internal identity. Do not add a new ambiguous
+phone-to-account choice or otherwise change quick-create identity semantics.
 
 ### Signed originating-call reservation recovery
 
@@ -434,6 +437,8 @@ exception; it never commits these work/pricing mutations.
 Precedence for NEW C1 external orders:
 
 1. Labor: positive configured customer rate; otherwise current Tenant.labor_rate.
+   An existing permitted shop rate of 0.00 remains a valid inherited snapshot/rate;
+   it does not make 0.00 a valid configured customer agreement.
 2. Parts policy: customer's selected matrix current revision; otherwise current
    shop revision; otherwise explicit catalog mode. Capture the source and version.
 3. For a newly attached part, P1 fixed catalog bypass, actual-cost protection,
@@ -547,6 +552,33 @@ type SafeLaborPricing = {
   can_override: boolean;
 };
 ```
+
+Authenticated counter sale detail (the current frontend `CounterSale` type) adds
+`pricing_policy: CounterSalePolicy`. Use the same safe field in GET and existing
+mutations that return that full detail through serialize_sale; keep existing counter
+roles, tenant scope and feature gates. The exact shape and valid combinations are:
+
+```ts
+type CounterSalePolicy = {
+  schema_version: 1;
+  snapshot_id: string | null;
+  mode: 'captured' | 'legacy';
+  parts: {
+    source: 'customer' | 'shop' | 'legacy';
+    mode: 'matrix' | 'catalog' | 'legacy';
+  };
+};
+```
+
+Captured means a real non-NULL snapshot_id, source customer/shop and mode
+matrix/catalog, read only from the validated saved snapshot. Walk-in captured source
+is shop. Legacy means exactly snapshot_id=NULL, mode=legacy and
+parts={source:'legacy',mode:'legacy'}; never infer it from today's customer/shop
+configuration. This object contains no labor, account identity, matrix/revision
+ID/name/rules, cost, margin or audit data. Do not spread the raw snapshot. Sale list,
+public/customer projections and downloadable receipt/return documents gain no new
+pricing-policy fields. The existing compact notice can show Account, Shop or Saved
+from this projection without fetching current customer settings.
 
 Shop LaborResponse adds `pricing: SafeLaborPricing`; legacy default is NULL when
 unknown. Owner/admin and ordinary shop rows use this safe projection; no full

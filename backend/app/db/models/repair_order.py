@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Numeric, ForeignKey, Text, DateTime, Integer, Boolean, Enum as SQLEnum, text, CheckConstraint, Index
+from sqlalchemy import Column, String, Numeric, ForeignKey, Text, DateTime, Integer, Boolean, Enum as SQLEnum, text, CheckConstraint, Index, ForeignKeyConstraint, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 import enum
@@ -24,6 +24,7 @@ class RepairOrderStatus(str, enum.Enum):
 class RepairOrder(BaseModel):
     __tablename__ = "repair_orders"
     __table_args__ = (
+        ForeignKeyConstraint(['tenant_id','pricing_matrix_revision_id'],['parts_price_matrix_revisions.tenant_id','parts_price_matrix_revisions.id'],name='fk_repair_orders_account_revision'),
         CheckConstraint("scheduled_start_at IS NULL OR promised_finish_at IS NULL OR promised_finish_at > scheduled_start_at", name="ck_repair_orders_schedule_order"),
         Index("ix_repair_orders_tenant_promised_finish", "tenant_id", "promised_finish_at", "id", postgresql_where=text("promised_finish_at IS NOT NULL")),
     )
@@ -37,6 +38,9 @@ class RepairOrder(BaseModel):
     vehicle_id = Column(UUID(as_uuid=True), ForeignKey("vehicles.id"), nullable=False, index=True)
     vehicle = relationship("Vehicle", back_populates="repair_orders")
     
+    pricing_policy_snapshot = Column(JSON(none_as_null=True))
+    pricing_matrix_revision_id = Column(UUID(as_uuid=True))
+
     order_number = Column(String(50), unique=True, nullable=False, index=True)
     status = Column(
         SQLEnum(RepairOrderStatus, values_callable=lambda e: [m.value for m in e]),

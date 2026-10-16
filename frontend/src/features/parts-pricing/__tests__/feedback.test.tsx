@@ -42,4 +42,18 @@ describe('pricing feedback visibility', () => {
     view.rerender(content({ message: revision.message }))
     expect(screen.getByRole('alert')).toHaveFocus()
   })
+  it('reveals inline customer feedback inside its existing record scroller, without moving the page', () => {
+    const outer = document.createElement('div'); outer.scrollTop = 300
+    const scroller = document.createElement('div'); scroller.style.overflowY = 'auto'; scroller.scrollTop = 100
+    Object.defineProperties(scroller, { scrollHeight: { value: 900 }, clientHeight: { value: 400 } })
+    vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue(rectangle(100, 500))
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(rectangle(520, 590))
+    outer.append(scroller); document.body.append(outer)
+    const revision = {}; const view = render(<PricingFeedback revision={revision}>Settings changed. Review current pricing.</PricingFeedback>, { container: scroller })
+    expect(scroller.scrollTop).toBe(198); expect(outer.scrollTop).toBe(300); expect(screen.getByRole('alert')).toHaveFocus()
+    scroller.scrollTop = 100
+    view.rerender(<PricingFeedback revision={{}}>Settings changed. Review current pricing.</PricingFeedback>)
+    expect(scroller.scrollTop).toBe(198)
+    view.unmount(); outer.remove()
+  })
 })
