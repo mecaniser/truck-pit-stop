@@ -18,6 +18,7 @@ The portaled panel now has a transparent, portaled backdrop above the clickable 
 - Changed-source ESLint, TypeScript and git diff checks pass.
 - CUA fixture browser: desktop1280×900 close and coordinate click over TEST-3 leave all9 cards displayed; no detail navigation and trigger focus restored. Compact390×844 close/reopen/Escape pass; panel bounds12..378 ×192..832, document width390.
 - Mobile physical touch injection is unsupported by the in-app browser; touch-event regression is covered by the component suite, compact runtime uses browser pointer/keyboard input.
+- Baseline reproduction: temporarily loading the unmodified component from main and clicking the same TEST-3 coordinates dismissed the panel AND opened truck details (0 cards, Back to fleet visible). Restoring the fix made that exact click dismiss only (9 cards, no details).
 - Direct Close reproduction was intermittent in earlier live acceptance and did not recur during this fixture investigation; outside-card dismissal exposed the reliable unguarded path. Both dismissal paths are covered by the change.
 - Screenshot and browser evidence are private in `output/driver-dismiss/`.
 
