@@ -1939,6 +1939,10 @@ Latest user refinement: removed the visible route legend while retaining blue/gr
 
 ## DB-133 customer pricing delivery history
 
+> **DB-133 / C1 RELEASE RESUMED (2026-10-16), Release & Reliability:** User confirms recovered host; both isolated CI workers online. Interrupted38854713548 supplies no pass. Integrate latest main2f093ca3 configuration-only delta, rerun final-head CI and complete merge/deployment plus production Light/Night acceptance. C1 remains Review; M1 follows C1Done.
+
+> **DB-133 / C1 RELEASE BLOCKED (2026-10-16 07:31 UTC), Release & Reliability recovery owner:** Candidate0d427576/PR550 has independent local QA/Security GO; final run38854713548 is queued with no active runner registrations. Both disposable VM starts repeatedly time out under severe host load after graceful supervisor recovery. No checks weakened or production change made. Host responsiveness must recover, then exact-head CI, merge/deploy and production acceptance resume. User notified for host recovery; M1 stays queued.
+
 > **DB-133 / C1 INTEGRATION VERIFIED (2026-10-16 UTC), Backend & Integrations accountable:** Main d5cb6628 integrated as4cbdc3e8 after preview upgrade176. Nine migration paths, ten unchanged preview table fingerprints, eleven merged-model PostgreSQL tests and actual signed-in pricing-panel reload pass. Fresh production175contact v3 baseline captured read-only. Final exact-head CI and production acceptance remain; C1 stays Review.
 
 > **DB-133 / C1 MIGRATION INTEGRATION (2026-10-16 05:00 UTC), Backend & Integrations accountable:** PR549/d5cb6628 merged with a separate customer-contact revision175. Preserve both applied175 migrations and join them with no-op176; disposable retention tests and independent delta review precede preview alignment. Current preview backed up, with all C1 QA evidence retained. Run38850524237 is cancelled, not a pass; fresh final-head CI, deployment and production acceptance remain. C1 stays Review; M1 preparation only.
