@@ -38,7 +38,34 @@ blocked; component tests are not claimed as signed-in browser acceptance.
 
 ## Release
 
-All six protected checks on the final PR head and current main, merge/deployment
-evidence, and parent-owned signed-in desktop/mobile acceptance remain required.
-The companion cadence documentation records already accepted production work;
-this PR does not change its schedule or worker runtime.
+PR554 passed all six protected checks in run38918827921 on exact head
+`e8e6c059e91e3d27ccac7904238275f6745fb1c6`. It merged at 15:37:20 UTC on
+2026-10-16 as `4061aaa83935fb67723ac5fcd340957781aae850`; tested and squash
+trees both equal `52f42af2c54dd1667dc38329d7a9a8fae642ba50`. Only the redundant
+post-merge main run38925435576 was canceled after tree equality was verified;
+the six required PR checks passed independently.
+
+Web deployment `5b8a025c-5d3f-421c-9521-d8c386386aef` is SUCCESS. The public
+build endpoint serves that exact merge SHA (built 15:40:58.940 UTC), and database
+and Redis readiness pass. Signed-in production acceptance at 1280x900 and
+390x844 passed:
+
+- Truck860 initially showed explicit 0 mph, source observed around 11:42 AM EDT,
+  captured 11:44:23 AM. Its safety score85 remained visible beside the driver.
+- Without navigation or reload, that observation expired: at 15:47:37 UTC the
+  detail showed Speed unavailable and motion unknown, retaining location/score.
+- Still without navigation or reload, the normal detail poll received fresh
+  0 mph by 15:49:43 UTC. The source timestamp advanced to around 11:47 AM EDT,
+  captured 11:48:54 AM; location age and stopped state updated with it.
+- Mobile document client/scroll widths both390; desktop/mobile labels and
+  timestamp popover were readable. No new warning/error console entries during
+  this acceptance window. Viewport restored and the user tab returned to Fleet map.
+
+Private evidence is under `output/detail-refresh/`: before/expired/after JSON,
+release receipt, desktop/mobile screenshots and the bounded console observation.
+This is authenticated production evidence, separate from local component tests.
+The companion cadence documentation records accepted production work; this PR
+changes neither the collector schedule nor worker runtime. The separately
+identified daily driver identity timeout recovery remains open in PR555, held
+behind the coordinated PR551/550 release sequence; it does not negate this
+UI acceptance and is not claimed complete here.
