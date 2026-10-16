@@ -242,3 +242,50 @@ own coherent source/runtime handoff. Once independent programs exist, old
 unguarded scalar writers are not a safe rollback; retain maintenance guards or
 pause affected writes as required by the contract. Review receipt frozen pending
 that later integration handoff.
+
+
+## Reading/configuration source checkpoint — two returned defects
+
+Reviewed the current pure rules plus program/readings/configuration preview,
+CRUD/history and idempotency middleware. Work creation, finalization/evidence
+commands and lifecycle integration remain unfinished and were not gated. This
+is a non-frozen source checkpoint; manifest captured at review conclusion in
+`/tmp/db134-independent-foundation-review-manifest.json`, not an exact final
+candidate approval. No broad test suite was repeated.
+
+**Finding4 — nested outside-service identity leaks to Fleet (open).**
+`completion_view` correctly hides outer `source.id/can_open` for a Fleet manager,
+but returns raw `row.readings`; `current_readings` also republishes the controlling
+completion's reading provenance. After an owner-recorded outside-service
+completion, Fleet history and program due both disclose that private source UUID
+through `readings.*.source_id`. Reproduced with an authorized current Fleet member
+and a synthetic completion: outer source.id is null yet the same hidden source
+UUID remains in the serialized history/page. Contract requires safe outside
+summary without private source link; projection must cover nested provenance,
+not just the outer source object. Returned to Backend.
+
+**Finding5 — same-day rebaseline does not isolate previous meter generation
+(open).** Created a program at confirmed110,000, recorded a120,000 observation,
+then performed a manager rebaseline on that same shop date to actual1,000 after
+meter replacement. Save correctly sets target2,000, but the previously recorded
+120,000 still wins the due projection. `current_readings`/`choose_observation`
+filter by date, while the advanced baseline generation does not exclude that
+prior observation. This can falsely mark the new meter overdue, contrary to the
+contract's no subtraction across rebaseline generations. Returned to Backend
+with the exact sequence and expected isolation of the older reading.
+
+Independent reproducible evidence: `/tmp/test_db134_independent_foundation.py`
+and `/tmp/db134-independent-foundation-probes.log`; two focused assertions fail
+in5.03seconds using fresh in-memory SQLite fixtures and autoflush=False. Synthetic
+setup writes affect only those disposable fixtures. No existing app/test file,
+preview/production database, provider or browser was changed. Source-identity
+redaction and same-day generation handling need owner correction and focused
+regressions before a CRUD/configuration GO. Prior schema-foundation GO remains
+limited to its frozen migration/model proof.
+
+A separate source observation was passed to Root/Architecture, without claiming
+an additional reproduced failure: native RO-selected mileage currently takes
+mileage_out, which existing fleet finalization can populate from Vehicle.mileage.
+The eventual source/attestation contract must preserve its explicit distinction
+between actual service evidence and automatic odometer fallback. This review
+will resume on the coherent corrected handoff.
