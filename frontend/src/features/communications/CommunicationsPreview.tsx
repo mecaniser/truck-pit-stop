@@ -40,7 +40,7 @@ import {
 import { createDemoConversations, DEMO_TENANT, DEMO_USER } from "./fixtures";
 import "./communications.css";
 
-const people: Record<string, string> = {
+const demoPeople: Record<string, string> = {
   alex: "Alex · You",
   nina: "Nina",
   unassigned: "Unassigned",
@@ -66,14 +66,58 @@ const time = (value: string) =>
     timeZone: "America/New_York",
   });
 
-export default function CommunicationsPreview() {
-  const [rows, setRows] = useState(createDemoConversations);
+export interface InboxConnection {
+  rows: Conversation[];
+  searchIds?: string[] | null;
+  onSearch?: (search: string) => void;
+  tenantId: string;
+  userId: string;
+  people: Record<string, string>;
+  deliveryMode: string;
+  channels?: { channel: string; connected: boolean }[];
+  busy: boolean;
+  error: string;
+  pending: boolean;
+  canRecover?: boolean;
+  confirmedDraft?: { key: string; text: string } | null;
+  onSelect: (id: string) => void;
+  onSend: (
+    row: Conversation,
+    body: string,
+    draftKey: string,
+  ) => Promise<boolean>;
+  onPatch: (
+    row: Conversation,
+    patch: { status?: "open" | "resolved"; assignee_id?: string | null },
+  ) => void;
+  onOlder: (id: string) => void;
+  onRecover: () => void;
+}
+export default function CommunicationsPreview({
+  connection,
+}: {
+  connection?: InboxConnection;
+}) {
+  const [demoRows, setRows] = useState(createDemoConversations);
+  const rows = connection?.rows ?? demoRows;
+  const tenantId = connection?.tenantId ?? DEMO_TENANT;
+  const userId = connection?.userId ?? DEMO_USER;
+  const people = connection?.people ?? demoPeople;
   const [view, setView] = useState<InboxView>("open");
   const [channel, setChannel] = useState<Channel | "all">("all");
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState("01");
+  const [selectedId, setSelectedId] = useState(connection?.rows[0]?.id ?? "01");
   const [composeChannel, setComposeChannel] = useState<Channel>("sms");
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useState<Record<string, string>>(() => {
+    if (!connection) return {};
+    try {
+      return JSON.parse(
+        localStorage.getItem(`inbox-drafts:${tenantId}:${userId}`) || "{}",
+      );
+    } catch {
+      return {};
+    }
+  });
   const [showAutomation, setShowAutomation] = useState(true);
   const [showContext, setShowContext] = useState(false);
   const [showConnections, setShowConnections] = useState(false);
@@ -88,10 +132,20 @@ export default function CommunicationsPreview() {
   const composeRef = useRef<HTMLTextAreaElement>(null);
   const visible = useMemo(
     () =>
-      filterConversations(rows, DEMO_TENANT, view, channel, search, DEMO_USER),
-    [rows, view, channel, search],
+      filterConversations(
+        rows,
+        tenantId,
+        view,
+        channel,
+        connection ? "" : search,
+        userId,
+      ).filter(
+        (row) =>
+          !connection?.searchIds || connection.searchIds.includes(row.id),
+      ),
+    [rows, tenantId, userId, view, channel, search, connection],
   );
-  const selected = rows.find((row) => row.id === selectedId)!;
+  const selected = rows.find((row) => row.id === selectedId) ?? rows[0];
   const composeConversation: Conversation =
     composeChannel === selected.channel
       ? selected
@@ -102,12 +156,12 @@ export default function CommunicationsPreview() {
           contactIdentityId: `unlinked-${selected.customerId}-${composeChannel}`,
           sendPolicy: { canSend: false, reason: "not_connected" },
         };
-  const key = draftKey(DEMO_TENANT, DEMO_USER, composeConversation);
+  const key = draftKey(tenantId, userId, composeConversation);
   const draft = drafts[key] || "";
   const counts = {
     open: rows.filter((r) => r.status === "open").length,
     unread: rows.filter((r) => r.status === "open" && r.unreadCount > 0).length,
-    mine: rows.filter((r) => r.status === "open" && r.assigneeId === DEMO_USER)
+    mine: rows.filter((r) => r.status === "open" && r.assigneeId === userId)
       .length,
     resolved: rows.filter((r) => r.status === "resolved").length,
   };
@@ -142,6 +196,26 @@ export default function CommunicationsPreview() {
       opener?.focus();
     };
   }, [showConnections]);
+  useEffect(() => {
+    if (connection)
+      localStorage.setItem(
+        `inbox-drafts:${tenantId}:${userId}`,
+        JSON.stringify(drafts),
+      );
+  }, [drafts, tenantId, userId, connection]);
+  useEffect(() => {
+    const confirmed = connection?.confirmedDraft;
+    if (confirmed)
+      setDrafts((previous) =>
+        previous[confirmed.key] === confirmed.text
+          ? { ...previous, [confirmed.key]: "" }
+          : previous,
+      );
+  }, [connection?.confirmedDraft]);
+  const onSearch = connection?.onSearch;
+  useEffect(() => {
+    onSearch?.(search);
+  }, [search, onSearch]);
   function updateDraft(value: string) {
     setDrafts((previous) => ({ ...previous, [key]: value }));
   }
@@ -152,14 +226,27 @@ export default function CommunicationsPreview() {
     setShowNew(false);
     setShowContext(false);
     setDetailsId(null);
+    if (connection) {
+      connection.onSelect(row.id);
+      return;
+    }
     setRows((previous) =>
       previous.map((item) =>
         item.id === row.id ? { ...item, unreadCount: 0 } : item,
       ),
     );
   }
-  function sendPreview() {
+  async function sendPreview() {
     if (!canCompose(composeConversation, draft)) return;
+    if (connection) {
+      const submitted = draft;
+      if (await connection.onSend(composeConversation, submitted, key)) {
+        setDrafts((previous) =>
+          previous[key] === submitted ? { ...previous, [key]: "" } : previous,
+        );
+      }
+      return;
+    }
     const next: Message = {
       id: crypto.randomUUID(),
       conversationId: selected.id,
@@ -190,6 +277,10 @@ export default function CommunicationsPreview() {
   }
   function resolve() {
     const status = selected.status === "open" ? "resolved" : "open";
+    if (connection) {
+      connection.onPatch(selected, { status });
+      return;
+    }
     setRows((previous) =>
       previous.map((row) =>
         row.id === selected.id ? { ...row, status, unreadCount: 0 } : row,
@@ -217,20 +308,30 @@ export default function CommunicationsPreview() {
           </span>
         </div>
         <div className="rail-bottom">
-          <span className="rail-avatar">AP</span>
+          <span className="rail-avatar">
+            {connection ? initials(people[userId] || "Staff") : "AP"}
+          </span>
         </div>
       </aside>
       <main className="comms-workspace">
         <div className="preview-strip">
           <span>
-            <span className="preview-dot" /> Interactive prototype
+            <span className="preview-dot" />{" "}
+            {connection ? "Connected inbox" : "Interactive prototype"}
           </span>
-          <span>Sample conversations · No messages are sent</span>
+          <span>
+            {connection
+              ? connection.deliveryMode === "simulated"
+                ? "Isolated workspace · Simulated SMS"
+                : "Live SMS delivery"
+              : "Sample conversations · No messages are sent"}
+          </span>
         </div>
         <header className="page-header">
           <div>
             <div className="breadcrumb">
-              Truck Pit Stop <ChevronRight size={12} /> Communication
+              {connection ? "Workspace" : "Truck Pit Stop"}{" "}
+              <ChevronRight size={12} /> Communication
             </div>
             <h1>
               Messages <span className="heading-count">{counts.open}</span>
@@ -254,7 +355,7 @@ export default function CommunicationsPreview() {
               }}
             >
               <Plus size={17} />
-              New message
+              {connection ? "Open conversation" : "New message"}
             </button>
           </div>
         </header>
@@ -316,7 +417,11 @@ export default function CommunicationsPreview() {
             {showNew && (
               <div className="new-conversation">
                 <div>
-                  <strong>Choose a sample contact</strong>
+                  <strong>
+                    {connection
+                      ? "Open an existing conversation"
+                      : "Choose a sample contact"}
+                  </strong>
                   <button
                     aria-label="Close new message"
                     onClick={() => setShowNew(false)}
@@ -409,7 +514,9 @@ export default function CommunicationsPreview() {
             </div>
             <div className="list-footer">
               <ShieldCheck size={14} />
-              <span>Preview workspace</span>
+              <span>
+                {connection ? "Shared workspace" : "Preview workspace"}
+              </span>
               <span className="connection-dot" />
               SMS
             </div>
@@ -443,6 +550,7 @@ export default function CommunicationsPreview() {
                   }
                   className={`resolve-button ${selected.status === "resolved" ? "resolved" : ""}`}
                   onClick={resolve}
+                  disabled={connection?.busy}
                 >
                   {selected.status === "resolved" ? (
                     <RotateCcw size={16} />
@@ -473,21 +581,21 @@ export default function CommunicationsPreview() {
                 <select
                   aria-label="Assign conversation"
                   value={selected.assigneeId || "unassigned"}
-                  onChange={(event) =>
-                    setRows((previous) =>
-                      previous.map((row) =>
-                        row.id === selected.id
-                          ? {
-                              ...row,
-                              assigneeId:
-                                event.target.value === "unassigned"
-                                  ? null
-                                  : event.target.value,
-                            }
-                          : row,
-                      ),
-                    )
-                  }
+                  disabled={connection?.busy}
+                  onChange={(event) => {
+                    const assigneeId =
+                      event.target.value === "unassigned"
+                        ? null
+                        : event.target.value;
+                    if (connection)
+                      connection.onPatch(selected, { assignee_id: assigneeId });
+                    else
+                      setRows((previous) =>
+                        previous.map((row) =>
+                          row.id === selected.id ? { ...row, assigneeId } : row,
+                        ),
+                      );
+                  }}
                 >
                   {Object.entries(people).map(([value, label]) => (
                     <option key={value} value={value}>
@@ -526,9 +634,24 @@ export default function CommunicationsPreview() {
             )}
             <div className="message-scroll">
               <div className="day-divider">
-                <span>Friday, October 16</span>
+                <span>
+                  {messages[0]
+                    ? new Date(messages[0].createdAt).toLocaleDateString(
+                        "en-US",
+                        { weekday: "long", month: "long", day: "numeric" },
+                      )
+                    : "Conversation"}
+                </span>
               </div>
               <div className="message-stack">
+                {connection && selected.messagesHasMore && (
+                  <button
+                    className="subtle-button"
+                    onClick={() => connection.onOlder(selected.id)}
+                  >
+                    Load older messages
+                  </button>
+                )}
                 {messages.map((message) => (
                   <div
                     key={message.id}
@@ -560,7 +683,7 @@ export default function CommunicationsPreview() {
                         <div className="message-meta">
                           {message.direction === "outbound" && (
                             <>
-                              <span>Alex</span>
+                              <span>{connection ? "Team" : "Alex"}</span>
                               <span>·</span>
                               <DeliveryStatus status={message.deliveryStatus} />
                             </>
@@ -568,7 +691,8 @@ export default function CommunicationsPreview() {
                           {time(message.createdAt)}
                           {message.direction === "outbound" && (
                             <span>
-                              {message.deliveryStatus === "queued"
+                              {!connection &&
+                              message.deliveryStatus === "queued"
                                 ? "Preview only"
                                 : message.deliveryStatus}
                             </span>
@@ -582,12 +706,14 @@ export default function CommunicationsPreview() {
                         <span>Status: {message.deliveryStatus}</span>
                         <span>
                           {message.errorCode
-                            ? `Provider code: ${message.errorCode} (sample)`
-                            : "Sample delivery event"}
+                            ? `Provider code: ${message.errorCode}${connection ? "" : " (sample)"}`
+                            : connection
+                              ? "No provider error code"
+                              : "Sample delivery event"}
                         </span>
                         <p>
                           Check the recipient and provider record before
-                          retrying. This preview does not resend messages.
+                          retrying. Uncertain messages must not be resent.
                         </p>
                       </div>
                     )}
@@ -596,7 +722,11 @@ export default function CommunicationsPreview() {
                 {!messages.length && (
                   <div className="empty-channel">
                     {channelIcon(selected.channel)}
-                    <h3>{channelLabels[selected.channel]} is next</h3>
+                    <h3>
+                      {connection
+                        ? "No messages yet"
+                        : `${channelLabels[selected.channel]} is next`}
+                    </h3>
                     <p>
                       {selected.channel === "telegram"
                         ? "Customers will start a chat with your shop bot, then replies will appear here."
@@ -611,6 +741,28 @@ export default function CommunicationsPreview() {
               </div>
             </div>
             <div className="composer-area">
+              {connection?.error && (
+                <div className="compose-restriction" role="alert">
+                  {connection.error}
+                </div>
+              )}
+              {connection?.pending && (
+                <div className="compose-restriction">
+                  <span>
+                    A send request needs confirmation. Your original message is
+                    preserved.
+                  </span>
+                  <button
+                    className="subtle-button"
+                    disabled={
+                      connection.busy || connection.canRecover === false
+                    }
+                    onClick={connection.onRecover}
+                  >
+                    Check original send
+                  </button>
+                </div>
+              )}
               <div className="composer-heading">
                 <label>
                   Reply via{" "}
@@ -684,11 +836,15 @@ export default function CommunicationsPreview() {
                   </div>
                   <button
                     className="primary-button send-button"
-                    disabled={!canCompose(composeConversation, draft)}
+                    disabled={
+                      !canCompose(composeConversation, draft) ||
+                      connection?.busy ||
+                      connection?.pending
+                    }
                     onClick={sendPreview}
                   >
                     <Send size={15} />
-                    Send preview
+                    {connection ? "Send SMS" : "Send preview"}
                   </button>
                 </div>
                 {showReplies && (
@@ -745,7 +901,9 @@ export default function CommunicationsPreview() {
                 </span>
                 <span>
                   {selected.channel === "sms"
-                    ? "Sample identity"
+                    ? connection
+                      ? "SMS contact"
+                      : "Sample identity"
                     : "Not linked"}
                 </span>
               </div>
@@ -855,16 +1013,26 @@ export default function CommunicationsPreview() {
                   <h3>{channelLabels[value]}</h3>
                   <p>
                     {value === "sms"
-                      ? "Existing Twilio connection · Sample data in this preview"
+                      ? connection
+                        ? `SMS delivery: ${connection.deliveryMode}`
+                        : "Existing Twilio connection · Sample data in this preview"
                       : value === "whatsapp"
                         ? "Business sender and approved templates required"
                         : "Shop bot and customer-started conversation required"}
                   </p>
                 </div>
                 <span
-                  className={`connection-state ${value === "sms" ? "ready" : ""}`}
+                  className={`connection-state ${value === "sms" && (!connection || connection.channels?.some((c) => c.channel === value && c.connected)) ? "ready" : ""}`}
                 >
-                  {value === "sms" ? "Preview active" : "Planned"}
+                  {value === "sms"
+                    ? connection
+                      ? connection.channels?.some(
+                          (c) => c.channel === value && c.connected,
+                        )
+                        ? "Connected"
+                        : "Unavailable"
+                      : "Preview active"
+                    : "Planned"}
                 </span>
               </div>
             ))}

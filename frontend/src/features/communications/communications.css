@@ -1372,3 +1372,25 @@ textarea::placeholder {
     scroll-behavior: auto !important;
   }
 }
+
+.inbox-entry {
+  max-width: 420px;
+  margin: 12vh auto;
+  padding: 28px;
+  font-family: system-ui, sans-serif;
+  color: #172b3a;
+}
+.inbox-entry form,
+.inbox-entry label {
+  display: grid;
+  gap: 12px;
+}
+.inbox-entry form {
+  gap: 24px;
+}
+.inbox-entry input {
+  padding: 12px;
+  border: 1px solid #cbd5db;
+  border-radius: 8px;
+  font: inherit;
+}

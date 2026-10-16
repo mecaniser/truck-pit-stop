@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from twilio.base.exceptions import TwilioRestException
 from twilio.request_validator import RequestValidator
@@ -492,9 +492,15 @@ async def handle_inbound_sms(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="SMS tenant number not recognized")
 
     if twilio_message_sid:
+        # Serialize duplicate provider receipts before their unique SID is committed.
+        import hashlib
+        lock_key = int.from_bytes(hashlib.sha256(f"sms-inbound:{twilio_message_sid}".encode()).digest()[:8], "big", signed=True)
+        await db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
         result = await db.execute(select(SMSMessage).where(SMSMessage.twilio_message_sid == twilio_message_sid))
         existing = result.scalar_one_or_none()
         if existing:
+            if existing.tenant_id != tenant.id:
+                raise HTTPException(status_code=409, detail="Inbound receipt does not match tenant")
             thread_result = await db.execute(
                 select(MessageThread).where(
                     and_(
@@ -520,40 +526,23 @@ async def handle_inbound_sms(
     if not sender_candidates or not normalized_sender:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid inbound sender number")
 
-    # First, check for existing thread by phone - preserves conversation continuity
-    customer: Optional[Customer] = None
-    thread_result = await db.execute(
-        select(MessageThread)
-        .where(
-            and_(
-                MessageThread.tenant_id == tenant.id,
-                MessageThread.customer_phone.in_(sender_candidates),
-            )
-        )
-        .order_by(MessageThread.last_message_at.desc().nulls_last())
-        .limit(1)
-    )
-    existing_thread = thread_result.scalar_one_or_none()
-    if existing_thread:
-        customer_result = await db.execute(
-            select(Customer).where(Customer.id == existing_thread.customer_id)
-        )
-        customer = customer_result.scalar_one_or_none()
+    # Different receipts from the same previously unknown sender must not create
+    # two placeholder customers. Lock only this tenant and normalized identity.
+    import hashlib
+    identity_key = int.from_bytes(hashlib.sha256(f"sms-identity:{tenant.id}:{_normalize_for_twilio(from_number)}".encode()).digest()[:8], "big", signed=True)
+    await db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": identity_key})
 
-    # Fall back to most recently active customer with this phone
-    if not customer:
-        result = await db.execute(
-            select(Customer)
-            .where(
-                and_(
-                    Customer.tenant_id == tenant.id,
-                    Customer.phone.in_(sender_candidates),
-                )
-            )
-            .order_by(Customer.updated_at.desc())
-            .limit(1)
-        )
-        customer = result.scalar_one_or_none()
+    # Normalize E.164, US-local and formatted storage consistently. Never choose
+    # the most-recent customer when a shared phone has ambiguous ownership.
+    result = await db.execute(select(Customer).where(
+        Customer.tenant_id == tenant.id, Customer.deleted_at.is_(None),
+        Customer.phone.is_not(None),
+    ))
+    matching = [candidate for candidate in result.scalars().all()
+                if _normalize_for_twilio(candidate.phone) == _normalize_for_twilio(from_number)]
+    if len(matching) > 1:
+        raise HTTPException(status_code=409, detail="Inbound sender has ambiguous customer ownership")
+    customer = matching[0] if matching else None
     if not customer:
         customer = Customer(
             tenant_id=tenant.id,
@@ -569,6 +558,9 @@ async def handle_inbound_sms(
 
     _apply_opt_keyword(customer, body)
     thread = await _get_or_create_thread(db, tenant.id, customer)
+    thread = (await db.execute(select(MessageThread).where(
+        MessageThread.id == thread.id, MessageThread.tenant_id == tenant.id,
+    ).with_for_update().execution_options(populate_existing=True))).scalar_one()
     now = datetime.now(timezone.utc)
 
     message = SMSMessage(
@@ -590,6 +582,21 @@ async def handle_inbound_sms(
     thread.last_message_at = now
     thread.last_message_preview = _preview_text(body or "")
     thread.unread_count_staff = (thread.unread_count_staff or 0) + 1
+
+    # New inbound activity reopens the shared workflow without changing legacy archive.
+    from app.db.models.communication import ConversationWorkflow
+    workflow_row = (await db.execute(select(ConversationWorkflow).where(
+        ConversationWorkflow.tenant_id == tenant.id,
+        ConversationWorkflow.thread_id == thread.id,
+    ).with_for_update())).scalar_one_or_none()
+    if workflow_row:
+        workflow_row.status = "open"
+        workflow_row.version += 1
+    else:
+        # Existing conversations without metadata expose version 1 on GET;
+        # this arrival must invalidate any previously loaded compose form.
+        db.add(ConversationWorkflow(tenant_id=tenant.id, thread_id=thread.id,
+                                    status="open", version=2))
 
     await db.commit()
     await db.refresh(message)

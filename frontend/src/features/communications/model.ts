@@ -29,6 +29,9 @@ export interface Message {
   sendOperationId?: string;
 }
 export interface Conversation {
+  version?: number;
+  messagesHasMore?: boolean;
+  messagesNextCursor?: string | null;
   id: string;
   tenantId: string;
   customerId: string | null;

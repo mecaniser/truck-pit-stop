@@ -54,3 +54,6 @@ api_router.include_router(parts_pricing.router, prefix="/parts-pricing", tags=["
 
 from app.api.v1.endpoints import customer_pricing
 api_router.include_router(customer_pricing.router, prefix="/customers", tags=["customer-pricing"])
+
+from app.api.v1.endpoints import communications
+api_router.include_router(communications.router, prefix='/communications', tags=['communications'])
