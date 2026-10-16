@@ -6,7 +6,9 @@ from uuid import uuid4
 
 import pytest
 from app.db.models.dashboard_vehicle_binding import DashboardVehicleBinding
+from app.db.models.fleet_driver_record import FleetDriverRecordCapture
 from app.db.models.fleet_telemetry import FleetTelemetrySnapshot
+from app.db.models.vehicle import Vehicle
 from app.db.models.vehicle_relationship import FleetMembership
 from app.schemas.dashboard_vehicle_binding import BindingManifest
 from app.schemas.fleet_telemetry import TelemetryCapture
@@ -14,9 +16,10 @@ from app.services import dashboard_vehicle_bindings as bindings
 from app.services import fleet_driver_records, fleet_telemetry
 from fastapi import HTTPException
 from pydantic import ValidationError
-from scripts.motive_drivers import import_records
+from scripts.motive_drivers import import_records, runner
 from scripts.motive_sync import import_locations
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.exc import IntegrityError
 from tests.test_fleet_driver_records import VIN, body, fixture, save
 from tests.test_motive_driver_worker import document
@@ -89,6 +92,99 @@ async def test_bound_driver_capture_replay_and_revoked_projection(
     with pytest.raises(HTTPException):
         await save(db_session, actor, member, request)
     assert vehicle.vin == "PENDING-26"
+
+
+@pytest.mark.asyncio
+async def test_reviewed_identity_unavailable_preserves_binding_and_other_fleet_capture(
+    _db_engine, db_session, monkeypatch, tmp_path
+):
+    actor, placeholder, member, binding, _manifest = await setup(
+        db_session, monkeypatch, expires=False
+    )
+    other = Vehicle(
+        tenant_id=actor.tenant_id,
+        customer_id=member.fleet_customer_id,
+        vin="2M8GDM9AXKP042788",
+        unit_number="77",
+        make="Test",
+        model="Tractor",
+        year=2020,
+        driver_name="Other Driver",
+    )
+    db_session.add(other)
+    await db_session.flush()
+    other_member = FleetMembership(
+        tenant_id=actor.tenant_id,
+        vehicle_id=other.id,
+        fleet_customer_id=member.fleet_customer_id,
+        effective_from=fleet_telemetry.now() - timedelta(days=1),
+    )
+    db_session.add(other_member)
+    await db_session.commit()
+
+    source_doc = document()
+    source_doc["drivers"][0].update(
+        provider_driver_id="other-provider-driver",
+        provider_vehicle_id="other-provider-vehicle",
+        driver_name="Other Driver",
+        unit="77",
+        vin=other.vin,
+    )
+    source_doc["drivers"].append(
+        {
+            "provider_driver_id": "reviewed-placeholder-driver",
+            "driver_name": "Placeholder Driver",
+            "provider_vehicle_id": binding.provider_vehicle_id,
+            "unit": "26",
+            "vin": None,
+            "state": "unavailable",
+            "source_read_at": source_doc["finished_at"],
+            "assignment_verified_before": True,
+            "assignment_verified_after": True,
+            "reason": "vehicle_identity_changed",
+        }
+    )
+    source_doc["driver_directory_count"] = 2
+    source_doc["terminal_evidence"] = "Showing 2 of 2"
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    receipt = await runner.run(
+        factory,
+        source_doc,
+        actor.tenant_id,
+        actor.id,
+        "Synthetic Fleet",
+        "KT123",
+        tmp_path / "reviewed-identity-unavailable.json",
+        commit=True,
+        expected_customer_id=member.fleet_customer_id,
+    )
+
+    assert receipt["stage"] == "verified"
+    assert receipt["readback_verified"] == 1
+    deferred = next(
+        row for row in receipt["rows"]
+        if row.get("reason") == "vehicle_identity_changed"
+    )
+    assert deferred["status"] == "unavailable"
+    assert deferred["capture_id"] is None
+    async with factory() as db:
+        assert await db.scalar(
+            select(func.count()).select_from(FleetDriverRecordCapture)
+        ) == 1
+        capture = (await db.execute(select(FleetDriverRecordCapture))).scalar_one()
+        assert capture.vehicle_id == other.id and capture.dashboard_binding_id is None
+        persisted = (
+            await db.execute(
+                select(DashboardVehicleBinding).where(
+                    DashboardVehicleBinding.id == binding.id
+                )
+            )
+        ).scalar_one()
+        assert persisted.revoked_at is None
+        assert persisted.vehicle_id == placeholder.id
+        assert persisted.fleet_membership_id == member.id
+        assert persisted.provider_vehicle_id == binding.provider_vehicle_id
+        assert placeholder.vin == "PENDING-26"
 
 
 @pytest.mark.parametrize(

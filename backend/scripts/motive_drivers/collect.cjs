@@ -257,10 +257,17 @@ async function collect(output) {
       console.error(JSON.stringify({stage:'driver_identity_check_failed',...diagnostic,reason:safeReason(error)}));throw error;
      }
     }
-    row.vin=await identityVin('before_summary');
+    const beforeIdentity=await readBeforeSummaryIdentity(()=>identityVin('before_summary'),reviewed);
+    row.vin=beforeIdentity.vin;
+    const identityDeferred=beforeIdentity.deferred;
+    if(identityDeferred){
+     // No vehicle proof was obtained. Preserve the directory row without
+     // creating a score or binding-backed capture for this observation.
+     row.reason=beforeIdentity.reason;row.source_read_at=new Date().toISOString();
+    }
     const beforeProof=identityProof;
-    if(!row.vin&&!reviewed)row.reason='vin_unavailable';
-    else {
+    if(!identityDeferred&&(!row.vin&&!reviewed))row.reason='vin_unavailable';
+    else if(!identityDeferred) {
      if(row.vin&&vins.has(row.vin))throw new Error('duplicate_vin');if(row.vin)vins.add(row.vin);
      let content;
      try {content=await summary(context,identity,result.performance_ranges);}catch(error){if(error.message==='driver_identity_changed')throw error;content=emptyContent('Driver summary could not be read.');}
@@ -282,6 +289,14 @@ async function collect(output) {
   result.finished_at=new Date().toISOString();result.complete=true;save(output,result);return result;
  }finally{await browser.close();}
 }
+function canDeferReviewedPreSummaryIdentity(error,reviewed){return reviewed&&error?.message==='vehicle_identity_changed';}
+async function readBeforeSummaryIdentity(readIdentity,reviewed){
+ try{return {deferred:false,vin:await readIdentity()};}
+ catch(error){
+  if(!canDeferReviewedPreSummaryIdentity(error,reviewed))throw error;
+  return {deferred:true,vin:null,reason:'vehicle_identity_changed'};
+ }
+}
 function safeReason(error) {
  const known=['missing_configuration','login_origin','company_mismatch','timezone_unverified','driver_directory_incomplete','driver_directory_layout','driver_identity_invalid','ambiguous_driver_assignment','driver_source_changed','driver_identity_changed','driver_directory_changed','vehicle_identity_changed','vehicle_identity_unavailable','vehicle_source_changed','ambiguous_vin','duplicate_vin','performance_ranges_unavailable','performance_ranges_invalid','performance_ranges_changed'];
  return known.includes(error?.message)?error.message:error?.name==='TimeoutError'?'ui_timeout':'driver_collection_failed';
@@ -290,4 +305,4 @@ if(require.main===module) {
  if(!process.argv[2]){console.error('Output file required');process.exitCode=1;}
  else collect(process.argv[2]).then(r=>console.log(JSON.stringify({stage:'driver_collection_complete',drivers:r.drivers.length}))).catch(e=>{console.error(JSON.stringify({stage:'driver_collection_failed',reason:safeReason(e),import_permitted:false}));process.exitCode=1;});
 }
-module.exports={collect,parseRanges,classify,directoryColumns,validateDirectory,validateSummaryIdentity,summaryDomReady,emptyContent,parseSummary,readDriverVehicleVin,safeReason};
+module.exports={collect,parseRanges,classify,directoryColumns,validateDirectory,validateSummaryIdentity,summaryDomReady,emptyContent,parseSummary,readDriverVehicleVin,canDeferReviewedPreSummaryIdentity,readBeforeSummaryIdentity,safeReason};
