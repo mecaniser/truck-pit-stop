@@ -1,6 +1,6 @@
 # DB134 / M1 — multiple maintenance programs
 
-Accountable: Backend & Integrations. Lane: High risk (schema, tenancy, financial/stock integration and completion state). Status: **In progress — implementation handoff**. Branch: `codex/maintenance-programs`, base `c42009e08b10003ddc2ab54e96c39a6a61be5bbd`. M1 application implementation is in progress; no preview migration, PR or release yet.
+Accountable: Backend & Integrations. Lane: High risk (schema, tenancy, financial/stock integration and completion state). Status: **In progress — implementation handoff**. Branch: `codex/maintenance-programs`, base `c42009e08b10003ddc2ab54e96c39a6a61be5bbd`. M1 application implementation is in progress; local preview migration177 applied and retained existing rows; no PR or release yet.
 
 ## Outcome and acceptance
 
@@ -64,3 +64,9 @@ Root ran capture only against the LOCAL176 preview, then independent reviewer pa
 Independent PostgreSQL probes returned NO-GO: duplicate finalize/advanced completion records were accepted for one program/work/source when recognition_key was null. Backend is correcting durable link/source constraints and must re-freeze/rehearse migration177. Other20 probes passed, including tenant FKs, active-cycle uniqueness, immutable evidence/event requirements and zero/NaN guards. All34 disposable old+M1 table fingerprints were unchanged after rollback. Preview remains schema176, preserved backup intact; no M1 production change.
 
 Frontend contextual editors now appear under the toolbar or selected program row, with first-field focus and Escape/trigger return coverage for20 programs. This is source/component evidence pending actual browser acceptance. Runtime recheck at HEADde8db657 retained frontendPID39898, intended bindmount and direct/proxied readiness200; preview still176.
+
+## Corrected foundation and local migration — 2026-10-16
+
+Independent foundation GO:36/36 real-PostgreSQL probes, including null-key/different-key duplicate rejection and valid pending→resolve. All34 disposable table hashes retained after rollback. Frozen177 SHA256 `ab8513967a6400cbe238cb83c1a67a7a4af78866202a32caf43034b319618432`, maintenance model `9e7770b2cfb4f1a83ca31a3afb1fc4300843a681ba1b8645465c03f9f465738a`, repair-order identity index `a1d8d8609fbc353ffc96bdc2f3adfd66177f17ddfb7a3872ac2a4dc50c8ed3cd`.
+
+Root rechecked all three hashes and captured fresh read-only preview baseline at2026-10-16T18:06:13.148008+00:00, applied normal Alembic176→177 to the preserved local database, then captured post-state at2026-10-16T18:06:25.311646+00:00. Comparator returned **all28 original tables/rows unchanged**, zero changed tables. Private captures `/tmp/db134-preview-before-migrate.json` and `/tmp/db134-preview-after-migrate.json`. Both direct8001/proxied5174 readiness200, DB/Redis okay; solehead177. This is local schema/foundation proof, not full application acceptance or production release. Backend may expose coherent foundation routes after its legacy/merge writer guards; complete work/evidence/lifecycle gates remain open.

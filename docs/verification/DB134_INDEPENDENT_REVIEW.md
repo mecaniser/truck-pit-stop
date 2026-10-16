@@ -152,3 +152,93 @@ This is not permission to capture production, apply177, or approve M1. Exact
 schema/content/legacy conversion, deployed identity and application/runtime gates
 remain open. No capture path, database connection or migration was executed by
 the reviewer. Receipt frozen pending the foundation handoff.
+
+
+## Frozen schema foundation review — initial candidate
+
+**NO-GO for preview migration pending Finding3.** Reviewed only migration/model
+scope, not the unfinished service/API/UI. Exact source hashes:
+
+- `177_maintenance_programs.py`: `9785054d95cab4d80fc5e2b9d273d94eb0d1f8984021a3b057fcbc65c2dd360c`.
+- `models/maintenance.py`: `353051f16350f0e3de9ddb7058096b41fdac85907c05c14b92015f0d2a88d6a5`.
+- `models/repair_order.py`: `a1d8d8609fbc353ffc96bdc2f3adfd66177f17ddfb7a3872ac2a4dc50c8ed3cd`; bounded delta is the same-tenant identity index for work-link FKs.
+
+Reviewed the owner's disposable migration runner/result: exact176→177 and
+repeat upgrade, empty downgrade/upgrade and populated downgrade refusal;
+28 original-table hashes retained; six explicitly admitted legacy variants,
+one claim/two operation mappings/six events and zero readings/completions.
+Defaults-only is unenrolled, package order is retained and imported0 is recorded
+raw with null projected interval/review. Ambiguous/unmapped active work is held
+for review rather than assigned invented evidence. These are owner-run migration
+proofs; the independent run below tests the resulting schema without resetting
+or re-running migrations.
+
+Independently ran21 PostgreSQL probes on the coordinated, allowlisted disposable
+`db134_test_m1_migration_2d09213f`: **20 passed / one failed**. Program/link/
+operation identity, immutable evidence update/delete, missing corresponding
+event, active-cycle uniqueness and cross-tenant FK checks reject as expected.
+Explicit0 reading is accepted; NaN is rejected. Existing recognition-key
+uniqueness rejects a duplicated nonnull key. All probe writes were rolled back;
+full hashes of28 original plus six M1 tables are identical before/after. No
+preview or production connection occurred. Evidence/script:
+`/tmp/db134-independent-schema-probes.json` and
+`/tmp/db134-independent-schema-probes.py`.
+
+**Finding3 — durable completion uniqueness depended on an optional key (closed below).**
+Migration `maintenance_completions` has only
+`UNIQUE(tenant_id, program_id, recognition_key)` for source durability;
+`recognition_key` is nullable. Two `finalize`/`advanced` rows with the exact same
+program, cycle, work link and RO source, separate request IDs and null key both
+succeed, including deferred-constraint validation. Contract section3/8 requires
+link-finalization and source/program uniqueness independently of receipt
+retention. This schema permits duplicates despite that invariant. Backend owns
+the correction and has acknowledged it; no reviewer implementation edit was
+made. Return condition: frozen corrected schema and disposable migration proof,
+then repeat the relevant null/different-key link/source cases alongside valid
+pending→resolution/correction evidence. No migration GO is implied by the20
+other passes. Disposable slot released to Backend after rollback verification.
+
+
+### Finding3 closure / bounded schema-foundation GO
+
+**Independent GO for Root's backed-up local preview176→177 migration and
+subsequent retention check only.** Corrected frozen migration SHA256
+`ab8513967a6400cbe238cb83c1a67a7a4af78866202a32caf43034b319618432`, model
+`9e7770b2cfb4f1a83ca31a3afb1fc4300843a681ba1b8645465c03f9f465738a`;
+repair-order model remains
+`a1d8d8609fbc353ffc96bdc2f3adfd66177f17ddfb7a3872ac2a4dc50c8ed3cd`.
+The migration and model agree on explicit partial uniqueness for initial
+finalize/pending evidence per work link, one pending resolution per link, and
+initial source/program evidence across finalize/pending/recognize. Required
+source/work/cycle checks prevent null identities from bypassing those indexes.
+The optional recognition key is no longer their only enforcement mechanism.
+
+Independently reran and expanded the schema probes on new disposable
+`db134_test_m1_migration_40b35377`: **36/36 passed**. The original null-key
+reproduction now fails with23505, as do changed-key duplicates, pending followed
+by a second initial finalize, repeated pending resolution and recognition versus
+finalization for the same source/program in either order. Missing work/source/
+cycle and invalid recognition source are rejected. Initial pending followed by
+one resolution is allowed; separate reaffirm/supersede/revoke evidence remains
+insertable. These positive checks establish schema compatibility, not the
+unfinished service's authorization or correction-chain behavior. Prior tenant,
+identity, event-required, immutable evidence,0/NaN and active-claim cases also
+pass. All writes were rolled back and all34 original+M1 table hashes remain
+identical. Evidence: `/tmp/db134-independent-schema-corrected-probes.json` and
+its corresponding `.py` script. Source hashes matched after the checks.
+
+Reviewed the refreshed owner migration logs/result: actual176→177, repeated
+upgrade, empty down/up and populated downgrade refusal; all28 old-table
+fingerprints retained, six legacy programs/six admission events, one claim/two
+mappings, no readings or completions. Root still owns the actual preserved
+preview migration and exact pre/post28-table check; no reviewer preview or
+production action occurred. The disposable slot is released.
+
+This gate approves only the frozen additive schema/model foundation and closes
+Finding3. It does **not** approve exposing incomplete maintenance controls,
+application/API tenant behavior, work/completion/lifecycle writers, UI journeys,
+CI, production migration or release. Those remain explicitly open until their
+own coherent source/runtime handoff. Once independent programs exist, old
+unguarded scalar writers are not a safe rollback; retain maintenance guards or
+pause affected writes as required by the contract. Review receipt frozen pending
+that later integration handoff.
