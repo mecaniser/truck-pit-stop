@@ -656,3 +656,191 @@ evolving and is explicitly excluded. Full runtime, CI and release gates remain
 pending. Only this receipt and temporary independent probes were changed by
 the reviewer; no browser, preview, production or repository app/test edits.
 Receipt frozen for the next integration handoff.
+
+## Whole integration review — evidence-chain blockers
+
+**NO-GO while Findings13/15 remain open.** This is an independent source and
+SQLite (`autoflush=False`) integration review, not browser or production testing.
+The initial handoff manifest was superseded during owner corrections; the final
+whole-feature identity must be recorded after the remaining fixes.
+
+- **Finding12 — revoking newer evidence skips a valid reaffirmed prior chain.**
+  In `maintenance.prior_valid_targets`, the original query selected only
+  `result=advanced` and then discarded every row with a successor. Recognize A,
+  reaffirm A, recognize newer B, revoke B restored the original explicit
+  100000-mile/December1 baseline instead of A's valid 101000-mile/November5
+  targets. The original independent test failed in6.13s in
+  `/tmp/db134-independent-lifecycle-review.log`. The correction considers an
+  unsuperseded reaffirmed leaf only when its original actual chain advanced;
+  pending/history-only and revoked chains are excluded.
+- **Finding13 — correcting an older source clears a different controller's
+  review.** Recognize A then newer B; change B's recorded mileage; reaffirm A.
+  `evidence_command` kept B as controller but removed B's `source_changed`
+  warning. The first correction verifies controller and unresolved-source
+  fingerprints before clearing warnings. However, the additional delete/restore
+  reproduction below shows that a matching digest alone is insufficient to
+  acknowledge a durable lifecycle review.
+- **Finding14 — resolved historical pending evidence incorrectly disputes a
+  newer controller.** Finalize A without evidence, resolve A, recognize newer B,
+  change old A. `invalidate_source` selected every historical pending row and
+  marked B's otherwise valid program for review. The correction limits pending
+  source invalidation to currently unresolved pending/review claims; old history
+  remains immutable and still receives its source-change audit.
+
+The original Finding13/14 probes both failed (19.93s), recorded in
+`/tmp/db134-independent-controller-review.log`. After owner corrections, all
+three original independent probes passed unchanged: **3 passed**,9.27s,
+`/tmp/db134-independent-chain-corrected.log`. Reproduction source:
+`/tmp/test_db134_independent_lifecycle_review.py`. Findings12/14 are provisionally
+closed by those reproductions; final chain variants and exact-source checks
+remain part of the whole integration gate.
+
+**Finding13 remains open — lifecycle ABA still clears unrelated review.** The
+additional probe recognizes A then B, calls the normal M1 delete hook on B and
+sets its soft-delete timestamp, calls the normal restore hook and clears that
+timestamp, then reaffirms A. Before the last action B still has durable
+`source_changed`, as required. Reaffirming A removes it because B's restored
+source digest matches again. No explicit acknowledgment of B occurred. This
+violates the contract's restore-without-reacceptance boundary even though B's
+values happen to match. The probe exercises the real service lifecycle hooks
+and persisted source states; it does not claim an actual HTTP/browser journey.
+
+**Finding15 — receptionist receives private outside identity through nested
+reading provenance.** An owner accepts an outside-service record with its
+source-selected actual odometer. Receptionist `program_history` correctly
+returns `source.id=null` and `can_open=false`, but the same response includes
+the private external-record UUID in
+`completion.readings.odometer_miles.source_id`. `safe_readings` currently masks
+only the Fleet channel, while a receptionist uses Shop. The contract limits
+outside details/links to owner/admin and allows only a safe unavailable summary.
+No provider, cost or document contents were exposed by this probe; the concrete
+leak is the inaccessible record identity. The owner and parent received both
+remaining failures with exact reproduction paths.
+
+These last two probes: **2 failed**,3.83s,
+`/tmp/db134-independent-aba-privacy.log`. No preview, production, browser,
+provider or repository app/test source was modified by the reviewer.
+
+## Fleet execution controls — bounded source verification
+
+The three-file Fleet builder delta reuses existing operation-query and execution
+controls. Current server capabilities govern assignment/completion/timers;
+writes carry operation CAS versions. An errored refresh removes stale action
+controls, and finalization is blocked both before opening and within an already
+open completion sheet until operation progress is verified with zero remaining
+operations. Existing role/session query keys and server endpoint checks remain.
+The actual FleetPriceBuilderPanel test file independently passed **21 tests**,
+6.87s, `/tmp/db134-independent-fleet-execution.log`, including assignment version2,
+completion version3, denied capabilities and write-conflict/failed-refresh
+recovery. This is a bounded source/component result only; Root owns actual UI
+acceptance and later frontend deltas still require identity reconciliation.
+
+## Final implementation integration gate — GO, release still pending
+
+Reviewed candidate **0e7df696a3edec0a6fc73e5ef4cb009a83f49de9**, including
+backend correction db37893a and the final seven-file frontend checkpoint
+f5efc118. All29 backend files match the owner's frozen manifest aggregate
+`31a878ab33a4c54b91ff0d76102b6b759da7de710dc2718bc3aad7cc29ee9e63`.
+The independent36-file backend/final-frontend manifest is
+`/tmp/db134-independent-whole-source-manifest.json`, aggregate SHA256
+`437e9c6308904e512d2ad4d9e9d576c2826d75b77cc5419228c396b8f25e2de4`.
+Incoming main integration changes are confined to the separately owned auth,
+ETS contact helper and Motive collector paths/tests; none changes this M1
+manifest. Migration177 and both earlier independently reviewed model hashes
+remain unchanged. This is the exact local source gate, not a protected-CI,
+merge, deployment or production-acceptance claim.
+
+**Findings12–15 are closed.** The correction now follows an unsuperseded prior
+reaffirmation to its actual advancing origin, excludes history-only/pending/
+revoked and wrong-baseline chains, and validates that source against its exact
+acceptance event. A subsequent source-change event remains material even after
+its source bytes are restored. Only the exact newly reviewed correction can
+acknowledge that evidence in its locked command. Correcting an older source
+therefore cannot clear a different controller's outstanding review. Resolved
+historical pending rows no longer dispute a newer controller; current unresolved
+pending chains still do. Restricted reading projection now considers current
+role as well as channel at every projection call site, retaining authorized
+owner/admin Shop provenance and stored evidence while hiding private nested
+service IDs from receptionists and Fleet. No immutable history was rewritten.
+
+Independent exact-source checks:
+
+- **53 backend integration tests passed**,67.87s, including work/evidence,
+  prior-chain corrections, actual HTTP finalizer adapters and both removal
+  paths. Command: `python -m pytest -q tests/test_maintenance_work.py
+  tests/test_maintenance_evidence.py tests/test_maintenance_prior_chain.py
+  tests/test_maintenance_http_work.py tests/test_maintenance_removal.py
+  --disable-warnings`. Log `/tmp/db134-independent-final-integration.log`.
+- **10 actual PostgreSQL tests passed**,21.70s, on the allowlisted disposable
+  `db134_test_m1_service_4801b99e` at177 with production `autoflush=False`.
+  These cover append-only constraints, same-key/claim races, config CAS,
+  complete order/part/receipt rollback, valid and pending completion/resolution,
+  source edit versus recognition, config versus completion, merge versus first
+  program, and pricing edit versus attachment. Reused the idle fixture without
+  migrating/resetting it; owner was notified when the slot was released.
+  Logs `/tmp/db134-independent-final-pg.log` and
+  `/tmp/db134-independent-final-pg/tests.log`.
+- **8 additional independent negative/boundary tests passed**,9.98s,
+  `/tmp/db134-independent-final-negatives.log`. All five original chain/privacy
+  reproductions pass, including explicit current-source reaffirmation after an
+  older correction correctly retains the warning. Five foreign/mismatched work
+  carriers were each tested through actual ASGI preview and commit with no new
+  order/labor/parts/claim/evidence/receipt writes or stock change. Foreign
+  vehicle/program/payer/order returns404; a service differing from the exact
+  configured package returns generic422 invalid coverage before identity lookup.
+  A successful Fleet receipt cannot replay after current membership is removed.
+  Completion preview leaves a real open time session and completion date intact,
+  never invokes operation finishing, and denies a receptionist before calling
+  the eligibility guard. Temporary probes:
+  `/tmp/test_db134_independent_lifecycle_review.py` and
+  `/tmp/test_db134_independent_http_security.py`.
+- **60 frontend tests passed**,10.78s, across FleetPriceBuilderPanel,
+  MaintenanceSection, maintenance work/evidence and the real repair-order page
+  finalization adapters; `/tmp/db134-independent-final-frontend.log`.
+  This includes the final Fleet execution controls, current CAS/capabilities,
+  correct Fleet/Shop request carriers, the caller-specific completion label and
+  omission of absent history-reading rows. Prior broader foundation, selection,
+  draft, focus and privacy gates remain valid; unrelated suites were not rerun.
+
+The temporary HTTP harness initially omitted actor names required by the
+existing checklist audit and expected404 for an invalid configured service;
+those were corrected in the independent test only. The service mismatch uses
+same-scope configuration validation without revealing whether the supplied
+service exists. Neither harness issue required an application change or
+weakened an application assertion. Existing deprecation warnings remain;
+there were no failed cases in the final runs.
+
+Source review confirms current tenant/channel/role and target/source membership
+are checked before durable outcome replay. Outcomes store identities and are
+reprojected; no raw private pricing response is cached by M1. Shared work uses
+one atomic P1/C1 bundle and one operation per distinct coverage group, retaining
+saved work/reservation/checklist identities on attachment. Completion preview
+uses read-only checklist/execution eligibility after scope authorization; both
+financial finalizers retain their existing eligibility guards and locked M1
+recheck before status, timers, invoice and evidence writes. Explicit missing
+evidence records pending targets, historical recognition/correction stays
+source-linked, and alternate deletion/PM/lifecycle/merge hooks retain the
+required claim and financial boundaries. Owner mixed-transaction tests were
+independently rerun on PostgreSQL rather than inferred from lock mocks.
+
+Root's documented actual local journeys separately show shared Shop work
+131.50→manual saved171.50→retained attachment171.50, valid+pending finalization,
+later hours500→600 resolution, explicit reaffirmation, and correct source/back
+navigation. Fleet removes/replans one bundle on the same order and completes
+its operation and maintenance once at61.50 with target2026-11-15. The reviewer
+visually inspected Root's Night desktop/landscape target-review captures and
+Light customer/Fleet320 captures: entered values and footer actions are visible
+inside bounded content areas. Some earlier captures predate later width/label
+clarity fixes and are not treated as final visual proof of those corrections;
+Root's subsequent runtime receipt and exact component tests establish those
+specific changes. Mobile evidence is browser viewport/touch emulation, not a
+physical-device claim. The reviewer did not operate or mutate the browser.
+
+**Independent QA/Security GO for the complete reviewed implementation and
+integration source.** No reproduced source blocker remains. Root still owns
+final local fixture/appearance recovery evidence, exact protected PR CI,
+merge/deployment/schema and production retention plus Light/Night desktop/mobile
+acceptance. M1 must remain In progress until those release gates exist. The
+reviewer changed only this receipt and temporary independent probes; no
+repository app/test changes, provider calls, preview or production mutations.
+Receipt frozen for Root's next commit.
