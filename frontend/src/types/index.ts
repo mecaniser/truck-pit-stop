@@ -1,4 +1,5 @@
 import type { SafePrice } from '@/features/parts-pricing/contract'
+import type { SafeLaborPricing, ShopOrderPolicy } from '@/features/customer-pricing/contract'
 export type UserRole = 'super_admin' | 'garage_owner' | 'garage_admin' | 'mechanic' | 'receptionist' | 'fleet_manager' | 'driver' | 'customer'
 
 export type RepairOrderStatus = 
@@ -260,6 +261,7 @@ export interface PartsUsage {
 }
 
 export interface Labor {
+  pricing?: SafeLaborPricing
   recommendation_source?: {
     conversion_id: string
     recommendation_id: string
@@ -295,6 +297,7 @@ export interface RepairOrderPhoto {
 }
 
 export interface RepairOrder {
+  pricing_policy?: ShopOrderPolicy
   scheduled_start_at?: string | null
   promised_finish_at?: string | null
   schedule_timezone?: string | null
@@ -422,6 +425,7 @@ export interface RepairOperationCandidate {
 export interface PriceBuildLine extends Labor {}
 
 export interface PriceBuildSummary {
+  pricing_policy?: ShopOrderPolicy
   parts_pricing_fingerprint?: string | null
   can_convert_recommendations?: boolean
   recommendation_hourly_rate?: string | null

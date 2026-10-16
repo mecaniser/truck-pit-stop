@@ -215,12 +215,18 @@ async def create_or_replace_draft(
     if customer:
         buyer_name=(customer.company_name or f'{customer.first_name} {customer.last_name}').strip()
         buyer_email=customer.email;buyer_phone=customer.phone
+    from app.services import customer_pricing as account
     is_new=sale is None;old_version=sale.version if sale else None
+    policy_changed=is_new or sale.customer_id!=customer_id
+    before_policy=sale.pricing_policy_snapshot if sale else None
     if sale is None:
         sale=CounterSale(id=uuid4(),tenant_id=tenant.id,sale_number=await _next_sale_number(db,tenant.id),status='draft',version=1,currency='USD',
             customer_id=customer_id,created_by_user_id=actor.id,updated_by_user_id=actor.id,tax_rate_snapshot=Decimal(tenant.sales_tax_rate or 0))
-        db.add(sale);await db.flush()
+        db.add(sale)
     else: sale.version+=1
+    if policy_changed:
+        account.assign(sale,plan.account_snapshot)
+        account.add_event(db,actor,'counter_policy',sale.id,customer=customer,sale_id=sale.id,before={'policy':before_policy},after={'policy':plan.account_snapshot},old_version=old_version,new_version=sale.version,revision_id=sale.pricing_matrix_revision_id)
     sale.customer_id=customer_id;sale.buyer_name_snapshot=(buyer_name or '').strip() or None
     sale.buyer_email_snapshot=(buyer_email or '').strip() or None;sale.buyer_phone_snapshot=(buyer_phone or '').strip() or None;sale.updated_by_user_id=actor.id
     lines=[];events=[]
@@ -689,7 +695,9 @@ async def serialize_sale(db: AsyncSession, sale: CounterSale, actor: User) -> di
             returned_by_line.get(line.id, 0) < line.quantity for line in lines
         ):
             actions.append("create_return")
+    from app.services.customer_pricing import counter_view
     return {
+        "pricing_policy": counter_view(sale),
         "id": str(sale.id),
         "sale_number": sale.sale_number,
         "status": sale.status,

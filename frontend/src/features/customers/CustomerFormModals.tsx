@@ -7,6 +7,7 @@ import { AlertTriangle, Search, Truck, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 import api from '@/lib/api'
+import { pricingError } from '@/features/parts-pricing/contract'
 import { Spinner } from '@/components/ui'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { useTheme } from '@/contexts/ThemeContext'
@@ -377,6 +378,9 @@ const mergeMutation = useMutation({
   },
   onSuccess: (result) => {
     queryClient.invalidateQueries({ queryKey: ['customers'] })
+    queryClient.removeQueries({ queryKey: ['customer-pricing-policy'] })
+    queryClient.removeQueries({ queryKey: ['customer-pricing-history'] })
+    queryClient.removeQueries({ queryKey: ['customer-pricing-intake'] })
     queryClient.invalidateQueries({ queryKey: ['customerVehicles', result.winner_id] })
     queryClient.invalidateQueries({ queryKey: ['customerContacts', result.winner_id] })
     setIsMergeModalOpen(false)
@@ -387,7 +391,7 @@ const mergeMutation = useMutation({
     )
   },
   onError: (error: AxiosError<{ detail?: string }>) => {
-    toast.error(error.response?.data?.detail || 'Failed to merge customers')
+    toast.error(pricingError(error, 'Failed to merge customers'))
   },
 })
 
@@ -1247,6 +1251,7 @@ const renderCustomerForm = (onCancel: () => void) => (
               </div>
 
               <div className="p-6 space-y-4">
+                {mergeMutation.error && <p role="alert" className="text-sm text-red-800">{pricingError(mergeMutation.error, 'The accounts could not be merged. Your selection is kept.')}</p>}
                 {!mergeTargetCustomer ? (
                   <>
                     <p className="text-sm text-gray-600">

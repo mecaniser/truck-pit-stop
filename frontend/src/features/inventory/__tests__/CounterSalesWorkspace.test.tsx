@@ -52,6 +52,7 @@ function sale(overrides: Partial<CounterSale> = {}): CounterSale {
     status: 'draft',
     version: 3,
     customer_id: null,
+    pricing_policy: { schema_version: 1, snapshot_id: null, mode: 'legacy', parts: { source: 'legacy', mode: 'legacy' } },
     buyer_name: null,
     buyer_email: null,
     buyer_phone: null,
@@ -184,6 +185,33 @@ describe('DB-045 bounded manual Parts sales workspace', () => {
     renderWorkspace('/dashboard/garage/inventory/sales?new=1&part=part-1')
     expect(await screen.findByText('Primary air filter')).toBeInTheDocument()
     expect(screen.queryByText('Manager price override')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    { name: 'legacy walk-in', customer_id: null, pricing_policy: { schema_version: 1, snapshot_id: null, mode: 'legacy', parts: { source: 'legacy', mode: 'legacy' } }, expected: 'New parts use current quoted pricing.' },
+    { name: 'legacy linked buyer', customer_id: 'customer-1', pricing_policy: { schema_version: 1, snapshot_id: null, mode: 'legacy', parts: { source: 'legacy', mode: 'legacy' } }, expected: 'New parts use current quoted pricing.' },
+    { name: 'saved account matrix', customer_id: 'customer-1', pricing_policy: { schema_version: 1, snapshot_id: 'captured-account', mode: 'captured', parts: { source: 'customer', mode: 'matrix' } }, expected: 'New parts use saved Account matrix pricing.' },
+    { name: 'saved shop catalog', customer_id: null, pricing_policy: { schema_version: 1, snapshot_id: 'captured-shop', mode: 'captured', parts: { source: 'shop', mode: 'catalog' } }, expected: 'New parts use saved Shop catalog pricing.' },
+  ] as const)('identifies $name from the saved sale projection without reading customer settings', async ({ customer_id, pricing_policy, expected }) => {
+    installApi(sale({ customer_id, pricing_policy })); const user = userEvent.setup()
+    renderWorkspace('/dashboard/garage/inventory/sales?sale=sale-1')
+    await user.click(await screen.findByRole('button', { name: 'Edit draft' }))
+    expect(screen.getByText(`${expected} Saved prices stay unchanged.`)).toBeVisible()
+    expect(screen.queryByText(/saved pricing defaults/)).not.toBeInTheDocument()
+    expect(apiMocks.get.mock.calls.some(([path]) => /pricing-policy|pricing-preview/.test(path))).toBe(false)
+    expect(apiMocks.patch).not.toHaveBeenCalled()
+  })
+
+  it('describes a buyer change as future pricing and returns to the saved shop source when cleared', async () => {
+    installApi(sale({ pricing_policy: { schema_version: 1, snapshot_id: 'captured-shop', mode: 'captured', parts: { source: 'shop', mode: 'matrix' } } }))
+    const user = userEvent.setup(); renderWorkspace('/dashboard/garage/inventory/sales?sale=sale-1')
+    await user.click(await screen.findByRole('button', { name: 'Edit draft' }))
+    await user.type(screen.getByLabelText('Existing customer'), 'Elis')
+    await user.click(await screen.findByRole('button', { name: /Elis Logistics/ }))
+    expect(screen.getByText('New parts use Elis Logistics’s pricing defaults. Saved prices stay unchanged.')).toBeVisible()
+    await user.clear(screen.getByLabelText('Existing customer'))
+    expect(screen.getByText('New parts use saved Shop matrix pricing. Saved prices stay unchanged.')).toBeVisible()
+    expect(apiMocks.get.mock.calls.some(([path]) => /pricing-policy|pricing-preview/.test(path))).toBe(false)
   })
 
   it('records one manual tender and no provider payload', async () => {

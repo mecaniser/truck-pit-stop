@@ -606,7 +606,7 @@ async def test_manual_labor_book_time_matches_by_application_signature(db_sessio
 
 
 @pytest.mark.asyncio
-async def test_recalculate_converts_legacy_flat_service_to_hourly_labor(db_session):
+async def test_recalculate_preserves_legacy_service_rate_while_normalizing_line_type(db_session):
     tenant, _, _, order, service = await _seed_context(db_session)
     db_session.add(
         Labor(
@@ -627,12 +627,12 @@ async def test_recalculate_converts_legacy_flat_service_to_hourly_labor(db_sessi
     loaded = await svc.load_order(db_session, order.id)
     result = await svc.recalculate_order(db_session, loaded)
 
-    assert result.order.total_labor_cost == Decimal("200.00")
+    assert result.order.total_labor_cost == Decimal("298.00")
     assert len(result.order.labor_items) == 1
     line = result.order.labor_items[0]
     assert line.line_type == LaborLineType.MANUAL
-    assert Decimal(str(line.hourly_rate)) == Decimal("100.00")
-    assert Decimal(str(line.total_cost)) == Decimal("200.00")
+    assert Decimal(str(line.hourly_rate)) == Decimal("149.00")
+    assert Decimal(str(line.total_cost)) == Decimal("298.00")
 
 
 @pytest.mark.asyncio

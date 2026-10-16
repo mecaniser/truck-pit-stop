@@ -493,7 +493,7 @@ const STEPPER_COMMIT_DEBOUNCE_MS = 500
 function LaborLineEditor({
   line, canMutate, onUpdate, onLocalChange,
 }: {
-  line: { id: string; description: string; hours: string; hourly_rate: string; total_cost: string }
+  line: { id: string; description: string; hours: string; hourly_rate: string; total_cost: string; pricing?: SafeLaborPricing }
   canMutate: boolean
   onUpdate: (body: { description?: string; hours?: number; hourly_rate?: number }) => void
   // Fires with the optimistic hours/rate on every step, ahead of the
@@ -518,6 +518,7 @@ function LaborLineEditor({
           <span className="tabular-nums">{formatHoursMinutes(lineHours)}</span>
           <span className="text-gray-400">×</span>
           <span className="tabular-nums">${lineRate.toFixed(2)}/hr</span>
+          {line.pricing && <small>{laborSourceLabel(line.pricing)}</small>}
           <span className="text-gray-400">=</span>
           <span className="font-semibold text-gray-900">${parseFloat(line.total_cost || '0').toFixed(2)}</span>
         </div>
@@ -557,7 +558,7 @@ function LaborLineEditor({
         <label className="inline-flex items-center gap-1.5">
           <span className="text-[11px] font-medium uppercase tracking-wide text-slate-600">Rate</span>
           <span className="text-gray-500">$</span>
-          <QuantityStepper
+          {line.pricing?.can_override === false ? <span className="tabular-nums">{lineRate.toFixed(2)}/hr</span> : <QuantityStepper
             value={lineRate}
             onChange={(r) => onUpdate({ hourly_rate: r })}
             onLocalChange={(r) => onLocalChange({ hourly_rate: r })}
@@ -567,8 +568,9 @@ function LaborLineEditor({
             ariaLabel="Labor hourly rate"
             align="start"
             commitDebounceMs={STEPPER_COMMIT_DEBOUNCE_MS}
-          />
+          />}
         </label>
+        {line.pricing && <small className="text-slate-600">{laborSourceLabel(line.pricing)}</small>}
         <span className="text-gray-400">=</span>
         <span className="font-semibold text-gray-900">${parseFloat(line.total_cost || '0').toFixed(2)}</span>
       </div>
@@ -769,7 +771,7 @@ function PartPricePopover({ part, disabled, saving, onApply }: { part: PartsUsag
     <PopoverButton type="button" onClick={() => { setDraft(Number(part.unit_price).toFixed(2)); setReason(''); setAction('manual'); setError(null); setOpened(true) }} className="db-part-price h-8 min-w-[84px] whitespace-nowrap rounded-lg border bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-xs text-gray-900 shadow-sm border-gray-200">{money(part.unit_price)} <ChevronDown className="ml-1 inline h-3 w-3 text-gray-400" /></PopoverButton>
     <PopoverPanel anchor="bottom end" focus aria-label={`Part pricing for ${part.inventory_name}`} className="db-part-price-panel db-parts-pricing z-[70] w-[min(340px,calc(100vw-32px))] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-[14px] border border-gray-200 p-3 text-sm shadow-xl [--anchor-gap:4px] [--anchor-padding:16px]">
       <div className="db-parts-pricing__toolbar"><strong>{part.inventory_name}</strong><button type="button" aria-label="Close part pricing" onClick={() => { setOpened(false); close() }}><X size={16} /></button></div>
-      <p className="db-parts-pricing__muted">Saved charge {pricingMoney(part.unit_price)} · {priceSourceLabel(part.pricing?.current_source)} · Saved default {pricingMoney(part.pricing?.default_unit_price ?? part.list_price)}</p>
+      <p className="db-parts-pricing__muted">Saved charge {pricingMoney(part.unit_price)} · {priceSourceLabel(part.pricing?.current_source, part.pricing?.policy_source)} · Saved default {pricingMoney(part.pricing?.default_unit_price ?? part.list_price)}</p>
       {manager && <><p className="db-parts-pricing__muted">Actual cost {details.data ? details.data.actual_cost_known ? pricingMoney(details.data.actual_unit_cost) : 'Unknown' : '—'}</p>{details.isError && <p role="alert">Saved pricing details unavailable.</p>}{!details.isError && details.data && <p className="db-parts-pricing__muted">{details.data.matrix ? `${details.data.matrix.name} · Revision ${details.data.matrix.revision} · ${details.data.matrix.band.markup_percent}% markup` : details.data.fixed_catalog_price ? 'Fixed catalog price' : 'No saved matrix'} · Basis {pricingMoney(details.data.pricing_basis)} · Minimum {pricingMoney(details.data.effective_minimum)}{details.data.override && <> · {details.data.override.reason} · {new Date(details.data.override.occurred_at).toLocaleString()}</>}</p>}</>}
       {editable && <><label>Customer price<input inputMode="decimal" value={draft} disabled={saving} onChange={event => { setDraft(event.target.value); setAction('manual') }} /></label>{action === 'manual' && <label>Override reason<input value={reason} maxLength={500} disabled={saving} onChange={event => setReason(event.target.value)} placeholder="Required for a price change" /></label>}
       <div className="db-parts-pricing__actions"><button type="button" disabled={saving} onClick={() => { setDraft(part.pricing?.default_unit_price ?? part.list_price ?? part.unit_price); setAction('list') }}>List</button><button type="button" disabled={saving || part.unit_cost === null} onClick={() => { setDraft(part.unit_cost ?? ''); setAction('stock') }}>Stock</button><button type="button" disabled={saving} onClick={async () => {
@@ -3738,7 +3740,7 @@ export default function PriceBuilderPanel({
                         ) : (
                           <>${parseFloat(pu.unit_price).toFixed(2)}</>
                         )}
-                        {pu.pricing && <span className="db-parts-pricing__source ml-1">{priceSourceLabel(pu.pricing.current_source)}</span>}
+                        {pu.pricing && <span className="db-parts-pricing__source ml-1">{priceSourceLabel(pu.pricing.current_source, pu.pricing.policy_source)}</span>}
                       </td>
                       {hasSavings && <td role="cell" className="db-part-savings py-1.5 px-2.5 text-right">
                         <span aria-hidden="true" className="db-part-mobile-label">Savings</span>
@@ -4904,3 +4906,4 @@ export default function PriceBuilderPanel({
     </div>
   )
 }
+import { laborSourceLabel, type SafeLaborPricing } from '@/features/customer-pricing/contract'

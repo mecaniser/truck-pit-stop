@@ -223,9 +223,10 @@ class PartSuggestionsResponse(BaseModel):
 
 
 class LaborCreate(BaseModel):
+    pricing_intent: Optional[Literal["default", "manual"]] = None
     description: Optional[str] = None
     hours: Decimal
-    hourly_rate: Decimal
+    hourly_rate: Optional[Decimal] = None
     mechanic_id: Optional[UUID] = None
     service_code: Optional[str] = None
     line_type: LaborLineType = LaborLineType.MANUAL
@@ -263,6 +264,13 @@ class LaborUpdate(BaseModel):
 
 
 class LaborResponse(BaseModel):
+    pricing: Optional[dict] = None
+    @model_serializer(mode='wrap')
+    def omit_private_pricing(self, handler):
+        data = handler(self)
+        if self.pricing is None: data.pop('pricing', None)
+        return data
+
     recommendation_source: Optional[RecommendationSourceResponse] = None
     id: UUID
     repair_order_id: UUID
@@ -335,6 +343,8 @@ class RepairOrderBase(BaseModel):
 
 
 class RepairOrderCreate(RepairOrderBase):
+    expected_pricing_policy: Optional[str] = None
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None
     originating_call_reference: Optional[str] = Field(None, min_length=1, max_length=4096)
     customer_id: UUID
     vehicle_id: UUID
@@ -377,6 +387,13 @@ class RepairOrderUpdate(BaseModel):
 
 
 class RepairOrderResponse(RepairOrderBase):
+    pricing_policy: Optional[dict] = None
+    @model_serializer(mode='wrap')
+    def omit_private_policy(self, handler):
+        data = handler(self)
+        if self.pricing_policy is None: data.pop('pricing_policy', None)
+        return data
+
     id: UUID
     tenant_id: UUID
     customer_id: UUID
@@ -530,9 +547,11 @@ class PriceBuildLineUpdateRequest(BaseModel):
 
 
 class PriceBuildSummaryResponse(BaseModel):
+    pricing_policy: Optional[dict] = None
     @model_serializer(mode='wrap')
     def safe_parts_token(self, handler):
         data = handler(self)
+        if self.pricing_policy is None: data.pop('pricing_policy', None)
         if self.parts_pricing_fingerprint is None:
             data.pop('parts_pricing_fingerprint', None)
         return data
@@ -564,6 +583,8 @@ class PriceBuildSearchResponse(BaseModel):
 
 
 class QuickRepairOrderCreate(BaseModel):
+    expected_pricing_policy: Optional[str] = None
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None
     phone: Optional[str] = None
     vehicle_description: Optional[str] = None
     complaint: Optional[str] = None

@@ -219,6 +219,10 @@ async def write_matrix(db,actor,body,matrix_id=None,action=None):
         archived=action=='archive'
         if archived and await db.scalar(select(Policy.tenant_id).where(Policy.tenant_id==actor.tenant_id,Policy.default_matrix_id==matrix.id)):
             fail('matrix_is_default','Clear or replace the shop default before archiving this matrix.',409)
+        if archived:
+            from app.db.models.customer import Customer
+            if await db.scalar(select(Customer.id).where(Customer.tenant_id==actor.tenant_id,Customer.parts_price_matrix_id==matrix.id,Customer.deleted_at.is_(None)).limit(1)):
+                fail('matrix_assigned_to_customer','Clear or replace customer pricing defaults before archiving this matrix.',409)
         if bool(matrix.archived_at)==archived: return {'schema_version':1,'matrix':await matrix_view(db,matrix)}
         if not archived: await check_name(db,actor.tenant_id,matrix.name,matrix.id)
         before={'archived_at':matrix.archived_at};old=matrix.version

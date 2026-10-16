@@ -75,3 +75,21 @@ deployment. All-day continuity must not be claimed from a short smoke check.
   continuity. No actual user's credentials were used in fixtures.
 
 Independent Architecture fallback Security: GO, 13 final tests passed, no blocking findings. Independent QA: GO for focused backend candidate, 30 tests passed in 32.21s. Both reviewers made no implementation edits. Live runtime/release acceptance remains pending.
+
+## Final integration and live-test boundary
+
+The user explicitly authorized PR556 merge/deployment and live idle-return
+verification. Original candidate5301e4d1 passed all six protected checks.
+Main subsequently advanced; run38936626649 oncf11b032 was canceled as
+superseded, with four passed checks and two canceled backend checks.
+Final integration incorporates main1875a71d; auth implementation is unchanged.
+Only additive delivery-board notes conflicted and were preserved.
+
+The first signed-in test tab was suspended at17:04 UTC, but its document
+reloaded at17:15 during another deployment. It stayed signed in; that run is
+inconclusive for stale in-memory renewal. A fresh stable-build test must
+observe sibling rotation, return beyond replay grace and access expiry,
+refresh200 before navigation, and authenticated board use. Real elapsed
+idle evidence must remain separate from the simulated24-hour regression.
+Final release evidence is tracked in PR556 pending protected checks and
+exact deployed-build acceptance.

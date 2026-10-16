@@ -22,6 +22,13 @@ beforeEach(() => {
   })
 })
 describe('private parts pricing configuration', () => {
+  it('labels an unarchived matrix by shop-default status without claiming it is unused', async () => {
+    const user = userEvent.setup(); setup()(<PartsPricingSettings onClose={vi.fn()} />)
+    expect(await screen.findByText('Not shop default · v1')).toBeVisible()
+    await user.click(screen.getByText('Standard'))
+    expect(await screen.findByText('Revision 1 · Not shop default')).toBeVisible()
+    expect(screen.queryByText(/Inactive/)).not.toBeInTheDocument()
+  })
   it('saves an inactive matrix without selecting a default', async () => {
     const user = userEvent.setup(); mocks.post.mockResolvedValue({ data: { schema_version: 1, matrix } }); setup()(<PartsPricingSettings onClose={vi.fn()} />)
     await user.click(await screen.findByText('New matrix')); await user.type(screen.getByLabelText('Name'), 'Standard'); await user.type(screen.getByLabelText('Markup percent band 1'), '50'); await user.click(screen.getByText('Save matrix'))

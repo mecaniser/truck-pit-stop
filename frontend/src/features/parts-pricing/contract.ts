@@ -8,6 +8,7 @@ export const safePriceSchema = z.object({
   origin_source: origin, current_source: z.enum([...origin.options, 'manual']), managed: z.boolean(),
   default_unit_price: money.nullable(), charged_unit_price: money.nullable(), line_total: money.nullable(),
   pricing_version: z.number().int().nonnegative().nullable(), can_override: z.boolean(),
+  policy_source: z.enum(['customer', 'shop', 'internal', 'legacy']).optional(),
 }).strict()
 export type SafePrice = z.infer<typeof safePriceSchema>
 export type PriceSource = SafePrice['current_source']
@@ -74,7 +75,7 @@ export function pricingError(error: unknown, fallback = 'Pricing could not be co
   if (detail && typeof detail === 'object' && 'message' in detail && typeof detail.message === 'string') return detail.message
   return fallback
 }
-export const priceSourceLabel = (source: PriceSource | null | undefined) => ({ matrix: 'Shop matrix', fixed: 'Fixed', catalog: 'Catalog', manual: 'Manual', ad_hoc: 'Manual', internal: 'At cost', legacy_unknown: 'Saved price' })[source ?? 'legacy_unknown']
+export const priceSourceLabel = (source: PriceSource | null | undefined, policySource?: SafePrice['policy_source']) => source === 'matrix' && policySource === 'customer' ? 'Account matrix' : ({ matrix: 'Shop matrix', fixed: 'Fixed', catalog: 'Catalog', manual: 'Manual', ad_hoc: 'Manual', internal: 'At cost', legacy_unknown: 'Saved price' })[source ?? 'legacy_unknown']
 export const pricingMoney = (value: string | null | undefined) => value == null ? '—' : new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(Number(value))
 export const previewTotal = (preview: PricingPreview) => preview.totals.kind === 'counter_sale' ? preview.totals.total : preview.totals.repair_total
 
