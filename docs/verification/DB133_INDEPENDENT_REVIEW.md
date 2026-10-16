@@ -5,7 +5,7 @@ has not implemented or directed C1 application or test changes. Ownership is
 limited to this receipt. Backend & Integrations is accountable; Root owns the
 board, runtime, browser acceptance and release record.
 
-## Current gate: corrected local source/UI checks pass — cleanup and release gates pending
+## Current gate: local QA/Security GO — protected CI and production release gates pending
 
 Reviewed accepted contract commit `201e7935bef792260b819a412bdf32795dc2405a` on
 `codex/customer-pricing-defaults`, plus the baseline source at that commit.
@@ -446,3 +446,51 @@ pairs, not an unmeasured claim for every component. Readability comes from suppl
 browser images/measurements, not JSDOM. The earlier failure capture remains
 failure evidence only. Corrected final intake-error acceptance, fresh synthetic
 cleanup and exact committed candidate/release gates are still pending.
+
+
+## Independent local candidate GO — 2026-10-16 03:54 UTC
+
+**GO for the local QA and Security gates on candidate `929f2d4e55e220f09aedfbb28e4bae41eb12f99b`.**
+This is approval to proceed through protected CI and the existing release process,
+not a claim that C1 is merged, deployed, production verified or Done.
+
+Independently verified the committed candidate against all30 final backend manifest
+entries and all6 final UI-correction manifest entries: zero mismatches. Earlier
+reviewed recommendation/counter changes are included in application commit
+a5cd369b; the main ancestry merge added no tree delta. All seven numbered findings
+and the subsequent bounded counter/recommendation/recovery concerns have corrected
+source and relevant independent verification; no known local release-blocking
+finding remains.
+
+The main receipt's final local acceptance covers saved agreement/history,
+new-order capture, retained earlier terms after account changes, manual labor,
+recommendation source linkage, customer-matrix review/confirmation, assigned-matrix
+archive refusal, retained archived revision, explicit stale-intake acceptance,
+Cancel/Escape and customer-return behavior. Independently inspected final supplied
+Light/Night settings and order captures. The final390px accepted-conflict image
+shows the selected customer/truck and typed work retained with Account137.50,
+without the stale warnings. Root's actual browser journey establishes no automatic
+submission and Cancel returning to the customer; this reviewer did not operate the
+browser. No optional counter-flag or restricted-role automated case is relabeled
+as an actual browser pass. Viewport emulation is not physical-device testing.
+
+Reviewed the fresh committed `db133/local-cleanup.json` checked at03:52:13UTC:
+active customer rate/matrix NULL, tax false, version6; both synthetic orders
+soft-deleted; no remaining part usages; test matrix archived. Independently
+computed seven assertions across those fields and the stock events: all pass.
+For each of the two affected parts, orderB's reservation102→101 and release101→102
+balance to zero and match final stock102. This is recorded-event evidence, not a
+claim that an independent pre-test per-row database snapshot existed. Immutable
+agreement/order/line audit evidence remains intentionally retained. Root records
+original Night appearance restoration and removal of device/touch overrides.
+No invoice, payment, estimate or real-work completion was performed for this QA.
+
+Release must still prove all required CI contexts on the exact final head, merge
+tree identity, Web/Worker deployment identity, additive schema175/health/readiness,
+legacy/pricing defaults unchanged by migration, and the agreed read-only/unsaved
+production desktop/mobile Light/Night acceptance. Existing signed-call reservation
+recovery has the documented crash/network/pre-durable-commit uncertainty boundary;
+this GO does not claim provider-level exactly-once semantics or unrelated legacy
+financial-merge remediation. Any substantive post-gate source change requires a
+bounded delta review; a documentation-only receipt commit does not invalidate the
+reviewed application identity.
