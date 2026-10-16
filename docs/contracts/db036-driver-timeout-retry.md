@@ -74,4 +74,17 @@ Configuration hashes, all three approved scope identities, daily13:45UTC command
 
 Private evidence: `output/driver-timeout/release-2026-10-16/` contains `release-plan.json`, `runtime-source-proof.json`, `canary-trigger-intent.json`, `current-state.json`, accumulated exact-deployment `current-logs.json`, `db-verification-20261016T181617Z.json` and `canary-acceptance-20261016T181641Z.json` (63/63 accepted checks). The17:01UTC baseline remains preserved as `pre-canary-baseline-20261016T170129Z.json`; all12 synthetic parity cases and all14 saved-evidence acceptance cases passed. Raw provider rows and environment values are not included in tracked documentation.
 
-Authenticated desktop/mobile score/period/layout acceptance remains separately pending. Product & Delivery observed a pointer dismissal opening the underlying truck on the pre-existing public Web revision; Escape works. Do not claim that pointer-close behavior passed or attribute it to this collector-only release.
+## Authenticated production acceptance
+
+**Scoped worker release Done.** Product & Delivery completed authenticated, read-only score/period/timestamp and responsive-layout acceptance on desktop1280×900 and mobile390×844. The saved UI receipt and all seven referenced screenshots exist in `output/driver-timeout/ui/production-ui-acceptance.json` and its directory. Release & Reliability independently compared every focused UI score, provider period, checked time and assignment time in that receipt with the final verified DB readback; all match.
+
+- W900: score88 and provider period Sep28–Oct11 on desktop card/map and mobile map/detail; checked18:03:54.639UTC, assignment18:05:24.304UTC.
+- Elis609: score81 and the same provider period in desktop detail; checked18:08:19.762UTC, assignment18:10:02.897UTC. Elis ownership remains displayed.
+- Lynx17: explicit safety unavailable on the mobile card; checked18:01:49.241UTC, assignment18:05:24.304UTC.
+- DONTRANS532: explicit safety unavailable on the mobile card; checked18:11:03.871UTC, assignment18:14:51.785UTC.
+
+The board shows22 trucks and21 driver controls:15 numeric scores,6 unavailable-score controls and1 unassigned truck. This is consistent with20 captured records (15 scores and5 provider-no-score), one assigned row without a verified capture, and one unassigned row. Mobile document width equals the390px viewport; the dialog spans x12–378 with no horizontal overflow. Console errors/warnings are empty. Stale W900 speed remains unavailable with motion unknown and last-known map location. The original viewport and Fleet Board tab were restored.
+
+Public Web advanced from `c42009e0` to exact merged `c9beafe4`; DB and Redis readiness passed. After reload, root reconfirmed22 trucks,21 driver controls, W90088 with the same exact fresh timestamps and an empty console. Worker/source and public-Web identities are separately evidenced.
+
+**Separate frontend investigation:** pointer dismissal of a fleet-card driver popover opened the underlying truck in IAB, both before and after the worker rollout. Escape dismissed correctly. Source cause is unconfirmed, and full pointer-interaction acceptance is not claimed. This collector-only change does not explain that pre-existing behavior; no worker rollback is required. The completed worker release does not close this separate investigation or establish future daily reliability.
