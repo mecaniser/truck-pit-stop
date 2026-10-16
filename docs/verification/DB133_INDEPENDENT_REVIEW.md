@@ -691,3 +691,24 @@ The independently reviewed pre-to-pre comparison passed six pure-local cases;
 use a new output path to avoid overwriting either receipt. Worker timeout/exit is
 a failed startup requiring investigation of Web's migration, never permission
 to stamp, bypass the gate, or migrate from Worker. C1 remains not Done.
+
+### Worker startup visibility correction — 2026-10-16
+
+**Local QA/Security GO retained** for final four-file aggregate SHA256
+`43dc8184197cee421ff37025774f72a7102edc37f2c48573ab57cb1e646e1432`.
+The owner reproduced that default WARNING logging hides the two INFO readiness
+messages because `worker_init` precedes Celery's logging setup. The narrow fix
+emits those same fixed, secret-free messages through flushed stderr. It does not
+configure global logging or change the probe, PostgreSQL session, deadline,
+signal registration, task schedules or startup ordering.
+
+Independently inspected the two-line behavior change and actual
+`celery.apps.worker.Worker` regression, then reran the focused suite:
+**29 passed**, 2.72 seconds, with two existing deprecation warnings. The test
+requires exactly one waiting and one passed message before Celery logging setup,
+unchanged global logger settings until that setup, and no synthetic credential
+in output. Log: `/tmp/db133-independent-worker-gate-logging.log`. Source manifest
+matched before and after. The earlier four real-PG passes and ten-table retention
+remain applicable because their probe and connection code is byte-identical;
+those database checks were not repeated. Exact final-source CI and production
+readiness-pass/deployment evidence remain required.

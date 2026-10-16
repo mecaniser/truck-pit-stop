@@ -153,7 +153,9 @@ def wait_for_worker_schema(
         heads = _expected_heads()
     except Exception:
         _abort("invalid database or migration configuration")
-    logger.info("Worker schema readiness waiting for installed migration head")
+    # worker_init precedes Celery's logging setup. Emit fixed, flushed status
+    # directly so default WARNING logging cannot hide deployment evidence.
+    print("Worker schema readiness waiting for installed migration head", file=sys.stderr, flush=True)
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -163,7 +165,7 @@ def wait_for_worker_schema(
         if time.monotonic() >= deadline:
             _abort("deadline exhausted")
         if state == "ready":
-            logger.info("Worker schema readiness passed; startup may continue")
+            print("Worker schema readiness passed; startup may continue", file=sys.stderr, flush=True)
             return
         if state == "fatal":
             _abort("unrecoverable readiness failure")

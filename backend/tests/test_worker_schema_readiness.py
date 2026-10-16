@@ -229,3 +229,37 @@ print(json.dumps({'state':state}))
 
 def test_invalid_postgres_driver_is_fatal_configuration():
     assert gate._probe_database("postgresql+nonexistentdriver://unused/unused", {"head"}) == "fatal"
+
+
+def test_actual_worker_reports_readiness_before_celery_configures_logging():
+    # worker_init runs before Worker.on_init_blueprint/setup_logging. Default
+    # WARNING logging must not hide the readiness evidence used at deployment.
+    code = """
+import json,logging,sys
+from celery.apps.worker import Worker
+from app.tasks import celery_app,settings
+from app.commands import worker_schema_readiness as gate
+root=logging.getLogger();initial=(root.level,list(root.handlers))
+assert initial==(logging.WARNING,[])
+settings.DATABASE_URL='postgresql://synthetic:DO_NOT_LOG_THIS@127.0.0.1:1/disposable'
+celery_app.conf.broker_url='memory://';celery_app.conf.imports=()
+gate._expected_heads=lambda:{'installed_head'}
+gate._probe_process=lambda *args:'ready'
+original_setup=Worker.setup_logging
+def setup(self,*args,**kwargs):
+ assert (root.level,list(root.handlers))==initial,'Gate changed global logging'
+ print('CELERY_LOGGING_SETUP',file=sys.stderr,flush=True)
+ return original_setup(self,*args,**kwargs)
+Worker.setup_logging=setup
+Worker.Blueprint.apply=lambda *args,**kwargs:None
+Worker(app=celery_app,pool='solo',concurrency=1,beat=True,without_heartbeat=True,without_gossip=True,without_mingle=True)
+print(json.dumps({'startup':'passed'}))
+"""
+    result = subprocess.run([sys.executable, "-c", code], cwd=gate.BACKEND_ROOT, capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"startup": "passed"}
+    assert "DO_NOT_LOG_THIS" not in result.stdout + result.stderr
+    waiting = "Worker schema readiness waiting for installed migration head"
+    passed = "Worker schema readiness passed; startup may continue"
+    assert result.stderr.count(waiting) == result.stderr.count(passed) == 1
+    assert result.stderr.index(waiting) < result.stderr.index(passed) < result.stderr.index("CELERY_LOGGING_SETUP")
