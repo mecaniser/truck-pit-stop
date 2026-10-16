@@ -5,7 +5,7 @@ import DatePicker from '@/components/DatePicker'
 import { useAuthStore } from '@/stores/authStore'
 import { usePricingScope } from '@/features/parts-pricing/usePricingScope'
 import PricingFeedback from '@/features/parts-pricing/PricingFeedback'
-import { detachMutationSchema, historySchema, hours, label, programMutationSchema, readingMutationSchema, whole, type Channel, type Completion, type Program } from './contract'
+import { detachMutationSchema, historySchema, hours, label, programMutationSchema, programServices, readingMutationSchema, whole, type Channel, type Completion, type Program } from './contract'
 import { maintenanceError, MaintenanceCancelled, programPath, scopedProgram, useMaintenanceCommand, usePrograms } from './api'
 import { Reading, TargetValues } from './MaintenanceFields'
 import ProgramEditor from './ProgramEditor'
@@ -34,6 +34,8 @@ function ScopedMaintenance({ vehicleId, channel, customerId, onOpenOrder }: Prop
   const rows = [...(query.data?.items ?? [])]
   if (editedProgram && !rows.some(program => program.id === editedProgram.id)) rows.push(editedProgram)
   const visibleRows = !query.isError && !query.isPending
+  const selectedPrograms = query.data?.items.filter(program => selected.includes(program.id)) ?? []
+  const selectionUnavailable = selectedPrograms.length !== selected.length || selectedPrograms.some(program => !program.capabilities.can_plan || Boolean(program.archived_at) || programServices(program).length === 0)
   const renderEditor = () => {
     if (!editor) return null
     const title = editor.kind === 'program' ? editor.program ? `Edit ${editor.program.name}` : 'New maintenance program' : editor.kind === 'reading' ? 'Record reading' : editor.kind === 'work' ? 'Plan maintenance work' : editor.kind === 'evidence' ? `Service evidence · ${editor.program.name}` : `${editor.kind === 'detach' ? 'Release work' : editor.kind === 'archive' ? 'Archive' : 'Restore'} · ${editor.program.name}`
@@ -54,7 +56,8 @@ function ScopedMaintenance({ vehicleId, channel, customerId, onOpenOrder }: Prop
       {editedProgram?.id === program.id && renderEditor()}
       {visibleRows && historyId === program.id && <MaintenanceHistory vehicleId={vehicleId} channel={channel} program={program} onOpenOrder={onOpenOrder} onReview={(completion, element) => open({ kind: 'evidence', program, completion }, element)} />}
     </li>)}</ul>
-    {visibleRows && query.data && <div className="db-maintenance__actions"><label className="db-maintenance__check"><input type="checkbox" checked={archived} disabled={Boolean(editor)} onChange={event => { setArchived(event.target.checked); setPage(0); setSelected([]) }} />Show archived</label>{selected.length > 0 && <button type="button" disabled={Boolean(editor)} onClick={event => open({ kind: 'work', programs: query.data!.items.filter(program => selected.includes(program.id)) }, event.currentTarget)}>Plan work · {selected.length}</button>}{(page > 0 || query.data.has_more) && <><button type="button" disabled={page === 0 || Boolean(editor) || query.isFetching} onClick={() => { setPage(value => value - 1); setSelected([]) }}>Previous programs</button><span>Page {page + 1}</span><button type="button" disabled={!query.data.has_more || Boolean(editor) || query.isFetching} onClick={() => { setPage(value => value + 1); setSelected([]) }}>Next programs</button></>}</div>}
+    {visibleRows && selectionUnavailable && !editor && <p role="alert">Selection changed. Clear selection and choose available programs again.</p>}
+    {visibleRows && query.data && <div className="db-maintenance__actions"><label className="db-maintenance__check"><input type="checkbox" checked={archived} disabled={Boolean(editor)} onChange={event => { setArchived(event.target.checked); setPage(0); setSelected([]) }} />Show archived</label>{selected.length > 0 && <><button type="button" disabled={Boolean(editor)} onClick={() => setSelected([])}>Clear selection</button><button type="button" disabled={Boolean(editor) || selectionUnavailable} onClick={event => { if (!selectionUnavailable) open({ kind: 'work', programs: selectedPrograms }, event.currentTarget) }}>Plan work · {selected.length}</button></>}{(page > 0 || query.data.has_more) && <><button type="button" disabled={page === 0 || Boolean(editor) || query.isFetching} onClick={() => { setPage(value => value - 1); setSelected([]) }}>Previous programs</button><span>Page {page + 1}</span><button type="button" disabled={!query.data.has_more || Boolean(editor) || query.isFetching} onClick={() => { setPage(value => value + 1); setSelected([]) }}>Next programs</button></>}</div>}
     {notice && <PricingFeedback revision={notice} role="status">{notice.message}</PricingFeedback>}
   </section>
 }

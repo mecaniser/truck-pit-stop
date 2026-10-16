@@ -514,7 +514,7 @@ it('carries one reviewed maintenance block through fleet completion and preserve
   mockQueries({ status: 'in_progress' })
   const originalGet = apiMocks.get.getMockImplementation()!
   const item = program('program-1', { vehicle_id: 'veh-1', work: work('link-1', { repair_order_id: ORDER_ID, operation_ids: ['line-1'] }) })
-  apiMocks.get.mockImplementation((url: string) => url.endsWith('/maintenance') ? Promise.resolve({ data: { ...orderMaintenance([item]), repair_order_id: ORDER_ID } }) : originalGet(url))
+  apiMocks.get.mockImplementation((url: string, config?: { params?: { channel?: string } }) => { if (url.endsWith('/maintenance')) { if (config?.params?.channel !== 'fleet') return Promise.reject(new Error('422: fleet maintenance channel is required')); return Promise.resolve({ data: { ...orderMaintenance([item]), repair_order_id: ORDER_ID } }) } return originalGet(url, config) })
   apiMocks.post.mockImplementation((url: string, body: TargetRequest) => Promise.resolve({ data: url.endsWith('/maintenance-target-preview') ? targetPreview(body) : {} }))
   const user = userEvent.setup(); renderPanel()
   await user.click(await screen.findByRole('button', { name: 'Complete' }))
@@ -532,4 +532,13 @@ it('carries one reviewed maintenance block through fleet completion and preserve
   await screen.findByLabelText('Target review')
   await user.click(within(review).getByRole('button', { name: 'Finalize & Send Invoice' }))
   await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith(`/fleet/work-orders/${ORDER_ID}/complete`, expect.objectContaining({ mileage_out: 621566, maintenance_review: expect.objectContaining({ expected_review_fingerprint: 'review-1', expected_target_fingerprint: 'target-1', entries: [expect.objectContaining({ work_link_id: 'link-1', attestation: null })] }) })))
+  expect(apiMocks.get).toHaveBeenCalledWith(`/repair-orders/${ORDER_ID}/maintenance`, expect.objectContaining({ params: { channel: 'fleet' } }))
+})
+
+it.each(['garage_owner', 'fleet_manager'] as const)('uses fleet review and deletion presentation for %s removing linked work in the fleet panel', async role => {
+  useAuthStore.setState({ user: { id: 'user-1', tenant_id: 'tenant-1', role } as User, authSessionEpoch: 1, logoutInProgress: false }); mockQueries(); const originalGet = apiMocks.get.getMockImplementation()!
+  const item = program('program-1', { vehicle_id: 'veh-1', work: work('link-1', { repair_order_id: ORDER_ID, operation_ids: ['line-1'] }) })
+  apiMocks.get.mockImplementation((url: string, config?: { params?: { channel?: string } }) => { if (url.endsWith('/maintenance')) { if (config?.params?.channel !== 'fleet') return Promise.reject(new Error('422: fleet maintenance channel is required')); return Promise.resolve({ data: { ...orderMaintenance([item]), repair_order_id: ORDER_ID } }) } return originalGet(url, config) })
+  apiMocks.delete.mockResolvedValue({ data: {} }); const user = userEvent.setup(); renderPanel(); await user.click(await screen.findByRole('button', { name: 'Remove Replace air line' })); const dialog = await screen.findByRole('dialog', { name: 'Remove work' }); expect(dialog).toHaveTextContent('Oil service'); await user.click(within(dialog).getByRole('button', { name: 'Remove work' }))
+  await waitFor(() => expect(apiMocks.delete).toHaveBeenCalledWith(`/repair-orders/${ORDER_ID}/price-build/lines/line-1`, { params: { pricing_presentation: 'fleet', expected_maintenance_fingerprint: 'review-1' } })); expect(apiMocks.get).toHaveBeenCalledWith(`/repair-orders/${ORDER_ID}/maintenance`, expect.objectContaining({ params: { channel: 'fleet' } }))
 })

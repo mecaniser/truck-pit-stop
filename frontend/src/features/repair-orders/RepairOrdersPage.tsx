@@ -1823,7 +1823,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       mileageOut?: number | null
       reviewNotes?: string
     }) => {
-      return maintenanceFinalization.execute(orderId, selectedOrder?.vehicle_id ?? '', currentUser?.role === 'fleet_manager' ? 'fleet' : 'shop', async maintenanceReview => {
+      return maintenanceFinalization.execute(orderId, selectedOrder?.vehicle_id ?? '', 'fleet', async maintenanceReview => {
       const response = await api.post(`/fleet/work-orders/${orderId}/complete`, {
         mileage_out: woOut ?? null,
         review_notes: managerNotes || null,
@@ -2157,10 +2157,11 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     },
   })
 
-  const maintenanceRemoval = useMaintenanceRemoval(selectedOrder?.id ?? '')
+  const maintenanceChannel = currentUser?.role === 'fleet_manager' ? 'fleet' : 'shop'
+  const maintenanceRemoval = useMaintenanceRemoval(selectedOrder?.id ?? '', maintenanceChannel)
   const removeLaborMutation = useMutation({
     mutationFn: async ({ orderId, laborId }: { orderId: string; laborId: string }) => {
-      await maintenanceRemoval.execute(orderId, laborId, 'this operation', async fingerprint => { await api.delete(`/repair-orders/${orderId}/labor/${laborId}`, ...(fingerprint ? [{ params: { expected_maintenance_fingerprint: fingerprint } }] : [])) })
+      await maintenanceRemoval.execute(orderId, laborId, 'this operation', async fingerprint => { await api.delete(`/repair-orders/${orderId}/labor/${laborId}`, { params: { pricing_presentation: maintenanceChannel, ...(fingerprint ? { expected_maintenance_fingerprint: fingerprint } : {}) } }) })
     },
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })

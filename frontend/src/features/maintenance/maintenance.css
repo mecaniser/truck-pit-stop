@@ -34,7 +34,7 @@
 .db-maintenance__dialog .db-slide-panel-form__header p, .db-maintenance__dialog .db-slide-panel-form__header button, .db-maintenance__dialog .db-slide-panel-form__footer button { color: var(--workspace-text, #14243a); }
 .db-maintenance__dialog .db-slide-panel-form__header button { min-width: 44px; min-height: 44px; }
 .db-maintenance__dialog .db-slide-panel-form__submit { background: var(--personal-accent-600, #0e7490) !important; color: var(--personal-accent-foreground, #fff) !important; }
-@media (max-width: 640px) { .db-maintenance button, .db-maintenance .db-maintenance__check, .db-maintenance :is(input, select, textarea) { min-height: 44px; } .db-maintenance__fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } .db-maintenance__service { grid-template-columns: minmax(0, 1fr); } .db-maintenance .db-maintenance__check input { min-height: 18px; } }
+@media (max-width: 640px) { .db-maintenance button, .db-maintenance .db-maintenance__check, .db-maintenance :is(input, select, textarea) { min-height: 44px; } .db-maintenance__fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } .db-maintenance__fields > .db-datepicker { grid-column: 1 / -1; } .db-maintenance__service { grid-template-columns: minmax(0, 1fr); } .db-maintenance .db-maintenance__check input { min-height: 18px; } }
 
 .db-maintenance__more { background: color-mix(in srgb, var(--workspace-text, #14243a) 4%, transparent); border-radius: 6px; padding: 6px 8px; }
 

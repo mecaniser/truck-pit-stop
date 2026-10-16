@@ -1326,7 +1326,6 @@ function RecognizePMModal({ entry, truck, onClose, onDone }: {
         <DatePicker
           label="PM performed date"
           value={performedOn}
-          max={new Date().toISOString().slice(0, 10)}
           onChange={setPerformedOn}
         />
         <label>

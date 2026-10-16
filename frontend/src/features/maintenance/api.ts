@@ -18,10 +18,10 @@ export function usePrograms(vehicleId: string, channel: Channel, archived = fals
     queryFn: async ({ signal }) => { const result = programPageSchema.parse((await api.get(maintenancePath(vehicleId), { signal, params: { channel, include_archived: archived, skip: page * 25, limit: 25 } })).data); result.items.forEach(program => scopedProgram(program, vehicleId)); return result },
   })
 }
-export function useOrderMaintenance(orderId: string, enabled: boolean) {
+export function useOrderMaintenance(orderId: string, channel: Channel, enabled: boolean) {
   const scope = usePricingScope()
-  return useQuery({ queryKey: ['maintenance-order', scope, orderId], enabled: enabled && Boolean(orderId), gcTime: 0, retry: false, refetchOnWindowFocus: false,
-    queryFn: async ({ signal }) => { const result = orderMaintenanceSchema.parse((await api.get(`/repair-orders/${orderId}/maintenance`, { signal })).data); if (result.repair_order_id !== orderId) throw new Error('Maintenance response does not match this order.'); return result },
+  return useQuery({ queryKey: ['maintenance-order', scope, orderId, channel], enabled: enabled && Boolean(orderId), gcTime: 0, retry: false, refetchOnWindowFocus: false,
+    queryFn: async ({ signal }) => { const result = orderMaintenanceSchema.parse((await api.get(`/repair-orders/${orderId}/maintenance`, { signal, params: { channel } })).data); if (result.repair_order_id !== orderId) throw new Error('Maintenance response does not match this order.'); return result },
   })
 }
 export class MaintenanceCancelled extends Error { constructor() { super('Maintenance context changed.'); this.name = 'MaintenanceCancelled' } }

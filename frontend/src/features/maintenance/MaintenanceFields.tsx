@@ -22,11 +22,12 @@ export function Reading({ value }: { value: Observation | null }) {
 }
 export function TargetValues({ value }: { value: Targets }) { const values = [value.due_on, value.odometer_miles === null ? null : `${value.odometer_miles.toLocaleString()} mi`, value.engine_hours === null ? null : `${value.engine_hours} h`].filter(Boolean); return <span>{values.join(' · ') || 'No targets set'}</span> }
 export function TargetReview({ preview, names = {} }: { preview: TargetPreview; names?: Record<string, string> }) {
+  const affectedOrders = preview.affected_work.filter((work, index, all) => !work.repair_order_id || all.findIndex(other => other.repair_order_id === work.repair_order_id) === index)
   return <PricingFeedback revision={preview} role="status"><div className="db-maintenance__review" aria-label="Target review">{preview.items.map((item, index) => <div key={item.program_id ?? index}>
     <strong>{names[item.program_id ?? 'new'] ? `${names[item.program_id ?? 'new']} · ` : ''}{label(item.outcome)}</strong><div><small>Before </small><TargetValues value={item.previous_targets} /></div><div><small>After </small><TargetValues value={item.proposed_targets} /></div>
     {item.resolved_attestation && <div>Service {item.resolved_attestation.performed_on}{item.resolved_attestation.readings.odometer_miles && <Reading value={item.resolved_attestation.readings.odometer_miles} />}{item.resolved_attestation.readings.engine_hours && <Reading value={item.resolved_attestation.readings.engine_hours} />}</div>}
     {item.missing.length > 0 && <p>Still needed: {item.missing.map(label).join(', ')}.</p>}{item.warnings.map((warning, i) => <p key={i}>{warning.message}</p>)}
-  </div>)}{preview.warnings.map((warning, i) => <p key={i}>{warning.message}</p>)}{preview.affected_work.length > 0 && <p>Affected work: {preview.affected_work.map(work => work.order_number || 'Saved work').join(', ')}.</p>}</div></PricingFeedback>
+  </div>)}{preview.warnings.map((warning, i) => <p key={i}>{warning.message}</p>)}{affectedOrders.length > 0 && <p>Affected work: {affectedOrders.map(work => work.order_number || 'Saved work').join(', ')}.</p>}</div></PricingFeedback>
 }
 export function ServicePicker({ value, name, onChange, disabled = false }: { value: string; name?: string; onChange: (id: string) => void; disabled?: boolean }) {
   const scope = usePricingScope(); const [search, setSearch] = useState(''); const queryText = useDebouncedValue(search, 250)

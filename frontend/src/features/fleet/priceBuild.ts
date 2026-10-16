@@ -290,11 +290,11 @@ export function useUpdateLine(orderId: string) {
 
 export function useRemoveLine(orderId: string) {
   const qc = useQueryClient()
-  const maintenance = useMaintenanceRemoval(orderId)
+  const maintenance = useMaintenanceRemoval(orderId, 'fleet')
   const mutation = useMutation<unknown, unknown, string | { lineId: string; label: string; message?: string }>({
     mutationFn: async value => {
       const { lineId, label, message } = typeof value === 'string' ? { lineId: value, label: 'this operation', message: undefined } : value
-      return maintenance.execute(orderId, lineId, label, async fingerprint => (await api.delete(`/repair-orders/${orderId}/price-build/lines/${lineId}`, ...(fingerprint ? [{ params: { expected_maintenance_fingerprint: fingerprint } }] : []))).data, message)
+      return maintenance.execute(orderId, lineId, label, async fingerprint => (await api.delete(`/repair-orders/${orderId}/price-build/lines/${lineId}`, { params: { pricing_presentation: 'fleet', ...(fingerprint ? { expected_maintenance_fingerprint: fingerprint } : {}) } })).data, message)
     },
     onSuccess: () => invalidateOrder(qc, orderId),
     onError: (error) => { if (!(error instanceof MaintenanceCancelled)) toast.error(errorMessage(error, 'Unable to remove this line')) },

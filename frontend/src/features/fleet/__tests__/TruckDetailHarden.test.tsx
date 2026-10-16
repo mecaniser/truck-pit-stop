@@ -268,3 +268,21 @@ it.each([
   await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message))
   expect(screen.getByLabelText('Odometer at service')).toHaveValue('0'); expect(screen.getByLabelText('PM performed date')).toHaveValue('2026-10-01'); expect(screen.getByRole('dialog', { name: 'Recognize prior PM' })).toBeInTheDocument()
 })
+
+it('allows a current shop service day ahead of UTC and leaves future-day validation to the server', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-16T22:00:00Z'))
+  const user = userEvent.setup()
+  apiMocks.get.mockImplementation((url: string) => {
+    if (url === `/fleet/trucks/${truck.id}`) return Promise.resolve({ data: detail })
+    if (url === `/fleet/trucks/${truck.id}/history`) return Promise.resolve({ data: [{ id: 'historical-pm', kind: 'Repair', date: '2026-10-01', summary: 'Preventive maintenance', odometer: null }] })
+    return Promise.resolve({ data: [] })
+  })
+  const message = 'The service date cannot be in the future for this shop.'
+  apiMocks.post.mockRejectedValue({ response: { status: 422, data: { detail: { code: 'maintenance_future_service', message } } } })
+  try {
+    renderTruck(); await user.click(await screen.findByRole('button', { name: /Service history/ })); await user.click(await screen.findByRole('button', { name: 'Recognize as PM' }))
+    const field = screen.getByLabelText('PM performed date'); await user.click(field.parentElement!.querySelector('button')!)
+    const currentShopDay = screen.getByRole('dialog', { name: 'PM performed date' }).querySelector<HTMLButtonElement>('[data-day="2026-10-17"]')!; expect(currentShopDay).toBeEnabled(); await user.click(currentShopDay); expect(field).toHaveValue('2026-10-17'); expect(screen.getByLabelText('Odometer at service')).toHaveValue('')
+    await user.clear(field); await user.type(field, '2026-10-18'); await user.type(screen.getByLabelText('Odometer at service'), '0'); await user.click(screen.getByRole('button', { name: 'Record PM completion' })); await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message)); expect(field).toHaveValue('2026-10-18'); expect(screen.getByLabelText('Odometer at service')).toHaveValue('0'); expect(screen.getByRole('dialog', { name: 'Recognize prior PM' })).toBeInTheDocument()
+  } finally { vi.useRealTimers() }
+})

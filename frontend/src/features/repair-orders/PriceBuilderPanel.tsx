@@ -2077,11 +2077,12 @@ export default function PriceBuilderPanel({
   // bundled parts go with it. That is deliberate — a tech's parts should not
   // vanish with a labor line — but silently moving them left the operator to
   // discover them loose later, so say what happened.
-  const maintenanceRemoval = useMaintenanceRemoval(orderId)
+  const maintenanceChannel = staffRole === 'fleet_manager' ? 'fleet' : 'shop'
+  const maintenanceRemoval = useMaintenanceRemoval(orderId, maintenanceChannel)
   const removeLine = useMutation({
     mutationFn: async ({ lineId }: { lineId: string; keptParts: number }) => {
       await maintenanceRemoval.execute(orderId, lineId, summary?.lines.find(line => line.id === lineId)?.description || 'this operation', async fingerprint => {
-        await api.delete(`/repair-orders/${orderId}/price-build/lines/${lineId}`, ...(fingerprint ? [{ params: { expected_maintenance_fingerprint: fingerprint } }] : []))
+        await api.delete(`/repair-orders/${orderId}/price-build/lines/${lineId}`, { params: { pricing_presentation: maintenanceChannel, ...(fingerprint ? { expected_maintenance_fingerprint: fingerprint } : {}) } })
       })
     },
     onSuccess: async (_data, variables) => {

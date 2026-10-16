@@ -7,11 +7,28 @@ const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn(), a
 vi.mock('@/lib/api', () => ({ default: { get: mocks.get, post: mocks.post, patch: mocks.patch } }))
 vi.mock('@/stores/authStore', () => ({ useAuthStore: Object.assign((select: (state: typeof mocks.auth) => unknown) => select(mocks.auth), { getState: () => mocks.auth }) }))
 import MaintenanceSection from '../MaintenanceSection'
-import { observation, page, program, targetPreview } from './fixtures'
-import type { TargetRequest } from '../contract'
+import { observation, page, program, targetPreview, workPreview } from './fixtures'
+import type { Program, TargetRequest, WorkRequest } from '../contract'
 function setup() { const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } }); const component = <QueryClientProvider client={client}><MaintenanceSection vehicleId="vehicle-1" customerId="customer-1" channel="shop" /></QueryClientProvider>; return { client, ...render(component), component } }
 beforeEach(() => { mocks.get.mockReset(); mocks.post.mockReset(); mocks.patch.mockReset(); mocks.auth.user = { id: 'user-1', tenant_id: 'tenant-1', role: 'garage_owner' }; mocks.auth.authSessionEpoch = 1; mocks.get.mockImplementation(async (url: string) => ({ data: url === '/services/typeahead' ? [{ id: 'service-1', name: 'Preventive service' }] : page() })) })
 describe('shared maintenance section', () => {
+  it.each([
+    ['missing', null],
+    ['archived', { archived_at: '2026-10-16T12:00:00Z' }],
+    ['not permitted', { capabilities: { can_edit: true, can_plan: false, can_record_evidence: true, can_archive: true } }],
+    ['without a service', { service: null }],
+  ] as [string, Partial<Program> | null][])('blocks aggregate planning when a selected program becomes %s until explicit reselection', async (_state, changes) => {
+    mocks.get.mockImplementation(async (url: string) => ({ data: url.includes('maintenance-programs') ? page([program(), program('program-2')]) : { items: [], has_more: false } })); mocks.post.mockImplementation(async (_url: string, body: WorkRequest) => ({ data: workPreview(body) }))
+    const user = userEvent.setup(); const view = setup(); await user.click(await screen.findByRole('checkbox', { name: 'Select Oil service' })); await user.click(screen.getByRole('checkbox', { name: 'Select Safety inspection' }))
+    await act(async () => { view.client.setQueriesData({ queryKey: ['maintenance'] }, page([program(), ...(changes ? [program('program-2', changes)] : [])])) })
+    const plan = screen.getByRole('button', { name: 'Plan work · 2' }); await waitFor(() => expect(plan).toBeDisabled()); expect(screen.getByRole('alert')).toHaveTextContent('Selection changed. Clear selection and choose available programs again.'); expect(screen.getByRole('checkbox', { name: 'Select Oil service' })).toBeChecked(); await user.click(plan); expect(screen.queryByRole('button', { name: 'Review work' })).not.toBeInTheDocument(); expect(mocks.post).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Clear selection' })); expect(screen.queryByRole('alert')).not.toBeInTheDocument(); expect(screen.getByRole('checkbox', { name: 'Select Oil service' })).not.toBeChecked(); await user.click(screen.getByRole('checkbox', { name: 'Select Oil service' })); await user.click(screen.getByRole('button', { name: 'Plan work · 1' })); await user.click(screen.getByRole('button', { name: 'Review work' })); await waitFor(() => expect(mocks.post).toHaveBeenCalled()); expect(mocks.post.mock.calls[0][1].programs).toEqual([{ program_id: 'program-1', expected_version: 1 }])
+  })
+  it('keeps every opened work snapshot when a later refresh removes a selected program', async () => {
+    mocks.get.mockImplementation(async (url: string) => ({ data: url.includes('maintenance-programs') ? page([program(), program('program-2')]) : { items: [], has_more: false } })); mocks.post.mockImplementation(async (_url: string, body: WorkRequest) => ({ data: workPreview(body) }))
+    const user = userEvent.setup(); const view = setup(); await user.click(await screen.findByRole('checkbox', { name: 'Select Oil service' })); await user.click(screen.getByRole('checkbox', { name: 'Select Safety inspection' })); await user.click(screen.getByRole('button', { name: 'Plan work · 2' }))
+    await act(async () => { view.client.setQueriesData({ queryKey: ['maintenance'] }, page([program('program-1', { version: 2 })])) }); await user.click(screen.getByRole('button', { name: 'Review work' })); await waitFor(() => expect(mocks.post).toHaveBeenCalled()); expect(mocks.post.mock.calls[0][1].programs).toEqual([{ program_id: 'program-1', expected_version: 1 }, { program_id: 'program-2', expected_version: 1 }])
+  })
   it('distinguishes a zero interval from an all-blank configuration without offering saved-state reload', async () => {
     const user = userEvent.setup(); setup(); await screen.findByText('Oil service'); await user.click(screen.getByRole('button', { name: 'Edit' })); await user.clear(screen.getByLabelText('Days')); await user.type(screen.getByLabelText('Days'), '0'); await user.click(screen.getByRole('button', { name: 'Save program' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Intervals must be positive. Leave unused fields blank.'); expect(screen.getByLabelText('Miles')).toHaveValue('1000'); expect(screen.getByLabelText('Days')).toHaveValue('0'); expect(screen.queryByRole('button', { name: 'Discard draft & reload saved' })).not.toBeInTheDocument(); expect(mocks.patch).not.toHaveBeenCalled(); expect(mocks.post).not.toHaveBeenCalled()

@@ -23,7 +23,7 @@ export function useMaintenanceFinalization(context: string) {
     const active = () => !signal.aborted && live.current === captured && isPricingScopeCurrent(scope)
     if (!active()) throw new MaintenanceCancelled()
     let raw: unknown
-    try { raw = (await api.get(`/repair-orders/${orderId}/maintenance`, { signal })).data } catch (failure) { if (!active()) throw new MaintenanceCancelled(); throw failure }
+    try { raw = (await api.get(`/repair-orders/${orderId}/maintenance`, { signal, params: { channel } })).data } catch (failure) { if (!active()) throw new MaintenanceCancelled(); throw failure }
     if (!active()) throw new MaintenanceCancelled()
     const data = orderMaintenanceSchema.parse(raw)
     if (data.repair_order_id !== orderId) throw new Error('Invalid order maintenance response.')
@@ -53,7 +53,7 @@ function FinalizationPanel({ pending, onCancel, onDone }: { pending: Pending; on
   })
   const request = (): Extract<TargetRequest, { purpose: 'completion' }> => ({ purpose: 'completion', channel: pending.channel, repair_order_id: pending.orderId, expected_review_fingerprint: order.expected_review_fingerprint, entries: entries() })
   const review = async () => { try { setError(null); const body = request(); setPreview(await command.run(`/vehicles/${pending.vehicleId}/maintenance-target-preview`, body, raw => parseTargetPreview(raw, body), 'post', true)) } catch (failure) { if (!(failure instanceof MaintenanceCancelled)) setError({ message: maintenanceError(failure) }) } }
-  const reload = async () => { try { const next = orderMaintenanceSchema.parse((await api.get(`/repair-orders/${pending.orderId}/maintenance`, { signal: controller.current.signal })).data); if (!active()) return; if (next.repair_order_id !== pending.orderId) throw new Error('Invalid maintenance review'); next.programs.forEach(program => scopedProgram(program, pending.vehicleId)); setOrder(next); setPreview(null); setError(null) } catch (failure) { if (active()) setError({ message: maintenanceError(failure) }) } }
+  const reload = async () => { try { const next = orderMaintenanceSchema.parse((await api.get(`/repair-orders/${pending.orderId}/maintenance`, { signal: controller.current.signal, params: { channel: pending.channel } })).data); if (!active()) return; if (next.repair_order_id !== pending.orderId) throw new Error('Invalid maintenance review'); next.programs.forEach(program => scopedProgram(program, pending.vehicleId)); setOrder(next); setPreview(null); setError(null) } catch (failure) { if (active()) setError({ message: maintenanceError(failure) }) } }
   const finish = async () => {
     if (!preview || saving) return
     setSaving(true); setError(null)
