@@ -191,17 +191,23 @@ async function summary(context, identity, ranges) {
 }
 async function readDriverVehicleVin(context,link,{expectedVin=null,readVin=readVehicleVin,onRetry=()=>{}}={}) {
  // readVehicleVin opens a fresh document and validates the provider route on
- // every attempt. Retry only a missing rendered VIN, never a conflicting VIN
- // or a source/ambiguity error. Missing verification is not a changed VIN.
+ // every attempt. Missing VINs and page timeouts share the same bounded budget;
+ // conflicting VINs and source/ambiguity errors still fail immediately.
  const attempts=3;
+ let timeoutError=null;
  for(let attempt=1;attempt<=attempts;attempt++) {
-  const vin=await readVin(context,link);
+  let vin=null,timedOut=false;
+  try {vin=await readVin(context,link);} catch(error) {
+   if(error?.name!=='TimeoutError')throw error;
+   timeoutError=error;timedOut=true;
+  }
   if(vin!==null) {
    if(expectedVin!==null&&vin!==expectedVin)throw new Error('vehicle_identity_changed');
    return vin;
   }
-  if(attempt<attempts)onRetry({attempt,max_attempts:attempts});
+  if(attempt<attempts)onRetry({attempt,max_attempts:attempts,...(timedOut?{reason:'ui_timeout'}:{})});
  }
+ if(timeoutError)throw timeoutError;
  if(expectedVin!==null)throw new Error('vehicle_identity_unavailable');
  return null;
 }
