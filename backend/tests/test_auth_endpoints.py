@@ -212,6 +212,8 @@ async def test_refresh_rejects_rotated_token_when_grace_disabled(client, monkeyp
     original_refresh = reg.json()["refresh_token"]
 
     assert (await client.post(REFRESH_URL, json={"refresh_token": original_refresh})).status_code == 200
+    # A replay without the current browser credential remains unauthorized.
+    client.cookies.clear()
     replayed = await client.post(REFRESH_URL, json={"refresh_token": original_refresh})
     assert replayed.status_code == 401
     assert "revoked" in replayed.json()["detail"].lower()
