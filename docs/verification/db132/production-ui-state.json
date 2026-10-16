@@ -1,0 +1,28 @@
+{
+  "migration": "174_parts_pricing_matrix",
+  "pricing_tables": [
+    "parts_price_matrices",
+    "parts_price_matrix_revisions",
+    "parts_pricing_events",
+    "parts_pricing_policies"
+  ],
+  "pricing_counts": {
+    "parts_price_matrices": 0,
+    "parts_price_matrix_revisions": 0,
+    "parts_pricing_events": 0,
+    "parts_pricing_policies": 0
+  },
+  "configured_inventory": 0,
+  "configured_default": 0,
+  "baseline_order": [
+    {
+      "id": "bce9b62b-a7e3-4ba9-a740-6ced6857e9b3",
+      "order_number": "TPS-828ACD84-000056",
+      "status": "in_progress",
+      "total_parts_cost": "0.00",
+      "total_labor_cost": "0.00",
+      "total_cost": "0.00",
+      "deleted_at": "2026-10-15 19:56:49.214269+00:00"
+    }
+  ]
+}

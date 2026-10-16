@@ -1,0 +1,7 @@
+{
+  "deployment": "ebc872be-cee4-4598-8165-79406459d9cf",
+  "sample_lines": 150,
+  "server_5xx": 0,
+  "fatal_or_schema_errors": 0,
+  "started": true
+}
