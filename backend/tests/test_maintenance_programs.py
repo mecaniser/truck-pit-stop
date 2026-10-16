@@ -304,7 +304,7 @@ async def test_rebaseline_generation_excludes_earlier_same_day_reading(db_sessio
 def test_fleet_reading_projection_removes_private_nested_source_identity():
     original={'odometer_miles':{'source':'service_evidence','source_id':str(uuid4()),'value':'120000'},'engine_hours':None}
     assert service.safe_readings(original,'fleet')['odometer_miles']['source_id'] is None
-    assert service.safe_readings(original,'shop')==original
+    assert service.safe_readings(original,'shop',UserRole.GARAGE_OWNER)==original
     assert original['odometer_miles']['source_id'] is not None
 
 

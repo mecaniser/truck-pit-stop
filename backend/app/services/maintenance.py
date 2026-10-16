@@ -302,9 +302,9 @@ async def safe_work(db,actor,channel,link):
             'order_number':order.order_number if can_open else None,'state':link.state,'operation_ids':[str(value) for value in operation_ids] if can_open else [],'can_open':can_open}
 
 
-def safe_readings(readings, channel):
+def safe_readings(readings, channel, role=None):
     result = json_value(readings)
-    if channel == 'fleet':
+    if channel == 'fleet' or role not in {UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN}:
         for reading in result.values():
             if reading and reading.get('source') == 'service_evidence':
                 # Native source links have their own currently authorized
@@ -314,7 +314,7 @@ def safe_readings(readings, channel):
 
 
 async def program_view(db,actor,channel,program,vehicle,tenant,as_of,*,candidates=None):
-    readings=safe_readings(await current_readings(db,program,vehicle,as_of,tenant.timezone,candidates=candidates), channel)
+    readings=safe_readings(await current_readings(db,program,vehicle,as_of,tenant.timezone,candidates=candidates), channel, actor.role)
     links=list((await db.scalars(select(WorkLink).where(WorkLink.tenant_id==program.tenant_id,WorkLink.program_id==program.id,WorkLink.state.in_(OCCUPYING)).order_by(WorkLink.cycle.desc(),WorkLink.id))).all())
     work=next((row for row in links if row.cycle==program.current_cycle),links[0] if links else None)
     service=await service_ref(db,program.tenant_id,program.service_id,saved=program.service_snapshot)
@@ -574,7 +574,7 @@ async def config_preview(db, actor, vehicle, tenant, body, *, lock=False):
         proposed, missing = rules.next_targets(values, resolved['performed_on'], resolved['readings'], legacy=mode == 'legacy')
     item = {'program_id': str(program.id) if program else None, 'current_version': program.version if program else None,
             'outcome': 'targets_updated', 'previous_targets': targets(program) if program else dict(rules.EMPTY_TARGETS), 'proposed_targets': proposed,
-            'resolved_attestation': {**resolved, 'readings': safe_readings(resolved['readings'], body.channel)} if resolved else None, 'missing': missing, 'warnings': []}
+            'resolved_attestation': {**resolved, 'readings': safe_readings(resolved['readings'], body.channel, actor.role)} if resolved else None, 'missing': missing, 'warnings': []}
     return {'schema_version': 1, 'as_of': rules.iso(as_of), 'timezone': tenant.timezone, 'purpose': 'configuration',
             'expected_target_fingerprint': target_digest(actor, vehicle.id, body, [item], dependencies, [program] if program else [], []),
             'items': [item], 'affected_work': [], 'warnings': []}
@@ -716,7 +716,7 @@ async def completion_view(db, actor, channel, row):
                 can_open, source_id = True, str(source.id)
     return {'id': str(row.id), 'program_id': str(row.program_id), 'cycle': row.cycle, 'work_link_id': str(row.work_link_id) if row.work_link_id else None,
         'action': row.action, 'result': row.result, 'performed_on': row.performed_on.isoformat() if row.performed_on else None,
-        'readings': safe_readings(row.readings, channel), 'source': {'kind': row.source_kind, 'id': source_id, 'can_open': can_open, 'label': label},
+        'readings': safe_readings(row.readings, channel, actor.role), 'source': {'kind': row.source_kind, 'id': source_id, 'can_open': can_open, 'label': label},
         'previous_targets': row.previous_targets, 'next_targets': row.next_targets,
         'supersedes_id': str(row.supersedes_id) if row.supersedes_id else None, 'recorded_at': rules.iso(row.created_at)}
 
@@ -1240,7 +1240,7 @@ async def completion_preview(db, actor, vehicle, tenant, body, *, lock=False):
             outcome = 'review_required'
         items.append({'program_id': str(program.id), 'current_version': program.version, 'outcome': outcome,
             'previous_targets': targets(program), 'proposed_targets': targets(program) if missing or program.review_codes else proposed,
-            'resolved_attestation': {**attestation, 'readings': safe_readings(attestation['readings'], body.channel)} if attestation else None,
+            'resolved_attestation': {**attestation, 'readings': safe_readings(attestation['readings'], body.channel, actor.role)} if attestation else None,
             'missing': missing, 'warnings': []})
     affected = [await safe_work(db, actor, body.channel, link) for link in links]
     fingerprint = target_digest(actor, vehicle.id, body, items, [review, *dependencies], list(programs.values()), affected)
@@ -1396,6 +1396,29 @@ async def correction_work(db, actor, channel, program, original):
     return links, safe
 
 
+async def source_evidence_current(db, actor, channel, vehicle, program, evidence, *, accepted_id=None):
+    try:
+        _, _, digest = await source_context(db, actor, channel, vehicle,
+            wire.SourceRef(kind=evidence.source_kind, id=evidence.source_id))
+    except HTTPException:
+        return False
+    if digest != evidence.source_fingerprint:
+        return False
+    if evidence.id == accepted_id:
+        return True  # This exact source was explicitly reviewed in this locked command.
+    events = list((await db.scalars(select(Event).where(Event.tenant_id == actor.tenant_id,
+        Event.program_id == program.id).order_by(Event.version.desc()))).all())
+    accepted_version = next((event.version for event in events
+        if (event.after_values or {}).get('completion_id') == str(evidence.id)), None)
+    if accepted_version is None:
+        return False
+    # Restoring the same source bytes does not acknowledge an intervening
+    # reopen/delete/edit. Only a later explicit evidence acceptance does that.
+    return not any(event.version > accepted_version and event.action == 'source_changed'
+        and (event.after_values or {}).get('source_kind') == evidence.source_kind
+        and (event.after_values or {}).get('source_id') == str(evidence.source_id) for event in events)
+
+
 async def prior_valid_targets(db, actor, channel, vehicle, program, original):
     candidates = list((await db.scalars(select(Completion).where(Completion.tenant_id == actor.tenant_id, Completion.program_id == program.id,
         Completion.id != original.id, Completion.result.in_({'advanced', 'reaffirmed'}), Completion.performed_on < original.performed_on)
@@ -1412,11 +1435,7 @@ async def prior_valid_targets(db, actor, channel, vehicle, program, original):
                 Completion.program_id == program.id, Completion.id == anchor.supersedes_id)) if anchor.supersedes_id else None
         if anchor is None or anchor.result != 'advanced':
             continue  # Reaffirming pending/history-only evidence cannot create a baseline.
-        try:
-            _, _, digest = await source_context(db, actor, channel, vehicle, wire.SourceRef(kind=row.source_kind, id=row.source_id))
-        except HTTPException:
-            continue
-        if digest == row.source_fingerprint:
+        if await source_evidence_current(db, actor, channel, vehicle, program, row):
             return row.next_targets, row.id
     return (program.baseline_snapshot or {}).get('targets') or {key: None for key in ('due_on', 'odometer_miles', 'engine_hours')}, None
 
@@ -1466,7 +1485,7 @@ async def evidence_preview(db, actor, vehicle, tenant, body, *, lock=False):
             proposed, _ = await prior_valid_targets(db, actor, body.channel, vehicle, program, original)
     item = {'program_id': str(program.id), 'current_version': program.version, 'outcome': outcome,
         'previous_targets': targets(program), 'proposed_targets': proposed,
-        'resolved_attestation': {**attestation, 'readings': safe_readings(attestation['readings'], body.channel)} if attestation else None,
+        'resolved_attestation': {**attestation, 'readings': safe_readings(attestation['readings'], body.channel, actor.role)} if attestation else None,
         'missing': missing, 'warnings': []}
     fingerprint = target_digest(actor, vehicle.id, body, [item], [source_digest, *dependencies], [program], affected)
     return {'schema_version': 1, 'as_of': rules.iso(now()), 'timezone': tenant.timezone, 'purpose': 'evidence',
@@ -1480,7 +1499,7 @@ async def unresolved_pending(db, program):
         WorkLink.state.in_({'pending_evidence', 'review_required'})).order_by(Completion.id))).all())
 
 
-async def source_review_resolved(db, actor, channel, vehicle, program):
+async def source_review_resolved(db, actor, channel, vehicle, program, *, accepted_id=None):
     required = []
     if program.controlling_completion_id:
         controlling = await db.scalar(select(Completion).where(Completion.tenant_id == actor.tenant_id,
@@ -1504,12 +1523,7 @@ async def source_review_resolved(db, actor, channel, vehicle, program):
         if leaf.action != 'revoke':
             required.append(leaf)
     for evidence in required:
-        try:
-            _, _, digest = await source_context(db, actor, channel, vehicle,
-                wire.SourceRef(kind=evidence.source_kind, id=evidence.source_id))
-        except HTTPException:
-            return False
-        if digest != evidence.source_fingerprint:
+        if not await source_evidence_current(db, actor, channel, vehicle, program, evidence, accepted_id=accepted_id):
             return False
     return True
 
@@ -1579,7 +1593,7 @@ async def evidence_command(db, actor, vehicle_id, body, key):
                 program.target_provenance = {'kind': 'completion' if prior else 'baseline', 'evidence_id': str(prior) if prior else None, 'confirmed_at': rules.iso(now())}
             else:
                 program.controlling_completion_id = row.id
-        if await source_review_resolved(db, actor, body.channel, vehicle, program):
+        if await source_review_resolved(db, actor, body.channel, vehicle, program, accepted_id=row.id):
             program.review_codes = [code for code in program.review_codes or [] if not code.startswith('source_')]
     append_event(db, actor, program, row.action, before, reason=getattr(intent, 'reason', None), link=link, extra={'completion_id': str(row.id)})
     await db.flush()

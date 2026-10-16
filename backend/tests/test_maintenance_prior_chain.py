@@ -104,3 +104,70 @@ async def test_revoked_reaffirmed_chain_cannot_return_as_prior_controller(db_ses
     later=await evidence(db_session,a,p,{'action':'recognize','source':{'kind':'repair_order','id':str(next_source.id)},'attestation':actual(5,110000)})
     revoked=await evidence(db_session,a,p,{'action':'revoke','completion_id':later['completion']['id'],'reason':'Later entry was incorrect','acknowledged_work_link_ids':[]})
     assert revoked['program']['targets']==baseline['program']['targets'] and p.controlling_completion_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('lifecycle', ['delete_restore', 'reopen_recomplete'])
+async def test_older_reaffirm_cannot_clear_current_controller_delete_restore_review(db_session,lifecycle):
+    a=await seed(db_session);a.order.status=RepairOrderStatus.COMPLETED;await db_session.commit()
+    saved,_=await create(db_session,a);p=await db_session.get(Program,UUID(saved['program']['id']))
+    first=await evidence(db_session,a,p,{'action':'recognize','source':{'kind':'repair_order','id':str(a.order.id)},'attestation':actual(10,100000)})
+    second_source=await source(db_session,a,'INDEPENDENT-CURRENT-ABA')
+    second=await evidence(db_session,a,p,{'action':'recognize','source':{'kind':'repair_order','id':str(second_source.id)},'attestation':actual(5,110000)})
+    if lifecycle == 'delete_restore':
+        await service.order_lifecycle(db_session,a.owner,second_source,'delete');second_source.deleted_at=datetime.now(timezone.utc);await db_session.commit()
+        await service.order_lifecycle(db_session,a.owner,second_source,'restore');second_source.deleted_at=None;await db_session.commit()
+    else:
+        await service.order_lifecycle(db_session,a.owner,second_source,'reopen');second_source.status=RepairOrderStatus.IN_PROGRESS;await db_session.commit()
+        second_source.status=RepairOrderStatus.COMPLETED;await db_session.commit()
+    await db_session.refresh(p)
+    assert p.review_codes==['source_changed']
+    corrected=await evidence(db_session,a,p,{'action':'reaffirm','completion_id':first['completion']['id'],'reason':'Verify older original service','acknowledged_work_link_ids':[]})
+    assert p.controlling_completion_id==UUID(second['completion']['id'])
+    assert corrected['program']['review']['required'] and 'source_changed' in corrected['program']['review']['codes'],corrected['program']['review']
+    accepted=await evidence(db_session,a,p,{'action':'reaffirm','completion_id':second['completion']['id'],'reason':'Explicitly reviewed restored current source','acknowledged_work_link_ids':[]})
+    assert not accepted['program']['review']['required']
+    assert accepted['program']['targets']==second['program']['targets']
+
+@pytest.mark.asyncio
+async def test_receptionist_history_does_not_leak_private_outside_reading_id(db_session):
+    import json
+    from types import SimpleNamespace
+    from app.db.models.user import UserRole
+    from app.services import external_service
+    from test_external_service import create as external_create
+    a=await seed(db_session)
+    performed=(datetime.now(timezone.utc).date()-timedelta(days=1)).isoformat()
+    record=(await external_service.mutate(db_session,a.vehicle.id,a.owner,external_create(service_date=performed))).record
+    await db_session.commit()
+    saved,_=await create(db_session,a);p=await db_session.get(Program,UUID(saved['program']['id']))
+    result=await evidence(db_session,a,p,{'action':'recognize','source':{'kind':'external_service','id':str(record.id)},'attestation':{
+      'performed_on':performed,'confirm_actual_service_readings':True,'readings':{'odometer_miles':{'kind':'source','source_kind':'external_service','source_id':str(record.id),'meter':'odometer_miles'},'engine_hours':None}}})
+    actor=SimpleNamespace(id=a.owner.id,tenant_id=a.tenant.id,role=UserRole.RECEPTIONIST)
+    history=await service.program_history(db_session,actor,'shop',a.vehicle.id,p.id)
+    completion=next(row['completion'] for row in history['items'] if row['completion'])
+    assert completion['source']['id'] is None and not completion['source']['can_open']
+    assert str(record.id) not in json.dumps(history),completion['readings']
+
+    page=await service.program_page(db_session,actor,'shop',vehicle_id=a.vehicle.id)
+    assert str(record.id) not in json.dumps(page)
+    owner_history=await service.program_history(db_session,a.owner,'shop',a.vehicle.id,p.id)
+    owner_completion=next(item['completion'] for item in owner_history['items'] if item['completion'])
+    assert owner_completion['readings']['odometer_miles']['source_id']==str(record.id)
+    stored=await db_session.get(Completion,UUID(result['completion']['id']))
+    assert stored.readings['odometer_miles']['source_id']==str(record.id)
+
+
+@pytest.mark.asyncio
+async def test_revoke_never_reinstates_prior_source_with_unacknowledged_aba(db_session):
+    a=await seed(db_session);a.order.status=RepairOrderStatus.COMPLETED;await db_session.commit()
+    baseline,_=await create(db_session,a);p=await db_session.get(Program,UUID(baseline['program']['id']))
+    first=await evidence(db_session,a,p,{'action':'recognize','source':{'kind':'repair_order','id':str(a.order.id)},'attestation':actual(10,100000)})
+    await evidence(db_session,a,p,{'action':'reaffirm','completion_id':first['completion']['id'],'reason':'Verified original source','acknowledged_work_link_ids':[]})
+    second_source=await source(db_session,a,'PRIOR-ABA-CURRENT')
+    second=await evidence(db_session,a,p,{'action':'recognize','source':{'kind':'repair_order','id':str(second_source.id)},'attestation':actual(5,110000)})
+    await service.order_lifecycle(db_session,a.owner,a.order,'reopen');a.order.status=RepairOrderStatus.IN_PROGRESS;await db_session.commit()
+    a.order.status=RepairOrderStatus.COMPLETED;await db_session.commit()
+    revoked=await evidence(db_session,a,p,{'action':'revoke','completion_id':second['completion']['id'],'reason':'Current entry was incorrect','acknowledged_work_link_ids':[]})
+    assert revoked['program']['targets']==baseline['program']['targets']
+    assert p.controlling_completion_id is None
