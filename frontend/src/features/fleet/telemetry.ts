@@ -55,9 +55,17 @@ export function truckCoordinates(truck: BoardTruck, now = Date.now()): [number, 
   if (!value || value.lat == null || value.lng == null || !Number.isFinite(value.lat) || !Number.isFinite(value.lng) || Math.abs(value.lat) > 90 || Math.abs(value.lng) > 180) return null
   return [value.lng, value.lat]
 }
-export function truckMotion(truck: BoardTruck, now = Date.now()) {
+/** A saved speed is current only while its own trusted observation is fresh. */
+export function truckCurrentSpeed(truck: BoardTruck, now = Date.now()): NumericReading | null {
   const speed = retained(truck.telemetry?.speed, now)
-  return speed && readingFreshness(speed, now) === 'fresh' ? speed.value > 0 ? 'moving' : 'stopped' : 'unknown'
+  if (!speed || !['motive_api', 'motive_dashboard_manual'].includes(speed.source) || speed.unit !== 'mph' || !Number.isFinite(speed.value) || speed.value < 0 || speed.value > 250) return null
+  // observed_at is the interval start for minute precision. Never borrow the
+  // location or capture timestamp to make an old speed look current.
+  return speed.observed_at && readingFreshness(speed, now) === 'fresh' ? speed : null
+}
+export function truckMotion(truck: BoardTruck, now = Date.now()) {
+  const speed = truckCurrentSpeed(truck, now)
+  return speed ? speed.value > 0 ? 'moving' : 'stopped' : 'unknown'
 }
 
 /** Refresh age labels and motion while a fleet view stays open. */
