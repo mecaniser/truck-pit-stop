@@ -482,7 +482,7 @@ async def test_all_completion_routes_block_before_side_effects(
     monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", forbidden)
     monkeypatch.setattr(repair_orders, "stop_active_session", forbidden)
     monkeypatch.setattr(repair_orders, "send_email", forbidden)
-    monkeypatch.setattr(repair_orders, "send_sms", forbidden)
+    monkeypatch.setattr(repair_orders, "enqueue_automated_sms", forbidden)
     monkeypatch.setattr(repair_orders, "_refresh_repair_order_totals", forbidden)
     monkeypatch.setattr(fleet, "_load_fleet_ro_or_404", AsyncMock(return_value=a.order))
     if route == "mechanic":
@@ -878,7 +878,7 @@ async def test_completion_paths_accept_finished_required_tasks(
         a.order.status = Status.PENDING_REVIEW
     await db_session.commit()
     monkeypatch.setattr(repair_orders, "send_email", AsyncMock())
-    monkeypatch.setattr(repair_orders, "send_sms", AsyncMock())
+    monkeypatch.setattr(repair_orders, "enqueue_automated_sms", AsyncMock())
     monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", AsyncMock())
     monkeypatch.setattr(fleet, "_load_fleet_ro_or_404", AsyncMock(return_value=a.order))
     if route == "mechanic":

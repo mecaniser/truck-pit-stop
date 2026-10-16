@@ -26,6 +26,7 @@ LEDGER = Path(__file__).resolve().parents[1] / '.communications-provider.sqlite'
 
 class SimulatedSMSSender:
     mode = 'simulated'
+    ready = True
 
     async def send(self, *, body, from_number, to_number, status_callback):
         # Separate durable store intentionally survives application rollback and restart.
@@ -51,3 +52,31 @@ from app.services.communications_service import get_sms_sender
 
 sender = SimulatedSMSSender()
 app.dependency_overrides[get_sms_sender] = lambda: sender
+
+
+if settings.SMS_TENANT_ROUTING_ENABLED:
+    from types import SimpleNamespace
+    from app.services import tenant_sms_routing as routing
+    from app.services.communications_service import LiveSMSSender
+
+    class FakeManagedClient:
+        def __init__(self, context):
+            self.context = context
+            self.messages = self
+
+        def create(self, **payload):
+            if payload.get('from_') != self.context.sender_phone or payload.get('messaging_service_sid') != self.context.messaging_service_sid:
+                raise RuntimeError('Synthetic provider rejected incorrect account/sender/service binding')
+            sid = 'SM' + uuid.uuid4().hex
+            with sqlite3.connect(LEDGER) as ledger:
+                ledger.execute('CREATE TABLE IF NOT EXISTS managed_calls (sid TEXT PRIMARY KEY, account_sid TEXT NOT NULL, service_sid TEXT NOT NULL, sender TEXT NOT NULL, recipient TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)')
+                ledger.execute('INSERT INTO managed_calls (sid,account_sid,service_sid,sender,recipient) VALUES (?,?,?,?,?)', (sid,self.context.account_sid,self.context.messaging_service_sid,payload['from_'],payload['to']))
+            return SimpleNamespace(sid=sid,status='queued')
+
+    routing.client_for = FakeManagedClient
+
+    class SimulatedManagedSender(LiveSMSSender):
+        mode = 'simulated'
+
+    sender = SimulatedManagedSender()
+    app.dependency_overrides[get_sms_sender] = lambda: sender

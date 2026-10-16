@@ -225,3 +225,49 @@ async def test_inbound_normalized_identity_and_duplicate_receipt(monkeypatch):
         with pytest.raises(HTTPException) as error:
             await inbox.thread_for(db, tenant_id, thread_id)
         assert error.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_manual_poison_is_held_and_next_batch_progresses(monkeypatch):
+    from app.db.session import AsyncSessionLocal
+    from app.db.models.tenant import Tenant
+    from app.db.models.user import User
+    from app.db.models.customer import Customer
+    from app.db.models.message_thread import MessageThread
+    from app.db.models.sms_message import SMSMessage
+    from app.db.models.communication import SMSSendOperation
+    from app.services import communications_service as svc
+    tenant_id, actor_id, customer_id, thread_id = [uuid4() for _ in range(4)]
+    operations = [uuid4(), uuid4()]
+    async with AsyncSessionLocal() as db:
+        db.add(Tenant(id=tenant_id, name='Poison recovery', slug=f'poison-{tenant_id}'))
+        await db.flush()
+        db.add(User(id=actor_id, tenant_id=tenant_id, first_name='Test', last_name='Operator', email=f'{actor_id}@example.test', hashed_password='disabled', role='garage_owner', is_active=True))
+        db.add(Customer(id=customer_id, tenant_id=tenant_id, first_name='Test', last_name='Recipient', email=f'{customer_id}@example.test'))
+        await db.flush()
+        db.add(MessageThread(id=thread_id, tenant_id=tenant_id, customer_id=customer_id))
+        await db.flush()
+        for index, operation_id in enumerate(operations):
+            message_id = uuid4()
+            db.add(SMSMessage(id=message_id, tenant_id=tenant_id, thread_id=thread_id, customer_id=customer_id, direction='outbound', source='manual', body='Recovery test', from_number='+15005550001', to_number='+15005550101', delivery_status='pending'))
+            await db.flush()
+            db.add(SMSSendOperation(id=operation_id, tenant_id=tenant_id, actor_id=actor_id, thread_id=thread_id, message_id=message_id, idempotency_key=uuid4().hex, payload_hash='a'*64, channel_account_id=uuid4(), contact_identity_id=uuid4(), from_number='+15005550001', to_number='+15005550101', body='Recovery test', state='pending', created_at=datetime.now(timezone.utc) + timedelta(seconds=index)))
+        await db.commit()
+    visited = []
+    async def dispatch(db, operation_id, sender):
+        visited.append(operation_id)
+        if operation_id == operations[0]:
+            raise ValueError('Malformed legacy row')
+        operation = await db.get(SMSSendOperation, operation_id)
+        operation.state = 'accepted'
+        await db.commit()
+    monkeypatch.setattr(svc, 'dispatch_operation', dispatch)
+    async with AsyncSessionLocal() as db:
+        with pytest.raises(RuntimeError, match='1 operations'):
+            await svc.process_pending_operations(db, object(), limit=1, tenant_id=tenant_id)
+        poison = await db.get(SMSSendOperation, operations[0])
+        assert (poison.state, poison.reconciliation_state) == ('unknown', 'required')
+    async with AsyncSessionLocal() as db:
+        result = await svc.process_pending_operations(db, object(), limit=1, tenant_id=tenant_id)
+        assert result['accepted'] == 1
+    assert visited == operations

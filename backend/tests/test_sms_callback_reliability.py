@@ -150,13 +150,13 @@ async def test_invalid_signature_does_not_touch_database(monkeypatch):
 async def test_notification_only_callback_acknowledged_without_mutation(monkeypatch, provider_status, code):
     notification = SimpleNamespace(status=NotificationStatus.SENT, delivered_at=None, error_message=None)
     before = vars(notification).copy()
-    db = FakeDB(None, [notification])
+    db = FakeDB(None, [notification], None)
     response = await post_callback(monkeypatch, db, {
         "MessageSid": "SMlegacy", "MessageStatus": provider_status, "ErrorCode": code,
     })
     assert response.status_code == 200
     assert vars(notification) == before
-    assert len(db.queries) == 2
+    assert len(db.queries) == 3
     sql = str(db.queries[1].compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
     assert "notifications.type = 'sms'" in sql
     assert "LIMIT 2" in sql

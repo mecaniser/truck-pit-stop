@@ -31,6 +31,9 @@ class SMSSendOperation(BaseModel):
         CheckConstraint("state IN ('pending','dispatching','accepted','rejected','unknown')"),
         CheckConstraint('attempt_count BETWEEN 0 AND 1'),
     )
+    binding_id = Column(UUID(as_uuid=True), ForeignKey('tenant_sms_bindings.id'), nullable=True)
+    twilio_account_sid = Column(String(34), nullable=True)
+    messaging_service_sid = Column(String(34), nullable=True)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey('tenants.id'), nullable=False, index=True)
     thread_id = Column(UUID(as_uuid=True), ForeignKey('message_threads.id'), nullable=False, index=True)
     message_id = Column(UUID(as_uuid=True), ForeignKey('sms_messages.id'), nullable=False, unique=True)

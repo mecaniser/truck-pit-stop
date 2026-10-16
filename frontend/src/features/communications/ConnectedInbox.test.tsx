@@ -8,10 +8,11 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ConnectedInbox from "./ConnectedInbox";
 import { inboxApi } from "./api";
+import { useAuthStore } from "../../stores/authStore";
 import { createDemoConversations, DEMO_TENANT, DEMO_USER } from "./fixtures";
 vi.mock("../../lib/api", () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 vi.mock("../../stores/authStore", () => {
-  const state = { authSessionEpoch: 0 };
+  const state = { authSessionEpoch: 0, user: null as { role: string } | null };
   return {
     useAuthStore: Object.assign(
       (select: (s: typeof state) => unknown) => select(state),
@@ -39,6 +40,9 @@ const storeKey = `inbox-send:${DEMO_TENANT}:${DEMO_USER}`;
 beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
+  (
+    useAuthStore.getState() as unknown as { user: { role: string } | null }
+  ).user = null;
   vi.mocked(inboxApi.bootstrap).mockResolvedValue({
     tenant_id: DEMO_TENANT,
     user_id: DEMO_USER,
@@ -143,5 +147,28 @@ describe("connected inbox sending", () => {
     await compose();
     expect(screen.getByRole("button", { name: "Send SMS" })).toBeDisabled();
     expect(inboxApi.send).not.toHaveBeenCalled();
+  });
+});
+
+describe("SMS setup entry", () => {
+  it("offers setup to shop owners with an empty inbox", async () => {
+    (useAuthStore.getState() as unknown as { user: { role: string } }).user = {
+      role: "garage_owner",
+    };
+    vi.mocked(inboxApi.list).mockResolvedValue([]);
+    render(<ConnectedInbox />);
+    expect(
+      await screen.findByRole("button", { name: "SMS setup" }),
+    ).toBeVisible();
+  });
+  it("hides registration actions from reception staff", async () => {
+    (useAuthStore.getState() as unknown as { user: { role: string } }).user = {
+      role: "receptionist",
+    };
+    render(<ConnectedInbox />);
+    await screen.findByRole("textbox", { name: "Message draft" });
+    expect(
+      screen.queryByRole("button", { name: "SMS setup" }),
+    ).not.toBeInTheDocument();
   });
 });

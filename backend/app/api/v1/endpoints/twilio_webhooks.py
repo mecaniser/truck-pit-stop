@@ -11,6 +11,9 @@ from app.services.messaging_service import (
     validate_twilio_signature,
 )
 
+from app.services import tenant_sms_routing as routing
+from twilio.request_validator import RequestValidator
+
 router = APIRouter()
 logger = get_logger(__name__)
 
@@ -61,6 +64,16 @@ def _has_valid_signature(request: Request, values: dict[str, str], signature: Op
     return False
 
 
+async def _signature_for_account(db, request, values, signature):
+    token = await routing.account_token(db, values.get('AccountSid')) if values.get('AccountSid') else None
+    if not token and not routing.enabled():
+        # The legacy token authenticates only the configured legacy account.
+        if values.get('AccountSid') and values['AccountSid'] != routing.settings.TWILIO_ACCOUNT_SID:
+            return False
+        return _has_valid_signature(request, values, signature)
+    return bool(token and signature and any(RequestValidator(token).validate(url, values, signature) for url in _candidate_signature_urls(request)))
+
+
 @router.post("/sms/inbound")
 async def twilio_inbound_sms(
     request: Request,
@@ -69,7 +82,7 @@ async def twilio_inbound_sms(
     form_data = await request.form()
     values = _coerce_form_values(form_data)
     signature = request.headers.get("x-twilio-signature")
-    if not _has_valid_signature(request, values, signature):
+    if not await _signature_for_account(db, request, values, signature):
         logger.warning(
             "twilio_signature_invalid",
             endpoint="inbound",
@@ -80,6 +93,7 @@ async def twilio_inbound_sms(
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Twilio signature")
 
+    managed_receipt = routing.enabled() or bool(await routing.account_token(db, values.get('AccountSid')))
     try:
         await handle_inbound_sms(
             db=db,
@@ -87,6 +101,7 @@ async def twilio_inbound_sms(
             from_number=values.get("From", ""),
             body=values.get("Body", ""),
             twilio_message_sid=values.get("MessageSid"),
+            **(dict(account_sid=values.get("AccountSid"), messaging_service_sid=values.get("MessagingServiceSid")) if managed_receipt else {}),
         )
     except HTTPException:
         raise
@@ -109,7 +124,7 @@ async def twilio_sms_status(
     form_data = await request.form()
     values = _coerce_form_values(form_data)
     signature = request.headers.get("x-twilio-signature")
-    if not _has_valid_signature(request, values, signature):
+    if not await _signature_for_account(db, request, values, signature):
         logger.warning(
             "twilio_signature_invalid",
             endpoint="status",
@@ -120,6 +135,7 @@ async def twilio_sms_status(
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Twilio signature")
 
+    managed_receipt = routing.enabled() or bool(await routing.account_token(db, values.get('AccountSid')))
     try:
         await process_twilio_status_callback(
             db=db,
@@ -127,6 +143,7 @@ async def twilio_sms_status(
             message_status=values.get("MessageStatus"),
             error_code=values.get("ErrorCode"),
             error_message=values.get("ErrorMessage"),
+            **(dict(account_sid=values.get("AccountSid"), from_number=values.get("From"), messaging_service_sid=values.get("MessagingServiceSid")) if managed_receipt else {}),
         )
     except HTTPException:
         await db.rollback()

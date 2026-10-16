@@ -1,3 +1,4 @@
+import SMSConsentPanel from "./SMSConsentPanel";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -67,6 +68,7 @@ const time = (value: string) =>
   });
 
 export interface InboxConnection {
+  onSMSSetup?: () => void;
   rows: Conversation[];
   searchIds?: string[] | null;
   onSearch?: (search: string) => void;
@@ -338,6 +340,11 @@ export default function CommunicationsPreview({
             </h1>
           </div>
           <div className="page-actions">
+            {connection?.onSMSSetup && (
+              <button className="subtle-button" onClick={connection.onSMSSetup}>
+                <Settings2 size={16} /> SMS setup
+              </button>
+            )}
             <button
               ref={channelsButtonRef}
               aria-label="Channels"
@@ -912,6 +919,12 @@ export default function CommunicationsPreview({
                 <p className="context-warning">SMS opted out</p>
               )}
             </section>
+            {connection && selected.customerId && (
+              <SMSConsentPanel
+                key={`${connection.tenantId}:${connection.userId}:${selected.customerId}`}
+                customerId={selected.customerId}
+              />
+            )}
             <section>
               <h4>Current repair</h4>
               {selected.context.repairOrderLabel ? (
