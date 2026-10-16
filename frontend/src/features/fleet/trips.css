@@ -568,6 +568,9 @@
 .fleet-root .otr-bar-value .otr-bar-track{position:relative;overflow:visible}
 .fleet-root .otr-bar-track>i{border-radius:3px}
 .fleet-root .otr-median-tick{position:absolute;top:-4px;height:14px;width:2px;background:var(--text);transform:translateX(-1px);box-shadow:0 0 0 1px var(--bg)}
+.fleet-root .otr-median-difference{flex:0 0 auto;min-width:6ch;font-size:12px;font-weight:650;color:var(--muted);white-space:nowrap}
+.fleet-root .otr-median-difference.is-above{color:#39d98a}
+.fleet-root .otr-median-difference.is-below{color:var(--red,#ff6673)}
 .fleet-root .otr-median-key,.fleet-root .otr-pattern-key{display:block;color:var(--muted);font-size:11px;margin-top:6px}
 .fleet-root .otr-median-key b{color:var(--text);margin-right:4px}
 .fleet-root .otr-missing-toggle{display:flex;align-items:center;gap:8px;min-height:44px;background:none;border:0;color:var(--muted);font-size:12px;padding:8px 0;cursor:pointer}

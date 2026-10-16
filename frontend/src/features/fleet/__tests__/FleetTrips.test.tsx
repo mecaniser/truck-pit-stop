@@ -102,6 +102,48 @@ describe('OTR fleet overview', () => {
     await userEvent.click(screen.getByRole('button', {name:'Driving hours', exact:true}))
     expect(screen.getAllByRole('img', {name:/fleet median 1.5h/})).toHaveLength(2)
   })
+  it('puts signed percentages beside the bars and recomputes when the measure changes', async () => {
+    api.get.mockResolvedValue({ data: { ...response, total: 2,
+      items: [...response.items, { ...response.items[0], id: 'peer', vehicle_id: other.id, distance_miles: 20, driving_seconds: 10800 }],
+      summary: { ...response.summary, truck_count: 2, trip_count: 2, distance_miles: 60, driving_seconds: 14400 },
+    } })
+    setup({ vehicleId: '', start: '2026-10-02', end: '2026-10-02' })
+    const above = await screen.findByText('+33.3%')
+    expect(above).toHaveClass('is-above')
+    expect(above).toHaveTextContent('vs fleet median distance')
+    expect(screen.getByText('−33.3%')).toHaveClass('is-below')
+    expect(above.closest('tr')).toHaveTextContent('Example Fleet 101')
+    await userEvent.click(screen.getByRole('button', { name: 'Driving hours', exact: true }))
+    expect(screen.getByText('−50%').closest('tr')).toHaveTextContent('Example Fleet 101')
+    expect(screen.getByText('+50%')).toHaveTextContent('vs fleet median driving hours')
+    expect(screen.queryByText('+33.3%')).not.toBeInTheDocument()
+  })
+  it('shows rounded median matches as neutral zero without positive or negative zero', async () => {
+    api.get.mockResolvedValue({ data: { ...response, total: 2,
+      items: [...response.items, { ...response.items[0], id: 'peer', vehicle_id: other.id, distance_miles: 40.001 }],
+      summary: { ...response.summary, truck_count: 2, trip_count: 2, distance_miles: 80.001, driving_seconds: 7200 },
+    } })
+    setup({ vehicleId: '', start: '2026-10-02', end: '2026-10-02' })
+    const matches = await screen.findAllByText('0%')
+    expect(matches).toHaveLength(2)
+    matches.forEach(match => expect(match).not.toHaveClass('is-above', 'is-below'))
+  })
+  it('does not invent percentages for a zero median', async () => {
+    api.get.mockResolvedValue({ data: { ...response, total: 2,
+      items: [{ ...response.items[0], distance_miles: 0 }, { ...response.items[0], id: 'peer', vehicle_id: other.id, distance_miles: 0 }],
+      summary: { ...response.summary, truck_count: 2, trip_count: 2, distance_miles: 0, driving_seconds: 7200 },
+    } })
+    setup({ vehicleId: '', start: '2026-10-02', end: '2026-10-02' })
+    await screen.findByText(/Fleet median 0 mi/)
+    expect(screen.queryByTitle(/vs fleet median distance/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Truck activity comparison')).not.toHaveTextContent(/NaN|Infinity/)
+  })
+  it('excludes missing trucks from the baseline and omits percentages without reporting peers', async () => {
+    setup({ vehicleId: '', start: '2026-10-02', end: '2026-10-02' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Show 1 truck without imported trips' }))
+    expect(screen.getByText('No imported trips')).toBeVisible()
+    expect(screen.queryByTitle(/vs fleet median distance/)).not.toBeInTheDocument()
+  })
   it('shows signed median differences and converts driving deltas to hours', async () => {
     api.get.mockResolvedValue({ data: { ...response, total: 2,
       items: [{ ...response.items[0], metrics: { ...emptyMetrics, fuel_used_gallons: 4 } }, { ...response.items[0], id: 'trip-2', vehicle_id: other.id, distance_miles: 20, driving_seconds: 1800, metrics: { ...emptyMetrics, fuel_used_gallons: 4 } }],
