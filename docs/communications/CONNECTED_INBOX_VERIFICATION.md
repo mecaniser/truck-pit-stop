@@ -1,10 +1,10 @@
 # Connected shared inbox — local verification
 
-DB-COMMS-002; 2026-10-16, 15:40 America/New_York. Backend & Integrations accountable. Local simulated acceptance only; no merge or deployment.
+DB-COMMS-002; 2026-10-16, 15:40 America/New_York. Backend & Integrations accountable. Local simulated acceptance only; draft [PR562](https://github.com/mecaniser/truck-pit-stop/pull/562), stacked on560; no merge or deployment.
 
 ## Runtime receipt
 
-Branch `codex/shared-inbox-backend`, implementation based on `3f424bec` with working changes recorded in the ensuing implementation commit. Frontend PID56726 serves this worktree's `frontend/prototypes/communications/vite.config.ts`, `http://127.0.0.1:5186/`, `/api` proxy to8006. Backend PID82043 runs `uvicorn communications_local_app:app` from this worktree's `backend` directory. Explicit local harness overrides only SMS provider; normal application authentication and routers execute. PostgreSQL16 container `dieselbridge-comms-002-postgres`, localhost55460, database `communications_local`, migration `177_shared_inbox`; dedicated Redis6386. Readiness database/Redis both pass. Other tasks' servers and databases remain untouched.
+Branch `codex/shared-inbox-backend`, implementation `aeea4a88`, independent final gate recorded at `952c4487`. Frontend PID56726 serves this worktree's `frontend/prototypes/communications/vite.config.ts`, `http://127.0.0.1:5186/`, `/api` proxy to8006. Backend PID82043 runs `uvicorn communications_local_app:app` from this worktree's `backend` directory. Explicit local harness overrides only SMS provider; normal application authentication and routers execute. PostgreSQL16 container `dieselbridge-comms-002-postgres`, localhost55460, database `communications_local`, migration `177_shared_inbox`; dedicated Redis6386. Readiness database/Redis both pass. Other tasks' servers and databases remain untouched.
 
 The standard controller cannot launch the missing backend/.env; this task uses the explicitly authorized isolated harness documented in LOCAL_SETUP.md. No production data was copied. All contacts, staff, messages and provider events are synthetic. Environment secrets are generated, ignored and not included here. Simulation rejects nondevelopment environments and all actual Twilio HTTP calls.
 
