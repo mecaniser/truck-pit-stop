@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), role: 'garage_owner' }))
@@ -50,4 +50,89 @@ it('preserves a policy draft until the operator accepts the visible fresh baseli
 it('ignores a policy write completion after authority changes before rerender', async () => {
   let settle!: (value: unknown) => void; const close = vi.fn(); const saved = vi.fn(); mocks.patch.mockReturnValue(new Promise(resolve => { settle = resolve })); const user = userEvent.setup(); setup()(<PartPricingPolicy inventoryId="inventory-1" name="Filter" onClose={close} onSaved={saved} />)
   await screen.findByLabelText('Catalog price'); await user.click(screen.getByText('Save policy')); mocks.role = 'mechanic'; await act(async () => settle({ data: { schema_version: 1, policy } })); expect(close).not.toHaveBeenCalled(); expect(saved).not.toHaveBeenCalled()
+})
+
+describe('visible pricing action feedback', () => {
+  async function sampleDraft(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByText('New matrix'))
+    await user.type(screen.getByLabelText('Name'), 'Unsaved matrix')
+    await user.type(screen.getByLabelText('Cost to band 1'), '25')
+    await user.type(screen.getByLabelText('Markup percent band 1'), '100')
+    await user.click(screen.getByText('Add band'))
+    await user.type(screen.getByLabelText('Cost to band 2'), '100')
+    await user.type(screen.getByLabelText('Markup percent band 2'), '50')
+    await user.click(screen.getByText('Add band'))
+    await user.type(screen.getByLabelText('Markup percent band 3'), '30')
+    await user.type(screen.getByLabelText('Actual cost'), '100')
+    await user.type(screen.getByLabelText('Catalog price'), '45')
+  }
+
+  it('reveals a rejected sample beside its action, keeps the complete draft, and allows correction and Escape', async () => {
+    const user = userEvent.setup(); const close = vi.fn()
+    mocks.post.mockRejectedValue({ response: { status: 422, data: { detail: { message: 'Bands must be contiguous.' } } } })
+    setup()(<PartsPricingSettings onClose={close} />)
+    await sampleDraft(user)
+    await user.clear(screen.getByLabelText('Cost from band 2')); await user.type(screen.getByLabelText('Cost from band 2'), '26')
+    await user.click(screen.getByText('Preview sample'))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Bands must be contiguous.')
+    expect(alert.closest('.db-parts-pricing__sample')).toContainElement(screen.getByText('Preview sample'))
+    expect(alert).toHaveFocus()
+    expect(screen.getByLabelText('Name')).toHaveValue('Unsaved matrix')
+    expect(screen.getByLabelText('Cost from band 2')).toHaveValue('26')
+    expect(screen.getByLabelText('Markup percent band 3')).toHaveValue('30')
+    expect(screen.getByLabelText('Actual cost')).toHaveValue('100')
+    await user.clear(screen.getByLabelText('Cost from band 2')); await user.type(screen.getByLabelText('Cost from band 2'), '25')
+    expect(screen.getByLabelText('Cost from band 2')).toHaveFocus()
+    await user.click(screen.getByText('Preview sample'))
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledTimes(2))
+    expect(await screen.findByRole('alert')).toHaveFocus()
+    expect(mocks.post.mock.calls.every(([path]) => path === '/parts-pricing/preview')).toBe(true)
+    await user.keyboard('{Escape}'); expect(close).toHaveBeenCalledOnce()
+  })
+
+  it('reveals the whole successful sample outcome and keeps draft values until edited', async () => {
+    const user = userEvent.setup()
+    const evaluation = { status: 'priced', unit_price: '45.00', source: 'catalog', pricing_basis: '100.00', effective_minimum: null, band: null, gross_profit: '-55.00', markup_percent: '-55', margin_percent: '-122.22', warnings: [], errors: [] }
+    mocks.post.mockResolvedValue({ data: { schema_version: 1, currency: 'USD', current_default: { matrix_id: null, generation: 0 }, cases: [{ sample_key: 'sample', inventory_id: null, label: 'Sample part', actual_unit_cost: '100.00', actual_cost_known: true, catalog_unit_price: '45.00', current: evaluation, proposed: { ...evaluation, unit_price: '130.00', source: 'matrix', band: { min_cost: '100.00', max_cost: null, markup_percent: '30' }, gross_profit: '30.00', markup_percent: '30', margin_percent: '23.08' } }] } })
+    setup()(<PartsPricingSettings onClose={vi.fn()} />)
+    await sampleDraft(user); await user.click(screen.getByText('Preview sample'))
+    const outcome = await screen.findByRole('status')
+    expect(within(outcome).getByText('Proposed $130.00')).toBeInTheDocument()
+    expect(within(outcome).getByText('Profit $30.00 · Markup 30% · Margin 23.08%')).toBeInTheDocument()
+    expect(outcome).toHaveFocus()
+    expect(screen.getByLabelText('Name')).toHaveValue('Unsaved matrix')
+    expect(screen.getByLabelText('Cost from band 3')).toHaveValue('100')
+    await user.type(screen.getByLabelText('Actual cost'), '0')
+    expect(screen.getByLabelText('Actual cost')).toHaveFocus()
+    expect(screen.queryByText('Proposed $130.00')).not.toBeInTheDocument()
+  })
+
+  it('reveals matrix-save rejection without discarding the draft', async () => {
+    const user = userEvent.setup()
+    mocks.post.mockRejectedValue({ response: { status: 422, data: { detail: { message: 'Bands must be contiguous.' } } } })
+    setup()(<PartsPricingSettings onClose={vi.fn()} />)
+    await sampleDraft(user); await user.click(screen.getByText('Save matrix'))
+    expect(await screen.findByRole('alert')).toHaveFocus()
+    expect(screen.getByLabelText('Name')).toHaveValue('Unsaved matrix')
+    expect(screen.getByLabelText('Markup percent band 3')).toHaveValue('30')
+    expect(mocks.post.mock.calls[0][0]).toBe('/parts-pricing/matrices')
+  })
+
+  it.each(['entered amount', 'server rejection'])('reveals policy %s errors and keeps editable values', async (cause) => {
+    const user = userEvent.setup(); const close = vi.fn()
+    mocks.patch.mockRejectedValue({ response: { status: 422, data: { detail: { message: 'Policy could not be saved.' } } } })
+    setup()(<PartPricingPolicy inventoryId="inventory-1" name="Filter" onClose={close} />)
+    const amount = cause === 'entered amount' ? '1.005' : '15'
+    await user.type(await screen.findByLabelText('Minimum sale price'), amount)
+    await user.click(screen.getByText('Save policy'))
+    expect(await screen.findByRole('alert')).toHaveFocus()
+    expect(screen.getByLabelText('Minimum sale price')).toHaveValue(amount)
+    expect(screen.getByLabelText('Catalog price')).toHaveValue('20.00')
+    if (cause === 'entered amount') expect(mocks.patch).not.toHaveBeenCalled()
+    else expect(mocks.patch).toHaveBeenCalledOnce()
+    await user.click(screen.getByLabelText('Minimum sale price'))
+    expect(screen.getByLabelText('Minimum sale price')).toHaveFocus()
+    await user.keyboard('{Escape}'); expect(close).toHaveBeenCalledOnce()
+  })
 })
