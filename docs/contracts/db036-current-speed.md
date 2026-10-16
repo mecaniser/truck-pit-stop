@@ -142,7 +142,10 @@ render. Treat that root cause as unconfirmed until fresh diagnostics establish
 it. The driver collector may retry a null VIN read at most twice after the
 initial attempt. Each attempt uses the existing fresh-document reader with the
 same exact provider route. Do not retry a non-null mismatching VIN, an ambiguous
-VIN, a changed source, or other reader exceptions.
+VIN or a changed source. The [Oct16 timeout amendment](db036-driver-timeout-retry.md)
+permits only TimeoutError within that same three-read budget; every other reader
+exception remains immediately fatal. Exhausted mixed timeout/null reads retain
+ui_timeout and cannot become ordinary missing-VIN rows.
 
 An initially absent VIN after all three attempts remains the existing
 `vin_unavailable` row. After a known initial VIN, every non-null verification
