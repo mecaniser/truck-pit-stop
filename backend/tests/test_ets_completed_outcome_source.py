@@ -319,3 +319,26 @@ def test_deleted_unverified_invoice_still_conflicts(field, value):
     assert duplicate.repair_order_id in source._verified_legacy_duplicate_roots(
         order=args['order'], siblings=[args['order'], sibling],
         invoices=[canonical, duplicate], snapshot=snapshot)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('age_hours, expected_hold', [(1, None), (25, 'source_read_unavailable')])
+async def test_capture_uses_confirmed_observation_without_weakening_freshness(monkeypatch, age_hours, expected_hold):
+    from datetime import timedelta
+    from scripts.easytruck_sync.source_evidence import append_source_evidence
+    args = fixture()
+    first = dict(args['evidence'][0], observed_at_source='2020-01-01T00:00:00Z')
+    original = {'schema_version': 1, 'observations': [{'evidence': first} for _ in range(20)]}
+    stamp = datetime.now(timezone.utc) - timedelta(hours=age_hours)
+    fresh = dict(first, observed_at_source=stamp.isoformat())
+    envelope = append_source_evidence(original, fresh)
+    monkeypatch.setattr(source, 'configured_shops', lambda: {args['tenant_id']: 'sh_test'})
+    persist = AsyncMock()
+    monkeypatch.setattr(source, 'persist_completed_observation', persist)
+    result = Mock()
+    result.all.return_value = [(uuid4(), envelope, None)]
+    db = SimpleNamespace(execute=AsyncMock(return_value=result))
+    await source.capture_imported_order(db, args['tenant_id'], args['order'].id)
+    assert persist.call_args.kwargs['force_hold'] == expected_hold
+    assert persist.call_args.kwargs['evidence'][0]['observed_at_source'] == stamp.isoformat()
+    assert envelope['observations'] == original['observations']

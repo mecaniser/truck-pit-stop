@@ -46,9 +46,9 @@ import psycopg2
 import psycopg2.extras
 
 try:
-    from .source_evidence import normalize_source_evidence, append_source_evidence
+    from .source_evidence import normalize_source_evidence, append_source_evidence, latest_source_evidence
 except ImportError:
-    from source_evidence import normalize_source_evidence, append_source_evidence
+    from source_evidence import normalize_source_evidence, append_source_evidence, latest_source_evidence
 
 # Let psycopg2 adapt uuid.UUID objects directly in parameterized queries.
 psycopg2.extras.register_uuid()
@@ -620,7 +620,7 @@ def _preserve_source_read_failures(w, tenant_id, failures):
             observations = envelope.get("observations", []) if isinstance(envelope, dict) else []
             if not observations or observations[-1].get("evidence", {}).get("service_id") != service_id:
                 continue
-            latest = observations[-1]["evidence"].get("observed_at_source")
+            latest = latest_source_evidence(envelope).get("observed_at_source")
             if latest:
                 try:
                     if datetime.fromisoformat(latest.replace("Z", "+00:00")) >= timestamp:

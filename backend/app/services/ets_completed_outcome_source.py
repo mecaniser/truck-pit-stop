@@ -14,6 +14,8 @@ from decimal import Decimal, InvalidOperation
 from uuid import UUID, uuid4
 
 from sqlalchemy import select, text
+
+from scripts.easytruck_sync.source_evidence import latest_source_evidence
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
@@ -340,9 +342,9 @@ async def capture_imported_order(db: AsyncSession, tenant_id, order_id):
             continue
         if envelope.get("source_read_unavailable_at"):
             force_hold = "source_read_unavailable"
-        if len(observations) >= 20:
+        if envelope.get("revision_capacity_exceeded") or len(observations) > 39:
             force_hold = "evidence_capacity_exceeded"
-        row = dict(observations[-1].get("evidence") or {})
+        row = latest_source_evidence(envelope)
         row["imported_invoice_uuid"] = str(invoice_id)
         evidence.append(row)
     if not evidence:

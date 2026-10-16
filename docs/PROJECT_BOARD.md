@@ -1923,3 +1923,23 @@ Latest user refinement: removed the visible route legend while retaining blue/gr
 > **DB-036 data visualization clarity / IN PROGRESS (2026-10-04):** Frontend & UX accountable; Fast UI lane, branch `codex/fleet-data-clarity`. Acceptance: mileage-based fuel coverage with measured/estimated distinction; median reference on comparison bars; unique reporting counts and clipped/current bucket labels; departure-date heatmap semantics; collapsible no-record trucks and compact summary coverage. Preserve totals, inline drilldown, missing versus zero, keyboard access, and API/tenant contracts. Focused tests and desktop/compact preview required before review.
 
 > **DB-036 data visualization clarity / LOCAL VERIFIED (2026-10-05):** Frontend & UX implemented the accepted five-point refinement on `codex/fleet-data-clarity`. 46 focused tests pass; production build/TypeScript and changed-source lint pass. Desktop and 700px preview checked: median references, mileage fuel coverage, heatmap semantics, unique reporting counts, calendar partial labels, missing-truck disclosure; inline/back regression tests pass. Preview uses private imported snapshot only; no API, tenant, or imported totals changed. Screenshot `output/fleet-data-clarity.png`. Awaiting user review; not committed, pushed, or deployed.
+
+
+## DB-ETS-FRESHNESS — In progress (2026-10-15)
+
+Backend & Integrations accountable; high-risk worker/source-evidence lane.
+Outcome: repeated successful ETS mirror reads remain fresh without exhausting
+immutable evidence capacity. Acceptance: unchanged facts retain their original
+observations and refresh a digest-bound timestamp; new A→B→A facts remain ordered
+revisions; older replays cannot clear newer failure holds; tenant/financial/manual
+state is unchanged; the existing 24-hour freshness boundary remains enforced.
+No source replay or Google delivery is part of this change. Independent QA and
+Security, protected CI, and coordinated Web/Worker/ETS Sync deployment required.
+Local serving blocked: isolated worktree has no local configuration/launch file
+and no 5173/8000 listeners; no secrets copied or services replaced.
+
+Owner evidence: 97 focused source-evidence/completion/history tests pass; diff
+integrity passes. Contract: `docs/contracts/ets-source-evidence-refresh.md`.
+Independent QA/Security pending. Runtime remains blocked as above; unit/SQLite
+checks do not establish deployed cron or source delivery readiness. Release must
+update Web/Worker reader before ETS Sync writer. No production writes performed.

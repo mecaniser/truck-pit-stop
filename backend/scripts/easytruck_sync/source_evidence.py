@@ -84,11 +84,51 @@ def normalize_source_evidence(value):
     return result if len(json.dumps(result)) <= 131072 else None
 
 
-def append_source_evidence(existing, evidence):
-    """Immutable observations; bounded saturation is explicit, never replacement."""
+def _instant(value):
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed if parsed.utcoffset() is not None else None
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _facts(evidence):
+    return {key: value for key, value in evidence.items() if key != "observed_at_source"}
+
+
+def _digest(evidence):
     import hashlib
+    return hashlib.sha256(json.dumps(evidence, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def latest_source_evidence(envelope):
+    """Return the last immutable facts with their verified latest observation.
+
+    The refresh is bound to the exact last immutable row digest. It cannot
+    refresh different facts or replace the original source observation.
+    """
+    rows = envelope.get("observations", [])
+    if not rows:
+        return {}
+    row = rows[-1]
+    evidence = dict(row.get("evidence") or {})
+    refresh = envelope.get("latest_confirmation") or {}
+    stamp = _instant(refresh.get("observed_at_source"))
+    prior = _instant(evidence.get("observed_at_source"))
+    if (stamp and prior and stamp >= prior
+            and refresh.get("sha256") == _digest(evidence)):
+        evidence["observed_at_source"] = refresh["observed_at_source"]
+    return evidence
+
+
+def append_source_evidence(existing, evidence):
+    """Preserve fact revisions; same-fact reads refresh a digest-bound watermark.
+
+    Legacy timestamp-only rows remain immutable. Count consecutive fact changes
+    for the existing 20-revision ceiling, rather than consuming it on each scan.
+    A later A->B->A is a new revision; a delayed old observation is not.
+    """
     import warnings
-    digest = hashlib.sha256(json.dumps(evidence, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     if existing is None:
         existing = {"schema_version": 1, "observations": []}
     if not isinstance(existing, dict) or existing.get("schema_version") != 1 or not isinstance(existing.get("observations"), list):
@@ -96,13 +136,35 @@ def append_source_evidence(existing, evidence):
         return existing
     rows = existing["observations"]
     if any(not isinstance(row, dict) or not isinstance(row.get("evidence"), dict)
-           or any(row["evidence"].get(k) != evidence.get(k) for k in ("service_id", "invoice_id", "invoice_number", "service_internal_id", "invoice_service_id"))
+           or any(row["evidence"].get(k) != evidence.get(k) for k in ("service_id", "invoice_id", "invoice_number", "service_internal_id", "invoice_service_id", "ets_shop_id"))
            for row in rows):
         warnings.warn("ETS evidence source identity mismatch; preservation held", RuntimeWarning)
         return existing
-    if any(isinstance(row, dict) and row.get("sha256") == digest for row in rows):
+    current = latest_source_evidence(existing)
+    stamp, prior = _instant(evidence.get("observed_at_source")), _instant(current.get("observed_at_source"))
+    failed = _instant(existing.get("source_read_unavailable_at"))
+    capacity_at = _instant(existing.get("revision_capacity_observed_at"))
+    if capacity_at and (not failed or capacity_at > failed):
+        failed = capacity_at
+    if rows and ((prior and (not stamp or stamp <= prior)) or (failed and (not stamp or stamp <= failed))):
         return existing
-    if len(rows) >= 20:
+    if rows and _facts(rows[-1]["evidence"]) == _facts(evidence):
+        if not stamp:
+            return existing
+        updated = dict(existing, latest_confirmation={"sha256": _digest(rows[-1]["evidence"]),
+                                                       "observed_at_source": evidence["observed_at_source"]})
+        updated.pop("source_read_unavailable_at", None)
+        # A capacity hold means a changed revision was not retained. Only a
+        # newer complete source read matching the retained facts can clear it.
+        updated.pop("revision_capacity_exceeded", None)
+        updated.pop("revision_capacity_observed_at", None)
+        return updated
+    if rows and not stamp and any(row.get("sha256") == _digest(evidence) for row in rows):
+        return existing  # old pre-timestamp import replay has no ordering proof
+    revisions = sum(index == 0 or _facts(row["evidence"]) != _facts(rows[index - 1]["evidence"])
+                    for index, row in enumerate(rows))
+    if revisions >= 20 or len(rows) >= 39:
         warnings.warn("ETS evidence revision capacity reached; preservation held", RuntimeWarning)
-        return existing
-    return {"schema_version": 1, "observations": [*rows, {"sha256": digest, "evidence": evidence}]}
+        return dict(existing, revision_capacity_exceeded=True,
+                    revision_capacity_observed_at=evidence.get("observed_at_source"))
+    return {"schema_version": 1, "observations": [*rows, {"sha256": _digest(evidence), "evidence": evidence}]}

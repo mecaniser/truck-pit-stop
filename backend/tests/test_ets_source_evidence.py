@@ -102,9 +102,12 @@ def test_revisioned_evidence_preserves_unpaid_then_paid_and_replay():
     assert updated["observations"][0] == envelope["observations"][0]
     assert append_source_evidence(updated, first) == updated
     assert append_source_evidence(updated, second) == updated
-    full = {"schema_version": 1, "observations": envelope["observations"] * 20}
+    full = {"schema_version": 1, "observations": [
+        {"evidence": dict(first, completed=index % 2 == 0)} for index in range(20)]}
     with pytest.warns(RuntimeWarning, match="capacity"):
-        assert append_source_evidence(full, second) == full
+        held = append_source_evidence(full, second)
+        assert held["observations"] == full["observations"]
+        assert held["revision_capacity_exceeded"] is True
 
 
 def test_provider_identity_changes_are_held():
@@ -149,3 +152,81 @@ def test_failed_source_read_only_invalidates_previously_verified_service():
     assert "paid_at" not in sql
     assert params[0].adapted["observations"] == prior["observations"]
     assert params[0].adapted["source_read_unavailable_at"] == "2020-01-01T00:00:00+00:00"
+
+
+def test_refreshes_preserve_original_and_do_not_consume_capacity():
+    from scripts.easytruck_sync.source_evidence import append_source_evidence, latest_source_evidence
+    from datetime import datetime, timedelta, timezone
+    first = dict(normalize_source_evidence(source()), observed_at_source="2020-01-01T00:00:00+00:00")
+    envelope = append_source_evidence(None, first)
+    original = envelope["observations"][:]
+    for day in range(1, 80):
+        stamp = (datetime(2020, 1, 1, tzinfo=timezone.utc) + timedelta(days=day)).isoformat()
+        envelope = append_source_evidence(envelope, dict(first, observed_at_source=stamp))
+    assert envelope["observations"] == original
+    assert latest_source_evidence(envelope)["observed_at_source"] == stamp
+    assert not envelope.get("revision_capacity_exceeded")
+
+
+def test_new_return_to_prior_facts_is_not_old_replay():
+    from scripts.easytruck_sync.source_evidence import append_source_evidence, latest_source_evidence
+    first = dict(normalize_source_evidence(source()), observed_at_source="2020-01-01T00:00:00Z")
+    second = dict(first, completed=True, observed_at_source="2020-01-02T00:00:00Z")
+    third = dict(first, observed_at_source="2020-01-03T00:00:00Z")
+    envelope = append_source_evidence(append_source_evidence(append_source_evidence(None, first), second), third)
+    assert len(envelope["observations"]) == 3
+    assert append_source_evidence(envelope, second) == envelope
+    assert latest_source_evidence(envelope) == third
+
+
+def test_legacy_twenty_refreshes_are_preserved_and_can_continue():
+    from scripts.easytruck_sync.source_evidence import append_source_evidence, latest_source_evidence
+    first = normalize_source_evidence(source())
+    rows = [{"evidence": dict(first, observed_at_source=f"2020-01-{day:02}T00:00:00Z")} for day in range(1, 21)]
+    legacy = {"schema_version": 1, "observations": rows}
+    fresh = dict(first, observed_at_source="2020-01-21T00:00:00Z")
+    envelope = append_source_evidence(legacy, fresh)
+    assert envelope["observations"] == rows
+    assert latest_source_evidence(envelope) == fresh
+    changed = append_source_evidence(envelope, dict(fresh, completed=False, observed_at_source="2020-01-22T00:00:00Z"))
+    assert len(changed["observations"]) == 21
+    assert changed["observations"][:20] == rows
+
+
+def test_old_success_cannot_clear_newer_failure_and_mismatched_digest_cannot_refresh():
+    from scripts.easytruck_sync.source_evidence import append_source_evidence, latest_source_evidence
+    first = dict(normalize_source_evidence(source()), observed_at_source="2020-01-01T00:00:00Z")
+    envelope = append_source_evidence(None, first)
+    envelope["source_read_unavailable_at"] = "2020-01-03T00:00:00Z"
+    assert append_source_evidence(envelope, dict(first, observed_at_source="2020-01-02T00:00:00Z")) == envelope
+    renewed = append_source_evidence(envelope, dict(first, observed_at_source="2020-01-04T00:00:00Z"))
+    assert "source_read_unavailable_at" not in renewed
+    renewed["latest_confirmation"]["sha256"] = "wrong"
+    assert latest_source_evidence(renewed) == first
+
+
+def test_capacity_hold_cannot_be_cleared_by_older_matching_read():
+    from scripts.easytruck_sync.source_evidence import append_source_evidence
+    first = normalize_source_evidence(source())
+    rows = [{'evidence': dict(first, completed=index % 2 == 0, observed_at_source=f'2020-01-{index+1:02}T00:00:00Z')}
+            for index in range(20)]
+    original = {'schema_version': 1, 'observations': rows}
+    with pytest.warns(RuntimeWarning, match='capacity'):
+        held = append_source_evidence(original, dict(first, completed=True, observed_at_source='2020-01-25T00:00:00Z'))
+    older = dict(first, completed=False, observed_at_source='2020-01-24T00:00:00Z')
+    assert append_source_evidence(held, older) == held
+    fresh = append_source_evidence(held, dict(older, observed_at_source='2020-01-26T00:00:00Z'))
+    assert not fresh.get('revision_capacity_exceeded')
+    assert fresh['observations'] == rows
+
+
+def test_failure_older_than_confirmation_does_not_invalidate_source():
+    from scripts.easytruck_sync.source_evidence import append_source_evidence
+    from scripts.easytruck_sync.import_to_truckpitstop import _preserve_source_read_failures
+    first = dict(normalize_source_evidence(source()), observed_at_source='2020-01-01T00:00:00Z')
+    envelope = append_source_evidence(append_source_evidence(None, first), dict(first, observed_at_source='2020-01-03T00:00:00Z'))
+    cursor = Mock()
+    cursor.fetchone.return_value = (True,)
+    cursor.fetchall.return_value = [('invoice', envelope)]
+    _preserve_source_read_failures(cursor, 'tenant', [{'serviceNo': '123', 'observed_at_source': '2020-01-02T00:00:00Z'}])
+    assert not any('UPDATE invoices' in call.args[0] for call in cursor.execute.call_args_list)
