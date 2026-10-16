@@ -48,9 +48,10 @@ export default function Preview() {
   const [detail, setDetail] = useState(false)
   const [selected, setSelected] = useState(scenario)
   const truck = previewTruck()
+  const trucks = [truck, ...Array.from({ length: 8 }, (_, index) => ({ ...truck, id: `adjacent-${index}`, unit_number: `TEST-${index + 2}` }))]
   return <main className="fleet-root" style={{ overflow: 'auto', padding: 20 }}>
     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, marginBottom: 16 }}><p style={{ color: 'var(--muted)' }}>Synthetic driver records · no fleet connection</p><label>Scenario <select value={selected} onChange={event => { scenario = event.target.value; client.clear(); setSelected(scenario) }} style={{ background: '#263442', padding: 8, borderRadius: 6 }}><option value="source">Different local alias</option><option value="alias-free">No local name</option><option value="managed">Managed profile</option><option value="missing-score">Missing source score</option><option value="unknown">Unknown</option><option value="stale">Stale</option><option value="zero">Zero / unrated</option><option value="error">Read failure</option></select></label></div>
-    {detail ? <><button className="dbtn" onClick={() => setDetail(false)}>Back to fleet</button><TruckDetail key={selected} truckId={truck.id} trucks={[truck]} onOpen={() => {}} /></> : <FleetBoard key={selected} data={{ trucks: [truck], stats: { total: 1, active: 1, shop: 0, pm: 0, parts: 0, open_wo: 0, incidents_total: 0 } }} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} sort={sort} setSort={setSort} onOpen={() => setDetail(true)} onOpenRepairOrder={() => {}} />}
+    {detail ? <><button className="dbtn" onClick={() => setDetail(false)}>Back to fleet</button><TruckDetail key={selected} truckId={truck.id} trucks={[truck]} onOpen={() => {}} /></> : <FleetBoard key={selected} data={{ trucks, stats: { total: trucks.length, active: trucks.length, shop: 0, pm: 0, parts: 0, open_wo: 0, incidents_total: 0 } }} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} sort={sort} setSort={setSort} onOpen={() => setDetail(true)} onOpenRepairOrder={() => {}} />}
   </main>
 }
 ReactDOM.createRoot(document.getElementById('root')!).render(<QueryClientProvider client={client}><MemoryRouter><Preview /></MemoryRouter></QueryClientProvider>)

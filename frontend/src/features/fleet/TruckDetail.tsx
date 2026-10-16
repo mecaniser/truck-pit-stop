@@ -1467,7 +1467,6 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
         <div className="avatar">{initials(driver ? displayName : currentDriverName(truck))}</div>
         <div className="fleet-driver-profile-copy">
           <div className="person-name driver-name-record">{driver ? displayName : <CurrentDriver truck={truck} fallback="No driver assigned" />}</div>
-          <div className="person-role">{driver ? 'Managed driver profile' : truck.driver_name ? 'Legacy contact — profile not created' : 'Assign a profile to begin custody tracking'}</div>
         </div>
         {phone && <a className="person-call" href={`tel:${phone}`} aria-label={`Call ${driver ? displayName : truck.driver_name || 'driver'}`}><Phone size={15} /></a>}
       </div>

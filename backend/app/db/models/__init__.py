@@ -262,3 +262,4 @@ from app.db.models.communication import ConversationWorkflow, ConversationReadWa
 from app.db.models.automated_sms import AutomatedSMSOperation  # noqa: F401
 
 from app.db.models.messaging_business import MessagingBusiness, TenantSMSBinding, SMSConsentEvidence, SMSConfigurationAudit  # noqa: F401
+from app.db.models.dashboard_vehicle_binding import DashboardVehicleBinding  # noqa: F401
