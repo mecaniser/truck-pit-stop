@@ -64,6 +64,10 @@ async def test_current_account_contact_evidence_replaces_and_invalidates_without
         invalidated = history_snapshot(tenant=tenant, invoice=invoice, order=order, customer=customer, vehicle=vehicle, operations=[order])
         assert invalidated['customer']['contact_phone_snapshot']['complete'] is False
         assert invalidated['customer']['contact_phone_snapshot']['contacts'] == []
+        customer.ets_external_id = 'invalid-source-id'
+        malformed = history_snapshot(tenant=tenant, invoice=invoice, order=order, customer=customer, vehicle=vehicle, operations=[order])
+        assert malformed['customer']['source_customer_id'] is None
+        assert malformed['customer']['contact_phone_snapshot']['source_customer_id'] is None
         assert customer.phone == primary_before
         assert invoice.total_amount == Decimal('1992.62')
 

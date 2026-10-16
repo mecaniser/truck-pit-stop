@@ -87,6 +87,8 @@ def history_snapshot(*, tenant: Tenant, invoice: Invoice, order: RepairOrder,
     from scripts.easytruck_sync.contact_snapshot import for_history
     from app.services.ets_completed_outcome_source import configured_shops
     source_customer_id = getattr(customer, "ets_external_id", None)
+    if not isinstance(source_customer_id, str) or not re.fullmatch(r"[0-9]{1,50}", source_customer_id):
+        source_customer_id = None
     contact_snapshot = for_history(getattr(customer, "ets_contact_phone_snapshot", None),
                                    customer_id=source_customer_id, dbn_customer_id=customer.id,
                                    shop_id=configured_shops().get(order.tenant_id), source=customer.source)
