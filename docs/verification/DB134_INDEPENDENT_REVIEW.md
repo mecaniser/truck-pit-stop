@@ -253,7 +253,7 @@ is a non-frozen source checkpoint; manifest captured at review conclusion in
 `/tmp/db134-independent-foundation-review-manifest.json`, not an exact final
 candidate approval. No broad test suite was repeated.
 
-**Finding4 — nested outside-service identity leaks to Fleet (open).**
+**Finding4 — nested outside-service identity leaks to Fleet (closed below).**
 `completion_view` correctly hides outer `source.id/can_open` for a Fleet manager,
 but returns raw `row.readings`; `current_readings` also republishes the controlling
 completion's reading provenance. After an owner-recorded outside-service
@@ -265,7 +265,7 @@ summary without private source link; projection must cover nested provenance,
 not just the outer source object. Returned to Backend.
 
 **Finding5 — same-day rebaseline does not isolate previous meter generation
-(open).** Created a program at confirmed110,000, recorded a120,000 observation,
+(closed below).** Created a program at confirmed110,000, recorded a120,000 observation,
 then performed a manager rebaseline on that same shop date to actual1,000 after
 meter replacement. Save correctly sets target2,000, but the previously recorded
 120,000 still wins the due projection. `current_readings`/`choose_observation`
@@ -289,3 +289,156 @@ mileage_out, which existing fleet finalization can populate from Vehicle.mileage
 The eventual source/attestation contract must preserve its explicit distinction
 between actual service evidence and automatic odometer fallback. This review
 will resume on the coherent corrected handoff.
+
+### Findings4/5 closure — bounded correction GO
+
+**Independent QA/Security GO for these two corrections only.** The reviewed
+helpers are `safe_readings`, `current_readings`, `program_view`,
+`program_command` and `completion_view`. Their source-segment hashes are recorded
+in `/tmp/db134-independent-finding45-correction-manifest.json`; the aggregate
+SHA256 of the sorted function-hash map is
+`a048cff1ebb352936ffacc8bc7935f3f099416d3bd35249ee9b02dbc2a191d6d`.
+This identifies the bounded correction while later service integration remains
+under active development; it does not assert a frozen whole-file candidate.
+
+Fleet projections now deep-copy the readings and remove nested service-evidence
+source IDs in both history and current due data. The saved evidence and Shop
+projection retain their provenance. Rebaseline and legacy conversion now record
+a `comparison_reset_at` boundary; observations captured or observed before that
+boundary are excluded before the separately confirmed baseline is considered.
+Ordinary target changes preserve that boundary. A legitimate subsequent reading
+is still selected, so the correction does not permanently suppress new data.
+
+Independent verification:
+
+- Original two reproductions now pass: **2 passed**, 3.08s;
+  `/tmp/db134-independent-foundation-corrected.log`.
+- Expanded independent cases also pass: **2 passed**, 3.61s; Fleet history/due
+  redact the nested ID, stored evidence and Shop history retain it, and a new
+  post-reset1,100 reading produces900 remaining against the2,000 target.
+  `/tmp/db134-independent-foundation-expanded-correction.log` and
+  `/tmp/test_db134_independent_foundation_corrected.py`.
+- Independently ran the owner's two named regression cases for same-day
+  generation isolation and nested Fleet projection: **2 passed**, 2.21s;
+  `/tmp/db134-independent-foundation-owner-correction.log`.
+
+These checks use fresh in-memory SQLite fixtures with autoflush=False. No
+preview/production database, PostgreSQL fixture, browser, provider or app/test
+source was changed by this reviewer. The owner's broader110-case result was
+reported separately and is not represented here as an independent run.
+
+Findings4/5 are closed. The legacy recognize-PM exception and the prohibition on
+using raw RO arrival/mileage-out as actual service readings are now clarified in
+contract section9, but their unfinished implementation is outside this gate.
+The work/evidence/finalization paths, coherent full API integration, actual UI,
+CI and release acceptance remain pending. Prior schema GO retains its original
+scope. Review receipt frozen for handoff.
+
+## Section9 legacy adapter review — returned for correction
+
+**NO-GO for the current legacy recognition integration.** This review covers
+the old recognize-PM adapter and native order reading selection only. Work,
+finalization and new evidence routes remain outside the gate. Exact reviewed
+function/class hashes and source lines are captured in
+`/tmp/db134-independent-legacy-review-manifest.json`; the rest of the service is
+still evolving. Prior migration and Findings4/5 gates retain their narrow scope.
+
+**Finding6 — older legacy recognition can replace newer controlling M1 evidence
+(closed below).** `api/v1/endpoints/fleet.py:2501–2513` decides whether to advance solely
+from other native orders marked `is_pm`. New M1 recognition is explicitly
+required to retain the source's original flag. With a newer controlling
+completion at100,000 and its native source still `is_pm=False`, recognizing an
+older order at90,000 returns `schedule_advanced=True`, changes target125,000 to
+115,000, replaces the controlling completion and increments the cycle. The
+program's newer controlling evidence is available but is not included in that
+decision. This violates section9 older-history protection and section8
+history-only semantics. Independent reproduction seeds valid newer evidence
+through the existing adapter helpers without editing the native source, then
+calls the public legacy route function for the older order. Expected: append
+history-only evidence and retain the controlling identity/cycle/targets/scalars.
+The separate case with a newer source already marked `is_pm=True` passes.
+
+**Finding7 — server-day check rejects a valid shop-local date (closed below).**
+`api/v1/endpoints/fleet.py:2460` still checks `date.today()` before the new
+shop-timezone validation. At2026-10-16T22:00Z in Australia/Sydney, performed_on
+2026-10-17 is the current shop day, but the route returns400 before reaching the
+valid attestation. Expected: validate using the persisted shop timezone as
+required by section9, while retaining actual future-date rejection. Reproduced
+with explicit clock substitutions and a fresh synthetic tenant.
+
+**Finding8 — legacy reading wire accepts coercions and overrange input (closed below).**
+`schemas/fleet.py:351–355` still uses a permissive BaseModel and `int` with only
+a lower bound. It accepts booleanTrue, string`"100"`, float100.0,100,000,000 and
+unknown actor_id. Section9 requires strict reading bounds; section2 forbids
+unknown fields/coercion. The overrange request passes the route schema and then
+raises an uncaught Pydantic ValidationError in
+`services/maintenance.py:767`, rather than returning request-validation422.
+This is not an observed production500; the independently exercised handler
+raises the unhandled exception. Expected: strict supported request input and
+normal422 rejection before any mutation; explicit integer0 remains valid.
+
+Evidence and controls:
+
+- Independently reran the owner's five native-meter/legacy tests: **5 passed**,
+  4.48s, `/tmp/db134-independent-legacy-owner-tests.log`. Raw arrival/fallback/
+  apparently manual native output is rejected as selected actual evidence;
+  manual0 with date precision succeeds without changing the native readings.
+- Expanded independent probes: **12 passed / 8 failed**,7.09s, in
+  `/tmp/db134-independent-legacy-review-final.log`; script
+  `/tmp/test_db134_independent_legacy_review.py`. Eight failed assertions map to
+  the three findings above. Passing cases cover active/pending/review claims,
+  program review, receptionist/mechanic/driver denial, foreign/deleted source,
+  ended membership, lower-reading refusal and existing flagged-PM older history.
+  Refusals retain source/scalars and create no completion; successful
+  history-only behavior retains the newer targets/cycle/controller.
+- The first probe run had three temporary fixture-field errors; these were
+  corrected only in `/tmp` and are not application findings. The final20-case
+  run has no fixture errors. All writes used fresh in-memory SQLite with
+  autoflush=False. No PostgreSQL fixture, preserved preview, production,
+  provider, browser, application source or repository test was changed.
+
+Returned all three findings with reproductions to Backend and Root. Corrected
+frozen functions plus focused regression evidence are required before closing
+this bounded gate. The owner's separate three PostgreSQL concurrency/CAS/
+append-only tests are not represented as reviewer-run evidence. Full feature,
+actual UI, protected CI and release gates remain open. Review receipt frozen
+pending the correction handoff.
+
+### Findings6–8 closure — bounded legacy correction GO
+
+**Independent QA/Security GO for these corrections only.** The original20
+independent probes now all pass in17.34s. Evidence:
+`/tmp/db134-independent-legacy-corrected.log`, using the unchanged independent
+reproduction file `/tmp/test_db134_independent_legacy_review.py`.
+
+Reviewed the corrected source: existing legacy adapters are retained during
+recognition instead of resynchronized over their controlling provenance;
+advancement is suppressed when controlling M1 evidence is newer, and the
+response/history message follows the recorded evidence result. The old server
+date guard is removed, allowing the existing shop-timezone attestation check to
+decide actual future dates. The legacy request now forbids unknown fields and
+requires a strict integer odometer within0–99,999,999, so invalid types and the
+previous uncaught overrange input fail request validation.
+
+Four additional independent boundary cases and the five prior owner regression
+cases also pass: **9 passed**,6.69s;
+`/tmp/db134-independent-legacy-correction-boundaries.log` and
+`/tmp/test_db134_independent_legacy_correction.py`. An actual shop-future date
+returns422 without source/scalar changes and rolls back provisional enrollment.
+Older evidence retains the controller, cycle and completion provenance; a
+different source on the same date returns409 without changes; legitimate newer
+service advances once to the expected target. Native order readings remain
+ineligible as selected evidence; explicit manual0/date-only precision and
+duplicate/independent-program guards continue to pass.
+
+Seven reviewed function/class hashes are captured in
+`/tmp/db134-independent-legacy-corrected-manifest.json`, aggregate SHA256
+`bc35801c451d9cd86eb39d273f81b1071c8eacbf66384cb4f916ed856760460b`.
+This is a scoped source identity, not a frozen whole-service or release SHA.
+All independent writes used fresh in-memory SQLite with autoflush=False; no
+PostgreSQL, preserved preview, production, browser, provider or application/test
+source was changed. No duplicate schema/privacy suite was run.
+
+Findings6–8 are closed. Full work/completion/evidence integration remains outside
+this review and unapproved, as do complete actual-UI, protected-CI and release
+acceptance. Receipt frozen for the next coherent integration handoff.

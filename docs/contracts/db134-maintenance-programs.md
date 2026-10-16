@@ -305,6 +305,16 @@ Native RO mileage_out has no persisted provenance and may have been copied from 
 
 Required regressions: one explicit legacy success/event/advance; duplicate/concurrent retry; independent/occupied/review refusal retaining source/scalars; future/invalid/regressing rollback; older history never rewinds; explicit0; raw fallback/manual-looking historical output and arrival readings rejected as selected evidence; confirmed manual reading succeeds with date precision; new M1 recognition never changes source or Vehicle.
 
+### One-time legacy scheduled package (accepted Architecture amendment)
+
+The existing POST `/fleet/trucks/{vehicle_id}/schedule-pm` retains its `service_ids` semantics: null selects the saved default; an explicit ordered selection is the package for this scheduled order. With `save_as_default=false`, leave `Program.legacy_package` and `VehiclePMService` defaults unchanged. This is a bounded legacy-route exception to the new M1 exact configured-package rule. Other explicit schedule/target changes still synchronize through the guarded versioned legacy adapter.
+
+When `create_work_order=true`, create one legacy program/cycle WorkLink whose immutable `captured_config.legacy_package` contains the complete actual selected service identities/display snapshots in order, with captured program version, intervals and targets. Map every distinct selected service to its exact generated operation once and apply/charge each bundle once. The default package remains recoverable from the program version/event snapshot. When `save_as_default=true`, update the saved package through the guarded adapter before capturing the cycle. When `create_work_order=false`, create no cycle claim or operation mapping.
+
+Completion/removal/cancellation/restoration use the cycle's captured scheduled package, never substitute today's saved default or reject the deliberate one-time selection merely for differing from it. All cycle, baseline, authorization, version, lifecycle and compatibility guards remain. Missing/ambiguous mappings retain review_required and cannot advance targets; empty/partial mappings never prove completion. Preserve P1/C1 review, pricing, reservations and atomic order/claim transaction. Replays cannot create another order/link. Ordinary new M1 work preview/commit continues to require the full exact configured legacy package.
+
+Acceptance: default A+B with one-time A+C preserves defaults A+B, captures/maps A+C, and advances once only when both actual operations and evidence qualify; default-saving updates/captures A+C; schedule-only creates no link; replay/race, missing mapping, cancellation/restore, and new M1 rejection of unconfigured A+C remain covered.
+
 ### Removal confirmation carriers (accepted Architecture amendment)
 
 ```ts
