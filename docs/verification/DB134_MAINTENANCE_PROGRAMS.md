@@ -1,6 +1,6 @@
 # DB134 / M1 — multiple maintenance programs
 
-Accountable: Backend & Integrations. Lane: High risk (schema, tenancy, financial/stock integration and completion state). Status: **In progress — implementation handoff**. Branch: `codex/maintenance-programs`, base `c42009e08b10003ddc2ab54e96c39a6a61be5bbd`. No M1 code, applied migration, PR or release yet.
+Accountable: Backend & Integrations. Lane: High risk (schema, tenancy, financial/stock integration and completion state). Status: **In progress — implementation handoff**. Branch: `codex/maintenance-programs`, base `c42009e08b10003ddc2ab54e96c39a6a61be5bbd`. M1 application implementation is in progress; no preview migration, PR or release yet.
 
 ## Outcome and acceptance
 
@@ -58,3 +58,9 @@ Architecture accepted the narrow removal-carrier amendment: direct DELETE uses o
 Private M1 capture/comparison helper is frozen at `Documents/Codex/ets-priority-preparation-20261015/db134-production-retention-v1.py`, SHA256 `592372ecfb5ad5694a2f371c50c389d48cc5c8ac23b95cb39ed567023d298c56`. It protects13 original cohorts across orders/labor/parts/invoices/counter sales, customer terms, vehicle PM targets/packages, payments, inventory and cores; returns only opaque references/hashes/counts. Read-only repeatable-read,20s statement/2s lock limits, fixed cutoff/baseline digest and exact schema/scope checks. Changes and new M1 adoption require review, never timestamp-based exemption.
 
 Root ran capture only against the LOCAL176 preview, then independent reviewer passed28 initial negative cases and15 correction cases after adding payment/stock protection. Comparator-only GO recorded separately. No production execution or application/schema approval follows from these preparation checks. Final revision/source and production environment must be rechecked before actual release use.
+
+## Foundation gate return — 2026-10-16
+
+Independent PostgreSQL probes returned NO-GO: duplicate finalize/advanced completion records were accepted for one program/work/source when recognition_key was null. Backend is correcting durable link/source constraints and must re-freeze/rehearse migration177. Other20 probes passed, including tenant FKs, active-cycle uniqueness, immutable evidence/event requirements and zero/NaN guards. All34 disposable old+M1 table fingerprints were unchanged after rollback. Preview remains schema176, preserved backup intact; no M1 production change.
+
+Frontend contextual editors now appear under the toolbar or selected program row, with first-field focus and Escape/trigger return coverage for20 programs. This is source/component evidence pending actual browser acceptance. Runtime recheck at HEADde8db657 retained frontendPID39898, intended bindmount and direct/proxied readiness200; preview still176.

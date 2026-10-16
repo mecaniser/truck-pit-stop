@@ -31,7 +31,7 @@ Last updated: 2026-10-16. Program owner: Product & Delivery Lead. Discovery inve
   - Approved: new external orders use the customer agreed labor rate, otherwise the shop billing rate; existing orders retain saved rates.
   - Evidence: [C1 readiness notes](verification/DB133_CUSTOMER_PRICING_READINESS.md). [C1 contract](contracts/db133-customer-pricing-defaults.md) and [implementation receipt](verification/DB133_CUSTOMER_PRICING_DEFAULTS.md).
 - [ ] **M1 — Multiple recurring maintenance programs per truck**
-  - Status: **In progress — contract intake and runtime alignment**. Board: **DB-134**. Owner: Backend & Integrations.
+  - Status: **In progress — implementation; foundation uniqueness correction returned to Backend before preview migration**. Board: **DB-134**. Owner: Backend & Integrations.
   - Evidence: [M1 contract](contracts/db134-maintenance-programs.md); [implementation receipt](verification/DB134_MAINTENANCE_PROGRAMS.md).
 - [ ] **B1 — Customer transaction ledger, statements and overdue-balance aging**
   - Status: **Queued**. Board: **DB-135**. Owner: Backend & Integrations.
