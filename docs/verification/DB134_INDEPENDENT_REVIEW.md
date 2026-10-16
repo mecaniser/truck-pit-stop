@@ -442,3 +442,217 @@ source was changed. No duplicate schema/privacy suite was run.
 Findings6–8 are closed. Full work/completion/evidence integration remains outside
 this review and unapproved, as do complete actual-UI, protected-CI and release
 acceptance. Receipt frozen for the next coherent integration handoff.
+
+## Frontend/contract checkpoint142a1b99 — two returned defects
+
+**NO-GO for the bounded frontend checkpoint until Findings9/10 are corrected.**
+Reviewed `04a61f5b..142a1b99`: the shared Maintenance feature, customer/fleet/RO
+adapters and P1 removal extension. Backend work/lifecycle files were still under
+owner development and are not approved by this pass.
+
+Source review confirms scoped query keys and cancellation, retained editor/CAS
+snapshots, explicit discard-and-reload, mutation identity retention after
+uncertain responses, null attestations for unchecked completion entries, blank
+actual service inputs, native RO reading selection omitted, downward Fleet
+pricing projection, and reviewed removal tokens with explicit confirmation
+after409. Shared coverage groups retain full configured legacy packages and one
+operation per selected service. The P1 extension is limited to PM replacement,
+checks the relevant order and requires confirmation for affected links. These
+are bounded source/component conclusions, not proof of unfinished backend
+lifecycle behavior.
+
+Independent tests on the frozen implementation:
+
+- Seven affected Maintenance/customer/fleet files: **89 passed**,5.15s;
+  `/tmp/db134-independent-frontend-focused.log`. Cases include CAS and drafts,
+  actor/context changes, exact completion entries, unchecked deferral, retry
+  identity, Escape, foreign response rejection and Fleet completion adapter.
+- P1 maintenance removal-extension cases: **3 passed /16 deliberately filtered**,
+  2.44s; `/tmp/db134-independent-frontend-removal-pricing.log`. Full unrelated
+  pricing suites were not repeated.
+- Two independent probes use a temporary source snapshot in
+  `/tmp/db134-independent-frontend`. All23 changed implementation files match
+  checkpoint142a1b99 byte-for-byte, recorded in
+  `/tmp/db134-independent-frontend-manifest.json`. Only temporary probe files
+  were authored; repository implementation/tests and runtime were untouched.
+
+**Finding9 — refreshed selection silently loses a requested program (closed below).**
+`MaintenanceSection.tsx:57` keeps selected IDs but constructs the Plan work
+editor from `query.data.items.filter(...)`. Select Oil and Safety, then refresh
+the page without Safety (for example, it was archived or moved off the current
+page). The button still says “Plan work ·2”, but opens a one-program editor and
+Review work submits only Oil. The original selection is silently reduced before
+the server can validate it. Independent test fails with actual
+`['program-1']` versus both selected IDs. Expected: preserve the requested scope
+or visibly require explicit re-selection when it changes; do not silently plan
+the subset. Evidence: `/tmp/db134-independent-frontend/selection.test.tsx` and
+`/tmp/db134-independent-frontend-selection.log`.
+
+**Finding10 — legacy calendar still uses a UTC maximum (closed below).**
+`TruckDetail.tsx:1329` gives DatePicker
+`max={new Date().toISOString().slice(0,10)}`. With clock2026-10-16T22:00Z and
+browser/shop Australia/Sydney, the actual calendar button for the current
+shop date2026-10-17 is disabled. Backend now correctly accepts that shop-local
+day; the frontend cap still rejects it. The independent test renders the real
+TruckDetail and DatePicker in the isolated snapshot, not a calendar stub.
+Evidence: `/tmp/db134-independent-frontend-legacy-date.log` and the temporary
+TruckDetailHarden test named “independent: allows the current service day when
+the shop is ahead of UTC”. Prior Finding7 closure was explicitly backend-only
+and remains accurate.
+
+Root's actual UI receipt separately reports Light/Night desktop/mobile CRUD,
+target retention,95second fleet-refetch draft retention, stale-save/retry/
+explicit reload, focused validation and one content scroller. This reviewer
+read that receipt; these are Root-observed local/browser-emulated journeys,
+not independent browser execution or complete work/finalization acceptance.
+No production proof is implied. Returned Findings9/10 to Root and Frontend;
+correction-only rerun is required. Review receipt frozen pending handoff.
+
+## Frontend Findings9/10 correction — bounded GO
+
+Independently reviewed the four-file correction over `142a1b99`. Aggregate
+planning now requires every selected ID to remain present, unarchived,
+permitted and configured with a service. A changed selection retains its count
+and IDs, disables planning, explains the change and offers explicit Clear
+selection. A planning editor already opened retains both original program
+identities and versions for server validation. The legacy calendar no longer
+uses a UTC-derived maximum; the server's shop-local date check remains
+authoritative and its rejection retains the entered date and literal-zero
+odometer. No unrelated assertions were removed or weakened.
+
+Independent correction evidence, all with `TZ=Australia/Sydney`:
+
+- The two changed repository test files: **35 passed**, 4.90s;
+  `/tmp/db134-independent-selection-date-owner-recheck.log`. Existing React
+  act warnings remain; there were no failing cases.
+- Five independent isolated-snapshot cases: **5 passed**, 2.02s;
+  `/tmp/db134-independent-frontend-selection-corrected.log`. Missing,
+  archived, denied and no-service selections cannot submit a reduced subset;
+  explicit clear/reselect submits exactly the chosen remaining program. An
+  opened draft preserves both identities and version1 after a version2 refresh.
+  The first probe attempt asserted synchronously before React Query notified
+  the component; waiting for the observable disabled state corrected that
+  temporary test timing issue, with no application change.
+- The original real-DatePicker timezone reproduction now passes unchanged:
+  **1 passed /11 filtered**, 1.79s;
+  `/tmp/db134-independent-frontend-date-corrected.log`. At
+  `2026-10-16T22:00Z`, the current Sydney date `2026-10-17` is selectable.
+
+The two application files in the independent snapshot match the reviewed
+working tree byte-for-byte. Four-file manifest:
+`/tmp/db134-independent-frontend-correction-manifest.json`, aggregate SHA256
+`f118b7e38d4d81c79b0fe9c99dd69445d5888eb128a82598f4b5957c704a4e00`.
+This identifies the correction over HEAD142a1b99, not a final whole-feature
+release revision. No duplicate broad suite was run.
+
+Root separately reproduced the selection change in the actual local UI:
+another tab archived Safety and edited Oil; the original stale save refreshed
+the list, Cancel retained the two-item selection with disabled planning and
+guidance, and mobile Clear selection removed it without a work request.
+Screenshot: `/tmp/db134-selection-changed-desktop.png`. This is Root's browser
+evidence, not independent browser execution.
+
+Findings9/10 are closed. **GO for this bounded frontend/contract correction**;
+no additional concrete defect was found in the reviewed frontend scope. Full
+backend work/evidence/finalization, complete runtime journeys, CI and production
+release remain separate pending gates. The reviewer changed only this receipt
+and temporary probes; no browser, preview, production or application/test source
+was changed. Receipt frozen for the next integration handoff.
+
+## Finalization channel correction — returned GET carrier defect
+
+**NO-GO pending Finding11.** The reviewed one-line change in
+`RepairOrdersPage.tsx:1826` correctly uses Fleet preview for the mutation that
+always posts to `/fleet/work-orders/:id/complete`. That endpoint fixes its
+maintenance channel to Fleet for owner, admin and fleet-manager actors. The
+generic `/repair-orders/:id/approve-completion` endpoint retains Shop for owner/
+admin and Fleet for fleet managers, matching the unchanged generic callback.
+This is source-level endpoint/role correspondence, not approval of the full
+backend finalization implementation.
+
+The page adapter tests and existing work/evidence tests independently pass:
+**13 passed**, 3.96s, `/tmp/db134-independent-finalization-channel.log`.
+However, the page API stub returns an order-maintenance response regardless of
+GET options, hiding a real wire failure.
+
+**Finding11 — order-maintenance GET omits its required channel (closed below).**
+`backend/app/api/v1/endpoints/maintenance.py:128` requires the `channel` query
+parameter. Initial and reload GETs in `useMaintenanceFinalization.tsx:26,56`
+send only `signal`; the same omission exists in `api.ts:24` and
+`useMaintenanceRemoval.tsx:20,38`. The shared Axios interceptor does not add
+channel. Consequently the actual endpoint rejects the initial review request
+with422 `maintenance_invalid_input`, field `channel`, before loading the
+review or allowing either finalization path. Removal and summary reads have
+the same defect. Additionally, the `m1_review` digest explicitly binds channel,
+so initial/reload reads must use the projection corresponding to their preview
+and final write; merely choosing an arbitrary default is not sufficient.
+
+Independent actual-ASGI validation reproduction:
+`/tmp/test_db134_independent_order_channel.py`,
+`/tmp/db134-independent-order-channel-http.log`: **3 passed**, 0.35s. For
+owner, admin and fleet-manager identities, a missing channel returns422 without
+calling the service; explicit Shop/Fleet parameters reach the service with the
+exact supplied carrier. The service was replaced with an AsyncMock and DB
+dependency with a sentinel, so this proves the HTTP query boundary only, not
+role authorization or database behavior. No DB, provider, preview or browser
+was accessed. Returned the finding to Root and Backend; Root assigned the
+frontend correction including initial, reload and removal callers. Prior
+selection/date GO remains valid. Correction review remains open.
+
+## Finding11 and finalization channel correction — bounded GO
+
+Reviewed the frozen frontend correction against the actual HTTP signatures.
+All five order-maintenance GET locations now send the explicit channel:
+summary, initial/reloaded finalization and initial/reloaded removal. Summary
+query keys include channel. Removal captures channel in its pending request
+and identity, so a changed projection cancels the earlier request. Shop-page
+DELETE calls use the same role-selected `pricing_presentation` as their GET;
+Fleet builder DELETE calls explicitly use Fleet for both, including when an
+owner uses that builder. Both server DELETE adapters pass that presentation
+to their maintenance token guard. Initial GET, target preview and final write
+agree for the Fleet completion endpoint, while generic approval retains the
+role-dependent Shop/Fleet rule described above. The required backend query
+parameter and channel-bound token validation were not relaxed.
+
+Independent corrected-source results:
+
+- Commands, work/evidence, Fleet builder and real repair-order page adapters:
+  **49 passed**, 5.20s; `/tmp/db134-independent-channel-corrected.log`.
+  Updated API stubs reject missing or wrong channels. Initial and explicit
+  reloads, stale-removal refresh and next explicit confirmation retain the
+  intended projection and refreshed token. Page cases cover owner/admin/fleet
+  manager through the actual callback and finalization hook.
+- Actual Shop PriceBuilder removal adapter for owner and fleet-manager roles:
+  **2 passed /72 deliberately filtered**, 2.63s;
+  `/tmp/db134-independent-shop-removal-channel.log`. GET channel and DELETE
+  presentation/token match. The unrelated 74-case full file was not repeated.
+- Three additional independent isolated-snapshot probes: **3 passed**, 1.19s;
+  `/tmp/db134-independent-channel-boundaries.log`. A late Shop removal read
+  cannot open or write after switching to Fleet; the next Fleet review uses
+  only its new token. Concurrent Shop/Fleet summary queries retain distinct
+  tokens. An order with no maintenance still fetches the exact Fleet channel
+  before the existing no-dialog finalization path.
+- The original actual-ASGI mandatory-query reproduction remains valid:
+  **3 passed**, 0.58s;
+  `/tmp/db134-independent-order-channel-http-recheck.log`. Missing channel
+  still fails before service execution; explicit values pass the wire boundary.
+  This test uses a service stub and a DB sentinel, not real authorization or
+  database mutation.
+
+The three independently exercised hook files match the working tree exactly.
+Twelve-file source/test manifest:
+`/tmp/db134-independent-channel-correction-manifest.json`, aggregate SHA256
+`db1605c9c0cfe1a630b2c9bb7463783bef381adb5a9567c85e49f60abb915d23`.
+The nearby presentation correction in MaintenanceWork also correctly labels
+current agreement terms only for new work; retained-operation pricing is not
+represented as recomputed from that policy, and its focused tests pass.
+
+Root separately reports the signed-in local mobile UI now opens its three-
+program completion review. That observation is limited to opening the review;
+it is not recorded here as successful financial finalization or full browser
+acceptance. **Finding11 is closed; GO for the bounded frontend carrier and
+finalization-channel correction.** Backend lifecycle/evidence source was still
+evolving and is explicitly excluded. Full runtime, CI and release gates remain
+pending. Only this receipt and temporary independent probes were changed by
+the reviewer; no browser, preview, production or repository app/test edits.
+Receipt frozen for the next integration handoff.
