@@ -47,3 +47,15 @@ Final inbound-version delta: inspected creation of workflow version2 when inboun
 Independent reinspection of final `ConnectedInbox`, transport adapter, shared preview changes and actual Axios interceptor tests found no blocking frontend security or send-recovery issue. `npx vitest run src/features/communications --run`: **16 tests passed across four files**. Coverage includes signed-out401 without invalid refresh, cookie-only session acceptance, WorkOS renewal, exact stored send recovery after network loss/reload, double-click suppression, preservation of a newer draft, corrupt recovery fail-closed behavior, cross-contact/channel drafts and unavailable-channel blocking. Server data maps explicitly; no fixture conversations enter the connected adapter. Current session epoch guards and tenant/user storage keys prevent late response/draft mixing across sessions. Shared `lib/api.ts` behavior is reused rather than changed globally.
 
 Awaiting final desktop/mobile screenshots and delivery-lead browser receipt before the overall local workflow QA gate.
+
+## Final isolated workflow QA gate
+
+**GO — DB-COMMS-002 isolated simulated workflow acceptance. This is not production release approval.**
+
+Independently inspected the desktop1280×900, mobile390×844 and refreshed mobile held-delivery screenshots using the image tool. Desktop list/history/contact panels, readable delivery states and simulation label are coherent. Mobile normal and unknown-detail views preserve readable history and composer controls without horizontal clipping. The initial held-state capture showed an incomplete footer; the delivery lead rechecked exact DOM bounds (Send button772–803 within844) and replaced the mid-layout capture. The refreshed image independently confirms the disabled Send SMS button and full footer are visible. No source change was required for that capture issue.
+
+Reviewed `CONNECTED_INBOX_VERIFICATION.md` and `.impeccable/review/http-acceptance.json`: the final HTTP pass adds the previously missing foreign send/read/history/workflow/message-ID and unauthorized mutation checks. It explicitly separates the initial fresh unknown timeout from the retained held fixture in subsequent runs. Browser execution remains delivery-lead evidence; screenshot inspection, source review and focused automated reruns are independent evidence.
+
+Also inspected the final local recovery CLI: it imports the guarded isolated sender and invokes the already-reviewed bounded processor with limit50; it adds no production route or scheduling and does not reclaim held operations.
+
+No unresolved blocker for the authorized isolated workflow remains. Real SMS/carrier verification, protected CI, production scheduling/reconciliation readiness, merge and deployment are still required before release. Legacy sending and notifications remain outside the new operations' duplicate-safety guarantee.
