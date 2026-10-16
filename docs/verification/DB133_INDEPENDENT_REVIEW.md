@@ -494,3 +494,28 @@ this GO does not claim provider-level exactly-once semantics or unrelated legacy
 financial-merge remediation. Any substantive post-gate source change requires a
 bounded delta review; a documentation-only receipt commit does not invalidate the
 reviewed application identity.
+
+## Production comparison preparation — 2026-10-16 04:07 UTC
+
+Read-only review found two gaps in the initial release-evidence script: existing
+counter header/line money was not fingerprinted, and late-visible pre-cutoff rows
+or global pre-cutoff C1 activity could still return a green comparison. The script
+owner corrected both in receiptversion2; these were evidence-only findings and
+did not alter the approved application. Independent connection-free probes6/6 and
+the script self-test pass. The corrected script SHA256 is
+`b84f531769b6020380b663f761fef5faadfd241930ad448143b9cbbf20687c89`.
+Changed financial hashes require review even when updated_at advances; late rows,
+missing/changed original rows, source/config changes and global pre-cutoff C1
+snapshots/events also require review. The incomplete version1 baseline is rejected.
+
+Independently validated the new private0600 version2 baseline at fixed cutoff
+`2026-10-16T04:07:03.781201+00:00`, schema174, read-only repeatable-read, readiness
+ready. Counts:3671 repair orders,4670 labor,2934 part usages,2443 invoices,
+765 customers,1 counter sale and1 counter line. Counter money hashes and all opaque
+references validate. Canonical receipt digest:
+`059f5b1f2192c3d9bd4b6db138451c3ed6ca6f02cc5aa70bf0009e49d5937620`.
+No row manifest was printed; this reviewer opened no database/browser connection.
+Original-cohort equivalence must not be described as all-production equivalence:
+post-cutoff new work/adoption needs its own audit attribution, and a later timestamp
+alone never proves a changed charge was authorized. Final175 comparison and
+production UI acceptance remain pending.

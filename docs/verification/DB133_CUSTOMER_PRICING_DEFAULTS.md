@@ -117,3 +117,12 @@ Final source checks: Backend335 affected regressions,89 overlapping final-delta 
 Evidence images in [db133](db133/): `night-desktop-settings-fixed.png`, `night-320-settings-fixed.png`, `night-landscape-settings-fixed.png`, `light-desktop-settings-fixed.png`, `light-mobile-settings-fixed.png`, `mobile-intake-accepted-fixed.png`, `light-mobile-agreement-history.png`, `light-mobile-manual-rate.png`, `night-desktop-retained-order.png`, `night-mobile-order-b.png`. The Price Builder intentionally remains a light working sheet in Night mode; the retained-order image shows its dark surrounding queue. Browser viewport emulation is not physical-device testing. Counter optional-flag cells and restricted-role flows are covered by automated/API/PG checks, not claimed as actual signed-in browser passes.
 
 Production remains the P1 application at PR545 documentation merge ef936b8b, deployment6c2e0321-5ca4-4f96-a7dc-d0413aaf602c, public build and readiness verified. C1 has not been merged/deployed or production verified yet.
+
+
+## Release candidate
+
+Independent local QA/Security GO applies to application candidate929f2d4e55e220f09aedfbb28e4bae41eb12f99b. The subsequent gate-only commit948c9a43df7480a90e96398700d3ce574d0506fc is [PR550](https://github.com/mecaniser/truck-pit-stop/pull/550)'s exact protectedCI candidate, run38847883650. All six contexts must pass before normal merge. No direct-main push or bypass.
+
+Rollback boundary: migration175 is additive and retains historical rates/charges. Once any C1 defaults/snapshots exist, P1-only code cannot safely ignore them: use a forward correction, retain a compatible policy reader, or pause affected new-work creation. Do not destructively downgrade adopted pricing evidence. Post-deployment checks cover schema/build/health, fixed-baseline finance retention, aggregate no-backfill state and actual permitted production UI.
+
+New-local-day runtime receipt,2026-10-16 04:01UTC: intended branch948c9a43 with release-documentation-only edits; frontend39898 serves this checkout/frontend at5174, effective proxy8001. Backend9d8774b7 imagebde2e27b binds this checkout/backend,development postgres/truckpitstop_ets_workflow_parity_20261012/schema175. Direct and correctly proxied /health/ready pass. Reloaded customer Business settings visibly shows C1 Pricing with145/shop/catalog and restored Night mode. Existing branch stamp195c7f3 is corroborated by source process/mount and actual feature; no server restart, migration or data change. Local5174 is aligned and browser-verified.
