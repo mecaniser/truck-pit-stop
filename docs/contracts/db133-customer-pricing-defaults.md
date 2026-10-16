@@ -157,13 +157,45 @@ type OrderPricingSnapshot = {
 };
 ```
 
-Counter snapshots use the same identity/source fields and parts object, omit labor,
-and add `captured_for: 'counter_sale'`. The JSON revision ID must match its typed
-column; matrix mode requires both and catalog mode requires both NULL. Validate
-these invariants on write, with schema checks/tenant FKs where applicable. Never
-trust a browser-supplied snapshot. P1 parts keep their own attachment cost, fixed
-policy and floor snapshots; the order snapshot does not freeze inventory WAC or
-part-specific policy before a part is attached.
+Counter snapshots omit labor and have two explicit identity variants. A linked
+customer keeps the exact account identity above; a walk-in has no customer identity:
+
+```ts
+type CounterPricingSnapshot =
+  | (Omit<OrderPricingSnapshot, 'labor'> & { captured_for: 'counter_sale' })
+  | (Omit<OrderPricingSnapshot,
+      'labor' | 'customer_id' | 'customer_name' | 'customer_pricing_version' |
+      'customer_policy_event_id' | 'parts'> & {
+      captured_for: 'counter_sale';
+      customer_id: null;
+      customer_name: null;
+      customer_pricing_version: 0;
+      customer_policy_event_id: null;
+      parts: {
+        source: 'shop';
+        mode: 'matrix' | 'catalog';
+        matrix: MatrixRef | null;
+        shop_default_generation: number;
+      };
+    });
+```
+
+For a walk-in, use the actual shop matrix revision or explicit catalog mode if no
+shop default exists, and capture the current P1 shop-default generation (including
+zero). Do not create a customer, account policy or customer-policy event. Free-text
+buyer name/contact remains in existing sale/receipt fields; it is not fabricated
+account provenance. A counter-policy event may still record the actual sale's
+policy transition with NULL customer identity. Skip customer lookup/locking and
+customer-reference merge checks for this NULL identity; normal tenant/sale/P1
+checks still apply. The linked-account-only pricing-preview endpoint is not called
+for a walk-in; existing P1 counter_draft preview supplies its pricing confirmation.
+
+For either variant, the JSON revision ID must match its typed column; matrix mode
+requires both and catalog mode requires both NULL. Validate these invariants on
+write, with schema checks/tenant FKs where applicable. Never trust a browser-supplied
+snapshot. P1 parts keep their own attachment cost, fixed policy and floor snapshots;
+the order snapshot does not freeze inventory WAC or part-specific policy before a
+part is attached.
 
 ## Dedicated customer configuration API
 
@@ -306,14 +338,81 @@ token. A supplied mismatch rolls back newly staged customer/vehicle/relationship
 otherwise capture the actual account's terms and return the resulting order source.
 Do not add a new ambiguous phone-to-account choice or change quick-create semantics.
 
-Signed originating-call intake requires special ordering: an idempotent existing
-order returns its original snapshot after existing authorization/identity checks,
-not a comparison against today's agreement. Prevalidate displayed policy before
-reserving an originating-call reference; capture/recheck before the final DB
-creation transaction. Preserve the reserved order UUID for retry if a concurrent
-pricing change occurs between those steps. Do not issue another provider reserve,
-create a duplicate order, or claim to undo an external reservation on DB rollback.
-No C1 pricing retry sends a customer notification or changes the provider protocol.
+### Signed originating-call reservation recovery
+
+Reuse existing PartsOperationIdempotency storage under operation_family
+`c1_call_reservation`; no new receipt table, provider protocol or outbound action.
+The server computes the key from a keyed, domain-separated digest of authenticated
+tenant ID, actor ID and the opaque originating_call_reference token. The key is not
+the browser's mutable intake Idempotency-Key. Never store or log the raw token,
+provider secret, full request body or browser-supplied attribution in this mapping.
+The request fingerprint additionally binds the actual selected customer_id and
+vehicle_id. It deliberately excludes current pricing token/rate so an explicit
+pricing-conflict retry can reuse its known-success reservation.
+
+The internal completed receipt body is exactly:
+
+```ts
+type CallReservationReceipt = {
+  schema_version: 1;
+  tenant_id: string;
+  actor_id: string;
+  customer_id: string;
+  vehicle_id: string;
+  repair_order_uuid: string;
+  elis_opportunity_id: string;
+  callrail_call_id: string;
+  recorded_at: string; // local UTC receipt time, not asserted provider event time
+};
+```
+
+These are validated provider response fields plus validated local identity bindings,
+not caller-controlled attribution. Store an internal 200 completed receipt, never a
+serialized RO/price response. Normal endpoint responses still apply the current
+safe projection and authorization rather than replaying a cached response body.
+
+Required ordering and transaction boundaries:
+
+1. Before lookup/replay, perform current authenticated tenant/role/call-intake
+   eligibility and actual customer/vehicle access checks. A receipt never grants
+   new scope. Acquire P1's existing per-key transaction advisory serialization,
+   then refresh/inspect the scoped receipt. A different customer/vehicle binding
+   conflicts using the existing call-intake identity-conflict behavior; never
+   rebind the receipt or disclose the earlier account/vehicle IDs.
+2. If a completed mapping exists, validate its tenant/actor/bindings and load the
+   reserved order by UUID plus tenant. If that order exists, apply current order
+   authorization and existing deleted/lifecycle visibility guards; verify its
+   actual customer_id, vehicle_id and provider attribution against the receipt.
+   Return the authorized order with its ORIGINAL snapshot before comparing today's
+   agreement. Never revive deleted work, silently select another order or recreate
+   an inaccessible order. If the reserved order does not yet exist, reuse the
+   mapping and continue the final capture without another provider reserve.
+3. Without a mapping, prevalidate any displayed pricing precondition before the
+   existing provider reserve call. Only a validated successful provider response
+   may become a completed mapping. Bound the call with existing timeouts and keep
+   serialization limited to this reservation key; do not hold broad tenant,
+   customer, order, inventory or financial locks across network I/O.
+4. Durably commit this reservation evidence in its own narrowly owned transaction
+   before final locked policy capture/order creation. This transaction may contain
+   only reservation evidence and read checks, not staged customer/vehicle/order,
+   relationship, stock, pricing or payment mutations. Do not accidentally commit
+   pending ORM changes from an outer request. The intake adapter owns this explicit
+   boundary; normal pricing helpers still do not commit.
+5. Begin/revalidate the normal final C1 intake transaction, using the reserved UUID,
+   current authorization/actual identities and displayed pricing precondition.
+   Another request may already have created that order after the receipt commit:
+   refresh and replay it with the same original-order checks before inserting.
+   Complete order, snapshot, work and normal intake receipt atomically. A pricing
+   409 or other final-work rollback retains the known-success reservation mapping;
+   retry preserves the UUID and does not reserve again after that mapping exists.
+
+A crash, network loss or DB failure after provider success but BEFORE the mapping
+is durably saved remains an ambiguous provider outcome. C1 cannot guarantee zero
+repeated provider calls or exactly-once external execution in that interval. Keep
+the existing bounded provider error/retry semantics and authority checks; do not
+fabricate a success receipt, invent a new UUID or claim a DB rollback undid the
+external reservation. No new provider recovery endpoint, queue, notification or
+customer send is introduced. This is known-success recovery only.
 
 P1 fleet_create preview binds the candidate account policy and its total. Its
 mutation uses that same captured policy for order creation and parts/labor planning,
@@ -327,8 +426,10 @@ Implement one customer/intake capture helper and one existing-order policy reade
 Use them in all three constructors: create_repair_order, quick_create_repair_order,
 and fleet._spawn_internal_ro (despite its name, it creates external work too).
 Every caller of the fleet helper, including PM scheduling, receives the same policy.
-Snapshot, revision FK, order, initial work, stock/relationship changes and existing
-idempotency receipt belong to the owning transaction/savepoint. No helper commit.
+Snapshot, revision FK, order, initial work, stock/relationship changes and the normal
+intake idempotency receipt belong to the owning transaction/savepoint. No helper
+commit. The separately durable call-reservation evidence above is the sole explicit
+exception; it never commits these work/pricing mutations.
 
 Precedence for NEW C1 external orders:
 
@@ -468,13 +569,17 @@ customer/order, presentation and relevant version; clear on identity changes.
 ## Counter-sale default and buyer change
 
 Reuse P1 counter_draft planning and saved line identity. New customer draft captures
-that customer's parts policy; new walk-in draft captures shop/catalog policy. All
+that customer's parts policy; new walk-in draft uses the NULL-identity snapshot
+variant above and captures the actual shop matrix/catalog policy. All
 pricing/checkout feature flags, manager-only override rules, tax, payment, receipt
 and return accounting remain unchanged. No feature activation is part of C1.
 
 Same buyer plus later account edit does not repin a saved draft. Changing the buyer
 on an editable existing draft captures the selected buyer's current policy for
-future lines. P1 preview binds candidate buyer/policy version/revision, saved sale
+future lines. This also covers linked account → walk-in and walk-in → linked
+account; clearing the buyer captures the current shop policy with NULL identity,
+while retained lines remain unchanged. P1 preview binds candidate buyer (including
+NULL)/policy version/revision, saved sale
 version and retained line prices; existing expected_version and
 pricing_preview_fingerprint remain the request's concurrency carriers. Reuse P1's
 review on changed totals; no keep_existing_line_prices flag, extra acknowledgment
@@ -536,7 +641,8 @@ ordering; never add a late tenant lock to a receipt already holding PO/inventory
 locks. No new pricing helper commits. No broad lock is held over user think-time.
 Use the established Tenant lock for coherent new-order capture with existing shop
 settings writes; do not rewrite financial creators or reviewed-import workflows.
-Originating-call reservation recovery remains bounded as specified above.
+Originating-call reservation recovery uses only the bounded per-key receipt
+transaction above; its known-success commit precedes final-work locks.
 
 Domain errors use FastAPI typed JSON; 403 role denial and 404 missing/foreign active
 subject do not reveal account terms. 422 handles malformed/out-of-range/unknown
@@ -634,9 +740,14 @@ Required focused evidence before independent gates:
   order or counter reference and reverse-pair merge; manual labor edits versus
   reapply/completion. Assert actual rollback and saved-rate preservation. Do not
   claim new labor stale-form CAS or broader financial-merge race guarantees.
-- Signed call reservation/replay and standard create-then-attach conflict/cancel
-  retain one order identity and original policy. No duplicate relationship/stock
-  effects or customer sends during recovery.
+- Signed call reservation: precondition failure before reserve; known-success
+  mapping plus final pricing409 retry without another reserve; concurrent same-key
+  submissions; existing-order replay after agreement change; changed customer/
+  vehicle/actor/tenant/role and inaccessible/deleted order negatives; no raw token
+  persisted/logged. Simulate ambiguous provider/commit failure and preserve the
+  documented limit rather than asserting exactly-once external calls.
+- Standard create-then-attach conflict/cancel retains one order identity and original
+  policy. No duplicate relationship/stock effects or customer sends during recovery.
 
 Actual runtime journeys in Light and Night Shop on desktop 1280+, portrait 390/320
 and landscape 740×400: configure synthetic terms, create exact-account work,

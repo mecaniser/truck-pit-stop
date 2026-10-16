@@ -29,3 +29,50 @@ Before any C1 migration: preserved local schema174 custom-format backup at `/Use
 Product accepted [Architecture contract](../contracts/db133-customer-pricing-defaults.md) after narrowing it to account defaults, frozen new-order terms, existing manual-rate controls and current P1 counter behavior. No compulsory labor-edit reason or new labor CAS protocol; no payment/import/financial-merge rewrite. The conservative C1 merge guard requires retaining identities with C1 pricing history/references, rather than deleting their provenance. The pre-existing generic financial-merge concern remains separately recorded in readiness notes and is not claimed fixed.
 
 Backend owns all backend models/migration/services/endpoints/serializers/tests as one contract integration; Frontend owns customer settings/types/hooks and narrow order/fleet/counter/source adapters/tests. They must not edit each other's files, reset unrelated changes, commit/push or migrate the preserved preview without coordination. Independent QA/Security begins after the integrated source and focused evidence are ready; root owns browser QA and release.
+
+## Local additive migration — 2026-10-16 02:52 UTC
+
+Applied revision175 only to the preserved local preview after the existing custom-format backup and disposable174→175→174→175 compatibility proof. The migration's SHA256 was `e7a37d49cba996cddea83999d9f90d435a1952047ff0d6da27dc4d14edfa169d`. Direct PostgreSQL tests reject six malformed snapshot shapes and NaN/zero/negative account rates, while accepting the maximum valid rate. Mapped ORM activation was held until this upgrade completed.
+
+Before/after hashes of every pre-existing column and row matched for customers631, repair orders2815, counter sales0, labor3837, inventory1334, part usages2894 and invoices2056. No agreement, price or money backfill occurred. Direct8001 and frontend-proxied5174 readiness both pass; frontend39898 and backend9d8774b7 still serve this checkout. The existing signed-in customer workspace is browser verified; new C1 workflow acceptance remains pending coherent implementation.
+
+Evidence: `db133/local-schema-before.json`, `db133/local-schema-after.json`, and backend disposable receipts. Independent schema review is underway separately from implementation. No production migration or feature release has occurred.
+
+## Runtime acceptance plan
+
+Use the local Performance Lab only for synthetic agreement writes and new test orders; restore its active customer/shop settings and soft-delete synthetic orders afterward. Retain required immutable audit evidence. Production acceptance uses read-only defaults/history, unsaved editor drafts with cancellation, source displays and historical-order retention; it does not configure fictional customer agreements.
+
+| Journey | Required actual UI result |
+| --- | --- |
+| Customer settings | One Business settings disclosure; existing Tax permission unchanged. Set/reload rate and matrix, blank inheritance, validation and repeated error visibility, Save/Cancel/Escape and history. |
+| New and existing work | New external order captures customer terms, ordinary manual labor and service use those terms; a later settings change affects only a future order. New additions and manual edits on the earlier order keep saved terms after reload. Legacy saved prices stay unchanged. |
+| Draft recovery | Changed-account conflict retains customer/truck/work, exposes the current terms for deliberate retry and creates at most one order. Cancel returns to the preserved customer search. |
+| Fleet and recommendation | Permitted external fleet work uses billing defaults, restricted projection stays free of private rate/matrix data, recommendation conversion keeps linkage and saved price on retry. |
+| Boundary controls | Matrix archive assignment guard and customer merge provenance guard return clear recoverable messages. Existing tax, order completion/time tracking and P1 review behavior remain intact. |
+| Layout | Light and Night Shop at1280×900,390×844,320×740 and740×400; readable source/actions/errors, no horizontal document overflow, compact desktop, one mobile scroll area and visible focus. Browser emulation is not physical-device verification. |
+
+Automated API/HTTP/PostgreSQL coverage handles role changes, simultaneous writes, request replay, every writer and unavailable feature-flag cells that cannot be honestly exercised in the signed-in local/prod UI. Those cells are recorded separately, never counted as browser passes.
+
+## Early runtime and independent findings
+
+Night Shop read-only settings render at desktop,320×740 and740×400. Invalid zero and repeated identical validation remain visible and focused in the single customer scroller; no horizontal document overflow. History correctly shows no pricing changes. No agreement was saved. Screenshots are retained locally at `/tmp/db133-night-320-draft-validation.png` and `/tmp/db133-night-landscape-draft-validation.png`; these are early implementation evidence, not final acceptance.
+
+Cancel/Escape initially lost focus to the document body; Frontend supplied a correction, pending browser recheck. A second actual path—Business settings → Edit pricing → Manage matrices → Escape—collapses Business settings while leaving the portal dialog open. Returned to Frontend with exact reproduction; no final UI approval.
+
+Independent schema review reproduced two counter snapshot guard holes (14/16 probes pass). Backend must reject policy clearing and replacement during finalization. Root will align only the corrected function in the preserved local preview after the same disposable probes pass, preserving all data. Production175 has not been deployed.
+
+## Schema correction independently closed — 2026-10-16 03:01 UTC
+
+All16 independent PostgreSQL probes now pass on corrected migration175 SHA256 `2dcf08c6b502917e303ac89f21d0e438338a5abef9c014dc4e962f0f302b5f66`. The guard requires both old/new counter status to be draft, an actual buyer change, and a non-NULL replacement policy. Root extracted only that exact migration function and applied `CREATE OR REPLACE FUNCTION` transactionally to the preserved preview. All seven full legacy-data hashes remained unchanged. This closes the schema-only findings; integrated C1 QA/Security and final UI/release remain open.
+
+P1 release-record PR545 merged normally at2026-10-16 03:04:31UTC as `ef936b8b05971a3217a4d4943a31fd26f62063cd` after all six contexts in run38841002264 passed on exact head195c7f3a. It contains documentation/evidence only. C1 implementation will incorporate this main ancestry before its final protected CI run; no checkout switch occurs during parallel edits.
+
+Early UI correction recheck: local Light Shop390×844 now closes the inner Parts pricing dialog with Escape, retains the zero-rate unsaved draft and expanded Business settings, and restores focus to Manage. Cancel restores focus to Edit pricing. Manage sits beside the matrix selector. Light validation is focused and visible at632–680px with document width390; Save pricing computes white on#115e59. These checks do not replace final saved-workflow acceptance. Local appearance is temporarily Day/Cyan/Geist/default for testing; original Night must be restored at cleanup.
+
+## Retry contract and ongoing independent review
+
+Architecture clarified the separately created truck path: retain the actual customer/truck IDs, submit the originally reviewed customer-only pricing token, and parse any conflict against those exact submitted identities. A valid NULL-vehicle token remains customer-bound; changed terms require deliberate review. No duplicate prerequisite creation or silent replacement of reviewed terms.
+
+The accepted signed-call amendment reuses existing P1 receipt storage solely for known-success reservation recovery. Current authorization and original customer/vehicle bindings precede reuse; a narrow reservation-only transaction persists the validated provider UUID before final order creation. It does not store raw tokens, alter the provider protocol, send notifications, or promise exactly-once external calls across a crash/network failure before the receipt is durable.
+
+Independent HTTP configuration negatives passed14 cases. Saved-policy validation findings remain with Backend: partial catalog shape, malformed rate and out-of-range rate must all fail with `account_pricing_unverified`, without adopting current defaults. Final source approval remains pending.
