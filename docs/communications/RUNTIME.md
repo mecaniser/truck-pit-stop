@@ -32,3 +32,5 @@ missing backend/.env; recheck after branch split reported task-owned dirty files
 No env files copied, database attached, migrations run, or other service stopped.
 Callback fix committed separately as 3efbf8f2 / draft PR559; current branch is
 `codex/communications-foundation` based on 1875a71d, with the prototype files.
+
+Final preview source commit: `3921d97596897e71f8595813212ac8aa8fe7a5c8` / draft PR560. Clean-checkout runtime dry-run still reports missing backend/.env. PID 56726 remains the intended fixture preview. Keyboard Escape restores focus to Channels; browser error/warning log was empty. No runtime restart followed this documentation update.
