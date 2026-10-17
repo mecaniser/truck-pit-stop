@@ -258,4 +258,5 @@ from app.db.models.parts_pricing import PartsPriceMatrix, PartsPriceMatrixRevisi
 
 from app.db.models.customer_pricing import AccountPricingEvent  # noqa: F401
 
+from app.db.models.maintenance import MaintenanceProgram, MaintenanceProgramEvent, MaintenanceWorkLink, MaintenanceOperationLink, MaintenanceCompletion, MaintenanceReading
 from app.db.models.dashboard_vehicle_binding import DashboardVehicleBinding  # noqa: F401

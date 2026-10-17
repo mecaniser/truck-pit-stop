@@ -1,5 +1,7 @@
 import { useAdHocPartCommand } from '@/features/parts-pricing/useAdHocPartCommand'
 import { usePricingCommand } from '@/features/parts-pricing/usePricingCommand'
+import { useMaintenanceRemoval } from '@/features/maintenance/useMaintenanceRemoval'
+import { MaintenanceCancelled, maintenanceError } from '@/features/maintenance/api'
 import { usePricingScope } from '@/features/parts-pricing/usePricingScope'
 import { PricingCancelled, parsePricingPreview, pricingError, pricingMoney, priceSourceLabel } from '@/features/parts-pricing/contract'
 import { enteredMoney } from '@/features/parts-pricing/configuration'
@@ -2075,9 +2077,13 @@ export default function PriceBuilderPanel({
   // bundled parts go with it. That is deliberate — a tech's parts should not
   // vanish with a labor line — but silently moving them left the operator to
   // discover them loose later, so say what happened.
+  const maintenanceChannel = staffRole === 'fleet_manager' ? 'fleet' : 'shop'
+  const maintenanceRemoval = useMaintenanceRemoval(orderId, maintenanceChannel)
   const removeLine = useMutation({
     mutationFn: async ({ lineId }: { lineId: string; keptParts: number }) => {
-      await api.delete(`/repair-orders/${orderId}/price-build/lines/${lineId}`)
+      await maintenanceRemoval.execute(orderId, lineId, summary?.lines.find(line => line.id === lineId)?.description || 'this operation', async fingerprint => {
+        await api.delete(`/repair-orders/${orderId}/price-build/lines/${lineId}`, { params: { pricing_presentation: maintenanceChannel, ...(fingerprint ? { expected_maintenance_fingerprint: fingerprint } : {}) } })
+      })
     },
     onSuccess: async (_data, variables) => {
       await invalidate()
@@ -2087,7 +2093,7 @@ export default function PriceBuilderPanel({
           : 'Line removed',
       )
     },
-    onError: () => toast.error('Unable to remove line'),
+    onError: error => { if (!(error instanceof MaintenanceCancelled)) toast.error(maintenanceError(error)) },
   })
 
   const lineTypeLabel = (line: { line_type: string; source_service_id?: string | null }) => {
@@ -2578,6 +2584,7 @@ export default function PriceBuilderPanel({
   return (
     <div className="db-price-builder relative flex h-full min-h-full flex-col overflow-hidden bg-white">
       {pricingCommand.dialog}
+      {maintenanceRemoval.dialog}
       {adHocPricing.dialog}
       <div
         className="db-workspace-header px-5 py-4 text-white"

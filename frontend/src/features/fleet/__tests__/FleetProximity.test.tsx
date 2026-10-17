@@ -77,6 +77,14 @@ describe('map workspace', async () => {
     expect(screen.getByText('Time unknown')).toBeInTheDocument()
     expect(screen.getByTitle('Last known · 1h ago')).toBeInTheDocument()
   })
+  it('keeps the selected driver name but never exposes local contact phone on the map', () => {
+    const selected = { ...origin, driver_name: 'Current driver', driver_phone: '(704) 555-0123' }
+    render(<FleetMap focusId={selected.id} trucks={[selected]} />)
+    expect(screen.getByText('Current driver')).toBeVisible()
+    expect(screen.queryByText('(704) 555-0123')).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Call' })).not.toBeInTheDocument()
+    expect(document.querySelector('a[href^="tel:"]')).toBeNull()
+  })
   it('expands nearest three, changes the comparison origin, and clears selection', async () => {
     render(<FleetMap focusId={origin.id} trucks={[origin, near, truck('Two', .2), truck('Three', .3), truck('Four', .4)]} />)
     await settle()

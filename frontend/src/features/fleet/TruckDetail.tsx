@@ -1,4 +1,6 @@
 import { usePricingCommand } from '@/features/parts-pricing/usePricingCommand'
+import { maintenanceError } from '@/features/maintenance/api'
+import MaintenanceSection from '@/features/maintenance/MaintenanceSection'
 import { PricingCancelled, pricingError } from '@/features/parts-pricing/contract'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Spinner } from '@/components/ui'
@@ -7,7 +9,7 @@ import type { AxiosError } from 'axios'
 import toast from 'react-hot-toast'
 import {
   Gauge, Calendar, Wrench, AlertTriangle, History, Truck, User, Box, Route, Map as MapIcon,
-  Shield, Phone, ClipboardList, ClipboardCheck, Pencil, CheckCircle2, ChevronDown, Check, Info, Trash2, Camera, MoreHorizontal,
+  Shield, ClipboardList, ClipboardCheck, Pencil, CheckCircle2, ChevronDown, Check, Info, Trash2, Camera, MoreHorizontal,
   Archive, ArrowLeft, ArrowRight, Clock3, Combine, RotateCcw, LogOut, Ban } from 'lucide-react'
 import api from '../../lib/api'
 import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
@@ -222,6 +224,8 @@ export default function TruckDetail({
   }, [onOpen, truckId])
 
   const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['maintenance'] })
+    qc.invalidateQueries({ queryKey: ['maintenance-history'] })
     qc.invalidateQueries({ queryKey: ['fleet-truck', truckId] })
     qc.invalidateQueries({ queryKey: ['fleet-truck-incidents', truckId] })
     qc.invalidateQueries({ queryKey: ['fleet-truck-history', truckId] })
@@ -1063,6 +1067,7 @@ export default function TruckDetail({
             </div>
           </section>
 
+          <MaintenanceSection vehicleId={t.id} channel="fleet" onOpenOrder={setRoPanelId} />
           <section className="detail-station-section dsec-record" aria-labelledby="service-record-heading">
             <div className="dsec-head">
               <div className="dsec-title"><History size={17} /><h3 id="service-record-heading">Service record</h3></div>
@@ -1267,13 +1272,12 @@ function RecognizePMModal({ entry, truck, onClose, onDone }: {
   onClose: () => void
   onDone: () => void
 }) {
-  const initialDate = entry.date?.slice(0, 10) || new Date().toISOString().slice(0, 10)
-  const initialOdometer = entry.odometer ?? truck.odometer ?? 0
+  const initialDate = entry.date?.slice(0, 10) || ''
   const [performedOn, setPerformedOn] = useState(initialDate)
-  const [odometer, setOdometer] = useState(String(initialOdometer || ''))
+  const [odometer, setOdometer] = useState('')
   const parsedOdometer = Number(odometer)
-  const nextPmMiles = Number.isFinite(parsedOdometer) && parsedOdometer >= 0
-    ? parsedOdometer + (truck.pm_interval_miles || 25_000)
+  const nextPmMiles = odometer.trim() && Number.isFinite(parsedOdometer) && parsedOdometer >= 0 && truck.pm_interval_miles != null && truck.pm_interval_miles > 0
+    ? parsedOdometer + truck.pm_interval_miles
     : null
 
   const recognize = useMutation({
@@ -1291,7 +1295,7 @@ function RecognizePMModal({ entry, truck, onClose, onDone }: {
       onDone()
       onClose()
     },
-    onError: (error: AxiosError<{ detail?: string }>) => toast.error(error.response?.data?.detail || 'Failed to recognize PM service'),
+    onError: (error: unknown) => toast.error(maintenanceError(error)),
   })
 
   const invalid = !performedOn || !odometer.trim() || !Number.isFinite(parsedOdometer) || parsedOdometer < 0
@@ -1322,7 +1326,6 @@ function RecognizePMModal({ entry, truck, onClose, onDone }: {
         <DatePicker
           label="PM performed date"
           value={performedOn}
-          max={new Date().toISOString().slice(0, 10)}
           onChange={setPerformedOn}
         />
         <label>
@@ -1335,7 +1338,7 @@ function RecognizePMModal({ entry, truck, onClose, onDone }: {
         <Info size={15} />
         <span>
           This repair order will become the truck’s PM record.
-          {nextPmMiles != null && <> The next PM will be set to <strong>{fmt(nextPmMiles)} mi</strong> using the truck’s {fmt(truck.pm_interval_miles || 25_000)} mi interval.</>}
+          {nextPmMiles != null && <> The next PM will be set to <strong>{fmt(nextPmMiles)} mi</strong> using the truck’s {fmt(truck.pm_interval_miles)} mi interval.</>}
         </span>
       </div>
 
@@ -1440,7 +1443,6 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
   })
   const driver = assignment.data?.driver
   const displayName = driver ? `${driver.first_name} ${driver.last_name}` : truck.driver_name
-  const phone = driver?.phone || detail.driver_phone
   const capability = capabilities.data?.driver_invitation_management
   const portalState = portal.data
   const driverPortalUrl = tenantId
@@ -1468,7 +1470,6 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
         <div className="fleet-driver-profile-copy">
           <div className="person-name driver-name-record">{driver ? displayName : <CurrentDriver truck={truck} fallback="No driver assigned" />}</div>
         </div>
-        {phone && <a className="person-call" href={`tel:${phone}`} aria-label={`Call ${driver ? displayName : truck.driver_name || 'driver'}`}><Phone size={15} /></a>}
       </div>
       {driver && currentDriverRecord(truck) && <div className="fleet-motive-driver"><CurrentDriver truck={truck} /></div>}
       {driver && (

@@ -289,12 +289,14 @@ async function collect(output) {
   result.finished_at=new Date().toISOString();result.complete=true;save(output,result);return result;
  }finally{await browser.close();}
 }
-function canDeferReviewedPreSummaryIdentity(error,reviewed){return reviewed&&error?.message==='vehicle_identity_changed';}
+function canDeferReviewedPreSummaryIdentity(error,reviewed){
+ return reviewed&&(error?.message==='vehicle_identity_changed'||error?.message==='vehicle_identity_unavailable'||error?.name==='TimeoutError');
+}
 async function readBeforeSummaryIdentity(readIdentity,reviewed){
  try{return {deferred:false,vin:await readIdentity()};}
  catch(error){
   if(!canDeferReviewedPreSummaryIdentity(error,reviewed))throw error;
-  return {deferred:true,vin:null,reason:'vehicle_identity_changed'};
+  return {deferred:true,vin:null,reason:safeReason(error)};
  }
 }
 function safeReason(error) {

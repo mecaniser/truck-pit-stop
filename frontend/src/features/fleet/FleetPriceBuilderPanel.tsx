@@ -1,6 +1,8 @@
 import { pricingError } from '@/features/parts-pricing/contract'
 import { checklistOpenEvent } from '@/features/service-checklists/queries'
 import OrderChecklist from '@/features/service-checklists/OrderChecklist'
+import { OperationExecutionControls, OperationExecutionFeedback, OperationExecutionStatus } from '@/features/operation-execution/OperationExecution'
+import { useOperationExecution, type OperationExecution } from '@/features/operation-execution/queries'
 /**
  * The FleetBoard repair-order builder.
  *
@@ -71,7 +73,7 @@ function Sheet({ title, onClose, children }: {
   title: string; onClose: () => void; children: React.ReactNode
 }) {
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !event.defaultPrevented) onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
@@ -110,6 +112,16 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
 
   const detail = detailQuery.data
   const summary = summaryQuery.data
+  const operationExecution = useOperationExecution(repairOrderId, summary)
+  const operationProgress = !operationExecution.isError ? operationExecution.data : undefined
+  const remainingOperations = operationProgress?.summary.remaining ?? 0
+  const completionBlocked = operationExecution.isError || !operationExecution.allowed
+    ? 'Refresh operation progress before finishing.'
+    : operationExecution.isPending || operationExecution.isFetching || !operationProgress
+      ? 'Checking operation progress…'
+      : remainingOperations > 0
+        ? `Complete ${remainingOperations} remaining operation${remainingOperations === 1 ? '' : 's'} before finishing.`
+        : null
 
   const [addMode, setAddMode] = useState<AddMode>('operation')
   const [term, setTerm] = useState('')
@@ -153,7 +165,7 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
   // put them back on the board rather than leaving them on a builder they are
   // done with, staring at a Complete button they cannot honestly press yet.
   const startWork = useStartWork(repairOrderId, () => { notify(); onClose() })
-  const completeWork = useCompleteWork(repairOrderId, () => { notify(); onClose() })
+  const completeWork = useCompleteWork(repairOrderId, () => { notify(); onClose() }, detail?.vehicle_id ?? '')
   const deleteOrder = useDeleteOrder(repairOrderId, () => { notify(); onClose() })
 
   // Operation search is a POST, so it runs on a settled term rather than on
@@ -221,9 +233,9 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
    * change to work someone may already have done, so that one is confirmed.
    */
   const requestRemoval = (kind: 'line' | 'part', id: string, label: string) => {
+    if (kind === 'line') { removeLine.mutate({ lineId: id, label, ...(started ? { message: `This repair order is in progress. Removing ${label} changes what the shop is working from, and any of it already done will not be recorded.` } : {}) }); return }
     if (!started) {
-      if (kind === 'line') removeLine.mutate(id)
-      else removePart.mutate(id)
+      removePart.mutate(id)
       return
     }
     setPendingRemoval({ kind, id, label })
@@ -239,6 +251,7 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
       onClose={onClose}
       footer={(
         // One number: what this visit costs. No per-line money anywhere above.
+        <>
         <div className="fleet-ro-dock">
           <div className="fleet-ro-dock-total">
             <small>This visit</small>
@@ -257,12 +270,16 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
             <button
               type="button"
               className="dbtn dbtn-yellow"
+              disabled={Boolean(completionBlocked)}
+              aria-describedby={completionBlocked ? 'fleet-completion-requirement' : undefined}
               onClick={() => setCompleteOpen(true)}
             >
               <Check size={16} /> Complete
             </button>
           ) : null}
         </div>
+        {detail.status === 'in_progress' && completionBlocked && <p id="fleet-completion-requirement" role="status" className="fleet-ro-completion-requirement">{completionBlocked}</p>}
+        </>
       )}
     >
       <div className="wo-drawer-body">
@@ -419,6 +436,7 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
                 </div>
               </div>
 
+              {view === 'work' && <div className="fleet-ro-execution"><OperationExecutionFeedback query={operationExecution} /></div>}
               {view === 'activity' ? (
                 historyEvents.length === 0 ? (
                   <div className="wo-builder-empty">
@@ -451,6 +469,11 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
                       line={line}
                       parts={partsByLine.get(line.id) ?? []}
                       canEdit={canEdit}
+                      execution={operationProgress?.items.find(item => item.labor_id === line.id)}
+                      executionDisabled={operationExecution.isError || operationExecution.isFetching}
+                      technicians={(mechanics ?? []).map(mechanic => ({ mechanic_id: mechanic.id, mechanic_name: mechanic.name }))}
+                      orderId={repairOrderId}
+                      onUpdated={notify}
                       onHours={(hours) => updateLine.mutate({ lineId: line.id, hours })}
                       onRemove={() => requestRemoval('line', line.id, line.description)}
                       onPartQuantity={(partUsageId, quantity) =>
@@ -548,10 +571,13 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
         />
       )}
 
+      {removeLine.dialog}
+      {completeWork.dialog}
       {completeOpen && (
         <CompleteSheet
           currentMileage={detail.mileage_in}
           pending={completeWork.isPending}
+          blockedReason={completionBlocked}
           onClose={() => setCompleteOpen(false)}
           onSubmit={(mileageOut) => completeWork.mutate(mileageOut)}
         />
@@ -802,10 +828,15 @@ function PmScopeSection({ orderId, vehicleId, canEdit }: {
   )
 }
 
-function LineRow({ line, parts, canEdit, onHours, onRemove, onPartQuantity, onPartRemove }: {
+function LineRow({ line, parts, canEdit, execution, executionDisabled, technicians, orderId, onUpdated, onHours, onRemove, onPartQuantity, onPartRemove }: {
   line: PriceBuildLine
   parts: PartsUsage[]
   canEdit: boolean
+  execution?: OperationExecution
+  executionDisabled: boolean
+  technicians: Array<{ mechanic_id: string; mechanic_name: string }>
+  orderId: string
+  onUpdated: () => void
   onHours: (hours: number) => void
   onRemove: () => void
   onPartQuantity: (partUsageId: string, quantity: number) => Promise<unknown>
@@ -838,10 +869,12 @@ function LineRow({ line, parts, canEdit, onHours, onRemove, onPartQuantity, onPa
             <Trash2 size={16} />
           </button>
         ) : <span />}
+        {execution && <div className="fleet-ro-operation-status"><OperationExecutionStatus item={execution} /></div>}
       </div>
 
       {open && (
         <div className="fleet-ro-line-body">
+          {execution && <div className="fleet-ro-execution"><OperationExecutionControls key={`${orderId}:${line.id}`} orderId={orderId} item={execution} technicians={technicians} disabled={executionDisabled} onUpdated={onUpdated} /></div>}
           {canEdit && (
             <div className="fleet-ro-field">
               <span>Labor time</span>
@@ -1101,9 +1134,10 @@ function AdHocPartSheet({ pending, onClose, onSubmit }: {
   )
 }
 
-function CompleteSheet({ currentMileage, pending, onClose, onSubmit }: {
+function CompleteSheet({ currentMileage, pending, blockedReason, onClose, onSubmit }: {
   currentMileage: number | null
   pending: boolean
+  blockedReason: string | null
   onClose: () => void
   onSubmit: (mileageOut: number | null) => void
 }) {
@@ -1125,12 +1159,13 @@ function CompleteSheet({ currentMileage, pending, onClose, onSubmit }: {
         />
       </label>
       {invalid && <p className="wo-builder-empty-note">Enter a whole number of miles.</p>}
+      {blockedReason && <p role="status" className="fleet-ro-completion-requirement">{blockedReason}</p>}
       <button
         type="button"
         className="dbtn dbtn-yellow"
         style={{ width: '100%', marginTop: 8 }}
-        disabled={pending || invalid}
-        onClick={() => onSubmit(parsed)}
+        disabled={pending || invalid || Boolean(blockedReason)}
+        onClick={() => { if (!blockedReason) onSubmit(parsed) }}
       >
         {pending ? <Spinner size="xs" /> : <Check size={16} />} Complete
       </button>
