@@ -118,9 +118,13 @@ def test_verified_range_mapping_and_request_identity():
     )
 
 
+@pytest.mark.parametrize(
+    "unavailable_reason",
+    ["vehicle_identity_changed", "vehicle_identity_unavailable", "ui_timeout"],
+)
 @pytest.mark.asyncio
 async def test_unverifiable_reviewed_vehicle_does_not_block_other_driver_capture(
-    _db_engine, db_session, monkeypatch, tmp_path
+    _db_engine, db_session, monkeypatch, tmp_path, unavailable_reason
 ):
     actor, _vehicle, member = await fixture(db_session, monkeypatch)
     factory = async_sessionmaker(_db_engine, expire_on_commit=False)
@@ -136,7 +140,7 @@ async def test_unverifiable_reviewed_vehicle_does_not_block_other_driver_capture
             "source_read_at": source["finished_at"],
             "assignment_verified_before": True,
             "assignment_verified_after": True,
-            "reason": "vehicle_identity_changed",
+            "reason": unavailable_reason,
         }
     )
     source["driver_directory_count"] = 2
