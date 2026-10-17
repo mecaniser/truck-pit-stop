@@ -725,3 +725,96 @@ The owner's final focused rerun reports **29 passed**, 2.78 seconds, with two
 existing warnings (`/tmp/db133-worker-gate-password-free.log`). No tests or hooks
 are bypassed. No additional PostgreSQL run was warranted for this fixture-only
 change. Final protected CI and production gates remain pending.
+
+
+### Final production closure — 2026-10-16
+
+**Independent QA/Security GO for DB133/C1 production closure.** This closes the
+release gates above for PR550. Product & Delivery may mark C1 Done and proceed
+to the approved M1 item. The reviewer did not implement the application or tests,
+operate the production browser, or mutate a database/service during this review.
+
+**Exact release identity.** Independently confirmed all six protected contexts
+in run `38934085629` passed for checked head
+`0a193dc0e3595ec51ec3a21d7f2b15e9d36dd19a`. Its Git tree and merge
+`c42009e08b10003ddc2ab54e96c39a6a61be5bbd` are both
+`e85c0ac9602d02753de765f8137caf8c31c27318`. The canceled duplicate main run is
+not counted as a pass. A fresh read-only Railway status independently confirmed
+Web `259c080c-eb85-4409-aedf-ad847a8fc84b` and Worker
+`53e8847b-17d2-40e5-870f-ed7bc8fdb264` both SUCCESS on that exact merge. Public
+build/readiness evidence agrees; the database and Redis readiness checks pass.
+The final checked worker-source manifest remains
+`54d7828f6688b8a12b3a3c87b052d147a1660a4d84938bbeed2f2cfd07fab3af`.
+
+**Migration and retained data.** Revalidated the frozen v3 comparison helper
+SHA256 `03eea7a2f0dccd3a0f0b4100483112c1d0621fa9f0756b55160e19eac1eeee73`
+and independently recomputed both the immediate post-release and final post-UI
+comparisons without a database connection. Both exactly match the saved release
+comparisons and return `database_checks_passed`. The final comparison uses the
+new, separately preserved pre-release receipt at `17:06:11.042928 UTC` and final
+capture at `17:22:34.842297 UTC`. Their canonical digests are respectively
+`ad1815c71c2b21e1a10982a29793431ac2f09b23f96977acc5541cb068f94f9a`
+and `61f79b466fb95a28c30ac83ff4ce706fdabc88ff430fd2d345787df74fe3f7bc`.
+The original 05:12 pre-release receipt was preserved; a separate original-to-fresh
+comparison found identical complete cohort payloads, including timestamps.
+
+The deployed database has exactly `176_merge_contact_pricing`, the contact
+column, required C1 columns and account-pricing event table. All original rows
+remain unchanged in the seven fixed cohorts: 3,671 repair orders, 4,670 labor
+rows, 2,934 parts-usage rows, 2,443 invoices, 765 customers, one counter sale and
+one counter-sale line. There are no missing originals, late-visible pre-cutoff
+rows, financial/source/config changes or introduced historical snapshots.
+Customer agreements, assigned matrices, pricing versions/update metadata,
+order/labor/counter snapshots and pricing events remain zero. These are bounded
+retention/adoption checks, not a claim that every production workflow was run.
+Private full-row manifests remain outside the repository. Reviewer comparison:
+`/tmp/db133-independent-production-post-ui-comparison.json`; sanitized release
+summary: `docs/verification/db133/production-release.json`.
+
+**Worker readiness and operational limits.** Startup evidence records the gate
+waiting and then passing before normal worker activity. Delivery timestamps are
+17:12:33 and 17:13:53 UTC; buffered logs are not used to infer an exact waiting
+duration. Normal background tasks subsequently ran, including shop-history at
+17:18:47 with 50 scanned and one captured. This sample contains no import or
+schema error. Paid-invoice task success is natural background processing, not a
+manual QA dispatch or proof of a new provider/business outcome.
+
+The final Worker sample does contain three `QuickBooksConfigurationError`
+failures at 17:14, 17:18 and 17:22 UTC because `QUICKBOOKS_REDIRECT_URI` is missing.
+The QuickBooks task and both implicated service files are byte-identical between
+previous release `6471943f` and this release. Independently inspected the prior
+Worker log sample `/tmp/pr550-preexisting-qb-config.jsonl`: the same error also
+occurred before rollout, including 16:49 through 17:10 UTC. This is a pre-existing
+configuration issue, separately tracked as `DB-QB-CONFIG`, not evidence of a C1
+migration/import regression; it must not be described as an error-free Worker or successful
+QuickBooks synchronization. The issue was returned to Product & Delivery for its
+own operational tracking. No configuration, retry or provider action was taken.
+
+**Production UI acceptance.** Product & Delivery executed the authenticated
+Light and Night journeys at 1280×900, 390×844, 320×740 and 740×400. The reviewer
+independently inspected representative screenshots in both themes, including
+narrow and landscape pricing settings, nested/intake surfaces, retained work
+and customer-search return. Rate, matrix selector, reason and tax help are
+legible; Save/Cancel remain reachable. No visual blocker was found in the
+reviewed captures. The owner also verified named Close/Escape/focus return,
+draft preservation and Cancel/history, same-customer intake dismissal, retained
+search and reload. Privacy-redacted DOM input values are not treated as a failed
+literal-value assertion when the captured search is visibly retained.
+
+Existing work remains visibly saved at $100/hour × 45 minutes = $75 labor plus
+$35.73 parts, order total $110.73; the separately issued invoice remains $112.98.
+These checks were read/reload and unsaved-draft/cancel journeys. No production
+agreement, order, stock, invoice or payment was written; the only saved QA change
+was reversible appearance selection, restored to original Light afterward.
+Viewport/touch/page-scale overrides were cleared and no draft was left open.
+Saved agreements, policy capture/conflicts, role boundaries and destructive
+negative cases are supported by the previously approved local/API/PostgreSQL
+checks, not falsely attributed to production writes. Mobile evidence is browser
+viewport/touch emulation, not physical-device testing. Full journey details and
+capture references are in `DB133_CUSTOMER_PRICING_DEFAULTS.md`.
+
+No unresolved C1 acceptance or security blocker remains. The abandoned manual
+migration runner was not executed; Web remained migration owner and Worker
+passed its read-only startup gate. The separate QuickBooks configuration issue
+and the evidence limits above remain explicit rather than being hidden by this
+C1 closure.

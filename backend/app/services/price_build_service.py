@@ -576,6 +576,8 @@ class PriceBuildService:
         *,
         line_id: UUID,
         actor: Optional[User] = None,
+        expected_maintenance_fingerprint=None,
+        maintenance_channel=None,
     ) -> PriceBuildResult:
         order = await self.load_order(db, order.id, for_update=True, tenant_id=order.tenant_id)
         self._assert_editable(order)
@@ -593,6 +595,8 @@ class PriceBuildService:
             raise PriceBuildNotFoundError("Price build line not found")
         if await operation_execution.active_for_line(db, order, line):
             raise HTTPException(409, "Stop the operation timer before removing this work.")
+        from app.services import maintenance
+        await maintenance.guard_operation_removal(db, actor, order, [line.id], expected=expected_maintenance_fingerprint, channel=maintenance_channel)
         # If this labor line came from a Service, also release its bundled parts.
         if line.source_service_id:
             await self._restore_service_parts(db, order, line.source_service_id, actor)

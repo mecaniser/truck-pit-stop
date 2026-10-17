@@ -1,4 +1,5 @@
 import { quote, price } from '@/features/parts-pricing/__tests__/fixtures'
+import { orderMaintenance, program, work } from '@/features/maintenance/__tests__/fixtures'
 import type { ResolveRequest } from '@/features/parts-pricing/contract'
 import { useAuthStore } from '@/stores/authStore'
 import type { User } from '@/types'
@@ -12,6 +13,7 @@ const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   patch: vi.fn(),
+  delete: vi.fn(),
   limits: vi.fn(),
   resolve: vi.fn(),
 }))
@@ -21,6 +23,7 @@ vi.mock('@/lib/api', () => ({
     get: (url: string, ...args: unknown[]) => url.endsWith('/operations') ? Promise.resolve({ data: { items: [], summary: { tracked: 0, completed: 0, remaining: 0, legacy_untracked: 0 }, order_status: 'draft', is_order_lead: false } }) : url.endsWith('/checklist') ? Promise.resolve({ data: { items: [], total: 0, skip: 0, limit: 100, summary: { total: 0, completed: 0, required: 0, required_remaining: 0 }, can_update: true } }) : url.endsWith('/discount-limits') ? apiMocks.limits() : apiMocks.get(url, ...args),
     post: (url: string, body: ResolveRequest, ...args: unknown[]) => url === '/parts-pricing/resolve' ? apiMocks.resolve(body) : apiMocks.post(url, body, ...args),
     patch: apiMocks.patch,
+    delete: apiMocks.delete,
   },
 }))
 
@@ -72,6 +75,15 @@ function renderPanel(props: Partial<ComponentProps<typeof PriceBuilderPanel>> = 
 }
 
 describe('PriceBuilderPanel pending feedback', () => {
+  it.each([['garage_owner', 'shop'], ['fleet_manager', 'fleet']] as const)('matches maintenance read and removal presentation for %s', async (role, channel) => {
+    useAuthStore.setState({ user: { id: 'user-1', tenant_id: 'tenant-1', role } as User, authSessionEpoch: 1, logoutInProgress: false })
+    apiMocks.get.mockImplementation(async (url: string, config?: { params?: { channel?: string } }) => {
+      if (url.endsWith('/maintenance')) { if (config?.params?.channel !== channel) throw new Error('422: exact maintenance channel is required'); return { data: orderMaintenance([program('program-1', { work: work() })]) } }
+      return { data: { ...emptySummary, can_edit_work: true, lines: [{ id: 'labor-1', description: 'Saved maintenance', hours: '1.00', hourly_rate: '100.00', total_cost: '100.00', line_type: 'manual', source_service_id: null }], parts: [] } }
+    })
+    apiMocks.delete.mockResolvedValue({ data: {} }); const user = userEvent.setup(); renderPanel(); await user.click(await screen.findByRole('button', { name: /^Saved maintenance/ })); await user.click(screen.getByRole('button', { name: 'Remove', exact: true })); const dialog = await screen.findByRole('dialog', { name: 'Remove work' }); expect(dialog).toHaveTextContent('Oil service'); await user.click(within(dialog).getByRole('button', { name: 'Remove work' }))
+    await waitFor(() => expect(apiMocks.delete).toHaveBeenCalledWith('/repair-orders/order-1/price-build/lines/labor-1', { params: { pricing_presentation: channel, expected_maintenance_fingerprint: 'review-1' } })); expect(apiMocks.get).toHaveBeenCalledWith('/repair-orders/order-1/maintenance', expect.objectContaining({ params: { channel } }))
+  })
   beforeEach(() => {
     apiMocks.resolve.mockReset().mockImplementation((body: ResolveRequest) => Promise.resolve({ data: quote({ plan: body.plan, required: false }) }))
     useAuthStore.setState({ user: { id: 'user-1', tenant_id: 'tenant-1', role: 'garage_owner' } as User, authSessionEpoch: 1, logoutInProgress: false })
@@ -306,6 +318,7 @@ describe('PriceBuilderPanel pending feedback', () => {
     apiMocks.get.mockReset()
     apiMocks.post.mockReset()
     apiMocks.patch.mockReset()
+    apiMocks.delete.mockReset()
   })
 
   afterAll(() => {

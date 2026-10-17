@@ -95,6 +95,8 @@ async def mutate(db, vehicle_id, actor, body, *, action="create", record_id=None
     repeated = await replay(db, vehicle_id, record_id, actor, action, body, digest)
     if repeated is not None:
         return repeated
+    from app.services import maintenance
+    maintenance_programs = await maintenance.source_programs_locked(db, actor, vehicle_id, 'external_service', record_id) if record_id else []
     record = None if action == "create" else await load_record(db, vehicle_id, record_id, actor, write=True)
     if record is not None:
         if record.version != body.expected_version:
@@ -139,4 +141,6 @@ async def mutate(db, vehicle_id, actor, body, *, action="create", record_id=None
         if repeated is not None:
             return repeated
         raise
+    if maintenance_programs:
+        await maintenance.invalidate_source(db, actor, vehicle_id, 'external_service', record.id, programs=maintenance_programs)
     return ExternalServiceMutation(record=item(record), replayed=False)
