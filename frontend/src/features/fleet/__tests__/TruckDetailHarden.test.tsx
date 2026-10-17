@@ -123,11 +123,11 @@ describe('TruckDetail hardening', () => {
     const managed = await screen.findByText('Managed Custodian')
     const custodyRow = managed.closest('.fleet-driver-profile-row') as HTMLElement
     expect(within(custodyRow).queryByRole('button', { name: /Driver record/ })).not.toBeInTheDocument()
-    expect(within(custodyRow).getByRole('link', { name: 'Call Managed Custodian' })).toHaveAttribute('href', 'tel:7045550199')
+    expect(within(custodyRow).queryByRole('link', { name: 'Call Managed Custodian' })).not.toBeInTheDocument()
     const providerRow = document.querySelector('.fleet-motive-driver') as HTMLElement
     expect(within(providerRow).getByText('Example Driver')).toBeVisible()
     expect(within(providerRow).getByRole('button', { name: /Driver record for Example Driver/ })).toHaveTextContent('82')
-    expect(within(providerRow).getByText('Example · (704) 555-0123')).toBeVisible()
+    expect(within(providerRow).queryByText('Example · (704) 555-0123')).not.toBeInTheDocument()
   })
 
   it('keeps mileage comparison and speed in the header, with hours and entry in details', async () => {
