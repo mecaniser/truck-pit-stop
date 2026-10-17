@@ -1,3 +1,10 @@
+.fleet-root .db-maintenance {
+  --workspace-text: var(--text);
+  --workspace-muted: var(--muted);
+  --workspace-border: var(--line);
+  --surface-overlay: var(--surface-2);
+  color-scheme: dark;
+}
 .db-maintenance { min-width: 0; color: var(--workspace-text, #14243a); font-size: 13px; border-top: 1px solid var(--workspace-border, #cbd5df); padding-block: 10px; }
 .db-maintenance :is(h3, h4, p) { margin: 0; color: inherit; }
 .db-maintenance :is(h3, h4, p, small) { overflow-wrap: anywhere; }
