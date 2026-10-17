@@ -1,3 +1,6 @@
+import type { OperationExecution, OperationPage } from '@/features/operation-execution/queries'
+import { orderMaintenance, program, targetPreview, work } from '@/features/maintenance/__tests__/fixtures'
+import type { TargetRequest } from '@/features/maintenance/contract'
 import { quote } from '@/features/parts-pricing/__tests__/fixtures'
 import type { ResolveRequest } from '@/features/parts-pricing/contract'
 import { useAuthStore } from '@/stores/authStore'
@@ -110,6 +113,16 @@ const summary = {
   warnings: [],
 }
 
+const operation: OperationExecution = {
+  labor_id: 'line-1', description: 'Replace air line', mechanic_id: null, mechanic_name: null,
+  status: 'pending', version: 2, completed_at: null, completed_by: null, tracked_seconds: 0,
+  active_session: null, required_tasks_remaining: 0, can_assign: true, can_complete: true,
+  can_reopen: false, can_start_timer: false, can_stop_timer: false,
+}
+function operationPage(item: OperationExecution, status = 'in_progress'): OperationPage {
+  return { items: [item], summary: { tracked: item.status === null ? 0 : 1, completed: item.status === 'completed' ? 1 : 0, remaining: item.status === 'pending' ? 1 : 0, legacy_untracked: item.status === null ? 1 : 0 }, order_status: status, is_order_lead: false }
+}
+
 function mockQueries(overrides: Record<string, unknown> = {}) {
   apiMocks.get.mockImplementation((url: string) => {
     if (url === `/repair-orders/${ORDER_ID}/detail`) {
@@ -118,6 +131,7 @@ function mockQueries(overrides: Record<string, unknown> = {}) {
     if (url === `/repair-orders/${ORDER_ID}/price-build`) {
       return Promise.resolve({ data: summary })
     }
+    if (url === `/repair-orders/${ORDER_ID}/operations`) return Promise.resolve({ data: operationPage({ ...operation, status: null, can_assign: false, can_complete: false, tracked_seconds: null }, String(overrides.status ?? detail.status)) })
     if (url === '/fleet/mechanics') return Promise.resolve({ data: [] })
     if (url === '/fleet/settings') {
       return Promise.resolve({ data: { internal_labor_rate: 80, labor_rate: 100 } })
@@ -504,4 +518,116 @@ it('retains a grouped part quantity draft on stale CAS and retries with the refr
   await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledWith(`/repair-orders/${ORDER_ID}/parts/part-1`, { quantity: 3, expected_pricing_version: 4, pricing_presentation: 'fleet' }))
   const conflict = await screen.findByText(/Saved quantity changed. Saved quantity 5/); const retry = within(conflict).getByRole('button', { name: 'Retry' }); expect(screen.getByLabelText('Quantity of Air line fitting')).toHaveValue('3'); await user.click(retry)
   await waitFor(() => expect(apiMocks.patch).toHaveBeenLastCalledWith(`/repair-orders/${ORDER_ID}/parts/part-1`, { quantity: 3, expected_pricing_version: 5, pricing_presentation: 'fleet' }))
+})
+
+
+it('assigns and completes the operation before reviewing maintenance and completing the fleet order', async () => {
+  useAuthStore.setState({ user: { id: 'user-1', tenant_id: 'tenant-1', role: 'fleet_manager' } as User, authSessionEpoch: 1, logoutInProgress: false })
+  mockQueries({ status: 'in_progress' })
+  const originalGet = apiMocks.get.getMockImplementation()!
+  const item = program('program-1', { vehicle_id: 'veh-1', work: work('link-1', { repair_order_id: ORDER_ID, operation_ids: ['line-1'] }) })
+  apiMocks.get.mockImplementation((url: string, config?: { params?: { channel?: string } }) => { if (url.endsWith('/maintenance')) { if (config?.params?.channel !== 'fleet') return Promise.reject(new Error('422: fleet maintenance channel is required')); return Promise.resolve({ data: { ...orderMaintenance([item]), repair_order_id: ORDER_ID } }) } return originalGet(url, config) })
+  const maintenanceGet = apiMocks.get.getMockImplementation()!
+  let currentOperation = { ...operation }
+  apiMocks.get.mockImplementation((url: string, config?: unknown) => {
+    if (url.endsWith('/operations')) return Promise.resolve({ data: operationPage(currentOperation) })
+    if (url === '/fleet/mechanics') return Promise.resolve({ data: [{ id: 'tech-1', name: 'Dana Mechanic' }] })
+    if (url.endsWith('/checklist')) return Promise.resolve({ data: { items: [1, 2].map(index => ({ id: `task-${index}`, labor_id: 'line-1', service_name: 'Air line service', label: `Inspection ${index}`, required: true, position: index, is_completed: true, completed_at: '2026-10-16T12:00:00Z', completed_by: { id: 'user-1', name: 'Manager' }, version: 1 })), total: 2, skip: 0, limit: 100, summary: { total: 2, completed: 2, required: 2, required_remaining: 0 }, can_update: true } })
+    return maintenanceGet(url, config)
+  })
+  apiMocks.put.mockImplementation(async (url: string, body: unknown) => {
+    if (url.endsWith('/assignment')) {
+      expect(body).toEqual({ expected_version: 2, mechanic_id: 'tech-1' })
+      currentOperation = { ...currentOperation, mechanic_id: 'tech-1', mechanic_name: 'Dana Mechanic', version: 3 }
+    } else if (url.endsWith('/completion')) {
+      expect(body).toEqual({ expected_version: 3, is_completed: true })
+      currentOperation = { ...currentOperation, status: 'completed', version: 4, can_assign: false, can_complete: false, can_reopen: true, completed_at: '2026-10-16T12:05:00Z', completed_by: { id: 'user-1', name: 'Manager' } }
+    } else throw new Error(`Unexpected PUT ${url}`)
+    return { data: operationPage(currentOperation) }
+  })
+  apiMocks.post.mockImplementation(async (url: string, body: TargetRequest) => {
+    if (url.endsWith('/maintenance-target-preview')) { expect(currentOperation.status).toBe('completed'); return { data: targetPreview(body) } }
+    if (url === `/fleet/work-orders/${ORDER_ID}/complete`) { expect(currentOperation.status).toBe('completed'); return { data: {} } }
+    throw new Error(`Unexpected POST ${url}`)
+  })
+  const user = userEvent.setup(); renderPanel()
+  await screen.findByText('Checklist · 2/2')
+  expect(screen.getByRole('button', { name: 'Complete', exact: true })).toBeDisabled()
+  expect(await screen.findByText('Complete 1 remaining operation before finishing.')).toBeVisible()
+  await user.click(screen.getByRole('button', { name: /^Replace air line/ }))
+  const technician = screen.getByRole('combobox', { name: 'Technician for Replace air line' })
+  await waitFor(() => expect(technician).toBeEnabled())
+  await user.selectOptions(technician, 'tech-1')
+  await waitFor(() => expect(technician).toHaveValue('tech-1'))
+  const completeOperation = screen.getByRole('button', { name: 'Complete operation' })
+  await waitFor(() => expect(completeOperation).toBeEnabled())
+  await user.click(completeOperation)
+  await screen.findByText('Completed')
+  expect(apiMocks.put).toHaveBeenCalledTimes(2)
+  expect(apiMocks.put).toHaveBeenNthCalledWith(1, `/repair-orders/${ORDER_ID}/operations/line-1/assignment`, { expected_version: 2, mechanic_id: 'tech-1' })
+  expect(apiMocks.put).toHaveBeenNthCalledWith(2, `/repair-orders/${ORDER_ID}/operations/line-1/completion`, { expected_version: 3, is_completed: true })
+  expect(apiMocks.post).not.toHaveBeenCalled()
+  const completeOrder = screen.getByRole('button', { name: 'Complete', exact: true })
+  await waitFor(() => expect(completeOrder).toBeEnabled())
+  await user.click(completeOrder)
+  const sheet = screen.getByRole('dialog', { name: 'Complete repair order' })
+  await user.type(within(sheet).getByLabelText(/Odometer out/), '621566')
+  await user.click(within(sheet).getByRole('button', { name: 'Complete' }))
+  const firstReview = await screen.findByRole('dialog', { name: 'Review maintenance completion' })
+  await waitFor(() => expect(firstReview).toContainElement(document.activeElement as HTMLElement))
+  await user.keyboard('{Escape}')
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Review maintenance completion' })).not.toBeInTheDocument())
+  expect(within(sheet).getByLabelText(/Odometer out/)).toHaveValue('621566')
+  await user.click(within(sheet).getByRole('button', { name: 'Complete' }))
+  const review = await screen.findByRole('dialog', { name: 'Review maintenance completion' })
+  await user.click(within(review).getByText('Review targets'))
+  await screen.findByLabelText('Target review')
+  await user.click(within(review).getByRole('button', { name: 'Complete repair order' }))
+  await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith(`/fleet/work-orders/${ORDER_ID}/complete`, expect.objectContaining({ mileage_out: 621566, maintenance_review: expect.objectContaining({ expected_review_fingerprint: 'review-1', expected_target_fingerprint: 'target-1', entries: [expect.objectContaining({ work_link_id: 'link-1', attestation: null })] }) })))
+  expect(apiMocks.get).toHaveBeenCalledWith(`/repair-orders/${ORDER_ID}/maintenance`, expect.objectContaining({ params: { channel: 'fleet' } }))
+})
+
+it.each(['garage_owner', 'fleet_manager'] as const)('uses fleet review and deletion presentation for %s removing linked work in the fleet panel', async role => {
+  useAuthStore.setState({ user: { id: 'user-1', tenant_id: 'tenant-1', role } as User, authSessionEpoch: 1, logoutInProgress: false }); mockQueries(); const originalGet = apiMocks.get.getMockImplementation()!
+  const item = program('program-1', { vehicle_id: 'veh-1', work: work('link-1', { repair_order_id: ORDER_ID, operation_ids: ['line-1'] }) })
+  apiMocks.get.mockImplementation((url: string, config?: { params?: { channel?: string } }) => { if (url.endsWith('/maintenance')) { if (config?.params?.channel !== 'fleet') return Promise.reject(new Error('422: fleet maintenance channel is required')); return Promise.resolve({ data: { ...orderMaintenance([item]), repair_order_id: ORDER_ID } }) } return originalGet(url, config) })
+  apiMocks.delete.mockResolvedValue({ data: {} }); const user = userEvent.setup(); renderPanel(); await user.click(await screen.findByRole('button', { name: 'Remove Replace air line' })); const dialog = await screen.findByRole('dialog', { name: 'Remove work' }); expect(dialog).toHaveTextContent('Oil service'); await user.click(within(dialog).getByRole('button', { name: 'Remove work' }))
+  await waitFor(() => expect(apiMocks.delete).toHaveBeenCalledWith(`/repair-orders/${ORDER_ID}/price-build/lines/line-1`, { params: { pricing_presentation: 'fleet', expected_maintenance_fingerprint: 'review-1' } })); expect(apiMocks.get).toHaveBeenCalledWith(`/repair-orders/${ORDER_ID}/maintenance`, expect.objectContaining({ params: { channel: 'fleet' } }))
+})
+
+it('keeps denied operation actions hidden and blocks fleet finalization while required work remains', async () => {
+  useAuthStore.setState({ user: { id: 'user-1', tenant_id: 'tenant-1', role: 'fleet_manager' } as User })
+  mockQueries({ status: 'in_progress' }); const originalGet = apiMocks.get.getMockImplementation()!
+  apiMocks.get.mockImplementation((url: string) => url.endsWith('/operations') ? Promise.resolve({ data: operationPage({ ...operation, can_assign: false, can_complete: false, required_tasks_remaining: 1 }) }) : originalGet(url))
+  const user = userEvent.setup(); renderPanel()
+  await screen.findByText('Complete 1 remaining operation before finishing.')
+  await user.click(screen.getByRole('button', { name: /^Replace air line/ }))
+  expect(screen.queryByRole('combobox', { name: /Technician for/ })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Complete operation' })).not.toBeInTheDocument()
+  expect(screen.getByText('1 required checklist task remaining.')).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Complete', exact: true }))
+  expect(screen.queryByRole('dialog', { name: 'Complete repair order' })).not.toBeInTheDocument()
+  expect(apiMocks.put).not.toHaveBeenCalled(); expect(apiMocks.post).not.toHaveBeenCalled()
+})
+
+it('does not complete or enter maintenance review after an operation write conflict and failed refresh', async () => {
+  useAuthStore.setState({ user: { id: 'user-1', tenant_id: 'tenant-1', role: 'fleet_manager' } as User })
+  mockQueries({ status: 'in_progress' }); const originalGet = apiMocks.get.getMockImplementation()!
+  let progressUnavailable = false
+  apiMocks.get.mockImplementation((url: string) => url.endsWith('/operations') ? progressUnavailable ? Promise.reject(new Error('Offline')) : Promise.resolve({ data: operationPage(operation) }) : originalGet(url))
+  apiMocks.put.mockImplementation(async () => { progressUnavailable = true; throw { response: { status: 409, data: { detail: 'Operation changed. Review current progress.' } } } })
+  const user = userEvent.setup(); renderPanel()
+  await user.click(await screen.findByRole('button', { name: /^Replace air line/ }))
+  const completeOperation = await screen.findByRole('button', { name: 'Complete operation' })
+  await waitFor(() => expect(completeOperation).toBeEnabled()); await user.click(completeOperation)
+  await screen.findByText(/Operation progress could not be refreshed/)
+  expect(screen.getByRole('button', { name: 'Complete', exact: true })).toBeDisabled()
+  expect(screen.queryByText('Completed')).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Complete operation' })).not.toBeInTheDocument()
+  expect(apiMocks.put).toHaveBeenCalledTimes(1); expect(apiMocks.post).not.toHaveBeenCalled()
+  progressUnavailable = false
+  await user.click(screen.getByRole('button', { name: 'Retry operation progress' }))
+  await screen.findByRole('button', { name: 'Complete operation' })
+  expect(screen.getByRole('button', { name: 'Complete', exact: true })).toBeDisabled()
+  expect(apiMocks.put).toHaveBeenCalledTimes(1)
 })

@@ -1,6 +1,6 @@
 # DB133 / C1 customer pricing defaults
 
-Accountable: Backend & Integrations. Status: **Local workflow and integration checks complete; final protected CI before release**. Selected after completed P1 in the [parity tracker](../ETS_PARITY_TRACKER.md). Branch: `codex/customer-pricing-defaults`, from P1 release-record195c7f3a (application70530bda).
+Accountable: Backend & Integrations. Status: **Done — merged, deployed and production verified; independent QA/Security GO**. Selected after completed P1 in the [parity tracker](../ETS_PARITY_TRACKER.md). Branch: `codex/customer-pricing-defaults`, from P1 release-record195c7f3a (application70530bda).
 
 ## Acceptance before implementation
 
@@ -204,3 +204,36 @@ Collector owner confirms file0UTC plus daily run history is authoritative;557 is
 
 
 Final push preflight stopped62876c76 because four deliberately synthetic loopback test URLs included password notation. No push or credential exposure occurred and the hook was not bypassed. The tests now use password-free synthetic usernames containing the same redaction marker; all assertions remain. Owner29 cases pass; independent exact four-replacement delta GO retains unchanged application/PG evidence at aggregate54d7828f6688b8a12b3a3c87b052d147a1660a4d84938bbeed2f2cfd07fab3af. Medium scanner findings were verified as GitHub run IDs and an already-merged localhost fixture URL, not customer contact data. Final protected CI has not yet started at this checkpoint.
+
+
+## Final CI and normal merge — 2026-10-16 17:06 UTC
+
+Final head `0a193dc0e3595ec51ec3a21d7f2b15e9d36dd19a` passed all six protected checks in run38934085629: migration graph, frontend critical207, full frontend1787/173files, backend critical581 (13skipped), full backend3456 (198skipped), and browser smoke5. All required contexts succeeded; none was waived. Normal squash merge `c42009e08b10003ddc2ab54e96c39a6a61be5bbd` at17:06:31UTC has identical tree `e85c0ac9602d02753de765f8137caf8c31c27318`. The queued duplicate main run38937138266 was cancelled after that identity check to free isolated runner capacity; it is not a passing gate.
+
+Fresh read-only repeatable-read baseline at17:06:11.042928UTC confirms schema175contact/C1 absent and unchanged original cohorts:3671 orders,4670 labor,2934 parts usages,2443 invoices,765 customers and1 counter/line. No missing, additional, financial, source/config or timestamp-only changes versus the original05:12 baseline. Private canonical digest `ad1815c71c2b21e1a10982a29793431ac2f09b23f96977acc5541cb068f94f9a`; post-check is bound to that exact cutoff/digest.
+
+Web deployment259c080c is building. Production acceptance is still pending, not claimed from CI. Web owns normal migration; the read-only Worker gate must pass before startup. No staged/manual migration is used. The separate collector owner reports run0214ce5b still in capture stage with no import; any later import boundary remains separately attributable.
+
+
+## Production rollout and actual UI acceptance — 2026-10-16 17:14–17:25 UTC
+
+Exact c42009e0 Web259c080c and Worker53e8847b are SUCCESS; public build matches and database/Redis readiness is200. Normal Web predeploy upgraded175contact→176 with physical C1 fields present. Worker emitted waiting17:12:33 then passed17:13:53 before normal task processing. Natural shop-history17:18:47 scanned50/captured1 with no import errors. These background-task observations are not provider/revenue-outcome claims. The ETS release617fd172 was SKIPPED; the separately owned collector run remains independently attributable.
+
+Final read-only post-UI capture17:22:34 uses the exact17:06:11 cutoff and baseline digest. Recomputed comparison reports database_checks_passed: all seven original cohorts remain unchanged; no missing identities or late-visible rows, no original order/labor backfill, and zero customer agreements, matrix assignments, pricing events or order/labor/counter snapshots. [Sanitized release receipt](db133/production-release.json) retains exact source/service IDs and counts; private full manifests are not committed.
+
+Actual production Light and Night Shop passes cover1280×900 desktop,390×844/320×740 portrait and740×400 landscape. Customer Business settings shows inherited120/hr and shop catalog. Unsaved120 drafts and Reason are legible (Night#f6f8fb on#111f33, Light#14243a on white). Nested Parts pricing opens, named close and Escape work, Escape preserves the underlying draft/focus, and Cancel returns unchanged configuration/history. No pricing changes yet remains after cancellation. Mobile/desktop intake shows120/shop and shop catalog; Cancel, named close and Escape return to the same customer. The final mobile screenshot visually confirms retained77 CARGO LLC search after intake dismissal and Back. Read-only DOM input values are privacy-redacted, so a literal-value script comparison is not used as search-retention proof.
+
+Historical order source stays45m×saved100/hr=75 labor,35.73 saved part,110.73 order and112.98 invoice in both themes on mobile/desktop after navigation/reload. No horizontal document overflow at tested widths, one active mobile content scroller, usable compact footer and reachable Save/Cancel in landscape. The repair working sheet/intake retains its existing light surface within Night Shop; it remains readable. These are browser viewport/touch-emulation checks, not physical-device testing.
+
+Private screenshots: `/tmp/db133-prod-{night,light}-{desktop,mobile,320,landscape}-settings.png`, retained-order desktop/mobile variants, Night mobile intake and Light mobile search-return. The focused non-contact feature image is `/tmp/db133-production-pricing-feature.png`. Original Light appearance restored, production metric/touch/page-scale overrides cleared and no unsaved pricing draft remains. Production writes were limited to that reversible appearance preference; no invented agreement, order, stock, invoice or payment action. Saved/conflict/role/optional-flag evidence remains separately local/API/PostgreSQL as documented above.
+
+Immediate deployment/schema/retention release hold was explicitly handed back to the coordinated owners. Motive555 takes the next protected release slot, followed by collector558 when its active run is idle. Independent final closure precedes trackerDone/M1 intake.
+
+
+### Existing operational issue retained separately
+
+Independent release review found recurring QuickBooksConfigurationError for missing `QUICKBOOKS_REDIRECT_URI`. Root verified the identical error on the prior1777d45a/647 Worker before rollout (16:45–17:10), and the QuickBooks task/service code is byte-identical across this release. Private historical log `/tmp/pr550-preexisting-qb-config.jsonl` and final Worker sample retain evidence. DB-QB-CONFIG records a separate Backend & Integrations follow-up. No provider/configuration changes or manual retries were made; the C1 release does not claim every unrelated Worker task is healthy.
+
+## Final closure — 2026-10-16
+
+Independent QA/Security reviewed the exact released source, all six protected CI checks, deployments, migration/startup gate, recomputed final retained-data comparison and representative Light/Night desktop/mobile pixels. Final GO is recorded in [the independent review](DB133_INDEPENDENT_REVIEW.md). No unresolved C1 blocker remains. Tracker advanced to3/29 and3/6; M1 starts next. DB-QB-CONFIG is a separately evidenced pre-existing operational issue.

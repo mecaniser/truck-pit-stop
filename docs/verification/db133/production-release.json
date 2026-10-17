@@ -1,0 +1,104 @@
+{
+  "pr": 550,
+  "checked_head": "0a193dc0e3595ec51ec3a21d7f2b15e9d36dd19a",
+  "protected_ci": 38934085629,
+  "checks": "6/6 success",
+  "full_backend": {
+    "passed": 3456,
+    "skipped": 198
+  },
+  "full_frontend": {
+    "passed": 1787,
+    "files": 173
+  },
+  "playwright_smoke": 5,
+  "merge": "c42009e08b10003ddc2ab54e96c39a6a61be5bbd",
+  "merged_at": "2026-10-16T17:06:31Z",
+  "checked_and_merge_tree": "e85c0ac9602d02753de765f8137caf8c31c27318",
+  "web": {
+    "deployment": "259c080c-eb85-4409-aedf-ad847a8fc84b",
+    "status": "SUCCESS"
+  },
+  "worker": {
+    "deployment": "53e8847b-17d2-40e5-870f-ed7bc8fdb264",
+    "status": "SUCCESS",
+    "readiness_waiting": "2026-10-16T17:12:33.255529173Z",
+    "readiness_passed": "2026-10-16T17:13:53.255807681Z",
+    "shop_history_success": "2026-10-16T17:18:47.963011908Z",
+    "shop_history_scanned": 50,
+    "shop_history_captured": 1,
+    "import_errors": 0
+  },
+  "public_build_matches_merge": true,
+  "readiness": "200 ready; database and Redis ok",
+  "migration": "176_merge_contact_pricing",
+  "physical_c1_schema_verified": true,
+  "baseline_cutoff": "2026-10-16T17:06:11.042928+00:00",
+  "baseline_digest": "ad1815c71c2b21e1a10982a29793431ac2f09b23f96977acc5541cb068f94f9a",
+  "post_ui_observed_at": "2026-10-16T17:22:34.842297+00:00",
+  "post_ui_digest": "61f79b466fb95a28c30ac83ff4ce706fdabc88ff430fd2d345787df74fe3f7bc",
+  "retention": "database_checks_passed; all seven original cohorts unchanged",
+  "c1_adoption": {
+    "customer_agreements": 0,
+    "assigned_matrices": 0,
+    "account_pricing_events": 0,
+    "order_snapshots": 0,
+    "labor_snapshots": 0,
+    "counter_snapshots": 0
+  },
+  "production_ui": {
+    "themes": [
+      "Light Shop",
+      "Night Shop"
+    ],
+    "viewports": [
+      "1280x900",
+      "390x844",
+      "320x740",
+      "740x400"
+    ],
+    "method": "Browser viewport and touch emulation, not physical devices",
+    "passed": [
+      "pricing source/defaults",
+      "readable unsaved fields",
+      "nested matrix dialog named close/Escape and preserved draft",
+      "Cancel and unchanged history",
+      "new-order defaults and cancel/close/Escape return",
+      "visually preserved customer search",
+      "legacy saved labor/parts/order/invoice totals",
+      "responsive actions and no document horizontal overflow"
+    ],
+    "mutations": "Only temporary appearance preference; restored original Light Shop. No pricing save, new order, stock, invoice or payment action.",
+    "cleanup": "No draft remains; device/touch/page-scale overrides cleared."
+  },
+  "ets_deployment": {
+    "id": "617fd172-70a0-44f0-b3e7-9a3a9f982fe3",
+    "status": "SKIPPED"
+  },
+  "duplicate_main_ci": {
+    "id": 38937138266,
+    "conclusion": "cancelled",
+    "reason": "Queued duplicate after all-six checked-tree pass; not counted as passing"
+  },
+  "limitations": [
+    "Production acceptance uses existing records and cancelled drafts; saved agreement/conflict workflows are separately proven on named local synthetic fixtures.",
+    "Optional-flag and restricted-role cells are automated/API/PostgreSQL evidence, not production browser claims.",
+    "Natural worker captures/webhook tasks prove runtime execution only, not new provider or revenue outcomes."
+  ],
+  "existing_operational_issue": {
+    "board": "DB-QB-CONFIG",
+    "issue": "QuickBooks invoice sync lacks QUICKBOOKS_REDIRECT_URI",
+    "preexisting_runtime_verified": true,
+    "prior_deployment": "1777d45a-b494-4137-9678-0f838459487d",
+    "prior_error_window": "2026-10-16T16:45Z\u201317:10Z",
+    "task_service_source_unchanged": true,
+    "configuration_changed": false
+  },
+  "independent_gate": {
+    "result": "QA/Security GO",
+    "receipt": "../DB133_INDEPENDENT_REVIEW.md",
+    "exact_release_verified": true,
+    "final_retention_independently_recomputed": true
+  },
+  "status": "Done"
+}

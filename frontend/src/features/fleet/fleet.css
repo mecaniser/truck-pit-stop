@@ -1530,6 +1530,16 @@
 .fleet-root .fleet-ro-line-body{display:grid;gap:12px;padding:12px 0 14px 12px;
   border-bottom:1px solid var(--line);}
 
+/* Shared operation controls use the fleet surface tokens in both appearances. */
+.fleet-root .fleet-ro-operation-status{grid-column:1 / -1;}
+.fleet-root .fleet-ro-operation-status span,.fleet-root .fleet-ro-execution :is(span,p,label){color:var(--muted);}
+.fleet-root .fleet-ro-execution>div{border-color:var(--line);}
+.fleet-root .fleet-ro-execution :is(button,select){min-height:44px;max-width:100%;white-space:nowrap;}
+.fleet-root .fleet-ro-execution :is(button,select){background:var(--surface-2) !important;color:var(--text) !important;border-color:var(--line-2);}
+.fleet-root .fleet-ro-execution select{font-size:16px;caret-color:var(--text);}
+.fleet-root .fleet-ro-execution [role="alert"]{color:var(--red);}
+.fleet-root .fleet-ro-completion-requirement{margin:6px 0 0;font-size:12px;line-height:1.4;color:var(--muted);}
+
 .fleet-root .fleet-ro-field{display:grid;gap:7px;}
 .fleet-root .fleet-ro-field>span{font-size:11px;font-weight:750;letter-spacing:.06em;
   text-transform:uppercase;color:var(--muted-2);}

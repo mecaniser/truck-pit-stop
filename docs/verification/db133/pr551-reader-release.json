@@ -30,7 +30,7 @@
     "deployment": "7c7aaa00-01b8-4933-acaf-307873a04f73",
     "status": "SKIPPED"
   },
-  "collector_release_handoff": "After reader acceptance, separately reviewed PR557 may release after its protected checks. Export owner owns natural cycle and source-delivery acceptance.",
+  "collector_release_handoff": "Historical PR557 plan superseded:557 closed unmerged; original daily0UTC cadence retained. Export owner separately verifies exact647 collector source and owns scoped558 follow-up. No collector runtime acceptance is claimed by551.",
   "duplicate_main_ci": {
     "run": 38929538626,
     "status": "cancelled",

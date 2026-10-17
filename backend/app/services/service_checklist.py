@@ -333,6 +333,10 @@ async def snapshot_service(db: AsyncSession, order, labor, service, actor=None):
 
 
 async def archive_labor(db, order, labor, actor=None):
+    # Normal removal adapters already confirm/detach M1 mappings. Any alternate
+    # writer must fail closed before execution or checklist history is changed.
+    from app.services.maintenance import guard_operation_removal
+    await guard_operation_removal(db, actor, order, [labor.id])
     from app.services.operation_execution import remove
     await remove(db, order, labor, actor)
     tasks = (

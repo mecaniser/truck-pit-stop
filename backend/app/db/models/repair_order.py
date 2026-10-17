@@ -24,6 +24,7 @@ class RepairOrderStatus(str, enum.Enum):
 class RepairOrder(BaseModel):
     __tablename__ = "repair_orders"
     __table_args__ = (
+        Index("uq_repair_orders_tenant_identity", "tenant_id", "id", unique=True),
         ForeignKeyConstraint(['tenant_id','pricing_matrix_revision_id'],['parts_price_matrix_revisions.tenant_id','parts_price_matrix_revisions.id'],name='fk_repair_orders_account_revision'),
         CheckConstraint("scheduled_start_at IS NULL OR promised_finish_at IS NULL OR promised_finish_at > scheduled_start_at", name="ck_repair_orders_schedule_order"),
         Index("ix_repair_orders_tenant_promised_finish", "tenant_id", "promised_finish_at", "id", postgresql_where=text("promised_finish_at IS NOT NULL")),
