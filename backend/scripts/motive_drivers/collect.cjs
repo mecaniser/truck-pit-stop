@@ -1,6 +1,7 @@
+const {allowlist,isReviewed,readReviewedIdentity,sameIdentity}=require('../motive_sync/vehicle_identity.cjs');
+const {readVehicleVin}=require('../motive_sync/collect_trips.cjs');
 /* Rendered Motive UI observations only; never private APIs or extracted sessions. */
 const fs = require('node:fs');
-const {readVehicleVin} = require('../motive_sync/collect_trips.cjs');
 const ORIGIN = 'https://app.gomotive.com';
 const DIRECTORY = '/en-US/#/fleetview/list/drivers';
 const RANGES = '/en-US/#/admin/safety/performance-ranges';
@@ -214,6 +215,7 @@ async function readDriverVehicleVin(context,link,{expectedVin=null,readVin=readV
 async function collect(output) {
  const companyLabel=process.env.MOTIVE_COMPANY_LABEL,companyId=process.env.MOTIVE_COMPANY_ID;
  if(!companyLabel||!companyId||!process.env.MOTIVE_EMAIL||!process.env.MOTIVE_PASSWORD)throw new Error('missing_configuration');
+ const reviewedProviders=allowlist();
  const {chromium}=require('../motive_sync/node_modules/playwright');
  const result={version:1,company_label:companyLabel,company_id:companyId,company_verified_before:false,company_verified_after:false,complete:false,started_at:new Date().toISOString(),finished_at:null,driver_directory_count:null,terminal_evidence:null,timezone_evidence:null,performance_ranges:[],drivers:[]};save(output,result);
  const browser=await chromium.launch({headless:true});
@@ -245,21 +247,34 @@ async function collect(output) {
    if(!identity.provider_vehicle_id)row.reason='driver_unassigned';
    else {
     const link={href:`#/fleetview/vehicles/summary/${identity.provider_vehicle_id}`,unit:identity.unit};
+    const reviewed=isReviewed(reviewedProviders,companyId,identity.provider_vehicle_id);
+    let identityProof=null;
     async function identityVin(phase,expectedVin=null) {
      const diagnostic={provider_driver_id:identity.provider_driver_id,provider_vehicle_id:identity.provider_vehicle_id,unit:identity.unit,phase};
      try {
-      return await readDriverVehicleVin(context,link,{expectedVin,onRetry:attempt=>console.log(JSON.stringify({stage:'driver_identity_retry',...diagnostic,...attempt}))});
+      return await readDriverVehicleVin(context,link,{expectedVin,...(reviewed?{readVin:async(c,l)=>{identityProof=await readReviewedIdentity(c,l);return identityProof.vin;}}:{}),onRetry:attempt=>console.log(JSON.stringify({stage:'driver_identity_retry',...diagnostic,...attempt}))});
      } catch(error) {
       console.error(JSON.stringify({stage:'driver_identity_check_failed',...diagnostic,reason:safeReason(error)}));throw error;
      }
     }
-    row.vin=await identityVin('before_summary');
-    if(!row.vin)row.reason='vin_unavailable';
-    else {
-     if(vins.has(row.vin))throw new Error('duplicate_vin');vins.add(row.vin);
+    const beforeIdentity=await readBeforeSummaryIdentity(()=>identityVin('before_summary'),reviewed);
+    row.vin=beforeIdentity.vin;
+    const identityDeferred=beforeIdentity.deferred;
+    if(identityDeferred){
+     // No vehicle proof was obtained. Preserve the directory row without
+     // creating a score or binding-backed capture for this observation.
+     row.reason=beforeIdentity.reason;row.source_read_at=new Date().toISOString();
+    }
+    const beforeProof=identityProof;
+    if(!identityDeferred&&(!row.vin&&!reviewed))row.reason='vin_unavailable';
+    else if(!identityDeferred) {
+     if(row.vin&&vins.has(row.vin))throw new Error('duplicate_vin');if(row.vin)vins.add(row.vin);
      let content;
      try {content=await summary(context,identity,result.performance_ranges);}catch(error){if(error.message==='driver_identity_changed')throw error;content=emptyContent('Driver summary could not be read.');}
-     await identityVin('after_summary',row.vin);
+     const afterVin=await identityVin('after_summary',row.vin);
+     if(afterVin!==row.vin)throw new Error('vehicle_identity_changed');
+     if(reviewed)sameIdentity(beforeProof,identityProof);
+     if(row.vin===null)row.source_vin_state=beforeProof.source_vin_state;
      Object.assign(row,content,{state:'captured',source_read_at:new Date().toISOString()});
     }
    }
@@ -274,6 +289,16 @@ async function collect(output) {
   result.finished_at=new Date().toISOString();result.complete=true;save(output,result);return result;
  }finally{await browser.close();}
 }
+function canDeferReviewedPreSummaryIdentity(error,reviewed){
+ return reviewed&&(error?.message==='vehicle_identity_changed'||error?.message==='vehicle_identity_unavailable'||error?.name==='TimeoutError');
+}
+async function readBeforeSummaryIdentity(readIdentity,reviewed){
+ try{return {deferred:false,vin:await readIdentity()};}
+ catch(error){
+  if(!canDeferReviewedPreSummaryIdentity(error,reviewed))throw error;
+  return {deferred:true,vin:null,reason:safeReason(error)};
+ }
+}
 function safeReason(error) {
  const known=['missing_configuration','login_origin','company_mismatch','timezone_unverified','driver_directory_incomplete','driver_directory_layout','driver_identity_invalid','ambiguous_driver_assignment','driver_source_changed','driver_identity_changed','driver_directory_changed','vehicle_identity_changed','vehicle_identity_unavailable','vehicle_source_changed','ambiguous_vin','duplicate_vin','performance_ranges_unavailable','performance_ranges_invalid','performance_ranges_changed'];
  return known.includes(error?.message)?error.message:error?.name==='TimeoutError'?'ui_timeout':'driver_collection_failed';
@@ -282,4 +307,4 @@ if(require.main===module) {
  if(!process.argv[2]){console.error('Output file required');process.exitCode=1;}
  else collect(process.argv[2]).then(r=>console.log(JSON.stringify({stage:'driver_collection_complete',drivers:r.drivers.length}))).catch(e=>{console.error(JSON.stringify({stage:'driver_collection_failed',reason:safeReason(e),import_permitted:false}));process.exitCode=1;});
 }
-module.exports={collect,parseRanges,classify,directoryColumns,validateDirectory,validateSummaryIdentity,summaryDomReady,emptyContent,parseSummary,readDriverVehicleVin,safeReason};
+module.exports={collect,parseRanges,classify,directoryColumns,validateDirectory,validateSummaryIdentity,summaryDomReady,emptyContent,parseSummary,readDriverVehicleVin,canDeferReviewedPreSummaryIdentity,readBeforeSummaryIdentity,safeReason};

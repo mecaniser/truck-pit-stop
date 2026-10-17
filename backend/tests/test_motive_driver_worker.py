@@ -118,6 +118,52 @@ def test_verified_range_mapping_and_request_identity():
     )
 
 
+@pytest.mark.parametrize(
+    "unavailable_reason",
+    ["vehicle_identity_changed", "vehicle_identity_unavailable", "ui_timeout"],
+)
+@pytest.mark.asyncio
+async def test_unverifiable_reviewed_vehicle_does_not_block_other_driver_capture(
+    _db_engine, db_session, monkeypatch, tmp_path, unavailable_reason
+):
+    actor, _vehicle, member = await fixture(db_session, monkeypatch)
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    source = document()
+    source["drivers"].append(
+        {
+            "provider_driver_id": "unverified-provider-driver",
+            "driver_name": "Unverified Driver",
+            "provider_vehicle_id": "5981300",
+            "unit": "26",
+            "vin": None,
+            "state": "unavailable",
+            "source_read_at": source["finished_at"],
+            "assignment_verified_before": True,
+            "assignment_verified_after": True,
+            "reason": unavailable_reason,
+        }
+    )
+    source["driver_directory_count"] = 2
+    source["terminal_evidence"] = "Showing 2 of 2"
+    receipt = await runner.run(
+        factory,
+        source,
+        actor.tenant_id,
+        actor.id,
+        "Synthetic Fleet",
+        "KT123",
+        tmp_path / "isolated.json",
+        commit=True,
+        expected_customer_id=member.fleet_customer_id,
+    )
+    assert receipt["stage"] == "verified"
+    assert receipt["readback_verified"] == 1
+    assert receipt["rows"][1]["status"] == "unavailable"
+    assert receipt["rows"][1]["capture_id"] is None
+    async with factory() as db:
+        assert await db.scalar(select(func.count()).select_from(FleetDriverRecordCapture)) == 1
+
+
 @pytest.mark.asyncio
 async def test_runner_commit_recovery_and_malformed_tail_atomicity(
     _db_engine, db_session, monkeypatch, tmp_path

@@ -9,7 +9,7 @@ import type { AxiosError } from 'axios'
 import toast from 'react-hot-toast'
 import {
   Gauge, Calendar, Wrench, AlertTriangle, History, Truck, User, Box, Route, Map as MapIcon,
-  Shield, Phone, ClipboardList, ClipboardCheck, Pencil, CheckCircle2, ChevronDown, Check, Info, Trash2, Camera, MoreHorizontal,
+  Shield, ClipboardList, ClipboardCheck, Pencil, CheckCircle2, ChevronDown, Check, Info, Trash2, Camera, MoreHorizontal,
   Archive, ArrowLeft, ArrowRight, Clock3, Combine, RotateCcw, LogOut, Ban } from 'lucide-react'
 import api from '../../lib/api'
 import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
@@ -1443,7 +1443,6 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
   })
   const driver = assignment.data?.driver
   const displayName = driver ? `${driver.first_name} ${driver.last_name}` : truck.driver_name
-  const phone = driver?.phone || detail.driver_phone
   const capability = capabilities.data?.driver_invitation_management
   const portalState = portal.data
   const driverPortalUrl = tenantId
@@ -1470,9 +1469,7 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
         <div className="avatar">{initials(driver ? displayName : currentDriverName(truck))}</div>
         <div className="fleet-driver-profile-copy">
           <div className="person-name driver-name-record">{driver ? displayName : <CurrentDriver truck={truck} fallback="No driver assigned" />}</div>
-          <div className="person-role">{driver ? 'Managed driver profile' : truck.driver_name ? 'Legacy contact — profile not created' : 'Assign a profile to begin custody tracking'}</div>
         </div>
-        {phone && <a className="person-call" href={`tel:${phone}`} aria-label={`Call ${driver ? displayName : truck.driver_name || 'driver'}`}><Phone size={15} /></a>}
       </div>
       {driver && currentDriverRecord(truck) && <div className="fleet-motive-driver"><CurrentDriver truck={truck} /></div>}
       {driver && (

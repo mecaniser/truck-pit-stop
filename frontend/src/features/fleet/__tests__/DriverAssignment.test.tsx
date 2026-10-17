@@ -117,7 +117,7 @@ describe('Driver profile assignment', () => {
     render(<QueryClientProvider client={client}><AssignDriverModal truck={truck} onClose={vi.fn()} /></QueryClientProvider>)
 
     await user.type(await screen.findByRole('searchbox', { name: 'Search driver profiles' }), 'Marcus')
-    await user.click(await screen.findByRole('button', { name: /Marcus Jones.*Legacy contact/i }))
+    await user.click(await screen.findByRole('button', { name: /Marcus Jones.*2 trucks/i }))
 
     expect(screen.getByDisplayValue('Marcus')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Jones')).toBeInTheDocument()

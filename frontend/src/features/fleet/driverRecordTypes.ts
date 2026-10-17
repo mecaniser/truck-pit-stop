@@ -6,6 +6,8 @@ export interface DriverRecordSummary {
   provider_driver_id: string
   driver_name: string
   identity_basis: 'motive_current_assignment'
+  vehicle_identity_basis?: 'verified_vin' | 'reviewed_provider_binding'
+  vehicle_identity_binding_id?: string | null
   source_company_id: string
   provider_vehicle_id: string
   local_driver_name: string | null
