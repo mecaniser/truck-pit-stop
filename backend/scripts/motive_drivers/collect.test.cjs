@@ -1,7 +1,7 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const vm=require('node:vm');
-const {parseRanges,classify,directoryColumns,validateDirectory,validateSummaryIdentity,summaryDomReady,parseSummary,readDriverVehicleVin,safeReason}=require('./collect.cjs');
+const {parseRanges,classify,directoryColumns,validateDirectory,validateSummaryIdentity,summaryDomReady,parseSummary,readDriverVehicleVin,canDeferReviewedPreSummaryIdentity,readBeforeSummaryIdentity,safeReason}=require('./collect.cjs');
 const ranges=parseRanges('Performance ranges\nFair\nGood\nExcellent\nFair 50 – 84 Good 85 – 95 Excellent 96 – 100');
 const snapshot=()=>({safety_score_texts:['82'],safety_lines:['Safety Score','SEP 28, 2026 - OCT 4, 2026','82','Top behaviors impacting score','Close following','-9','Stop sign violation','-4.7','Speeding','-4'],coaching_annotation:true,fuel_text:'Fuel performance LAST 30 DAYS 41.4% UTILIZATION Summary Active time 68h 14m Idle time 96h 26m',coaching_text:'Driver needs coaching Never coached 4',event_headers:['DATE (MDY EDT) / LOCATION','VEHICLE ID / MMY','STATUS','BEHAVIOR / SEVERITY'],events:[['Oct 9, 2026, 2:29 PM\n—','01\nFRHT 2019','Pending review','Stop sign violation\nN/A']]});
 test('Motive source ranges determine bands, including exact boundaries',()=>{
@@ -201,6 +201,25 @@ test('source, ambiguity and navigation errors never trigger an identity retry',a
   assert.equal(reads.calls,1);assert.deepEqual(reads.retries,[]);
   assert.equal(safeReason(error),message.startsWith('navigation')?'driver_collection_failed':message);
  }
+});
+test('only a reviewed pre-summary page identity disagreement may isolate one row',()=>{
+ const changed=new Error('vehicle_identity_changed');
+ assert.equal(canDeferReviewedPreSummaryIdentity(changed,true),true);
+ assert.equal(canDeferReviewedPreSummaryIdentity(changed,false),false);
+ for(const reason of ['vin_changed','vehicle_source_changed','driver_identity_changed','ambiguous_vin','vehicle_identity_unavailable']){
+  assert.equal(canDeferReviewedPreSummaryIdentity(new Error(reason),true),false,reason);
+ }
+});
+test('reviewed pre-summary identity disagreement yields an unavailable outcome; other failures still abort',async()=>{
+ let reads=0;
+ const deferred=await readBeforeSummaryIdentity(async()=>{reads++;throw new Error('vehicle_identity_changed');},true);
+ assert.deepEqual(deferred,{deferred:true,vin:null,reason:'vehicle_identity_changed'});assert.equal(reads,1);
+ reads=0;
+ await assert.rejects(readBeforeSummaryIdentity(async()=>{reads++;throw new Error('vehicle_identity_changed');},false),{message:'vehicle_identity_changed'});assert.equal(reads,1);
+ for(const reason of ['vin_changed','vehicle_source_changed','ambiguous_vin','vehicle_identity_unavailable']){
+  await assert.rejects(readBeforeSummaryIdentity(async()=>{throw new Error(reason);},true),{message:reason});
+ }
+ const accepted=await readBeforeSummaryIdentity(async()=>expectedVin,true);assert.deepEqual(accepted,{deferred:false,vin:expectedVin});
 });
 
 function uiTimeout() {return Object.assign(new Error('Timed out opening private vehicle page'),{name:'TimeoutError'});}
