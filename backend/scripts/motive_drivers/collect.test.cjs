@@ -202,21 +202,28 @@ test('source, ambiguity and navigation errors never trigger an identity retry',a
   assert.equal(safeReason(error),message.startsWith('navigation')?'driver_collection_failed':message);
  }
 });
-test('only a reviewed pre-summary page identity disagreement may isolate one row',()=>{
- const changed=new Error('vehicle_identity_changed');
- assert.equal(canDeferReviewedPreSummaryIdentity(changed,true),true);
- assert.equal(canDeferReviewedPreSummaryIdentity(changed,false),false);
- for(const reason of ['vin_changed','vehicle_source_changed','driver_identity_changed','ambiguous_vin','vehicle_identity_unavailable']){
+test('only reviewed pre-summary identity failures may isolate one row',()=>{
+ for(const reason of ['vehicle_identity_changed','vehicle_identity_unavailable']){
+  const error=new Error(reason);
+  assert.equal(canDeferReviewedPreSummaryIdentity(error,true),true,reason);
+  assert.equal(canDeferReviewedPreSummaryIdentity(error,false),false,reason);
+ }
+ const timeout=uiTimeout();
+ assert.equal(canDeferReviewedPreSummaryIdentity(timeout,true),true);
+ assert.equal(canDeferReviewedPreSummaryIdentity(timeout,false),false);
+ for(const reason of ['vin_changed','vehicle_source_changed','driver_identity_changed','ambiguous_vin','company_mismatch']){
   assert.equal(canDeferReviewedPreSummaryIdentity(new Error(reason),true),false,reason);
  }
 });
-test('reviewed pre-summary identity disagreement yields an unavailable outcome; other failures still abort',async()=>{
- let reads=0;
- const deferred=await readBeforeSummaryIdentity(async()=>{reads++;throw new Error('vehicle_identity_changed');},true);
- assert.deepEqual(deferred,{deferred:true,vin:null,reason:'vehicle_identity_changed'});assert.equal(reads,1);
- reads=0;
- await assert.rejects(readBeforeSummaryIdentity(async()=>{reads++;throw new Error('vehicle_identity_changed');},false),{message:'vehicle_identity_changed'});assert.equal(reads,1);
- for(const reason of ['vin_changed','vehicle_source_changed','ambiguous_vin','vehicle_identity_unavailable']){
+test('reviewed pre-summary identity failures yield no VIN and no readings; other failures still abort',async()=>{
+ for(const [error,expectedReason] of [[new Error('vehicle_identity_changed'),'vehicle_identity_changed'],[new Error('vehicle_identity_unavailable'),'vehicle_identity_unavailable'],[uiTimeout(),'ui_timeout']]){
+  let reads=0;
+  const deferred=await readBeforeSummaryIdentity(async()=>{reads++;throw error;},true);
+  assert.deepEqual(deferred,{deferred:true,vin:null,reason:expectedReason});assert.equal(reads,1);
+  reads=0;
+  await assert.rejects(readBeforeSummaryIdentity(async()=>{reads++;throw error;},false),error);assert.equal(reads,1);
+ }
+ for(const reason of ['vin_changed','vehicle_source_changed','ambiguous_vin','company_mismatch']){
   await assert.rejects(readBeforeSummaryIdentity(async()=>{throw new Error(reason);},true),{message:reason});
  }
  const accepted=await readBeforeSummaryIdentity(async()=>expectedVin,true);assert.deepEqual(accepted,{deferred:false,vin:expectedVin});
