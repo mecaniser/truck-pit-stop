@@ -258,4 +258,8 @@ from app.db.models.parts_pricing import PartsPriceMatrix, PartsPriceMatrixRevisi
 
 from app.db.models.customer_pricing import AccountPricingEvent  # noqa: F401
 
+from app.db.models.communication import ConversationWorkflow, ConversationReadWatermark, SMSSendOperation  # noqa: F401
+from app.db.models.automated_sms import AutomatedSMSOperation  # noqa: F401
+
+from app.db.models.messaging_business import MessagingBusiness, TenantSMSBinding, SMSConsentEvidence, SMSConfigurationAudit  # noqa: F401
 from app.db.models.dashboard_vehicle_binding import DashboardVehicleBinding  # noqa: F401

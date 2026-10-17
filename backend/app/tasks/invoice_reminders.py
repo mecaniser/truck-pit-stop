@@ -19,7 +19,7 @@ from app.db.models.tenant import Tenant
 from app.core.vehicle_display import vehicle_display_label
 from app.services.email_service import send_email
 from app.services.invoice_access_service import generate_invoice_access_link
-from app.services.twilio_service import send_sms
+from app.services.automated_sms_service import enqueue_automated_sms
 from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
 # Fallback defaults if tenant settings are missing
@@ -74,6 +74,7 @@ async def _process_invoice_reminders(tenant_id: str = None):
         invoices = result.scalars().all()
         
         sent_count = 0
+        email_notifications = []
         for invoice in invoices:
             from app.services.financial_transaction_lock import lock_tenant_financials
             from app.services.invoice_settlement_service import SettlementDomainError
@@ -132,8 +133,8 @@ async def _process_invoice_reminders(tenant_id: str = None):
             
             reminder_num = invoice.reminder_count + 1
             
-            # Notification transports commit their own logs in a separate session;
-            # the financial transaction retains its mutex through both sends.
+            # The SMS intent and reminder counter share the financial transaction.
+            # Email delivery follows the commit, in its own session.
             # Send SMS if customer has phone
             if customer.phone:
                 if reminder_num == 1:
@@ -141,20 +142,13 @@ async def _process_invoice_reminders(tenant_id: str = None):
                 else:
                     sms_body = f"Reminder #{reminder_num}: Invoice #{invoice.invoice_number} for ${invoice.total_amount:,.2f} is {days_overdue} days overdue. Please pay ASAP to avoid service holds. - {garage_name}"
                 
-                try:
-                    async with AsyncSessionLocal() as notification_db:
-                        await send_sms(
-                            notification_db,
-                            str(invoice.tenant_id),
-                            customer.phone,
-                            sms_body,
-                            template_name="invoice_reminder_sms",
-                            customer_id=customer.id,
-                            source="automated",
-                        )
-                except Exception:
-                    pass
-            
+                await enqueue_automated_sms(
+                    db, tenant_id=invoice.tenant_id,
+                    domain_event_id=f"invoice:{invoice.id}:reminder:{reminder_num}",
+                    to=customer.phone, body=sms_body,
+                    template_name="invoice_reminder_sms", customer_id=customer.id,
+                )
+
             # Send email if customer has email (and not a placeholder)
             if customer.email and "@placeholder" not in customer.email:
                 invoice_access_url = await generate_invoice_access_link(
@@ -206,21 +200,23 @@ async def _process_invoice_reminders(tenant_id: str = None):
                 </html>
                 """
                 
-                try:
-                    async with AsyncSessionLocal() as notification_db:
-                        await send_email(
-                            notification_db, str(invoice.tenant_id), customer.email, subject, html_body,
-                            template_name="invoice_reminder_email"
-                        )
-                except Exception:
-                    pass
-            
+                email_notifications.append(dict(
+                    tenant_id=str(invoice.tenant_id), to=customer.email,
+                    subject=subject, body=html_body, template_name="invoice_reminder_email",
+                ))
+
             # Update tracking fields
             invoice.last_reminder_sent_at = now
             invoice.reminder_count = reminder_num
             sent_count += 1
         
         await db.commit()
+        for email_kwargs in email_notifications:
+            try:
+                async with AsyncSessionLocal() as notification_db:
+                    await send_email(notification_db, **email_kwargs)
+            except Exception:
+                pass
         return sent_count
 
 
