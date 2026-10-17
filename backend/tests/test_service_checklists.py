@@ -845,7 +845,7 @@ async def test_legacy_fleet_add_service_snapshots(db_session, monkeypatch):
     await db_session.commit()
     monkeypatch.setattr(fleet, "_load_fleet_ro_or_404", AsyncMock(return_value=a.order))
     await fleet.add_service_to_work_order(
-        a.order.id, AddServiceRequest(service_id=a.service.id), db_session, a.owner
+        a.order.id, AddServiceRequest(service_id=a.service.id), db=db_session, current_user=a.owner
     )
     assert (await checks.read_checklist(db_session, a.order.id, a.owner)).total == 3
 

@@ -75,6 +75,17 @@ class IdempotencyMiddleware:
         # domain replay response and its `Idempotency-Replayed: true` contract.
         if path.startswith("/api/v1/parts-operations/"):
             return False
+        if path.rstrip("/") in {"/api/v1/repair-orders", "/api/v1/repair-orders/quick"}:
+            return False
+        # DB132 reauthorizes before its transaction-owned durable replay.
+        if path.startswith('/api/v1/customers/') and path.endswith('/pricing-policy'):
+            return False
+        if path.startswith('/api/v1/parts-pricing/'):
+            return False
+        if path.startswith('/api/v1/repair-orders/') and path.endswith(('/parts', '/parts/ad-hoc', '/price-build/flat-service', '/price-build/repair-ops/apply')):
+            return False
+        if path.startswith('/api/v1/fleet/') and path.endswith(('/work-order', '/schedule-pm', '/add-service')):
+            return False
         return True
 
     @staticmethod

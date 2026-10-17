@@ -176,6 +176,32 @@
 .db-customer-business-settings > button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; font-size: calc(var(--font-size-body, 16px) * .8125); font-weight: 600; }
 .db-customer-business-settings > button svg { width: 14px; height: 14px; }
 .db-customer-business-settings > section[hidden] { display: none; }
+/* Override the shared staff field's fixed light fill as a matching theme pair. */
+.db-presentation-new .db-staff-content .db-customer-business-settings :is(input, textarea, select) {
+  background: var(--surface-overlay, #fff) !important;
+  color: var(--workspace-text, #14243a) !important;
+  -webkit-text-fill-color: var(--workspace-text, #14243a);
+  caret-color: var(--workspace-text, #14243a);
+  color-scheme: inherit;
+}
+.db-presentation-new .db-staff-content .db-customer-business-settings :is(input, textarea)::placeholder {
+  color: var(--workspace-muted, #5b6d82) !important;
+  -webkit-text-fill-color: var(--workspace-muted, #5b6d82);
+  opacity: 1;
+}
+.db-customer-business-settings section[aria-label='Customer sales tax'] {
+  color: var(--workspace-text, #14243a);
+  border-color: var(--workspace-border, #cbd5df);
+}
+.db-presentation-new .db-staff-content .db-customer-business-settings :is(.text-slate-600, .text-slate-700) {
+  color: var(--workspace-muted, #5b6d82) !important;
+}
+.db-presentation-new .db-staff-content .db-customer-business-settings .text-red-800 {
+  color: color-mix(in srgb, var(--semantic-danger-500, #ef4444) 35%, var(--workspace-text, #14243a));
+}
+.db-presentation-new .db-staff-content .db-customer-business-settings .text-emerald-800 {
+  color: color-mix(in srgb, var(--semantic-success-500, #10b981) 35%, var(--workspace-text, #14243a));
+}
 @media (max-width: 639px) {
   .db-customer-business-settings > button { min-height: 44px; }
 }

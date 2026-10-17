@@ -42,3 +42,14 @@ describe('SlidePanelForm', () => {
     await waitFor(() => expect(opener).toHaveFocus())
   })
 })
+
+it('portals opted-in pricing dialogs to the themed shell and keeps parent Escape handling separate', async () => {
+  function Nested() {
+    const [child, setChild] = useState(false)
+    const [parent, setParent] = useState(true)
+    return <div className="db-staff-shell" data-appearance-mode="dark"><div data-testid="transformed-parent" style={{ transform: 'translateX(0)' }}><SlidePanelForm isOpen={parent} title="Parent" onClose={() => setParent(false)} hideFooter><button onClick={() => setChild(true)}>Review pricing</button>{child && <SlidePanelForm portalToShell isOpen title="Pricing" onClose={() => setChild(false)} hideFooter><button>Accept</button></SlidePanelForm>}</SlidePanelForm></div></div>
+  }
+  const user = userEvent.setup(); render(<Nested />); await user.click(screen.getByText('Review pricing'))
+  const pricing = screen.getByRole('dialog', { name: 'Pricing' }); expect(pricing.closest('.db-staff-shell')).toHaveAttribute('data-appearance-mode', 'dark'); expect(screen.getByTestId('transformed-parent')).not.toContainElement(pricing)
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Close Pricing' })).toHaveFocus()); await user.keyboard('{Escape}'); expect(screen.queryByRole('dialog', { name: 'Pricing' })).not.toBeInTheDocument(); expect(screen.getByRole('dialog', { name: 'Parent' })).toBeInTheDocument(); await waitFor(() => expect(screen.getByText('Review pricing')).toHaveFocus())
+})

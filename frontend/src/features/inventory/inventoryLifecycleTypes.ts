@@ -1,3 +1,4 @@
+import type { SafePrice } from '@/features/parts-pricing/contract'
 export type CursorPage<T> = { items: T[]; next_cursor: string | null }
 
 export type ActivityCategory = 'catalog' | 'stock' | 'repairs' | 'purchasing' | 'returns' | 'sales'
@@ -47,6 +48,7 @@ export type CounterSaleStatus = 'draft' | 'completed' | 'partially_returned' | '
 export type CounterSaleTender = 'cash' | 'check' | 'ach' | 'zelle' | 'external_terminal' | 'fleet_reference' | 'other'
 
 export type CounterSaleLine = {
+  pricing?: SafePrice
   id: string
   inventory_id: string
   sku: string
@@ -102,12 +104,18 @@ export type CounterSaleReturn = {
   completed_at: string | null
 }
 
+export type CounterSalePolicy = { schema_version: 1 } & (
+  | { snapshot_id: string; mode: 'captured'; parts: { source: 'customer' | 'shop'; mode: 'matrix' | 'catalog' } }
+  | { snapshot_id: null; mode: 'legacy'; parts: { source: 'legacy'; mode: 'legacy' } }
+)
+
 export type CounterSale = {
   id: string
   sale_number: string
   status: CounterSaleStatus
   version: number
   customer_id: string | null
+  pricing_policy: CounterSalePolicy
   buyer_name: string | null
   buyer_email: string | null
   buyer_phone: string | null
@@ -133,6 +141,8 @@ export type CounterSaleListItem = Pick<CounterSale, 'id' | 'sale_number' | 'stat
 }
 
 export type CounterSaleDraftLine = {
+  sale_line_id?: string
+  pricing_intent?: 'default' | 'manual' | 'stock' | 'list'
   inventory_id: string
   quantity: number
   charged_unit_price?: string

@@ -38,7 +38,8 @@ def can_convert(order):
 
 
 def policy_rate(order, tenant):
-    return Decimal(tenant.labor_rate if not order.is_internal or fleet_labor_uses_customer_rate(order) else tenant.internal_labor_rate)
+    from app.services.customer_pricing import labor_default
+    return labor_default(order,tenant)[0]
 
 
 def scoped_order(order_id, tenant_id, *, include_deleted=False):
@@ -161,7 +162,8 @@ def _conversion_state(conversion, target_status, target_available, line_availabl
 def request_hash(target_id, recommendation_id, body):
     value = dict(target_id=str(target_id), recommendation_id=str(recommendation_id),
                  hours=format(body.hours.quantize(Decimal('.01')), 'f'),
-                 hourly_rate=format(body.hourly_rate.quantize(Decimal('.01')), 'f'),
+                 hourly_rate=format(body.hourly_rate.quantize(Decimal('.01')), 'f') if body.hourly_rate is not None else None,
+                 pricing_intent=body.pricing_intent,
                  replaces_conversion_id=str(body.replaces_conversion_id) if body.replaces_conversion_id else None)
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
@@ -203,7 +205,7 @@ async def convert(db, *, target_id, recommendation_id, body, user):
     previous = await project(db, existing) if existing else None
     if existing is not None and previous.state == 'active':
         if (existing.target_order_id == target_id and existing.hours == body.hours
-                and existing.hourly_rate == body.hourly_rate and body.replaces_conversion_id is None):
+                and (body.hourly_rate is None or existing.hourly_rate == body.hourly_rate) and body.replaces_conversion_id is None):
             return previous, True
         fail('already_converted', 'This recommendation already has an operation.', conversion=previous)
     if rec.is_resolved or rec.resolved_by_repair_order_id:
@@ -220,9 +222,11 @@ async def convert(db, *, target_id, recommendation_id, body, user):
     elif body.replaces_conversion_id is not None:
         fail('conversion_changed', 'The recommendation changed. Refresh before adding work.')
     tenant = await db.get(Tenant, tenant_id)
-    if target.is_internal and body.hourly_rate != policy_rate(target, tenant):
-        fail('pricing_changed', 'The work order labor rate changed. Refresh and review the new amount.')
-    total = (body.hours * body.hourly_rate).quantize(Decimal('.01'))
+    from app.services import customer_pricing as account
+    if target.is_internal and body.hourly_rate is not None and body.pricing_intent != 'default' and body.hourly_rate != policy_rate(target,tenant):
+        fail('pricing_changed','The work order labor rate changed. Refresh and review the new amount.')
+    rate,origin,pricing_source=account.new_labor(target,tenant,user,requested=body.hourly_rate,intent=body.pricing_intent)
+    total = (body.hours * rate).quantize(Decimal('.01'))
     if total > Decimal('99999999.99'):
         fail('amount_too_large', 'The labor total exceeds the supported amount.', status=422)
     conversion_id, line_id = uuid4(), uuid4()
@@ -232,7 +236,7 @@ async def convert(db, *, target_id, recommendation_id, body, user):
         # Flush the partial unique index release before inserting its successor.
         await db.flush()
     line = Labor(execution_status="pending", id=line_id, tenant_id=tenant_id, repair_order_id=target.id,
-                 description=rec.description, hours=body.hours, hourly_rate=body.hourly_rate,
+                 description=rec.description, hours=body.hours, hourly_rate=rate, pricing_snapshot=origin, pricing_source=pricing_source,
                  total_cost=total, line_type=LaborLineType.MANUAL, auto_recalc_enabled=False)
     conversion = RecommendationConversion(
         id=conversion_id, tenant_id=tenant_id, recommendation_id=rec.id,
@@ -240,11 +244,12 @@ async def convert(db, *, target_id, recommendation_id, body, user):
         source_description=rec.description, source_priority=rec.priority.value,
         vehicle_id=source.vehicle_id, target_order_id=target.id, target_order_number=target.order_number,
         target_labor_id=line_id, request_id=body.request_id, request_hash=digest,
-        hours=body.hours, hourly_rate=body.hourly_rate, created_by_user_id=user.id, created_at=now)
+        hours=body.hours, hourly_rate=rate, created_by_user_id=user.id, created_at=now)
     from app.services.operation_execution import enroll_new_scope
     enroll_new_scope(target)
     db.add_all([line, conversion])
     await db.flush()
+    account.audit_labor(db,user,target,line)
     if existing is not None:
         existing.superseded_by_conversion_id = conversion_id
     db.add(RepairOrderHistoryEvent(

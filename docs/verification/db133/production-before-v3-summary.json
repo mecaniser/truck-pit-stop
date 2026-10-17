@@ -1,0 +1,70 @@
+{
+  "c1_counts": {
+    "availability": "pre_c1_fields_absent_expected",
+    "configured_defaults": 0,
+    "events": 0,
+    "snapshots": 0
+  },
+  "cutoff": "2026-10-16T05:12:44.974006+00:00",
+  "isolation": "repeatable read",
+  "observed_at": "2026-10-16T05:12:44.974006+00:00",
+  "phase": "pre",
+  "read_only": true,
+  "readiness": {
+    "checks": {
+      "database": "ok",
+      "redis": "ok"
+    },
+    "http_status": 200,
+    "status": "ready"
+  },
+  "receipt_version": 3,
+  "schema": {
+    "account_pricing_events_table": false,
+    "c1_columns": {
+      "counter_sales": [],
+      "customers": [],
+      "labor": [],
+      "repair_orders": []
+    },
+    "compatible": true,
+    "contact_snapshot_column": true,
+    "expected": "175_customer_contact_snapshot",
+    "migrations": [
+      "175_customer_contact_snapshot"
+    ]
+  },
+  "status": "baseline_captured",
+  "baseline_receipt_sha256": "717b8646238f1d36d18c075eaf610f2dc99f6543813eb0ac0330c59e01c018de",
+  "cohorts": {
+    "counter_sale_lines": {
+      "count": 1,
+      "financial_fingerprint": "1b06a130d7d4986ba329efb3c617e98e6e6a5fac05d326c4ac14b7b870b5c68b"
+    },
+    "counter_sales": {
+      "count": 1,
+      "financial_fingerprint": "14592f56d3d1e8cd8b7df56669ff9003f90580347973b8f2020b9882eed03f78"
+    },
+    "customers": {
+      "count": 765,
+      "financial_fingerprint": null
+    },
+    "invoices": {
+      "count": 2443,
+      "financial_fingerprint": "ebf8f80ecc2e534c1ed27b1630a577e15cf96820d26f9103e424c5a05ec109bc"
+    },
+    "labor": {
+      "count": 4670,
+      "financial_fingerprint": "d1ce00270b950b2b375cd966761e609ef500f70ff61caeababcd0373b6c54228"
+    },
+    "parts_usage": {
+      "count": 2934,
+      "financial_fingerprint": "c5b3bc3c50e2b32b80e064ddca27e93bc8de4bbf9413036d034605ffadcf17a7"
+    },
+    "repair_orders": {
+      "count": 3671,
+      "financial_fingerprint": "35df2bbb629dfac4e69ade287bd7c4507bff18d568d3c0b4d17429a9980762e4"
+    }
+  },
+  "supersedes_for_release": "Historical v2 pre-baseline, captured before PR549, retained separately."
+}

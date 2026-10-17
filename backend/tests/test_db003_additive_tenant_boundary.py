@@ -12,6 +12,8 @@ from app.db.models.customer import Customer
 from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.labor import Labor
 from app.db.models.provider_outbox import ProviderOutboxEvent
+from app.db.models.parts_pricing import PartsPricingEvent
+from app.db.models.parts_operations import InventoryMovement, PartsOperationIdempotency
 from app.db.models.quote import Quote
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.repair_order_history import RepairOrderHistoryEvent
@@ -212,6 +214,9 @@ async def test_cross_tenant_mechanic_additive_http_paths_are_generic_404_and_noo
             "quantity": "1.00",
             "allow_stock_shortage": True,
         }),
+        ("post", f"{base}/parts/ad-hoc", {
+            "name": "Unauthorized ad-hoc part", "quantity": "1.00", "unit_price": "12.50",
+        }),
         ("post", f"{base}/price-build/flat-service", {
             "service_id": str(service.id),
             "quantity": 1,
@@ -225,7 +230,7 @@ async def test_cross_tenant_mechanic_additive_http_paths_are_generic_404_and_noo
     )
 
     for method, path, payload in requests:
-        response = await getattr(client, method)(path, json=payload, headers=headers)
+        response = await getattr(client, method)(path, json=payload, headers={**headers, "Idempotency-Key": str(uuid4())})
         assert response.status_code == 404
         assert response.json()["detail"] == "Repair order not found"
 
@@ -241,6 +246,9 @@ async def test_cross_tenant_mechanic_additive_http_paths_are_generic_404_and_noo
             "inventory_id": str(owner_inventory_id),
             "quantity": "1.00",
         }),
+        (f"{base}/parts/ad-hoc", {
+            "name": "Unassigned ad-hoc part", "quantity": "1.00", "unit_price": "12.50",
+        }),
         (f"{base}/price-build/flat-service", {
             "service_id": str(owner_service_id),
             "quantity": 1,
@@ -253,7 +261,7 @@ async def test_cross_tenant_mechanic_additive_http_paths_are_generic_404_and_noo
         }),
     )
     for path, payload in unassigned_requests:
-        response = await client.post(path, json=payload, headers=unassigned_headers)
+        response = await client.post(path, json=payload, headers={**unassigned_headers, "Idempotency-Key": str(uuid4())})
         assert response.status_code == 403
         assert response.json()["detail"] == "Use your assigned operation workspace for this job."
 
@@ -268,6 +276,9 @@ async def test_cross_tenant_mechanic_additive_http_paths_are_generic_404_and_noo
             (f"{candidate_base}/parts", {
                 "inventory_id": str(owner_inventory_id),
                 "quantity": "1.00",
+            }),
+            (f"{candidate_base}/parts/ad-hoc", {
+                "name": "Missing-order ad-hoc part", "quantity": "1.00", "unit_price": "12.50",
             }),
             (f"{candidate_base}/price-build/flat-service", {
                 "service_id": str(owner_service_id),
@@ -284,7 +295,7 @@ async def test_cross_tenant_mechanic_additive_http_paths_are_generic_404_and_noo
     for candidate_order_id in (deleted_order_id, uuid4()):
         for path, payload in additive_requests(candidate_order_id):
             response = await client.post(
-                path, json=payload, headers=unassigned_headers
+                path, json=payload, headers={**unassigned_headers, "Idempotency-Key": str(uuid4())}
             )
             assert response.status_code == 404
             assert response.json()["detail"] == "Repair order not found"
@@ -341,4 +352,8 @@ async def test_cross_tenant_mechanic_additive_http_paths_are_generic_404_and_noo
         select(func.count(Quote.id)).where(Quote.repair_order_id == order_id)
     ) == 1
     assert await db_session.scalar(select(func.count(ProviderOutboxEvent.id))) == 0
+    assert await db_session.scalar(select(func.count(Inventory.id)).where(Inventory.is_placeholder.is_(True))) == 0
+    assert await db_session.scalar(select(func.count(InventoryMovement.id))) == 0
+    assert await db_session.scalar(select(func.count(PartsPricingEvent.id))) == 0
+    assert await db_session.scalar(select(func.count(PartsOperationIdempotency.id))) == 0
     assert websocket_events == []

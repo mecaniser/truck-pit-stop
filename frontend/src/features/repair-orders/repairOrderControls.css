@@ -1,0 +1,120 @@
+/* One toolbar shared by the full ledger, selected-order queue and Shop Work.
+   Keep the existing quick statuses on wide canvases; narrow queues put search
+   on its own row and group the status selector with the deadline filter. */
+.db-presentation-new .db-repair-orders-controls {
+  --db-repair-orders-control-height: 44px;
+}
+.db-presentation-new .db-repair-orders-controls .db-repair-orders-new__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.db-presentation-new .db-repair-orders-controls .db-repair-orders-new__header h1 {
+  margin: 0;
+  font-size: calc(var(--font-size-body) * 1.5) !important;
+}
+.db-presentation-new .db-repair-orders-controls .db-repair-orders-new__header p { display: none; }
+.db-presentation-new .db-repair-orders-controls .db-repair-orders-new__create {
+  flex: none;
+  width: var(--db-repair-orders-control-height);
+  min-width: var(--db-repair-orders-control-height);
+  min-height: var(--db-repair-orders-control-height);
+  margin: 0;
+  padding: 0;
+}
+.db-presentation-new .db-repair-orders-controls .db-repair-orders-new__create-label { display: none; }
+.db-presentation-new .db-repair-orders-controls .db-repair-orders-new__toolbar {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  padding: 0;
+  margin-bottom: 4px;
+}
+.db-repair-orders-new__filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.db-presentation-new .db-repair-orders-controls .db-repair-orders-new__status-select { flex: 1; }
+.db-presentation-new .db-repair-orders-controls .db-repair-orders-new__status-tabs {
+  flex: 1;
+  justify-content: flex-start;
+}
+.db-presentation-new .db-repair-orders-controls .db-repair-orders-new__status-tabs button {
+  min-height: var(--db-repair-orders-control-height);
+  padding-block: 4px;
+}
+.db-presentation-new .db-repair-orders-controls .db-order-overdue-filter {
+  flex: none;
+  gap: 5px;
+  min-height: var(--db-repair-orders-control-height);
+}
+.db-presentation-new .db-repair-orders-controls .db-order-overdue-filter[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--personal-accent-400) 15%, var(--surface-overlay));
+  border-color: var(--personal-accent-400);
+}
+.db-presentation-new .db-repair-orders-controls .db-repair-orders-ledger > header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  margin-bottom: 4px;
+  /* Match the 12px row inset, including the reserved scrollbar gutter. */
+  padding: 2px 12px;
+}
+.db-presentation-new .db-repair-orders-controls .db-repair-orders-ledger__caption {
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+}
+.db-presentation-new .db-repair-orders-controls .db-repair-orders-ledger__caption h2:not(.sr-only) {
+  font-size: 12px;
+}
+.db-presentation-new .db-repair-orders-controls .db-repair-orders-ledger__totals {
+  min-width: 0;
+  text-align: end;
+}
+.db-presentation-new .db-repair-orders-controls .db-repair-orders-ledger__value-summary {
+  width: auto;
+  white-space: nowrap;
+}
+.db-presentation-new .db-repair-orders-controls .db-repair-orders-ledger__scope-control > button {
+  min-height: var(--db-repair-orders-control-height);
+  gap: 4px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+.db-presentation-new .db-repair-orders-controls .db-repair-orders-ledger__scope-menu {
+  left: 0;
+  right: auto;
+}
+@media (max-width: 1023px), (pointer: coarse) {
+  .db-presentation-new .db-repair-orders-controls .db-repair-orders-new__status-select li > button { min-height: 44px; }
+}
+@media (max-width: 780px) {
+  /* The full-ledger three-column rule also matches phones. Give identity and
+     money the full row; keep its separate disclosure below, not in a third
+     column that squeezes the amount/date out of the record. */
+  .db-presentation-new .db-repair-orders-controls .db-repair-orders-ledger__row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .db-presentation-new .db-repair-orders-controls .db-repair-orders-ledger__record {
+    grid-template-columns: minmax(0, 1fr) 96px;
+    gap: 6px 10px;
+  }
+  .db-presentation-new .db-repair-orders-controls .db-repair-orders-ledger__money {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: start;
+  }
+  .db-presentation-new .db-repair-orders-controls .db-repair-orders-ledger__work {
+    grid-column: 1 / -1;
+  }
+  .db-presentation-new .db-repair-orders-controls .db-repair-orders-ledger__details-toggle {
+    min-height: 44px;
+    padding-block: 0;
+  }
+}

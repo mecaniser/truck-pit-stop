@@ -34,6 +34,10 @@ jobs:
         run: python backend/scripts/check_alembic_heads.py
       - name: Verify Motive driver collector contracts
         run: node --test backend/scripts/motive_drivers/collect.test.cjs
+      - name: Verify ETS contact evidence contracts
+        run: node --test backend/scripts/easytruck_sync/lib/contact_snapshot.test.js
+      - name: Verify Motive location and speed collector contracts
+        run: node --test backend/scripts/motive_sync/collector.test.cjs
       - name: Verify Railway deployment readiness
         run: |
           python .github/scripts/check_railway_config.py
@@ -74,6 +78,7 @@ jobs:
             tests/test_motive_driver_worker.py \
             tests/test_motive_driver_worker_process.py \
             tests/test_motive_driver_journal.py \
+            tests/test_motive_sync_import.py \
             tests/test_database_resilience.py \
             tests/test_dashboard_performance.py \
             tests/test_dashboard_zelle_queue.py \

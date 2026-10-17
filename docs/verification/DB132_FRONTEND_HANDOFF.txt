@@ -1,0 +1,19 @@
+DB132 frontend checkpoint — source frozen, no frontend commit by owner.
+Worktree: /Users/sergio_m1_promax/.codex/worktrees/ets-checkpoint-merge/truck-pit-stop
+Node: /Users/sergio_m1_promax/local/node22/bin/node
+
+From frontend/:
+/Users/sergio_m1_promax/local/node22/bin/node node_modules/vitest/vitest.mjs run src/features/parts-pricing/__tests__ src/features/inventory/__tests__/PartsInventoryWorkspace.test.tsx src/features/inventory/__tests__/CounterSalesWorkspace.test.tsx src/features/inventory/__tests__/InventoryPage.search-link.test.tsx src/features/repair-orders/__tests__/RepairOrdersPage.customer.test.tsx src/features/repair-orders/__tests__/PriceBuilderPanel.pending-feedback.test.tsx src/features/fleet/__tests__/FleetPriceBuilderPanel.test.tsx src/features/fleet/__tests__/SchedulePMDate.test.tsx src/features/fleet/__tests__/TruckDetailHarden.test.tsx src/components/__tests__/SlidePanelForm.test.tsx --reporter=json --outputFile=/tmp/db132-final-complete.json > /tmp/db132-final-complete.log 2>&1
+Result: 223 passed, 0 failed.
+
+From frontend/:
+/Users/sergio_m1_promax/local/node22/bin/node node_modules/typescript/bin/tsc --noEmit > /tmp/db132-final-tsc.log 2>&1
+
+From worktree root:
+/Users/sergio_m1_promax/local/node22/bin/node /tmp/db132-lint.cjs > /tmp/db132-changed-lint.json
+git diff --check -- frontend
+
+Differential lint compares changed/untracked frontend TypeScript errors with the current HEAD baseline; existing unrelated file errors are not presented as whole-file clean.
+Runtime/browser acceptance, backend regressions, independent gates, commit/CI/release remain parent-owned. No production policy activation by frontend owner.
+
+Exact-final checks: TypeScript exit 0; differential lint 30 files, 0 regressions; git diff --check frontend exit 0.

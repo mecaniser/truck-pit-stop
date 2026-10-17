@@ -235,4 +235,35 @@ describe('current-driver record', () => {
     await userEvent.click(screen.getByRole('button', { name: /Open TEST-1 truck details/ }))
     expect(onOpen).toHaveBeenCalledWith(driverTruck)
   })
+  it.each(['pointer', 'touch', 'Enter', 'Space', 'Escape', 'outside'] as const)('dismisses by %s without opening a truck and restores trigger focus', async method => {
+    const user = userEvent.setup()
+    const onOpen = vi.fn()
+    const adjacent = { ...driverTruck, id: 'adjacent-truck', unit_number: 'TEST-2', driver_name: null, driver_record: null }
+    get.mockResolvedValue({ data: driverResponse })
+    render(<QueryClientProvider client={client()}><FleetBoard data={{ trucks: [driverTruck, adjacent], stats: { total: 2, active: 2, shop: 0, pm: 0, parts: 0, open_wo: 0, incidents_total: 0 } }} onOpen={onOpen} onOpenRepairOrder={vi.fn()} filter="all" setFilter={vi.fn()} query="" setQuery={vi.fn()} sort="attention" setSort={vi.fn()} /></QueryClientProvider>)
+    await user.click(trigger())
+    await screen.findByText('68h 14m')
+    const close = screen.getByRole('button', { name: 'Close driver record' })
+    if (method === 'pointer') {
+      await user.pointer({ keys: '[MouseLeft>]', target: close })
+      expect(screen.getByRole('dialog')).toBeVisible()
+      await user.pointer({ keys: '[/MouseLeft]', target: close })
+    } else if (method === 'touch') {
+      await user.pointer({ keys: '[TouchA]', target: close })
+    } else if (method === 'outside') {
+      // In a browser this portaled layer receives the click above adjacent cards.
+      const backdrop = document.querySelector('.driver-record-backdrop')!
+      expect(backdrop.closest('.tcard')).toBeNull()
+      await user.click(backdrop)
+    } else {
+      expect(close).toHaveFocus()
+      await user.keyboard(method === 'Space' ? ' ' : `{${method}}`)
+    }
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(trigger()).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: 'Open TEST-2 truck details' }))
+    expect(onOpen).toHaveBeenCalledExactlyOnceWith(adjacent)
+  })
+
 })

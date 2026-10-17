@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/stores/authStore'
 import type { BoardTruck } from '../types'
-import { readingCaption, readingSummary, readingFreshness, retained, truckCoordinates, truckMotion, type FleetTelemetry, type ReadingProvenance } from '../telemetry'
+import { readingCaption, readingSummary, readingFreshness, retained, truckCoordinates, truckCurrentSpeed, truckMotion, type FleetTelemetry, type NumericReading, type ReadingProvenance } from '../telemetry'
 import TelemetrySummary from '../TelemetrySummary'
 import TelemetryCapture from '../TelemetryCapture'
 import FleetMap from '../FleetMap'
@@ -55,6 +55,7 @@ describe('reported telemetry semantics', () => {
     expect(readingSummary({ ...minute, observed_at: 'invalid' }, now)).toBe('')
   })
   it('does not share an approximate age with a second-precision reading', () => {
+    vi.useFakeTimers(); vi.setSystemTime(now)
     const observed_at = new Date(now - 5 * 60000).toISOString()
     render(<TelemetrySummary compact truck={{ ...truck, telemetry: { ...telemetry,
       location: { ...telemetry.location!, observed_at, observed_precision: 'minute' },
@@ -72,7 +73,10 @@ describe('reported telemetry semantics', () => {
   })
   it('expires readings after retention and rejects future timestamps', () => { expect(retained(provenance, now + 31 * 86400000)).toBeNull(); expect(retained({ ...provenance, observed_at: new Date(now + 600000).toISOString() }, now)).toBeNull() })
   it('keeps the card to location and speed, with one shared age and no odometer', () => {
-    render(<TelemetrySummary truck={truck} compact />)
+    render(<TelemetrySummary truck={{ ...truck, telemetry: { ...telemetry,
+      location: { ...telemetry.location!, observed_at: new Date(now).toISOString() },
+      speed: { ...telemetry.speed!, observed_at: new Date(now).toISOString() },
+    } }} compact />)
     expect(screen.getByText('Synthetic reported area')).toBeInTheDocument()
     expect(screen.getByText('0 mph')).toBeInTheDocument()
     expect(screen.queryByText(/odometer/i)).not.toBeInTheDocument()
@@ -89,19 +93,83 @@ describe('reported telemetry semantics', () => {
     expect(screen.queryByText(/observation time unknown/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Reading details' }))
     expect(screen.getAllByText('Motive odometer')).toHaveLength(2)
-    expect(screen.getAllByText(`Captured ${new Date(provenance.captured_at!).toLocaleString()}`)).toHaveLength(3)
+    expect(screen.getAllByText(`Captured ${new Date(provenance.captured_at!).toLocaleString()}`)).toHaveLength(2)
     expect(screen.queryByText(/source displayed|observation time unknown/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Reading details' }))
     expect(screen.queryByText(/observation time unknown/)).not.toBeInTheDocument()
   })
-  it('does not apply a manual location timestamp to a newer API speed', () => {
+  it('keeps a recent location without presenting an old API speed as current', () => {
     render(<TelemetrySummary compact truck={{ ...truck, telemetry: { ...telemetry, speed: { ...telemetry.speed!, source: 'motive_api', observed_at: new Date(now - 20 * 60000).toISOString() } } }} />)
     expect(screen.getByText(/Updated just now/)).toBeInTheDocument()
-    expect(screen.getByText('Updated 20 minutes ago')).toBeInTheDocument()
+    expect(screen.getByText('Speed unavailable')).toBeInTheDocument()
+    expect(screen.queryByText(/mph|Updated 20 minutes ago/)).not.toBeInTheDocument()
   })
   it('omits compact telemetry when only odometer is available', () => {
     render(<TelemetrySummary compact truck={{ ...truck, telemetry: { ...telemetry, location: null, speed: null } }} />)
     expect(screen.queryByLabelText('Reported truck readings')).not.toBeInTheDocument()
+  })
+})
+describe('current speed', () => {
+  const currentTruck = (changes: Partial<NumericReading> = {}): BoardTruck => ({ ...truck, telemetry: { ...telemetry, speed: { ...telemetry.speed!, observed_at: new Date(now).toISOString(), ...changes } } })
+  it.each([
+    ['capture time only', { observed_at: null }],
+    ['invalid observation', { observed_at: 'invalid' }],
+    ['12-day-old observation', { observed_at: new Date(now - 12 * 86400000).toISOString() }],
+    ['delayed observation', { observed_at: new Date(now - 300001).toISOString() }],
+    ['future observation outside tolerance', { observed_at: new Date(now + 300001).toISOString() }],
+    ['non-speed source', { source: 'manual_location' }],
+    ['wrong unit', { unit: 'mi' }],
+    ['negative speed', { value: -1 }],
+    ['out-of-range speed', { value: 251 }],
+    ['NaN speed', { value: NaN }],
+    ['infinite speed', { value: Infinity }],
+  ] satisfies [string, Partial<NumericReading>][])('rejects %s for current value and motion', (_name, changes) => {
+    const value = currentTruck(changes)
+    expect(truckCurrentSpeed(value, now)).toBeNull()
+    expect(truckMotion(value, now)).toBe('unknown')
+  })
+  it.each([0, 10, 250])('preserves fresh %s mph and its motion', value => {
+    const fresh = currentTruck({ value })
+    expect(truckCurrentSpeed(fresh, now)?.value).toBe(value)
+    expect(truckMotion(fresh, now)).toBe(value === 0 ? 'stopped' : 'moving')
+  })
+  it('allows both Motive sources and keeps the exact five-minute age and future boundaries', () => {
+    for (const source of ['motive_api', 'motive_dashboard_manual'] as const) {
+      const value = currentTruck({ source })
+      expect(truckCurrentSpeed(value, now + 300000)).not.toBeNull()
+      expect(truckCurrentSpeed(value, now + 300001)).toBeNull()
+      expect(truckCurrentSpeed(value, now - 300000)).not.toBeNull()
+      expect(truckCurrentSpeed(value, now - 300001)).toBeNull()
+    }
+  })
+  it('uses the start of a minute observation and never its capture time', () => {
+    const value = currentTruck({ observed_precision: 'minute', captured_at: new Date(now + 300000).toISOString() })
+    expect(truckCurrentSpeed(value, now + 300000)).not.toBeNull()
+    expect(truckCurrentSpeed(value, now + 300001)).toBeNull()
+    expect(truckMotion(value, now + 300001)).toBe('unknown')
+  })
+  it.each([false, true])('hides a 12-day-old numeric speed from summary with compact=%s', compact => {
+    render(<TelemetrySummary compact={compact} truck={currentTruck({ value: 10, observed_at: new Date(now - 12 * 86400000).toISOString() })} />)
+    expect(screen.getByText('Speed unavailable')).toBeInTheDocument()
+    expect(screen.getByText('Synthetic reported area')).toBeInTheDocument()
+    expect(screen.queryByText(/10 mph|Updated 12 days ago/)).not.toBeInTheDocument()
+  })
+  it('hides capture-only speed despite a recent location and save time', () => {
+    render(<TelemetrySummary compact truck={currentTruck({ value: 10, observed_at: null })} />)
+    expect(screen.getByText('Speed unavailable')).toBeInTheDocument()
+    expect(screen.getByText('Updated just now')).toBeInTheDocument()
+    expect(screen.queryByText('10 mph')).not.toBeInTheDocument()
+  })
+  it('expires a current numeric speed while the summary remains open', () => {
+    vi.useFakeTimers(); vi.setSystemTime(now)
+    render(<TelemetrySummary compact truck={currentTruck({ value: 10 })} />)
+    expect(screen.getByText('10 mph')).toBeInTheDocument()
+    act(() => vi.advanceTimersByTime(300000))
+    expect(screen.getByText('10 mph')).toBeInTheDocument()
+    act(() => vi.advanceTimersByTime(30000))
+    expect(screen.queryByText('10 mph')).not.toBeInTheDocument()
+    expect(screen.getByText('Speed unavailable')).toBeInTheDocument()
+    expect(screen.getByText('Synthetic reported area')).toBeInTheDocument()
   })
 })
 describe('geographic map', () => {

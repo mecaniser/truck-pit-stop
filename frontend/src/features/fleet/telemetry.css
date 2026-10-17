@@ -26,6 +26,7 @@
 .fleet-root .telemetry-summary--compact .telemetry-footer { grid-column: 1 / -1; }
 .fleet-root .telemetry-summary--compact small { font-size: 10px; }
 .fleet-root .telemetry-summary--compact .telemetry-metric small { max-width: 110px; }
+.fleet-root .telemetry-speed-unavailable { grid-column: 1 / -1; margin: 0; color: var(--muted-2); font-size: 11px; }
 .fleet-root .telemetry-capture { margin: 0 0 16px; }
 .fleet-root .telemetry-capture--open { padding: 14px; border: 1px solid var(--line); border-radius: 10px; }
 .fleet-root .telemetry-capture h3 { margin: 16px 0 8px; font-size: 15px; }
@@ -60,6 +61,7 @@
 .fleet-root .truck-header-metric .truck-reading-label { text-transform: uppercase; letter-spacing: 1px; }
 .fleet-root .truck-header-metric strong { font: 800 28px/1 var(--display); white-space: nowrap; }
 .fleet-root .truck-reading--speed strong { color: var(--st-shop); }
+.fleet-root .truck-reading--unavailable { color: var(--muted-2); font-size: 13px; }
 .fleet-root .truck-reading--fuel strong { color: var(--st-parts); }
 .fleet-root .truck-vitals-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
 .fleet-root .truck-vitals-grid .truck-reading { flex-direction: column; align-items: flex-start; }

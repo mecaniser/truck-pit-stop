@@ -863,23 +863,11 @@ async def merge_customers(
             detail="winner_id and loser_id must be different customers",
         )
 
-    winner_result = await db.execute(select(Customer).where(Customer.id == merge_request.winner_id))
-    winner = winner_result.scalar_one_or_none()
-    # Serialize deletion with fleet invoice key provisioning for this bill-to.
-    loser_result = await db.execute(select(Customer).where(Customer.id == merge_request.loser_id).with_for_update())
-    loser = loser_result.scalar_one_or_none()
-
-    if not winner or not loser:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
-
-    if winner.tenant_id != current_user.tenant_id or loser.tenant_id != current_user.tenant_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-
-    if winner.tenant_id != loser.tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot merge customers from different tenants",
-        )
+    from app.services.customer_pricing import lock_customers
+    from app.services.customer_merge_guard import require_removable_pricing_identity
+    locked = await lock_customers(db, current_user.tenant_id, [merge_request.winner_id, merge_request.loser_id])
+    winner, loser = locked[merge_request.winner_id], locked[merge_request.loser_id]
+    await require_removable_pricing_identity(db, loser)
 
     active_fleet_export = (await db.execute(select(FleetInvoiceApiKey.id).where(
         FleetInvoiceApiKey.tenant_id == loser.tenant_id,

@@ -44,6 +44,35 @@ async def seed(db, *, imported=True):
 
 
 @pytest.mark.asyncio
+async def test_current_account_contact_evidence_replaces_and_invalidates_without_profile_edits(_db_engine, monkeypatch):
+    from scripts.easytruck_sync.contact_snapshot import normalize
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    async with factory() as db:
+        tenant, customer, vehicle, order, invoice = await seed(db)
+        customer.source = 'easy_truck_shop_import'
+        customer.ets_external_id = '123'
+        primary_before = customer.phone
+        customer.ets_contact_phone_snapshot = normalize(dict(source_shop_id='shop_test', source_customer_id='123',
+            observed_at='2026-10-16T00:00:00Z', complete=True, reason=None, phones=['7045551234']),
+            customer_id='123', dbn_customer_id=customer.id)
+        monkeypatch.setattr('app.services.ets_completed_outcome_source.configured_shops', lambda: {tenant.id: 'shop_test'})
+        snapshot = history_snapshot(tenant=tenant, invoice=invoice, order=order, customer=customer, vehicle=vehicle, operations=[order])
+        assert snapshot['customer']['source_customer_id'] == '123'
+        assert snapshot['customer']['contact_phone_snapshot']['complete']
+        customer.source = None
+        customer.ets_external_id = None
+        invalidated = history_snapshot(tenant=tenant, invoice=invoice, order=order, customer=customer, vehicle=vehicle, operations=[order])
+        assert invalidated['customer']['contact_phone_snapshot']['complete'] is False
+        assert invalidated['customer']['contact_phone_snapshot']['contacts'] == []
+        customer.ets_external_id = 'invalid-source-id'
+        malformed = history_snapshot(tenant=tenant, invoice=invoice, order=order, customer=customer, vehicle=vehicle, operations=[order])
+        assert malformed['customer']['source_customer_id'] is None
+        assert malformed['customer']['contact_phone_snapshot']['source_customer_id'] is None
+        assert customer.phone == primary_before
+        assert invoice.total_amount == Decimal('1992.62')
+
+
+@pytest.mark.asyncio
 async def test_replay_changed_snapshot_split_operations_and_tenant_scope(_db_engine, monkeypatch):
     factory = async_sessionmaker(_db_engine, expire_on_commit=False)
     async with factory() as db:
@@ -253,14 +282,49 @@ async def test_invalid_correction_quarantines_previous_valid_context(_db_engine,
 
 
 @pytest.mark.asyncio
-async def test_native_history_uses_evidenced_amount_and_holds_missing_evidence(db_session):
+async def test_native_history_preserves_invoice_value_independent_of_settlement(db_session):
     tenant, customer, vehicle, order, invoice = await seed(db_session, imported=False)
     invoice.total_amount = Decimal("103"); invoice.service_fee_amount = Decimal("3")
     no_evidence = history_snapshot(tenant=tenant, invoice=invoice, order=order, customer=customer, vehicle=vehicle, operations=[order])
-    assert no_evidence["grouping_uncertain"]
+    assert not no_evidence["grouping_uncertain"]
+    assert no_evidence["invoice_total"] == "103.00"
     assert no_evidence["paid_time_precision"] == "unknown"
     paid = history_snapshot(tenant=tenant, invoice=invoice, order=order, customer=customer, vehicle=vehicle, operations=[order], settled_amount=Decimal("100"))
-    assert paid["invoice_total"] == "100.00"
+    assert paid["invoice_total"] == "103.00"
     assert paid["paid_time_precision"] == "instant"
     assert not paid["grouping_uncertain"]
     assert invoice.total_amount == Decimal("103")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invalid_case", ["internal", "invalid_history_amount", "unsupported_source", "unsupported_order_source"])
+async def test_prior_native_completion_invalidates_outside_public_history(_db_engine, monkeypatch, invalid_case):
+    from app.services.native_completed_outcome_source import ETS_HOLD_EVENT
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    async with factory() as db:
+        tenant, customer, vehicle, order, invoice = await seed(db, imported=False)
+        if invalid_case == "internal":
+            invoice.is_internal = True
+        elif invalid_case == "unsupported_source":
+            invoice.source = "unsupported"
+        elif invalid_case == "unsupported_order_source":
+            order.source = "unsupported"
+        else:
+            invoice.total_amount = Decimal("-1.00")
+        previous = ProviderOutboxEvent(tenant_id=tenant.id, event_type='repair.completed_invoice_snapshot',
+            aggregate_type='repair_order', aggregate_id=order.id,
+            idempotency_key=f'native-completed:{order.id}:1:prior', status='succeeded', available_at=datetime.now(timezone.utc),
+            payload={'schema_version':2,'source_observation':1,'snapshot':{'source':'dieselbridge',
+                'source_job_id':str(order.id),'repair_order_uuid':str(order.id),'completed':True}})
+        db.add(previous); await db.commit()
+    monkeypatch.setattr('app.core.config.settings.SHOP_HISTORY_CAPTURE_ENABLED',True)
+    monkeypatch.setattr('app.core.config.settings.SHOP_HISTORY_CAPTURE_TENANT_IDS',str(tenant.id))
+    result = await capture_shop_history_batch(session_factory=factory)
+    assert result['scanned'] == 1
+    assert result['captured'] == 0  # internal record is not exported as public history
+    async with factory() as db:
+        events = list(await db.scalars(select(ProviderOutboxEvent).where(ProviderOutboxEvent.tenant_id == tenant.id)))
+        holds = [event for event in events if event.event_type == ETS_HOLD_EVENT]
+        assert len(holds) == 1
+        assert holds[0].payload['source_observation'] == 2
+        assert holds[0].payload['snapshot']['source_job_id'] == str(order.id)

@@ -1,0 +1,40 @@
+{
+  "pr": 551,
+  "checked_head": "52683b19c5b520643fdc018f4b49984ad197e54d",
+  "protected_ci": 38925629657,
+  "required_checks": "6/6 success",
+  "merge": "6471943f0dad7ba6cd01b84a5befa16a99934a2f",
+  "merge_tree_matches_checked_head": true,
+  "merged_at": "2026-10-16T16:08:11Z",
+  "web": {
+    "deployment": "752f4d70-fff5-4697-b7e3-5168c94dbdc7",
+    "status": "SUCCESS"
+  },
+  "worker": {
+    "deployment": "1777d45a-b494-4137-9678-0f838459487d",
+    "status": "SUCCESS"
+  },
+  "public_build_matches_merge": true,
+  "readiness": "200 ready",
+  "worker_observation": {
+    "from": "2026-10-16T16:14:00Z",
+    "through": "2026-10-16T16:19:59Z",
+    "paid_invoice_task_successes": 36,
+    "paid_invoice_claimed": 0,
+    "shop_history_success": "2026-10-16T16:19:02.268018166Z",
+    "shop_history_scanned": 50,
+    "shop_history_captured": 0,
+    "import_error_mentions": 0
+  },
+  "ets_before_handoff": {
+    "deployment": "7c7aaa00-01b8-4933-acaf-307873a04f73",
+    "status": "SKIPPED"
+  },
+  "collector_release_handoff": "After reader acceptance, separately reviewed PR557 may release after its protected checks. Export owner owns natural cycle and source-delivery acceptance.",
+  "duplicate_main_ci": {
+    "run": 38929538626,
+    "status": "cancelled",
+    "reason": "Queued post-merge duplicate; identical merge tree already passed all six required PR checks. Not counted as passing."
+  },
+  "limitations": "Task execution with zero captured/claimed rows proves imports/runtime health, not a new business outcome or provider delivery."
+}

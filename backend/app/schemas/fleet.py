@@ -2,7 +2,7 @@ from app.schemas.fleet_driver_record import DriverRecordSummary
 from app.schemas.fleet_telemetry import FleetTelemetry
 from datetime import datetime, date
 from decimal import Decimal
-from typing import Any, Optional, List
+from typing import Any, Optional, List, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -501,6 +501,10 @@ class WorkOrderLaborLineCreate(BaseModel):
 
 
 class WorkOrderPartLineCreate(BaseModel):
+    client_key: Optional[str] = None
+    pricing_intent: Literal['default','manual','stock'] = 'default'
+    unit_price: Optional[Decimal] = None
+    price_override_reason: Optional[str] = None
     """An inventory part staged before the Fleet repair order exists."""
     inventory_id: UUID
     quantity: Decimal
@@ -512,6 +516,9 @@ class WorkOrderPartLineCreate(BaseModel):
 
 
 class WorkOrderCreate(BaseModel):
+    expected_pricing_policy: Optional[str] = None
+    pricing_preview_fingerprint: Optional[str] = None
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None
     # Optional description of the work needed; defaults server-side when blank.
     description: Optional[str] = None
     # Visit-specific payer. Defaults to the truck's primary/default account.
@@ -539,18 +546,25 @@ class WorkOrderCreateResponse(BoardTruck):
 
 
 class PMServicesUpdate(BaseModel):
+    pricing_preview_fingerprint: Optional[str] = None
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None
     """Replace the full set of PM services (order preserved) for a truck default
     package or a PM work order."""
     service_ids: List[UUID] = []
 
 
 class AddServiceRequest(BaseModel):
+    pricing_preview_fingerprint: Optional[str] = None
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None
     """Add a single catalog service (e.g. Diagnostic) to a non-PM internal work
     order, seeding an internal-rate labor line plus the service's parts."""
     service_id: UUID
 
 
 class SchedulePMRequest(BaseModel):
+    expected_pricing_policy: Optional[str] = None
+    pricing_preview_fingerprint: Optional[str] = None
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None
     due_date: Optional[date] = None            # scheduled/next PM date
     next_pm_miles: Optional[int] = None         # odometer at which the next PM is due
     create_work_order: bool = False             # also spawn the PM work order now

@@ -92,13 +92,18 @@ is 503. No private source payload in logs or repository fixtures.
 ## Matching boundary
 
 Resolve explicit opportunity/call references to one current canonical repair.
-Other automatic matches require unique recording-grounded identifiers: exact
-invoice/order reference, or VIN plus compatible service/date, or verified phone
-plus exact unit plus compatible service/date. Reject conflicting equipment,
-multiple candidate repairs and grouping_uncertain. Phone/name alone and generic
-make/model are insufficient. Preserve human locks and append match evidence with
-source revision and recording-analysis revision. Unmatched/uncertain jobs remain
-held; matching a job does not establish ad causality or approve a conversion.
+Automatic matching may also use a verified source account/company identity,
+normalized customer or contact phone, compatible call/service chronology, and
+exactly one compatible repair opportunity. A CallRail VIN is not required: the
+shop vehicle VIN establishes the job's equipment; it cannot manufacture VIN
+information absent from the call. Exact invoice/order references and call-grounded
+VIN/unit evidence remain stronger corroboration where available.
+
+Reject conflicting equipment, multiple compatible repairs/opportunities, shared
+phone ambiguity, non-repair intent, grouping_uncertain, and conflicting account
+facts. Company names alone do not establish identity. Preserve human locks and
+append evidence with source and call-analysis revisions. Unmatched/uncertain jobs
+remain held; matching alone does not establish ad causality or approve delivery.
 
 ## Acceptance and rollout
 

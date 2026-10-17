@@ -27,6 +27,14 @@ from app.core.work_value_validation import validate_part_quantity
 
 router = APIRouter()
 
+async def _lock_pricing_service(db, service_id, actor):
+    from app.services.parts_pricing import lock_tenant_financials
+    await lock_tenant_financials(db, actor.tenant_id)
+    row = await db.scalar(select(Service.id).where(Service.id == service_id, Service.tenant_id == actor.tenant_id,
+        Service.deleted_at.is_(None)).with_for_update(of=Service))
+    if row is None: raise HTTPException(404, 'Service not found')
+
+
 
 def _money(value: Decimal) -> Decimal:
     return Decimal(value).quantize(Decimal("0.01"))
@@ -702,6 +710,7 @@ async def update_service(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin()),
 ):
+    await _lock_pricing_service(db, service_id, current_user)
     result = await db.execute(select(Service).where(Service.id == service_id))
     service = result.scalar_one_or_none()
 
@@ -738,6 +747,7 @@ async def add_service_part(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin()),
 ):
+    await _lock_pricing_service(db, service_id, current_user)
     try:
         validate_part_quantity(data.quantity)
     except ValueError as exc:
@@ -803,6 +813,7 @@ async def update_service_part(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin()),
 ):
+    await _lock_pricing_service(db, service_id, current_user)
     try:
         validate_part_quantity(data.quantity)
     except ValueError as exc:
@@ -838,6 +849,7 @@ async def delete_service_part(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin()),
 ):
+    await _lock_pricing_service(db, service_id, current_user)
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="User must be associated with a tenant")
 

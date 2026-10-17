@@ -151,12 +151,12 @@ describe('RepairOrdersPage request cancellation', () => {
 
     themeState.presentationVariant = 'new'
     renderPage()
-    const input = await screen.findByPlaceholderText(/order, work, customer/i)
+    const input = await screen.findByRole('searchbox', { name: 'Search repair orders' })
     fireEvent.change(input, { target: { value: 'Northline' } })
 
     await waitFor(() => expect(resolveSearch).not.toBeNull())
     // Same element, still in the document: not a remount wearing the same role.
-    expect(screen.getByPlaceholderText(/order, work, customer/i)).toBe(input)
+    expect(screen.getByRole('searchbox', { name: 'Search repair orders' })).toBe(input)
     expect(input).toHaveValue('Northline')
     expect(input.isConnected).toBe(true)
   })

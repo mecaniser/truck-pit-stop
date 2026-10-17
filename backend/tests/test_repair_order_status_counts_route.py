@@ -41,6 +41,9 @@ def test_status_counts_is_declared_before_any_order_id_route():
 @pytest.mark.asyncio
 async def test_status_counts_uses_the_projection_primary_key():
     class Result:
+        def one(self):
+            return (5, 5)
+
         def all(self):
             return [("invoiced", 3), ("paid", 2)]
 

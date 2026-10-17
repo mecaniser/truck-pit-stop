@@ -1,3 +1,6 @@
+import { usePricingCommand } from '@/features/parts-pricing/usePricingCommand'
+import { PricingCancelled, pricingError } from '@/features/parts-pricing/contract'
+import { formatScheduleDate, overdueSearchParams, scheduleDeadline, scheduleRefreshInterval } from './repairOrderSchedule'
 import { openChecklistOnCompletionError } from '@/features/service-checklists/queries'
 import RepairOrderEntryGate from './RepairOrderEntryGate'
 import OriginatingCallPicker from './OriginatingCallPicker'
@@ -309,6 +312,13 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const compactWorkspace = useCompactWorkspace()
   const currentUser = useAuthStore((s) => s.user)
   const authSessionEpoch = useAuthStore((s) => s.authSessionEpoch)
+  const servicePricing = usePricingCommand('new-order-services')
+  type PendingService = { id: string; name: string; status: 'pending' | 'applied' | 'failed'; reason?: string }
+  const [serviceRecovery, setServiceRecovery] = useState<{ order: RepairOrder; services: PendingService[] } | null>(null)
+  const createdForServices = useRef<RepairOrder | null>(null)
+  const serviceFlowMounted = useRef(true)
+  useEffect(() => { serviceFlowMounted.current = true; return () => { serviceFlowMounted.current = false } }, [])
+  useEffect(() => { setServiceRecovery(null); createdForServices.current = null }, [currentUser?.tenant_id, currentUser?.id, currentUser?.role, authSessionEpoch])
   const canSelectOriginatingCall = ['garage_owner', 'garage_admin', 'receptionist', 'mechanic'].includes(currentUser?.role ?? '')
   const { accentColors, presentationVariant } = useTheme()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -317,22 +327,44 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
   // Connect to WebSocket for real-time updates (cache/status refresh only on this page).
   useWebSocket()
-  const [searchQuery, setSearchQuery] = useState('')
+  const searchQuery = searchParams.get('search') ?? ''
+  const setSearchQuery = (value: string) => setSearchParams(current => {
+    const next = new URLSearchParams(current)
+    if (value) next.set('search', value); else next.delete('search')
+    return next
+  }, { replace: true })
   const debouncedSearch = useDebouncedValue(searchQuery.trim(), 300)
-  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const statusFilter = searchParams.get('status') ?? 'all'
+  const setStatusFilter = (value: string) => setSearchParams(current => {
+    const next = new URLSearchParams(current)
+    if (value === 'all') next.delete('status'); else next.set('status', value)
+    return next
+  }, { replace: true })
+  const overdue = searchParams.get('overdue') === 'true'
+  const customerFilter = searchParams.get('customer_id')
+  const vehicleFilter = searchParams.get('vehicle_id')
+  const scheduleFilters = {
+    ...(overdue ? { overdue: true } : {}),
+    ...(customerFilter ? { customer_id: customerFilter } : {}),
+    ...(vehicleFilter ? { vehicle_id: vehicleFilter } : {}),
+  }
+  const overdueRefresh = overdue ? 60_000 : false
   // Counts for the status filters. Kept with the other hooks: this component
   // returns early for the legacy presentation, so a query declared beside
   // statusOptions further down runs on only some renders.
   const statusCountsQuery = useQuery<Record<string, number>>({
-    queryKey: ['repair-orders', 'status-counts', debouncedSearch],
+    queryKey: ['repair-orders', 'status-counts', debouncedSearch, scheduleFilters, statusFilter === 'deleted'],
     queryFn: async () => (await api.get('/repair-orders/status-counts', {
-      params: { ...(debouncedSearch ? { search: debouncedSearch } : {}) },
+      params: { ...scheduleFilters, ...(statusFilter === 'deleted' ? { deleted: true } : {}), ...(debouncedSearch ? { search: debouncedSearch } : {}) },
     })).data,
     staleTime: 15_000,
+    refetchInterval: overdueRefresh,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
     retry: false,
   })
   const statusCounts = statusCountsQuery.data
-  const queueParam = searchParams.get('queue')
+  const queueParam = overdue ? null : searchParams.get('queue')
   const workQueueLane: WorkQueueLane | null = queueParam && queueParam in DAILY_WORKBENCH_FIELD
     ? queueParam as WorkQueueLane
     : null
@@ -354,6 +386,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const [selectedCustomerOption, setSelectedCustomerOption] = useState<CustomerTypeaheadItem | null>(null)
   const [selectedVehicleOption, setSelectedVehicleOption] = useState<VehicleTypeaheadItem | null>(null)
   const [showNewVehicleForm, setShowNewVehicleForm] = useState(false)
+  const intakePricing = useIntakePricing(selectedCustomerId === 'add_new' ? null : selectedCustomerId, showNewVehicleForm ? null : selectedVehicleId || null, isModalOpen)
   const [description, setDescription] = useState('')
   const [mileageIn, setMileageIn] = useState('')
   // True only while the field still holds exactly the reading we offered. Any
@@ -398,7 +431,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const [addLaborDescription, setAddLaborDescription] = useState('')
   const [addLaborHours, setAddLaborHours] = useState('')
   const [addLaborRate, setAddLaborRate] = useState('100')
-  const laborRateInitialized = useRef(false)
+  const [addLaborRateEdited, setAddLaborRateEdited] = useState(false)
   const [showPartComposer, setShowPartComposer] = useState(false)
   const [customerSectionExpanded, setCustomerSectionExpanded] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -490,6 +523,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     queryKey: ['dashboard-action-queue'],
     queryFn: async () => (await api.get('/dashboard/action-queue')).data,
     enabled: workbenchScope === 'all' && Boolean(workQueueLane && workQueueLane !== 'closed_today'),
+    refetchInterval: query => scheduleRefreshInterval([...(query.state.data?.orders_needing_action ?? []), ...(query.state.data?.orders_on_floor ?? []), ...(query.state.data?.orders_ready_to_close ?? [])]),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
     staleTime: 60 * 1000,
   })
   const {
@@ -501,6 +537,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     queryKey: ['dashboard-daily-workset'],
     queryFn: async () => (await api.get('/dashboard/daily-workset')).data,
     enabled: workbenchScope === 'daily' && Boolean(workQueueLane),
+    refetchInterval: query => scheduleRefreshInterval(query.state.data ? ['needs_attention', 'on_floor', 'ready_to_close', 'closed_today'].flatMap(key => query.state.data![key as keyof Pick<DailyWorkbench, 'needs_attention' | 'on_floor' | 'ready_to_close' | 'closed_today'>].items) : []),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
     staleTime: 60 * 1000,
   })
   const workQueueErrorForScope = workbenchScope === 'daily' ? dailyWorkbenchError : workQueueError
@@ -519,6 +558,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     const response = await api.get('/repair-orders', {
       signal,
       params: {
+        ...scheduleFilters,
         paginated: true,
         skip: p * RO_PAGE_SIZE,
         limit: RO_PAGE_SIZE,
@@ -533,11 +573,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     return response.data as OrderPage
   }
   const ordersQuery = useInfiniteQuery({
-    queryKey: ['repair-orders', 'infinite', { search: debouncedSearch, status: statusFilter }] as const,
+    queryKey: ['repair-orders', 'infinite', { search: debouncedSearch, status: statusFilter, ...scheduleFilters }] as const,
     queryFn: ({ pageParam, signal }: { pageParam: number; signal: AbortSignal }) => fetchOrderPage(pageParam, signal),
     initialPageParam: 0,
     getNextPageParam: (last: OrderPage, all: OrderPage[]) => (last.has_more ? all.length : undefined),
     staleTime: 30_000,
+    refetchInterval: query => scheduleRefreshInterval(query.state.data?.pages.flatMap(page => page.items) ?? [], overdue),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
     enabled: !workQueueLane,
     // The search term is part of the query key, so every keystroke that
     // settles starts a query with no cached data. Without this, isLoading goes
@@ -565,9 +608,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const totalOrders = ordersQuery.data?.pages[0]?.total ?? 0
   const loadedOrderCount = orders?.length ?? 0
   const repairOrderValueQuery = useQuery<OrderValueSummary>({
-    queryKey: ['repair-orders', 'value-summary', { search: debouncedSearch, status: statusFilter }],
+    queryKey: ['repair-orders', 'value-summary', { search: debouncedSearch, status: statusFilter, ...scheduleFilters }],
     queryFn: async () => (await api.get('/repair-orders/value-summary', {
       params: {
+        ...scheduleFilters,
         ...(statusFilter === 'deleted'
           ? { deleted: true }
           : statusFilter !== 'all'
@@ -578,6 +622,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     })).data,
     enabled: presentationVariant === 'new' && !workQueueLane,
     staleTime: 15_000,
+    refetchInterval: overdueRefresh,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
     retry: false,
   })
   const dailyValueQuery = useQuery<OrderValueSummary>({
@@ -602,7 +649,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     const newParam = searchParams.get('new')
     if (newParam === 'true') {
       setIsModalOpen(true)
-      setSearchParams({}, { replace: true })
+      setSearchParams(current => { const next = new URLSearchParams(current); next.delete('new'); return next }, { replace: true })
     }
   }, [searchParams, setSearchParams])
 
@@ -650,8 +697,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     // workset. The explicit "All orders" control is the only way to drop this
     // navigation context; a ledger click must not silently turn a lane review
     // into the unrelated global list.
-    const nextSearchParams: Record<string, string> = { selected: order.id }
-    if (workQueueLane) nextSearchParams.queue = workQueueLane
+    const nextSearchParams = new URLSearchParams(searchParams)
+    nextSearchParams.set('selected', order.id)
+    for (const key of ['customer', 'customer_vehicle', 'operation', 'recommendation']) nextSearchParams.delete(key)
+    if (workQueueLane) nextSearchParams.set('queue', workQueueLane)
     // Fresh open pushes ?selected= so Back/close return to the view underneath;
     // switching orders while open (prev/next, arrow keys) replaces the entry so
     // Back still exits to the origin instead of replaying every order viewed.
@@ -664,7 +713,11 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       cancelOrderQueries(selectedOrder.id)
     }
     if (options?.focusWorkspace) setWorkspaceFocusRequest((request) => request + 1)
-    setSearchParams({ selected: orderId, queue: workQueueLane }, { replace: true })
+    const next = new URLSearchParams(searchParams)
+    next.set('selected', orderId)
+    next.set('queue', workQueueLane)
+    for (const key of ['customer', 'customer_vehicle', 'operation', 'recommendation']) next.delete(key)
+    setSearchParams(next, { replace: true })
   }
 
   const clearDetailState = () => {
@@ -785,8 +838,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   }
 
   const showAllOrders = () => {
-    const selectedId = searchParams.get('selected')
-    setSearchParams(selectedId ? { selected: selectedId } : {}, { replace: true })
+    const next = new URLSearchParams(searchParams)
+    next.delete('queue')
+    setSearchParams(next, { replace: true })
   }
 
   // The ?selected= URL param is the source of truth for the detail panel: it
@@ -820,7 +874,11 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       .catch(() => {
         if (cancelled) return
         toast.error("Couldn't open that repair order — it may have been deleted")
-        setSearchParams({}, { replace: true })
+        setSearchParams(current => {
+          const next = new URLSearchParams(current)
+          for (const key of ['selected', 'customer', 'customer_vehicle', 'operation', 'recommendation']) next.delete(key)
+          return next
+        }, { replace: true })
       })
     return () => {
       cancelled = true
@@ -939,6 +997,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       return response.data
     },
     enabled: !!selectedOrder?.id && isDetailOpen,
+    refetchInterval: query => scheduleRefreshInterval(query.state.data ? [query.state.data] : []),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   })
   // Scope private detail by identity values, not the user object's reference.
   // Profile refreshes must not repeatedly replace the selected workspace.
@@ -1254,13 +1315,11 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     ),
   })
 
-  // Set default labor rate from tenant settings (only on initial load)
+  // Display the captured order default; untouched input still asks the server to resolve it.
   useEffect(() => {
-    if (taxFeeSettings?.labor_rate !== undefined && !laborRateInitialized.current) {
-      setAddLaborRate(taxFeeSettings.labor_rate.toString())
-      laborRateInitialized.current = true
-    }
-  }, [taxFeeSettings])
+    if (!addLaborRateEdited) setAddLaborRate(String(orderDetail?.pricing_policy?.labor.rate ?? taxFeeSettings?.labor_rate ?? '100'))
+  }, [orderDetail?.pricing_policy?.labor.rate, taxFeeSettings?.labor_rate, addLaborRateEdited])
+  useEffect(() => { setAddLaborRateEdited(false) }, [selectedOrder?.id])
 
   useEffect(() => {
     setInvoiceDueDate('')
@@ -1523,9 +1582,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       mileage_in,
       mileage_in_carried,
       originating_call_reference,
-    }: { originating_call_reference?: string; customer_id: string; vehicle_id: string; description: string; internal_notes?: string | null; mileage_in?: number | null; mileage_in_carried?: boolean | null }) => {
+      expected_pricing_policy,
+      pricing_presentation,
+    }: { expected_pricing_policy?: string; pricing_presentation?: 'shop' | 'fleet'; originating_call_reference?: string; customer_id: string; vehicle_id: string; description: string; internal_notes?: string | null; mileage_in?: number | null; mileage_in_carried?: boolean | null }) => {
       const response = await api.post('/repair-orders', {
         ...(originating_call_reference ? { originating_call_reference } : {}),
+        ...(expected_pricing_policy ? { expected_pricing_policy, pricing_presentation } : {}),
         customer_id,
         vehicle_id,
         description: roDescription || null,
@@ -1534,9 +1596,6 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         mileage_in_carried: mileage_in_carried ?? false,
       })
       return response.data as RepairOrder
-    },
-    onError: (error: unknown) => {
-      setFormErrors((current) => ({ ...current, root: getErrorDetail(error, 'Failed to create repair order') }))
     },
   })
 
@@ -2039,17 +2098,20 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     },
   })
 
+  const legacyPartPricing = usePricingCommand(`legacy-ro:${selectedOrder?.id || ''}`)
   const addPartMutation = useMutation({
     mutationFn: async ({ orderId, inventory_id, quantity }: { orderId: string; inventory_id: string; quantity: number }) => {
-      const response = await api.post(`/repair-orders/${orderId}/parts`, { inventory_id, quantity })
-      return response.data as PartsUsage
+      const line = { client_key: `legacy:${inventory_id}`, inventory_id, quantity: String(quantity), pricing_intent: 'default' as const }
+      return legacyPartPricing.execute<PartsUsage>({ context: { kind: 'repair_order', repair_order_id: orderId }, plan: { kind: 'parts_add', lines: [line] } }, async (confirmation, options) => (await api.post(`/repair-orders/${orderId}/parts`, { ...line, quantity, ...confirmation }, options)).data)
     },
     onSuccess: (_, vars) => {
+      setAddPartInventoryId(''); setAddPartQuantity(1)
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', vars.orderId] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       refetchOrderDetail()
     },
+    onError: (cause) => { if (!(cause instanceof PricingCancelled)) toast.error(pricingError(cause, 'Part could not be added. Your selection is kept.')) },
   })
 
   const removePartMutation = useMutation({
@@ -2070,8 +2132,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       description,
       hours,
       hourly_rate,
-    }: { orderId: string; description: string; hours: number; hourly_rate: number }) => {
-      const response = await api.post(`/repair-orders/${orderId}/labor`, { description, hours, hourly_rate })
+      pricing_intent,
+    }: { orderId: string; description: string; hours: number; hourly_rate?: number; pricing_intent: 'default' | 'manual' }) => {
+      const response = await api.post(`/repair-orders/${orderId}/labor`, { description, hours, ...(hourly_rate === undefined ? {} : { hourly_rate }), pricing_intent })
       return response.data as Labor
     },
     onSuccess: (_, vars) => {
@@ -2854,10 +2917,40 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     return Object.keys(errors).length === 0
   }
 
+  const pricingIdentity = () => { const state = useAuthStore.getState(); return JSON.stringify([state.user?.tenant_id, state.user?.id, state.user?.role, state.authSessionEpoch, state.logoutInProgress]) }
+  const applyPendingServices = async (order: RepairOrder, services: PendingService[]) => {
+    const owner = pricingIdentity()
+    const active = () => serviceFlowMounted.current && pricingIdentity() === owner
+
+    const progress = services.map(service => ({ ...service }))
+    const warnings: PriceBuildWarning[] = []
+    for (const service of progress) {
+      if (service.status === 'applied') continue
+      try {
+        const result = await servicePricing.execute<{ warnings?: PriceBuildWarning[] }>({ context: { kind: 'repair_order', repair_order_id: order.id }, plan: { kind: 'service_apply', service_id: service.id, quantity: '1' } }, async (confirmation, options) => (await api.post(`/repair-orders/${order.id}/price-build/flat-service`, { service_id: service.id, quantity: 1, ...confirmation }, options)).data)
+        if (!active()) return
+        warnings.push(...(result.warnings || [])); service.status = 'applied'; delete service.reason
+      } catch (cause) {
+        if (!active()) return
+        service.status = 'failed'; service.reason = cause instanceof PricingCancelled ? 'Not added · review cancelled' : pricingError(cause, 'Could not be applied')
+        if (cause instanceof PricingCancelled) break
+      }
+    }
+    if (!active()) return
+    if (warnings.length) setInitialPriceBuildWarningsByOrder(current => ({ ...current, [order.id]: [...(current[order.id] || []), ...warnings] }))
+    const remaining = progress.filter(service => service.status !== 'applied')
+    setServiceRecovery(remaining.length ? { order, services: progress } : null)
+    if (remaining.length) toast.error(`Order ${order.order_number} exists. ${remaining.length} service${remaining.length === 1 ? '' : 's'} still need applying.`)
+    await queryClient.invalidateQueries({ queryKey: ['price-build', order.id] })
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (submittingOrder.current || !validateRepairOrderForm()) return
+    if (submittingOrder.current || createdForServices.current || !validateRepairOrderForm() || !intakePricing.ready) return
 
+    const pricingOwner = pricingIdentity()
+    const reviewedPricing = intakePricing.confirmation()
+    let submittedPricingContext: { customerId: string; vehicleId: string } | undefined
     submittingOrder.current = true
     setIsSubmitting(true)
 
@@ -2880,8 +2973,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
           // Explicitly allow customer creation without an inline initial_vehicle payload.
           no_vehicle: true,
         })
+        if (!serviceFlowMounted.current || pricingIdentity() !== pricingOwner) return
         finalCustomerId = createdCustomer.id
         customerForCreatedOrder = createdCustomer
+        setSelectedCustomerId(createdCustomer.id)
+        setSelectedCustomerOption(createdCustomer)
+        setShowNewVehicleForm(true)
       } else if (!finalCustomerId) {
         setFormErrors((current) => ({ ...current, customer: 'Select a customer or add a new one.' }))
         return
@@ -2909,9 +3006,13 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
           customer_id: finalCustomerId,
           data: newVehicle,
         })
+        if (!serviceFlowMounted.current || pricingIdentity() !== pricingOwner) return
         finalVehicleId = createdVehicle.id
         finalCustomerId = createdVehicle.customer_id
         vehicleForCreatedOrder = createdVehicle
+        setSelectedVehicleId(createdVehicle.id)
+        setSelectedVehicleOption(createdVehicle)
+        setShowNewVehicleForm(false)
       } else {
         const vehicle = vehicleOptions.find((item) => item.id === selectedVehicleId)
         if (!vehicle) {
@@ -2940,7 +3041,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
       const combinedDescription = [selectedServiceText, description.trim()].filter(Boolean).join(' — ')
 
+      submittedPricingContext = { customerId: finalCustomerId, vehicleId: finalVehicleId }
       const createdOrder = await createRepairOrderMutation.mutateAsync({
+        ...reviewedPricing,
         customer_id: finalCustomerId,
         ...(canSelectOriginatingCall && originatingCallReference ? { originating_call_reference: originatingCallReference } : {}),
         vehicle_id: finalVehicleId,
@@ -2949,6 +3052,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         mileage_in: mileageIn.trim() === '' ? null : Number(mileageIn),
         mileage_in_carried: mileageInCarried && mileageIn.trim() !== '',
       })
+      if (!serviceFlowMounted.current || pricingIdentity() !== pricingOwner) return
       const createdOrderWithPresentation = seedRepairOrderPresentation(
         createdOrder,
         customerForCreatedOrder && {
@@ -2967,34 +3071,13 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         },
       )
 
+      createdForServices.current = createdOrderWithPresentation
       if (selectedServicePayload.length > 0) {
-        // Apply sequentially so a stock-failure on one service doesn't abort the rest,
-        // and so we can surface a per-service reason to the user.
-        const failures: { name: string; reason: string }[] = []
-        const warnings: PriceBuildWarning[] = []
-        for (const svc of selectedServicePayload) {
-          try {
-            const response = await api.post(`/repair-orders/${createdOrder.id}/price-build/flat-service`, {
-              service_id: svc.id,
-              quantity: 1,
-            })
-            warnings.push(...(response.data?.warnings || []))
-          } catch (err) {
-            console.error(`Failed to apply service "${svc.name}" to price builder`, err)
-            failures.push({ name: svc.name, reason: getErrorDetail(err, 'could not be applied') })
-          }
-        }
-        if (warnings.length > 0) {
-          setInitialPriceBuildWarningsByOrder((current) => ({
-            ...current,
-            [createdOrder.id]: warnings,
-          }))
-        }
-        if (failures.length > 0) {
-          const detail = failures.map((f) => `${f.name}: ${f.reason}`).join('; ')
-          toast.error(`Repair order created, but ${failures.length} service line${failures.length > 1 ? 's' : ''} failed — ${detail}`)
-        }
+        const pending = selectedServicePayload.map(service => ({ ...service, status: 'pending' as const }))
+        setServiceRecovery({ order: createdOrderWithPresentation, services: pending })
+        await applyPendingServices(createdOrderWithPresentation, pending)
       }
+      if (!serviceFlowMounted.current || pricingIdentity() !== pricingOwner) return
 
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['customer-typeahead'] })
@@ -3007,8 +3090,21 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       // Drop the operator straight into the new order's drawer so they can start
       // building it, instead of hunting for it back in the list.
       openDetail(createdOrderWithPresentation)
+      createdForServices.current = null
     } catch (err: unknown) {
-      setFormErrors((current) => ({ ...current, root: getErrorDetail(err, 'Failed to create repair order') }))
+      if (!serviceFlowMounted.current || pricingIdentity() !== pricingOwner) return
+      if (createdForServices.current) {
+        const created = createdForServices.current; createdForServices.current = null
+        setIsModalOpen(false); openDetail(created)
+        toast.error(`Order ${created.order_number} exists. Remaining services were not added.`)
+        return
+      }
+      const message = getErrorDetail(err, 'Failed to create repair order')
+      intakePricing.handleConflict(err, submittedPricingContext, () => setFormErrors(current => {
+        if (current.root !== message) return current
+        const next = { ...current }; delete next.root; return next
+      }))
+      setFormErrors((current) => ({ ...current, root: message }))
     } finally {
       submittingOrder.current = false
       setIsSubmitting(false)
@@ -3055,6 +3151,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       technicianName: order.assigned_mechanic_id ? mechanicLookup.get(order.assigned_mechanic_id) ?? null : null,
       holdReason: order.hold_reason ?? null,
       quoteSent: order.quote_sent ?? null,
+      deadline: scheduleDeadline(order),
+      overdue: order.is_overdue,
+      scheduledStart: formatScheduleDate(order.scheduled_start_at, order.schedule_timezone),
     }
   })
 
@@ -3102,6 +3201,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         technicianName: order.mechanic_name,
         holdReason: order.hold_reason,
         quoteSent: order.quote_sent,
+        deadline: scheduleDeadline(order),
+        overdue: order.is_overdue,
+        scheduledStart: formatScheduleDate(order.scheduled_start_at, order.schedule_timezone),
       }
     })
 
@@ -3116,8 +3218,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     ? 'Today’s repair work, ready to operate.'
     : 'Review and update repair work from check-in through payment.'
   const activeValueQuery = isQueueWorkset ? dailyValueQuery : repairOrderValueQuery
+  const recoveryInPriceBuilder = isDetailOpen && !!selectedOrder && !customerViewId && showPriceBuilder
+  const serviceRecoveryNotice = serviceRecovery ? <div role="status" aria-label="Unfinished service attachment" className="db-service-pricing-recovery"><span><strong>{serviceRecovery.order.order_number} created</strong> · {serviceRecovery.services.filter(service => service.status !== 'applied').map(service => `${service.name}${service.reason ? `: ${service.reason}` : ': pending'}`).join('; ')}</span><button type="button" disabled={servicePricing.busy} onClick={() => { openDetail(serviceRecovery.order); void applyPendingServices(serviceRecovery.order, serviceRecovery.services) }}>Retry remaining</button><button type="button" disabled={servicePricing.busy} onClick={() => { openDetail(serviceRecovery.order); setServiceRecovery(null) }}>Keep current work</button></div> : null
+  const pricingNotice = <>{servicePricing.dialog}{legacyPartPricing.dialog}{serviceRecoveryNotice}</>
   return (
     <div className={`db-repair-orders-workspace flex flex-col h-full ${presentationVariant === 'new' ? 'db-repair-orders-workspace--new' : ''} ${presentationVariant === 'new' && isDetailOpen && selectedOrder ? 'db-repair-orders-workspace--detail-open' : ''}`}>
+
       {voidedOrderNumber && (
         <div role="status" className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
           <span>Order {voidedOrderNumber} voided. The record is preserved.</span>
@@ -3129,6 +3235,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       {presentationVariant === 'new' ? (
         <RepairOrdersLedger
           key="repair-orders-ledger"
+          notice={!recoveryInPriceBuilder ? pricingNotice : null}
           rows={displayedLedgerRows}
           totalOrders={displayedLedgerTotal}
           searchQuery={searchQuery}
@@ -3147,6 +3254,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
             && searchQuery.trim() === debouncedSearch && !ordersQuery.isPlaceholderData}
           onSearchChange={setSearchQuery}
           onStatusChange={setStatusFilter}
+          overdue={overdue}
+          onOverdueChange={enabled => {
+            const next = overdueSearchParams(searchParams, enabled)
+            if (enabled && workbenchScope === 'daily') navigate(`/dashboard/repair-orders?${next.toString()}`)
+            else setSearchParams(next)
+          }}
           onOpenOrder={(id, options) => {
             if (isQueueWorkset) {
               openWorkQueueOrder(id, options)
@@ -3171,6 +3284,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         />
       ) : (
         <>
+      {!recoveryInPriceBuilder && pricingNotice}
       <h1 className="text-xl sm:text-2xl font-bold text-white mb-4 flex-shrink-0">Repair Orders</h1>
 
       {/* Search + Filters */}
@@ -3916,6 +4030,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 )}
 
                 {/* Order details */}
+                {intakePricing.notice}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
@@ -4065,7 +4180,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                   <button
                     type="submit"
                     disabled={
-                      isSubmitting ||
+                      isSubmitting || !intakePricing.ready ||
                       createRepairOrderMutation.isPending ||
                       createCustomerMutation.isPending ||
                       createVehicleMutation.isPending
@@ -4708,12 +4823,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
                 {showPriceBuilder && (
                   <PriceBuilderPanel
+                    workspaceNotice={recoveryInPriceBuilder ? pricingNotice : null}
                     focusedOperationId={searchParams.get('operation')}
                     focusedRecommendationId={searchParams.get('recommendation')}
                     recommendedWorkPanel={(context) => <RecommendedWorkPanel vehicleId={selectedOrder.vehicle_id} contextOrderId={selectedOrder.id} {...context} />}
                     orderId={selectedOrder.id}
                     workflowInfo={orderDetail ?? selectedOrder}
                     workHoldOrder={orderDetail ?? selectedOrder}
+                    schedule={orderDetail ?? selectedOrder}
                     orderStatus={(orderDetail ?? selectedOrder).status}
                     canEdit={canEditPriceBuilderByRole}
                     isInternalOrder={!!(orderDetail ?? selectedOrder).is_internal}
@@ -5136,8 +5253,6 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                     onClick={() => {
                                       if (!selectedOrder?.id || !addPartInventoryId) return
                                       addPartMutation.mutate({ orderId: selectedOrder.id, inventory_id: addPartInventoryId, quantity: addPartQuantity })
-                                      setAddPartInventoryId('')
-                                      setAddPartQuantity(1)
                                     }}
                                     className="h-[42px] px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg shrink-0"
                                   >
@@ -5165,6 +5280,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                         ) : (
                                           <span className="text-gray-600">{parseFloat(li.hours)}h × ${parseFloat(li.hourly_rate).toFixed(2)}</span>
                                         )}
+                                        {li.pricing && <small className="ml-1">{laborSourceLabel(li.pricing)}</small>}
                                       </div>
                                       <div className="flex items-center gap-2">
                                         <span className="font-semibold">${parseFloat(li.total_cost).toFixed(2)}</span>
@@ -5209,7 +5325,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                       <span>$</span>
                                       <QuantityStepper
                                         value={parseFloat(addLaborRate) || 0}
-                                        onChange={(n) => setAddLaborRate(String(n))}
+                                        onChange={(n) => { setAddLaborRate(String(n)); setAddLaborRateEdited(true) }}
                                         min={0}
                                         step={1}
                                         unitLabel="/hr"
@@ -5229,11 +5345,13 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                           orderId: selectedOrder.id,
                                           description: addLaborDescription.trim() || '',
                                           hours,
-                                          hourly_rate: rate,
+                                          ...(addLaborRateEdited ? { hourly_rate: rate } : {}),
+                                          pricing_intent: addLaborRateEdited ? 'manual' : 'default',
                                         })
                                         setAddLaborDescription('')
                                         setAddLaborHours('')
                                         setAddLaborRate(taxFeeSettings?.labor_rate?.toString() || '100')
+                                        setAddLaborRateEdited(false)
                                       }}
                                       className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
                                     >
@@ -6819,3 +6937,5 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     </div>
   )
 }
+import { useIntakePricing } from '@/features/customer-pricing/useIntakePricing'
+import { laborSourceLabel } from '@/features/customer-pricing/contract'

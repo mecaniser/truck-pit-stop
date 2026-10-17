@@ -1,9 +1,10 @@
+from app.services import customer_pricing as account_pricing
 import base64
 import math
 import re
 import traceback
 from decimal import Decimal
-from typing import List, Optional
+from typing import List, Optional, Literal
 from uuid import UUID, uuid4
 from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile, status, Query, Response
@@ -12,7 +13,10 @@ from sqlalchemy import select, and_, exists, or_, func, literal_column, case
 from sqlalchemy.orm import joinedload, selectinload
 from pydantic import BaseModel
 from app.schemas.staff_work_hold import StaffHoldRequest, StaffReleaseHoldRequest, StaffHoldResponse
-from app.services import staff_work_hold
+from app.services import staff_work_hold, repair_order_schedule, parts_pricing, parts_pricing_planner
+from app.services.parts_pricing_planner import build_plan
+from app.schemas.parts_pricing import ResolveRequest
+from app.schemas.repair_order_schedule import RepairOrderScheduleUpdate, RepairOrderScheduleResponse
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
 from app.core.search import build_search
@@ -212,17 +216,32 @@ def require_role(*allowed_roles: UserRole):
     return role_checker
 
 
+def _account_order_response(order, actor, presentation=None):
+    response=RepairOrderResponse.model_validate(order)
+    if actor.role in parts_pricing.STAFF and parts_pricing.presentation(actor,presentation)=='shop':
+        response.pricing_policy=account_pricing.order_view(order)
+    return response
+
+
+def _account_labor_response(line, actor, order=None, presentation=None):
+    response=LaborResponse.model_validate(line)
+    if actor.role in parts_pricing.STAFF and parts_pricing.presentation(actor,presentation)=='shop' and line.line_type!=LaborLineType.SUBLET:
+        response.pricing=account_pricing.labor_view(line,actor,editable=bool(order and operation_execution.editable(order) and not order.is_internal))
+    return response
+
+
 async def _to_price_build_summary(
     db: AsyncSession,
     current_user: User,
     order: RepairOrder,
     *,
     warnings: Optional[list[PriceBuildWarning]] = None,
+    pricing_presentation: Optional[str] = None,
 ) -> PriceBuildSummaryResponse:
-    labor_resp = [LaborResponse.model_validate(li) for li in order.labor_items]
+    labor_resp = [_account_labor_response(li,current_user,order,pricing_presentation) for li in order.labor_items]
     default_rate = None
     staff_can_convert = False
-    if current_user.role in recommendation_conversion.STAFF_ROLES:
+    if current_user.role in recommendation_conversion.STAFF_ROLES and parts_pricing.presentation(current_user,pricing_presentation)=="shop":
         provenance = await recommendation_conversion.line_sources(db, order.tenant_id, order.id, [li.id for li in order.labor_items])
         for line in labor_resp:
             line.recommendation_source = provenance.get(line.id)
@@ -234,7 +253,10 @@ async def _to_price_build_summary(
         (order.is_internal and order.status not in INTERNAL_FROZEN_RO_STATUSES)
         or (not order.is_internal and order.status in EDITABLE_RO_STATUSES)
     )
+    await parts_pricing.load_overlays(db, order.tenant_id, order.parts_usage)
     return PriceBuildSummaryResponse(
+        pricing_policy=account_pricing.order_view(order) if parts_pricing.presentation(current_user,pricing_presentation)=="shop" else None,
+        parts_pricing_fingerprint=parts_pricing.parts_fingerprint(order) if parts_pricing.presentation(current_user, pricing_presentation) == "shop" else None,
         recommendation_hourly_rate=default_rate,
         can_convert_recommendations=staff_can_convert,
         order_id=order.id,
@@ -256,7 +278,7 @@ async def _to_price_build_summary(
         ),
         can_finalize=order.status == RepairOrderStatus.PENDING_REVIEW,
         lines=labor_resp,
-        parts=[_build_parts_usage_response(part) for part in order.parts_usage],
+        parts=[_build_parts_usage_response(part, actor=current_user, presentation=pricing_presentation, can_edit=can_edit_work) for part in order.parts_usage],
         warnings=warnings or [],
     )
 
@@ -343,18 +365,22 @@ def _insufficient_stock_detail(
     }
 
 
-def _build_parts_usage_response(pu: "PartsUsage", inv=None) -> "PartsUsageResponse":
+def _build_parts_usage_response(pu: "PartsUsage", inv=None, *, actor=None, presentation=None, can_edit=True) -> "PartsUsageResponse":
     inv = inv if inv is not None else pu.inventory_item
     list_price = pu.list_price if pu.list_price is not None else pu.unit_price
     savings = (list_price - pu.unit_price) * pu.quantity if list_price > pu.unit_price else Decimal("0")
+    audience = parts_pricing.presentation(actor, presentation) if actor and actor.role in parts_pricing.STAFF else 'public'
     return PartsUsageResponse(
+        pricing_audience=audience,
+        pricing=parts_pricing.safe_price(pu, can_override=can_edit and actor.role in parts_pricing.EDITORS) if audience == 'shop' else None,
+        pricing_version=(pu.pricing_version or 0) if audience in {'shop','fleet'} else None,
         id=pu.id,
         repair_order_id=pu.repair_order_id,
         inventory_id=pu.inventory_id,
         inventory_sku=inv.sku if inv else "",
         inventory_name=inv.name if inv else "",
         quantity=pu.quantity,
-        unit_type=inv.unit_type if inv else "each",
+        unit_type=(inv.unit_type or "each") if inv else "each",
         unit_price=pu.unit_price,
         unit_cost=pu.unit_cost,
         list_price=list_price,
@@ -514,6 +540,7 @@ async def create_repair_order(
     order_data: RepairOrderCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
 ):
     if order_data.originating_call_reference and current_user.role not in CALL_INTAKE_ROLES:
         raise HTTPException(403, "Only shop staff can select an originating call")
@@ -529,6 +556,7 @@ async def create_repair_order(
             and_(
                 Customer.id == order_data.customer_id,
                 Customer.tenant_id == current_user.tenant_id,
+                Customer.deleted_at.is_(None),
             )
         )
     )
@@ -575,7 +603,7 @@ async def create_repair_order(
                 detail="Fleet managers can only create work orders for active fleet vehicles",
             )
 
-    create_data = order_data.model_dump(exclude={"originating_call_reference"})
+    create_data = order_data.model_dump(exclude={"originating_call_reference","expected_pricing_policy","pricing_presentation"})
     reservation = None
     if order_data.originating_call_reference:
         # Browser-supplied IDs cannot override the signed operator selection.
@@ -583,8 +611,9 @@ async def create_repair_order(
             "elis_opportunity_id", "callrail_call_id", "external_lead_id", "google_click_id", "gbraid", "wbraid",
         )):
             raise HTTPException(422, "Call selection cannot be combined with attribution identifiers")
-        reservation = await repair_intake_reference.reserve_originating_call(
-            tenant, current_user.id, order_data.originating_call_reference,
+        reservation = await account_pricing.reserve_call(
+            db,current_user,customer.id,vehicle.id,order_data.originating_call_reference,
+            expected=order_data.expected_pricing_policy,presentation=order_data.pricing_presentation,
         )
         # Serialize retries of the same reserved ID inside the local transaction.
         await db.execute(select(Tenant).where(Tenant.id == tenant.id).with_for_update())
@@ -593,14 +622,20 @@ async def create_repair_order(
             RepairOrder.tenant_id == tenant.id,
         ))).scalar_one_or_none()
         if existing:
+            if existing.deleted_at is not None:
+                raise HTTPException(404, "Repair order not found")
             if (existing.customer_id != order_data.customer_id or existing.vehicle_id != order_data.vehicle_id
                     or existing.elis_opportunity_id != reservation.elis_opportunity_id
                     or existing.callrail_call_id != reservation.callrail_call_id):
                 raise HTTPException(409, "Call selection already belongs to another repair intake")
-            return RepairOrderResponse.model_validate(existing)
+            return _account_order_response(existing,current_user,order_data.pricing_presentation)
         create_data.update(id=reservation.repair_order_uuid,
                            elis_opportunity_id=reservation.elis_opportunity_id,
                            callrail_call_id=reservation.callrail_call_id)
+
+    receipt,replayed=await account_pricing.begin_intake(db,current_user,idempotency_key,'c1-standard',order_data.model_dump(mode='json'))
+    if replayed is not None:return _account_order_response(replayed,current_user,order_data.pricing_presentation)
+    policy_snapshot,_=await account_pricing.capture(db,current_user,customer.id,vehicle.id,expected=order_data.expected_pricing_policy,presentation=order_data.pricing_presentation)
 
     await ensure_vehicle_relationship(
         db,
@@ -625,6 +660,8 @@ async def create_repair_order(
                 bool(vehicle.bill_labor_at_customer_rate)
                 if uses_internal_pricing else False
             ),
+            pricing_policy_snapshot=policy_snapshot,
+            pricing_matrix_revision_id=account_pricing.revision_id(policy_snapshot),
             **create_data,
         )
         db.add(repair_order)
@@ -636,11 +673,14 @@ async def create_repair_order(
         create_fn=create_order_with_number,
         generate_number_fn=lambda: generate_order_number(db, current_user.tenant_id),
         entity_name="repair_order",
+        commit=False,
     )
+    parts_pricing.finish_write(receipt,{"order_id":str(repair_order.id)},201)
+    await db.commit()
     await db.refresh(repair_order)
     record_repair_order_created(str(current_user.tenant_id))
     
-    return RepairOrderResponse.model_validate(repair_order)
+    return _account_order_response(repair_order,current_user,order_data.pricing_presentation)
 
 
 @router.post("/quick", response_model=RepairOrderResponse, status_code=status.HTTP_201_CREATED)
@@ -648,6 +688,7 @@ async def quick_create_repair_order(
     data: QuickRepairOrderCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
 ):
     """Quick-create a repair order with minimal info. Auto-creates walk-in customer and vehicle."""
     try:
@@ -663,6 +704,8 @@ async def quick_create_repair_order(
                 detail="Fleet managers can only create internal fleet repair orders",
             )
 
+        receipt,replayed=await account_pricing.begin_intake(db,current_user,idempotency_key,'c1-quick',data.model_dump(mode='json'))
+        if replayed is not None:return _account_order_response(replayed,current_user,data.pricing_presentation)
         raw_phone = (data.phone or "").strip()
         # Normalize phone for consistent storage and lookup
         phone = normalize_phone(raw_phone) or ""
@@ -675,6 +718,7 @@ async def quick_create_repair_order(
                     and_(
                         Customer.tenant_id == tenant_id,
                         Customer.phone == phone,
+                        Customer.deleted_at.is_(None),
                     )
                 )
             )
@@ -699,6 +743,7 @@ async def quick_create_repair_order(
                     and_(
                         Customer.tenant_id == tenant_id,
                         Customer.email == "walkin@placeholder.dieselbridge.network",
+                        Customer.deleted_at.is_(None),
                     )
                 ).limit(1)
             )
@@ -714,6 +759,7 @@ async def quick_create_repair_order(
                 db.add(customer)
                 await db.flush()
 
+        policy_snapshot,_=await account_pricing.capture(db,current_user,customer.id,expected=data.expected_pricing_policy,presentation=data.pricing_presentation)
         # Parse vehicle_description best-effort: "2019 Peterbilt 579" -> year=2019 make=Peterbilt model=579
         desc = data.vehicle_description.strip() if data.vehicle_description else ""
         parts = desc.split(None, 2) if desc else []
@@ -756,6 +802,10 @@ async def quick_create_repair_order(
                 order_number=order_number,
                 status=RepairOrderStatus.DRAFT,
                 description=data.complaint or None,
+                is_internal=policy_snapshot is None,
+                is_fleet_work=bool(customer.is_internal_fleet),
+                pricing_policy_snapshot=policy_snapshot,
+                pricing_matrix_revision_id=account_pricing.revision_id(policy_snapshot),
             )
             db.add(repair_order)
             # Don't commit here - create_with_retry uses savepoints and handles commit
@@ -766,12 +816,16 @@ async def quick_create_repair_order(
             create_fn=create_order_with_number,
             generate_number_fn=lambda: generate_order_number(db, tenant_id),
             entity_name="repair_order",
+            commit=False,
         )
+        parts_pricing.finish_write(receipt,{"order_id":str(repair_order.id)},201)
+        await db.commit()
         await db.refresh(repair_order)
         record_repair_order_created(str(tenant_id))
 
-        return RepairOrderResponse.model_validate(repair_order)
+        return _account_order_response(repair_order,current_user,data.pricing_presentation)
     except HTTPException:
+        await db.rollback()
         raise
     except Exception as e:
         logger.error(
@@ -931,61 +985,111 @@ async def regenerate_description_library_endpoint(
     return DescriptionLibraryRegenerateResponse()
 
 
+def _schedule_projection_join():
+    return and_(RepairOrderReadModel.repair_order_id == RepairOrder.id,
+                RepairOrderReadModel.tenant_id == RepairOrder.tenant_id)
+
+
+def _ledger_filters(actor, *, customer_id=None, vehicle_id=None, status=None, deleted=False, overdue=False, now=None):
+    """Keep page, count and value scope identical before search and pagination."""
+    if overdue:
+        repair_order_schedule.require_reader(actor)
+    if deleted and actor.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
+        raise HTTPException(403, "Access denied")
+    if actor.role == UserRole.CUSTOMER:
+        identity = actor.customer_id
+        source = [RepairOrder.customer_id == identity] if identity else [False]
+        projection = [RepairOrderReadModel.customer_id == identity] if identity else [False]
+    else:
+        identity = actor.tenant_id
+        source = [RepairOrder.tenant_id == identity] if identity else [False]
+        projection = [RepairOrderReadModel.tenant_id == identity] if identity else [False]
+        if actor.role == UserRole.FLEET_MANAGER:
+            source.append(RepairOrder.is_internal.is_(True))
+            projection.append(RepairOrderReadModel.is_internal.is_(True))
+        if customer_id:
+            source.append(RepairOrder.customer_id == customer_id)
+            projection.append(RepairOrderReadModel.customer_id == customer_id)
+    if actor.role == UserRole.MECHANIC:
+        # Preserve the existing ledger's lead-only scope. Per-operation mechanics
+        # still have their separately authorized exact-order schedule endpoint.
+        source.append(RepairOrder.assigned_mechanic_id == actor.id)
+        projection.append(RepairOrder.assigned_mechanic_id == actor.id)
+    if vehicle_id:
+        source.append(RepairOrder.vehicle_id == vehicle_id)
+        projection.append(RepairOrderReadModel.vehicle_id == vehicle_id)
+    if status:
+        source.append(RepairOrder.status == status)
+        projection.append(RepairOrderReadModel.status == status.value)
+    source.append(RepairOrder.deleted_at.isnot(None) if deleted else RepairOrder.deleted_at.is_(None))
+    projection.append(RepairOrderReadModel.is_deleted.is_(deleted))
+    if overdue:
+        predicate = repair_order_schedule.overdue_predicate(now)
+        source.append(predicate)
+        projection.append(predicate)
+    return source, projection
+
+
+def _projection_search(filters, search):
+    term = (search if isinstance(search, str) else "").strip()
+    if term:
+        compact = re.sub(r"[^A-Za-z0-9]", "", term)
+        conditions = [RepairOrderReadModel.search_document.ilike(f"%{term}%")]
+        if compact:
+            conditions.append(RepairOrderReadModel.search_compact.ilike(f"%{compact}%"))
+        filters.append(or_(*conditions))
+    return bool(term)
+
+
+def _legacy_ledger_search(statement, search):
+    term = (search if isinstance(search, str) else "").strip()
+    if not term:
+        return statement
+    full_name = Customer.first_name + literal_column("' '") + Customer.last_name
+    clause, _ = build_search(term,
+        primary=[RepairOrder.order_number, Customer.first_name, Customer.last_name, full_name,
+                 Customer.company_name, Vehicle.vin, Vehicle.unit_number],
+        squashed=[RepairOrder.order_number, Vehicle.vin, Vehicle.unit_number],
+        secondary=[RepairOrder.description, Customer.usdot_number, Customer.mc_number, Vehicle.make, Vehicle.model],
+        similarity=[full_name, Customer.company_name, Vehicle.make])
+    stripped = re.sub(r"[\s().+-]", "", term)
+    if stripped and stripped.isdigit():
+        clause = or_(clause, func.regexp_replace(func.coalesce(Customer.phone, ""), r"\D", "", "g").ilike(f"%{stripped}%"))
+    return (statement.join(Customer, RepairOrder.customer_id == Customer.id)
+            .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id).where(clause))
+
+
+async def _ledger_coverage(db, source_filters):
+    return (await db.execute(
+        select(func.count(RepairOrder.id), func.count(RepairOrderReadModel.repair_order_id))
+        .select_from(RepairOrder).outerjoin(RepairOrderReadModel, _schedule_projection_join())
+        .where(*source_filters))).one()
+
+
 @router.get("/status-counts")
 async def repair_order_status_counts(
     customer_id: Optional[UUID] = Query(None),
     vehicle_id: Optional[UUID] = Query(None),
     search: Optional[str] = Query(None, description="Same search the list applies, so the counts match what it shows"),
     deleted: bool = Query(False),
+    overdue: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """How many orders sit in each status, for the filters currently applied.
-
-    The status filters showed no counts, so an operator could not tell an empty
-    stage from a busy one without selecting it and waiting for an empty list.
-    Counting here rather than client-side keeps the numbers true across the
-    whole ledger instead of the loaded page, and honouring the same search means
-    a filter never advertises rows the list would not show.
-    """
-    if current_user.role == UserRole.CUSTOMER:
-        if not current_user.customer_id:
-            return {"all": 0}
-        filters = [RepairOrderReadModel.customer_id == current_user.customer_id]
+    """All statuses under the current scope/search, including unbackfilled rows."""
+    source, projection = _ledger_filters(current_user, customer_id=customer_id,
+        vehicle_id=vehicle_id, deleted=deleted, overdue=overdue is True, now=repair_order_schedule.now_utc())
+    source_count, projected_count = await _ledger_coverage(db, source)
+    if source_count == projected_count:
+        _projection_search(projection, search)
+        statement = (select(RepairOrderReadModel.status, func.count(RepairOrderReadModel.repair_order_id))
+                     .select_from(RepairOrderReadModel).join(RepairOrder, _schedule_projection_join())
+                     .where(*projection).group_by(RepairOrderReadModel.status))
     else:
-        if not current_user.tenant_id:
-            return {"all": 0}
-        filters = [RepairOrderReadModel.tenant_id == current_user.tenant_id]
-        if current_user.role == UserRole.FLEET_MANAGER:
-            filters.append(RepairOrderReadModel.is_internal.is_(True))
-        if customer_id:
-            filters.append(RepairOrderReadModel.customer_id == customer_id)
-
-    if current_user.role == UserRole.MECHANIC:
-        filters.append(RepairOrderReadModel.repair_order_id.in_(select(RepairOrder.id).where(RepairOrder.tenant_id == current_user.tenant_id, RepairOrder.assigned_mechanic_id == current_user.id)))
-    if vehicle_id:
-        filters.append(RepairOrderReadModel.vehicle_id == vehicle_id)
-    filters.append(RepairOrderReadModel.is_deleted.is_(deleted))
-
-    search_term = (search if isinstance(search, str) else "").strip()
-    if search_term:
-        compact_term = re.sub(r"[^A-Za-z0-9]", "", search_term)
-        search_filters = [RepairOrderReadModel.search_document.ilike(f"%{search_term}%")]
-        if compact_term:
-            search_filters.append(RepairOrderReadModel.search_compact.ilike(f"%{compact_term}%"))
-        filters.append(or_(*search_filters))
-
-    result = await db.execute(
-        select(RepairOrderReadModel.status, func.count(RepairOrderReadModel.repair_order_id))
-        .where(*filters)
-        .group_by(RepairOrderReadModel.status)
-    )
-    counts: dict[str, int] = {}
-    total = 0
-    for status_value, count in result.all():
-        counts[str(status_value)] = int(count)
-        total += int(count)
-    counts["all"] = total
+        statement = _legacy_ledger_search(select(RepairOrder.status, func.count(RepairOrder.id))
+            .select_from(RepairOrder).where(*source), search).group_by(RepairOrder.status)
+    counts = {getattr(value, "value", str(value)): int(count) for value, count in (await db.execute(statement)).all()}
+    counts["all"] = sum(counts.values())
     return counts
 
 
@@ -996,123 +1100,29 @@ async def repair_order_value_summary(
     status: Optional[RepairOrderStatus] = Query(None),
     search: Optional[str] = Query(None),
     deleted: bool = Query(False),
+    overdue: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Return the complete filtered ledger's canonical net order value."""
-    if current_user.role not in (
-        UserRole.GARAGE_OWNER,
-        UserRole.GARAGE_ADMIN,
-        UserRole.RECEPTIONIST,
-        UserRole.MECHANIC,
-        UserRole.FLEET_MANAGER,
-    ):
-        raise HTTPException(status_code=403, detail="Shop access denied")
-
-    if deleted and current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    if not current_user.tenant_id:
-        return FilteredRepairOrderValueSummary(order_count=0, order_value=Decimal("0.00"))
-    projection_filters = [RepairOrderReadModel.tenant_id == current_user.tenant_id]
-    source_filters = [RepairOrder.tenant_id == current_user.tenant_id]
-    if current_user.role == UserRole.FLEET_MANAGER:
-        projection_filters.append(RepairOrderReadModel.is_internal.is_(True))
-        source_filters.append(RepairOrder.is_internal.is_(True))
-    if customer_id:
-        projection_filters.append(RepairOrderReadModel.customer_id == customer_id)
-        source_filters.append(RepairOrder.customer_id == customer_id)
-
-    if current_user.role == UserRole.MECHANIC:
-        source_filters.append(RepairOrder.assigned_mechanic_id == current_user.id)
-        projection_filters.append(RepairOrderReadModel.repair_order_id.in_(select(RepairOrder.id).where(RepairOrder.tenant_id == current_user.tenant_id, RepairOrder.assigned_mechanic_id == current_user.id)))
-    if vehicle_id:
-        projection_filters.append(RepairOrderReadModel.vehicle_id == vehicle_id)
-        source_filters.append(RepairOrder.vehicle_id == vehicle_id)
-    if status:
-        projection_filters.append(RepairOrderReadModel.status == status.value)
-        source_filters.append(RepairOrder.status == status)
-    projection_filters.append(RepairOrderReadModel.is_deleted.is_(deleted))
-    source_filters.append(RepairOrder.deleted_at.isnot(None) if deleted else RepairOrder.deleted_at.is_(None))
-
-    source_count, projected_count = (
-        await db.execute(
-            select(func.count(RepairOrder.id), func.count(RepairOrderReadModel.repair_order_id))
-            .select_from(RepairOrder)
-            .outerjoin(RepairOrderReadModel, RepairOrderReadModel.repair_order_id == RepairOrder.id)
-            .where(*source_filters)
-        )
-    ).one()
-
-    search_term = (search if isinstance(search, str) else "").strip()
-    visible_value = case(
-        (
-            RepairOrder.total_cost < 0,
-            Decimal("0.00"),
-        ),
-        else_=func.coalesce(RepairOrder.total_cost, Decimal("0.00")),
-    )
-    if (source_count or 0) == (projected_count or 0):
-        if search_term:
-            compact_term = re.sub(r"[^A-Za-z0-9]", "", search_term)
-            search_filters = [RepairOrderReadModel.search_document.ilike(f"%{search_term}%")]
-            if compact_term:
-                search_filters.append(RepairOrderReadModel.search_compact.ilike(f"%{compact_term}%"))
-            projection_filters.append(or_(*search_filters))
-        statement = (
-            select(
-                func.count(RepairOrderReadModel.repair_order_id),
-                func.coalesce(func.sum(visible_value), Decimal("0.00")),
-            )
-            .select_from(RepairOrderReadModel)
-            .join(RepairOrder, RepairOrder.id == RepairOrderReadModel.repair_order_id)
-            .where(*projection_filters)
-        )
+    if not repair_order_schedule.can_read(current_user):
+        raise HTTPException(403, "Shop access denied")
+    source, projection = _ledger_filters(current_user, customer_id=customer_id, vehicle_id=vehicle_id,
+        status=status, deleted=deleted, overdue=overdue is True, now=repair_order_schedule.now_utc())
+    source_count, projected_count = await _ledger_coverage(db, source)
+    visible_value = case((RepairOrder.total_cost < 0, Decimal("0.00")),
+                         else_=func.coalesce(RepairOrder.total_cost, Decimal("0.00")))
+    if source_count == projected_count:
+        _projection_search(projection, search)
+        statement = (select(func.count(RepairOrderReadModel.repair_order_id),
+                            func.coalesce(func.sum(visible_value), Decimal("0.00")))
+                     .select_from(RepairOrderReadModel).join(RepairOrder, _schedule_projection_join()).where(*projection))
     else:
-        statement = select(
-            func.count(RepairOrder.id),
-            func.coalesce(func.sum(visible_value), Decimal("0.00")),
-        ).select_from(RepairOrder).where(*source_filters)
-        if search_term:
-            full_name = Customer.first_name + literal_column("' '") + Customer.last_name
-            search_clause, _ = build_search(
-                search_term,
-                primary=[
-                    RepairOrder.order_number,
-                    Customer.first_name,
-                    Customer.last_name,
-                    full_name,
-                    Customer.company_name,
-                    Vehicle.vin,
-                    Vehicle.unit_number,
-                ],
-                squashed=[RepairOrder.order_number, Vehicle.vin, Vehicle.unit_number],
-                secondary=[
-                    RepairOrder.description,
-                    Customer.usdot_number,
-                    Customer.mc_number,
-                    Vehicle.make,
-                    Vehicle.model,
-                ],
-                similarity=[full_name, Customer.company_name, Vehicle.make],
-            )
-            stripped = re.sub(r"[\s().+-]", "", search_term)
-            if stripped and stripped.isdigit():
-                phone_hit = func.regexp_replace(func.coalesce(Customer.phone, ""), r"\D", "", "g").ilike(
-                    f"%{stripped}%"
-                )
-                search_clause = or_(search_clause, phone_hit)
-            statement = (
-                statement.join(Customer, RepairOrder.customer_id == Customer.id)
-                .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
-                .where(search_clause)
-            )
-
+        statement = _legacy_ledger_search(select(func.count(RepairOrder.id),
+            func.coalesce(func.sum(visible_value), Decimal("0.00"))).select_from(RepairOrder).where(*source), search)
     order_count, order_value = (await db.execute(statement)).one()
-    return FilteredRepairOrderValueSummary(
-        order_count=int(order_count or 0),
-        order_value=Decimal(str(order_value or 0)).quantize(Decimal("0.01")),
-    )
+    return FilteredRepairOrderValueSummary(order_count=int(order_count or 0),
+        order_value=Decimal(str(order_value or 0)).quantize(Decimal("0.01")))
 
 
 @router.get("", response_model=List[RepairOrderResponse])
@@ -1122,6 +1132,7 @@ async def list_repair_orders(
     status: Optional[RepairOrderStatus] = Query(None),
     search: Optional[str] = Query(None, description="Filter by order number or description"),
     deleted: bool = Query(False, description="Show only soft-deleted orders (owner/admin only)"),
+    overdue: bool = Query(False),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
     paginated: bool = Query(False),
@@ -1131,61 +1142,14 @@ async def list_repair_orders(
     """Return a bounded repair-order list from its screen-specific projection.
 
     The legacy query remains only for databases restored without the projection
-    backfill. A healthy migrated tenant takes two bounded queries: one count
-    and one indexed projection read, regardless of its invoice/quote history.
+    backfill. A healthy migrated tenant uses bounded count/page reads and one
+    shop-timezone lookup, regardless of its invoice/quote history.
     """
-    if deleted and current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    if current_user.role == UserRole.CUSTOMER:
-        if not current_user.customer_id:
-            return paginated_or_list([], 0, skip, limit, paginated)
-        projection_filters = [RepairOrderReadModel.customer_id == current_user.customer_id]
-        source_filters = [RepairOrder.customer_id == current_user.customer_id]
-    else:
-        if not current_user.tenant_id:
-            return paginated_or_list([], 0, skip, limit, paginated)
-        projection_filters = [RepairOrderReadModel.tenant_id == current_user.tenant_id]
-        source_filters = [RepairOrder.tenant_id == current_user.tenant_id]
-        if current_user.role == UserRole.FLEET_MANAGER:
-            projection_filters.append(RepairOrderReadModel.is_internal.is_(True))
-            source_filters.append(RepairOrder.is_internal.is_(True))
-        if customer_id:
-            projection_filters.append(RepairOrderReadModel.customer_id == customer_id)
-            source_filters.append(RepairOrder.customer_id == customer_id)
-
-    if current_user.role == UserRole.MECHANIC:
-        source_filters.append(RepairOrder.assigned_mechanic_id == current_user.id)
-        projection_filters.append(RepairOrderReadModel.repair_order_id.in_(select(RepairOrder.id).where(RepairOrder.tenant_id == current_user.tenant_id, RepairOrder.assigned_mechanic_id == current_user.id)))
-    if vehicle_id:
-        projection_filters.append(RepairOrderReadModel.vehicle_id == vehicle_id)
-        source_filters.append(RepairOrder.vehicle_id == vehicle_id)
-    if status:
-        projection_filters.append(RepairOrderReadModel.status == status.value)
-        source_filters.append(RepairOrder.status == status)
-
-    projection_filters.append(RepairOrderReadModel.is_deleted.is_(deleted))
-    source_filters.append(
-        RepairOrder.deleted_at.isnot(None) if deleted else RepairOrder.deleted_at.is_(None)
-    )
-
-    # Compare source and projection counts in one query. Any mismatch means a
-    # restored database has rows awaiting backfill, so preserve correctness by
-    # falling back to the pre-projection implementation for that request.
-    source_count, projected_count = (
-        await db.execute(
-            select(
-                func.count(RepairOrder.id),
-                func.count(RepairOrderReadModel.repair_order_id),
-            )
-            .select_from(RepairOrder)
-            .outerjoin(
-                RepairOrderReadModel,
-                RepairOrderReadModel.repair_order_id == RepairOrder.id,
-            )
-            .where(*source_filters)
-        )
-    ).one()
+    overdue = overdue is True
+    now = repair_order_schedule.now_utc()
+    source_filters, projection_filters = _ledger_filters(current_user, customer_id=customer_id,
+        vehicle_id=vehicle_id, status=status, deleted=deleted, overdue=overdue, now=now)
+    source_count, projected_count = await _ledger_coverage(db, source_filters)
     total = source_count or 0
     if total != (projected_count or 0):
         return await _list_repair_orders_legacy(
@@ -1194,6 +1158,8 @@ async def list_repair_orders(
             status=status,
             search=search,
             deleted=deleted,
+            overdue=overdue,
+            _schedule_now=now,
             skip=skip,
             limit=limit,
             paginated=paginated,
@@ -1201,27 +1167,22 @@ async def list_repair_orders(
             current_user=current_user,
         )
 
-    search_term = (search if isinstance(search, str) else "").strip()
-    if search_term:
-        compact_term = re.sub(r"[^A-Za-z0-9]", "", search_term)
-        search_filters = [RepairOrderReadModel.search_document.ilike(f"%{search_term}%")]
-        if compact_term:
-            search_filters.append(RepairOrderReadModel.search_compact.ilike(f"%{compact_term}%"))
-        projection_filters.append(or_(*search_filters))
-        total = (
-            await db.execute(
-                select(func.count(RepairOrderReadModel.repair_order_id)).where(*projection_filters)
-            )
-        ).scalar() or 0
+    if _projection_search(projection_filters, search):
+        total = (await db.execute(select(func.count(RepairOrderReadModel.repair_order_id))
+            .select_from(RepairOrderReadModel).join(RepairOrder, _schedule_projection_join())
+            .where(*projection_filters))).scalar() or 0
 
+    ordering = ([RepairOrder.promised_finish_at.asc(), RepairOrder.id.asc()] if overdue else
+                [RepairOrderReadModel.created_at.desc(), RepairOrderReadModel.repair_order_id.desc()])
     result = await db.execute(
-        select(RepairOrderReadModel.payload)
-        .where(*projection_filters)
-        .order_by(RepairOrderReadModel.created_at.desc(), RepairOrderReadModel.repair_order_id.desc())
-        .offset(skip)
-        .limit(limit)
-    )
-    items = [RepairOrderResponse.model_validate(payload) for payload in result.scalars().all()]
+        select(RepairOrderReadModel.payload, RepairOrder.scheduled_start_at, RepairOrder.promised_finish_at,
+               RepairOrder.status, RepairOrder.deleted_at, RepairOrder.vehicle_released_at)
+        .select_from(RepairOrderReadModel).join(RepairOrder, _schedule_projection_join())
+        .where(*projection_filters).order_by(*ordering).offset(skip).limit(limit))
+    zone = await repair_order_schedule.tenant_timezone(db, current_user.tenant_id) if repair_order_schedule.can_read(current_user) else None
+    items = [RepairOrderResponse.model_validate({**row.payload,
+        **repair_order_schedule.fields(row, zone, now, visible=repair_order_schedule.can_read(current_user))})
+        for row in result.all()]
     if not staff_work_hold.can_read(current_user):
         for item in items:
             item.hold_reason = None
@@ -1255,44 +1216,14 @@ async def _list_repair_orders_legacy(
     paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    overdue: bool = False,
+    _schedule_now: datetime | None = None,
 ):
-    if deleted and current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    query = select(RepairOrder)
-    count_query = select(func.count(RepairOrder.id))
-    query = query.where(RepairOrder.deleted_at.isnot(None) if deleted else RepairOrder.deleted_at.is_(None))
-    count_query = count_query.where(RepairOrder.deleted_at.isnot(None) if deleted else RepairOrder.deleted_at.is_(None))
-
-    if current_user.role == UserRole.CUSTOMER:
-        # Customers can only see their own repair orders
-        if not current_user.customer_id:
-            return paginated_or_list([], 0, skip, limit, paginated)
-        query = query.where(RepairOrder.customer_id == current_user.customer_id)
-        count_query = count_query.where(RepairOrder.customer_id == current_user.customer_id)
-    else:
-        # Staff can filter by customer/vehicle/status or see all in tenant
-        if not current_user.tenant_id:
-            return paginated_or_list([], 0, skip, limit, paginated)
-        query = query.where(RepairOrder.tenant_id == current_user.tenant_id)
-        count_query = count_query.where(RepairOrder.tenant_id == current_user.tenant_id)
-        # Fleet operations may be customer-billed; pricing scope is separate.
-        if current_user.role == UserRole.FLEET_MANAGER:
-            query = query.where(RepairOrder.is_internal.is_(True))
-            count_query = count_query.where(RepairOrder.is_internal.is_(True))
-        if customer_id:
-            query = query.where(RepairOrder.customer_id == customer_id)
-            count_query = count_query.where(RepairOrder.customer_id == customer_id)
-    
-    if current_user.role == UserRole.MECHANIC:
-        query = query.where(RepairOrder.assigned_mechanic_id == current_user.id)
-        count_query = count_query.where(RepairOrder.assigned_mechanic_id == current_user.id)
-    if vehicle_id:
-        query = query.where(RepairOrder.vehicle_id == vehicle_id)
-        count_query = count_query.where(RepairOrder.vehicle_id == vehicle_id)
-    if status:
-        query = query.where(RepairOrder.status == status)
-        count_query = count_query.where(RepairOrder.status == status)
+    now = _schedule_now or repair_order_schedule.now_utc()
+    source, _ = _ledger_filters(current_user, customer_id=customer_id, vehicle_id=vehicle_id,
+        status=status, deleted=deleted, overdue=overdue, now=now)
+    query = select(RepairOrder).where(*source)
+    count_query = select(func.count(RepairOrder.id)).where(*source)
     # Search across the order plus its customer and vehicle: order number,
     # description, customer name/company/DOT/MC/phone, and vehicle VIN/unit/
     # make/model. The Customer/Vehicle joins are added only when a term is
@@ -1346,6 +1277,9 @@ async def _list_repair_orders_legacy(
         query = query.where(search_clause)
         count_query = count_query.where(search_clause)
         order_by = [relevance.desc(), RepairOrder.created_at.desc()]
+
+    if overdue:
+        order_by = [RepairOrder.promised_finish_at.asc(), RepairOrder.id.asc()]
 
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
@@ -1466,6 +1400,10 @@ async def _list_repair_orders_legacy(
         )
         for o in orders
     ]
+    zone = await repair_order_schedule.tenant_timezone(db, current_user.tenant_id) if repair_order_schedule.can_read(current_user) else None
+    for item, order in zip(items, orders):
+        for key, value in repair_order_schedule.fields(order, zone, now, visible=repair_order_schedule.can_read(current_user)).items():
+            setattr(item, key, value)
     if not staff_work_hold.can_read(current_user):
         for item in items:
             item.hold_reason = None
@@ -1479,6 +1417,40 @@ async def _list_repair_orders_legacy(
                 item.total_labor_cost = Decimal("0.00")
                 item.total_cost = Decimal("0.00")
     return paginated_or_list(items, total, skip, limit, paginated)
+
+
+@router.get("/{order_id}/schedule", response_model=RepairOrderScheduleResponse)
+async def get_repair_order_schedule(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    return await repair_order_schedule.read(db, order_id, current_user)
+
+
+@router.patch("/{order_id}/schedule", response_model=RepairOrderScheduleResponse)
+async def update_repair_order_schedule(
+    order_id: UUID,
+    body: RepairOrderScheduleUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    try:
+        order, response, changed = await repair_order_schedule.update(db, order_id, current_user, body)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    if changed:
+        try:
+            await broadcast_repair_order_update(
+                tenant_id=str(order.tenant_id), customer_id=str(order.customer_id),
+                order_id=str(order.id), order_number=order.order_number, status=order.status.value,
+                updated_at=response.updated_at.isoformat(), send_to_customer=False, notify_status_change=False,
+            )
+        except Exception:
+            pass  # A socket outage must not turn a committed write into a failure.
+    return response
 
 
 @router.get("/{order_id}/workspace", response_model=RepairOrderResponse)
@@ -1501,12 +1473,18 @@ async def get_repair_order_workspace(
         if not access_order:
             raise HTTPException(404, "Repair order not found")
         _check_ro_access(current_user, access_order)
-    projection = await db.scalar(
-        select(RepairOrderReadModel)
+    projection_row = (await db.execute(
+        select(RepairOrderReadModel, RepairOrder.scheduled_start_at, RepairOrder.promised_finish_at,
+               RepairOrder.status, RepairOrder.deleted_at, RepairOrder.vehicle_released_at, Tenant.timezone.label("schedule_timezone"))
+        .select_from(RepairOrderReadModel).join(RepairOrder, _schedule_projection_join())
+        .join(Tenant, Tenant.id == RepairOrderReadModel.tenant_id)
         .where(RepairOrderReadModel.repair_order_id == order_id)
-    )
+    )).first()
+    projection = projection_row[0] if projection_row else None
     if projection:
-        item = RepairOrderResponse.model_validate(projection.payload)
+        zone = repair_order_schedule.valid_timezone(projection_row.schedule_timezone) if repair_order_schedule.can_read(current_user) else None
+        item = RepairOrderResponse.model_validate({**projection.payload,
+            **repair_order_schedule.fields(projection_row, zone, repair_order_schedule.now_utc(), visible=repair_order_schedule.can_read(current_user))})
         if not staff_work_hold.can_read(current_user):
             item.hold_reason = None
             item.held_at = None
@@ -1576,6 +1554,9 @@ async def get_repair_order_workspace(
         item.total_parts_cost = Decimal("0.00")
         item.total_labor_cost = Decimal("0.00")
         item.total_cost = Decimal("0.00")
+    zone = await repair_order_schedule.tenant_timezone(db, current_user.tenant_id) if repair_order_schedule.can_read(current_user) else None
+    for key, value in repair_order_schedule.fields(order, zone, repair_order_schedule.now_utc(), visible=repair_order_schedule.can_read(current_user)).items():
+        setattr(item, key, value)
     return item
 
 
@@ -1584,6 +1565,7 @@ async def get_repair_order_detail(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None,
 ):
     # Owner/admin can open a soft-deleted order's detail (e.g. from the
     # Deleted view, to review before restoring); everyone else gets a 404
@@ -1610,8 +1592,9 @@ async def get_repair_order_detail(
         current_user.role == UserRole.CUSTOMER
         and not _customer_financials_are_published(order)
     )
-    parts_resp = [] if customer_financials_hidden else [_build_parts_usage_response(pu) for pu in order.parts_usage]
-    labor_resp = [] if customer_financials_hidden else [LaborResponse.model_validate(li) for li in order.labor_items]
+    await parts_pricing.load_overlays(db, order.tenant_id, order.parts_usage)
+    parts_resp = [] if customer_financials_hidden else [_build_parts_usage_response(pu, actor=current_user, presentation=pricing_presentation, can_edit=operation_execution.editable(order)) for pu in order.parts_usage]
+    labor_resp = [] if customer_financials_hidden else [_account_labor_response(li,current_user,order,pricing_presentation) for li in order.labor_items]
     history_result = await db.execute(
         select(RepairOrderHistoryEvent)
         .where(
@@ -1624,7 +1607,7 @@ async def get_repair_order_detail(
     visible_history = await operation_notes.visible_history(db, order, current_user, history_result.scalars().all())
     history_resp = [RepairOrderHistoryEventResponse.model_validate(event) for event in visible_history
                     if (current_user.role != UserRole.CUSTOMER or event.event_type not in (service_checklist.INTERNAL_EVENT_TYPES | operation_execution.INTERNAL_EVENT_TYPES))
-                    and (staff_work_hold.can_read(current_user) or event.event_type not in staff_work_hold.INTERNAL_EVENT_TYPES)]
+                    and (staff_work_hold.can_read(current_user) or event.event_type not in (staff_work_hold.INTERNAL_EVENT_TYPES | repair_order_schedule.INTERNAL_EVENT_TYPES))]
 
     # Selected PM services (fleet PM work orders). Ordered as chosen.
     from app.db.models.fleet import RepairOrderPMService
@@ -1664,6 +1647,9 @@ async def get_repair_order_detail(
         return f"{u.first_name} {u.last_name}".strip() if u else None
 
     detail_base = RepairOrderResponse.model_validate(order).model_dump(exclude=_detail_vf_exclude)
+    detail_base.update(repair_order_schedule.fields(order,
+        await repair_order_schedule.tenant_timezone(db, current_user.tenant_id) if repair_order_schedule.can_read(current_user) else None,
+        repair_order_schedule.now_utc(), visible=repair_order_schedule.can_read(current_user)))
     customer = order.customer
     detail_base.update({
         "customer_first_name": customer.first_name or "" if customer else "",
@@ -1687,6 +1673,7 @@ async def get_repair_order_detail(
             "order_discount_amount": Decimal("0.00"),
         })
 
+    detail_base["pricing_policy"] = account_pricing.order_view(order) if current_user.role in parts_pricing.STAFF and parts_pricing.presentation(current_user,pricing_presentation)=="shop" else None
     return RepairOrderDetailResponse(
         **detail_base,
         vehicle_make=v.make or "" if v else "",
@@ -1914,6 +1901,9 @@ async def get_repair_order(
     )
 
     payload = RepairOrderResponse.model_validate(order).model_dump(exclude={'pending_zelle_confirmation'})
+    payload.update(repair_order_schedule.fields(order,
+        await repair_order_schedule.tenant_timezone(db, current_user.tenant_id) if repair_order_schedule.can_read(current_user) else None,
+        repair_order_schedule.now_utc(), visible=repair_order_schedule.can_read(current_user)))
     # This path authorises the customer but returns the row as-is. The shop's
     # note is never theirs to read.
     if current_user.role == UserRole.CUSTOMER:
@@ -3842,15 +3832,19 @@ def _validate_cost_discounts(order, **candidate):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-def _apply_parts_mode(order, mode):
-    # Calculate every proposed price first; a missing cost cannot partly mutate.
-    try:
-        prices = [(part, proposed_part_price(part, mode)) for part in order.parts_usage]
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    for part, price in prices:
-        part.unit_price = price
-        part.total_price = price * part.quantity
+async def _apply_parts_mode(db, actor, order, mode, expected, note=None):
+    if expected != parts_pricing.parts_fingerprint(order):
+        parts_pricing.fail('pricing_version_conflict', 'Order parts changed. Refresh them while keeping your draft.', 409)
+    planned = [(part, *parts_pricing.retained_price(part, action=mode, actor=actor, internal=order.is_internal)) for part in order.parts_usage]
+    command_id = uuid4()
+    for part, price, reason in planned:
+        if part.unit_price == price: continue
+        before = parts_pricing.usage_values(part); old = part.pricing_version or 0
+        part.unit_price = price; part.total_price = parts_pricing.line_total(price, part.quantity)
+        part.pricing_version = old + 1
+        await parts_pricing.audit_usage(db, actor, order, part, 'price.' + mode, before=before,
+            old_version=old, reason=(reason + (': ' + note.strip() if note and note.strip() else ''))[:500], correlation_id=command_id)
+        part._pricing_current_source = (part.pricing_snapshot or {}).get('source', 'legacy_unknown') if mode == 'list' else 'manual'
 
 
 @router.get('/{order_id}/discount-limits')
@@ -3896,11 +3890,12 @@ async def get_price_build_summary(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None,
 ):
     try:
         order = await _load_tenant_price_build_order(db, order_id, current_user)
         _check_ro_access(current_user, order)
-        return await _to_price_build_summary(db, current_user, order)
+        return await _to_price_build_summary(db, current_user, order, pricing_presentation=pricing_presentation)
     except Exception as exc:
         raise _map_price_build_error(exc)
 
@@ -3909,6 +3904,7 @@ async def get_price_build_summary(
 async def add_price_build_flat_service(
     order_id: UUID,
     body: PriceBuildFlatServiceRequest,
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*PRICE_BUILD_ADD_ROLES)),
 ):
@@ -3922,12 +3918,19 @@ async def add_price_build_flat_service(
             db, order_id, tenant_id=current_user.tenant_id
         )
         _check_mechanic_order_assignment(current_user, order)
+        record, replay = await parts_pricing.begin_write(db, current_user, idempotency_key,
+            f'order:{order_id}:service:apply', body.model_dump(mode='json'))
+        if replay is not None:
+            return await _to_price_build_summary(db, current_user, order, pricing_presentation=body.pricing_presentation)
         result = await price_build_service.add_flat_service_line(
             db,
             order,
             body.service_id,
             quantity=body.quantity,
             actor=current_user,
+            pricing_preview_fingerprint=body.pricing_preview_fingerprint,
+            pricing_presentation=body.pricing_presentation,
+            commit=False,
             mechanic_additive_only=current_user.role == UserRole.MECHANIC,
             mechanic_id=(
                 current_user.id if current_user.role == UserRole.MECHANIC else None
@@ -3945,11 +3948,14 @@ async def add_price_build_flat_service(
                 "Service",
             ),
         )
-        await db.commit()
-        return await _to_price_build_summary(db, current_user,
+        response = await _to_price_build_summary(db, current_user,
             result.order,
+            pricing_presentation=body.pricing_presentation,
             warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
+        parts_pricing.finish_write(record, response.model_dump(mode='json'))
+        await db.commit()
+        return response
     except Exception as exc:
         raise _map_price_build_error(exc)
 
@@ -3988,8 +3994,23 @@ async def apply_price_build_repair_operation(
     body: PriceBuildRepairOpsApplyRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*PRICE_BUILD_ADD_ROLES)),
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
 ):
     try:
+        # Search exposes saved service packages as service:<UUID>. The alias
+        # shares the canonical transaction, confirmation and durable receipt.
+        if body.operation_id.startswith("service:"):
+            try:
+                service_id = UUID(body.operation_id[len("service:"):])
+            except ValueError:
+                raise HTTPException(422, "Invalid service operation identifier")
+            return await add_price_build_flat_service(
+                order_id,
+                PriceBuildFlatServiceRequest(service_id=service_id, quantity=1,
+                    pricing_preview_fingerprint=body.pricing_preview_fingerprint,
+                    pricing_presentation=body.pricing_presentation),
+                idempotency_key, db, current_user,
+            )
         if not current_user.tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -3999,6 +4020,10 @@ async def apply_price_build_repair_operation(
             db, order_id, tenant_id=current_user.tenant_id
         )
         _check_mechanic_order_assignment(current_user, order)
+        record, replay = await parts_pricing.begin_write(db, current_user, idempotency_key,
+            f'order:{order_id}:repair-operation:apply', body.model_dump(mode='json'))
+        if replay is not None:
+            return await _to_price_build_summary(db, current_user, order, pricing_presentation=body.pricing_presentation)
         result = await price_build_service.add_repair_operation_line(
             db,
             order,
@@ -4009,6 +4034,7 @@ async def apply_price_build_repair_operation(
             provider=body.provider,
             auto_recalc_enabled=body.auto_recalc_enabled,
             actor=current_user,
+            commit=False,
             mechanic_additive_only=current_user.role == UserRole.MECHANIC,
             mechanic_id=(
                 current_user.id if current_user.role == UserRole.MECHANIC else None
@@ -4022,11 +4048,14 @@ async def apply_price_build_repair_operation(
             label="Work added to repair order",
             detail=body.name or "Repair operation",
         )
-        await db.commit()
-        return await _to_price_build_summary(db, current_user,
+        response = await _to_price_build_summary(db, current_user,
             result.order,
+            pricing_presentation=body.pricing_presentation,
             warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
+        parts_pricing.finish_write(record, response.model_dump(mode='json'))
+        await db.commit()
+        return response
     except Exception as exc:
         raise _map_price_build_error(exc)
 
@@ -4038,6 +4067,7 @@ async def update_price_build_line(
     body: PriceBuildLineUpdateRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*PRICE_BUILD_EDIT_ROLES)),
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None,
 ):
     try:
         order = await _load_tenant_price_build_order(db, order_id, current_user)
@@ -4049,10 +4079,12 @@ async def update_price_build_line(
             description=body.description,
             hours=body.hours,
             hourly_rate=body.hourly_rate,
+            actor=current_user,
             auto_recalc_enabled=body.auto_recalc_enabled,
         )
         return await _to_price_build_summary(db, current_user,
             result.order,
+            pricing_presentation=pricing_presentation,
             warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
     except Exception as exc:
@@ -4065,6 +4097,7 @@ async def delete_price_build_line(
     line_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*PRICE_BUILD_EDIT_ROLES)),
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None,
 ):
     try:
         order = await _load_tenant_price_build_order(db, order_id, current_user)
@@ -4086,6 +4119,7 @@ async def delete_price_build_line(
         await db.commit()
         return await _to_price_build_summary(db, current_user,
             result.order,
+            pricing_presentation=pricing_presentation,
             warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
     except Exception as exc:
@@ -4097,6 +4131,7 @@ async def recalculate_price_build(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*PRICE_BUILD_EDIT_ROLES)),
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None,
 ):
     try:
         order = await _load_tenant_price_build_order(db, order_id, current_user)
@@ -4104,6 +4139,7 @@ async def recalculate_price_build(
         result = await price_build_service.recalculate_order(db, order)
         return await _to_price_build_summary(db, current_user,
             result.order,
+            pricing_presentation=pricing_presentation,
             warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
     except Exception as exc:
@@ -4116,6 +4152,7 @@ async def add_sublet_to_price_build(
     body: PriceBuildSubletRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*PRICE_BUILD_EDIT_ROLES)),
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None,
 ):
     try:
         order = await _load_tenant_price_build_order(
@@ -4147,7 +4184,7 @@ async def add_sublet_to_price_build(
         if order is None:
             raise PriceBuildNotFoundError("Repair order not found")
         order = await _load_tenant_price_build_order(db, order_id, current_user)
-        return await _to_price_build_summary(db, current_user, order)
+        return await _to_price_build_summary(db, current_user, order, pricing_presentation=pricing_presentation)
     except HTTPException:
         raise
     except Exception as exc:
@@ -4161,102 +4198,84 @@ async def add_sublet_to_price_build(
 async def add_ad_hoc_part_to_repair_order(
     order_id: UUID,
     body: AdHocPartCreate,
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*PRICE_BUILD_ADD_ROLES)),
 ):
-    """Put a part that is not in the catalogue onto this order, and keep it.
-
-    Until now a part had to exist in inventory before it could be used, so a
-    one-off — a hose from the parts store, something a tech carried in — had no
-    route onto the order at all. Creating it here rather than sending the
-    operator to the inventory screen matters twice: it keeps them in the job,
-    and POST /inventory is admin-only while adding a part to an order is not, so
-    a mechanic could not have taken that route anyway.
-
-    The part is created as a placeholder: no stock, no location, no photo, but a
-    real catalogue row with a price and a history. If it turns out to be worth
-    stocking, clearing that one flag promotes it and everything recorded against
-    it stays attached.
-    """
+    from app.services.parts_pricing_rules import resolve_price, PricePolicy
+    from sqlalchemy.exc import IntegrityError
     if not current_user.tenant_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-
+        raise HTTPException(400, "User must be associated with a tenant")
+    try:
+        observed = await price_build_service.load_order(db, order_id, tenant_id=current_user.tenant_id)
+    except PriceBuildNotFoundError as exc:
+        raise _map_price_build_error(exc) from exc
+    _check_mechanic_order_assignment(current_user, observed)
+    record, replay = await parts_pricing.begin_write(db, current_user, idempotency_key,
+        f'order:{order_id}:ad-hoc', body.model_dump(mode='json'))
+    if replay is not None:
+        return parts_pricing.replay_part(replay,current_user,body.pricing_presentation,can_edit=operation_execution.editable(observed))
+    order = await _load_pricing_order_for_update(db, order_id, tenant_id=current_user.tenant_id)
+    _check_mechanic_order_assignment(current_user, order)
+    _require_editable_ro(order)
+    _require_valid_part_quantity(body.quantity)
+    await _validate_source_references(db, tenant_id=current_user.tenant_id, order_id=order_id,
+        source_service_id=body.source_service_id, source_line_id=body.source_line_id)
     name = body.name.strip()
-    if not name:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Part name is required")
+    if not name: parts_pricing.fail('part_name_required', 'Enter a part name.')
+    sku = (body.sku or '').strip().upper()
+    canonical = re.sub(r'[^A-Za-z0-9]', '', re.sub(r'^ETS-', '', sku))
 
-    supplied_sku = (body.sku or "").strip()
-    item: Optional[Inventory] = None
-    if supplied_sku:
-        # The catalogue is unique on a canonical SKU — the prefix stripped, every
-        # non-alphanumeric removed, upper-cased — so typing a number the shop
-        # already carries must land on that part rather than fail on the index or
-        # quietly mint a duplicate spelling of it.
-        # Upper-case first. The index strips a literal "ETS-" before normalising,
-        # so ets-0532668000 typed in lower case would otherwise canonicalise to
-        # ETS0532668000 and miss the ETS-0532668000 already in the catalogue.
-        # SKUs are stored upper-cased for the same reason.
-        supplied_sku = supplied_sku.upper()
-        canonical = re.sub(r"[^A-Za-z0-9]", "", re.sub(r"^ETS-", "", supplied_sku))
-        if canonical:
-            # Compared in Python, not SQL: regexp_replace is Postgres-only and the
-            # test database is SQLite, so an expression matching the index would
-            # pass against production and fail everywhere else. Narrow the rows
-            # first on the part of the key that is a plain string operation, so
-            # this reads a handful of candidates rather than the catalogue.
-            tail = canonical[-6:]
-            candidates = await db.execute(
-                select(Inventory).where(
-                    Inventory.tenant_id == current_user.tenant_id,
-                    Inventory.deleted_at.is_(None),
-                    Inventory.sku.ilike(f"%{tail}%"),
-                )
-            )
-            item = next(
-                (
-                    candidate
-                    for candidate in candidates.scalars().all()
-                    if re.sub(r"[^A-Za-z0-9]", "", re.sub(r"^ETS-", "", (candidate.sku or "").upper())) == canonical
-                ),
-                None,
-            )
+    tenant_id = current_user.tenant_id
 
-    if item is None:
-        item = Inventory(
-            tenant_id=current_user.tenant_id,
-            # A part with no number still needs one the index can keep unique.
-            sku=supplied_sku or f"ADHOC-{uuid4().hex[:10].upper()}",
-            name=name,
-            cost=body.unit_cost if body.unit_cost is not None else Decimal("0"),
-            selling_price=body.unit_price,
-            stock_quantity=0,
-            is_placeholder=True,
-        )
-        db.add(item)
-        await db.flush()
+    async def matched():
+        if not canonical: return None
+        stmt = select(Inventory).where(Inventory.tenant_id == tenant_id, Inventory.deleted_at.is_(None))
+        if db.get_bind().dialect.name == 'postgresql':
+            stmt = stmt.where(func.upper(func.regexp_replace(func.regexp_replace(Inventory.sku, '^ETS-', ''), '[^A-Za-z0-9]', '', 'g')) == canonical)
+            return await db.scalar(stmt)
+        rows = (await db.scalars(stmt)).all()
+        return next((r for r in rows if re.sub(r'[^A-Za-z0-9]', '', re.sub(r'^ETS-', '', r.sku.upper())) == canonical), None)
 
-    # Reuse the ordinary add-part path so movement, core obligations, activity
-    # and order totals stay identical to a catalogue part. Stock shortage is
-    # expected and allowed: a placeholder has never been stocked, and the shop is
-    # holding the part in its hand.
-    return await add_parts_to_repair_order(
-        order_id=order_id,
-        body=PartsUsageCreate(
-            inventory_id=item.id,
-            quantity=body.quantity,
-            unit_price=body.unit_price,
-            source_service_id=body.source_service_id,
-            source_line_id=body.source_line_id,
-            allow_stock_shortage=True,
-        ),
-        db=db,
-        current_user=current_user,
-    )
+    item = await matched()
+    if item:
+        parts_pricing.fail('catalog_match_requires_preview', 'This part number already exists. Review its catalog price before adding it.', 409,
+            inventory={'id': str(item.id), 'sku': item.sku, 'name': item.name})
+    item = Inventory(id=uuid4(), tenant_id=current_user.tenant_id, sku=sku or f'ADHOC-{uuid4().hex[:10].upper()}',
+        name=name, cost=body.unit_cost if body.unit_cost is not None else Decimal(0), selling_price=body.unit_price,
+        stock_quantity=0, is_placeholder=True)
+    price = resolve_price(item, PricePolicy(), internal=order.is_internal, ad_hoc=True,
+        actual_cost_known=body.unit_cost is not None, requested=body.unit_price, actor_id=current_user.id, quantity=body.quantity)
+    db.add(item)
+    try: await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        item = await matched()
+        if item:
+            parts_pricing.fail('catalog_match_requires_preview', 'This part number was just added. Review its catalog price before adding it.', 409,
+                inventory={'id': str(item.id), 'sku': item.sku, 'name': item.name})
+        raise
+    pu = PartsUsage(id=uuid4(), tenant_id=current_user.tenant_id, repair_order_id=order.id, inventory_id=item.id,
+        quantity=body.quantity, unit_cost=price.actual_cost, unit_price=price.charged, list_price=price.default,
+        total_price=parts_pricing.line_total(price.charged, body.quantity), pricing_snapshot=price.snapshot,
+        source_service_id=body.source_service_id, source_line_id=body.source_line_id,
+        stock_reserved_packages=0, stock_shortage_override=True)
+    db.add(pu); await db.flush()
+    await parts_pricing.audit_usage(db, current_user, order, pu, 'ad_hoc_price_entered', reason='ad_hoc_price_entered')
+    _record_repair_order_history_event(db, order=order, current_user=current_user,
+        event_type='part_added', label='Ad-hoc part added', detail=_part_history_detail(item.name, body.quantity, item.unit_type), entity_id=pu.id)
+    await append_part_activity(db, tenant_id=order.tenant_id, inventory_id=item.id, category='repairs', event_type='repair_usage.added',
+        idempotency_key=f'parts-usage:{pu.id}:added:v1', actor=current_user, source_type='repair_order', source_id=order.id,
+        source_number=order.order_number, reason_code='ad_hoc_price_entered', after={'quantity':pu.quantity},
+        money={'currency':'USD','unit_cost':str(pu.unit_cost) if pu.unit_cost is not None else None,'unit_price':str(pu.unit_price),'line_total':str(pu.total_price)})
+    await _refresh_repair_order_totals(db, order.id)
+    response = _build_parts_usage_response(pu, item, actor=current_user, presentation=body.pricing_presentation)
+    parts_pricing.finish_write(record, parts_pricing.part_receipt(response, pu), 201)
+    await db.commit()
+    return response
 
 
-# Notes are history events, not columns. A note that "goes with the order all
-# along" has to accumulate and carry an author, and the order already has a
-# durable, ordered, tenant-scoped place for things that happened to it.
+# Notes remain tenant-scoped history events with their existing visibility.
 NOTE_EVENT_TYPES = {"note_customer": "customer", "note_shop": "shop"}
 
 
@@ -4485,39 +4504,33 @@ async def delete_repair_order_note(
 async def add_parts_to_repair_order(
     order_id: UUID,
     body: PartsUsageCreate,
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*PRICE_BUILD_ADD_ROLES)),
 ):
     _require_valid_part_quantity(body.quantity)
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    order = await _load_pricing_order_for_update(
-        db, order_id, tenant_id=current_user.tenant_id
-    )
-    if not order:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
-    _check_mechanic_order_assignment(current_user, order)
-    _require_editable_ro(order)
-    if order.tenant_id != current_user.tenant_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    await _validate_source_references(
-        db,
-        tenant_id=current_user.tenant_id,
-        order_id=order_id,
-        source_service_id=body.source_service_id,
-        source_line_id=body.source_line_id,
-    )
-    result = await db.execute(
-        select(Inventory).where(
-            and_(
-                Inventory.id == body.inventory_id,
-                Inventory.tenant_id == current_user.tenant_id,
-            )
-        ).with_for_update()
-    )
-    inv = result.scalar_one_or_none()
-    if not inv:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inventory item not found")
+    # Reauthorize the exact live order before replaying a previously saved body.
+    try:
+        observed = await price_build_service.load_order(db, order_id, tenant_id=current_user.tenant_id)
+    except PriceBuildNotFoundError as exc:
+        raise _map_price_build_error(exc) from exc
+    _check_mechanic_order_assignment(current_user, observed)
+    if current_user.role == UserRole.MECHANIC and body.pricing_intent != 'default':
+        parts_pricing.fail('price_override_forbidden', 'You cannot override a part price.', 403)
+    record, replay = await parts_pricing.begin_write(db, current_user, idempotency_key,
+        f'order:{order_id}:part:add', body.model_dump(mode='json'))
+    if replay is not None:
+        return parts_pricing.replay_part(replay,current_user,body.pricing_presentation,operation_execution.editable(observed))
+    plan = await build_plan(db, current_user, ResolveRequest.model_validate({
+        'context': {'kind': 'repair_order', 'repair_order_id': order_id},
+        'plan': {'kind': 'parts_add', 'lines': [{k:v for k,v in body.model_dump().items() if k not in {'allow_stock_shortage','pricing_preview_fingerprint','pricing_presentation'}}]},
+        'pricing_presentation': body.pricing_presentation,
+    }), lock=True)
+    order = plan.order
+    planned = plan.new(body.client_key)
+    inv = planned.inventory
     if body.quantity <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quantity must be greater than zero")
     packages_needed = _packages_consumed(body.quantity)
@@ -4532,28 +4545,19 @@ async def add_parts_to_repair_order(
                 available_packages=available_packages,
             ),
         )
-    # Fleet parts are always billed at inventory cost. The truck's pricing
-    # preference changes labor only; non-fleet repairs use selling price.
-    default_price = inv.cost if order.is_internal else inv.selling_price
-    if (
-        current_user.role == UserRole.MECHANIC
-        and body.unit_price is not None
-        and body.unit_price != default_price
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Mechanics may add parts only at the shop's current price",
-        )
-    unit_price = body.unit_price if body.unit_price is not None else default_price
-    list_price = inv.cost if order.is_internal else inv.selling_price
-    total_price = unit_price * body.quantity
+    plan.confirm(body.pricing_preview_fingerprint, stock_acknowledged=body.allow_stock_shortage)
+    unit_price = planned.price.charged
+    list_price = planned.price.default
+    total_price = parts_pricing.line_total(unit_price, body.quantity)
     reserved_packages = min(available_packages, packages_needed)
     pu = PartsUsage(
         tenant_id=current_user.tenant_id,
         repair_order_id=order_id,
         inventory_id=body.inventory_id,
         quantity=body.quantity,
-        unit_cost=inv.cost,
+        unit_cost=planned.price.actual_cost,
+        pricing_snapshot=planned.price.snapshot,
+        pricing_matrix_revision_id=planned.price.revision_id,
         unit_price=unit_price,
         list_price=list_price,
         total_price=total_price,
@@ -4598,13 +4602,16 @@ async def add_parts_to_repair_order(
             "unit_price": pu.unit_price, "list_price": pu.list_price,
         },
         money={
-            "currency": "USD", "unit_cost": str(pu.unit_cost),
-            "unit_price": str(pu.unit_price), "list_price": str(pu.list_price),
+            "currency": "USD", "unit_cost": str(pu.unit_cost) if pu.unit_cost is not None else None,
+            "unit_price": str(pu.unit_price), "list_price": str(pu.list_price) if pu.list_price is not None else None,
             "line_total": str(pu.total_price),
         },
         source={"stock_shortage_override": bool(pu.stock_shortage_override)},
     )
+    await parts_pricing.audit_usage(db, current_user, order, pu, 'part.attached')
     await _refresh_repair_order_totals(db, order_id)
+    response = _build_parts_usage_response(pu, inv, actor=current_user, presentation=body.pricing_presentation)
+    parts_pricing.finish_write(record, parts_pricing.part_receipt(response, pu), 201)
     await db.commit()
     await db.refresh(pu)
     result = await db.execute(
@@ -4612,7 +4619,7 @@ async def add_parts_to_repair_order(
     )
     pu_loaded = result.scalar_one_or_none()
     inv_loaded = pu_loaded.inventory_item if pu_loaded else inv
-    return _build_parts_usage_response(pu, inv_loaded)
+    return _build_parts_usage_response(pu, inv_loaded, actor=current_user, presentation=body.pricing_presentation)
 
 
 @router.get("/{order_id}/parts", response_model=List[PartsUsageResponse])
@@ -4647,7 +4654,8 @@ async def list_repair_order_parts(
     )
     parts_usage = result.scalars().all()
 
-    out = [_build_parts_usage_response(pu) for pu in parts_usage]
+    await parts_pricing.load_overlays(db, order.tenant_id, parts_usage)
+    out = [_build_parts_usage_response(pu, actor=current_user, can_edit=operation_execution.editable(order)) for pu in parts_usage]
     return paginated_or_list(out, total, skip, limit, paginated)
 
 
@@ -4761,7 +4769,7 @@ async def update_parts_quantity(
 ):
     if body.quantity is not None:
         _require_valid_part_quantity(body.quantity)
-    if body.quantity is None and body.unit_price is None:
+    if body.quantity is None and body.unit_price is None and body.price_action is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nothing to update")
     if body.quantity is not None and body.quantity <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quantity must be greater than zero")
@@ -4802,13 +4810,25 @@ async def update_parts_quantity(
     old_quantity = pu.quantity
     old_unit_price = pu.unit_price
 
-    if body.quantity is not None:
+    before_price = parts_pricing.usage_values(pu)
+    old_version = pu.pricing_version or 0
+    price_change = body.price_action in {'stock', 'list'} or (body.unit_price is not None and body.unit_price != pu.unit_price)
+    parts_pricing.check_line_version(pu, body.expected_pricing_version, required=price_change)
+    proposed_price, price_reason = pu.unit_price, None
+    if price_change:
+        proposed_price, price_reason = parts_pricing.retained_price(pu, action=body.price_action,
+            requested=body.unit_price, reason=body.price_override_reason, actor=current_user, internal=order.is_internal)
+    parts_pricing.line_total(proposed_price, body.quantity if body.quantity is not None else pu.quantity)
+
+    if body.quantity is not None and body.quantity != pu.quantity:
+        await parts_pricing_planner.sync_expected_core_quantity(db, order, pu, body.quantity)
         # Stock tracks whole packages. Compare the reservation held by this row
         # to the new requirement rather than raw fractional quantity, because an
         # earlier shortage override may have reserved fewer packages than were
         # billed on the repair order.
-        old_reserved_packages = _stock_packages_reserved(pu)
-        new_packages = _packages_consumed(body.quantity)
+        old_reserved_packages = parts_pricing_planner.reservation(pu)
+        nonreserving_bundle = pu.source_service_id is not None and pu.stock_reserved_packages == 0 and not pu.stock_shortage_override
+        new_packages = 0 if nonreserving_bundle else _packages_consumed(body.quantity)
         if inv is not None:
             available_packages = max(0, inv.stock_quantity or 0)
             additional_packages = max(0, new_packages - old_reserved_packages)
@@ -4848,19 +4868,15 @@ async def update_parts_quantity(
             pu.stock_shortage_override = new_packages > 0
         pu.quantity = body.quantity
 
-    if body.unit_price is not None:
-        # Floor at the cost snapshot (or current inventory cost as fallback) — never sell below cost.
-        floor = pu.unit_cost if pu.unit_cost is not None else (inv.cost if inv else None)
-        if floor is not None and body.unit_price < floor:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unit price cannot be lower than cost ({floor})",
-            )
-        if body.unit_price < 0:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unit price cannot be negative")
-        pu.unit_price = body.unit_price
-
-    pu.total_price = pu.unit_price * pu.quantity
+    pu.unit_price = proposed_price
+    pu.total_price = parts_pricing.line_total(pu.unit_price, pu.quantity)
+    if pu.quantity != old_quantity or pu.unit_price != old_unit_price:
+        pu.pricing_version = old_version + 1
+        await parts_pricing.audit_usage(db, current_user, order, pu,
+            'price.' + body.price_action if pu.unit_price != old_unit_price else 'part.quantity_changed',
+            before=before_price, reason=price_reason, old_version=old_version)
+        if pu.unit_price != old_unit_price:
+            pu._pricing_current_source = (pu.pricing_snapshot or {}).get('source','legacy_unknown') if body.price_action == 'list' else 'manual'
     if body.quantity is not None and body.quantity != old_quantity:
         override_update = body.allow_stock_shortage and bool(pu.stock_shortage_override)
         _record_repair_order_history_event(
@@ -4889,8 +4905,8 @@ async def update_parts_quantity(
             before={"quantity": old_quantity, "unit_price": old_unit_price},
             after={"quantity": pu.quantity, "unit_price": pu.unit_price},
             money={
-                "currency": "USD", "unit_cost": str(pu.unit_cost),
-                "unit_price": str(pu.unit_price), "list_price": str(pu.list_price),
+                "currency": "USD", "unit_cost": str(pu.unit_cost) if pu.unit_cost is not None else None,
+                "unit_price": str(pu.unit_price), "list_price": str(pu.list_price) if pu.list_price is not None else None,
                 "line_total": str(pu.total_price),
             },
             source={"stock_shortage_override": bool(pu.stock_shortage_override)},
@@ -4898,7 +4914,8 @@ async def update_parts_quantity(
     await _refresh_repair_order_totals(db, order_id)
     await db.commit()
     await db.refresh(pu)
-    return _build_parts_usage_response(pu, inv)
+    await parts_pricing.load_overlays(db, order.tenant_id, [pu])
+    return _build_parts_usage_response(pu, inv, actor=current_user, presentation=body.pricing_presentation)
 
 
 async def _load_order_for_summary(db: AsyncSession, order_id: UUID) -> RepairOrder:
@@ -4919,6 +4936,7 @@ async def set_parts_pricing_mode(
     body: PartsPricingModeRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*PRICE_BUILD_EDIT_ROLES)),
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None,
 ):
     """Bulk-set every part on the order to garage cost ('stock') or list price ('list')."""
     if body.mode not in ("stock", "list"):
@@ -4934,10 +4952,10 @@ async def set_parts_pricing_mode(
     _require_editable_ro(order)
 
     _validate_cost_discounts(order, mode=body.mode)
-    _apply_parts_mode(order, body.mode)
+    await _apply_parts_mode(db, current_user, order, body.mode, body.expected_parts_fingerprint, body.note)
     _apply_repair_order_totals(order)
     await db.commit()
-    return await _to_price_build_summary(db, current_user, order)
+    return await _to_price_build_summary(db, current_user, order, pricing_presentation=pricing_presentation)
 
 
 @router.patch("/{order_id}/discounts", response_model=PriceBuildSummaryResponse)
@@ -4946,6 +4964,7 @@ async def update_repair_order_discounts(
     body: DiscountUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*PRICE_BUILD_EDIT_ROLES)),
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None,
 ):
     """Set a dollar discount on labor and/or the order total (owner dashboard)."""
     if not current_user.tenant_id:
@@ -4962,12 +4981,12 @@ async def update_repair_order_discounts(
     total = body.order_discount_amount if body.order_discount_amount is not None else (order.order_discount_amount or Decimal('0'))
     _validate_cost_discounts(order, labor=labor, total=total, mode=body.parts_pricing_mode)
     if body.parts_pricing_mode:
-        _apply_parts_mode(order, body.parts_pricing_mode)
+        await _apply_parts_mode(db, current_user, order, body.parts_pricing_mode, body.expected_parts_fingerprint, body.note)
     order.labor_discount_amount = labor.quantize(Decimal('0.01'))
     order.order_discount_amount = total.quantize(Decimal('0.01'))
     _apply_repair_order_totals(order)
     await db.commit()
-    return await _to_price_build_summary(db, current_user, order)
+    return await _to_price_build_summary(db, current_user, order, pricing_presentation=pricing_presentation)
 
 
 @router.delete("/{order_id}/parts/{parts_usage_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -5040,11 +5059,12 @@ async def remove_parts_from_repair_order(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="This part's core is on a vendor return. Void that return before removing the part.",
             )
+    reserved = parts_pricing_planner.reservation(pu)
     for core in cores:
         await db.delete(core)
-    if inv is not None and _stock_packages_reserved(pu):
+    if inv is not None and reserved:
         await apply_inventory_movement(
-            db, item=inv, quantity_delta=_stock_packages_reserved(pu),
+            db, item=inv, quantity_delta=reserved,
             movement_type="repair_release", actor=current_user,
             source_type="repair_order", source_id=order.id,
             destination_type="parts_usage", destination_id=pu.id,
@@ -5075,11 +5095,12 @@ async def remove_parts_from_repair_order(
                 "unit_price": pu.unit_price, "list_price": pu.list_price,
             },
             money={
-                "currency": "USD", "unit_cost": str(pu.unit_cost),
-                "unit_price": str(pu.unit_price), "list_price": str(pu.list_price),
+                "currency": "USD", "unit_cost": str(pu.unit_cost) if pu.unit_cost is not None else None,
+                "unit_price": str(pu.unit_price), "list_price": str(pu.list_price) if pu.list_price is not None else None,
                 "line_total": str(pu.total_price),
             },
         )
+    await parts_pricing.audit_usage(db, current_user, order, pu, "part.removed", before=parts_pricing.usage_values(pu), old_version=pu.pricing_version or 0)
     await db.delete(pu)
     await _refresh_repair_order_totals(db, order_id)
     await db.commit()
@@ -5097,6 +5118,7 @@ async def add_labor_to_repair_order(
     current_user: User = Depends(require_role(
         *PRICE_BUILD_ADD_ROLES,
     )),
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None,
 ):
     _require_valid_labor_hours(body.hours)
     if not current_user.tenant_id:
@@ -5116,24 +5138,22 @@ async def add_labor_to_repair_order(
         order_id=order_id,
         source_service_id=body.source_service_id,
     )
-    hourly_rate = body.hourly_rate
+    tenant = (await db.execute(select(Tenant).where(Tenant.id == order.tenant_id))).scalar_one()
     hours = body.hours
     mechanic_id = body.mechanic_id
     if current_user.role == UserRole.MECHANIC:
-        if body.mechanic_id is not None and body.mechanic_id != current_user.id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-        try:
-            hours = validate_mechanic_labor_hours(body.hours)
-        except PriceBuildInputError as exc:
-            raise _map_price_build_error(exc)
-        tenant = (await db.execute(select(Tenant).where(Tenant.id == order.tenant_id))).scalar_one()
-        hourly_rate = tenant.labor_rate
-        mechanic_id = current_user.id
-    elif order.is_internal:
-        tenant = (await db.execute(select(Tenant).where(Tenant.id == order.tenant_id))).scalar_one()
-        hourly_rate = (
-            tenant.labor_rate if fleet_labor_uses_customer_rate(order) else tenant.internal_labor_rate
-        )
+        if mechanic_id is not None and mechanic_id != current_user.id: raise HTTPException(403,"Access denied")
+        hours=validate_mechanic_labor_hours(hours);mechanic_id=current_user.id
+    if body.line_type == LaborLineType.SUBLET:
+        if body.hourly_rate is None: raise HTTPException(422,"Sublet amount is required")
+        hourly_rate=body.hourly_rate;origin=None;pricing_source=None
+        # Sublet writes retain their existing rules; C1 never supplies provenance.
+        if current_user.role == UserRole.MECHANIC:
+            hourly_rate=tenant.labor_rate
+        elif order.is_internal:
+            hourly_rate=tenant.labor_rate if fleet_labor_uses_customer_rate(order) else tenant.internal_labor_rate
+    else:
+        hourly_rate,origin,pricing_source=account_pricing.new_labor(order,tenant,current_user,requested=body.hourly_rate,intent=body.pricing_intent)
     await operation_execution.validate_assignee(db, order.tenant_id, mechanic_id)
     total_cost = hours * hourly_rate
     labor = Labor(execution_status=None if body.line_type == LaborLineType.SUBLET else "pending",
@@ -5151,9 +5171,12 @@ async def add_labor_to_repair_order(
         auto_recalc_enabled=body.auto_recalc_enabled,
         source_service_id=body.source_service_id,
     )
+    labor.pricing_snapshot=origin;labor.pricing_source=pricing_source
     if labor.execution_status is not None:
         operation_execution.enroll_new_scope(order)
     db.add(labor)
+    await db.flush()
+    if origin is not None: account_pricing.audit_labor(db,current_user,order,labor)
     if body.source_service_id:
         source = (await db.execute(select(Service).where(Service.id == body.source_service_id, Service.tenant_id == order.tenant_id, Service.deleted_at.is_(None), Service.is_active.is_(True)))).scalar_one_or_none()
         if source is None:
@@ -5162,7 +5185,7 @@ async def add_labor_to_repair_order(
     await _refresh_repair_order_totals(db, order_id)
     await db.commit()
     await db.refresh(labor)
-    return LaborResponse.model_validate(labor)
+    return _account_labor_response(labor,current_user,order,pricing_presentation)
 
 
 @router.get("/{order_id}/labor", response_model=List[LaborResponse])
@@ -5173,6 +5196,7 @@ async def list_repair_order_labor(
     paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*PRICE_BUILD_ADD_ROLES)),
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None,
 ):
     result = await db.execute(
         tenant_repair_order_statement(order_id, current_user)
@@ -5195,7 +5219,7 @@ async def list_repair_order_labor(
         .limit(limit)
     )
     labor_items = result.scalars().all()
-    items = [LaborResponse.model_validate(li) for li in labor_items]
+    items = [_account_labor_response(li,current_user,order,pricing_presentation) for li in labor_items]
     return paginated_or_list(items, total, skip, limit, paginated)
 
 
@@ -5208,6 +5232,7 @@ async def update_repair_order_labor(
     current_user: User = Depends(require_role(
         *PRICE_BUILD_EDIT_ROLES,
     )),
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None,
 ):
     if body.hours is not None:
         _require_valid_labor_hours(body.hours)
@@ -5243,14 +5268,16 @@ async def update_repair_order_labor(
             "source_service_id", labor.source_service_id
         ),
     )
+    old_rate,old_source=labor.hourly_rate,labor.pricing_source
     for field, value in update_data.items():
         setattr(labor, field, value)
     if "hours" in update_data or "hourly_rate" in update_data:
         labor.total_cost = labor.hours * labor.hourly_rate
+    if labor.line_type != LaborLineType.SUBLET: account_pricing.observe_rate_change(db,current_user,order,labor,old_rate,old_source)
     await _refresh_repair_order_totals(db, order_id)
     await db.commit()
     await db.refresh(labor)
-    return LaborResponse.model_validate(labor)
+    return _account_labor_response(labor,current_user,order,pricing_presentation)
 
 
 @router.delete("/{order_id}/labor/{labor_id}", status_code=status.HTTP_204_NO_CONTENT)

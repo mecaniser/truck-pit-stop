@@ -1,0 +1,18 @@
+{
+  "cutoff": "2026-10-15T23:15:00+00:00",
+  "observed_at": "2026-10-15 23:16:59.045663+00:00",
+  "fingerprints": {
+    "inventory": {
+      "rows": 1612,
+      "fingerprint": "9e3027f6ebea64d2bf4d2ebb70ecc2ff"
+    },
+    "parts_usage": {
+      "rows": 2934,
+      "fingerprint": "c62ef84002b398c0f8b1e63a85a7c147"
+    },
+    "invoices": {
+      "rows": 2424,
+      "fingerprint": "9feb237ae6706d784a5f76300750161f"
+    }
+  }
+}
