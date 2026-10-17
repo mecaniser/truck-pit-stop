@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Numeric, Integer, ForeignKey, Text, Boolean, DateTime, CheckConstraint, Enum as SQLEnum
+from sqlalchemy import Column, String, Numeric, Integer, ForeignKey, Text, Boolean, DateTime, CheckConstraint, JSON, Enum as SQLEnum
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from decimal import Decimal
@@ -16,6 +16,7 @@ class LaborLineType(str, enum.Enum):
 class Labor(BaseModel):
     __tablename__ = "labor"
     __table_args__ = (
+        CheckConstraint("pricing_source IS NULL OR pricing_source IN ('default','manual')", name='ck_labor_pricing_source'),
         CheckConstraint("execution_status IS NULL OR execution_status IN ('pending', 'completed')", name="ck_labor_execution_status"),
         CheckConstraint("execution_version >= 0", name="ck_labor_execution_version"),
     )
@@ -33,6 +34,9 @@ class Labor(BaseModel):
     repair_order_id = Column(UUID(as_uuid=True), ForeignKey("repair_orders.id"), nullable=False, index=True)
     repair_order = relationship("RepairOrder", back_populates="labor_items")
     
+    pricing_snapshot = Column(JSON(none_as_null=True))
+    pricing_source = Column(String(16))
+
     service_code = Column(String(50), nullable=True)
     description = Column(Text, nullable=False)
     hours = Column(Numeric(5, 2), nullable=False)

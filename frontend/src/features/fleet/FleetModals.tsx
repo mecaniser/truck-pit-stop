@@ -1,3 +1,5 @@
+import { usePricingCommand } from '@/features/parts-pricing/usePricingCommand'
+import { PricingCancelled, pricingError } from '@/features/parts-pricing/contract'
 import { forwardRef, useEffect, useId, useImperativeHandle, useState, useRef } from 'react'
 import { Spinner } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -654,6 +656,7 @@ export const WO_DRAWER_WIDTH = 'max-w-full sm:max-w-[94vw] lg:max-w-[760px] xl:m
 
 export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: { truck: BoardTruck; onClose: () => void; onDone: () => void; createMode?: boolean }) {
   const qc = useQueryClient()
+  const pricing = usePricingCommand(`fleet-schedule:${truck.id}`)
   const intervalMiles = truck.pm_interval_miles || 25000
   const AVG_MILES_PER_DAY = PM_AVG_MILES_PER_DAY
   // Project the due date from a target odometer, then round forward to the
@@ -680,6 +683,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
   const [createWO, setCreateWO] = useState(createMode)
   const { options: billToOptions, isLoading: billToLoading } = useTruckBillToOptions(truck.id)
   const [billToCustomerId, setBillToCustomerId] = useState('')
+  const accountPricing = useIntakePricing(billToCustomerId, truck.id, createWO, 'fleet')
   useEffect(() => {
     if (!billToCustomerId && billToOptions.length) {
       const preferred = billToOptions.find((item) => item.relationship_type === 'default_payer' && item.is_primary)
@@ -743,7 +747,8 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
   const choose = (id: string) => setSelected([id])
 
   const save = useMutation({
-    mutationFn: async () => (await api.post(`/fleet/trucks/${truck.id}/schedule-pm`, {
+    mutationFn: async () => {
+      const body = {
       // Create mode services the truck now: it must not touch the PM schedule —
       // the date/odometer roll forward when the work order completes (from the
       // real mileage-out). Only reschedule/schedule mode sets those fields.
@@ -755,7 +760,11 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
       service_ids: selected,
       save_as_default: saveAsDefault,
       bill_to_customer_id: (createWO && billToCustomerId) ? billToCustomerId : undefined,
-    })).data as BoardTruck,
+      ...(createWO ? accountPricing.confirmation() : {}),
+      }
+      if (!createWO) return (await api.post(`/fleet/trucks/${truck.id}/schedule-pm`, body)).data as BoardTruck
+      return pricing.execute<BoardTruck>({ context: { kind: 'fleet_draft', vehicle_id: truck.id, bill_to_customer_id: billToCustomerId || null }, plan: { kind: 'fleet_create', service_ids: selected, part_lines: [] }, pricing_presentation: 'fleet' }, async (confirmation, options) => (await api.post(`/fleet/trucks/${truck.id}/schedule-pm`, { ...body, ...confirmation }, options)).data, body)
+    },
     onSuccess: (updated) => {
       // Response is the BoardTruck; the PM work order's id IS the order number.
       const num = updated?.pm_work_order?.id || updated?.work_order?.id
@@ -768,7 +777,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
       invalidateFleetAndCockpit(qc)
       onDone(); onClose()
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to schedule PM'),
+    onError: (cause) => { accountPricing.handleConflict(cause); if (!(cause instanceof PricingCancelled)) toast.error(pricingError(cause, 'Failed to schedule PM')) },
   })
 
   const taskLabel = createMode
@@ -778,7 +787,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
     <div className="fleet-sidekick-actions">
       <button className={ghostBtn} disabled={save.isPending} onClick={onClose}>Cancel</button>
       <button className={yellowBtn}
-        disabled={save.isPending || (createWO && (billToLoading || !billToCustomerId))} onClick={() => save.mutate()}>
+        disabled={save.isPending || (createWO && (billToLoading || !billToCustomerId || !accountPricing.ready))} onClick={() => save.mutate()}>
         {save.isPending ? <Spinner size="sm" /> : (createMode ? <ClipboardCheck size={15} /> : <Calendar size={15} />)}
         {createMode ? 'Create repair order' : (createWO ? `${rescheduling ? 'Reschedule' : 'Schedule'} + create repair order` : 'Save schedule')}
       </button>
@@ -795,6 +804,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
       tone="maintenance"
     >
       <div style={{ display: 'grid', gap: 12 }}>
+        {pricing.dialog}
         {/* Schedule fields belong to planning (reschedule), not to servicing the
             truck now. In create mode they're hidden: the next PM rolls forward
             automatically when this work order completes. */}
@@ -846,6 +856,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
           </Field>
         )}
 
+        {accountPricing.notice}
         <FieldGroup label="PM service">
           <div className="pm-svc-list" role="radiogroup" aria-label="PM service">
             {activeServices.length === 0 ? (
@@ -1059,7 +1070,7 @@ export function AssignDriverModal({ truck, driverPhone, onClose }: { truck: Boar
                   {!drivers.isLoading && !legacyContacts.isLoading && !drivers.isError && !legacyContacts.isError && filteredLegacyContacts.map((contact) => (
                     <button type="button" key={`legacy:${contact.name}:${contact.phone || ''}`} className="driver-profile-option is-legacy" disabled={busy} onClick={() => chooseLegacyContact(contact)}>
                       <span className="avatar avatar-sm">{contact.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('')}</span>
-                      <span><strong>{contact.name}</strong><small>Legacy contact · {contact.vehicle_count} {contact.vehicle_count === 1 ? 'truck' : 'trucks'}{contact.phone ? ` · ${formatUSPhone(contact.phone)}` : ''}</small></span>
+                      <span><strong>{contact.name}</strong><small>{contact.vehicle_count} {contact.vehicle_count === 1 ? 'truck' : 'trucks'}{contact.phone ? ` · ${formatUSPhone(contact.phone)}` : ''}</small></span>
                       <span className="driver-profile-state">Create profile</span>
                     </button>
                   ))}
@@ -2115,3 +2126,4 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
     </SidekickPanel>
   )
 }
+import { useIntakePricing } from '@/features/customer-pricing/useIntakePricing'

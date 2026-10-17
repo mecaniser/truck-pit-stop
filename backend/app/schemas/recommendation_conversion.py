@@ -11,7 +11,8 @@ class RecommendationConvertRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     request_id: UUID
     hours: Decimal
-    hourly_rate: Decimal
+    hourly_rate: Decimal | None = None
+    pricing_intent: Literal["default", "manual"] | None = None
     replaces_conversion_id: UUID | None = None
 
     @field_validator("hours")
@@ -22,6 +23,7 @@ class RecommendationConvertRequest(BaseModel):
     @field_validator("hourly_rate")
     @classmethod
     def valid_rate(cls, value):
+        if value is None: return None
         try:
             if not value.is_finite() or not Decimal("0") <= value <= Decimal("99999999.99") or value != value.quantize(Decimal("0.01")):
                 raise ValueError("Hourly rate must be nonnegative with at most two decimal places")

@@ -1,3 +1,7 @@
+import { quote } from '@/features/parts-pricing/__tests__/fixtures'
+import type { ResolveRequest } from '@/features/parts-pricing/contract'
+import { useAuthStore } from '@/stores/authStore'
+import type { User } from '@/types'
 /**
  * The fleet builder shows what the work IS, not what each piece of it costs.
  *
@@ -10,7 +14,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -20,7 +24,7 @@ const apiMocks = vi.hoisted(() => ({
   delete: vi.fn(),
 }))
 
-vi.mock('@/lib/api', () => ({ default: apiMocks }))
+vi.mock('@/lib/api', () => ({ default: { ...apiMocks, post: (url: string, body: ResolveRequest, ...args: unknown[]) => url === '/parts-pricing/resolve' ? Promise.resolve({ data: quote({ plan: body.plan, projection: 'fleet', required: false }) }) : apiMocks.post(url, body, ...args) } }))
 vi.mock('react-hot-toast', () => ({
   default: { success: vi.fn(), error: vi.fn() },
 }))
@@ -145,6 +149,7 @@ afterEach(() => {
 })
 
 describe('FleetPriceBuilderPanel', () => {
+  beforeEach(() => useAuthStore.setState({ user: { id: 'user-1', tenant_id: 'tenant-1', role: 'fleet_manager' } as User, authSessionEpoch: 1, logoutInProgress: false }))
   it('shows the work and the visit total, but no per-line money', async () => {
     mockQueries()
     const user = userEvent.setup()
@@ -152,7 +157,7 @@ describe('FleetPriceBuilderPanel', () => {
 
     // A line summarises itself; its parts appear when it is opened.
     await user.click(await screen.findByRole('button', {
-      name: /Replace air line/, expanded: false,
+      name: /^Replace air line/, expanded: false,
     }))
     expect(await screen.findByText('Air line fitting')).toBeInTheDocument()
     expect(screen.getByText('AL-9921')).toBeInTheDocument()
@@ -167,6 +172,17 @@ describe('FleetPriceBuilderPanel', () => {
     for (const leaked of ['160.00', '80.00', '47.53', '23.76', '41.00']) {
       expect(container.textContent).not.toContain(leaked)
     }
+  })
+
+  it('routes a bundled operation through the fleet service preview and canonical attachment', async () => {
+    mockQueries()
+    apiMocks.post.mockImplementation((url: string) => Promise.resolve({ data: url.endsWith('/repair-ops/search') ? { candidates: [{ operation_id: 'service:service-1', name: 'Filter service bundle', estimated_hours: '0.25', provider: 'service_catalog' }] } : summary }))
+    const user = userEvent.setup(); renderPanel()
+    await user.type(await screen.findByLabelText('Search operations'), 'filter service')
+    const candidate = await screen.findByText('Filter service bundle')
+    await user.click(within(candidate.closest('li')!).getByRole('button', { name: 'Add', exact: true }))
+    await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith(`/repair-orders/${ORDER_ID}/price-build/flat-service`, { service_id: 'service-1', quantity: 1, pricing_preview_fingerprint: 'opaque-1', pricing_presentation: 'fleet' }, expect.objectContaining({ headers: { 'Idempotency-Key': expect.stringMatching(/^[0-9a-f-]{36}$/) } })))
+    expect(apiMocks.post.mock.calls.some(([url]) => url.endsWith('/repair-ops/apply'))).toBe(false)
   })
 
   it('names which pricing the truck is on', async () => {
@@ -477,4 +493,15 @@ describe('FleetPriceBuilderPanel', () => {
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: /^Remove / })).not.toBeInTheDocument())
   })
+})
+
+it('retains a grouped part quantity draft on stale CAS and retries with the refreshed fleet version', async () => {
+  mockQueries()
+  const originalGet = apiMocks.get.getMockImplementation()!
+  apiMocks.get.mockImplementation((url: string) => url === `/repair-orders/${ORDER_ID}/price-build` ? Promise.resolve({ data: { ...summary, parts: summary.parts.map(part => ({ ...part, quantity: apiMocks.patch.mock.calls.length ? '5' : '2', pricing_version: apiMocks.patch.mock.calls.length ? 5 : 4 })) } }) : originalGet(url))
+  apiMocks.patch.mockRejectedValueOnce({ response: { status: 409, data: { detail: { code: 'pricing_version_conflict', message: 'Saved quantity changed.' } } } }).mockResolvedValue({ data: {} })
+  const user = userEvent.setup(); renderPanel(); await user.click(await screen.findByRole('button', { name: /^Replace air line/ })); await user.click(screen.getByRole('button', { name: 'Increase Quantity of Air line fitting' }))
+  await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledWith(`/repair-orders/${ORDER_ID}/parts/part-1`, { quantity: 3, expected_pricing_version: 4, pricing_presentation: 'fleet' }))
+  const conflict = await screen.findByText(/Saved quantity changed. Saved quantity 5/); const retry = within(conflict).getByRole('button', { name: 'Retry' }); expect(screen.getByLabelText('Quantity of Air line fitting')).toHaveValue('3'); await user.click(retry)
+  await waitFor(() => expect(apiMocks.patch).toHaveBeenLastCalledWith(`/repair-orders/${ORDER_ID}/parts/part-1`, { quantity: 3, expected_pricing_version: 5, pricing_presentation: 'fleet' }))
 })

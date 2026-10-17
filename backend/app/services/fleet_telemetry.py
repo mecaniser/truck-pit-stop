@@ -3,7 +3,7 @@
 import hashlib
 import json
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException
 from sqlalchemy import delete, func, or_, select
@@ -24,15 +24,11 @@ from app.services.motive_oauth import configured
 
 
 def now():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def utc(t):
-    return (
-        t.replace(tzinfo=timezone.utc)
-        if t.tzinfo is None
-        else t.astimezone(timezone.utc)
-    )
+    return t.replace(tzinfo=UTC) if t.tzinfo is None else t.astimezone(UTC)
 
 
 def fail(status, code):
@@ -71,6 +67,16 @@ def observation_interval(observed, precision=None):
 
 
 async def capture(db, actor, vehicle_id, body):
+    from app.schemas.dashboard_vehicle_binding import BoundTelemetryCapture
+    from app.schemas.fleet_telemetry import TelemetryCapture
+    from app.services import dashboard_vehicle_bindings as bindings
+
+    bound = isinstance(body, BoundTelemetryCapture)
+    body = (
+        BoundTelemetryCapture.model_validate(body)
+        if bound
+        else TelemetryCapture.model_validate(body)
+    )
     stamp = now()
     tenant_id, actor_id = actor.tenant_id, actor.id
     # Tenant serialization also makes cross-vehicle request-id races deterministic.
@@ -146,7 +152,27 @@ async def capture(db, actor, vehicle_id, body):
             )
         )
     ).scalar_one()
-    if (
+    if bound:
+        bound_vehicle, bound_member, binding = await bindings.resolve(
+            db,
+            tenant_id,
+            body.source_company_id,
+            body.provider_vehicle_id,
+            body.source_read_at,
+            company_label=body.provider_company_label,
+            binding_id=body.dashboard_binding_id,
+            expected_customer_id=body.fleet_customer_id,
+        )
+        if bound_vehicle.id != vehicle_id or bound_member.id != member.id:
+            fail(409, "reviewed_vehicle_binding_invalid")
+        if body.observed_at:
+            start, end = observation_interval(body.observed_at, body.observed_precision)
+            if start < utc(binding.effective_from) or (
+                binding.effective_to is not None and end >= utc(binding.effective_to)
+            ):
+                fail(422, "observation_outside_binding")
+        vin = None
+    elif (
         not re.fullmatch(r"[A-HJ-NPR-Z0-9]{17}", vin)
         or body.vin != vin
         or duplicates != 1
@@ -196,8 +222,15 @@ async def capture(db, actor, vehicle_id, body):
         ):
             fail(422, "invalid_observation_time")
     # Preserve legacy exact captures, but never let an uncertain minute interval
-    # replace a location observation anywhere within that interval (or vice versa).
-    if body.observed_at and (body.lat is not None or body.location_label):
+    # replace an observation of the same field inside that interval (or vice versa).
+    overlap_fields = []
+    if body.lat is not None or body.location_label:
+        overlap_fields.append(
+            or_(Snapshot.lat.is_not(None), Snapshot.location_label.is_not(None))
+        )
+    if body.speed_mph is not None:
+        overlap_fields.append(Snapshot.speed_mph.is_not(None))
+    if body.observed_at and overlap_fields:
         start, end = observation_interval(body.observed_at, body.observed_precision)
         previous = (
             (
@@ -210,10 +243,7 @@ async def capture(db, actor, vehicle_id, body):
                         Snapshot.observed_at.is_not(None),
                         Snapshot.observed_at >= start - timedelta(minutes=1),
                         Snapshot.observed_at <= end,
-                        or_(
-                            Snapshot.lat.is_not(None),
-                            Snapshot.location_label.is_not(None),
-                        ),
+                        or_(*overlap_fields),
                     )
                 )
             )
@@ -231,7 +261,9 @@ async def capture(db, actor, vehicle_id, body):
             )
             if max(start, old_start) <= min(end, old_end):
                 fail(409, "overlapping_observation_interval")
-    data = body.model_dump(exclude={"vin"})
+    data = body.model_dump(
+        exclude={"vin", "source_company_id", "source_read_at", "source_vin_state"}
+    )
     row = Snapshot(
         **data,
         tenant_id=tenant_id,
@@ -480,17 +512,22 @@ async def attach(db, trucks, tenant_id):
             reading["period"] = period
         rank = (
             observed is not None,
-            observed or datetime.min.replace(tzinfo=timezone.utc),
+            observed or datetime.min.replace(tzinfo=UTC),
             source == "motive_api",
             source != "manual_location",
-            captured or datetime.min.replace(tzinfo=timezone.utc),
+            captured or datetime.min.replace(tzinfo=UTC),
             str(sid or ""),
         )
         old = choices[vid].get(field)
         if old is None or rank > old[0]:
             choices[vid][field] = rank, reading
 
+    from app.services import dashboard_vehicle_bindings as bindings
+
+    allowed_bindings = await bindings.valid_capture_ids(db, tenant_id, snapshots)
     for row in snapshots:
+        if row.dashboard_binding_id and row.id not in allowed_bindings:
+            continue
         m = by_pair.get((row.vehicle_id, row.fleet_customer_id))
         if (
             not m

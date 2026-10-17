@@ -1,0 +1,60 @@
+.db-parts-pricing { color: var(--workspace-text, #14243a); background: var(--surface-overlay, #fff) !important; font-size: 13px; }
+.db-parts-pricing .db-slide-panel-form__header, .db-parts-pricing .db-slide-panel-form__footer { padding: 10px 14px; flex-shrink: 0; border-color: var(--workspace-border, #cbd5df); }
+.db-parts-pricing .db-slide-panel-form__content { min-height: 0; padding: 12px 14px; }
+.db-parts-pricing button { min-height: 44px; white-space: nowrap; }
+.db-parts-pricing p { margin: 4px 0; overflow-wrap: anywhere; }
+.db-parts-pricing__muted { color: var(--workspace-muted, #5b6d82); font-size: 12px; }
+.db-parts-pricing__total, .db-parts-pricing__toolbar, .db-parts-pricing__actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 6px 10px; }
+.db-parts-pricing__total strong { font-size: 18px; font-variant-numeric: tabular-nums; }
+.db-parts-pricing__quote-lines { list-style: none; margin: 8px 0; padding: 0; }
+.db-parts-pricing__quote-lines li { display: flex; justify-content: space-between; align-items: start; gap: 10px; padding: 7px 0; border-top: 1px solid var(--workspace-border, #cbd5df); }
+.db-parts-pricing__quote-lines li > div { min-width: 0; }
+.db-parts-pricing__quote-lines li > div:last-child { text-align: right; }
+.db-parts-pricing__quote-lines strong, .db-parts-pricing__quote-lines span { display: block; overflow-wrap: anywhere; }
+.db-parts-pricing__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+.db-parts-pricing label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.db-parts-pricing :is(input, textarea, select) { min-width: 0; width: 100%; min-height: 44px; padding: 6px 8px; border: 1px solid var(--workspace-border, #cbd5df); border-radius: 6px; background: var(--surface-overlay, #fff) !important; color: var(--workspace-text, #14243a); font-size: 16px; color-scheme: inherit; }
+.db-parts-pricing [role='alert'] { color: color-mix(in srgb, var(--semantic-danger-500, #ef4444) 40%, var(--workspace-text, #14243a)); }
+.db-parts-pricing__source { display: inline-block; color: var(--workspace-muted, #5b6d82); font-size: 11px; white-space: nowrap; }
+/* The repair-order table owns its surface independently of the workspace theme. */
+.db-part-unit-price .db-parts-pricing__source { color: inherit; }
+@media (max-width: 420px) { .db-parts-pricing__fields { grid-template-columns: minmax(0, 1fr); } }
+.db-parts-pricing button:not([class]) { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 6px 10px; border: 1px solid var(--workspace-border, #cbd5df); border-radius: 6px; background: var(--workspace-raised, transparent); color: inherit; }
+.db-parts-pricing button:disabled { opacity: .5; cursor: not-allowed; }
+.db-parts-pricing button:hover:not(:disabled) { background: color-mix(in srgb, currentColor 8%, transparent); }
+.db-parts-pricing .db-parts-pricing__check { flex-direction: row; align-items: center; min-height: 44px; gap: 8px; }
+.db-parts-pricing .db-parts-pricing__check input { width: 18px; height: 18px; min-height: 18px; flex: 0 0 18px; }
+.db-parts-pricing__bands { margin: 10px 0; }
+.db-parts-pricing__band, .db-parts-pricing__band-labels { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 44px; gap: 6px; margin: 4px 0; }
+.db-parts-pricing__band-labels { font-size: 11px; color: var(--workspace-muted, #5b6d82); }
+.db-parts-pricing__sample, .db-parts-pricing__revision, .db-parts-pricing__confirm { border-top: 1px solid var(--workspace-border, #cbd5df); padding-top: 10px; margin-top: 10px; }
+.db-parts-pricing__sample > button { margin: 6px 0; }
+.db-parts-pricing__revision small { display: block; color: var(--workspace-muted, #5b6d82); }
+.db-parts-pricing__confirm button { margin: 4px 6px 0 0; }
+.db-parts-pricing__mobile-label { display: none; }
+@media (max-width: 480px) {
+  .db-parts-pricing__band-labels { display: none; }
+  .db-parts-pricing__band { grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--workspace-border, #cbd5df); padding: 8px 0; }
+  .db-parts-pricing__band label { grid-column: auto; }
+  .db-parts-pricing__band > button { grid-column: 2; grid-row: 2; align-self: end; justify-self: end; width: 44px; }
+  .db-parts-pricing__mobile-label { display: block; font-size: 12px; }
+}
+.db-service-pricing-recovery { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; color: var(--workspace-text, #14243a); background: var(--surface-overlay, #fff); border-bottom: 1px solid var(--workspace-border, #cbd5df); font-size: 12px; }
+.db-service-pricing-recovery span { flex: 1 1 240px; overflow-wrap: anywhere; }
+.db-service-pricing-recovery button { min-height: 44px; padding: 6px 10px; white-space: nowrap; border: 1px solid var(--workspace-border, #cbd5df); border-radius: 6px; }
+.db-parts-pricing .db-slide-panel-form__header p { color: var(--workspace-text, #14243a); }
+.db-parts-pricing .db-slide-panel-form__header p:first-child:not(:last-child) { color: var(--workspace-muted, #5b6d82); }
+.db-parts-pricing .db-slide-panel-form__header button, .db-parts-pricing .db-slide-panel-form__footer button:not(.db-slide-panel-form__submit) { color: var(--workspace-text, #14243a); }
+/* The 600 action fill pairs with the action foreground in every appearance;
+   the brighter Night 500 selection fill does not support white button text. */
+.db-parts-pricing .db-slide-panel-form__submit { background: var(--personal-accent-600, #0e7490) !important; color: var(--personal-accent-foreground, #fff) !important; }
+.db-parts-pricing-overlay { z-index: 90; }
+.db-presentation-new .db-staff-content .db-parts-pricing :is(input, textarea, select) { background: var(--surface-overlay, #fff) !important; color: var(--workspace-text, #14243a) !important; -webkit-text-fill-color: var(--workspace-text, #14243a); caret-color: var(--workspace-text, #14243a); color-scheme: inherit; }
+.db-presentation-new .db-staff-content .db-parts-pricing :is(input, textarea)::placeholder { color: var(--workspace-muted, #5b6d82) !important; -webkit-text-fill-color: var(--workspace-muted, #5b6d82); opacity: 1; }
+
+.db-parts-pricing .db-slide-panel-form__header button { min-width: 44px; }
+
+.db-parts-pricing__policy-summary { display: block; white-space: normal; overflow-wrap: anywhere; }
+
+.db-parts-pricing__feedback { overflow-wrap: anywhere; }
+.db-parts-pricing__feedback:focus { outline: 2px solid var(--workspace-border, #cbd5df); outline-offset: 3px; border-radius: 4px; }

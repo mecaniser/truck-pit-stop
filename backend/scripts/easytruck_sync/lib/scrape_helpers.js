@@ -1,4 +1,6 @@
 const { BASE, SHOP } = require('./auth');
+const { contactSnapshot } = require('./contact_snapshot');
+const { readContactView } = require('./contact_view');
 
 // Get vehicle IDs + unit numbers for a customer from their detail page. The
 // vehicle rows carry the id in an <a href=".../vehicles/{id}">, so read it
@@ -108,13 +110,17 @@ async function getVehicleServiceHistory(page, vehicleId) {
 // Scrape contacts table for a customer
 async function getCustomerContacts(page, customerId) {
   const url = `${BASE}/${SHOP}/customers/${customerId}/contacts`;
-  await page.goto(url, { waitUntil: 'networkidle', timeout: 20000 });
-  await page.waitForTimeout(500);
-  const rows = await page.locator('table tbody tr').evaluateAll(trs =>
-    trs.map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim()))
-  );
-  return rows.map(([role, firstName, lastName, phone, email, notes]) => ({ role, firstName, lastName, phone, email, notes }))
-    .filter(c => c.firstName || c.lastName || c.email || c.phone);
+  try {
+    await page.goto(url, { waitUntil: 'networkidle', timeout: 20000 });
+    await page.waitForTimeout(500);
+    const view = await page.evaluate(readContactView);
+    const snapshot = contactSnapshot(view, {shop: SHOP, customerId, observedAt: new Date().toISOString()});
+    return {contacts: snapshot.complete ? view.rows.map(([role, firstName, lastName, phone, email, notes]) => ({role, firstName, lastName, phone, email, notes}))
+      .filter(c => c.firstName || c.lastName || c.email || c.phone) : [], snapshot};
+  } catch (_) {
+    return {contacts: [], snapshot: {source_shop_id: SHOP, source_customer_id: String(customerId),
+      observed_at: new Date().toISOString(), complete: false, reason: 'read_unavailable', phones: []}};
+  }
 }
 
 module.exports = { getCustomerVehicleIds, getVehicleEditData, getVehicleServiceHistory, getCustomerContacts };

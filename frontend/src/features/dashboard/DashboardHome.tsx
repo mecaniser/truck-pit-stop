@@ -1,3 +1,5 @@
+import { scheduleDeadline, scheduleRefreshInterval, type OrderScheduleSummary } from '../repair-orders/repairOrderSchedule'
+import '../repair-orders/repairOrderSchedule.css'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { Spinner } from '@/components/ui'
 import {
@@ -50,7 +52,7 @@ interface OrderValueSummary {
   amount_basis: 'repair_order_net'
 }
 
-interface RecentOrder {
+interface RecentOrder extends OrderScheduleSummary {
   id: string
   order_number: string
   status: string
@@ -380,7 +382,7 @@ function OrderCard({
             <div className="text-xs 2xl:text-sm font-medium text-white">
               ${parseFloat(order.total_cost).toFixed(2)}
             </div>
-            <div className="text-xs 2xl:text-[13px] text-gray-500">{timeAgo(order.updated_at)}</div>
+            <div className="text-xs 2xl:text-[13px] text-gray-500">{scheduleDeadline(order) || timeAgo(order.updated_at)}</div>
           </div>
           <ChevronRight className="w-4 h-4 text-gray-500 group-hover:opacity-100 transition-colors" style={{ color: accentColor }} />
         </div>
@@ -466,6 +468,8 @@ export default function DashboardHome() {
       return response.data
     },
     enabled: presentationVariant !== 'new',
+    refetchInterval: query => scheduleRefreshInterval([...(query.state.data?.orders_needing_action ?? []), ...(query.state.data?.orders_on_floor ?? []), ...(query.state.data?.orders_ready_to_close ?? [])]),
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true, // Refresh when tab becomes visible
     // A 429 means we're rate-limited, not that the request is broken —
     // retrying immediately just extends the block. Let the limiter's
@@ -488,6 +492,8 @@ export default function DashboardHome() {
     queryKey: ['dashboard-daily-workset'],
     queryFn: async () => (await api.get('/dashboard/daily-workset')).data,
     enabled: presentationVariant === 'new' && !selectedShopWorkRecord,
+    refetchInterval: query => scheduleRefreshInterval(query.state.data ? [query.state.data.needs_attention, query.state.data.on_floor, query.state.data.ready_to_close, query.state.data.closed_today].flatMap(queue => queue.items) : []),
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     retry: (failureCount, err) => !(isAxiosError(err) && err.response?.status === 429) && failureCount < 1,
     refetchOnMount: true,

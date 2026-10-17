@@ -1,3 +1,10 @@
+import { useAdHocPartCommand } from '@/features/parts-pricing/useAdHocPartCommand'
+import { usePricingCommand } from '@/features/parts-pricing/usePricingCommand'
+import { usePricingScope } from '@/features/parts-pricing/usePricingScope'
+import { PricingCancelled, parsePricingPreview, pricingError, pricingMoney, priceSourceLabel } from '@/features/parts-pricing/contract'
+import { enteredMoney } from '@/features/parts-pricing/configuration'
+import RepairOrderScheduleControl from './RepairOrderScheduleControl'
+import type { OrderScheduleSummary } from './repairOrderSchedule'
 import RepairOrderActivity from './RepairOrderActivity'
 import { OperationExecutionControls, OperationExecutionFeedback, OperationExecutionStatus } from '@/features/operation-execution/OperationExecution'
 import { useOperationExecution } from '@/features/operation-execution/queries'
@@ -146,9 +153,11 @@ type LineWarning = {
 }
 
 type Props = {
+  workspaceNotice?: ReactNode
   orderId: string
   orderStatus: RepairOrderStatus
   canEdit: boolean
+  schedule?: OrderScheduleSummary
   workHoldOrder?: WorkHoldOrder
   isInternalOrder?: boolean
   defaultLaborRate?: number
@@ -355,7 +364,7 @@ function errorDetail(error: unknown, fallback: string) {
     const detail = response?.data?.detail
     if (typeof detail === 'string' && detail.trim()) return detail
   }
-  return fallback
+  return pricingError(error, fallback)
 }
 
 function partAddKey(inventoryId: string, sourceLineId?: string | null) {
@@ -484,7 +493,7 @@ const STEPPER_COMMIT_DEBOUNCE_MS = 500
 function LaborLineEditor({
   line, canMutate, onUpdate, onLocalChange,
 }: {
-  line: { id: string; description: string; hours: string; hourly_rate: string; total_cost: string }
+  line: { id: string; description: string; hours: string; hourly_rate: string; total_cost: string; pricing?: SafeLaborPricing }
   canMutate: boolean
   onUpdate: (body: { description?: string; hours?: number; hourly_rate?: number }) => void
   // Fires with the optimistic hours/rate on every step, ahead of the
@@ -509,6 +518,7 @@ function LaborLineEditor({
           <span className="tabular-nums">{formatHoursMinutes(lineHours)}</span>
           <span className="text-gray-400">×</span>
           <span className="tabular-nums">${lineRate.toFixed(2)}/hr</span>
+          {line.pricing && <small>{laborSourceLabel(line.pricing)}</small>}
           <span className="text-gray-400">=</span>
           <span className="font-semibold text-gray-900">${parseFloat(line.total_cost || '0').toFixed(2)}</span>
         </div>
@@ -548,7 +558,7 @@ function LaborLineEditor({
         <label className="inline-flex items-center gap-1.5">
           <span className="text-[11px] font-medium uppercase tracking-wide text-slate-600">Rate</span>
           <span className="text-gray-500">$</span>
-          <QuantityStepper
+          {line.pricing?.can_override === false ? <span className="tabular-nums">{lineRate.toFixed(2)}/hr</span> : <QuantityStepper
             value={lineRate}
             onChange={(r) => onUpdate({ hourly_rate: r })}
             onLocalChange={(r) => onLocalChange({ hourly_rate: r })}
@@ -558,8 +568,9 @@ function LaborLineEditor({
             ariaLabel="Labor hourly rate"
             align="start"
             commitDebounceMs={STEPPER_COMMIT_DEBOUNCE_MS}
-          />
+          />}
         </label>
+        {line.pricing && <small className="text-slate-600">{laborSourceLabel(line.pricing)}</small>}
         <span className="text-gray-400">=</span>
         <span className="font-semibold text-gray-900">${parseFloat(line.total_cost || '0').toFixed(2)}</span>
       </div>
@@ -738,119 +749,37 @@ function OrderNumberHeader({ value }: { value: string }) {
   )
 }
 
-function PartPricePopover({
-  part, disabled, saving, onApply,
-}: {
-  part: PartsUsage
-  disabled?: boolean
-  saving?: boolean
-  onApply: (value: number) => Promise<void>
-}) {
-  const [draft, setDraft] = useState('')
-  const unit = parseFloat(part.unit_price || '0')
-  const stock = part.unit_cost != null ? parseFloat(part.unit_cost) : null
-  const list = part.list_price != null ? parseFloat(part.list_price) : unit
-  const draftPrice = parseFloat(draft || String(unit))
-  const marginPrice = Number.isFinite(draftPrice) ? draftPrice : unit
-  const margin = stock != null && marginPrice > 0 ? ((marginPrice - stock) / marginPrice) * 100 : null
-  const isSameMoney = (a: number | null, b: number | null) => (
-    a != null && b != null && Math.abs(a - b) < 0.005
-  )
-  const resetToStock = stock != null && isSameMoney(marginPrice, list)
-  const resetLabel = resetToStock ? 'Reset to stock' : 'Reset to list'
-  const resetValue = resetToStock ? stock : list
-  const isCustom = Number.isFinite(list) && Math.abs(unit - list) >= 0.005
-
-  return (
-    <Popover as="span" className="inline-block">
-      {({ close }) => <>
-      <PopoverButton
-        type="button"
-        disabled={disabled}
-        onClick={() => setDraft(unit.toFixed(2))}
-        className={`db-part-price h-8 min-w-[84px] whitespace-nowrap rounded-lg border bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-xs text-gray-900 shadow-sm disabled:opacity-60 ${
-          isCustom ? 'border-orange-400 ring-2 ring-orange-100' : 'border-gray-200'
-        }`}
-      >
-        {money(unit)} <ChevronDown className="ml-1 inline h-3 w-3 text-gray-400" />
-      </PopoverButton>
-      <PopoverPanel
-          anchor="bottom end"
-          focus
-          aria-label={`Part pricing for ${part.inventory_name}`}
-          className="db-part-price-panel z-[70] w-[min(320px,calc(100vw-32px))] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-[14px] border border-gray-200 bg-white p-3 text-sm shadow-[0_10px_30px_rgba(20,25,35,.10)] [--anchor-gap:4px] [--anchor-padding:16px]"
-        >
-          <div className="mb-3 flex items-start justify-between gap-3">
-            <div>
-              <p className="font-semibold text-gray-900">{part.inventory_name}</p>
-              <p className="font-['JetBrains_Mono',monospace] text-[11px] text-gray-500">{part.inventory_sku}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => close()}
-              aria-label="Close part pricing"
-              className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between rounded-lg px-2 py-1.5 text-gray-600">
-              <span><span className="mr-2 inline-block h-2 w-2 rounded-full bg-gray-300" />Stock cost</span>
-              <span className="font-['JetBrains_Mono',monospace]">{stock == null ? '—' : money(stock)}</span>
-            </div>
-            <div className="flex items-center justify-between rounded-lg px-2 py-1.5 text-gray-700">
-              <span>List price</span>
-              <span className="font-['JetBrains_Mono',monospace]">{money(list)}</span>
-            </div>
-            <div className="flex items-center justify-between rounded-lg px-2 py-1.5 text-gray-700">
-              <span>Margin at this price</span>
-              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                {margin == null ? '—' : `${margin >= 0 ? '+' : ''}${margin.toFixed(1)}%`}
-              </span>
-            </div>
-            <label className="grid grid-cols-[minmax(0,1fr)_104px] items-center gap-3 rounded-xl border border-orange-200 bg-orange-50/70 px-2.5 py-2">
-              <span className="min-w-0 whitespace-nowrap font-medium text-gray-900">
-                <span className="mr-2 inline-block h-2 w-2 rounded-full bg-orange-500" />Customer price
-              </span>
-              <input
-                value={draft}
-                onChange={(e) => setDraft(e.target.value.replace(/[^0-9.]/g, ''))}
-                inputMode="decimal"
-                className="h-9 min-w-0 rounded-lg border border-orange-200 bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-sm outline-none focus:ring-2 focus:ring-orange-300"
-              />
-            </label>
-          </div>
-          <div className="mt-3 flex items-center justify-between gap-2 border-t border-gray-100 pt-3">
-            <button
-              type="button"
-              disabled={saving || disabled}
-              onClick={() => setDraft(resetValue.toFixed(2))}
-              className="rounded-lg px-2 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-60"
-            >
-              {resetLabel}
-            </button>
-            <button
-              type="button"
-              disabled={saving || disabled}
-              onClick={async () => {
-                const next = parseFloat(draft || '0')
-                if (!Number.isFinite(next) || next < 0) {
-                  toast.error('Customer price must be 0 or more')
-                  return
-                }
-                await onApply(next)
-                close()
-              }}
-              className="rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-bold text-white shadow-[0_6px_16px_rgba(239,138,18,.32)] disabled:opacity-60"
-            >
-              {saving ? 'Applying…' : 'Apply'}
-            </button>
-          </div>
-      </PopoverPanel>
-      </>}
-    </Popover>
-  )
+type PartPriceChange = { price_action: 'manual' | 'list' | 'stock'; unit_price?: string; price_override_reason?: string }
+function PartPricePopover({ part, disabled, saving, onApply }: { part: PartsUsage; disabled?: boolean; saving?: boolean; onApply: (change: PartPriceChange) => Promise<void> }) {
+  const [draft, setDraft] = useState(part.unit_price)
+  const [reason, setReason] = useState('')
+  const [action, setAction] = useState<PartPriceChange['price_action']>('manual')
+  const [error, setError] = useState<string | null>(null)
+  const [opened, setOpened] = useState(false)
+  const scope = usePricingScope()
+  const role = useAuthStore(state => state.user?.role)
+  const manager = role === 'garage_owner' || role === 'garage_admin'
+  const details = useQuery({ queryKey: ['saved-part-pricing', scope, part.repair_order_id, part.id, part.pricing?.pricing_version], enabled: opened && manager, gcTime: 0, retry: false, queryFn: async ({ signal }) => {
+    const request = { context: { kind: 'repair_order' as const, repair_order_id: part.repair_order_id }, plan: { kind: 'parts_add' as const, lines: [] }, include_management_details: true }
+    const preview = parsePricingPreview((await api.post('/parts-pricing/resolve', request, { signal })).data, request, role)
+    if (preview.projection !== 'shop') throw new Error('Invalid pricing projection')
+    const line = preview.lines.find(item => item.parts_usage_id === part.id)
+    return preview.management?.lines.find(item => item.line_key === line?.line_key) ?? null
+  } })
+  const editable = !disabled && (part.pricing?.can_override ?? ['garage_owner', 'garage_admin', 'receptionist'].includes(role ?? ''))
+  return <Popover as="span" className="inline-block">{({ close }) => <>
+    <PopoverButton type="button" onClick={() => { setDraft(Number(part.unit_price).toFixed(2)); setReason(''); setAction('manual'); setError(null); setOpened(true) }} className="db-part-price h-8 min-w-[84px] whitespace-nowrap rounded-lg border bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-xs text-gray-900 shadow-sm border-gray-200">{money(part.unit_price)} <ChevronDown className="ml-1 inline h-3 w-3 text-gray-400" /></PopoverButton>
+    <PopoverPanel anchor="bottom end" focus aria-label={`Part pricing for ${part.inventory_name}`} className="db-part-price-panel db-parts-pricing z-[70] w-[min(340px,calc(100vw-32px))] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-[14px] border border-gray-200 p-3 text-sm shadow-xl [--anchor-gap:4px] [--anchor-padding:16px]">
+      <div className="db-parts-pricing__toolbar"><strong>{part.inventory_name}</strong><button type="button" aria-label="Close part pricing" onClick={() => { setOpened(false); close() }}><X size={16} /></button></div>
+      <p className="db-parts-pricing__muted">Saved charge {pricingMoney(part.unit_price)} · {priceSourceLabel(part.pricing?.current_source, part.pricing?.policy_source)} · Saved default {pricingMoney(part.pricing?.default_unit_price ?? part.list_price)}</p>
+      {manager && <><p className="db-parts-pricing__muted">Actual cost {details.data ? details.data.actual_cost_known ? pricingMoney(details.data.actual_unit_cost) : 'Unknown' : '—'}</p>{details.isError && <p role="alert">Saved pricing details unavailable.</p>}{!details.isError && details.data && <p className="db-parts-pricing__muted">{details.data.matrix ? `${details.data.matrix.name} · Revision ${details.data.matrix.revision} · ${details.data.matrix.band.markup_percent}% markup` : details.data.fixed_catalog_price ? 'Fixed catalog price' : 'No saved matrix'} · Basis {pricingMoney(details.data.pricing_basis)} · Minimum {pricingMoney(details.data.effective_minimum)}{details.data.override && <> · {details.data.override.reason} · {new Date(details.data.override.occurred_at).toLocaleString()}</>}</p>}</>}
+      {editable && <><label>Customer price<input inputMode="decimal" value={draft} disabled={saving} onChange={event => { setDraft(event.target.value); setAction('manual') }} /></label>{action === 'manual' && <label>Override reason<input value={reason} maxLength={500} disabled={saving} onChange={event => setReason(event.target.value)} placeholder="Required for a price change" /></label>}
+      <div className="db-parts-pricing__actions"><button type="button" disabled={saving} onClick={() => { setDraft(part.pricing?.default_unit_price ?? part.list_price ?? part.unit_price); setAction('list') }}>List</button><button type="button" disabled={saving || part.unit_cost === null} onClick={() => { setDraft(part.unit_cost ?? ''); setAction('stock') }}>Stock</button><button type="button" disabled={saving} onClick={async () => {
+        try { const amount = enteredMoney(draft); if (amount === null) throw new Error('Enter a customer price.'); if (action === 'manual' && amount === part.unit_price) { setOpened(false); close(); return } if (action === 'manual' && reason.trim().length < 3) throw new Error('Enter an override reason of at least 3 characters.'); await onApply({ price_action: action, ...(action === 'manual' ? { unit_price: amount, price_override_reason: reason.trim() } : {}) }); setOpened(false); close() } catch (cause) { setError(pricingError(cause, cause instanceof Error ? cause.message : 'Price could not be saved.')) }
+      }}>{saving ? 'Applying…' : 'Apply'}</button></div></>}
+      {error && <p role="alert">{error}</p>}
+    </PopoverPanel>
+  </>}</Popover>
 }
 
 export default function PriceBuilderPanel({
@@ -858,6 +787,7 @@ export default function PriceBuilderPanel({
   orderStatus,
   canEdit,
   workHoldOrder,
+  schedule,
   isInternalOrder = false,
   defaultLaborRate,
   description,
@@ -957,6 +887,7 @@ export default function PriceBuilderPanel({
   restorePending = false,
   onReopenWorkOrder,
   reopenPending = false,
+  workspaceNotice,
   recommendedWorkPanel,
   focusedOperationId,
   focusedRecommendationId,
@@ -978,6 +909,9 @@ export default function PriceBuilderPanel({
 }: Props) {
   const queryClient = useQueryClient()
   const staffRole = useAuthStore(state => state.user?.role)
+  const pricingScope = usePricingScope()
+  const pricingCommand = usePricingCommand(`repair-order:${orderId}`)
+  const adHocPricing = useAdHocPartCommand(orderId, 'shop', isInternalOrder)
   const [holdDialogOrderId, setHoldDialogOrderId] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [candidates, setCandidates] = useState<RepairOperationCandidate[]>([])
@@ -1195,7 +1129,8 @@ export default function PriceBuilderPanel({
   // instead of a toast.
   const [vinDecodeStatus, setVinDecodeStatus] = useState<{ ok: boolean; message: string } | null>(null)
   const { data: summary, refetch: refetchSummary, isLoading, isError: summaryErrored, isFetching: summaryFetching } = useQuery<PriceBuildSummary>({
-    queryKey: ['price-build', orderId],
+    queryKey: ['price-build', orderId, pricingScope],
+    gcTime: 0,
     queryFn: async ({ signal }) => {
       const response = await api.get(`/repair-orders/${orderId}/price-build`, { signal })
       return response.data
@@ -1552,6 +1487,7 @@ export default function PriceBuilderPanel({
     try {
       await api.patch(`/repair-orders/${orderId}/parts/${part.id}`, {
         quantity: next,
+        expected_pricing_version: part.pricing?.pricing_version,
         allow_stock_shortage: allowStockShortage,
       })
       setStockShortages((current) => {
@@ -1572,11 +1508,6 @@ export default function PriceBuilderPanel({
         toast.error('Inventory count is short — review the inline stock check.')
         return
       }
-      setPartQuantityOverrides((current) => {
-        const updated = { ...current }
-        delete updated[shortageKey]
-        return updated
-      })
       toast.error(errorDetail(err, 'Failed to update part quantity'))
       await invalidate()
     } finally {
@@ -1730,15 +1661,16 @@ export default function PriceBuilderPanel({
       const response = await api.patch<PriceBuildSummary>(`/repair-orders/${orderId}/discounts`, {
         labor_discount_amount: nextLaborDiscount,
         order_discount_amount: nextOrderDiscount,
-        ...(draftPartsPricingMode !== partsPricingMode ? { parts_pricing_mode: draftPartsPricingMode } : {}),
+        ...(draftPartsPricingMode !== partsPricingMode ? { parts_pricing_mode: draftPartsPricingMode, expected_parts_fingerprint: summary?.parts_pricing_fingerprint } : {}),
       })
       setPartsPricingMode(draftPartsPricingMode)
-      queryClient.setQueryData<PriceBuildSummary>(['price-build', orderId], response.data)
+      queryClient.setQueryData<PriceBuildSummary>(['price-build', orderId, pricingScope], response.data)
       void queryClient.invalidateQueries({ queryKey: ['discount-limits', orderId] })
       onUpdated?.()
       return true
     } catch (err: unknown) {
       toast.error(errorDetail(err, 'Failed to apply pricing adjustments'))
+      void queryClient.invalidateQueries({ queryKey: ['price-build', orderId] })
       void queryClient.invalidateQueries({ queryKey: ['discount-limits', orderId] })
       return false
     } finally {
@@ -1748,7 +1680,7 @@ export default function PriceBuilderPanel({
 
   const addAdHocPart = useMutation({
     mutationFn: async (draft: { name: string; sku: string; price: string; cost: string; quantity: string; sourceLineId?: string | null }) => {
-      await api.post(`/repair-orders/${orderId}/parts/ad-hoc`, {
+      await adHocPricing.execute({
         name: draft.name.trim(),
         sku: draft.sku.trim() || null,
         quantity: Number(draft.quantity || '1'),
@@ -1767,7 +1699,7 @@ export default function PriceBuilderPanel({
       queryClient.invalidateQueries({ queryKey: ['inventory-typeahead'] })
       toast.success('Part added and saved to the catalogue')
     },
-    onError: () => toast.error('Could not add that part'),
+    onError: (cause) => { if (!(cause instanceof PricingCancelled)) toast.error(pricingError(cause, 'Could not add that part')) },
   })
 
   // One form, wherever the operator finds the part missing: the Part tab,
@@ -1847,25 +1779,8 @@ export default function PriceBuilderPanel({
       sourceLineId,
       allowStockShortage = false,
     }: PartAddRequest) => {
-      const inventoryItem = inventory?.find((item) => item.id === inventoryId)
-      const body: {
-        inventory_id: string
-        quantity: number
-        source_service_id: string | null
-        source_line_id: string | null
-        unit_price?: string
-        allow_stock_shortage: boolean
-      } = {
-        inventory_id: inventoryId,
-        quantity,
-        source_service_id: sourceServiceId || null,
-        source_line_id: sourceLineId || null,
-        allow_stock_shortage: allowStockShortage,
-      }
-      if (partsPricingMode === 'stock' && inventoryItem?.cost != null) {
-        body.unit_price = inventoryItem.cost
-      }
-      await api.post(`/repair-orders/${orderId}/parts`, body)
+      const body = { client_key: partAddKey(inventoryId, sourceLineId), inventory_id: inventoryId, quantity, source_service_id: sourceServiceId || null, source_line_id: sourceLineId || null, allow_stock_shortage: allowStockShortage, pricing_intent: partsPricingMode === 'stock' ? 'stock' as const : 'default' as const }
+      await pricingCommand.execute({ context: { kind: 'repair_order', repair_order_id: orderId }, plan: { kind: 'parts_add', lines: [{ client_key: partAddKey(inventoryId, sourceLineId), inventory_id: inventoryId, quantity: String(quantity), source_service_id: sourceServiceId || null, source_line_id: sourceLineId || null, pricing_intent: body.pricing_intent }] } }, async (confirmation, options) => (await api.post(`/repair-orders/${orderId}/parts`, { ...body, ...confirmation }, options)).data, body)
     },
     onSuccess: async (_data, variables) => {
       setStockShortages((current) => {
@@ -1885,8 +1800,10 @@ export default function PriceBuilderPanel({
       toast.success('Part added')
     },
     onError: (err: unknown, variables) => {
+      if (err instanceof PricingCancelled) return
       const shortage = stockShortageFromError(err)
       if (shortage && shortage.inventoryId === variables.inventoryId) {
+        pricingCommand.clearError()
         setStockShortages((current) => ({
           ...current,
           [partAddKey(variables.inventoryId, variables.sourceLineId)]: shortage,
@@ -1946,21 +1863,35 @@ export default function PriceBuilderPanel({
 
   const isNoMatchCandidate = searchWarnings.some((w) => w.code === 'no_saved_match')
 
+  const applyOperationCandidate = async (candidate: RepairOperationCandidate, estimatedHours?: number | string): Promise<PriceBuildSummary> => {
+    // Catalog search results attach the complete service, including its parts.
+    // Keep this identical to flat-service previews and retain the labor-only adapter.
+    if (candidate.operation_id.startsWith('service:')) {
+      const serviceId = candidate.operation_id.slice('service:'.length)
+      return pricingCommand.execute<PriceBuildSummary>({
+        context: { kind: 'repair_order', repair_order_id: orderId },
+        plan: { kind: 'service_apply', service_id: serviceId, quantity: '1' },
+      }, async (confirmation, options) => (await api.post(`/repair-orders/${orderId}/price-build/flat-service`, {
+        service_id: serviceId, quantity: 1, ...confirmation,
+      }, options)).data)
+    }
+    return (await api.post(`/repair-orders/${orderId}/price-build/repair-ops/apply`, {
+      operation_id: candidate.operation_id,
+      name: candidate.name,
+      description: candidate.description,
+      estimated_hours: estimatedHours ?? candidate.estimated_hours,
+      provider: candidate.provider,
+      auto_recalc_enabled: true,
+    })).data
+  }
+
   const applyRepairOp = useMutation({
     mutationFn: async ({ candidate, estimatedHours }: { candidate: RepairOperationCandidate; estimatedHours?: string }) => {
       const hours = estimatedHours != null ? parseFloat(estimatedHours || '0') : parseFloat(candidate.estimated_hours || '0')
       if (estimatedHours != null && (!Number.isFinite(hours) || hours <= 0)) {
         throw new Error('Book time hours must be greater than 0')
       }
-      const response = await api.post(`/repair-orders/${orderId}/price-build/repair-ops/apply`, {
-        operation_id: candidate.operation_id,
-        name: candidate.name,
-        description: candidate.description,
-        estimated_hours: estimatedHours != null ? hours : candidate.estimated_hours,
-        provider: candidate.provider,
-        auto_recalc_enabled: true,
-      })
-      return response.data as PriceBuildSummary
+      return applyOperationCandidate(candidate, estimatedHours != null ? hours : undefined)
     },
     onSuccess: async (data) => {
       const targetedWarnings = (data.warnings || []).filter((warning) => warning.line_id)
@@ -1989,7 +1920,7 @@ export default function PriceBuilderPanel({
       await invalidate()
       if (!targetedWarnings.length) toast.success('Repair operation applied')
     },
-    onError: (err: unknown) => toast.error(err instanceof Error ? err.message : 'Unable to apply operation'),
+    onError: (err: unknown) => { if (!(err instanceof PricingCancelled)) toast.error(errorDetail(err, err instanceof Error ? err.message : 'Unable to apply operation')) },
   })
 
   // Fork from the simple "new operation" row into the full Labor Book Time form:
@@ -2019,14 +1950,7 @@ export default function PriceBuilderPanel({
   const applyLaborBookEntry = useMutation({
     mutationFn: async (entry: LaborBookTimeEntry) => {
       const candidate = laborBookTimeCandidate(entry)
-      await api.post(`/repair-orders/${orderId}/price-build/repair-ops/apply`, {
-        operation_id: candidate.operation_id,
-        name: candidate.name,
-        description: candidate.description,
-        estimated_hours: candidate.estimated_hours,
-        provider: candidate.provider,
-        auto_recalc_enabled: true,
-      })
+      await applyOperationCandidate(candidate)
     },
     onSuccess: async () => {
       setSearchTerm('')
@@ -2065,14 +1989,7 @@ export default function PriceBuilderPanel({
       })
       const entry = response.data as LaborBookTimeEntry
       const candidate = laborBookTimeCandidate(entry)
-      await api.post(`/repair-orders/${orderId}/price-build/repair-ops/apply`, {
-        operation_id: candidate.operation_id,
-        name: candidate.name,
-        description: candidate.description,
-        estimated_hours: candidate.estimated_hours,
-        provider: candidate.provider,
-        auto_recalc_enabled: true,
-      })
+      await applyOperationCandidate(candidate)
       return entry
     },
     onSuccess: async (entry) => {
@@ -2660,6 +2577,8 @@ export default function PriceBuilderPanel({
 
   return (
     <div className="db-price-builder relative flex h-full min-h-full flex-col overflow-hidden bg-white">
+      {pricingCommand.dialog}
+      {adHocPricing.dialog}
       <div
         className="db-workspace-header px-5 py-4 text-white"
         style={{
@@ -2712,6 +2631,7 @@ export default function PriceBuilderPanel({
                   a different question from whose truck this is: the shop's own
                   fleet is isInternalOrder, and a paying carrier can be on a fleet
                   plan too. */}
+              {!isDeleted && <RepairOrderScheduleControl key={orderId} orderId={orderId} schedule={schedule} onUpdated={onUpdated} />}
               {!compactWorkspace && customerIdentity}
               {isInternalOrder && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-white/24 px-2.5 py-1.5 text-[11px] uppercase tracking-[0.08em] text-white ring-1 ring-white/30">
@@ -2745,6 +2665,7 @@ export default function PriceBuilderPanel({
       </div>
 
       <div className="db-workspace-scroll">
+      {workspaceNotice}
       {compactWorkspace && <div className="db-job-customer-mobile">{customerIdentity}</div>}
       {isOnHold && <p role="status" className="break-words border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-[#78350f]"><strong>On hold</strong> · {holdLabel}</p>}
       {/* Operational workflow is primary. Estimates are optional authorization
@@ -3541,7 +3462,7 @@ export default function PriceBuilderPanel({
                           <div className="min-w-0">
                             <p className="truncate text-sm font-semibold text-gray-900">{item.name}</p>
                             <p className="truncate font-['JetBrains_Mono',monospace] text-[11px] text-slate-600">
-                              {item.sku} · {item.stock_quantity} in stock{unitAbbr ? ` (${unitAbbr})` : ''} · list {money(item.selling_price)}
+                              {item.sku} · {item.stock_quantity} in stock{unitAbbr ? ` (${unitAbbr})` : ''} · catalog estimate {money(item.selling_price)}
                             </p>
                           </div>
                           <div className="flex shrink-0 items-center gap-2">
@@ -3803,11 +3724,12 @@ export default function PriceBuilderPanel({
                                 onApply={async (next) => {
                                   setPriceSavingId(pu.id)
                                   try {
-                                    await api.patch(`/repair-orders/${orderId}/parts/${pu.id}`, { unit_price: next })
+                                    await api.patch(`/repair-orders/${orderId}/parts/${pu.id}`, { ...next, expected_pricing_version: pu.pricing?.pricing_version })
                                     await invalidate()
-                                    toast.success(`${pu.inventory_name} price set to $${next.toFixed(2)}`)
+                                    toast.success(`${pu.inventory_name} price updated`)
                                   } catch (err: unknown) {
-                                    toast.error(errorDetail(err, 'Failed to update price'))
+                                    await invalidate()
+                                    throw err
                                   } finally {
                                     setPriceSavingId(null)
                                   }
@@ -3818,6 +3740,7 @@ export default function PriceBuilderPanel({
                         ) : (
                           <>${parseFloat(pu.unit_price).toFixed(2)}</>
                         )}
+                        {pu.pricing && <span className="db-parts-pricing__source ml-1">{priceSourceLabel(pu.pricing.current_source, pu.pricing.policy_source)}</span>}
                       </td>
                       {hasSavings && <td role="cell" className="db-part-savings py-1.5 px-2.5 text-right">
                         <span aria-hidden="true" className="db-part-mobile-label">Savings</span>
@@ -3949,7 +3872,7 @@ export default function PriceBuilderPanel({
                           <div className="min-w-0">
                             <p className="truncate text-sm font-semibold text-gray-900">{item.name}</p>
                             <p className="truncate font-['JetBrains_Mono',monospace] text-[11px] text-gray-500">
-                              {item.sku} · {item.stock_quantity} in stock ({unitAbbr}) · list {money(item.selling_price)}
+                              {item.sku} · {item.stock_quantity} in stock ({unitAbbr}) · catalog estimate {money(item.selling_price)}
                             </p>
                           </div>
                           <div className="flex shrink-0 items-center gap-2">
@@ -4983,3 +4906,4 @@ export default function PriceBuilderPanel({
     </div>
   )
 }
+import { laborSourceLabel, type SafeLaborPricing } from '@/features/customer-pricing/contract'

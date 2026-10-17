@@ -1,3 +1,5 @@
+import { scheduleDeadline, type OrderScheduleSummary } from '../repair-orders/repairOrderSchedule'
+import '../repair-orders/repairOrderSchedule.css'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import {
   History,
@@ -12,7 +14,7 @@ import { elapsedSince, shortDuration } from '@/lib/elapsed'
 export type ActionQueueLane = 'needs_action' | 'on_floor' | 'ready_to_close' | 'closed_today'
 type ActionQueueFilter = 'all' | ActionQueueLane
 
-export interface ActionQueueOrder {
+export interface ActionQueueOrder extends OrderScheduleSummary {
   id: string
   order_number: string
   status: string
@@ -341,7 +343,7 @@ export default function ShopCockpitActionLedger({
                     </span>
                     <span className="db-action-ledger__status">
                       <strong>{statusLabel(order)}</strong>
-                      <span>{order.mechanic_name || updatedLabel(order.updated_at)}</span>
+                      <span className={order.promised_finish_at ? "db-order-schedule-deadline" : undefined} data-overdue={order.is_overdue || undefined}>{scheduleDeadline(order) || order.mechanic_name || updatedLabel(order.updated_at)}</span>
                     </span>
                     <span className="db-action-ledger__amount">
                       <strong>{currency(order.total_cost)}</strong>

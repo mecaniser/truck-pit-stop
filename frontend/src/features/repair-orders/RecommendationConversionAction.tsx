@@ -19,7 +19,7 @@ type Props = ConversionContext & {
   contextOrderId?: string
   conversion?: RecommendationConversion | null
 }
-type Submission = { request_id: string; hours: string; hourly_rate: string; replaces_conversion_id: string | null }
+type Submission = { request_id: string; hours: string; hourly_rate?: string; pricing_intent: 'default' | 'manual'; replaces_conversion_id: string | null }
 const responseSchema = z.object({ conversion: conversionSchema, replayed: z.boolean() })
 const money = (value: number) => value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 
@@ -49,6 +49,7 @@ export default function RecommendationConversionAction({ recommendationId, descr
   const [open, setOpen] = useState(false)
   const [hours, setHours] = useState('')
   const [rate, setRate] = useState(hourlyRate == null ? '' : hourlyRate.toFixed(2))
+  const [rateEdited, setRateEdited] = useState(false)
   const [error, setError] = useState('')
   const [conflict, setConflict] = useState<RecommendationConversion | null>(null)
   // A refresh can reveal removal/cancellation after a concurrent-add conflict.
@@ -86,7 +87,7 @@ export default function RecommendationConversionAction({ recommendationId, descr
         if (!cached || typeof cached !== 'object' || !('items' in cached) || !Array.isArray(cached.items)) return cached
         return { ...cached, items: cached.items.map((item) => item.id === recommendationId ? { ...item, conversion: linked } : item) }
       })
-      setOpen(false); setError(''); setConflict(null); submission.current = null
+      setOpen(false); setError(''); setConflict(null); setHours(''); setRateEdited(false); submission.current = null
       await Promise.all([
         ['recommended-work'], ['recommended-services'], ['price-build', contextOrderId],
         ['repair-order-detail', contextOrderId], ['repair-orders'],
@@ -110,7 +111,7 @@ export default function RecommendationConversionAction({ recommendationId, descr
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
       <ConversionLink conversion={effective} contextOrderId={contextOrderId} onOpenOperation={onOpenOperation} />
       {mayAdd && !open && <button ref={trigger} type="button" onClick={() => {
-        if (!submission.current && !hours) setRate(hourlyRate == null ? '' : hourlyRate.toFixed(2))
+        if (!submission.current && !hours && !rateEdited) setRate(hourlyRate == null ? '' : hourlyRate.toFixed(2))
         setOpen(true)
       }} className="inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-xs font-semibold text-orange-700 hover:bg-orange-50"
         aria-label={`${effective ? 'Add again' : 'Add to this order'}: ${description}`}>
@@ -123,8 +124,8 @@ export default function RecommendationConversionAction({ recommendationId, descr
         event.preventDefault()
         if (mutation.isPending) return
         if (!submission.current) {
-          if (parsedHours == null || !validRate) { setError('Enter 0.01–999.99 hours and a valid rate with up to two decimals.'); return }
-          submission.current = { request_id: crypto.randomUUID(), hours: parsedHours.toFixed(2), hourly_rate: parsedRate.toFixed(2), replaces_conversion_id: effective?.id ?? null }
+          if (parsedHours == null || (rateEdited && !validRate)) { setError('Enter 0.01–999.99 hours and a valid rate with up to two decimals.'); return }
+          submission.current = { request_id: crypto.randomUUID(), hours: parsedHours.toFixed(2), ...(rateEdited ? { hourly_rate: parsedRate.toFixed(2) } : {}), pricing_intent: rateEdited ? 'manual' : 'default', replaces_conversion_id: effective?.id ?? null }
         }
         setError(''); mutation.mutate(submission.current)
       }}>
@@ -137,7 +138,7 @@ export default function RecommendationConversionAction({ recommendationId, descr
         </label>
         <label className="min-w-0 flex-1 basis-24 text-xs font-medium text-gray-700">Rate / hr
           <input type="text" inputMode="decimal" value={rate} readOnly={rateReadOnly} disabled={mutation.isPending || !!submission.current}
-            onChange={(event) => { setRate(event.target.value); setError('') }}
+            onChange={(event) => { setRate(event.target.value); setRateEdited(true); setError('') }}
             className="mt-1 block h-8 w-full min-w-0 rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-900 disabled:opacity-60" />
         </label>
         <span className="py-1 text-sm font-semibold tabular-nums text-gray-900">Labor {parsedHours != null && validRate ? money(conversionTotal(parsedHours, parsedRate)) : '—'}</span>

@@ -1,4 +1,4 @@
-from pydantic import AnyHttpUrl, BaseModel, Field, TypeAdapter, field_validator
+from pydantic import AnyHttpUrl, BaseModel, Field, TypeAdapter, field_validator, model_serializer
 from typing import Literal, Optional, List
 from datetime import datetime
 from uuid import UUID
@@ -6,6 +6,7 @@ from decimal import Decimal
 from app.db.models.repair_order import RepairOrderStatus
 from app.db.models.labor import LaborLineType
 from app.db.models.recommended_service import RecommendedServicePriority
+from app.schemas.parts_pricing import SafePrice
 from app.schemas.recommendation_conversion import RecommendationConversionResponse, RecommendationSourceResponse
 from app.core.work_value_validation import validate_labor_hours, validate_part_quantity
 
@@ -39,6 +40,7 @@ class AdHocPartCreate(BaseModel):
     was any way to make one from the job that needs it.
     """
 
+    pricing_presentation: Optional[Literal['shop', 'fleet']] = None
     name: str = Field(min_length=1, max_length=255)
     # Optional: a tech holding a box may have a part number, or only a name.
     sku: Optional[str] = Field(default=None, max_length=100)
@@ -64,6 +66,11 @@ class AdHocPartCreate(BaseModel):
 
 
 class PartsUsageCreate(BaseModel):
+    client_key: str = 'part'
+    pricing_intent: Literal['default', 'manual', 'stock'] = 'default'
+    price_override_reason: Optional[str] = Field(default=None, max_length=500)
+    pricing_preview_fingerprint: Optional[str] = None
+    pricing_presentation: Optional[Literal['shop', 'fleet']] = None
     inventory_id: UUID
     # Decimal so fluid parts (oil, coolant, DEF) can be entered in fractional
     # amounts, e.g. 1.25 gallons.
@@ -82,6 +89,10 @@ class PartsUsageCreate(BaseModel):
 
 
 class PartsUsageUpdate(BaseModel):
+    expected_pricing_version: Optional[int] = Field(default=None, ge=0)
+    price_action: Optional[Literal['manual', 'list', 'stock']] = None
+    price_override_reason: Optional[str] = Field(default=None, max_length=500)
+    pricing_presentation: Optional[Literal['shop', 'fleet']] = None
     quantity: Optional[Decimal] = None
     unit_price: Optional[Decimal] = None
     allow_stock_shortage: bool = False
@@ -93,10 +104,14 @@ class PartsUsageUpdate(BaseModel):
 
 
 class PartsPricingModeRequest(BaseModel):
+    expected_parts_fingerprint: Optional[str] = None
+    note: Optional[str] = Field(default=None, max_length=500)
     mode: str  # 'stock' (all parts at garage cost) | 'list' (all parts at list price)
 
 
 class DiscountUpdate(BaseModel):
+    expected_parts_fingerprint: Optional[str] = None
+    note: Optional[str] = Field(default=None, max_length=500)
     parts_pricing_mode: Optional[Literal['stock', 'list']] = None
     labor_discount_amount: Optional[Decimal] = None
     order_discount_amount: Optional[Decimal] = None
@@ -114,6 +129,9 @@ class DiscountUpdate(BaseModel):
 
 
 class PartsUsageResponse(BaseModel):
+    pricing_audience: str = Field(default="public", exclude=True)
+    pricing: Optional[SafePrice] = None
+    pricing_version: Optional[int] = None
     id: UUID
     repair_order_id: UUID
     inventory_id: UUID
@@ -133,6 +151,17 @@ class PartsUsageResponse(BaseModel):
 
     class Config:
         from_attributes = True
+    @model_serializer(mode='wrap')
+    def serialize_audience(self, handler):
+        data = handler(self)
+        if self.pricing is None: data.pop('pricing', None)
+        if self.pricing_version is None: data.pop('pricing_version', None)
+        if self.pricing_audience != 'shop': data.pop('unit_cost', None)
+        if self.pricing_audience == 'fleet':
+            for key in ('unit_price', 'list_price', 'savings', 'total_price'):
+                data.pop(key, None)
+        return data
+
 
 
 class RepairOrderHistoryEventResponse(BaseModel):
@@ -194,9 +223,10 @@ class PartSuggestionsResponse(BaseModel):
 
 
 class LaborCreate(BaseModel):
+    pricing_intent: Optional[Literal["default", "manual"]] = None
     description: Optional[str] = None
     hours: Decimal
-    hourly_rate: Decimal
+    hourly_rate: Optional[Decimal] = None
     mechanic_id: Optional[UUID] = None
     service_code: Optional[str] = None
     line_type: LaborLineType = LaborLineType.MANUAL
@@ -234,6 +264,13 @@ class LaborUpdate(BaseModel):
 
 
 class LaborResponse(BaseModel):
+    pricing: Optional[dict] = None
+    @model_serializer(mode='wrap')
+    def omit_private_pricing(self, handler):
+        data = handler(self)
+        if self.pricing is None: data.pop('pricing', None)
+        return data
+
     recommendation_source: Optional[RecommendationSourceResponse] = None
     id: UUID
     repair_order_id: UUID
@@ -306,6 +343,8 @@ class RepairOrderBase(BaseModel):
 
 
 class RepairOrderCreate(RepairOrderBase):
+    expected_pricing_policy: Optional[str] = None
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None
     originating_call_reference: Optional[str] = Field(None, min_length=1, max_length=4096)
     customer_id: UUID
     vehicle_id: UUID
@@ -348,6 +387,13 @@ class RepairOrderUpdate(BaseModel):
 
 
 class RepairOrderResponse(RepairOrderBase):
+    pricing_policy: Optional[dict] = None
+    @model_serializer(mode='wrap')
+    def omit_private_policy(self, handler):
+        data = handler(self)
+        if self.pricing_policy is None: data.pop('pricing_policy', None)
+        return data
+
     id: UUID
     tenant_id: UUID
     customer_id: UUID
@@ -360,6 +406,10 @@ class RepairOrderResponse(RepairOrderBase):
     total_cost: Decimal
     created_at: datetime
     updated_at: datetime
+    scheduled_start_at: Optional[datetime] = None
+    promised_finish_at: Optional[datetime] = None
+    schedule_timezone: Optional[str] = None
+    is_overdue: bool = False
     work_started_at: Optional[datetime] = None
     work_completed_at: Optional[datetime] = None
     vehicle_released_at: Optional[datetime] = None
@@ -450,6 +500,8 @@ class PriceBuildWarning(BaseModel):
 
 
 class PriceBuildFlatServiceRequest(BaseModel):
+    pricing_preview_fingerprint: Optional[str] = None
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None
     service_id: UUID
     quantity: int = Field(default=1, ge=1, le=999)
 
@@ -467,6 +519,8 @@ class RepairOperationCandidate(BaseModel):
 
 
 class PriceBuildRepairOpsApplyRequest(BaseModel):
+    pricing_preview_fingerprint: Optional[str] = None
+    pricing_presentation: Optional[Literal['shop', 'fleet']] = None
     operation_id: str
     name: Optional[str] = None
     description: Optional[str] = None
@@ -493,6 +547,16 @@ class PriceBuildLineUpdateRequest(BaseModel):
 
 
 class PriceBuildSummaryResponse(BaseModel):
+    pricing_policy: Optional[dict] = None
+    @model_serializer(mode='wrap')
+    def safe_parts_token(self, handler):
+        data = handler(self)
+        if self.pricing_policy is None: data.pop('pricing_policy', None)
+        if self.parts_pricing_fingerprint is None:
+            data.pop('parts_pricing_fingerprint', None)
+        return data
+
+    parts_pricing_fingerprint: Optional[str] = None
     recommendation_hourly_rate: Optional[Decimal] = None
     can_convert_recommendations: bool = False
     order_id: UUID
@@ -519,6 +583,8 @@ class PriceBuildSearchResponse(BaseModel):
 
 
 class QuickRepairOrderCreate(BaseModel):
+    expected_pricing_policy: Optional[str] = None
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None
     phone: Optional[str] = None
     vehicle_description: Optional[str] = None
     complaint: Optional[str] = None

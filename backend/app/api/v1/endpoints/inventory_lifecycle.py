@@ -66,6 +66,8 @@ MANUAL_TENDER = Literal["cash", "check", "ach", "zelle", "external_terminal", "f
 
 
 class SaleLineInput(BaseModel):
+    sale_line_id: UUID | None = None
+    pricing_intent: Literal['default','manual','stock','list'] = 'default'
     model_config = ConfigDict(extra="forbid")
     inventory_id: UUID
     quantity: int = Field(ge=1, le=999)
@@ -74,6 +76,8 @@ class SaleLineInput(BaseModel):
 
 
 class SaleDraftInput(BaseModel):
+    pricing_preview_fingerprint: str | None = None
+    pricing_presentation: Literal['shop','fleet'] | None = None
     model_config = ConfigDict(extra="forbid")
     customer_id: UUID | None = None
     buyer_name: str | None = Field(default=None, max_length=255)
@@ -518,6 +522,21 @@ async def list_counter_sales(
     }
 
 
+async def _project_counter_replay(db, tenant_id, user, receipt):
+    """Replay original facts with permissions rederived from the current actor."""
+    import copy
+    from app.services.counter_sale_service import MANAGER_ROLES
+    sale = await tenant_sale(db, tenant_id, UUID(receipt['id']))
+    current = await serialize_sale(db, sale, user)
+    result = copy.deepcopy(receipt)
+    result['allowed_actions'] = current['allowed_actions']
+    can_override = user.role in MANAGER_ROLES and sale.status == 'draft'
+    for line in result.get('lines', []):
+        if line.get('pricing'):
+            line['pricing']['can_override'] = can_override
+    return result
+
+
 @router.post("/counter-sales", status_code=201)
 async def create_counter_sale(
     body: SaleDraftInput,
@@ -526,6 +545,8 @@ async def create_counter_sale(
     user: User = Depends(get_current_active_user),
 ):
     tenant, _tenders = await require_counter_sales_enabled(db, user)
+    from app.services.parts_pricing import lock_tenant_financials
+    await lock_tenant_financials(db, tenant.id)
     payload = body.model_dump(mode="json")
     replay, record, replayed = await _mutation(
         db,
@@ -537,7 +558,7 @@ async def create_counter_sale(
         payload=payload,
     )
     if replayed:
-        return replay
+        return await _project_counter_replay(db, tenant.id, user, replay)
     sale, _lines = await create_or_replace_draft(
         db,
         tenant=tenant,
@@ -548,6 +569,8 @@ async def create_counter_sale(
         buyer_email=str(body.buyer_email) if body.buyer_email else None,
         buyer_phone=body.buyer_phone,
         line_inputs=[line.model_dump() for line in body.lines],
+        pricing_preview_fingerprint=body.pricing_preview_fingerprint,
+        pricing_presentation=body.pricing_presentation,
     )
     await db.flush()
     await db.refresh(sale)
@@ -576,9 +599,9 @@ async def update_counter_sale(
     user: User = Depends(get_current_active_user),
 ):
     tenant, _tenders = await require_counter_sales_enabled(db, user)
-    sale = await tenant_sale(db, tenant.id, sale_id, lock=True)
-    if sale.version != body.expected_version:
-        raise HTTPException(status_code=409, detail="Counter sale version conflict")
+    from app.services.parts_pricing import lock_tenant_financials
+    await tenant_sale(db, tenant.id, sale_id)
+    await lock_tenant_financials(db, tenant.id)
     replay, record, replayed = await _mutation(
         db,
         tenant_id=tenant.id,
@@ -589,7 +612,10 @@ async def update_counter_sale(
         payload=body.model_dump(mode="json"),
     )
     if replayed:
-        return replay
+        return await _project_counter_replay(db, tenant.id, user, replay)
+    sale = await tenant_sale(db, tenant.id, sale_id, lock=True)
+    if sale.version != body.expected_version:
+        raise HTTPException(status_code=409, detail="Counter sale version conflict")
     sale, _lines = await create_or_replace_draft(
         db,
         tenant=tenant,
@@ -600,6 +626,8 @@ async def update_counter_sale(
         buyer_email=str(body.buyer_email) if body.buyer_email else None,
         buyer_phone=body.buyer_phone,
         line_inputs=[line.model_dump() for line in body.lines],
+        pricing_preview_fingerprint=body.pricing_preview_fingerprint,
+        pricing_presentation=body.pricing_presentation,
     )
     await db.flush()
     await db.refresh(sale)

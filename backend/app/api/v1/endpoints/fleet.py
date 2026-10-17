@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, Query, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, Query, Response, Header
 from pydantic import BaseModel
 from app.schemas.fleet_driver_record import TruckDriverRecordRead
 from app.services import fleet_driver_records
@@ -27,7 +27,9 @@ from app.db.models.inventory import PartsUsage, Inventory
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.repair_order_history import RepairOrderHistoryEvent
 from app.db.models.labor import Labor, LaborLineType
-from app.services import service_checklist, operation_execution
+from app.services import service_checklist, operation_execution, parts_pricing, customer_pricing as account_pricing
+from app.services.parts_pricing_planner import build_plan, apply_plan_parts
+from app.schemas.parts_pricing import ResolveRequest
 from app.db.models.service import Service, ServicePart
 from app.db.models.tenant import Tenant
 from app.db.models.customer import Customer
@@ -915,7 +917,7 @@ async def create_work_order_for_inspection(
         _append_to_visit(ro, description)
     else:
         ro = await _spawn_internal_ro(
-            db, current_user.tenant_id, insp.vehicle, is_pm=False, description=description,
+            db, current_user.tenant_id, insp.vehicle, is_pm=False, description=description, actor=current_user,
         )
     insp.repair_order_id = ro.id
     await db.commit()
@@ -1257,6 +1259,7 @@ async def create_repair_for_incident(
             vehicle,
             is_pm=False,
             description=complaint,
+            actor=current_user,
         )
     incident.repair_order_id = ro.id
     if incident.status == IncidentStatus.OPEN:
@@ -2956,23 +2959,33 @@ async def _spawn_internal_ro(
     description: str,
     bill_to_customer_id: Optional[UUID] = None,
     commit: bool = True,
+    actor: Optional[User] = None,
+    pricing_plan=None,
+    expected_pricing_policy: Optional[str] = None,
+    pricing_presentation: Optional[str] = None,
 ) -> RepairOrder:
     from app.api.v1.endpoints.repair_orders import generate_order_number
     from app.core.unique_id import create_with_retry
     from app.core.metrics import record_repair_order_created
 
+    from types import SimpleNamespace
+    actor=actor or SimpleNamespace(tenant_id=tenant_id,id=None,role=UserRole.GARAGE_OWNER)
     payer_id = bill_to_customer_id or vehicle.customer_id
-    payer = (await db.execute(select(Customer).where(
-        Customer.id == payer_id,
-        Customer.tenant_id == tenant_id,
-        Customer.deleted_at.is_(None),
-    ))).scalar_one_or_none()
-    if not payer:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill-to company not found")
-    tenant = await db.get(Tenant, tenant_id)
-    if not tenant:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
-    uses_internal_pricing = uses_internal_fleet_pricing(payer, tenant)
+    await parts_pricing.lock_tenant_financials(db,tenant_id)
+    payer=await account_pricing.live_customer(db,tenant_id,payer_id,lock=True)
+    tenant=await db.get(Tenant,tenant_id)
+    if tenant is None:raise HTTPException(404,'Tenant not found')
+    uses_internal_pricing=uses_internal_fleet_pricing(payer,tenant)
+    if pricing_plan is not None:
+        policy_snapshot=pricing_plan.account_snapshot
+        if pricing_plan.order.customer_id!=payer.id:raise HTTPException(409,'Bill-to company changed')
+        if expected_pricing_policy:
+            view=account_pricing.intake_view(actor,payer.id,vehicle.id,policy_snapshot,pricing_presentation)
+            unbound=account_pricing.intake_view(actor,payer.id,None,policy_snapshot,pricing_presentation)
+            if expected_pricing_policy not in {view['expected_pricing_policy'],unbound['expected_pricing_policy']}:
+                parts_pricing.fail('account_pricing_changed','The account pricing changed. Review the current defaults before creating the order.',409,preview=view)
+    else:
+        policy_snapshot,_=await account_pricing.capture(db,actor,payer.id,vehicle.id,expected=expected_pricing_policy,presentation=pricing_presentation)
     await ensure_vehicle_relationship(
         db,
         tenant_id=tenant_id,
@@ -2984,6 +2997,7 @@ async def _spawn_internal_ro(
     async def _create(order_number: str) -> RepairOrder:
         ro = RepairOrder(
             id=uuid4(), tenant_id=tenant_id, customer_id=payer.id,
+            pricing_policy_snapshot=policy_snapshot,pricing_matrix_revision_id=account_pricing.revision_id(policy_snapshot),
             vehicle_id=vehicle.id, order_number=order_number,
             status=RepairOrderStatus.DRAFT,
             is_internal=uses_internal_pricing,
@@ -3114,16 +3128,28 @@ async def _set_vehicle_pm_services(
 
 async def _apply_pm_services_to_ro(
     db: AsyncSession, tenant_id: UUID, ro: RepairOrder, services: list[Service],
-    *, rewrite_description: bool = True, actor: Optional[User] = None,
+    *, rewrite_description: bool = True, actor: Optional[User] = None, pricing_plan=None,
+    pricing_preview_fingerprint=None, pricing_presentation=None,
 ) -> None:
     """Attach `services` to the PM work order: record the per-PM service list,
     roll the service names into the description (manager-facing scope), and
-    re-seed the owner-facing labor + parts cost lines from those services.
+    reconcile the owner-facing labor and parts with the confirmed pricing plan.
 
-    Idempotent: prior service-sourced rows are cleared and rebuilt, so this can
-    run again whenever the service selection changes (while the WO is a draft).
+    Retained parts preserve their identity, original cost, default, charge and
+    reservation. Only new or removed components add or remove financial scope.
     """
     from decimal import Decimal
+
+    if pricing_plan is None:
+        from types import SimpleNamespace
+        planning_actor = actor or SimpleNamespace(tenant_id=tenant_id, id=None, role=UserRole.GARAGE_OWNER)
+        pricing_plan = await build_plan(db, planning_actor, ResolveRequest.model_validate({
+            'context': {'kind':'repair_order','repair_order_id':ro.id},
+            'plan': {'kind':'pm_replace','service_ids':[service.id for service in services]},
+            'pricing_presentation': pricing_presentation,
+        }), lock=True)
+        pricing_plan.confirm(pricing_preview_fingerprint)
+    services = pricing_plan.services
 
     # Validate the complete generated bundle before deleting, inserting, or
     # mutating any repair-order data.
@@ -3158,14 +3184,6 @@ async def _apply_pm_services_to_ro(
     await db.flush()
     for i, service in enumerate(services):
         db.add(RepairOrderPMService(id=uuid4(), tenant_id=tenant_id, repair_order_id=ro.id, service_id=service.id, sort_order=i))
-    if reseeded_service_ids:
-        old_parts = await db.execute(select(PartsUsage).where(
-            PartsUsage.repair_order_id == ro.id, PartsUsage.tenant_id == tenant_id,
-            PartsUsage.source_service_id.in_(reseeded_service_ids),
-        ))
-        for row in old_parts.scalars().all():
-            await db.delete(row)
-
     # 3) Manager-facing scope: PM description lists the selected service names.
     #    When no services are selected, keep whatever description the spawn set.
     #    A repair order the manager described in their own words keeps that
@@ -3174,14 +3192,13 @@ async def _apply_pm_services_to_ro(
         names = ", ".join(s.name for s in services)
         ro.description = f"Preventive maintenance: {names}"
 
-    # 4) Owner-facing costing: fleet parts are always at inventory cost. Labor
-    # may use the truck's snapshotted customer-rate setting.
+    # Labor retains the adapter's existing snapshotted customer-rate setting.
+    # Parts use the canonical confirmed plan and preserve retained money.
     tenant_res = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
     tenant = tenant_res.scalar_one_or_none()
-    labor_rate = Decimal(str(
-        (tenant.labor_rate if fleet_labor_uses_customer_rate(ro) else tenant.internal_labor_rate) if tenant else 0
-    ))
+    labor_rate,_ = account_pricing.labor_default(ro,tenant,legacy_fleet=True)
 
+    parent_ids = {}
     for s in services:
         hours, part_quantities = validated_values[s.id]
         prior_labor = old_by_service.get(s.id)
@@ -3191,31 +3208,22 @@ async def _apply_pm_services_to_ro(
             await operation_execution.guard_material_edit(db, ro, prior_labor, {"description": s.name, "hours": hours})
             new_labor.description = s.name
             new_labor.hours = hours
-            new_labor.hourly_rate = labor_rate
-            new_labor.total_cost = (hours * labor_rate).quantize(Decimal("0.01"))
+            new_labor.total_cost = (hours * new_labor.hourly_rate).quantize(Decimal("0.01"))
         else:
-            new_labor = Labor(execution_status="pending", id=uuid4(), tenant_id=tenant_id, repair_order_id=ro.id,
+            labor_rate,origin,source=account_pricing.new_labor(ro,tenant,actor,legacy_fleet=True)
+            new_labor = Labor(execution_status="pending",
+                pricing_snapshot=origin,pricing_source=source, id=uuid4(), tenant_id=tenant_id, repair_order_id=ro.id,
                 description=s.name, hours=hours, hourly_rate=labor_rate, total_cost=(hours * labor_rate).quantize(Decimal("0.01")),
                 line_type=LaborLineType.FLAT_SERVICE, source_service_id=s.id)
             operation_execution.enroll_new_scope(ro)
             db.add(new_labor)
             await db.flush()
+            if actor is not None: account_pricing.audit_labor(db,actor,ro,new_labor)
             if s.id not in prior_pm_service_ids:
                 await service_checklist.snapshot_service(db, ro, new_labor, s, actor)
-        for sp in s.service_parts:
-            inv = sp.inventory_item
-            if inv is None:
-                continue
-            # Internal orders cost parts at inventory cost, not selling price.
-            unit_price = Decimal(str(inv.cost or 0))
-            qty = part_quantities[sp.id]
-            db.add(PartsUsage(
-                id=uuid4(), tenant_id=tenant_id, repair_order_id=ro.id,
-                inventory_id=inv.id, quantity=qty,
-                unit_price=unit_price, list_price=unit_price,
-                total_price=(unit_price * qty).quantize(Decimal("0.01")),
-                source_service_id=s.id,
-            ))
+        parent_ids[s.id] = new_labor.id
+
+    await apply_plan_parts(db, actor, ro, pricing_plan, parent_ids, components_only=True)
 
     selected_ids = {service.id for service in services}
     for old_labor in old_lines:
@@ -3432,6 +3440,7 @@ async def get_wo_pm_services(
 async def set_wo_pm_services(
     ro_id: UUID,
     body: PMServicesUpdate,
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_fleet_access),
 ):
@@ -3443,6 +3452,8 @@ async def set_wo_pm_services(
         _refresh_repair_order_totals,
     )
 
+    record, replay = await parts_pricing.begin_write(db,current_user,idempotency_key,f'fleet:{ro_id}:pm-replace',body.model_dump(mode='json'))
+    if replay is not None: return replay['items']
     services = await _load_pm_services(db, current_user.tenant_id, body.service_ids)
     if len(services) != len(set(body.service_ids)):
         raise HTTPException(
@@ -3461,10 +3472,12 @@ async def set_wo_pm_services(
             status_code=status.HTTP_409_CONFLICT,
             detail="PM services can only be changed while the work order is a draft.",
         )
-    await _apply_pm_services_to_ro(db, current_user.tenant_id, ro, services, actor=current_user)
+    await _apply_pm_services_to_ro(db, current_user.tenant_id, ro, services, actor=current_user, pricing_preview_fingerprint=body.pricing_preview_fingerprint, pricing_presentation=body.pricing_presentation)
     await _refresh_repair_order_totals(db, ro.id)
+    response = _pm_service_entries(services)
+    parts_pricing.finish_write(record, {'items':[item.model_dump(mode='json') for item in response]})
     await db.commit()
-    return _pm_service_entries(services)
+    return response
 
 
 @router.get("/service-catalog", response_model=List[PMServiceEntry])
@@ -3490,95 +3503,35 @@ async def service_catalog(
 
 @router.post("/work-orders/{ro_id}/add-service", response_model=BoardWorkOrder)
 async def add_service_to_work_order(
-    ro_id: UUID,
-    body: AddServiceRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_fleet_access),
+    ro_id: UUID, body: AddServiceRequest,
+    idempotency_key: Optional[str] = Header(default=None, alias='Idempotency-Key'),
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(require_fleet_access),
 ):
-    """Add a single catalog service to a non-PM internal work order. Seeds one
-    labor line (service duration × in-house rate) plus the service's parts at
-    internal cost — the same costing PM services use. PM work orders are scoped
-    through their service picker instead, so this is rejected for them.
-
-    DEPRECATED. This duplicates PriceBuildService.add_flat_service_line and can
-    drift from it — the two already compute the same labor/parts seeding in two
-    places. The FleetBoard price builder calls
-    POST /repair-orders/{id}/price-build/flat-service instead, which is the
-    canonical implementation and is already open to fleet managers. Remove this
-    route once no client calls it.
-    """
-    from decimal import Decimal
-    from app.api.v1.endpoints.repair_orders import (
-        _load_pricing_order_for_update,
-        _refresh_repair_order_totals,
-    )
-
-    await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
-    svc_res = await db.execute(
-        select(Service)
-        .where(and_(
-            Service.id == body.service_id,
-            Service.tenant_id == current_user.tenant_id,
-            Service.is_active.is_(True),
-            Service.deleted_at.is_(None),
-        ))
-        .options(selectinload(Service.service_parts).selectinload(ServicePart.inventory_item))
-    )
-    service = svc_res.scalar_one_or_none()
-    if service is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Source reference not found",
-        )
-    hours, part_quantities = _validated_service_work_values([service])[service.id]
-
-    ro = await _load_pricing_order_for_update(db, ro_id)
-    if ro is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
-    if ro.is_pm:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This is a PM work order — adjust its services with the PM picker.",
-        )
-    if ro.status in TERMINAL_RO_STATUSES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot add work to a work order in '{ro.status.value}' status.",
-        )
-
-    tenant_res = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
-    tenant = tenant_res.scalar_one_or_none()
-    labor_rate = Decimal(str(
-        (tenant.labor_rate if fleet_labor_uses_customer_rate(ro) else tenant.internal_labor_rate) if tenant else 0
-    ))
-
-    new_labor = Labor(execution_status="pending",
-        id=uuid4(), tenant_id=current_user.tenant_id, repair_order_id=ro.id,
-        description=service.name, hours=hours, hourly_rate=labor_rate,
-        total_cost=(hours * labor_rate).quantize(Decimal("0.01")),
-        line_type=LaborLineType.FLAT_SERVICE, source_service_id=service.id,
-    )
-    operation_execution.enroll_new_scope(ro)
-    db.add(new_labor)
-    await service_checklist.snapshot_service(db, ro, new_labor, service, current_user)
-    for sp in service.service_parts:
-        inv = sp.inventory_item
-        if inv is None:
-            continue
-        unit_price = Decimal(str(inv.cost or 0))
-        qty = part_quantities[sp.id]
-        db.add(PartsUsage(
-            id=uuid4(), tenant_id=current_user.tenant_id, repair_order_id=ro.id,
-            inventory_id=inv.id, quantity=qty,
-            unit_price=unit_price, list_price=unit_price,
-            total_price=(unit_price * qty).quantize(Decimal("0.01")),
-            source_service_id=service.id,
-        ))
-
-    await _refresh_repair_order_totals(db, ro.id)
+    from app.api.v1.endpoints.repair_orders import _refresh_repair_order_totals
+    await _load_fleet_ro_or_404(db,current_user.tenant_id,ro_id)
+    record,replay=await parts_pricing.begin_write(db,current_user,idempotency_key,f'fleet:{ro_id}:legacy-service',body.model_dump(mode='json'))
+    if replay is not None: return replay
+    plan=await build_plan(db,current_user,ResolveRequest.model_validate({
+        'context':{'kind':'repair_order','repair_order_id':ro_id},
+        'plan':{'kind':'service_apply','service_id':body.service_id,'quantity':1,'attachment_path':'fleet_legacy_service'},
+        'pricing_presentation':body.pricing_presentation,
+    }),lock=True)
+    plan.confirm(body.pricing_preview_fingerprint)
+    ro=plan.order;service=plan.services[0]
+    hours,_=_validated_service_work_values([service])[service.id]
+    labor_rate,origin,source=account_pricing.new_labor(ro,ro.tenant,current_user,legacy_fleet=True)
+    line=Labor(id=uuid4(),execution_status='pending',tenant_id=ro.tenant_id,repair_order_id=ro.id,pricing_snapshot=origin,pricing_source=source,
+        description=service.name,hours=hours,hourly_rate=labor_rate,total_cost=(hours*labor_rate).quantize(Decimal('.01')),
+        line_type=LaborLineType.FLAT_SERVICE,source_service_id=service.id)
+    operation_execution.enroll_new_scope(ro);db.add(line);await db.flush()
+    account_pricing.audit_labor(db,current_user,ro,line)
+    await service_checklist.snapshot_service(db,ro,line,service,current_user)
+    await apply_plan_parts(db,current_user,ro,plan,{service.id:line.id},components_only=True)
+    await _refresh_repair_order_totals(db,ro.id)
+    response=_board_work_order(await _load_fleet_ro_or_404(db,current_user.tenant_id,ro_id))
+    parts_pricing.finish_write(record,response.model_dump(mode='json'))
     await db.commit()
-    ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
-    return _board_work_order(ro)
+    return response
 
 
 @router.get("/settings", response_model=FleetSettingsResponse)
@@ -3701,6 +3654,7 @@ async def list_fleet_mechanics(
 async def new_work_order(
     vehicle_id: UUID,
     body: Optional[WorkOrderCreate] = None,
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_fleet_access),
 ):
@@ -3729,43 +3683,17 @@ async def new_work_order(
         ) from exc
     vehicle = await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
 
-    # Resolve and validate every staged line before inserting the repair order.
-    # A bad inventory id or short stock therefore cannot leave behind the empty
-    # draft that this one-step builder is specifically designed to avoid.
-    services = await _load_pm_services(db, current_user.tenant_id, body.service_ids or [])
-    if len(services) != len(set(body.service_ids or [])):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Source reference not found",
-        )
-    _validated_service_work_values(services)
-
-    requested_part_ids = {line.inventory_id for line in body.part_lines}
-    inventory_by_id: dict[UUID, Inventory] = {}
-    if requested_part_ids:
-        inventory_result = await db.execute(
-            select(Inventory).where(and_(
-                Inventory.id.in_(requested_part_ids),
-                Inventory.tenant_id == current_user.tenant_id,
-            )).with_for_update()
-        )
-        inventory_by_id = {item.id: item for item in inventory_result.scalars().all()}
-        if set(inventory_by_id) != requested_part_ids:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or more inventory parts were not found")
-
-        from decimal import ROUND_CEILING
-        requested_packages: dict[UUID, int] = {}
-        for line in body.part_lines:
-            packages = int(line.quantity.to_integral_value(rounding=ROUND_CEILING))
-            requested_packages[line.inventory_id] = requested_packages.get(line.inventory_id, 0) + packages
-        for inventory_id, packages in requested_packages.items():
-            item = inventory_by_id[inventory_id]
-            if (item.stock_quantity or 0) < packages:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Not enough stock for {item.name}. Available: {item.stock_quantity or 0}.",
-                )
-
+    record,replay=await parts_pricing.begin_write(db,current_user,idempotency_key,f'fleet:{vehicle_id}:create',body.model_dump(mode='json'))
+    if replay is not None: return replay
+    plan=await build_plan(db,current_user,ResolveRequest.model_validate({
+        'context':{'kind':'fleet_draft','vehicle_id':vehicle_id,'bill_to_customer_id':body.bill_to_customer_id},
+        'plan':{'kind':'fleet_create','service_ids':body.service_ids or [],
+            'part_lines':[{**line.model_dump(),'client_key':line.client_key or f'part:{i}'} for i,line in enumerate(body.part_lines)],
+            'labor_lines':[line.model_dump() for line in body.labor_lines]},
+        'pricing_presentation':body.pricing_presentation,
+    }),lock=True)
+    plan.confirm(body.pricing_preview_fingerprint)
+    services=plan.services
     # A truck can carry several open repair orders at once, so no single-open guard.
     # No placeholder description: the field holds the complaint — what is wrong
     # with this truck — and stamping "Fleet work order" into it told a mechanic
@@ -3779,52 +3707,37 @@ async def new_work_order(
         is_pm=False,
         description=description,
         bill_to_customer_id=body.bill_to_customer_id,
+        actor=current_user,pricing_plan=plan,expected_pricing_policy=body.expected_pricing_policy,pricing_presentation=body.pricing_presentation,
         commit=False,
     )
     # Services picked while scoping the visit seed the same labor/parts lines the
     # panel would add one at a time, so the order opens ready to assign.
     if services:
         await _apply_pm_services_to_ro(
-            db, current_user.tenant_id, ro, services, rewrite_description=False, actor=current_user,
+            db, current_user.tenant_id, ro, services, rewrite_description=False, actor=current_user, pricing_plan=plan,
         )
 
     tenant = await db.get(Tenant, current_user.tenant_id)
-    labor_rate = Decimal(str(
-        (tenant.labor_rate if fleet_labor_uses_customer_rate(ro) else tenant.internal_labor_rate) if tenant else 0
-    ))
+    labor_rate,_ = account_pricing.labor_default(ro,tenant,legacy_fleet=True)
     for line in body.labor_lines:
         hours = Decimal(str(line.hours))
-        db.add(Labor(execution_status="pending",
+        labor_rate,origin,source=account_pricing.new_labor(ro,tenant,current_user,legacy_fleet=True)
+        labor=Labor(execution_status="pending",
+            pricing_snapshot=origin,pricing_source=source,
             id=uuid4(), tenant_id=current_user.tenant_id, repair_order_id=ro.id,
             description=line.description.strip(), hours=hours, hourly_rate=labor_rate,
             total_cost=(hours * labor_rate).quantize(Decimal("0.01")),
             line_type=LaborLineType.MANUAL,
-        ))
-
-    from decimal import ROUND_CEILING
-    for line in body.part_lines:
-        item = inventory_by_id[line.inventory_id]
-        quantity = Decimal(str(line.quantity))
-        packages = int(quantity.to_integral_value(rounding=ROUND_CEILING))
-        unit_price = Decimal(str(item.cost if ro.is_internal else item.selling_price))
-        db.add(PartsUsage(
-            id=uuid4(), tenant_id=current_user.tenant_id, repair_order_id=ro.id,
-            inventory_id=item.id, quantity=quantity, unit_cost=item.cost,
-            unit_price=unit_price, list_price=unit_price,
-            total_price=(unit_price * quantity).quantize(Decimal("0.01")),
-            stock_reserved_packages=packages, stock_shortage_override=False,
-        ))
-        await apply_inventory_movement(
-            db, item=item, quantity_delta=-packages,
-            movement_type="repair_reservation", actor=current_user,
-            source_type="repair_order", source_id=ro.id,
-            reason_code="fleet_work_order_part_reservation",
         )
+        db.add(labor);await db.flush()
+        account_pricing.audit_labor(db,current_user,ro,labor)
+
+    await apply_plan_parts(db,current_user,ro,plan,include_keys={line.client_key or f'part:{i}' for i,line in enumerate(body.part_lines)})
 
     from app.api.v1.endpoints.repair_orders import _refresh_repair_order_totals
 
     await _refresh_repair_order_totals(db, ro.id)
-    await db.commit()
+    await db.flush()
     await db.refresh(ro)
 
     open_list = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id, [])
@@ -3833,13 +3746,18 @@ async def new_work_order(
     await _attach_account_context(db, [truck], current_user.tenant_id)
     # The card's work_order is the most urgent one, which may be an older visit —
     # return the new order explicitly so the caller can open it without guessing.
-    return WorkOrderCreateResponse(**truck.model_dump(), created_work_order=_board_work_order(ro))
+    response = WorkOrderCreateResponse(**truck.model_dump(), created_work_order=_board_work_order(ro))
+
+    parts_pricing.finish_write(record,response.model_dump(mode='json'),201)
+    await db.commit()
+    return response
 
 
 @router.post("/trucks/{vehicle_id}/schedule-pm", response_model=BoardTruck, status_code=status.HTTP_201_CREATED)
 async def schedule_pm(
     vehicle_id: UUID,
     body: Optional[SchedulePMRequest] = None,
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_fleet_access),
 ):
@@ -3860,6 +3778,17 @@ async def schedule_pm(
     else:
         services = await _vehicle_pm_services(db, current_user.tenant_id, vehicle.id)
     _validated_service_work_values(services)
+    record,replay=await parts_pricing.begin_write(db,current_user,idempotency_key,f'fleet:{vehicle_id}:schedule-pm',body.model_dump(mode='json'))
+    if replay is not None: return replay
+    plan=None
+    if body.create_work_order:
+        plan=await build_plan(db,current_user,ResolveRequest.model_validate({
+            'context':{'kind':'fleet_draft','vehicle_id':vehicle_id,'bill_to_customer_id':body.bill_to_customer_id},
+            'plan':{'kind':'fleet_create','service_ids':[service.id for service in services],'part_lines':[],'labor_lines':[]},
+            'pricing_presentation':body.pricing_presentation,
+        }),lock=True)
+        plan.confirm(body.pricing_preview_fingerprint)
+        services=plan.services
 
     if body.next_pm_miles is not None:
         vehicle.next_pm_miles = body.next_pm_miles
@@ -3889,19 +3818,20 @@ async def schedule_pm(
             db, current_user.tenant_id, vehicle, is_pm=True,
             description=f"Preventive maintenance — Service interval {vehicle.pm_interval_miles or 25000:,} mi",
             bill_to_customer_id=body.bill_to_customer_id,
+            actor=current_user,pricing_plan=plan,expected_pricing_policy=body.expected_pricing_policy,pricing_presentation=body.pricing_presentation,
             commit=False,
         )
         if services:
-            await _apply_pm_services_to_ro(db, current_user.tenant_id, ro, services, actor=current_user)
+            await _apply_pm_services_to_ro(db, current_user.tenant_id, ro, services, actor=current_user, pricing_plan=plan)
             from app.api.v1.endpoints.repair_orders import _refresh_repair_order_totals
 
             await _refresh_repair_order_totals(db, ro.id)
-        await db.commit()
-    else:
-        await db.commit()
+    await db.flush()
 
     open_list = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id, [])
     counts = await _open_incident_counts(db, [vehicle.id])
     truck = _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list), pm_ro=_open_pm_ro(open_list))
     await _attach_account_context(db, [truck], current_user.tenant_id)
+    parts_pricing.finish_write(record, truck.model_dump(mode="json"))
+    await db.commit()
     return truck

@@ -1,3 +1,5 @@
+import { quote } from '@/features/parts-pricing/__tests__/fixtures'
+import type { ResolveRequest } from '@/features/parts-pricing/contract'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -8,8 +10,8 @@ const apiMocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn()
 const authState = vi.hoisted(() => ({ role: 'garage_owner' }))
 
 vi.mock('@/lib/api', () => ({ default: { get: apiMocks.get, post: apiMocks.post, patch: apiMocks.patch } }))
-vi.mock('@/stores/authStore', () => ({ useAuthStore: (selector: (state: { user: { role: string } }) => unknown) => selector({ user: { role: authState.role } }) }))
-vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ appearance: { mode: 'dark' } }) }))
+vi.mock('@/stores/authStore', () => { const getState = () => ({ user: { role: authState.role, id: 'user-1', tenant_id: 'tenant-1' }, authSessionEpoch: 1, logoutInProgress: false }); return { useAuthStore: Object.assign((selector: (state: ReturnType<typeof getState>) => unknown) => selector(getState()), { getState }) } })
+vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ appearance: { mode: 'dark' }, accentColors: { 500: '#d86a15' } }) }))
 
 import CounterSalesWorkspace from '../CounterSalesWorkspace'
 import type { CounterSale } from '../inventoryLifecycleTypes'
@@ -50,6 +52,7 @@ function sale(overrides: Partial<CounterSale> = {}): CounterSale {
     status: 'draft',
     version: 3,
     customer_id: null,
+    pricing_policy: { schema_version: 1, snapshot_id: null, mode: 'legacy', parts: { source: 'legacy', mode: 'legacy' } },
     buyer_name: null,
     buyer_email: null,
     buyer_phone: null,
@@ -114,7 +117,8 @@ function installApi(initial = sale()) {
     if (url.endsWith('/receipt.pdf')) return Promise.resolve({ data: new Blob(['receipt']) })
     throw new Error(`Unexpected GET ${url}`)
   })
-  apiMocks.post.mockImplementation((url: string) => {
+  apiMocks.post.mockImplementation((url: string, body: ResolveRequest) => {
+    if (url === '/parts-pricing/resolve') return Promise.resolve({ data: quote({ plan: body.plan, counter: true, required: false }) })
     if (url === '/parts-operations/counter-sales') return Promise.resolve({ data: currentSale })
     if (url.endsWith('/checkout')) {
       currentSale = { ...currentSale, status: 'completed', version: 4, completed_at: '2026-08-26T12:05:00Z', allowed_actions: ['download_receipt', 'create_return'], payment_attempts: [{ id: 'attempt-1', tender: 'external_terminal', state: 'succeeded', amount: '42.80', reference: 'TERM-44', created_at: '2026-08-26T12:05:00Z' }] }
@@ -170,8 +174,9 @@ describe('DB-045 bounded manual Parts sales workspace', () => {
       buyer_name: null,
       buyer_email: null,
       buyer_phone: null,
-      lines: [{ inventory_id: 'part-1', quantity: 1 }],
-    }, { headers: { 'Idempotency-Key': expect.stringMatching(/^counter-sale-create-/) } }))
+      lines: [{ inventory_id: 'part-1', quantity: 1, pricing_intent: 'default' }],
+      pricing_preview_fingerprint: 'opaque-1', pricing_presentation: 'shop',
+    }, expect.objectContaining({ headers: { 'Idempotency-Key': expect.stringMatching(/^[0-9a-f-]{36}$/) } })))
   })
 
   it('hides price override from receptionists', async () => {
@@ -180,6 +185,33 @@ describe('DB-045 bounded manual Parts sales workspace', () => {
     renderWorkspace('/dashboard/garage/inventory/sales?new=1&part=part-1')
     expect(await screen.findByText('Primary air filter')).toBeInTheDocument()
     expect(screen.queryByText('Manager price override')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    { name: 'legacy walk-in', customer_id: null, pricing_policy: { schema_version: 1, snapshot_id: null, mode: 'legacy', parts: { source: 'legacy', mode: 'legacy' } }, expected: 'New parts use current quoted pricing.' },
+    { name: 'legacy linked buyer', customer_id: 'customer-1', pricing_policy: { schema_version: 1, snapshot_id: null, mode: 'legacy', parts: { source: 'legacy', mode: 'legacy' } }, expected: 'New parts use current quoted pricing.' },
+    { name: 'saved account matrix', customer_id: 'customer-1', pricing_policy: { schema_version: 1, snapshot_id: 'captured-account', mode: 'captured', parts: { source: 'customer', mode: 'matrix' } }, expected: 'New parts use saved Account matrix pricing.' },
+    { name: 'saved shop catalog', customer_id: null, pricing_policy: { schema_version: 1, snapshot_id: 'captured-shop', mode: 'captured', parts: { source: 'shop', mode: 'catalog' } }, expected: 'New parts use saved Shop catalog pricing.' },
+  ] as const)('identifies $name from the saved sale projection without reading customer settings', async ({ customer_id, pricing_policy, expected }) => {
+    installApi(sale({ customer_id, pricing_policy })); const user = userEvent.setup()
+    renderWorkspace('/dashboard/garage/inventory/sales?sale=sale-1')
+    await user.click(await screen.findByRole('button', { name: 'Edit draft' }))
+    expect(screen.getByText(`${expected} Saved prices stay unchanged.`)).toBeVisible()
+    expect(screen.queryByText(/saved pricing defaults/)).not.toBeInTheDocument()
+    expect(apiMocks.get.mock.calls.some(([path]) => /pricing-policy|pricing-preview/.test(path))).toBe(false)
+    expect(apiMocks.patch).not.toHaveBeenCalled()
+  })
+
+  it('describes a buyer change as future pricing and returns to the saved shop source when cleared', async () => {
+    installApi(sale({ pricing_policy: { schema_version: 1, snapshot_id: 'captured-shop', mode: 'captured', parts: { source: 'shop', mode: 'matrix' } } }))
+    const user = userEvent.setup(); renderWorkspace('/dashboard/garage/inventory/sales?sale=sale-1')
+    await user.click(await screen.findByRole('button', { name: 'Edit draft' }))
+    await user.type(screen.getByLabelText('Existing customer'), 'Elis')
+    await user.click(await screen.findByRole('button', { name: /Elis Logistics/ }))
+    expect(screen.getByText('New parts use Elis Logistics’s pricing defaults. Saved prices stay unchanged.')).toBeVisible()
+    await user.clear(screen.getByLabelText('Existing customer'))
+    expect(screen.getByText('New parts use saved Shop matrix pricing. Saved prices stay unchanged.')).toBeVisible()
+    expect(apiMocks.get.mock.calls.some(([path]) => /pricing-policy|pricing-preview/.test(path))).toBe(false)
   })
 
   it('records one manual tender and no provider payload', async () => {
@@ -235,4 +267,36 @@ describe('DB-045 bounded manual Parts sales workspace', () => {
       manual_refund_reference: 'REV-1',
     }, { headers: { 'Idempotency-Key': expect.stringMatching(/^counter-sale-return-/) } }))
   })
+})
+
+it('shows a server quoted source and total before a new sale is saved', async () => {
+  installApi(); renderWorkspace('/dashboard/garage/inventory/sales?new=1&part=part-1'); expect(await screen.findByText('$15.00 · Shop matrix')).toBeInTheDocument(); expect(screen.getByText('Quoted total $15.00')).toBeInTheDocument(); expect(apiMocks.post.mock.calls.some(([url]) => url === '/parts-operations/counter-sales')).toBe(false)
+})
+
+it.each(['garage_owner', 'receptionist'])('retains a saved manual line through quantity changes as %s without resending its override', async (role) => {
+  authState.role = role
+  apiMocks.patch.mockReset()
+  const { price } = await import('@/features/parts-pricing/__tests__/fixtures')
+  installApi(sale({ lines: [{ ...line, charged_unit_price: '18.00', price_override_reason: 'Agreed quote', pricing: { ...price, current_source: 'manual', charged_unit_price: '18.00', default_unit_price: '20.00', pricing_version: 4 } }] }))
+  const user = userEvent.setup(); renderWorkspace('/dashboard/garage/inventory/sales?sale=sale-1'); await user.click(await screen.findByRole('button', { name: 'Edit draft' })); await user.click(screen.getByRole('button', { name: 'Increase Quantity for Primary air filter' })); await user.click(screen.getByRole('button', { name: /Save draft/ }))
+  await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledWith('/parts-operations/counter-sales/sale-1', expect.objectContaining({ expected_version: 3, lines: [{ sale_line_id: 'line-1', inventory_id: 'part-1', quantity: 3, pricing_intent: 'default' }] }), expect.anything()))
+})
+
+
+it('keeps the entered manual price against an explicitly accepted fresh sale baseline', async () => {
+  apiMocks.patch.mockReset()
+  authState.role = 'garage_owner'
+  installApi(sale({ lines: [{ ...line, charged_unit_price: '18.00', price_override_reason: 'Agreed quote' }] }))
+  const fresh = sale({ version: 4, lines: [{ ...line, charged_unit_price: '20.00', price_override_reason: 'Updated agreement' }] })
+  const originalGet = apiMocks.get.getMockImplementation()!
+  let conflicted = false
+  apiMocks.get.mockImplementation((url: string) => conflicted && url === '/parts-operations/counter-sales/sale-1' ? Promise.resolve({ data: fresh }) : originalGet(url))
+  apiMocks.patch.mockImplementationOnce(() => { conflicted = true; return Promise.reject({ response: { status: 409, data: { detail: { code: 'sale_version_changed', message: 'Sale changed.' } } } }) }).mockResolvedValue({ data: fresh })
+  const user = userEvent.setup(); renderWorkspace('/dashboard/garage/inventory/sales?sale=sale-1')
+  await user.click(await screen.findByRole('button', { name: 'Edit draft' }))
+  await user.click(screen.getByRole('button', { name: 'Save draft' }))
+  await user.click(await screen.findByRole('button', { name: 'Keep my draft' }))
+  expect(screen.getByLabelText('Charged unit price')).toHaveValue('18.00')
+  await user.click(screen.getByRole('button', { name: 'Save draft' }))
+  await waitFor(() => expect(apiMocks.patch).toHaveBeenLastCalledWith('/parts-operations/counter-sales/sale-1', expect.objectContaining({ expected_version: 4, lines: [{ sale_line_id: 'line-1', inventory_id: 'part-1', quantity: 2, pricing_intent: 'manual', charged_unit_price: '18.00', price_override_reason: 'Agreed quote' }] }), expect.anything()))
 })

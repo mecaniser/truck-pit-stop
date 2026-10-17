@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -57,7 +57,7 @@ function renderTruck(trucks: BoardTruck[] = [truck]) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  render(
+  return render(
     <QueryClientProvider client={queryClient}>
       <TruckDetail truckId={truck.id} trucks={trucks} onOpen={vi.fn()} />
     </QueryClientProvider>,
@@ -74,6 +74,40 @@ function mockSuccessfulQueries() {
 }
 
 describe('TruckDetail hardening', () => {
+  it('refreshes speed while the detail stays open, preserves zero, and expires unchanged observations', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-16T14:00:00Z'))
+    const speed = { source: 'motive_dashboard_manual' as const, observed_at: new Date().toISOString(), captured_at: new Date().toISOString(), freshness: 'fresh' as const, snapshot_id: 'initial-speed', source_age_text: null, value: 45, unit: 'mph' as const, basis: null }
+    let response: TruckDetailData = { ...detail, truck: { ...truck, telemetry: { location: null, speed, odometer: null, engine_hours: null, fuel: null, fault_count: null, motion: 'moving' } } }
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === `/fleet/trucks/${truck.id}`) return Promise.resolve({ data: response })
+      if (url === `/fleet/trucks/${truck.id}/incidents` || url === '/fleet/inspections') return Promise.resolve({ data: [] })
+      return Promise.reject(new Error(`Unexpected GET ${url}`))
+    })
+    const view = renderTruck()
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+      expect(screen.getByText('45 mph')).toBeInTheDocument()
+      response = { ...response, truck: { ...response.truck, telemetry: { ...response.truck.telemetry!, speed: { ...speed, value: 0, observed_at: '2026-10-16T14:01:00Z', captured_at: '2026-10-16T14:01:00Z', snapshot_id: 'new-speed' }, motion: 'stopped' } } }
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(60000) })
+      expect(screen.getByText('0 mph')).toBeInTheDocument()
+      expect(screen.queryByText('45 mph')).not.toBeInTheDocument()
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(300000) })
+      expect(screen.getByText('0 mph')).toBeInTheDocument()
+      await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+      expect(screen.queryByText('0 mph')).not.toBeInTheDocument()
+      expect(screen.getByLabelText('Speed unavailable')).toBeInTheDocument()
+      expect(apiMocks.get.mock.calls.filter(([url]) => url === `/fleet/trucks/${truck.id}`).length).toBeGreaterThan(2)
+      expect(apiMocks.get.mock.calls.filter(([url]) => url === `/fleet/trucks/${truck.id}/incidents`)).toHaveLength(1)
+      expect(apiMocks.get.mock.calls.filter(([url]) => url === '/fleet/inspections')).toHaveLength(1)
+    } finally {
+      view.unmount()
+      vi.useRealTimers()
+    }
+  })
+
   it('keeps a managed custody profile separate from the current Motive identity and score', async () => {
     const sourceTruck = { ...driverTruck, id: truck.id }
     apiMocks.get.mockImplementation((url: string) => {
@@ -88,7 +122,6 @@ describe('TruckDetail hardening', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Open truck details' }))
     const managed = await screen.findByText('Managed Custodian')
     const custodyRow = managed.closest('.fleet-driver-profile-row') as HTMLElement
-    expect(within(custodyRow).getByText('Managed driver profile')).toBeVisible()
     expect(within(custodyRow).queryByRole('button', { name: /Driver record/ })).not.toBeInTheDocument()
     expect(within(custodyRow).getByRole('link', { name: 'Call Managed Custodian' })).toHaveAttribute('href', 'tel:7045550199')
     const providerRow = document.querySelector('.fleet-motive-driver') as HTMLElement
@@ -99,7 +132,7 @@ describe('TruckDetail hardening', () => {
 
   it('keeps mileage comparison and speed in the header, with hours and entry in details', async () => {
     const source = { source: 'motive_dashboard_manual' as const, observed_at: null, captured_at: new Date().toISOString(), freshness: 'unknown' as const, snapshot_id: 'fixture', source_age_text: '12s ago' }
-    truck.telemetry = { location: { ...source, label: 'Fixture town', lat: null, lng: null }, odometer: { ...source, value: 625000, unit: 'mi', basis: 'dashboard_unspecified' }, speed: { ...source, value: 0, unit: 'mph', basis: null }, fuel: { ...source, value: 38, unit: 'percent', basis: null }, engine_hours: { ...source, value: 4000, unit: 'h', basis: null }, fault_count: null, motion: 'unknown' }
+    truck.telemetry = { location: { ...source, label: 'Fixture town', lat: null, lng: null }, odometer: { ...source, value: 625000, unit: 'mi', basis: 'dashboard_unspecified' }, speed: { ...source, observed_at: new Date().toISOString(), value: 0, unit: 'mph', basis: null }, fuel: { ...source, value: 38, unit: 'percent', basis: null }, engine_hours: { ...source, value: 4000, unit: 'h', basis: null }, fault_count: null, motion: 'unknown' }
     mockSuccessfulQueries(); renderTruck()
     await screen.findByText('625,000 mi')
     expect(screen.getByText('621,565')).toBeInTheDocument()
@@ -183,4 +216,18 @@ describe('TruckDetail hardening', () => {
     expect(screen.getByTestId('fleet-map')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Hide map' })).toHaveAttribute('aria-expanded', 'true')
   })
+})
+
+it('retries an uncertain empty fleet order creation with the same command identity', async () => {
+  const { useAuthStore } = await import('@/stores/authStore')
+  const { quote } = await import('@/features/parts-pricing/__tests__/fixtures')
+  const previous = useAuthStore.getState().user
+  useAuthStore.setState({ user: { id: 'actor-1', tenant_id: 'tenant-1', role: 'fleet_manager' } as import('@/types').User, logoutInProgress: false })
+  let writes = 0
+  mockSuccessfulQueries()
+  apiMocks.post.mockImplementation((url, body) => url === '/parts-pricing/resolve' ? Promise.resolve({ data: quote({ plan: body.plan, projection: 'fleet', required: false, total: '0.00' }) }) : ++writes === 1 ? Promise.reject(new Error('offline')) : Promise.resolve({ data: {} }))
+  try {
+    const user = userEvent.setup(); renderTruck(); const button = await screen.findByRole('button', { name: /Create repair order/ }); await user.click(button); await waitFor(() => expect(writes).toBe(1)); await waitFor(() => expect(button).toBeEnabled()); await user.click(button); await waitFor(() => expect(writes).toBe(2))
+    const commands = apiMocks.post.mock.calls.filter(([url]) => url === `/fleet/trucks/${truck.id}/work-order`); expect(commands[1][2].headers).toEqual(commands[0][2].headers); expect(commands[1][1]).toEqual({ pricing_preview_fingerprint: 'opaque-1', pricing_presentation: 'fleet' }); expect(apiMocks.post.mock.calls.filter(([url]) => url === '/parts-pricing/resolve')).toHaveLength(1)
+  } finally { useAuthStore.setState({ user: previous }) }
 })

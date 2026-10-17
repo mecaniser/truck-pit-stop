@@ -85,7 +85,7 @@ describe('Motive integration', () => {
     mocks.get.mockImplementation(async (url: string) => ({ data: url.endsWith('/trucks') ? { items: [{ id: 'truck-a', unit_number: '7', vin: 'VIN-7' }] } : url.endsWith('/webhook') ? { status: 'not_configured', url: null, pending_count: 0, failed_count: 0 } : url.endsWith('/connection') ? connected : { items: [{ ...remote, vehicle_id: 'truck-a', telemetry: { location: { lat: 35, lng: -81, located_at: new Date(Date.now() - 3600000).toISOString(), received_at: new Date().toISOString() }, state: 'stale', speed_mph: 0, bearing_degrees: null, source: 'motive' } }], synced_at: null } }))
     mocks.post.mockResolvedValue({ data: { status: 'connected', counts: { updated: 1 }, completed_at: new Date().toISOString() } })
     wrap(<MotiveConnectionCard companyId="company-a" trucks={trucks} />)
-    expect(await screen.findByText(/Motive location · stale/)).toHaveTextContent('0.0 mph')
+    expect(await screen.findByText(/Motive location · stale/)).toHaveTextContent('Recorded speed: 0.0 mph')
     await user.click(screen.getByRole('button', { name: 'Sync now' }))
     expect(await screen.findByRole('status')).toHaveTextContent('1 truck readings updated')
     expect(mocks.post).toHaveBeenCalledWith('/fleet/motive/sync', { fleet_customer_id: 'company-a' })

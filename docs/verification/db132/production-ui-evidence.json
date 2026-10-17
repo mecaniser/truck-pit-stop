@@ -1,0 +1,191 @@
+{
+  "started_at": "2026-10-16T02:20:12.132Z",
+  "finished_at": "2026-10-16T02:24:38.778Z",
+  "checks": [
+    {
+      "label": "Light desktop success",
+      "bottom": 672,
+      "documentWidth": 1280,
+      "focused": true,
+      "scrollerBottom": 900,
+      "scrollerTop": 77,
+      "text": "Current $45.00Proposed $130.00Profit $30.00 \u00b7 Markup 30.00% \u00b7 Margin 23.08%",
+      "top": 623,
+      "viewportWidth": 1280
+    },
+    {
+      "label": "Light 390 invalid gap",
+      "bottom": 836,
+      "documentWidth": 390,
+      "focused": true,
+      "scrollerBottom": 844,
+      "scrollerTop": 77,
+      "text": "Bands must start at zero, have no gaps or overlaps, and end with an open upper bound.",
+      "top": 797,
+      "viewportWidth": 390
+    },
+    {
+      "label": "Light 390 repeated error",
+      "bottom": 836,
+      "documentWidth": 390,
+      "focused": true,
+      "scrollerBottom": 844,
+      "scrollerTop": 77,
+      "text": "Bands must start at zero, have no gaps or overlaps, and end with an open upper bound.",
+      "top": 797,
+      "viewportWidth": 390
+    },
+    {
+      "label": "Light 320 recovered success",
+      "bottom": 732,
+      "documentWidth": 320,
+      "focused": true,
+      "scrollerBottom": 740,
+      "scrollerTop": 77,
+      "text": "Current $45.00Proposed $130.00Profit $30.00 \u00b7 Markup 30.00% \u00b7 Margin 23.08%",
+      "top": 683,
+      "viewportWidth": 320
+    },
+    {
+      "label": "Light landscape success",
+      "bottom": 392,
+      "documentWidth": 740,
+      "focused": true,
+      "scrollerBottom": 400,
+      "scrollerTop": 77,
+      "text": "Current $45.00Proposed $130.00Profit $30.00 \u00b7 Markup 30.00% \u00b7 Margin 23.08%",
+      "top": 343,
+      "viewportWidth": 740
+    },
+    {
+      "label": "Light desktop policy",
+      "background": "rgb(17, 94, 89)",
+      "bottom": 890,
+      "color": "rgb(255, 255, 255)",
+      "documentWidth": 1280,
+      "top": 846,
+      "viewportHeight": 900,
+      "viewportWidth": 1280
+    },
+    {
+      "label": "Light 390 policy",
+      "background": "rgb(17, 94, 89)",
+      "bottom": 834,
+      "color": "rgb(255, 255, 255)",
+      "documentWidth": 390,
+      "top": 790,
+      "viewportHeight": 844,
+      "viewportWidth": 390
+    },
+    {
+      "label": "Light landscape policy",
+      "background": "rgb(17, 94, 89)",
+      "bottom": 390,
+      "color": "rgb(255, 255, 255)",
+      "documentWidth": 740,
+      "top": 346,
+      "viewportHeight": 400,
+      "viewportWidth": 740
+    },
+    {
+      "label": "Night desktop success",
+      "bottom": 672,
+      "documentWidth": 1280,
+      "focused": true,
+      "scrollerBottom": 900,
+      "scrollerTop": 77,
+      "text": "Current $45.00Proposed $130.00Profit $30.00 \u00b7 Markup 30.00% \u00b7 Margin 23.08%",
+      "top": 623,
+      "viewportWidth": 1280
+    },
+    {
+      "label": "Night 390 invalid gap",
+      "bottom": 836,
+      "documentWidth": 390,
+      "focused": true,
+      "scrollerBottom": 844,
+      "scrollerTop": 77,
+      "text": "Bands must start at zero, have no gaps or overlaps, and end with an open upper bound.",
+      "top": 797,
+      "viewportWidth": 390
+    },
+    {
+      "label": "Night 390 repeated error",
+      "bottom": 836,
+      "documentWidth": 390,
+      "focused": true,
+      "scrollerBottom": 844,
+      "scrollerTop": 77,
+      "text": "Bands must start at zero, have no gaps or overlaps, and end with an open upper bound.",
+      "top": 797,
+      "viewportWidth": 390
+    },
+    {
+      "label": "Night 320 recovered success",
+      "bottom": 732,
+      "documentWidth": 320,
+      "focused": true,
+      "scrollerBottom": 740,
+      "scrollerTop": 77,
+      "text": "Current $45.00Proposed $130.00Profit $30.00 \u00b7 Markup 30.00% \u00b7 Margin 23.08%",
+      "top": 683,
+      "viewportWidth": 320
+    },
+    {
+      "label": "Night landscape success",
+      "bottom": 392,
+      "documentWidth": 740,
+      "focused": true,
+      "scrollerBottom": 400,
+      "scrollerTop": 77,
+      "text": "Current $45.00Proposed $130.00Profit $30.00 \u00b7 Markup 30.00% \u00b7 Margin 23.08%",
+      "top": 343,
+      "viewportWidth": 740
+    },
+    {
+      "label": "Night desktop policy",
+      "background": "rgb(14, 116, 144)",
+      "bottom": 890,
+      "color": "rgb(255, 255, 255)",
+      "documentWidth": 1280,
+      "top": 846,
+      "viewportHeight": 900,
+      "viewportWidth": 1280
+    },
+    {
+      "label": "Night 320 policy",
+      "background": "rgb(14, 116, 144)",
+      "bottom": 730,
+      "color": "rgb(255, 255, 255)",
+      "documentWidth": 320,
+      "top": 686,
+      "viewportHeight": 740,
+      "viewportWidth": 320
+    },
+    {
+      "label": "Night landscape policy",
+      "background": "rgb(14, 116, 144)",
+      "bottom": 390,
+      "color": "rgb(255, 255, 255)",
+      "documentWidth": 740,
+      "top": 346,
+      "viewportHeight": 400,
+      "viewportWidth": 740
+    }
+  ],
+  "logs": [],
+  "appearance_restored": "Day shop",
+  "pricing_saved": false,
+  "policy_action_contrast": {
+    "Light": {
+      "foreground": "#ffffff",
+      "background": "#115e59",
+      "ratio": 7.58
+    },
+    "Night": {
+      "foreground": "#ffffff",
+      "background": "#0e7490",
+      "ratio": 5.36
+    }
+  }
+}

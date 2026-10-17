@@ -56,6 +56,12 @@ function renderRevision() {
   return client
 }
 
+function activePriceBuild(client: QueryClient) {
+  // Pricing caches are private to the current actor/session and are discarded
+  // when their panel unmounts. Assert the mounted summary, not the old public key.
+  return client.getQueriesData({ queryKey: ['price-build', order.id], type: 'active' })[0]?.[1]
+}
+
 describe('Void and revise work editing', () => {
   beforeEach(() => {
     vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} unobserve() {} })
@@ -91,7 +97,7 @@ describe('Void and revise work editing', () => {
     expect(await screen.findByRole('button', { name: 'Operation', exact: true })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Part', exact: true })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Labor', exact: true })).toBeEnabled()
-    expect(client.getQueryData(['price-build', order.id])).toMatchObject({ pricing_locked: false, can_edit_work: true })
+    expect(activePriceBuild(client)).toMatchObject({ pricing_locked: false, can_edit_work: true })
     expect(apiMocks.post).toHaveBeenCalledWith('/invoices/invoice-1/void', { reason: 'Add additional work' })
   })
   it('retains the lock and invoice actions when the server rejects voiding', async () => {
@@ -102,23 +108,27 @@ describe('Void and revise work editing', () => {
     await user.type(screen.getByPlaceholderText('Describe what needs to be corrected'), 'Add additional work')
     await user.click(screen.getByRole('button', { name: 'Void & reopen' }))
     await waitFor(() => expect(toastMocks.error).toHaveBeenCalled())
-    expect(client.getQueryData(['price-build', order.id])).toMatchObject({ pricing_locked: true, can_edit_work: false })
+    expect(activePriceBuild(client)).toMatchObject({ pricing_locked: true, can_edit_work: false })
     expect(screen.queryByRole('button', { name: 'Operation', exact: true })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Void & revise' })).toBeInTheDocument()
   })
 
   it('does not override a refreshed server capability that still forbids editing', async () => {
     const defaultGet = apiMocks.get.getMockImplementation()!
-    apiMocks.get.mockImplementation((url: string) => url.endsWith('/price-build')
-      ? Promise.resolve({ data: { ...summary(), pricing_locked: false, can_edit_work: false } })
-      : defaultGet(url))
+    let readAfterVoid = false
+    apiMocks.get.mockImplementation((url: string) => {
+      if (!url.endsWith('/price-build')) return defaultGet(url)
+      if (voided) readAfterVoid = true
+      return Promise.resolve({ data: { ...summary(), pricing_locked: false, can_edit_work: false } })
+    })
     const client = renderRevision()
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Void & revise' }))
     await user.type(screen.getByPlaceholderText('Describe what needs to be corrected'), 'Add additional work')
     await user.click(screen.getByRole('button', { name: 'Void & reopen' }))
-    await waitFor(() => expect(apiMocks.get.mock.calls.filter(([url]) => url.endsWith('/price-build'))).toHaveLength(2))
-    expect(client.getQueryData(['price-build', order.id])).toMatchObject({ can_edit_work: false })
+    await waitFor(() => expect(readAfterVoid).toBe(true))
+    await waitFor(() => expect(activePriceBuild(client)).toMatchObject({ can_edit_work: false }))
+    expect(activePriceBuild(client)).toMatchObject({ can_edit_work: false })
     expect(screen.queryByRole('button', { name: 'Operation', exact: true })).not.toBeInTheDocument()
   })
 

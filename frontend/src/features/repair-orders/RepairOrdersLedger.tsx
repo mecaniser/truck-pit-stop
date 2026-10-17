@@ -1,5 +1,7 @@
-import { useEffect, useId, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
+import './repairOrderSchedule.css'
+import './repairOrderControls.css'
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
+import { Check, ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import { StaffSearchField } from '@/components/ui'
 import { REPAIR_ORDERS_QUEUE_LABEL, type RepairOrdersQueueOrigin } from './repairOrdersPresentation'
 
@@ -21,9 +23,13 @@ export type RepairOrdersLedgerRow = {
   technicianName?: string | null
   holdReason?: string | null
   quoteSent?: boolean | null
+  deadline?: string | null
+  overdue?: boolean
+  scheduledStart?: string | null
 }
 
 export default function RepairOrdersLedger({
+  notice,
   rows,
   totalOrders,
   searchQuery,
@@ -52,7 +58,10 @@ export default function RepairOrdersLedger({
   valueSummaryLoading = false,
   valueSummaryError = false,
   valueSummaryLabel = 'Filtered order value',
+  overdue = false,
+  onOverdueChange,
 }: {
+  notice?: ReactNode
   rows: RepairOrdersLedgerRow[]
   totalOrders: number
   searchQuery: string
@@ -83,10 +92,12 @@ export default function RepairOrdersLedger({
   valueSummary?: { order_count: number; order_value: string } | null
   valueSummaryLoading?: boolean
   valueSummaryError?: boolean
+  overdue?: boolean
+  onOverdueChange?: (enabled: boolean) => void
   valueSummaryLabel?: string
 }) {
   const queueLabel = !compact && queueOrigin ? REPAIR_ORDERS_QUEUE_LABEL[queueOrigin] : null
-  const filtered = Boolean(searchQuery || statusFilter !== 'all')
+  const filtered = Boolean(searchQuery || statusFilter !== 'all' || overdue)
   const [scopeMenuOpen, setScopeMenuOpen] = useState(false)
   const scopeControlRef = useRef<HTMLDivElement>(null)
   const scopeTriggerRef = useRef<HTMLButtonElement>(null)
@@ -192,7 +203,8 @@ export default function RepairOrdersLedger({
   }, [scopeMenuOpen])
 
   return (
-    <section className={`db-repair-orders-new${compact ? ' db-repair-orders-new--compact' : ''}`} aria-labelledby="repair-orders-title" aria-busy={isFetching}>
+    <section className={`db-repair-orders-new db-repair-orders-controls${compact ? ' db-repair-orders-new--compact' : ''}`} aria-labelledby="repair-orders-title" aria-busy={isFetching}>
+      {notice}
       <header className="db-repair-orders-new__header db-operating-page-header">
         <div>
           <h1 id="repair-orders-title">{pageTitle}</h1>
@@ -210,62 +222,68 @@ export default function RepairOrdersLedger({
           className="db-repair-orders-new__search"
           value={searchQuery}
           onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="Order, work, customer, or vehicle"
+          placeholder="Order, customer, or truck"
         />
-        {!compact && (
-          <>
-            {/* The narrow column used a native select, which renders OS chrome
-                that ignores the appearance mode and states the current filter
-                only after you open it. A listbox keeps the control on one line,
-                names the active status on its face, and is themed like the rest
-                of the surface. */}
-            <div className="db-repair-orders-new__status-select" ref={statusMenu}>
-              <button
-                type="button"
-                aria-haspopup="listbox"
-                aria-expanded={statusOpen}
-                aria-label="Order status"
-                onClick={() => setStatusOpen((current) => !current)}
-              >
-                <span>{statusOptions.find((option) => option.value === statusFilter)?.label ?? 'All'}</span>
-                <ChevronDown aria-hidden="true" />
-              </button>
-              {statusOpen && (
-                <ul role="listbox" aria-label="Order status options">
-                  {statusOptions.map((option) => (
-                    <li key={option.value} role="presentation">
-                      <button
-                        type="button"
-                        role="option"
-                        aria-selected={option.value === statusFilter}
-                        onClick={() => {
-                          onStatusChange(option.value)
-                          setStatusOpen(false)
-                        }}
-                      >
-                        <span>{option.label}</span>
-                        {option.count !== undefined && <span className="db-repair-orders-new__status-count">{option.count}</span>}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <div className="db-repair-orders-new__status-tabs" role="group" aria-label="Filter repair orders by status">
-              {statusOptions.map((option) => (
+        <div className="db-repair-orders-new__filters">
+          {!compact && (
+            <>
+              {/* The narrow column used a native select, which renders OS chrome
+                  that ignores the appearance mode and states the current filter
+                  only after you open it. A listbox keeps the control on one line,
+                  names the active status on its face, and is themed like the rest
+                  of the surface. */}
+              <div className="db-repair-orders-new__status-select" ref={statusMenu}>
                 <button
                   type="button"
-                  key={option.value}
-                  aria-pressed={statusFilter === option.value}
-                  onClick={() => onStatusChange(option.value)}
+                  aria-haspopup="listbox"
+                  aria-expanded={statusOpen}
+                  aria-label="Order status"
+                  onClick={() => setStatusOpen((current) => !current)}
                 >
-                  {option.label}
-                  {option.count !== undefined && <span className="db-repair-orders-new__status-count">{option.count}</span>}
+                  <span>{statusFilter === 'all' ? 'All statuses' : statusOptions.find((option) => option.value === statusFilter)?.label ?? 'All statuses'}</span>
+                  <ChevronDown aria-hidden="true" />
                 </button>
-              ))}
-            </div>
-          </>
-        )}
+                {statusOpen && (
+                  <ul role="listbox" aria-label="Order status options">
+                    {statusOptions.map((option) => (
+                      <li key={option.value} role="presentation">
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={option.value === statusFilter}
+                          onClick={() => {
+                            onStatusChange(option.value)
+                            setStatusOpen(false)
+                          }}
+                        >
+                          <span>{option.label}</span>
+                          {option.count !== undefined && <span className="db-repair-orders-new__status-count">{option.count}</span>}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="db-repair-orders-new__status-tabs" role="group" aria-label="Filter repair orders by status">
+                {statusOptions.map((option) => (
+                  <button
+                    type="button"
+                    key={option.value}
+                    aria-pressed={statusFilter === option.value}
+                    onClick={() => onStatusChange(option.value)}
+                  >
+                    {option.label}
+                    {option.count !== undefined && <span className="db-repair-orders-new__status-count">{option.count}</span>}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          {onOverdueChange && <button type="button" className="db-order-overdue-filter" aria-pressed={overdue} onClick={() => onOverdueChange(!overdue)}>
+            {overdue && <Check aria-hidden="true" />}
+            <span>{queueOrigin || compact && !overdue ? 'All overdue work' : 'Overdue'}</span>
+          </button>}
+        </div>
       </div>
 
       <section
@@ -277,24 +295,8 @@ export default function RepairOrdersLedger({
         onKeyDownCapture={() => setLastLedgerInteractionWasPointer(false)}
       >
         <header>
-          <div>
-            <h2>{sectionTitle}</h2>
-            {!queueLabel && <span>{filtered ? `${totalOrders} matching` : `${totalOrders} total`}</span>}
-          </div>
-          <div className="db-repair-orders-ledger__header-actions">
-            <div className="db-repair-orders-ledger__value-summary" aria-live="polite">
-              <span>{valueSummaryLabel}</span>
-              <strong>
-                {valueSummaryLoading
-                  ? 'Calculating…'
-                  : valueSummaryError
-                    ? 'Unavailable'
-                    : Number.parseFloat(valueSummary?.order_value ?? '0').toLocaleString('en-US', {
-                      style: 'currency',
-                      currency: 'USD',
-                    })}
-              </strong>
-            </div>
+          <div className="db-repair-orders-ledger__caption">
+            <h2 className={compact ? undefined : 'sr-only'}>{sectionTitle}</h2>
             {queueLabel && (
               <div ref={scopeControlRef} className="db-repair-orders-ledger__scope-control">
                 <button
@@ -326,7 +328,23 @@ export default function RepairOrdersLedger({
                 )}
               </div>
             )}
-            {isFetching && <span className="db-repair-orders-ledger__sync" role="status">Updating…</span>}
+            {!queueLabel && <span>{filtered ? `${totalOrders} matching` : `${totalOrders} total`}</span>}
+          </div>
+          <div className="db-repair-orders-ledger__totals">
+            <div className="db-repair-orders-ledger__value-summary" aria-live="polite">
+              <span className="sr-only">{valueSummaryLabel}</span>
+              <strong>
+                {valueSummaryLoading
+                  ? 'Calculating…'
+                  : valueSummaryError
+                    ? 'Unavailable'
+                    : Number.parseFloat(valueSummary?.order_value ?? '0').toLocaleString('en-US', {
+                      style: 'currency',
+                      currency: 'USD',
+                    })}
+              </strong>
+            </div>
+            {isFetching && <span className="db-repair-orders-ledger__sync sr-only" role="status">Updating…</span>}
           </div>
         </header>
 
@@ -359,6 +377,8 @@ export default function RepairOrdersLedger({
               const isBriefOpen = expandedBriefId === row.id && !isOpenInWorkspace
               const isBriefMounted = mountedBriefId === row.id && !isOpenInWorkspace
               const briefFacts = [
+                row.scheduledStart ? { label: 'Scheduled start', value: row.scheduledStart } : null,
+                row.deadline ? { label: 'Promised finish', value: row.deadline } : null,
                 row.internal ? { label: 'Order type', value: 'Internal fleet' } : null,
                 row.technicianName ? { label: 'Technician', value: row.technicianName } : null,
                 row.holdReason ? { label: 'Hold', value: row.holdReason } : null,
@@ -383,6 +403,7 @@ export default function RepairOrdersLedger({
                     <button
                       type="button"
                       className="db-repair-orders-ledger__record"
+                      data-has-deadline={!!row.deadline || undefined}
                       aria-label={`Open repair order ${row.orderNumber}`}
                       aria-current={isOpenInWorkspace ? 'true' : undefined}
                       onKeyDown={(event) => {
@@ -409,8 +430,9 @@ export default function RepairOrdersLedger({
                       {requestOnRow && <span className="db-repair-orders-ledger__work">{row.description}</span>}
                       <span className="db-repair-orders-ledger__money">
                         <strong>{row.total}</strong>
-                        <small>{row.updated}</small>
+                        {!row.deadline && <small>{row.updated}</small>}
                       </span>
+                      {row.deadline && <span className="db-order-schedule-deadline db-order-schedule-ledger-date" data-overdue={row.overdue || undefined} title={row.deadline}>{row.deadline}</span>}
                     </button>
                     {!isOpenInWorkspace && <button
                       type="button"

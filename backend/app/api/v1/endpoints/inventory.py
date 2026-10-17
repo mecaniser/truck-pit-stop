@@ -27,6 +27,7 @@ from app.services.cloudinary_service import (
 from app.tasks.description_library_refresh import process_on_demand_library_regenerate
 from app.schemas.typeahead import InventoryTypeaheadResponse
 from app.services.parts_operations_service import apply_inventory_movement
+from app.services import parts_pricing
 from app.services.part_activity_service import append_part_activity
 
 router = APIRouter()
@@ -82,6 +83,7 @@ class InventoryResponse(BaseModel):
     reorder_level: int
     cost: Decimal
     selling_price: Decimal
+    pricing_version: int = 0
     core_charge: Decimal = Decimal("0.00")
     # "each" (default) for discrete parts, or a fluid unit ("gallon", "quart",
     # "liter") so the Price Builder can offer 0.25-increment quantities.
@@ -112,6 +114,7 @@ def _inventory_response(item: Inventory) -> InventoryResponse:
         reorder_level=item.reorder_level,
         cost=item.cost,
         selling_price=item.selling_price,
+        pricing_version=item.pricing_version,
         core_charge=item.core_charge,
         unit_type=item.unit_type,
         supplier_name=item.supplier_name,
@@ -158,6 +161,7 @@ class InventoryCreate(BaseModel):
 
 
 class InventoryUpdate(BaseModel):
+    expected_pricing_version: Optional[int] = None
     sku: Optional[str] = None
     name: Optional[str] = None
     description: Optional[str] = None
@@ -455,6 +459,8 @@ async def create_inventory_item(
         raise HTTPException(status_code=422, detail="Stock quantity cannot be negative")
 
     values = data.model_dump()
+    for field in ('cost', 'selling_price'):
+        values[field] = parts_pricing.amount(values[field], label=field.replace('_', ' ').capitalize())
     opening_quantity = values.pop("stock_quantity")
     item = Inventory(tenant_id=current_user.tenant_id, stock_quantity=0, **values)
     db.add(item)
@@ -602,19 +608,25 @@ async def update_inventory_item(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=404, detail="Inventory item not found")
+    await parts_pricing.lock_tenant_financials(db, current_user.tenant_id)
     query = select(Inventory).where(
         Inventory.id == item_id,
         Inventory.deleted_at.is_(None),
         Inventory.tenant_id == current_user.tenant_id,
     )
 
-    result = await db.execute(query)
+    result = await db.execute(query.with_for_update().execution_options(populate_existing=True))
     item = result.scalar_one_or_none()
 
     if not item:
         raise HTTPException(status_code=404, detail="Inventory item not found")
 
     updates = data.model_dump(exclude_unset=True)
+    expected = updates.pop('expected_pricing_version', None)
+    money_changes = {k: v for k, v in updates.items() if k in {'cost', 'selling_price'} and v != getattr(item, k)}
+    money_before = {k: getattr(item, k) for k in money_changes}
+    if money_changes:
+        await parts_pricing.patch_inventory(db, current_user, item, money_changes, expected)
     adjustment_reason = updates.pop("stock_adjustment_reason", None)
     requested_stock = updates.pop("stock_quantity", None)
     if requested_stock is not None:
@@ -643,6 +655,7 @@ async def update_inventory_item(
                     note=adjustment_reason.strip() if adjustment_reason else None,
                 )
     before = {field: getattr(item, field) for field in updates}
+    before.update(money_before)
     correlation_id = uuid4()
     for field, value in updates.items():
         setattr(item, field, value)

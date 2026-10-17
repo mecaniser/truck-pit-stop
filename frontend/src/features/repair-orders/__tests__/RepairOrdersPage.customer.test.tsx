@@ -1,13 +1,14 @@
+import type { ReactNode } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 const authState = vi.hoisted(() => ({ user: { id: 'actor-1', tenant_id: 'tenant-1', role: 'garage_owner' }, authSessionEpoch: 1 }))
-vi.mock('@/stores/authStore', () => ({ useAuthStore: (select: (state: typeof authState) => unknown) => select(authState) }))
+vi.mock('@/stores/authStore', () => ({ useAuthStore: Object.assign((select: (state: typeof authState) => unknown) => select(authState), { getState: () => authState }) }))
 vi.mock('@/hooks/useWebSocket', () => ({ useWebSocket: vi.fn() }))
 vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ presentationVariant: 'new', accentColors: { 500: '#d97706' } }) }))
-vi.mock('../PriceBuilderPanel', () => ({ default: ({ onClose, onOpenCustomer, onOpenVehicleHistory }: { onClose: () => void; onOpenCustomer: () => void; onOpenVehicleHistory?: () => void }) => <div>Repair order workspace<button onClick={onClose}>Close repair order</button><button onClick={onOpenCustomer}>Open customer</button>{onOpenVehicleHistory && <button onClick={onOpenVehicleHistory}>View vehicle history</button>}</div> }))
+vi.mock('../PriceBuilderPanel', () => ({ default: ({ workspaceNotice, onClose, onOpenCustomer, onOpenVehicleHistory }: { workspaceNotice?: ReactNode; onClose: () => void; onOpenCustomer: () => void; onOpenVehicleHistory?: () => void }) => <section aria-label="Repair order work">{workspaceNotice}Repair order workspace<button onClick={onClose}>Close repair order</button><button onClick={onOpenCustomer}>Open customer</button>{onOpenVehicleHistory && <button onClick={onOpenVehicleHistory}>View vehicle history</button>}</section> }))
 const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn() }))
 vi.mock('@/lib/api', () => ({ default: api }))
 import RepairOrdersPage from '../RepairOrdersPage'
@@ -20,7 +21,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   authState.user = { id: 'actor-1', tenant_id: 'tenant-1', role: 'garage_owner' }
   authState.authSessionEpoch = 1
-  api.get.mockImplementation((url: string) => {
+  api.get.mockImplementation((url: string, options?: { params?: { vehicle_id?: string } }) => {
+    if (url.endsWith('/pricing-preview')) return Promise.resolve({ data: { schema_version: 1, customer_id: url.split('/')[2], vehicle_id: options?.params?.vehicle_id ?? null, expected_pricing_policy: 'account-token', policy_kind: 'external', projection: 'shop', labor: { source: 'shop', rate: '145.00' }, parts: { source: 'shop', mode: 'catalog' } } })
     if (url === '/vehicles/vehicle-1') return Promise.resolve({ data: vehicle })
     if (url === '/vehicles/vehicle-1/external-services') return Promise.resolve({ data: { items: [], total: 0, has_more: false } })
     if (url === '/vehicles/typeahead') return Promise.resolve({data:[{ id:'vehicle-1',customer_id:'customer-1',unit_number:'C-001',year:2021,make:'Freightliner',model:'Cascadia',last_known_mileage:120000 }]})
@@ -91,17 +93,17 @@ it('starts a truck draft with exact context and cancels back to the same queued 
 
 it('keeps a related truck with a different owner and bills the selected customer', async () => {
   const baseGet = api.get.getMockImplementation()!
-  api.get.mockImplementation((url: string) => {
+  api.get.mockImplementation((url: string, options?: { params?: { vehicle_id?: string } }) => {
     if (url === '/customers/customer-1/vehicles/vehicle-1') return Promise.resolve({data: { id: 'vehicle-1', customer_id: 'other-owner', customer_relationship_types: ['operator'], unit_number: 'C-001', year: 2021, make: 'Freightliner', model: 'Cascadia' }})
     if (url === '/customers/customer-1/vehicles') return Promise.resolve({data: [{ id: 'vehicle-1', customer_id: 'other-owner', customer_relationship_types: ['operator'], unit_number: 'C-001', year: 2021, make: 'Freightliner', model: 'Cascadia' }]})
-    return baseGet(url)
+    return baseGet(url, options)
   })
   api.post.mockResolvedValue({data: {...order, id: 'new-order', order_number: 'RO-NEW'}})
   setup()
   fireEvent.click(await screen.findByRole('button', { name: /Open .*Unit C-001/ }))
   fireEvent.click(await within(screen.getByRole('region', {name:'Northline Logistics customer workspace'})).findByRole('button', { name: 'New repair order', exact: true }))
   await screen.findByRole('dialog', {name: 'New Repair Order'})
-  const submit = screen.getByRole('button', {name: 'Create Repair Order'})
+  const submit = screen.getByRole('button', {name: 'Create Repair Order'}); await waitFor(() => expect(submit).toBeEnabled())
   fireEvent.click(submit)
   fireEvent.click(submit)
   await waitFor(() => expect(api.post).toHaveBeenCalledWith('/repair-orders', expect.objectContaining({customer_id:'customer-1',vehicle_id:'vehicle-1'})))
@@ -144,7 +146,7 @@ it('keeps a failed draft and blocks repeated submit and cancel until the pending
   fireEvent.click(await within(screen.getByRole('region', {name:'Northline Logistics customer workspace'})).findByRole('button', {name:'New repair order',exact:true}))
   const dialog = await screen.findByRole('dialog', {name:'New Repair Order'})
   fireEvent.change(within(dialog).getByPlaceholderText('Briefly describe the repair work or concern...'), {target:{value:'Check air leak'}})
-  const submit = within(dialog).getByRole('button', {name:'Create Repair Order'})
+  const submit = within(dialog).getByRole('button', {name:'Create Repair Order'}); await waitFor(() => expect(submit).toBeEnabled())
   fireEvent.click(submit)
   await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1))
   expect(submit).toBeDisabled()
@@ -163,10 +165,60 @@ it('keeps a failed draft and blocks repeated submit and cancel until the pending
   expect(api.post).toHaveBeenCalledTimes(2)
 })
 
+it('keeps intake work on an account conflict and requires accepting current defaults before an explicit retry', async () => {
+  const message = 'The account pricing changed. Review the current defaults.'
+  const preview = { schema_version: 1, customer_id: 'customer-1', vehicle_id: 'vehicle-1', expected_pricing_policy: 'fresh-account-token', policy_kind: 'external', projection: 'shop', labor: { source: 'customer', rate: '125.00' }, parts: { source: 'customer', mode: 'matrix' } }
+  api.post.mockRejectedValueOnce({ response: { status: 409, data: { detail: { code: 'account_pricing_changed', message, preview } } } }).mockResolvedValueOnce({ data: { ...order, id: 'new-order', order_number: 'RO-NEW' } })
+  setup(); fireEvent.click(await screen.findByRole('button', { name: /Open .*Unit C-001/ }))
+  fireEvent.click(await within(screen.getByRole('region', { name: 'Northline Logistics customer workspace' })).findByRole('button', { name: 'New repair order', exact: true }))
+  const dialog = await screen.findByRole('dialog', { name: 'New Repair Order' })
+  const work = within(dialog).getByPlaceholderText('Briefly describe the repair work or concern...')
+  fireEvent.change(work, { target: { value: 'Check air leak' } })
+  const submit = within(dialog).getByRole('button', { name: 'Create Repair Order' }); await waitFor(() => expect(submit).toBeEnabled()); fireEvent.click(submit)
+  await screen.findByRole('button', { name: 'Use current defaults' })
+  expect(api.post).toHaveBeenCalledOnce(); expect(api.post.mock.calls[0][1]).toMatchObject({ expected_pricing_policy: 'account-token', pricing_presentation: 'shop' })
+  expect(submit).toBeDisabled(); expect(work).toHaveValue('Check air leak'); expect(dialog).toHaveTextContent('Labor $125.00/hr · Account')
+  expect(within(dialog).getByText(message)).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: 'Use current defaults' }))
+  expect(within(dialog).queryByText(message)).not.toBeInTheDocument()
+  expect(api.post).toHaveBeenCalledOnce(); expect(submit).toBeEnabled(); fireEvent.click(submit)
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  expect(api.post).toHaveBeenCalledTimes(2); expect(api.post.mock.calls[1][1]).toMatchObject({ customer_id: 'customer-1', vehicle_id: 'vehicle-1', description: 'Check air leak', expected_pricing_policy: 'fresh-account-token', pricing_presentation: 'shop' })
+})
+
+it('retains a newly created truck and the original reviewed token across a changed account retry', async () => {
+  const created = { ...vehicle, id: 'created-truck', unit_number: 'C-NEW' }
+  const preview = { schema_version: 1, customer_id: 'customer-1', vehicle_id: created.id, expected_pricing_policy: 'fresh-created-truck-token', policy_kind: 'external', projection: 'shop', labor: { source: 'customer', rate: '125.00' }, parts: { source: 'customer', mode: 'matrix' } }
+  let creates = 0
+  api.post.mockImplementation(async (path: string) => {
+    if (path === '/customers/customer-1/vehicles') return { data: created }
+    if (path === '/repair-orders' && !creates++) throw { response: { status: 409, data: { detail: { code: 'account_pricing_changed', message: 'Account pricing changed.', preview } } } }
+    return { data: { ...order, id: 'new-order', vehicle_id: created.id } }
+  })
+  setup(); fireEvent.click(await screen.findByRole('button', { name: /Open .*Unit C-001/ }))
+  fireEvent.click(await within(screen.getByRole('region', { name: 'Northline Logistics customer workspace' })).findByRole('button', { name: 'New repair order', exact: true }))
+  const dialog = await screen.findByRole('dialog', { name: 'New Repair Order' })
+  const truckControls = within(dialog).getByPlaceholderText('Filter by unit, VIN, plate, make, or model').parentElement!.parentElement!
+  fireEvent.click(within(truckControls).getByRole('button', { name: 'Add', exact: true }))
+  fireEvent.click(within(dialog).getByText('Select make')); fireEvent.mouseDown(screen.getByRole('option', { name: 'Freightliner' }))
+  fireEvent.change(within(dialog).getByPlaceholderText('579, Cascadia...'), { target: { value: 'Cascadia' } })
+  const submit = within(dialog).getByRole('button', { name: 'Create Repair Order' }); await waitFor(() => expect(submit).toBeEnabled()); fireEvent.click(submit)
+  await waitFor(() => expect(api.post).toHaveBeenCalledWith('/repair-orders', expect.objectContaining({ vehicle_id: created.id })))
+  expect(dialog.textContent).toContain('Account pricing changed.')
+  await screen.findByRole('button', { name: 'Use current defaults' })
+  expect(within(dialog).getByRole('button', { name: /Select Freightliner Cascadia · Unit C-NEW/ })).toHaveAttribute('aria-pressed', 'true')
+  expect(api.post.mock.calls.find(([path]) => path === '/repair-orders')?.[1]).toMatchObject({ vehicle_id: created.id, expected_pricing_policy: 'account-token' })
+  expect(submit).toBeDisabled(); fireEvent.click(screen.getByRole('button', { name: 'Use current defaults' })); fireEvent.click(submit)
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  expect(api.post.mock.calls.filter(([path]) => path === '/customers/customer-1/vehicles')).toHaveLength(1)
+  expect(api.post.mock.calls.filter(([path]) => path === '/repair-orders')).toHaveLength(2)
+  expect(api.post.mock.calls.filter(([path]) => path === '/repair-orders')[1][1]).toMatchObject({ vehicle_id: created.id, expected_pricing_policy: 'fresh-created-truck-token' })
+})
+
 it.each(['/dashboard?selected=order-1&queue=on_floor&customer=customer-1', '/dashboard/customers?selected=customer-1'])('recovers truck and contact reads in place from %s', async (route) => {
   const base = api.get.getMockImplementation()!
   let failed = true
-  api.get.mockImplementation((url: string) => failed && /customer-1\/(vehicles|contacts)$/.test(url) ? Promise.reject(new Error('Network unavailable')) : base(url))
+  api.get.mockImplementation((url: string, options?: { params?: { vehicle_id?: string } }) => failed && /customer-1\/(vehicles|contacts)$/.test(url) ? Promise.reject(new Error('Network unavailable')) : base(url, options))
   setup(route)
   expect(await screen.findByRole('button', {name:'Retry trucks'})).toBeVisible()
   expect(screen.getByRole('button', {name:'Retry contacts'})).toBeVisible()
@@ -183,7 +235,7 @@ it.each(['/dashboard?selected=order-1&queue=on_floor&customer=customer-1', '/das
 it('provides an embedded customer retry and escape route without losing the order', async () => {
   const base = api.get.getMockImplementation()!
   let failed = true
-  api.get.mockImplementation((url: string) => url === '/customers/customer-1' && failed ? Promise.reject(new Error('Unavailable')) : base(url))
+  api.get.mockImplementation((url: string, options?: { params?: { vehicle_id?: string } }) => url === '/customers/customer-1' && failed ? Promise.reject(new Error('Unavailable')) : base(url, options))
   setup()
   expect(await screen.findByRole('button', {name:'Retry customer'})).toBeVisible()
   expect(screen.queryByRole('button', {name:'Edit Customer'})).not.toBeInTheDocument()
@@ -196,7 +248,7 @@ it('provides an embedded customer retry and escape route without losing the orde
 })
 it('can return to the order even while the customer request is unresolved', async () => {
   const base = api.get.getMockImplementation()!
-  api.get.mockImplementation((url: string) => url === '/customers/customer-1' ? new Promise(() => {}) : base(url))
+  api.get.mockImplementation((url: string, options?: { params?: { vehicle_id?: string } }) => url === '/customers/customer-1' ? new Promise(() => {}) : base(url, options))
   setup()
   expect(await screen.findByText('Loading customer workspace…')).toBeVisible()
   fireEvent.click(await screen.findByRole('button', {name:'Back to #RO-1'}))
@@ -225,10 +277,10 @@ it('closes a direct-linked order while retaining list filters and removing recor
 
 it('opens the exact order truck when transferred or absent from the first customer-truck page', async () => {
   const base = api.get.getMockImplementation()!
-  api.get.mockImplementation((url: string) => {
+  api.get.mockImplementation((url: string, options?: { params?: { vehicle_id?: string } }) => {
     if (url === '/customers/customer-1/vehicles') return Promise.resolve({ data: [] })
     if (url === '/vehicles/vehicle-1') return Promise.resolve({ data: { ...vehicle, customer_id: 'new-owner' } })
-    return base(url)
+    return base(url, options)
   })
   setup('/dashboard?selected=order-1&queue=on_floor&filter=active')
   fireEvent.click(await screen.findByRole('button', { name: 'View vehicle history' }))
@@ -257,7 +309,7 @@ it('restores explicit vehicle history after reload and clears its URL context on
 it('shows exact-truck loading and failure without falling back to company controls, then retries', async () => {
   const base = api.get.getMockImplementation()!
   let rejectVehicle!: (error: Error) => void
-  api.get.mockImplementation((url: string) => url === '/vehicles/vehicle-1' ? new Promise((_, reject) => { rejectVehicle = reject }) : base(url))
+  api.get.mockImplementation((url: string, options?: { params?: { vehicle_id?: string } }) => url === '/vehicles/vehicle-1' ? new Promise((_, reject) => { rejectVehicle = reject }) : base(url, options))
   setup('/dashboard?selected=order-1&queue=on_floor&customer=customer-1&customer_vehicle=vehicle-1')
   expect(await screen.findByText('Loading vehicle history…')).toBeVisible()
   expect(screen.getByRole('button', { name: 'Back to Northline Logistics' })).toBeVisible()
@@ -277,7 +329,7 @@ it('shows exact-truck loading and failure without falling back to company contro
 
 it.each([{ id: 'wrong-truck' }, { tenant_id: 'other-tenant' }])('rejects an exact-truck response with mismatched scope %o', async (mismatch) => {
   const base = api.get.getMockImplementation()!
-  api.get.mockImplementation((url: string) => url === '/vehicles/vehicle-1' ? Promise.resolve({ data: { ...vehicle, ...mismatch } }) : base(url))
+  api.get.mockImplementation((url: string, options?: { params?: { vehicle_id?: string } }) => url === '/vehicles/vehicle-1' ? Promise.resolve({ data: { ...vehicle, ...mismatch } }) : base(url, options))
   setup('/dashboard?selected=order-1&queue=on_floor&customer=customer-1&customer_vehicle=vehicle-1')
   expect(await screen.findByRole('button', { name: 'Retry vehicle history' })).toBeVisible()
   expect(screen.queryByText(vehicle.vin)).not.toBeInTheDocument()
@@ -292,7 +344,7 @@ it('scopes exact-truck cache to tenant, actor, role and auth session', async () 
   expect(client.getQueryData(['customerVehicles', 'customer-1', 'selected', 'tenant-1', 'actor-1', 'garage_owner', 1, 'vehicle-1'])).toEqual(vehicle)
   const base = api.get.getMockImplementation()!
   let resolveNew!: (value: { data: typeof vehicle }) => void
-  api.get.mockImplementation((url: string) => url === '/vehicles/vehicle-1' ? new Promise(resolve => { resolveNew = resolve }) : base(url))
+  api.get.mockImplementation((url: string, options?: { params?: { vehicle_id?: string } }) => url === '/vehicles/vehicle-1' ? new Promise(resolve => { resolveNew = resolve }) : base(url, options))
   await act(async () => {
     authState.user = { id: 'actor-2', tenant_id: 'tenant-1', role: 'garage_admin' }
     authState.authSessionEpoch = 2
@@ -307,8 +359,8 @@ it('scopes exact-truck cache to tenant, actor, role and auth session', async () 
 
 it('keeps enriched owner and operating-authority facts when opening the exact truck', async () => {
   const base = api.get.getMockImplementation()!
-  api.get.mockImplementation((url: string) => url === '/vehicles/vehicle-1'
-    ? Promise.resolve({ data: { ...vehicle, owner_company_name: 'Current Truck Owner LLC', operating_authority_company_name: 'Current Truck Operator LLC' } }) : base(url))
+  api.get.mockImplementation((url: string, options?: { params?: { vehicle_id?: string } }) => url === '/vehicles/vehicle-1'
+    ? Promise.resolve({ data: { ...vehicle, owner_company_name: 'Current Truck Owner LLC', operating_authority_company_name: 'Current Truck Operator LLC' } }) : base(url, options))
   setup('/dashboard?selected=order-1&queue=on_floor&customer=customer-1&customer_vehicle=vehicle-1')
   expect(await screen.findByText('Current Truck Owner LLC')).toBeVisible()
   expect(screen.getByText('Current Truck Operator LLC')).toBeVisible()
@@ -316,8 +368,8 @@ it('keeps enriched owner and operating-authority facts when opening the exact tr
 
 it('offers recovery without live truck controls when the exact vehicle is archived', async () => {
   const base = api.get.getMockImplementation()!
-  api.get.mockImplementation((url: string) => url === '/vehicles/vehicle-1'
-    ? Promise.reject({ response: { status: 404, data: { detail: 'Vehicle not found' } } }) : base(url))
+  api.get.mockImplementation((url: string, options?: { params?: { vehicle_id?: string } }) => url === '/vehicles/vehicle-1'
+    ? Promise.reject({ response: { status: 404, data: { detail: 'Vehicle not found' } } }) : base(url, options))
   setup('/dashboard?selected=order-1&queue=on_floor&customer=customer-1&customer_vehicle=vehicle-1')
   expect(await screen.findByRole('button', { name: 'Retry vehicle history' })).toBeVisible()
   expect(screen.queryByRole('button', { name: 'Edit vehicle' })).not.toBeInTheDocument()
@@ -328,16 +380,31 @@ it('offers recovery without live truck controls when the exact vehicle is archiv
 })
 
 
-it('keeps typed customer search and page through a cancelled truck order and allows clearing it afterward', async () => {
+it.each(['immediate', 'delayed'])('keeps typed customer search and page through a cancelled truck order and allows clearing it afterward (%s response)', async responseTiming => {
   const base = api.get.getMockImplementation()!
-  api.get.mockImplementation((url: string, options?: { params?: { skip?: number } }) => url === '/customers'
-    ? Promise.resolve({ data: { items: [customer], total: 26, has_more: !options?.params?.skip } }) : base(url))
+  let resolveSearch!: (value: { data: { items: typeof customer[]; total: number; has_more: boolean } }) => void
+  const pendingSearch = new Promise<{ data: { items: typeof customer[]; total: number; has_more: boolean } }>(resolve => { resolveSearch = resolve })
+  api.get.mockImplementation((url: string, options?: { params?: { skip?: number; search?: string } }) => {
+    if (url !== '/customers') return base(url, options)
+    if (responseTiming === 'delayed' && options?.params?.search === 'Northline' && !options.params.skip) return pendingSearch
+    return Promise.resolve({ data: { items: [customer], total: 26, has_more: !options?.params?.skip } })
+  })
   setup('/dashboard/customers?view=list&filter=active')
   await screen.findByRole('button', { name: 'Open Northline Logistics customer workspace' })
   const search = screen.getByRole('searchbox', { name: 'Search customers' })
   fireEvent.change(search, { target: { value: 'Northline' } })
   await waitFor(() => expect(api.get).toHaveBeenCalledWith('/customers', expect.objectContaining({ params: expect.objectContaining({ search: 'Northline' }) })))
-  fireEvent.click(screen.getByRole('button', { name: 'Next', exact: true }))
+  const next = screen.getByRole('button', { name: 'Next', exact: true })
+  if (responseTiming === 'delayed') {
+    expect(next).toBeDisabled()
+    fireEvent.click(next)
+    expect(screen.getByText('1–25 of 26 customers')).toBeInTheDocument()
+    expect(api.get).not.toHaveBeenCalledWith('/customers', expect.objectContaining({ params: expect.objectContaining({ search: 'Northline', skip: 25 }) }))
+    await act(async () => resolveSearch({ data: { items: [customer], total: 26, has_more: true } }))
+  }
+  // A started request is not a rendered result: placeholder data disables paging.
+  await waitFor(() => expect(next).toBeEnabled())
+  fireEvent.click(next)
   await screen.findByText('26–26 of 26 customers')
   fireEvent.click(screen.getByRole('button', { name: 'Open Northline Logistics customer workspace', exact: true }))
   fireEvent.click(await screen.findByRole('button', { name: /Open .*Unit C-001/ }))
@@ -398,6 +465,7 @@ it.each([true, false])('sends only an explicitly selected call token and preserv
     fireEvent.click(within(dialog).getByRole('button', { name: 'Link originating call' }))
     fireEvent.click(await within(dialog).findByRole('radio', { name: /Shop contact/ }))
   }
+  await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Create Repair Order' })).toBeEnabled())
   fireEvent.click(within(dialog).getByRole('button', { name: 'Create Repair Order' }))
   await within(dialog).findByRole('alert')
   const payload = api.post.mock.calls.find(([url]) => url === '/repair-orders')![1]
@@ -425,6 +493,7 @@ it.each(['fleet_manager', 'customer', 'driver'])('removes call selection and its
   fireEvent.change(within(dialog).getByPlaceholderText('Briefly describe the repair work or concern...'), { target: { value: 'Tire repair' } })
   expect(within(dialog).queryByText('Originating call')).not.toBeInTheDocument()
   expect(within(dialog).queryByRole('radio')).not.toBeInTheDocument()
+  await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Create Repair Order' })).toBeEnabled())
   fireEvent.click(within(dialog).getByRole('button', { name: 'Create Repair Order' }))
   await within(dialog).findByRole('alert')
   expect(api.post.mock.calls.find(([url]) => url === '/repair-orders')![1]).not.toHaveProperty('originating_call_reference')
@@ -489,4 +558,81 @@ it('reloads the truck chosen after cancellation with its own history filters', a
   expect(screen.getByTestId('location')).not.toHaveTextContent('vehicle=')
   expect(screen.getByRole('region', { name: 'Account details' })).toBeVisible()
   expect(api.post).not.toHaveBeenCalled()
+})
+
+async function startOrderWithService() {
+  const originalGet = api.get.getMockImplementation()!
+  api.get.mockImplementation((url: string, options?: { params?: { vehicle_id?: string } }) => url === '/services/typeahead' ? Promise.resolve({ data: [{ id: 'service-1', name: 'Filter service', base_price: '15.00' }] }) : originalGet(url, options))
+  setup()
+  fireEvent.click(await screen.findByRole('button', { name: /Open .*Unit C-001/ }))
+  fireEvent.click(await within(screen.getByRole('region', { name: 'Northline Logistics customer workspace' })).findByRole('button', { name: 'New repair order', exact: true }))
+  const dialog = await screen.findByRole('dialog', { name: 'New Repair Order' })
+  fireEvent.click(await within(dialog).findByRole('button', { name: 'Filter service', exact: true }))
+  await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Create Repair Order' })).toBeEnabled())
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Create Repair Order' }))
+  return dialog
+}
+
+it('retains the created order and original service request identity after an uncertain attachment', async () => {
+  const { quote } = await import('@/features/parts-pricing/__tests__/fixtures')
+  let writes = 0
+  api.post.mockImplementation((url, body) => {
+    if (url === '/repair-orders') return Promise.resolve({ data: { ...order, id: 'new-order', order_number: 'RO-NEW' } })
+    if (url === '/parts-pricing/resolve') return Promise.resolve({ data: quote({ plan: body.plan, required: false }) })
+    if (url.endsWith('/flat-service')) { writes++; return writes === 1 ? Promise.reject(new Error('offline')) : Promise.resolve({ data: { warnings: [] } }) }
+    return Promise.resolve({ data: {} })
+  })
+  await startOrderWithService()
+  const work = await screen.findByRole('region', { name: 'Repair order work' })
+  expect(within(work).getByRole('alert')).toHaveTextContent('Your draft is kept')
+  fireEvent.click(within(work).getByRole('button', { name: 'Retry remaining' }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry remaining' })).not.toBeInTheDocument())
+  expect(api.post.mock.calls.filter(([url]) => url === '/repair-orders')).toHaveLength(1)
+  expect(api.post.mock.calls.filter(([url]) => url === '/parts-pricing/resolve')).toHaveLength(1)
+  const writesMade = api.post.mock.calls.filter(([url]) => url.endsWith('/flat-service'))
+  expect(writesMade).toHaveLength(2); expect(writesMade[1][2].headers).toEqual(writesMade[0][2].headers)
+  expect(screen.getByTestId('location')).toHaveTextContent('selected=new-order')
+})
+
+it('keeps the created order when the service preview is cancelled and resumes without another create', async () => {
+  const { quote } = await import('@/features/parts-pricing/__tests__/fixtures')
+  api.post.mockImplementation((url, body) => url === '/repair-orders' ? Promise.resolve({ data: { ...order, id: 'new-order', order_number: 'RO-NEW' } }) : url === '/parts-pricing/resolve' ? Promise.resolve({ data: quote({ plan: body.plan }) }) : Promise.resolve({ data: { warnings: [] } }))
+  await startOrderWithService()
+  const review = await screen.findByRole('dialog', { name: 'Review parts pricing' }); fireEvent.click(within(review).getByRole('button', { name: 'Cancel' }))
+  const work = await screen.findByRole('region', { name: 'Repair order work' })
+  expect(within(work).getByRole('status', { name: 'Unfinished service attachment' })).toHaveTextContent('RO-NEW created')
+  fireEvent.click(within(work).getByRole('button', { name: 'Retry remaining' })); fireEvent.click(await screen.findByRole('button', { name: 'Confirm price' }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry remaining' })).not.toBeInTheDocument())
+  expect(api.post.mock.calls.filter(([url]) => url === '/repair-orders')).toHaveLength(1); expect(api.post.mock.calls.filter(([url]) => url.endsWith('/flat-service'))).toHaveLength(1)
+})
+
+it.each(['Retry remaining', 'Keep current work'])('keeps recovery inside the ledger and %s reopens the same order', async action => {
+  const { quote } = await import('@/features/parts-pricing/__tests__/fixtures')
+  api.post.mockImplementation((url, body) => url === '/repair-orders' ? Promise.resolve({ data: { ...order, id: 'new-order', order_number: 'RO-NEW' } }) : url === '/parts-pricing/resolve' ? Promise.resolve({ data: quote({ plan: body.plan }) }) : Promise.resolve({ data: {} }))
+  await startOrderWithService()
+  fireEvent.click(within(await screen.findByRole('dialog', { name: 'Review parts pricing' })).getByRole('button', { name: 'Cancel' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Close repair order' }))
+  const notice = await screen.findByRole('status', { name: 'Unfinished service attachment' })
+  expect(notice.closest('section')).toHaveClass('db-repair-orders-new')
+  fireEvent.click(within(notice).getByRole('button', { name: action }))
+  if (action === 'Retry remaining') fireEvent.click(await screen.findByRole('button', { name: 'Confirm price' }))
+  expect(await screen.findByRole('region', { name: 'Repair order work' })).toBeInTheDocument()
+  await waitFor(() => expect(screen.queryByRole('status', { name: 'Unfinished service attachment' })).not.toBeInTheDocument())
+  expect(screen.getByTestId('location')).toHaveTextContent('selected=new-order')
+  expect(api.post.mock.calls.filter(([url]) => url === '/repair-orders')).toHaveLength(1)
+  expect(api.post.mock.calls.filter(([url]) => url.endsWith('/flat-service'))).toHaveLength(action === 'Retry remaining' ? 1 : 0)
+})
+
+it.each(['preview', 'write'])('does not restore another actor\'s order recovery after pending service %s completes', async stage => {
+  const { quote } = await import('@/features/parts-pricing/__tests__/fixtures')
+  let settle!: (value: unknown) => void
+  const pending = new Promise(resolve => { settle = resolve })
+  api.post.mockImplementation((url, body) => url === '/repair-orders' ? Promise.resolve({ data: { ...order, id: 'new-order', order_number: 'RO-NEW' } }) : url === '/parts-pricing/resolve' ? stage === 'preview' ? pending : Promise.resolve({ data: quote({ plan: body.plan, required: false }) }) : pending)
+  const dialog = await startOrderWithService()
+  await waitFor(() => expect(api.post.mock.calls.some(([url]) => stage === 'preview' ? url === '/parts-pricing/resolve' : url.endsWith('/flat-service'))).toBe(true))
+  authState.user = { id: 'actor-2', tenant_id: 'tenant-2', role: 'garage_owner' }; authState.authSessionEpoch++
+  fireEvent.change(within(dialog).getByPlaceholderText('Briefly describe the repair work or concern...'), { target: { value: 'New session' } })
+  await act(async () => { settle(stage === 'preview' ? { data: quote({ plan: { kind: 'service_apply', service_id: 'service-1', quantity: '1' }, required: false }) } : { data: { warnings: [] } }) })
+  expect(screen.queryByRole('button', { name: 'Retry remaining' })).not.toBeInTheDocument(); expect(screen.queryByText('RO-NEW created')).not.toBeInTheDocument(); expect(screen.getByTestId('location')).not.toHaveTextContent('selected=new-order')
+  if (stage === 'preview') expect(api.post.mock.calls.some(([url]) => url.endsWith('/flat-service'))).toBe(false)
 })

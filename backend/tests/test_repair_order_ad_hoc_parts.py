@@ -82,7 +82,7 @@ async def test_an_unlisted_part_reaches_the_order_and_stays_in_the_catalogue(db_
 
 
 @pytest.mark.asyncio
-async def test_a_part_number_already_in_the_catalogue_is_reused_not_duplicated(db_session):
+async def test_a_part_number_already_in_the_catalogue_requires_catalog_confirmation(db_session):
     tenant, user, order = await _seed(db_session)
     existing = Inventory(
         id=uuid4(), tenant_id=tenant.id, sku="ETS-0532668000", name="Hose Heater, Main",
@@ -93,17 +93,19 @@ async def test_a_part_number_already_in_the_catalogue_is_reused_not_duplicated(d
 
     # Typed by hand, lower case: the same part number, and it must land on the
     # same part rather than minting a second spelling of it.
-    usage = await repair_orders.add_ad_hoc_part_to_repair_order(
-        order_id=order.id,
-        body=AdHocPartCreate(
-            name="Typed by hand", sku="ets-0532668000",
-            quantity=Decimal("1"), unit_price=Decimal("80.00"),
-        ),
-        db=db_session,
-        current_user=user,
-    )
-
-    assert usage.inventory_id == existing.id
+    with pytest.raises(HTTPException) as conflict:
+        usage = await repair_orders.add_ad_hoc_part_to_repair_order(
+            order_id=order.id,
+            body=AdHocPartCreate(
+                name="Typed by hand", sku="ets-0532668000",
+                quantity=Decimal("1"), unit_price=Decimal("80.00"),
+            ),
+            db=db_session,
+            current_user=user,
+        )
+    assert conflict.value.status_code == 409
+    assert conflict.value.detail['code'] == 'catalog_match_requires_preview'
+    assert conflict.value.detail['inventory']['id'] == str(existing.id)
     rows = await db_session.execute(
         select(Inventory).where(Inventory.tenant_id == tenant.id, Inventory.deleted_at.is_(None))
     )

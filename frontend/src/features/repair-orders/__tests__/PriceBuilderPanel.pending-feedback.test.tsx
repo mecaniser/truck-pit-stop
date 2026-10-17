@@ -1,3 +1,7 @@
+import { quote, price } from '@/features/parts-pricing/__tests__/fixtures'
+import type { ResolveRequest } from '@/features/parts-pricing/contract'
+import { useAuthStore } from '@/stores/authStore'
+import type { User } from '@/types'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -9,15 +13,18 @@ const apiMocks = vi.hoisted(() => ({
   post: vi.fn(),
   patch: vi.fn(),
   limits: vi.fn(),
+  resolve: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
   default: {
-    get: (url: string, ...args: unknown[]) => url.endsWith('/discount-limits') ? apiMocks.limits() : apiMocks.get(url, ...args),
-    post: apiMocks.post,
+    get: (url: string, ...args: unknown[]) => url.endsWith('/operations') ? Promise.resolve({ data: { items: [], summary: { tracked: 0, completed: 0, remaining: 0, legacy_untracked: 0 }, order_status: 'draft', is_order_lead: false } }) : url.endsWith('/checklist') ? Promise.resolve({ data: { items: [], total: 0, skip: 0, limit: 100, summary: { total: 0, completed: 0, required: 0, required_remaining: 0 }, can_update: true } }) : url.endsWith('/discount-limits') ? apiMocks.limits() : apiMocks.get(url, ...args),
+    post: (url: string, body: ResolveRequest, ...args: unknown[]) => url === '/parts-pricing/resolve' ? apiMocks.resolve(body) : apiMocks.post(url, body, ...args),
     patch: apiMocks.patch,
   },
 }))
+
+vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ appearance: { mode: 'dark' }, accentColors: { 500: '#d86a15' } }) }))
 
 vi.mock('react-hot-toast', () => ({
   default: {
@@ -66,9 +73,24 @@ function renderPanel(props: Partial<ComponentProps<typeof PriceBuilderPanel>> = 
 
 describe('PriceBuilderPanel pending feedback', () => {
   beforeEach(() => {
+    apiMocks.resolve.mockReset().mockImplementation((body: ResolveRequest) => Promise.resolve({ data: quote({ plan: body.plan, required: false }) }))
+    useAuthStore.setState({ user: { id: 'user-1', tenant_id: 'tenant-1', role: 'garage_owner' } as User, authSessionEpoch: 1, logoutInProgress: false })
     const capacity = { labor_discount_max: '10000', combined_discount_max: '20000', labor_discount_block_reason: null, order_discount_block_reason: null }
     apiMocks.limits.mockResolvedValue({ data: { current: capacity, stock: capacity, list: capacity } })
   })
+  it('keeps recovery notices in the work scroller with the footer outside that content', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const { container } = renderPanel({ workspaceNotice: <div role="status" aria-label="Unfinished service attachment">Service pending<button>Retry remaining</button><button>Keep current work</button></div> })
+    const notice = await screen.findByRole('status', { name: 'Unfinished service attachment' })
+    const scroll = notice.closest('.db-workspace-scroll')
+    expect(scroll).not.toBeNull()
+    const footer = container.querySelector('.db-workspace-footer')
+    expect(footer).not.toBeNull()
+    expect(scroll).not.toContainElement(footer as HTMLElement)
+    expect(within(notice).getByRole('button', { name: 'Retry remaining' })).toBeEnabled()
+    expect(within(notice).getByRole('button', { name: 'Keep current work' })).toBeEnabled()
+  })
+
   it('limits combined discounts to cost headroom and rechecks a stock-price draft', async () => {
     apiMocks.get.mockResolvedValue({ data: emptySummary })
     const current = { labor_discount_max: '150', combined_discount_max: '450', labor_discount_block_reason: null, order_discount_block_reason: null }
@@ -473,6 +495,7 @@ describe('PriceBuilderPanel pending feedback', () => {
 
   it('dismisses part pricing without saving and preserves explicit price application', async () => {
     const part = {
+      pricing: { ...price, pricing_version: 2 },
       id: 'usage-1', repair_order_id: 'order-1', inventory_id: 'part-1', inventory_sku: 'BS-1', inventory_name: 'Brake Shoes',
       quantity: '1', unit_type: 'each', unit_price: '50', total_price: '50', savings: '0', source_service_id: null, source_line_id: null,
     }
@@ -492,8 +515,9 @@ describe('PriceBuilderPanel pending feedback', () => {
     expect(screen.getByRole('textbox', { name: 'Customer price' })).toHaveValue('50.00')
     await user.clear(screen.getByRole('textbox', { name: 'Customer price' }))
     await user.type(screen.getByRole('textbox', { name: 'Customer price' }), '45')
+    await user.type(screen.getByRole('textbox', { name: 'Override reason' }), 'Customer agreement')
     await user.click(screen.getByRole('button', { name: 'Apply', exact: true }))
-    await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledWith('/repair-orders/order-1/parts/usage-1', { unit_price: 45 }))
+    await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledWith('/repair-orders/order-1/parts/usage-1', { unit_price: '45.00', price_action: 'manual', price_override_reason: 'Customer agreement', expected_pricing_version: 2 }))
     await waitFor(() => expect(screen.queryByLabelText('Part pricing for Brake Shoes')).not.toBeInTheDocument())
   })
 
@@ -621,6 +645,51 @@ describe('PriceBuilderPanel pending feedback', () => {
       resolveApply?.()
       await pendingApply
     })
+  })
+
+  it('reviews a bundled operation, retains its search on cancel, and requires acceptance of a changed quote', async () => {
+    const serviceId = 'service-1'
+    const plan = { kind: 'service_apply' as const, service_id: serviceId, quantity: '1' }
+    const bundleQuote = (fingerprint: string, amount: string) => {
+      const result = quote({ fingerprint, total: amount })
+      return { ...result, plan_kind: 'service_apply', lines: result.lines.map(line => ({ ...line, source_service_id: serviceId, source_component_id: 'component-1' })) }
+    }
+    apiMocks.resolve.mockResolvedValue({ data: bundleQuote('bundle-old', '15.00') })
+    apiMocks.get.mockImplementation((url: string) => Promise.resolve({ data: url.endsWith('/price-build') ? emptySummary : [] }))
+    let writes = 0
+    apiMocks.post.mockImplementation((url: string) => {
+      if (url.endsWith('/repair-ops/search')) return Promise.resolve({ data: { candidates: [{ operation_id: `service:${serviceId}`, name: 'Filter service bundle', estimated_hours: '0.25', provider: 'service_catalog' }], warnings: [] } })
+      if (url.endsWith('/flat-service')) {
+        writes += 1
+        if (writes === 1) return Promise.reject({ response: { status: 409, data: { detail: { code: 'pricing_preview_changed', message: 'Service price changed.', preview: bundleQuote('bundle-fresh', '19.00') } } } })
+        return Promise.resolve({ data: emptySummary })
+      }
+      throw new Error(`Unexpected POST ${url}`)
+    })
+    const user = userEvent.setup(); renderPanel()
+    const search = await screen.findByPlaceholderText(/add operation/i)
+    await user.type(search, 'filter service')
+    await user.click(await screen.findByRole('button', { name: 'Apply operation' }))
+    expect(await screen.findByRole('dialog', { name: 'Review parts pricing' })).toHaveTextContent('$15.00')
+    expect(writes).toBe(0)
+    await user.click(screen.getByRole('button', { name: 'Cancel', exact: true }))
+    expect(search).toHaveValue('filter service')
+    expect(writes).toBe(0)
+    await user.click(screen.getByRole('button', { name: 'Apply operation' }))
+    await user.click(await screen.findByRole('button', { name: 'Confirm price' }))
+    const changed = await screen.findByRole('dialog', { name: 'Review changed price' })
+    expect(changed).toHaveTextContent('$19.00')
+    expect(changed).toHaveTextContent('Previously $15.00')
+    expect(writes).toBe(1)
+    await user.click(within(changed).getByRole('button', { name: 'Accept new price' }))
+    await waitFor(() => expect(search).toHaveValue(''))
+    expect(apiMocks.resolve).toHaveBeenCalledWith({ context: { kind: 'repair_order', repair_order_id: 'order-1' }, plan })
+    const calls = apiMocks.post.mock.calls.filter(([url]) => url.endsWith('/flat-service'))
+    expect(calls).toHaveLength(2)
+    expect(calls[0][1]).toEqual({ service_id: serviceId, quantity: 1, pricing_preview_fingerprint: 'bundle-old', pricing_presentation: 'shop' })
+    expect(calls[1][1]).toEqual({ service_id: serviceId, quantity: 1, pricing_preview_fingerprint: 'bundle-fresh', pricing_presentation: 'shop' })
+    expect(calls[1][2].headers['Idempotency-Key']).not.toBe(calls[0][2].headers['Idempotency-Key'])
+    expect(apiMocks.post.mock.calls.some(([url]) => url.endsWith('/repair-ops/apply'))).toBe(false)
   })
 
   it('persists manually entered labor duration through the optimistic pricing rollup', async () => {
@@ -791,7 +860,7 @@ describe('PriceBuilderPanel pending feedback', () => {
         inventory_id: 'part-1',
         quantity: 2,
         allow_stock_shortage: true,
-      }))
+      }), expect.objectContaining({ headers: { 'Idempotency-Key': expect.any(String) } }))
     })
   })
 
