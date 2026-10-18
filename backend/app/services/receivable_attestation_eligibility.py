@@ -39,6 +39,8 @@ def triage_receivable_source(bundle: ReceivableSourceBundle) -> ReceivableTriage
         InvoiceStatus.SENT, InvoiceStatus.OVERDUE, InvoiceStatus.PAID,
     } or invoice.is_internal:
         reasons.append("invoice_not_collectible_candidate")
+    if order.is_internal or customer.is_internal_fleet:
+        reasons.append("internal_source_conflict")
     if order.deleted_at or order.status == RepairOrderStatus.CANCELLED or customer.deleted_at:
         reasons.append("source_identity_inactive")
     if rows["superseding_invoices"]:

@@ -18,7 +18,8 @@ def _bundle(status=InvoiceStatus.OVERDUE):
     order = RepairOrder(id=order_id, tenant_id=tenant_id, customer_id=customer_id,
                         status=RepairOrderStatus.INVOICED)
     invoice = Invoice(id=invoice_id, tenant_id=tenant_id, repair_order_id=order_id,
-                      billed_customer_id=customer_id, status=status, subtotal=Decimal("100.00"),
+                      billed_customer_id=customer_id, status=status, is_internal=False,
+                      subtotal=Decimal("100.00"),
                       shop_supplies_amount=Decimal("0.00"), service_fee_amount=Decimal("0.00"),
                       tax_amount=Decimal("0.00"), total_amount=Decimal("100.00"))
     rows = {kind: [] for kind in REQUIRED_RELATIONS}
@@ -40,6 +41,18 @@ def test_open_candidate_always_requires_operator_review():
     bundle.linked_rows["payments"].append(_payment(bundle, "1.00"))
     held = triage_receivable_source(bundle)
     assert held.review_path is None and "open_invoice_has_payment_evidence" in held.hold_reasons
+
+
+def test_internal_order_or_fleet_customer_blocks_external_invoice_review():
+    bundle = _bundle()
+    assert bundle.invoice.is_internal is False
+    bundle.order.is_internal = True
+    assert "internal_source_conflict" in triage_receivable_source(bundle).hold_reasons
+    assert triage_receivable_source(bundle).review_path is None
+    bundle.order.is_internal = False
+    bundle.customer.is_internal_fleet = True
+    held = triage_receivable_source(bundle)
+    assert held.review_path is None and "internal_source_conflict" in held.hold_reasons
 
 
 def test_paid_candidate_needs_full_receipt_review_and_holds_overage_shortfall():
