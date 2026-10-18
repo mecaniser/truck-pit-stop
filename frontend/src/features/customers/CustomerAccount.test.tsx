@@ -16,7 +16,7 @@ const orderId = '11111111-1111-4111-8111-111111111111'
 const account = {
   as_of_date: '2026-10-17', generated_at: '2026-10-17T12:00:00Z', currency: 'USD',
   customer: { id: 'customer-a', name: 'Northline' },
-  native: { collectible: '85.00', current: '30.00', days_1_30: '55.00', days_31_60: '0.00', days_61_90: '0.00', days_90_plus: '0.00', undated_due: '0.00', unapplied_credit: '15.00', review_required_count: 1 },
+  native: { collectible: '85.00', collectible_complete: false, unverified_invoice_count: 1, current: '30.00', days_1_30: '55.00', days_31_60: '0.00', days_61_90: '0.00', days_90_plus: '0.00', undated_due: '0.00', unapplied_credit: '15.00', review_required_count: 1 },
   ets_history: { observed_open_balance: null, balance_basis: 'unavailable', review_required_count: 0, collectible: false },
   transactions: [
     { id: 'invoice-a', kind: 'invoice', source_owner: 'native', occurred_at: '2026-10-01', date_basis: 'issued_date', invoice_id: 'invoice-a', amount: '100.00', principal_total: '100.00', settled_principal: '15.00', remaining_principal: '85.00', drilldown_route: `/dashboard/repair-orders?selected=${orderId}`, review_reason: null },
@@ -39,6 +39,9 @@ describe('customer account', () => {
     setup()
     const view = await screen.findByRole('region', { name: 'Customer account' })
     expect(within(view).getByText('$85.00')).toBeVisible()
+    expect(within(view).getByText('Verified native subtotal')).toBeVisible()
+    expect(within(view).getByRole('alert')).toHaveTextContent('Native balance incomplete: 1 invoice is unverified')
+    expect(within(view).queryByText('DieselBridge collectible')).not.toBeInTheDocument()
     expect(within(view).getByText('$15.00')).toBeVisible()
     expect(within(view).getByText('Principal $100.00 · Settled $15.00 · $85.00 remaining')).toBeVisible()
     expect(within(view).getByText(/Outstanding ETS balance is unavailable/)).toBeVisible()
@@ -49,6 +52,14 @@ describe('customer account', () => {
     const reviewRow = within(activity).getByText('Needs review').closest('li')!
     expect(within(reviewRow).queryByRole('link')).not.toBeInTheDocument()
     expect(within(reviewRow).queryByText('$100.00')).not.toBeInTheDocument()
+  })
+
+  it('labels a complete verified account as collectible', async () => {
+    api.get.mockResolvedValue({ data: { ...account, native: { ...account.native, collectible_complete: true, unverified_invoice_count: 0, review_required_count: 0 } } })
+    setup()
+    const view = await screen.findByRole('region', { name: 'Customer account' })
+    expect(within(view).getByText('DieselBridge collectible')).toBeVisible()
+    expect(within(view).queryByText(/Native balance incomplete/)).not.toBeInTheDocument()
   })
 
   it('rejects a mismatched customer reply instead of showing another account', async () => {
@@ -131,7 +142,7 @@ describe('customer account', () => {
       : Promise.resolve({ data: account }))
     setup()
     fireEvent.click(await screen.findByRole('button', { name: 'Download statement' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('Statement unavailable')
+    expect(await screen.findByText('Statement unavailable. Try the download again.')).toBeVisible()
     expect(create).not.toHaveBeenCalled()
   })
 })

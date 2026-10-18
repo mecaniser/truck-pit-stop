@@ -178,7 +178,6 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
                                   Customer.tenant_id == Invoice.tenant_id,
                                   Customer.deleted_at.is_(None)))
         .where(Invoice.tenant_id == tenant_id, Invoice.deleted_at.is_(None),
-               RepairOrder.deleted_at.is_(None),
                or_(Invoice.billed_customer_id == customer_id,
                    and_(Invoice.billed_customer_id.is_(None), RepairOrder.customer_id == customer_id),
                    and_(RepairOrder.customer_id == customer_id,
@@ -226,6 +225,7 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
     buckets = {key: ZERO for key in (*BUCKETS, "undated_due")}
     collectible = ZERO
     review_native = review_ets = 0
+    unverified_native_invoices = 0
     rows: list[dict] = []
     source_by_invoice: dict[UUID, str] = {}
     masked_invoice_ids: set[UUID] = set()
@@ -233,9 +233,31 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
     number_by_invoice: dict[UUID, str] = {invoice.id: invoice.invoice_number for invoice, _, _ in invoices}
     mixed_payment_invoice_ids = {payment.invoice_id for payment in payments if payment.source == "easy_truck_shop_import"}
     for invoice, order, bill_to in invoices:
+        if order.deleted_at is not None:
+            imported = invoice.source == "easy_truck_shop_import" or invoice.accounting_policy == "historical_export_hold"
+            eligible = (invoice.status in {InvoiceStatus.SENT, InvoiceStatus.PAID, InvoiceStatus.OVERDUE}
+                        and not invoice.is_internal and not invoice.voided_at and invoice.id not in superseded_ids)
+            if not eligible:
+                continue
+            if imported:
+                review_ets += 1
+            else:
+                review_native += 1
+                unverified_native_invoices += 1
+            source_by_invoice[invoice.id] = "review_required"
+            masked_invoice_ids.add(invoice.id)
+            rows.append(_row("invoice", "review_required", invoice.id, None, "order_deleted",
+                             invoice.id, None, None, None, "Repair order was deleted"))
+            continue
         orphan = invoice.billed_customer_id is not None and bill_to is None
         if orphan:
-            review_native += 1
+            if invoice.source == "easy_truck_shop_import" or invoice.accounting_policy == "historical_export_hold":
+                review_ets += 1
+            else:
+                review_native += 1
+                if (invoice.status in {InvoiceStatus.SENT, InvoiceStatus.PAID, InvoiceStatus.OVERDUE}
+                        and not invoice.is_internal and not invoice.voided_at and invoice.id not in superseded_ids):
+                    unverified_native_invoices += 1
             source_by_invoice[invoice.id] = "review_required"
             masked_invoice_ids.add(invoice.id)
             rows.append(_row("invoice", "review_required", invoice.id, None, "identity_unresolved",
@@ -255,6 +277,7 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
                                                       customer_id=customer_id, bad_baseline=invoice.id in bad_baseline) else "review_required"
             if source == "review_required":
                 review_native += 1
+                unverified_native_invoices += 1
         else:
             # Drafts, voids, cancelled revisions and internal invoices are not AR.
             continue
@@ -314,7 +337,9 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
     return {
         "as_of_date": as_of.isoformat(), "generated_at": now.isoformat(), "currency": "USD",
         "customer": {"id": str(customer.id), "name": name},
-        "native": {"collectible": _money(collectible), **{key: _money(value) for key, value in buckets.items()},
+        "native": {"collectible": _money(collectible), "collectible_complete": unverified_native_invoices == 0,
+                   "unverified_invoice_count": unverified_native_invoices,
+                   **{key: _money(value) for key, value in buckets.items()},
                    "unapplied_credit": _money(_credit_remaining(credits, overpayments)),
                    "review_required_count": review_native},
         "ets_history": {"observed_open_balance": None, "balance_basis": "unavailable",

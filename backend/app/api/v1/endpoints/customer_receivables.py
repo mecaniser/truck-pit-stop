@@ -85,10 +85,16 @@ def render_statement_pdf(snapshot: dict) -> bytes:
     line("Customer account statement — preview only", size=15)
     line(snapshot["customer"]["name"])
     line(f"Generated {snapshot['generated_at']} · As of {snapshot['as_of_date']} (shop local)")
-    line("No statement was sent or issued. Current balance only; no historical opening balance.")
+    line("No statement was sent or issued. Current snapshot; no historical opening balance.")
     y -= 10
     native = snapshot["native"]
-    line(f"DieselBridge native collectible: ${native['collectible']}", size=12)
+    if native["collectible_complete"]:
+        line(f"DieselBridge native collectible: ${native['collectible']}", size=12)
+    else:
+        line("Native balance incomplete — do not use this preview to collect", size=12)
+        line(f"Verified native subtotal only: ${native['collectible']}")
+        line(f"{native['unverified_invoice_count']} invoice(s) excluded from balance and aging")
+    line("Aging below includes verified native principal only.")
     for label, key in (("Current", "current"), ("1–30 overdue", "days_1_30"),
                        ("31–60 overdue", "days_31_60"), ("61–90 overdue", "days_61_90"),
                        ("90+ overdue", "days_90_plus"), ("Undated due", "undated_due"),

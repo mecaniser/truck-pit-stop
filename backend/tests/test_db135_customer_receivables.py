@@ -101,7 +101,8 @@ def test_statement_identifies_entries_and_discloses_truncation(monkeypatch):
            "invoice_id": str(uuid4()), "invoice_number": "INV-ACCOUNT-1",
            "amount": "5.00", "remaining_principal": None, "credit_action": None}
     snapshot = {"customer": {"name": "A <script> customer"}, "generated_at": "2026-10-17T12:00:00Z",
-                "as_of_date": "2026-10-17", "native": {"collectible": "0.00", "current": "0.00",
+                "as_of_date": "2026-10-17", "native": {"collectible": "0.00", "collectible_complete": True,
+                "unverified_invoice_count": 0, "current": "0.00",
                 "days_1_30": "0.00", "days_31_60": "0.00", "days_61_90": "0.00",
                 "days_90_plus": "0.00", "undated_due": "0.00", "unapplied_credit": "0.00",
                 "review_required_count": 0}, "ets_history": {"review_required_count": 0},
@@ -111,6 +112,11 @@ def test_statement_identifies_entries_and_discloses_truncation(monkeypatch):
     assert row["id"].encode() in pdf and b"INV-ACCOUNT-1" in pdf
     assert b"1 activity rows omitted" in pdf
     assert len(pdf) < account_endpoints.PDF_BYTES_CAP
+    snapshot["native"]["collectible_complete"] = False
+    snapshot["native"]["unverified_invoice_count"] = 1
+    incomplete_pdf = render_statement_pdf(snapshot)
+    assert b"Native balance incomplete" in incomplete_pdf
+    assert b"Verified native subtotal only" in incomplete_pdf
 
 
 @pytest.mark.asyncio
@@ -130,7 +136,8 @@ async def test_account_api_denies_receptionist_and_ungranted_admin_then_pages(cl
         return {
             "as_of_date": "2026-10-17", "generated_at": "2026-10-17T12:00:00+00:00",
             "currency": "USD", "customer": {"id": str(customer_id), "name": "Customer"},
-            "native": {"collectible": "0.00", "current": "0.00", "days_1_30": "0.00",
+            "native": {"collectible": "0.00", "collectible_complete": True,
+                       "unverified_invoice_count": 0, "current": "0.00", "days_1_30": "0.00",
                        "days_31_60": "0.00", "days_61_90": "0.00", "days_90_plus": "0.00",
                        "undated_due": "0.00", "unapplied_credit": "0.00", "review_required_count": 0},
             "ets_history": {"observed_open_balance": None, "balance_basis": "unavailable",
@@ -180,10 +187,11 @@ async def test_account_separates_native_ets_and_orphan_bill_to_without_double_co
     await db_session.flush()
     orders = [RepairOrder(id=uuid4(), tenant_id=tenant_id, customer_id=customer_id,
                           vehicle_id=vehicle.id, order_number=f"RO-{uuid4().hex[:8]}",
-                          status=RepairOrderStatus.INVOICED) for _ in range(4)]
+                          status=RepairOrderStatus.INVOICED) for _ in range(6)]
     db_session.add_all(orders)
     await db_session.flush()
     now = datetime.now(timezone.utc)
+    orders[5].deleted_at = now
     native = Invoice(id=uuid4(), tenant_id=tenant_id, repair_order_id=orders[0].id,
                      billed_customer_id=None, invoice_number=f"INV-{uuid4().hex[:8]}",
                      status=InvoiceStatus.SENT, subtotal=Decimal("100.00"), total_amount=Decimal("100.00"),
@@ -198,11 +206,22 @@ async def test_account_separates_native_ets_and_orphan_bill_to_without_double_co
     reassigned = Invoice(id=uuid4(), tenant_id=tenant_id, repair_order_id=orders[3].id,
                          billed_customer_id=other_id, invoice_number=f"INV-{uuid4().hex[:8]}",
                          status=InvoiceStatus.SENT, subtotal=Decimal("300.00"), total_amount=Decimal("300.00"))
-    db_session.add_all([native, imported, orphan, reassigned])
+    missing_settlement = Invoice(id=uuid4(), tenant_id=tenant_id, repair_order_id=orders[4].id,
+                                 billed_customer_id=customer_id, invoice_number=f"INV-{uuid4().hex[:8]}",
+                                 status=InvoiceStatus.OVERDUE, subtotal=Decimal("200.00"),
+                                 total_amount=Decimal("200.00"), due_date=now - timedelta(days=91))
+    deleted_order_invoice = Invoice(id=uuid4(), tenant_id=tenant_id, repair_order_id=orders[5].id,
+                                    billed_customer_id=customer_id, invoice_number=f"INV-{uuid4().hex[:8]}",
+                                    status=InvoiceStatus.OVERDUE, subtotal=Decimal("400.00"),
+                                    total_amount=Decimal("400.00"), due_date=now - timedelta(days=91))
+    db_session.add_all([native, imported, orphan, reassigned, missing_settlement, deleted_order_invoice])
     await db_session.flush()
     db_session.add(InvoiceSettlement(id=uuid4(), tenant_id=tenant_id, invoice_id=native.id,
                                      customer_id=customer_id, principal_total=Decimal("100.00"),
                                      confirmed_principal=Decimal("25.00"), legacy_reconciliation_status="native"))
+    db_session.add(InvoiceSettlement(id=uuid4(), tenant_id=tenant_id, invoice_id=deleted_order_invoice.id,
+                                     customer_id=customer_id, principal_total=Decimal("400.00"),
+                                     confirmed_principal=Decimal("0.00"), legacy_reconciliation_status="native"))
     db_session.add(Payment(id=uuid4(), tenant_id=tenant_id, invoice_id=native.id,
                            payment_number=f"PAY-{uuid4().hex[:8]}", amount=Decimal("25.00"),
                            method=PaymentMethod.CASH, status=PaymentStatus.COMPLETED))
@@ -237,14 +256,22 @@ async def test_account_separates_native_ets_and_orphan_bill_to_without_double_co
         await account_snapshot(db_session, tenant_id=uuid4(), customer_id=customer_id)
     assert hidden.value.status_code == 404
     assert snapshot["native"]["collectible"] == "75.00"
+    assert snapshot["native"]["collectible_complete"] is False
+    assert snapshot["native"]["unverified_invoice_count"] == 3
     assert snapshot["native"]["days_31_60"] == "75.00"
-    assert snapshot["native"]["review_required_count"] == 2
+    assert snapshot["native"]["days_90_plus"] == "0.00"
+    assert snapshot["native"]["review_required_count"] == 4
     assert snapshot["ets_history"]["observed_open_balance"] is None
     assert snapshot["ets_history"]["collectible"] is False
     assert snapshot["ets_history"]["review_required_count"] == 1
     assert not any(row["invoice_id"] == str(reassigned.id) for row in snapshot["transactions"])
     orphan_row = next(row for row in snapshot["transactions"] if row["invoice_id"] == str(orphan.id))
     assert orphan_row["source_owner"] == "review_required"
+    missing_row = next(row for row in snapshot["transactions"] if row["invoice_id"] == str(missing_settlement.id))
+    assert missing_row["source_owner"] == "review_required" and missing_row["remaining_principal"] is None
+    deleted_row = next(row for row in snapshot["transactions"] if row["invoice_id"] == str(deleted_order_invoice.id))
+    assert deleted_row["source_owner"] == "review_required" and deleted_row["review_reason"] == "Repair order was deleted"
+    assert deleted_row["amount"] is None and deleted_row["remaining_principal"] is None
     assert orphan_row["amount"] is None and orphan_row["drilldown_route"] is None
     assert all(row["id"] != str(orphan_payment.id) for row in snapshot["transactions"])
     pending_row = next(row for row in snapshot["transactions"] if row["id"] == str(pending_payment.id))

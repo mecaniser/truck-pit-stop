@@ -15,6 +15,8 @@ const accountSchema = z.object({
   customer: z.object({ id: z.string(), name: z.string() }),
   native: z.object({
     collectible: moneySchema,
+    collectible_complete: z.boolean(),
+    unverified_invoice_count: z.number().int().nonnegative(),
     current: moneySchema,
     days_1_30: moneySchema,
     days_31_60: moneySchema,
@@ -197,11 +199,12 @@ export default function CustomerAccount({ customerId }: { customerId: string }) 
     </div>
     {downloadError && <p role="alert">Statement unavailable. Try the download again.</p>}
     <div className="db-customer-account__summary">
-      <div className="db-customer-account__collectible"><span>DieselBridge collectible</span><strong>{money(account.native.collectible)}</strong><small>Confirmed native invoice principal only</small></div>
+      <div className="db-customer-account__collectible"><span>{account.native.collectible_complete ? 'DieselBridge collectible' : 'Verified native subtotal'}</span><strong>{money(account.native.collectible)}</strong><small>{account.native.collectible_complete ? 'Confirmed native invoice principal only' : 'Balance incomplete · do not collect from this subtotal'}</small></div>
       <div><span>Unapplied credit</span><strong>{money(account.native.unapplied_credit)}</strong><small>Not deducted from aging</small></div>
     </div>
     <section className="db-customer-account__section" aria-label="Native aging">
-      <h4>Overdue aging</h4>
+      <h4>{account.native.collectible_complete ? 'Overdue aging' : 'Verified overdue aging only'}</h4>
+      {!account.native.collectible_complete && <p role="alert">Native balance incomplete: {account.native.unverified_invoice_count} {account.native.unverified_invoice_count === 1 ? 'invoice is' : 'invoices are'} unverified and excluded from this subtotal and aging.</p>}
       <div className="db-customer-account__buckets">{buckets.map(([label, amount]) => <div key={label}><span>{label}</span><strong>{money(amount)}</strong></div>)}</div>
       <div className="db-customer-account__exceptions"><span>Due date unavailable</span><strong>{money(account.native.undated_due)}</strong></div>
       {account.native.review_required_count > 0 && <p>{account.native.review_required_count} native {account.native.review_required_count === 1 ? 'item needs' : 'items need'} review and {account.native.review_required_count === 1 ? 'is' : 'are'} excluded from these totals.</p>}
