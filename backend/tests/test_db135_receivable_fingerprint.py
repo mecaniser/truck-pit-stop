@@ -69,3 +69,34 @@ def test_receivable_fingerprint_requires_complete_tenant_scoped_relation_map():
     invoice.billed_customer_id = uuid4()
     with pytest.raises(ValueError, match="bill-to mismatch"):
         fingerprint_source_bundle(**args, linked_rows=rows)
+
+
+def test_receivable_fingerprint_tracks_insert_status_due_and_rejects_bad_rows(monkeypatch):
+    tenant_id, invoice, order, customer, rows = _source()
+    args = dict(tenant_id=tenant_id, invoice=invoice, order=order, customer=customer)
+    first = fingerprint_source_bundle(**args, linked_rows=rows)
+    invoice.status = InvoiceStatus.OVERDUE
+    assert fingerprint_source_bundle(**args, linked_rows=rows) != first
+    invoice.status = InvoiceStatus.PAID
+    invoice.due_date = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    assert fingerprint_source_bundle(**args, linked_rows=rows) != first
+    invoice.due_date = None
+    rows["payments"].append(Payment(id=uuid4(), tenant_id=tenant_id, invoice_id=invoice.id,
+                                    amount=Decimal("1.00"), method=PaymentMethod.CASH,
+                                    status=PaymentStatus.COMPLETED))
+    assert fingerprint_source_bundle(**args, linked_rows=rows) != first
+    rows["payments"].append(rows["payments"][0])
+    with pytest.raises(ValueError, match="duplicated"):
+        fingerprint_source_bundle(**args, linked_rows=rows)
+    rows["payments"].pop()
+    monkeypatch.setattr("app.services.receivable_attestation_fingerprint.MAX_SOURCE_ROWS_PER_KIND", 2)
+    with pytest.raises(ValueError, match="safe read limit"):
+        fingerprint_source_bundle(**args, linked_rows=rows)
+
+
+def test_receivable_fingerprint_rejects_unsupported_json_value():
+    tenant_id, invoice, order, customer, rows = _source()
+    invoice.line_items_snapshot = {"unexpected": {1, 2}}
+    with pytest.raises(TypeError, match="Unsupported attestation source value"):
+        fingerprint_source_bundle(tenant_id=tenant_id, invoice=invoice, order=order,
+                                  customer=customer, linked_rows=rows)
