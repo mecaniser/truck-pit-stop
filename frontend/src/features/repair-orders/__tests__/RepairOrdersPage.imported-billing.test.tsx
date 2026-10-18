@@ -14,7 +14,7 @@ vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ presentationVaria
 const order = {
   id: 'ets-order', tenant_id: 'tenant-139', customer_id: 'customer-139', vehicle_id: 'vehicle-139',
   source: 'easy_truck_shop_import', imported_invoice_total_amount: '534.41',
-  order_number: 'ETS-1799-118833', status: 'completed', description: 'PM service',
+  order_number: 'ETS-7001-8002', status: 'completed', description: 'PM service',
   vehicle_make: 'VOLVO', vehicle_model: 'VNL', vehicle_year: 2021,
   customer_company_name: 'Imported shop customer', assigned_mechanic_id: null, is_internal: false,
   total_parts_cost: '489.52', total_labor_cost: '0.00', total_cost: '-150.00',
@@ -28,7 +28,7 @@ const detail = {
 }
 const sourceBilling = {
   source: 'easy_truck_shop_import', evidence_basis: 'ets_source_snapshot', reconciliation_status: 'not_checked',
-  invoice_id: 'ets-invoice', invoice_number: 'ETSINV-118833', total_amount: '534.41',
+  invoice_id: 'ets-invoice', invoice_number: 'ETSINV-9001', total_amount: '534.41',
   recorded_completed_amount: '534.41', recorded_remaining_amount: '0.00', payment_status: 'paid',
   observed_at: '2026-10-18T20:00:00Z', review_required: false, review_reasons: [],
 }

@@ -13,7 +13,7 @@ from app.services.imported_billing import SOURCE, load_imported_billing, summari
 
 
 def invoice(**changes):
-    return NS(**(dict(id=uuid4(), tenant_id=uuid4(), invoice_number="ETSINV-1667", status="paid", source=SOURCE, total_amount=Decimal("534.41"), deleted_at=None, updated_at=datetime(2026,10,18,tzinfo=timezone.utc)) | changes))
+    return NS(**(dict(id=uuid4(), tenant_id=uuid4(), invoice_number="ETSINV-9001", status="paid", source=SOURCE, total_amount=Decimal("534.41"), deleted_at=None, updated_at=datetime(2026,10,18,tzinfo=timezone.utc)) | changes))
 
 
 def payment(inv, **changes):
@@ -150,10 +150,10 @@ from app.core.config import settings
 
 def snapshot_fixture(**changes):
     inv=invoice()
-    order=NS(id=uuid4(),tenant_id=inv.tenant_id,source=SOURCE,deleted_at=None,order_number="ETS-1799-118833")
+    order=NS(id=uuid4(),tenant_id=inv.tenant_id,source=SOURCE,deleted_at=None,order_number="ETS-7001-8002")
     inv.repair_order_id=order.id
     money=lambda x:{"amount":str(x),"currency":"USD"}
-    facts=dict(source="easy_truck_shop",schema_version=1,settlement_semantics="unverified",service_id="1799",invoice_id="inv1",invoice_number="1667",service_internal_id="srv1",invoice_service_id="srv1",ets_shop_id="shop1",observed_at_source=datetime.now(timezone.utc).isoformat(),invoice_status="10",currency="USD",total=money("534.41"),balance=money("0.00"),payment_lines_truncated=False,invoice_manifest={"complete":True,"evidence_kind":"verified_source_service_invoice_manifest","service_internal_id":"srv1","invoice_ids":["inv1"]},payment_lines=[{"id":"a1","amount":money("534.41"),"payment":{"id":"p1","status":"20","type":"0","provider":"1","canceled":False,"total":money("534.41"),"credit_total":money("0"),"unapplied_amount":money("0")}}])
+    facts=dict(source="easy_truck_shop",schema_version=1,settlement_semantics="unverified",service_id="7001",invoice_id="inv1",invoice_number="9001",service_internal_id="srv1",invoice_service_id="srv1",ets_shop_id="shop1",observed_at_source=datetime.now(timezone.utc).isoformat(),invoice_status="10",currency="USD",total=money("534.41"),balance=money("0.00"),payment_lines_truncated=False,invoice_manifest={"complete":True,"evidence_kind":"verified_source_service_invoice_manifest","service_internal_id":"srv1","invoice_ids":["inv1"]},payment_lines=[{"id":"a1","amount":money("534.41"),"payment":{"id":"p1","status":"20","type":"0","provider":"1","canceled":False,"total":money("534.41"),"credit_total":money("0"),"unapplied_amount":money("0")}}])
     facts.update(changes)
     return inv,order,{"schema_version":1,"observations":[{"evidence":facts,"sha256":_digest(facts)}]}
 
