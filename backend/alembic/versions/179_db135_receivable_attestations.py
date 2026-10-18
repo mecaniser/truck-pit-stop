@@ -74,7 +74,7 @@ def upgrade():
         sa.CheckConstraint("decision IN ('verified_open', 'verified_paid_tender')", name="ck_db135_attestation_decision"),
         sa.CheckConstraint("currency = 'USD'", name="ck_db135_attestation_currency"),
         sa.CheckConstraint("principal_total_cents > 0 AND confirmed_principal_cents >= 0 AND confirmed_principal_cents <= principal_total_cents", name="ck_db135_attestation_amounts"),
-        sa.CheckConstraint("decision <> 'verified_open' OR confirmed_principal_cents = 0", name="ck_db135_attestation_open"),
+        sa.CheckConstraint("(decision = 'verified_open' AND confirmed_principal_cents = 0) OR (decision = 'verified_paid_tender' AND confirmed_principal_cents = principal_total_cents)", name="ck_db135_attestation_decision_amount"),
         sa.CheckConstraint("reviewer_user_id <> executor_user_id", name="ck_db135_attestation_independent"),
         sa.CheckConstraint("applied_at >= reviewed_at AND valid_until > applied_at AND valid_until <= reviewed_at + interval '7 days'", name="ck_db135_attestation_validity"),
         sa.CheckConstraint("source_fingerprint ~ '^[0-9a-f]{64}$' AND evidence_digest ~ '^[0-9a-f]{64}$' AND manifest_digest ~ '^[0-9a-f]{64}$'", name="ck_db135_attestation_digests"),
@@ -109,7 +109,13 @@ def upgrade():
       IF NOT EXISTS (SELECT 1 FROM invoices i JOIN repair_orders ro ON ro.id = i.repair_order_id
                      WHERE i.id = NEW.invoice_id AND i.tenant_id = NEW.tenant_id
                        AND i.repair_order_id = NEW.repair_order_id AND ro.tenant_id = NEW.tenant_id
-                       AND NEW.customer_id = COALESCE(i.billed_customer_id, ro.customer_id)) THEN
+                       AND NEW.customer_id = COALESCE(i.billed_customer_id, ro.customer_id)
+                       AND i.deleted_at IS NULL AND ro.deleted_at IS NULL
+                       AND i.is_internal IS FALSE AND i.voided_at IS NULL
+                       AND COALESCE(i.source, '') <> 'easy_truck_shop_import'
+                       AND i.accounting_policy <> 'historical_export_hold'
+                       AND ((NEW.decision = 'verified_open' AND i.status::text IN ('sent','overdue'))
+                         OR (NEW.decision = 'verified_paid_tender' AND i.status::text = 'paid'))) THEN
         RAISE EXCEPTION 'DB135 invoice lineage mismatch';
       END IF;
       SELECT r.approved_entries -> NEW.invoice_id::text INTO entry FROM invoice_receivable_attestation_runs r
@@ -151,7 +157,7 @@ def upgrade():
     op.execute("""CREATE FUNCTION db135_check_run_count() RETURNS trigger LANGUAGE plpgsql AS $$
     DECLARE run_id_to_check uuid; expected integer; actual integer;
     BEGIN
-      run_id_to_check := CASE WHEN TG_TABLE_NAME = 'invoice_receivable_attestation_runs' THEN NEW.id ELSE NEW.run_id END;
+      run_id_to_check := NEW.id;
       SELECT r.expected_insert_count INTO expected FROM invoice_receivable_attestation_runs r WHERE r.id = run_id_to_check;
       SELECT count(*) INTO actual FROM invoice_receivable_attestations a WHERE a.run_id = run_id_to_check;
       IF expected IS DISTINCT FROM actual THEN RAISE EXCEPTION 'DB135 run insert count mismatch'; END IF;
