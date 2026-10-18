@@ -168,6 +168,7 @@ async def test_customer_submit_zelle_broadcasts_repair_order_update(monkeypatch)
         broadcast_calls.append(kwargs)
 
     async def _capture_alert(**kwargs):
+        assert fake_db.committed == (kwargs["phase"] == "email")
         alert_calls.append(kwargs)
 
     monkeypatch.setattr(payments, "broadcast_repair_order_update", _capture_broadcast)
@@ -204,7 +205,9 @@ async def test_customer_submit_zelle_broadcasts_repair_order_update(monkeypatch)
     assert broadcast_calls[0]["customer_id"] == str(order.customer_id)
     assert broadcast_calls[0]["order_id"] == str(order.id)
     assert broadcast_calls[0]["status"] == order.status.value
-    assert len(alert_calls) == 1
+    assert len(alert_calls) == 2
+    assert [call["phase"] for call in alert_calls] == ["enqueue", "email"]
+    assert alert_calls[0]["domain_event_id"] == alert_calls[1]["domain_event_id"]
     assert alert_calls[0]["invoice_number"] == invoice.invoice_number
     assert alert_calls[0]["source_label"] == "customer portal"
 
@@ -234,6 +237,7 @@ async def test_guest_submit_zelle_broadcasts_repair_order_update(monkeypatch):
         broadcast_calls.append(kwargs)
 
     async def _capture_alert(**kwargs):
+        assert fake_db.committed == (kwargs["phase"] == "email")
         alert_calls.append(kwargs)
 
     monkeypatch.setattr(invoice_access, "_get_active_invoice_payload_or_400", _fake_get_payload)
@@ -271,7 +275,9 @@ async def test_guest_submit_zelle_broadcasts_repair_order_update(monkeypatch):
     assert broadcast_calls[0]["customer_id"] == str(order.customer_id)
     assert broadcast_calls[0]["order_id"] == str(order.id)
     assert broadcast_calls[0]["status"] == order.status.value
-    assert len(alert_calls) == 1
+    assert len(alert_calls) == 2
+    assert [call["phase"] for call in alert_calls] == ["enqueue", "email"]
+    assert alert_calls[0]["domain_event_id"] == alert_calls[1]["domain_event_id"]
     assert alert_calls[0]["invoice_number"] == invoice.invoice_number
     assert alert_calls[0]["source_label"] == "guest invoice link"
 
@@ -280,6 +286,8 @@ async def test_guest_submit_zelle_broadcasts_repair_order_update(monkeypatch):
 async def test_customer_resubmit_pending_zelle_does_not_send_staff_alert(monkeypatch):
     invoice, _order, _customer, user = _build_context()
     invoice.zelle_pending_submitted_at = datetime.now(timezone.utc)
+    original_occurrence = invoice.zelle_pending_submitted_at
+    invoice.zelle_pending_reminder_count = 1
     fake_db = _FakePaymentsSession(invoice=invoice)
     alert_calls: list[dict] = []
 
@@ -290,6 +298,7 @@ async def test_customer_resubmit_pending_zelle_does_not_send_staff_alert(monkeyp
         return user
 
     async def _capture_alert(**kwargs):
+        assert fake_db.committed == (kwargs["phase"] == "email")
         alert_calls.append(kwargs)
 
     async def _noop_broadcast(**_kwargs):
@@ -321,12 +330,16 @@ async def test_customer_resubmit_pending_zelle_does_not_send_staff_alert(monkeyp
     assert Tenant in fake_db.queried_entities
     assert InvoiceSettlement in fake_db.queried_entities
     assert len(alert_calls) == 0
+    assert invoice.zelle_pending_submitted_at == original_occurrence
+    assert invoice.zelle_pending_reminder_count == 1
 
 
 @pytest.mark.asyncio
 async def test_guest_resubmit_pending_zelle_does_not_send_staff_alert(monkeypatch):
     invoice, order, customer, _user = _build_context()
     invoice.zelle_pending_submitted_at = datetime.now(timezone.utc)
+    original_occurrence = invoice.zelle_pending_submitted_at
+    invoice.zelle_pending_reminder_count = 1
     fake_db = _FakeInvoiceAccessSession(invoice=invoice)
     alert_calls: list[dict] = []
     payload = {
@@ -345,6 +358,7 @@ async def test_guest_resubmit_pending_zelle_does_not_send_staff_alert(monkeypatc
         return invoice, order, customer, None
 
     async def _capture_alert(**kwargs):
+        assert fake_db.committed == (kwargs["phase"] == "email")
         alert_calls.append(kwargs)
 
     async def _noop_broadcast(**_kwargs):
@@ -377,3 +391,5 @@ async def test_guest_resubmit_pending_zelle_does_not_send_staff_alert(monkeypatc
     assert Tenant in fake_db.queried_entities
     assert InvoiceSettlement in fake_db.queried_entities
     assert len(alert_calls) == 0
+    assert invoice.zelle_pending_submitted_at == original_occurrence
+    assert invoice.zelle_pending_reminder_count == 1

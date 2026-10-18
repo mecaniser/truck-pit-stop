@@ -115,6 +115,7 @@ async def test_pending_zelle_reminders_sends_first_stage_after_24h(monkeypatch):
     )
 
     async def _capture_alert(**kwargs):
+        assert fake_session.committed == (kwargs["phase"] == "email")
         alert_calls.append(kwargs)
 
     monkeypatch.setattr(
@@ -127,7 +128,9 @@ async def test_pending_zelle_reminders_sends_first_stage_after_24h(monkeypatch):
 
     assert sent == 1
     assert fake_session.committed is True
-    assert len(alert_calls) == 1
+    assert len(alert_calls) == 2
+    assert [call["phase"] for call in alert_calls] == ["enqueue", "email"]
+    assert alert_calls[0]["domain_event_id"] == alert_calls[1]["domain_event_id"]
     assert alert_calls[0]["invoice_number"] == invoice.invoice_number
     assert alert_calls[0]["reminder_stage_hours"] == 24
     assert invoice.zelle_pending_reminder_count == 1
@@ -147,6 +150,7 @@ async def test_pending_zelle_reminders_sends_second_stage_after_48h(monkeypatch)
     )
 
     async def _capture_alert(**kwargs):
+        assert fake_session.committed == (kwargs["phase"] == "email")
         alert_calls.append(kwargs)
 
     monkeypatch.setattr(
@@ -159,7 +163,9 @@ async def test_pending_zelle_reminders_sends_second_stage_after_48h(monkeypatch)
 
     assert sent == 1
     assert fake_session.committed is True
-    assert len(alert_calls) == 1
+    assert len(alert_calls) == 2
+    assert [call["phase"] for call in alert_calls] == ["enqueue", "email"]
+    assert alert_calls[0]["domain_event_id"] == alert_calls[1]["domain_event_id"]
     assert alert_calls[0]["reminder_stage_hours"] == 48
     assert invoice.zelle_pending_reminder_count == 2
     assert invoice.zelle_pending_last_reminder_at is not None
@@ -179,6 +185,7 @@ async def test_pending_zelle_reminders_skips_not_due_and_already_reminded(monkey
     )
 
     async def _capture_alert(**kwargs):
+        assert fake_session.committed == (kwargs["phase"] == "email")
         alert_calls.append(kwargs)
 
     monkeypatch.setattr(
