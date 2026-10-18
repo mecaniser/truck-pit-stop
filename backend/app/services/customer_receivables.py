@@ -94,7 +94,7 @@ def decode_cursor(token: str | None, tenant_id: UUID, customer_id: UUID, source_
 
 def trusted_settlement(invoice: Invoice, settlement: InvoiceSettlement | None, *,
                        customer_id: UUID, bad_baseline: bool) -> bool:
-    if settlement is None or bad_baseline:
+    if settlement is None or settlement.deleted_at is not None or bad_baseline:
         return False
     if settlement.legacy_reconciliation_status not in TRUSTED_SETTLEMENT_STATES:
         return False
@@ -198,7 +198,6 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
         ))).scalars())
         settlements = {row.invoice_id: row for row in (await db.execute(select(InvoiceSettlement).where(
             InvoiceSettlement.tenant_id == tenant_id, InvoiceSettlement.invoice_id.in_(invoice_ids),
-            InvoiceSettlement.deleted_at.is_(None),
         ))).scalars()}
         bad_baseline = set((await db.execute(select(InvoicePaymentLedgerEvent.invoice_id).where(
             InvoicePaymentLedgerEvent.tenant_id == tenant_id,

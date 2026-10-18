@@ -55,6 +55,9 @@ def test_trusted_settlement_requires_exact_principal_and_no_paid_baseline():
                                    confirmed_principal=Decimal("40.00"),
                                    legacy_reconciliation_status="reconciled", currency="USD")
     assert trusted_settlement(invoice, settlement, customer_id=customer_id, bad_baseline=False)
+    settlement.deleted_at = datetime.now(timezone.utc)
+    assert not trusted_settlement(invoice, settlement, customer_id=customer_id, bad_baseline=False)
+    settlement.deleted_at = None
     assert not trusted_settlement(invoice, settlement, customer_id=customer_id, bad_baseline=True)
     settlement.legacy_reconciliation_status = "legacy_paid_snapshot"
     assert not trusted_settlement(invoice, settlement, customer_id=customer_id, bad_baseline=False)
@@ -216,9 +219,10 @@ async def test_account_separates_native_ets_and_orphan_bill_to_without_double_co
                                     total_amount=Decimal("400.00"), due_date=now - timedelta(days=91))
     db_session.add_all([native, imported, orphan, reassigned, missing_settlement, deleted_order_invoice])
     await db_session.flush()
-    db_session.add(InvoiceSettlement(id=uuid4(), tenant_id=tenant_id, invoice_id=native.id,
-                                     customer_id=customer_id, principal_total=Decimal("100.00"),
-                                     confirmed_principal=Decimal("25.00"), legacy_reconciliation_status="native"))
+    native_settlement = InvoiceSettlement(id=uuid4(), tenant_id=tenant_id, invoice_id=native.id,
+                                          customer_id=customer_id, principal_total=Decimal("100.00"),
+                                          confirmed_principal=Decimal("25.00"), legacy_reconciliation_status="native")
+    db_session.add(native_settlement)
     db_session.add(InvoiceSettlement(id=uuid4(), tenant_id=tenant_id, invoice_id=deleted_order_invoice.id,
                                      customer_id=customer_id, principal_total=Decimal("400.00"),
                                      confirmed_principal=Decimal("0.00"), legacy_reconciliation_status="native"))
@@ -284,3 +288,12 @@ async def test_account_separates_native_ets_and_orphan_bill_to_without_double_co
                for row in snapshot["transactions"])
     pdf = render_statement_pdf(snapshot)
     assert pdf.startswith(b"%PDF-") and len(pdf) < 2_000_000
+    native_settlement.deleted_at = now
+    await db_session.flush()
+    tombstoned_snapshot = await account_snapshot(db_session, tenant_id=tenant_id, customer_id=customer_id)
+    assert tombstoned_snapshot["native"]["collectible"] == "0.00"
+    assert tombstoned_snapshot["native"]["collectible_complete"] is False
+    assert tombstoned_snapshot["native"]["unverified_invoice_count"] == 4
+    native_row = next(row for row in tombstoned_snapshot["transactions"] if row["id"] == str(native.id))
+    assert native_row["source_owner"] == "review_required"
+    assert native_row["remaining_principal"] is None
