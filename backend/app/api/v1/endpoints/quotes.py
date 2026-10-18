@@ -789,7 +789,7 @@ async def create_quote(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="An authorization draft or customer decision is already pending for this repair order",
         )
-    
+
     # Quote total is the customer-facing net total after manager discounts.
     total_amount = _money(get_order_total(order))
     latest_approved = await _latest_approved_quote_for_order(
@@ -805,10 +805,10 @@ async def create_quote(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No additional customer authorization is required unless the repair total increases",
         )
-    
+
     # Use retry wrapper to handle rare race conditions on quote number
     from app.core.unique_id import create_with_retry
-    
+
     async def create_quote_with_number(quote_number: str) -> Quote:
         quote = Quote(
             tenant_id=current_user.tenant_id,
@@ -834,7 +834,7 @@ async def create_quote(
             existing.decision_at = datetime.now(timezone.utc)
         # Don't commit here - create_with_retry uses savepoints and handles commit
         return quote
-    
+
     quote = await create_with_retry(
         db=db,
         create_fn=create_quote_with_number,
@@ -948,7 +948,7 @@ async def update_quote(
 ):
     """Recalculate and update quote total based on current repair order state"""
     _require_staff(current_user)
-    
+
     result = await db.execute(
         select(Quote).where(
             Quote.id == quote_id,
@@ -962,7 +962,7 @@ async def update_quote(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Quote not found",
         )
-    
+
     result = await db.execute(
         select(RepairOrder)
         .where(
@@ -984,13 +984,13 @@ async def update_quote(
             detail="Repair order not found",
         )
     _require_mechanic_assignment(current_user, order)
-    
+
     if quote.is_approved:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot update an approved quote",
         )
-    
+
     # Recalculate only an unsent draft. Once sent, its scope is immutable.
     if quote.sent_to_customer:
         raise HTTPException(
@@ -1084,7 +1084,7 @@ async def send_quote_to_customer(
     current_tenant_id = current_user.tenant_id
     if not current_tenant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
-    
+
     result = await db.execute(
         select(RepairOrder, Quote)
         .join(Quote, Quote.repair_order_id == RepairOrder.id)
@@ -1174,17 +1174,17 @@ async def send_quote_to_customer(
             status_code=status.HTTP_409_CONFLICT,
             detail="No additional customer authorization is required at the current total",
         )
-    
+
     customer = order.customer
     if not customer or not customer.email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Customer email not found",
         )
-    
+
     # A token exists only for a successfully validated publication attempt.
     approval_token = secrets.token_urlsafe(48)
-    
+
     # Parse services and parts for email
     services_html = ""
     selected_services: list[dict] = []
@@ -1223,7 +1223,7 @@ async def send_quote_to_customer(
     savings_html = _build_quote_savings_html(order)
     checkout_html = _build_quote_checkout_html(order, tenant) if tenant else ""
     shop_contact_html = build_tenant_contact_html(tenant)
-    
+
     # Build vehicle info
     vehicle = order.vehicle
     vehicle_info = ""
@@ -1231,10 +1231,10 @@ async def send_quote_to_customer(
         vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number)
         if vehicle.vin:
             vehicle_info += f" (VIN: {vehicle.vin[-6:]})"
-    
+
     # Build magic link URL
     approval_url = f"{settings.FRONTEND_URL}/quote/{approval_token}"
-    
+
     is_additional = quote.authorization_type == "additional_work"
     threshold = getattr(customer, "auto_approval_threshold", None)
     approval_amount = quote.total_amount
@@ -1265,11 +1265,11 @@ async def send_quote_to_customer(
         <div style="text-align: center; margin-bottom: 30px;">
             <h1 style="color: #d97706; margin: 0;">🔧 {shop_name}</h1>
         </div>
-        
+
         <h2 style="color: #333;">{authorization_heading}</h2>
         <p>Hi {customer.first_name},</p>
         <p>{authorization_intro}</p>
-        
+
         <div style="background: #f9fafb; border-radius: 8px; padding: 20px; margin: 20px 0; border: 1px solid #e5e7eb;">
             <p style="margin: 0 0 10px 0;"><strong>Quote #:</strong> {quote.quote_number}</p>
             {f'<p style="margin: 0 0 10px 0;"><strong>Vehicle:</strong> {vehicle_info}</p>' if vehicle_info else ''}
@@ -1283,20 +1283,20 @@ async def send_quote_to_customer(
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 15px 0;">
             {amount_summary}
         </div>
-        
+
         <p style="text-align: center; margin: 30px 0;">
-            <a href="{approval_url}" 
+            <a href="{approval_url}"
                style="background-color: #16a34a; color: white; padding: 14px 32px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold; margin-right: 10px;">
                 ✓ {'Approve Additional Work' if is_additional else 'Approve Estimate'}
             </a>
         </p>
-        
+
         <p style="text-align: center; color: #666; font-size: 14px;">
             Click the button above to review the full quote details and approve or decline.
         </p>
-        
+
         <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-        
+
         <p style="color: #666; font-size: 12px; text-align: center;">
             This link expires in 7 days.
         </p>
@@ -1304,7 +1304,7 @@ async def send_quote_to_customer(
     </body>
     </html>
     """
-    
+
     # Compare-and-swap the publication claim so even a competing worker that
     # reaches this point cannot publish or enqueue the same revision twice.
     published_at = datetime.now(timezone.utc)
@@ -1356,7 +1356,7 @@ async def send_quote_to_customer(
         actor_name=_actor_name(current_user),
         source="staff_publication",
     )
-    
+
     # Auto-approval authorizes only a deliberately published initial estimate.
     if auto_approved:
         _record_authorization_history_event(
@@ -1368,7 +1368,7 @@ async def send_quote_to_customer(
             actor_name="System",
             source="auto_approval_threshold",
         )
-    
+
     if auto_approved:
         email_subject = f"{'Additional work' if is_additional else 'Estimate'} {quote.quote_number} Auto-Approved - {shop_name}"
         email_body = f"""
@@ -1450,7 +1450,7 @@ async def send_quote_to_customer(
             template_name=email_template_name,
             sender_name=shop_name,
         )
-    
+
     if not settings.SMS_AUTOMATION_OUTBOX_ENABLED:
         # SMS notification for quote with approval link
         if customer.phone:
@@ -1486,7 +1486,7 @@ async def send_quote_to_customer(
         event_type=ws_event_type,
         order_id=str(order.id),
     )
-    
+
     return QuoteResponse.model_validate(quote)
 
 
@@ -1526,7 +1526,7 @@ async def approve_quote(
     await db.refresh(quote)
     await db.refresh(order)
     record_quote(status="approved", tenant_id=str(order.tenant_id))
-    
+
     # Broadcast WebSocket updates
     await broadcast_quote_event(
         tenant_id=str(order.tenant_id),
@@ -1544,7 +1544,7 @@ async def approve_quote(
         status=order.status.value,
         updated_at=order.updated_at.isoformat() if order.updated_at else None,
     )
-    
+
     return QuoteResponse.model_validate(quote)
 
 
@@ -1562,7 +1562,7 @@ async def decline_quote(
         current_user=current_user,
         include_customer_vehicle=True,
     )
-    
+
     if quote.is_approved:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -1570,7 +1570,7 @@ async def decline_quote(
         )
     if quote.is_declined:
         return QuoteResponse.model_validate(quote)
-    
+
     quote.is_declined = True
     quote.decline_notes = body.notes
     quote.decision_at = datetime.now(timezone.utc)
@@ -1590,7 +1590,7 @@ async def decline_quote(
         vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "vehicle"
         customer_name = f"{customer.first_name} {customer.last_name}" if customer else "Customer"
         shop_name = await get_tenant_display_name(db, order.tenant_id)
-    
+
         # Find managers to notify
         result = await db.execute(
             select(User).where(
@@ -1603,11 +1603,11 @@ async def decline_quote(
             )
         )
         managers = result.scalars().all()
-    
+
         notes_snippet = ""
         if body.notes:
             notes_snippet = f' Notes: "{body.notes[:50]}{"..." if len(body.notes) > 50 else ""}"'
-    
+
         seen_phones = set()
         for manager in sorted(managers, key=lambda user: str(user.id)):
             phone = _normalize_for_twilio(manager.phone) if manager.phone else None
@@ -1644,7 +1644,7 @@ async def decline_quote(
         status=order.status.value,
         updated_at=order.updated_at.isoformat() if order.updated_at else None,
     )
-    
+
     if not settings.SMS_AUTOMATION_OUTBOX_ENABLED:
         # Notify shop managers via SMS (same as token-based decline)
         customer = order.customer
@@ -1695,7 +1695,7 @@ async def get_quote_by_token(
 ):
     """Get quote details by magic link token - no auth required"""
     quote, order = await _load_quote_context_by_token_or_400(db, token, include_parts=True)
-    
+
     # Parse services
     services = []
     if order.internal_notes:
@@ -1715,7 +1715,7 @@ async def get_quote_by_token(
                 "total_price": str(pu.total_price),
             }
         )
-    
+
     vehicle = order.vehicle
     customer = order.customer
     user_result = await db.execute(select(User).where(User.customer_id == order.customer_id))
@@ -1793,16 +1793,16 @@ async def approve_quote_by_token(
 ):
     """Approve quote via magic link - no auth required"""
     quote, order = await _load_quote_context_by_token_or_400(db, token)
-    
+
     if quote.is_declined:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="This authorization was declined. Please contact the shop for a new revision.",
         )
-    
+
     if quote.is_approved:
         return QuoteResponse.model_validate(quote)
-    
+
     quote.is_approved = True
     quote.is_declined = False
     quote.decision_at = datetime.now(timezone.utc)
@@ -1820,7 +1820,7 @@ async def approve_quote_by_token(
     await db.refresh(quote)
     await db.refresh(order)
     record_quote(status="approved", tenant_id=str(order.tenant_id))
-    
+
     # Broadcast WebSocket updates
     await broadcast_quote_event(
         tenant_id=str(order.tenant_id),
@@ -1838,7 +1838,7 @@ async def approve_quote_by_token(
         status=order.status.value,
         updated_at=order.updated_at.isoformat() if order.updated_at else None,
     )
-    
+
     return QuoteResponse.model_validate(quote)
 
 
@@ -2024,7 +2024,7 @@ async def decline_quote_by_token(
 ):
     """Decline quote via magic link - no auth required"""
     quote, order = await _load_quote_context_by_token_or_400(db, token)
-    
+
     if quote.is_approved:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -2032,7 +2032,7 @@ async def decline_quote_by_token(
         )
     if quote.is_declined:
         return QuoteResponse.model_validate(quote)
-    
+
     quote.is_declined = True
     quote.decline_notes = body.notes
     quote.decision_at = datetime.now(timezone.utc)
@@ -2053,7 +2053,7 @@ async def decline_quote_by_token(
         vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "vehicle"
         customer_name = f"{customer.first_name} {customer.last_name}" if customer else "Customer"
         shop_name = await get_tenant_display_name(db, order.tenant_id)
-    
+
         # Find managers to notify
         result = await db.execute(
             select(User).where(
@@ -2066,11 +2066,11 @@ async def decline_quote_by_token(
             )
         )
         managers = result.scalars().all()
-    
+
         notes_snippet = ""
         if body.notes:
             notes_snippet = f' Notes: "{body.notes[:50]}{"..." if len(body.notes) > 50 else ""}"'
-    
+
         seen_phones = set()
         for manager in sorted(managers, key=lambda user: str(user.id)):
             phone = _normalize_for_twilio(manager.phone) if manager.phone else None
@@ -2107,7 +2107,7 @@ async def decline_quote_by_token(
         status=order.status.value,
         updated_at=order.updated_at.isoformat() if order.updated_at else None,
     )
-    
+
     if not settings.SMS_AUTOMATION_OUTBOX_ENABLED:
         # Notify shop managers via SMS
         customer = order.customer

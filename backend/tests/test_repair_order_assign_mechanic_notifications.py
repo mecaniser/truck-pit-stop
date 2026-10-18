@@ -187,6 +187,11 @@ def _build_context(mechanic_phone: str | None):
     return order, mechanic, manager
 
 
+@pytest.fixture(autouse=True)
+def durable_automation_enabled(monkeypatch):
+    monkeypatch.setattr(repair_orders.settings, "SMS_AUTOMATION_OUTBOX_ENABLED", True)
+
+
 @pytest.mark.asyncio
 async def test_assign_mechanic_sends_sms_when_mechanic_has_phone(monkeypatch):
     order, mechanic, manager = _build_context(mechanic_phone="14145550123")
@@ -538,3 +543,23 @@ async def test_assignment_enqueue_error_prevents_domain_commit_and_email(monkeyp
         )
     assert fake_db.commit_count == 0
     email.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_rollout_disabled_assignment_keeps_sms_after_commit(monkeypatch):
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr(repair_orders.settings, "SMS_AUTOMATION_OUTBOX_ENABLED", False)
+    order, mechanic, manager = _build_context(mechanic_phone="14145550123")
+    db = _FakeAsyncSession(order, mechanic)
+    sends = []
+    async def send(*args, **kwargs):
+        assert db.commit_count == 1
+        sends.append(kwargs)
+    enqueue = AsyncMock(side_effect=AssertionError("Outbox must stay dormant"))
+    monkeypatch.setattr(repair_orders, "send_sms", send)
+    monkeypatch.setattr(repair_orders, "enqueue_automated_sms", enqueue)
+    monkeypatch.setattr(repair_orders, "send_email", AsyncMock())
+    monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", AsyncMock())
+    await repair_orders.assign_mechanic(order.id, repair_orders.AssignMechanicRequest(mechanic_id=mechanic.id), db, manager)
+    assert len(sends) == 1
+    enqueue.assert_not_awaited()
