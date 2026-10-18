@@ -2,9 +2,9 @@
 
 # ETS parity implementation tracker
 
-Last updated: 2026-10-16. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
+Last updated: 2026-10-17. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
 
-**Progress: 3/29 completed; 3/6 selected outcomes completed. Current: M1 release preparation. Next: B1 after M1.**
+**Progress: 4/29 completed; 4/6 selected outcomes completed. Current: B1 intake. Next: A1 after B1.**
 
 ## Approved delivery order
 
@@ -32,8 +32,8 @@ Last updated: 2026-10-16. Program owner: Product & Delivery Lead. Discovery inve
   - Status: **Done — PR550 merged, deployed and production verified; independent QA/Security GO**. Board: **DB-133**. Owner: Backend & Integrations.
   - Approved: new external orders use the customer agreed labor rate, otherwise the shop billing rate; existing orders retain saved rates.
   - Evidence: [C1 readiness notes](verification/DB133_CUSTOMER_PRICING_READINESS.md). [C1 contract](contracts/db133-customer-pricing-defaults.md) and [implementation receipt](verification/DB133_CUSTOMER_PRICING_DEFAULTS.md).
-- [ ] **M1 — Multiple recurring maintenance programs per truck**
-  - Status: **In progress — independent implementation GO and saved local workflows verified; ordered integration, CI and production acceptance pending**. Board: **DB-134**. Owner: Backend & Integrations.
+- [x] **M1 — Multiple recurring maintenance programs per truck**
+  - Status: **Done — PR #571 and Night correction #572 merged, deployed and production verified; independent QA/Security GO**. Board: **DB-134**. Owner: Backend & Integrations.
   - Evidence: [M1 contract](contracts/db134-maintenance-programs.md); [implementation receipt](verification/DB134_MAINTENANCE_PROGRAMS.md).
 - [ ] **B1 — Customer transaction ledger, statements and overdue-balance aging**
   - Status: **Queued**. Board: **DB-135**. Owner: Backend & Integrations.
