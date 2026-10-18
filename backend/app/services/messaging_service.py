@@ -290,7 +290,7 @@ async def send_sms_with_tracking(
 ) -> tuple[Notification, Optional[SMSMessage], Optional[MessageThread]]:
     tenant_uuid = _coerce_uuid(tenant_id)
     source_enum = _coerce_source(source)
-    if source_enum == SMSMessageSource.AUTOMATED:
+    if source_enum == SMSMessageSource.AUTOMATED and settings.SMS_AUTOMATION_OUTBOX_ENABLED:
         raise ValueError("Automated SMS requires transactional enqueue_automated_sms with a stable domain event")
     context = None
     if not routing.enabled():

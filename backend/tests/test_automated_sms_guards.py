@@ -6,6 +6,12 @@ from app.services import messaging_service, twilio_service
 from app.services.automated_sms_service import enqueue_automated_sms
 
 
+@pytest.fixture(autouse=True)
+def durable_automation_enabled(monkeypatch):
+    from app.core.config import settings
+    monkeypatch.setattr(settings, 'SMS_AUTOMATION_OUTBOX_ENABLED', True)
+
+
 @pytest.mark.asyncio
 async def test_legacy_automated_sender_requires_event_before_db_or_provider():
     db = AsyncMock()

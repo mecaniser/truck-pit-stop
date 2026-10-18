@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.db.models.notification import Notification
 from app.db.models.sms_message import SMSMessageSource
 from app.services.messaging_service import send_sms_with_tracking
@@ -25,8 +26,8 @@ async def send_sms(
     recipient_user_id: Optional[UUID | str] = None,
     recipient_tenant_contact: bool = False,
 ) -> Notification:
-    """Manual compatibility; automation only enqueues within the caller transaction."""
-    if source == SMSMessageSource.AUTOMATED or source == 'automated':
+    """Retain legacy delivery until automation explicitly moves to the outbox."""
+    if settings.SMS_AUTOMATION_OUTBOX_ENABLED and (source == SMSMessageSource.AUTOMATED or source == 'automated'):
         from app.services.automated_sms_service import enqueue_automated_sms
         operation = await enqueue_automated_sms(
             db, tenant_id=tenant_id, domain_event_id=domain_event_id,

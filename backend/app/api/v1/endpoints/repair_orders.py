@@ -56,6 +56,7 @@ from app.services.email_service import send_email
 from app.services.fleet_incident_resolution import resolve_incidents_for_completed_order
 from app.services.tenant_branding import build_tenant_contact_html, get_tenant_display_name
 from app.services.automated_sms_service import enqueue_automated_sms
+from app.services.twilio_service import send_sms
 from app.services.price_build_service import (
     PriceBuildConflictError,
     PriceBuildForbiddenError,
@@ -2118,6 +2119,8 @@ async def override_start_work_without_mechanic(
 
 
 async def _enqueue_order_customer_sms(db, order, template_name, occurrence, *, has_invoice=False):
+    if not settings.SMS_AUTOMATION_OUTBOX_ENABLED:
+        return
     customer = order.customer
     if not customer or not customer.phone:
         return
@@ -2239,7 +2242,7 @@ async def assign_mechanic(
     vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "Vehicle"
     portal_url = f"{settings.FRONTEND_URL.rstrip('/')}/mechanic"
     shop_name = await get_tenant_display_name(db, order.tenant_id)
-    if mechanic.phone:
+    if settings.SMS_AUTOMATION_OUTBOX_ENABLED and mechanic.phone:
         await enqueue_automated_sms(
             db, tenant_id=order.tenant_id,
             domain_event_id=f"repair-order:{order.id}:assigned:{order.assigned_at.isoformat()}:{mechanic.id}",
@@ -2321,6 +2324,23 @@ async def assign_mechanic(
             body=html_body,
             template_name="job_assigned",
         )
+
+    if not settings.SMS_AUTOMATION_OUTBOX_ENABLED:
+        if mechanic.phone:
+            try:
+                await send_sms(
+                    db=db,
+                    tenant_id=str(current_user.tenant_id),
+                    to=mechanic.phone,
+                    body=(
+                        f"New job assigned: Order #{order.order_number} for {vehicle_info}. "
+                        f"Portal: {portal_url} - {shop_name}"
+                    ),
+                    template_name="job_assigned_sms",
+                )
+            except Exception:
+                pass
+
 
     return RepairOrderResponse.model_validate(order)
 
@@ -2529,6 +2549,26 @@ async def start_work(
                 sender_name=shop_name,
             )
         
+    if not settings.SMS_AUTOMATION_OUTBOX_ENABLED:
+        if not resume_existing:
+            # SMS notification
+            if customer and customer.phone:
+                vehicle = order.vehicle
+                vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
+                try:
+                    await send_sms(
+                        db,
+                        str(order.tenant_id),
+                        customer.phone,
+                        f"Work has started on your {vi}. Order #{order.order_number}. We'll text you when it's done. - {shop_name}",
+                        template_name="work_started_sms",
+                        customer_id=customer.id,
+                        source="automated",
+                    )
+                except Exception:
+                    pass  # Don't fail the request if SMS fails
+
+
     return RepairOrderStartWorkResponse(
         **RepairOrderResponse.model_validate(order).model_dump(),
         auto_clocked_in=auto_clocked_in,
@@ -2986,6 +3026,26 @@ async def complete_work(
                 template_name="work_pending_review",
             )
     
+    if not settings.SMS_AUTOMATION_OUTBOX_ENABLED:
+        # SMS to customer: work is done, under review
+        customer = order.customer
+        if customer and customer.phone:
+            vehicle = order.vehicle
+            vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
+            try:
+                await send_sms(
+                    db,
+                    str(order.tenant_id),
+                    customer.phone,
+                    f"Repair on your {vi} is complete and under review. Order #{order.order_number}. - {shop_name}",
+                    template_name="work_complete_sms",
+                    customer_id=customer.id,
+                    source="automated",
+                )
+            except Exception:
+                pass
+
+
     return RepairOrderResponse.model_validate(order)
 
 
@@ -3053,6 +3113,26 @@ async def admin_complete_unassigned_work(
         status=order.status.value,
         updated_at=order.updated_at.isoformat() if order.updated_at else None,
     )
+
+    if not settings.SMS_AUTOMATION_OUTBOX_ENABLED:
+        customer = order.customer
+        if customer and customer.phone:
+            vehicle = order.vehicle
+            vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
+            shop_name = await get_tenant_display_name(db, order.tenant_id)
+            try:
+                await send_sms(
+                    db,
+                    str(order.tenant_id),
+                    customer.phone,
+                    f"Repair on your {vehicle_info} is complete and under review. Order #{order.order_number}. - {shop_name}",
+                    template_name="work_complete_sms",
+                    customer_id=customer.id,
+                    source="automated",
+                )
+            except Exception:
+                pass
+
 
     return RepairOrderResponse.model_validate(order)
 
@@ -3345,6 +3425,35 @@ async def approve_completion(
             )
         except Exception:
             logger.exception("approve_completion: broadcast failed for order %s", order_id)
+
+    if not settings.SMS_AUTOMATION_OUTBOX_ENABLED:
+        customer = order.customer
+        tenant_result = await db.execute(select(Tenant).where(Tenant.id == order.tenant_id))
+        email_tenant = tenant_result.scalar_one_or_none()
+        shop_name = email_tenant.name.strip() if email_tenant and email_tenant.name and email_tenant.name.strip() else "Your repair shop"
+
+        # SMS: ready for pickup
+        if customer and customer.phone:
+            vehicle = order.vehicle
+            vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
+            completion_message = (
+                f"Your {vi} is ready for pickup! Order #{order.order_number}. Your final invoice is now available. - {shop_name}"
+                if invoice is not None
+                else f"Work on your {vi} is complete! Order #{order.order_number}. - {shop_name}"
+            )
+            try:
+                await send_sms(
+                    db,
+                    str(order.tenant_id),
+                    customer.phone,
+                    completion_message,
+                    template_name="ready_pickup_sms",
+                    customer_id=customer.id,
+                    source="automated",
+                )
+            except Exception:
+                pass
+
 
     return RepairOrderResponse.model_validate(order).model_copy(update={"maintenance": maintenance_result})
 

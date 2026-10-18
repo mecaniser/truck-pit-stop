@@ -1,3 +1,5 @@
+from app.core.config import settings
+from app.services.twilio_service import send_sms
 from app.tasks import celery_app
 from app.services.email_service import send_email
 from app.services.automated_sms_service import enqueue_automated_sms
@@ -20,6 +22,10 @@ async def send_notification_email(
 
 async def _enqueue_notification_sms(tenant_id, to, body, template_name, *, domain_event_id,
                                     customer_id=None, recipient_user_id=None):
+    if not settings.SMS_AUTOMATION_OUTBOX_ENABLED:
+        async with AsyncSessionLocal() as db:
+            notification = await send_sms(db, tenant_id, to, body, template_name, customer_id=customer_id)
+            return {"notification_id": str(notification.id), "status": notification.status.value}
     if not domain_event_id or not template_name or not (customer_id or recipient_user_id):
         raise ValueError("Automated SMS requires a stable event, template and recipient identity")
     async with AsyncSessionLocal() as db:

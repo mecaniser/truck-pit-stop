@@ -40,7 +40,7 @@ def environment():
     env = {k:v for k,v in os.environ.items() if k in ('PATH','HOME','TMPDIR','LANG','VIRTUAL_ENV')}
     env.update(c)
     env['PATH'] = str(Path(sys.executable).parent) + os.pathsep + env.get('PATH','')
-    env.update(DATABASE_URL=f"postgresql+asyncpg://comms_local:{c['POSTGRES_PASSWORD']}@127.0.0.1:55460/communications_local", REDIS_URL='redis://127.0.0.1:6386/0', ENVIRONMENT='development', FRONTEND_URL='http://127.0.0.1:5186', PUBLIC_API_BASE_URL='http://127.0.0.1:8006', CORS_ORIGINS_STR='http://127.0.0.1:5186', PYTHONPATH=str(ROOT/'backend'), COMMUNICATIONS_ISOLATED_LOCAL='1', TWILIO_AUTH_TOKEN=c['LOCAL_WEBHOOK_SECRET'], TWILIO_ACCOUNT_SID='')
+    env.update(DATABASE_URL=f"postgresql+asyncpg://comms_local:{c['POSTGRES_PASSWORD']}@127.0.0.1:55460/communications_local", REDIS_URL='redis://127.0.0.1:6386/0', ENVIRONMENT='development', FRONTEND_URL='http://127.0.0.1:5186', PUBLIC_API_BASE_URL='http://127.0.0.1:8006', CORS_ORIGINS_STR='http://127.0.0.1:5186', PYTHONPATH=str(ROOT/'backend'), COMMUNICATIONS_ISOLATED_LOCAL='1', SMS_AUTOMATION_OUTBOX_ENABLED='true', TWILIO_AUTH_TOKEN=c['LOCAL_WEBHOOK_SECRET'], TWILIO_ACCOUNT_SID='')
     return env
 
 def run(*args, **kwargs):

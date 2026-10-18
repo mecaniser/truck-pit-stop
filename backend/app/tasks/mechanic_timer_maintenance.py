@@ -16,6 +16,11 @@ from app.core.websocket import (
     broadcast_mechanic_idle_alert,
     broadcast_mechanic_timer_update,
 )
+from app.core.config import settings
+from sqlalchemy import and_, select
+from app.db.models.user import User, UserRole
+from app.services.twilio_service import send_sms
+from app.services.pending_zelle_staff_notification_service import collect_staff_contacts
 from app.db.session import AsyncSessionLocal
 from app.services.pending_zelle_staff_notification_service import enqueue_staff_sms
 from app.services.mechanic_time_service import (
@@ -71,16 +76,17 @@ async def _process_mechanic_timer_maintenance(tenant_id: str | None = None) -> d
         ]
         alert_payload = list(alerts)
 
-        # Persist the intent with the idle streak before any external side effect.
-        for row in alert_payload:
-            await enqueue_staff_sms(
-                db, tenant_id=UUID(row["tenant_id"]),
-                domain_event_id=f"mechanic-idle-streak:{row['streak_id']}",
-                template_name="mechanic_idle_alert_sms",
-                body=(f"Idle alert: {row['mechanic_name']} has no active timer for "
-                      f"{row['idle_minutes']} minutes during core hours. Date: {row['local_date']}."),
-                mechanic_id=UUID(row["mechanic_id"]),
-            )
+        if settings.SMS_AUTOMATION_OUTBOX_ENABLED:
+            # Persist the intent with the idle streak before any external side effect.
+            for row in alert_payload:
+                await enqueue_staff_sms(
+                    db, tenant_id=UUID(row["tenant_id"]),
+                    domain_event_id=f"mechanic-idle-streak:{row['streak_id']}",
+                    template_name="mechanic_idle_alert_sms",
+                    body=(f"Idle alert: {row['mechanic_name']} has no active timer for "
+                          f"{row['idle_minutes']} minutes during core hours. Date: {row['local_date']}."),
+                    mechanic_id=UUID(row["mechanic_id"]),
+                )
 
         await db.commit()
 
@@ -128,6 +134,44 @@ async def _process_mechanic_timer_maintenance(tenant_id: str | None = None) -> d
                 )
             except Exception:
                 pass
+
+            if not settings.SMS_AUTOMATION_OUTBOX_ENABLED:
+                # Best-effort SMS alert to mechanic + owner/admin
+                try:
+                    tenant_uuid = UUID(row["tenant_id"])
+                    mechanic_uuid = UUID(row["mechanic_id"])
+                    _, staff_phones = await collect_staff_contacts(db, tenant_uuid)
+                    mech_result = await db.execute(
+                        select(User).where(
+                            and_(
+                                User.id == mechanic_uuid,
+                                User.tenant_id == tenant_uuid,
+                                User.role == UserRole.MECHANIC,
+                            )
+                        )
+                    )
+                    mechanic = mech_result.scalar_one_or_none()
+                    phones = set(staff_phones)
+                    if mechanic and mechanic.phone:
+                        phones.add(mechanic.phone)
+                    sms_body = (
+                        f"Idle alert: {row['mechanic_name']} has no active timer for "
+                        f"{row['idle_minutes']} minutes during core hours. "
+                        f"Date: {row['local_date']}."
+                    )
+                    for phone in phones:
+                        try:
+                            await send_sms(
+                                db=db,
+                                tenant_id=row["tenant_id"],
+                                to=phone,
+                                body=sms_body,
+                                template_name="mechanic_idle_alert_sms",
+                            )
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
 
         return {
             "closed_sessions": len(closed_payload),

@@ -14,6 +14,12 @@ from app.tasks import notifications, mechanic_timer_maintenance
 from app.api.v1.endpoints import repair_orders
 
 
+@pytest.fixture(autouse=True)
+def durable_automation_enabled(monkeypatch):
+    from app.core.config import settings
+    monkeypatch.setattr(settings, 'SMS_AUTOMATION_OUTBOX_ENABLED', True)
+
+
 @pytest.mark.asyncio
 async def test_staff_fanout_normalizes_shared_phone_and_uses_staff_identity(monkeypatch):
     tenant_id = uuid4()
@@ -79,15 +85,32 @@ async def test_idle_alert_enqueues_before_streak_commit_and_broadcast(monkeypatc
     assert events == ["enqueue", "commit", "broadcast"]
 
 
-def test_no_automated_producer_calls_legacy_transport():
+def test_legacy_producer_transport_is_only_reachable_with_rollout_disabled():
     root = Path(__file__).resolve().parents[1] / "app"
     paths = ["api/v1/endpoints/repair_orders.py", "api/v1/endpoints/quotes.py",
              "tasks/notifications.py", "tasks/invoice_reminders.py", "tasks/mechanic_timer_maintenance.py",
              "services/pending_zelle_staff_notification_service.py"]
+    checked = 0
     for path in paths:
         tree = ast.parse((root / path).read_text())
-        calls = [n.func.id for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)]
-        assert "send_sms" not in calls and "send_sms_fn" not in calls, path
+        parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+        for call in ast.walk(tree):
+            if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Name) or call.func.id not in {"send_sms", "send_sms_fn"}:
+                continue
+            node = call
+            guarded = False
+            while node in parents:
+                parent = parents[node]
+                if isinstance(parent, ast.If):
+                    test = ast.unparse(parent.test)
+                    if "not settings.SMS_AUTOMATION_OUTBOX_ENABLED" in test and node in parent.body:
+                        guarded = True
+                    if test == "settings.SMS_AUTOMATION_OUTBOX_ENABLED" and node in parent.orelse:
+                        guarded = True
+                node = parent
+            assert guarded, (path, call.lineno)
+            checked += 1
+    assert checked > 0
 
 
 @pytest.mark.asyncio

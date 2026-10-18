@@ -1,8 +1,8 @@
 # SMS recovery — DB-COMMS-003
 
-Deployment remains on HOLD pending authorized real SMS verification. This change
-is implemented and exercised only with synthetic data and a simulated provider.
-No production setting is enabled by this branch.
+The user authorized merging and deployment of the dormant foundation. Live SMS
+rollout and Twilio registration submissions remain on hold pending real delivery
+and callback acceptance. No production setting is enabled by this branch.
 
 ## Rollout contract
 
@@ -12,13 +12,19 @@ The migration is additive and does not enqueue historical notifications.
 
 `SMS_RECOVERY_ENABLED=false` is the default. Disabled Beat instances register no
 SMS cadence; the task also checks the flag before any provider, Redis or DB work.
-Automated producers persist pending intents even while recovery is disabled.
-Therefore rollout must explicitly account for held pending messages: deploying
-this branch without enabling recovery pauses automated delivery. A pending
-record is not provider acceptance or delivery.
+`SMS_AUTOMATION_OUTBOX_ENABLED=false` preserves existing immediate automated
+SMS behavior at its original transaction boundary. It creates no durable SMS
+intents. The isolated harness explicitly enables this flag for duplicate-safety
+tests. When true, migrated producers write transactional intents and require
+recovery to dispatch them; enabling producers without recovery pauses delivery.
+A pending record is not provider acceptance or delivery.
 
-After real SMS acceptance and explicit deployment authorization, configure the
-same settings for Worker and Beat:
+After real SMS acceptance and explicit enablement authorization, configure the
+same settings for Web, Worker and Beat. Automation rollout is global: the recovery
+allowlist must cover every tenant producing automated intents before enabling it.
+Do not enable automation for shops outside that dispatcher scope:
+
+- `SMS_AUTOMATION_OUTBOX_ENABLED=true`.
 
 - `SMS_RECOVERY_ENABLED=true`.
 - `SMS_RECOVERY_TENANT_IDS=<explicit comma-separated tenant UUID allowlist>`.
@@ -51,7 +57,11 @@ allowlisted tenants in both `sms_send_operations` and `automated_sms_operations`
 Sustained backlog, unknown growth, readiness failures or repeated budget exhaustion
 require investigation; queued/accepted is not proof of handset delivery.
 
-Pause by setting the flag false for Worker and Beat and restarting those services.
+Pause dispatch by setting `SMS_RECOVERY_ENABLED=false` for Worker and Beat and
+restarting those services. Keep the automation outbox flag enabled after adoption
+so new events cannot fall back to unprotected immediate delivery. Disabling the
+automation flag after queued operations exist requires a separate reconciliation
+and rollback review; never dispatch queued operations and legacy copies together.
 An in-flight provider call may finish, but redelivery cannot reclaim its operation.
 To investigate an unknown, reconcile the provider receipt/status through the
 existing signed-callback path and read-only provider evidence. Do not reset its

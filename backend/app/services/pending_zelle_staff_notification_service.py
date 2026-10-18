@@ -51,6 +51,8 @@ async def collect_staff_contacts(
 
 async def enqueue_staff_sms(db, *, tenant_id, domain_event_id, template_name, body, mechanic_id=None):
     """Explicit staff identities, one normalized address per business event."""
+    if not settings.SMS_AUTOMATION_OUTBOX_ENABLED:
+        return
     result = await db.execute(select(User).where(
         User.tenant_id == tenant_id, User.is_active.is_(True), User.deleted_at.is_(None),
         User.role.in_([UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST]
@@ -101,6 +103,27 @@ async def _send_staff_alert(
                 )
             except Exception:
                 pass
+        if not settings.SMS_AUTOMATION_OUTBOX_ENABLED:
+            send_sms_fn = None
+            try:
+                # Twilio client initialization is import-time in twilio_service.
+                # Keep SMS delivery best-effort without failing callers if misconfigured.
+                from app.services.twilio_service import send_sms as send_sms_fn
+            except Exception:
+                send_sms_fn = None
+
+            if send_sms_fn:
+                for phone in sorted(phones):
+                    try:
+                        await send_sms_fn(
+                            db=db,
+                            tenant_id=str(tenant_id),
+                            to=phone,
+                            body=sms_body,
+                            template_name=sms_template_name,
+                        )
+                    except Exception:
+                        pass
     else:
         raise ValueError("Unknown staff notification phase")
 

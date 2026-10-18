@@ -220,6 +220,9 @@ class Settings(BaseSettings):
     # Server-owned opaque reference -> {account_sid, auth_token}; never tenant input.
     SMS_TENANT_CREDENTIALS_JSON: str = "{}"
 
+    # Preserve existing immediate automation until durable dispatch is reviewed.
+    SMS_AUTOMATION_OUTBOX_ENABLED: bool = False
+
     # Durable SMS recovery is deployed dormant until real-SMS acceptance.
     SMS_RECOVERY_ENABLED: bool = False
     SMS_RECOVERY_TENANT_IDS: str = ""  # Required explicit allowlist in production.
