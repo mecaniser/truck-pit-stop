@@ -1,17 +1,41 @@
 # DB-139 ETS financial mirror — verification boundary
 
-2026-10-18. Owner: Backend & Integrations. Branch: `codex/db139-ets-financial-mirror`, based on released main `46f73e3d83cf157e8b66c0c9698fbe2a83476beb`.
+2026-10-18. Owner: Backend & Integrations. Branch: `codex/db139-ets-financial-mirror`. Draft [PR #576](https://github.com/mecaniser/truck-pit-stop/pull/576). Status: source/test approved; not released or Done.
 
-## Narrow safety slice
+## Root cause and read-only source inspection
 
-The authenticated Shop repair-order read uses authoritative order and invoice source identities. An imported order displays one same-tenant, unique active source invoice total when available, and otherwise holds the amount as unavailable. Imported work lines and parts have no asserted billed breakdown. Native invoice creation, mutation, resend, settlement/payment, direct QuickBooks export/charge, and historical native invoice review reject ETS-owned records. No collector, source financial row, QuickBooks record or native receivable was changed.
+The reviewed imported PM repair order has a $150 labor header, zero saved labor-line value and zero saved work total. The old footer calculates `0 + (0 - 150) = -150`. Its linked ETS invoice is $534.41: $150 labor, $339.52 parts, $4.50 supplies and $40.39 tax. Preserved ETS source evidence reports a completed allocation and zero balance. Read-only QuickBooks inspection corroborated invoice total, zero balance, customer and vehicle identity, and a directly allocated payment. Work completion alone was not used as payment proof.
 
-Source review: Architecture GO for a draft safety PR only. Independent QA/Security initially found API, UI pricing and tenant join gaps; the owner fixed them. QA/Security then gave source-only GO for the narrow draft. Neither review approves the full ETS/QuickBooks mirror or production acceptance.
+A second example has stale imported invoice columns suggesting a $63.66 remainder. Its latest validated ETS snapshot and QuickBooks both show $2,202.96 paid, zero balance. A partial example shows $9,658 total, $2,115.87 allocated and $7,542.13 remaining in ETS and QBO; customer matched, but vehicle identity was unavailable in the QBO document. Other bounded QBO samples matched customer and amounts without vehicle proof. These observations do not establish blanket QuickBooks reconciliation.
 
-Focused checks: backend imported-source guards and nearby invoice/repair-order tests, **14 passed**; imported PriceBuilder regression, **1 passed**; full PriceBuilder file before final part fixture, **75 passed**; TypeScript and changed-source ESLint completed with no errors (two existing hook warnings); `git diff --check` clean. Local browser acceptance is unavailable in this checkout: ports 5173/8000 belong to the separate DB-135 worktree, and DB-139 has no aligned `.env`/backend venv. Do not claim this branch is visible in the running local browser.
+Read-only repeatable-read production audit, same tenant and active imported orders: **3,560 orders**, 1,643 with a source invoice and 1,917 without; 595 labor-header/line mismatches, **585 negative old-footer calculations**, 674 zero work totals with positive source invoice totals, and 607 completed work orders linked to locally paid invoices. These categories overlap.
 
-## Still open
+A candidate reader was evaluated in memory against preserved production source observations without deploying code, modifying rows, invoking an importer or calling financial writers. With the explicitly verified tenant/shop binding supplied in memory: **1,532 paid, 24 unpaid, 1 partial, 2,003 unverified**; 1,559 used validated source snapshots and 2,001 retained imported-record evidence only. Snapshot freshness can change these counts. The PM and stale-total examples returned paid/zero remainder; the partial returned $7,542.13. This is candidate evaluation, not HTTP/browser or deployment evidence.
 
-- Verify the exact ETS invoice and payment source records for the reviewed imported PM order; owner's `$150` statement and screenshots are leads, not settlement proof.
-- Specify and implement a read-only, tenant-scoped ETS payment allocation mirror with QuickBooks corroboration, including unpaid, partial, paid, reversals and review holds.
-- Run protected PR CI, merge/deploy, fixed-cohort retention, and signed-in Light/Night desktop/mobile production checks. No payment state may be inferred from `completed` alone.
+Private 0600 audit receipts and cohort hashes are outside Git under the operator's private audit directory. Public documentation intentionally omits customer, vehicle, tenant, shop and row identifiers. Normal OAuth credential renewal was required for QBO GET access; no QBO accounting mutation occurred. No invoice, payment, receivable, service, inventory or provider financial record was created or rewritten by this inspection.
+
+## Implemented behavior
+
+- Tenant- and permission-scoped read-only imported billing endpoint; native orders reject, foreign/deleted orders remain unavailable.
+- A fresh, identity/digest/manifest/shop-bound source snapshot supplies total, unique completed allocations, balance and observed state. Unsupported, stale, incomplete or conflicting evidence stays unverified. Imported financial columns alone never assert paid/partial/unpaid or a remaining debt.
+- Batched list/workspace total enrichment; full-filter imported-row metadata hides misleading mixed aggregates even when imported rows are on unloaded pages. Daily queue endpoints already exclude imported orders.
+- Imported detail, including full-detail History, hides unsupported zero labor/parts prices and native invoice/edit/payment/QBO actions. Source-paid and remaining amounts retain exact decimal cents. Source observations and imported-row update timestamps have distinct labels. QuickBooks remains explicitly not checked by the runtime reader.
+- Future operational insert calculations use a verified invoice breakdown, fix labor-line value and avoid repeating a full invoice across sibling orders. Disputed future invoice/payment inserts hold before writes. Existing orders are skipped; no historical backfill runs.
+
+## Independent gates and checks
+
+Architecture approved the exact read contract and dedicated Web display binding. Independent QA/Security source/test GO followed corrections for stale payment claims, source confirmation binding, tenant joins, paged totals, detail pricing leaks, labor endpoint scope, disputed future splits, exact cents and timestamp semantics. Review did not execute browser tests or production writers.
+
+Focused backend: **111 passed**, covering imported money, source reader and tenant/permission failures, invoice guards, workspace projection and filtered value summaries. Focused frontend: **140 passed** across billing reader/display, panel, paged ledger and full History detail regressions. TypeScript and production build passed. Changed-source ESLint: no errors, two existing page hook warnings. Source fixtures/fake cursors only; importer was never executed. `git diff --check` clean at review.
+
+Old PR head `77e4e1f4` protected Backend tests failed on an unrelated Motive test: its substring assertion found `9999` inside a generated UUID, rather than stored provider speed. Job `117789230599`, run `39163987124`. No CI jobs were cancelled or changed. A new exact-head protected run remains required; this failure is not waived.
+
+## Release blockers and exclusions
+
+The Web-only `ETS_IMPORTED_BILLING_SHOPS` binding is prepared privately from existing verified collector configuration but **not applied**. Default/missing mapping safely holds source status. It changes presentation trust only, not collection or outcome delivery. Collector configuration and active watch exclusions remain untouched.
+
+Local runtime preflight found another task's frontend at port 5173 and no aligned DB139 backend/configuration. No service was replaced or restarted. Browser inventory still reports **Local browser use is disabled in Work settings**. No signed-in Light/Night desktop/mobile or touch acceptance is claimed, locally or in production.
+
+**Independent GO excludes `_sync_payments_for_existing_invoices`, the unchanged existing-payment writer. It does not authorize importer/collector execution or claim global sync safety.** Guarding that path requires separate review before importer rollout. No source financial apply or QuickBooks reconciliation is approved by this item.
+
+Remaining: final exact-head protected CI, approved Web binding/release configuration, aligned runtime and signed-in browser acceptance, merge/deploy identity and health, fixed-cohort financial/source-capture retention, and production Light/Night desktop/mobile checks. Roll back application code/binding on false paid status, tenant leakage, source identity failure or native-action exposure. Preserve financial/source records during rollback. DB-135 native receivable reconciliation remains a separate outcome.

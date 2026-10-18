@@ -58,6 +58,7 @@ export default function RepairOrdersLedger({
   valueSummaryLoading = false,
   valueSummaryError = false,
   valueSummaryLabel = 'Filtered order value',
+  hideValueSummary = false,
   overdue = false,
   onOverdueChange,
 }: {
@@ -95,6 +96,7 @@ export default function RepairOrdersLedger({
   overdue?: boolean
   onOverdueChange?: (enabled: boolean) => void
   valueSummaryLabel?: string
+  hideValueSummary?: boolean
 }) {
   const queueLabel = !compact && queueOrigin ? REPAIR_ORDERS_QUEUE_LABEL[queueOrigin] : null
   const filtered = Boolean(searchQuery || statusFilter !== 'all' || overdue)
@@ -331,7 +333,7 @@ export default function RepairOrdersLedger({
             {!queueLabel && <span>{filtered ? `${totalOrders} matching` : `${totalOrders} total`}</span>}
           </div>
           <div className="db-repair-orders-ledger__totals">
-            <div className="db-repair-orders-ledger__value-summary" aria-live="polite">
+            {!hideValueSummary && <div className="db-repair-orders-ledger__value-summary" aria-live="polite">
               <span className="sr-only">{valueSummaryLabel}</span>
               <strong>
                 {valueSummaryLoading
@@ -343,7 +345,7 @@ export default function RepairOrdersLedger({
                       currency: 'USD',
                     })}
               </strong>
-            </div>
+            </div>}
             {isFetching && <span className="db-repair-orders-ledger__sync sr-only" role="status">Updating…</span>}
           </div>
         </header>

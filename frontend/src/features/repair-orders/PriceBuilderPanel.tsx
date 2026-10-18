@@ -8,6 +8,8 @@ import { enteredMoney } from '@/features/parts-pricing/configuration'
 import RepairOrderScheduleControl from './RepairOrderScheduleControl'
 import type { OrderScheduleSummary } from './repairOrderSchedule'
 import RepairOrderActivity from './RepairOrderActivity'
+import { ImportedBillingDetails } from './ImportedBillingDetails'
+import { importedMoney, type ImportedBilling } from './importedBilling'
 import { OperationExecutionControls, OperationExecutionFeedback, OperationExecutionStatus } from '@/features/operation-execution/OperationExecution'
 import { useOperationExecution } from '@/features/operation-execution/queries'
 import { OperationNotes } from '@/features/operation-execution/OperationNotes'
@@ -159,6 +161,8 @@ type Props = {
   orderId: string
   orderStatus: RepairOrderStatus
   orderSource?: string | null
+  importedBilling?: ImportedBilling | null
+  importedBillingFailed?: boolean
   canEdit: boolean
   schedule?: OrderScheduleSummary
   workHoldOrder?: WorkHoldOrder
@@ -797,6 +801,8 @@ export default function PriceBuilderPanel({
   orderId,
   orderStatus,
   orderSource,
+  importedBilling,
+  importedBillingFailed = false,
   canEdit,
   workHoldOrder,
   schedule,
@@ -1405,7 +1411,6 @@ export default function PriceBuilderPanel({
   }, [isDeleted])
   const isLocked = !!summary?.pricing_locked
   const isEtsImported = orderSource === 'easy_truck_shop_import'
-  const etsInvoice = isEtsImported && invoice?.source === 'easy_truck_shop_import' && invoice.status !== 'cancelled' ? invoice : null
   const hasInvoice = !isEtsImported && !!invoice && ['invoiced', 'paid'].includes(orderStatus)
   const invoiceDisplayTotal = invoiceSettlement
     ? parseFloat(invoiceSettlement.allocatable_balance || '0')
@@ -4592,13 +4597,13 @@ export default function PriceBuilderPanel({
                   totalJustChanged ? 'price-total-amount--changed' : totalMotionActive ? 'price-total-amount--updating' : ''
                 }`}
               >
-                {isEtsImported ? etsInvoice ? money(etsInvoice.total_amount) : 'Unavailable' : isInitialSummaryLoad || summaryLoadFailed ? '…' : money(orderTotalValue)}
+                {isEtsImported ? importedMoney(importedBillingFailed ? null : importedBilling?.total_amount) : isInitialSummaryLoad || summaryLoadFailed ? '…' : money(orderTotalValue)}
               </p>
-              {isEtsImported && <p className="mt-1 max-w-[18rem] text-xs text-slate-600">ETS billing history. DBN work lines are not the billed breakdown; payment status needs source reconciliation.</p>}
+              {isEtsImported && <ImportedBillingDetails billing={importedBilling} failed={importedBillingFailed} />}
             </div>
             {!compactWorkspace && operationProgress}
             {(!isInternalOrder || hasInvoice || completionMode) && (
-              isEtsImported ? <span className="text-sm font-semibold text-slate-600">{etsInvoice ? 'ETS invoice on file' : 'ETS invoice unavailable'} · no new invoice</span> : canCreateInvoice ? (
+              isEtsImported ? <span className="text-sm font-semibold text-slate-600">{importedBilling?.invoice_id && !importedBillingFailed ? 'ETS invoice on file' : 'ETS invoice unavailable'} · no new invoice</span> : canCreateInvoice ? (
                 <div className="relative">
                   <button
                     type="button"

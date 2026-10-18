@@ -1023,12 +1023,15 @@ describe('PriceBuilderPanel pending feedback', () => {
     } as ComponentProps<typeof PriceBuilderPanel>['invoice']
     const { container } = renderPanel({
       orderStatus: 'completed', orderSource: 'easy_truck_shop_import', invoice,
+      importedBilling: { source: 'easy_truck_shop_import', evidence_basis: 'imported_records', reconciliation_status: 'not_checked', invoice_id: 'ets-invoice', total_amount: '534.41', recorded_completed_amount: '534.41', recorded_remaining_amount: '0.00', payment_status: 'paid', review_required: false, review_reasons: [] },
       onCreateInvoice: vi.fn(), onRecordPayment: vi.fn(),
     })
     const footer = container.querySelector('.db-workspace-footer') as HTMLElement
 
     expect(within(footer).getByText('ETS invoice total')).toBeVisible()
-    expect(within(footer).getByText('$150.00')).toBeVisible()
+    expect(within(footer).getAllByText('$534.41')).toHaveLength(2)
+    expect(within(footer).getByText('Paid in ETS')).toBeVisible()
+    expect(within(footer).getByText('$0.00')).toBeVisible()
     expect(within(footer).getByText('ETS invoice on file · no new invoice')).toBeVisible()
     expect(within(footer).queryByText('$-150.00')).not.toBeInTheDocument()
     expect(await screen.findByText('ETS billed breakdown unavailable')).toBeVisible()

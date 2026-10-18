@@ -492,6 +492,75 @@ def _ro_money_split(inv_data, fallback_total):
     return (Decimal("0.00"), fallback_total)
 
 
+def _invoice_insert_hold(data, service_no):
+    """Reject inconsistent future inserts without repairing financial history."""
+    evidence = normalize_source_evidence(data.get("sourceEvidence"))
+    if evidence is None:
+        return "source_evidence_missing"
+    try:
+        observed = datetime.fromisoformat(evidence["observed_at_source"].replace("Z", "+00:00"))
+        age = datetime.now(timezone.utc) - observed
+        if observed.utcoffset() != timedelta(0) or age < timedelta(0) or age > timedelta(hours=24):
+            return "source_observation_unverified"
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return "source_observation_unverified"
+    manifest = evidence.get("invoice_manifest") or {}
+    if (not os.environ.get("ETS_SHOP") or evidence.get("ets_shop_id") != os.environ["ETS_SHOP"]
+            or evidence.get("service_id") != str(service_no)
+            or evidence.get("invoice_number") != str(data.get("invoiceNumber") or service_no)
+            or manifest.get("complete") is not True
+            or manifest.get("invoice_ids") != [evidence.get("invoice_id")]):
+        return "source_identity_unverified"
+
+    def money(value):
+        if isinstance(value, bool):
+            raise ValueError()
+        result = Decimal(str(value))
+        if not result.is_finite() or result < 0 or result != result.quantize(Decimal("0.01")):
+            raise ValueError()
+        return result
+
+    def source_money(value):
+        if not isinstance(value, dict) or value.get("currency") != "USD":
+            raise ValueError()
+        return money(value.get("amount"))
+
+    try:
+        total, balance = source_money(evidence.get("total")), source_money(evidence.get("balance"))
+        subtotal, tax = money(data.get("subtotal")), money(data.get("tax"))
+        if (evidence.get("currency") != "USD" or total <= 0 or balance > total
+                or evidence.get("payment_lines_truncated") is not False
+                or money(data.get("total")) != total or subtotal + tax != total
+                or money(data.get("discount") or 0) != 0
+                or money(data.get("laborTotal")) + money(data.get("partsTotal")) + money(data.get("fees") or 0) != subtotal):
+            return "financial_source_conflict"
+        if evidence.get("invoice_status") != ("10" if balance == 0 else "5"):
+            return "source_payment_state_unverified"
+        amounts, seen_lines, seen_payments = [], set(), set()
+        for line in evidence["payment_lines"]:
+            payment = line["payment"]
+            value = source_money(line["amount"])
+            if (not line.get("id") or line["id"] in seen_lines or not payment.get("id")
+                    or payment["id"] in seen_payments or value <= 0
+                    or payment.get("status") != "20" or payment.get("type") not in {"0", "10"}
+                    or payment.get("provider") not in {"0", "1"} or payment.get("canceled") is not False
+                    or source_money(payment.get("credit_total")) != 0
+                    or source_money(payment.get("unapplied_amount")) != 0
+                    or source_money(payment.get("total")) < value):
+                return "source_payment_state_unverified"
+            seen_lines.add(line["id"])
+            seen_payments.add(payment["id"])
+            amounts.append(value)
+        legacy_payments = data.get("payments") or []
+        if (sum(amounts, Decimal("0.00")) != total - balance
+                or sorted(amounts) != sorted(money(p["amount"]) for p in legacy_payments)
+                or any(_parse_ets_date(p.get("date")) is None for p in legacy_payments)):
+            return "source_payment_allocation_conflict"
+    except (InvalidOperation, ValueError, TypeError, KeyError):
+        return "financial_source_unavailable"
+    return None
+
+
 def _create_invoice_and_payments(w, tenant_id, ro_id, order_number, service_no,
                                   invoices_by_service_no, existing_invoice_numbers, stats, now):
     """Analytics/reports (see backend/app/api/v1/endpoints/reports.py) key off
@@ -521,6 +590,14 @@ def _create_invoice_and_payments(w, tenant_id, ro_id, order_number, service_no,
         # exists on the first repair order of this service.
         stats["inv_dup_skipped"] += 1
         return
+    hold = _invoice_insert_hold(inv_data, service_no)
+    if hold:
+        # A source mismatch is not permission to synthesize an invoice, alter
+        # an existing balance, or turn a partial payment into a full payment.
+        stats["inv_financial_hold"] = stats.get("inv_financial_hold", 0) + 1
+        import warnings
+        warnings.warn(f"ETS future invoice insert held: {hold}", RuntimeWarning)
+        return
     existing_invoice_numbers.add(invoice_number)
 
     subtotal = Decimal(str(inv_data.get("subtotal") or 0))
@@ -529,7 +606,7 @@ def _create_invoice_and_payments(w, tenant_id, ro_id, order_number, service_no,
     total_amount = Decimal(str(inv_data["total"]))
     payments = inv_data.get("payments") or []
     paid_total = sum((Decimal(str(p["amount"])) for p in payments), Decimal("0.00"))
-    is_paid = bool(payments) and paid_total >= (total_amount - Decimal("0.01"))
+    is_paid = paid_total == total_amount
     paid_at = None
     if is_paid:
         payment_dates = [d for d in (_parse_ets_date(p.get("date")) for p in payments) if d]
@@ -843,6 +920,12 @@ def resync(conn, tenant_id, commit):
 
     # Repair orders: order_number is deterministic, so existing ones are simply
     # left as-is (historical work orders don't change). Only insert new ones.
+    claimed_invoice_money = set(existing_invoice_numbers)
+    for prior in recs["repair_orders"]:
+        if prior["order_number"] in existing_ro:
+            invoice = invoices_by_service_no.get(prior["service_no"])
+            if invoice:
+                claimed_invoice_money.add(f"ETSINV-{invoice.get('invoiceNumber') or prior['service_no']}")
     for r in recs["repair_orders"]:
         if r["order_number"] in existing_ro:
             stats["ro_exists"] += 1
@@ -856,8 +939,17 @@ def resync(conn, tenant_id, commit):
         # split; the rest of a multi-line-item service must not repeat it, or the
         # parts and labor figures multiply the same way the invoices did.
         _inv = invoices_by_service_no.get(r["service_no"])
-        _first_for_service = f"ETSINV-{(_inv or {}).get('invoiceNumber') or r['service_no']}" not in existing_invoice_numbers
-        ro_parts, ro_labor = _ro_money_split(_inv if _first_for_service else None, r["total_cost"])
+        trusted_invoice = _inv if _inv and _invoice_insert_hold(_inv, r["service_no"]) is None else None
+        source_invoice_number = f"ETSINV-{(_inv or {}).get('invoiceNumber') or r['service_no']}"
+        _first_for_service = source_invoice_number not in claimed_invoice_money
+        ro_parts, ro_labor = _ro_money_split(trusted_invoice if _first_for_service else None, r["total_cost"])
+        if _inv:
+            # A held invoice must not make every sibling claim the whole split.
+            claimed_invoice_money.add(source_invoice_number)
+        # Keep new operational rows internally consistent. ETS history may
+        # report a zero charge even while its invoice provides labor/parts.
+        # Fees and tax belong to the source invoice, not this work subtotal.
+        ro_work_total = ro_parts + ro_labor
 
         # Hours default to the service-history duration field, which is
         # "0:00 Minutes" on every row this shop has (no time-clocking is in
@@ -868,8 +960,8 @@ def resync(conn, tenant_id, commit):
         # a 0.1h rounding difference, across every August labor line).
         ro_hours = r["labor_hours"]
         ro_rate = r["labor_rate"]
-        if _first_for_service and _inv and _inv.get("laborHours") is not None:
-            ro_hours = Decimal(str(_inv["laborHours"])).quantize(Decimal("0.01"))
+        if _first_for_service and trusted_invoice and trusted_invoice.get("laborHours") is not None:
+            ro_hours = Decimal(str(trusted_invoice["laborHours"])).quantize(Decimal("0.01"))
             if ro_hours > 0:
                 ro_rate = (ro_labor / ro_hours).quantize(Decimal("0.01"))
 
@@ -881,14 +973,14 @@ def resync(conn, tenant_id, commit):
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (ro_id, r["tenant_id"], cust_id, veh_id, r["order_number"], r["status"],
              r["description"], r["mileage"], r["mileage"], ro_parts, ro_labor,
-             r["total_cost"], r["work_completed_at"], r["source"], False, False,
+             ro_work_total, r["work_completed_at"], r["source"], False, False,
              Decimal("0.00"), Decimal("0.00"), now, now))
         w.execute(
             """INSERT INTO labor (id, tenant_id, repair_order_id, description, hours,
                  hourly_rate, total_cost, line_type, created_at, updated_at)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (uuid.uuid4(), r["tenant_id"], ro_id, r["description"], ro_hours,
-             ro_rate, r["total_cost"], "manual", now, now))
+             ro_rate, ro_labor, "manual", now, now))
         stats["ro_ins"] += 1
 
         _create_invoice_and_payments(w, r["tenant_id"], ro_id, r["order_number"],

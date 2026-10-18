@@ -297,6 +297,8 @@ export interface RepairOrderPhoto {
 }
 
 export interface RepairOrder {
+  // Read-only source invoice projection; null means source billing is unavailable.
+  imported_invoice_total_amount?: string | null
   pricing_policy?: ShopOrderPolicy
   scheduled_start_at?: string | null
   promised_finish_at?: string | null

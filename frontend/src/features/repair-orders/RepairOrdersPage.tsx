@@ -52,6 +52,8 @@ import { useCustomerVehicleGroups } from '../customers/useCustomerVehicleGroups'
 import type { ViewMode } from '@/components/ViewToggle'
 import type { CustomerHistoryResponse } from '../customers/customerDetailFormat'
 import PriceBuilderPanel from './PriceBuilderPanel'
+import { ImportedBillingDetails } from './ImportedBillingDetails'
+import { importedMoney, useImportedBilling } from './importedBilling'
 import RecommendedWorkPanel from './RecommendedWorkPanel'
 import { recommendationErrorMessage } from './recommendationConversion'
 import RepairOrdersLedger, { type RepairOrdersLedgerRow } from './RepairOrdersLedger'
@@ -171,6 +173,7 @@ type OrderValueSummary = {
   order_value: string
   currency: 'USD'
   amount_basis: 'repair_order_net'
+  has_imported_orders?: boolean
 }
 
 type WorkQueueOrdersField =
@@ -1078,19 +1081,16 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
   const activeOrder = orderDetail?.id === selectedOrder?.id ? orderDetail : selectedOrder
   const importedEtsOrder = activeOrder?.source === 'easy_truck_shop_import'
+  const importedBillingQuery = useImportedBilling(selectedOrder?.id, importedEtsOrder && isDetailOpen && !selectedOrder?.deleted_at)
+  const importedBilling = importedBillingQuery.isError ? undefined : importedBillingQuery.data
   const { data: invoiceForOrder } = useQuery<Invoice | null>({
-    queryKey: ['invoice-for-order', selectedOrder?.id, importedEtsOrder],
+    queryKey: ['invoice-for-order', selectedOrder?.id, currentUser?.tenant_id, currentUser?.id, currentUser?.role, authSessionEpoch, importedEtsOrder],
     queryFn: async ({ signal }) => {
-      const response = await api.get(`/invoices?repair_order_id=${selectedOrder!.id}${importedEtsOrder ? '&paginated=true' : ''}`, { signal })
-      const invoices = (importedEtsOrder ? response.data.items : response.data) as Invoice[]
-      const matches = invoices.filter((invoice) => invoice.repair_order_id === selectedOrder!.id && invoice.status !== 'cancelled')
-      if (importedEtsOrder) {
-        const importedMatches = matches.filter((invoice) => invoice.source === 'easy_truck_shop_import')
-        return response.data.total === 1 && matches.length === 1 && importedMatches.length === 1 ? importedMatches[0] : null
-      }
-      return matches[0] ?? null
+      const response = await api.get(`/invoices?repair_order_id=${selectedOrder!.id}`, { signal })
+      const invoices = response.data as Invoice[]
+      return invoices.find(invoice => invoice.repair_order_id === selectedOrder!.id && invoice.status !== 'cancelled') ?? null
     },
-    enabled: !!(selectedOrder?.id && isDetailOpen && !selectedOrder.deleted_at && (importedEtsOrder || ['invoiced', 'paid'].includes(selectedOrder?.status || ''))),
+    enabled: !!(selectedOrder?.id && isDetailOpen && !selectedOrder.deleted_at && !importedEtsOrder && ['invoiced', 'paid'].includes(selectedOrder.status)),
   })
 
   const settlementAccess = !importedEtsOrder && invoiceForOrder?.id
@@ -3160,7 +3160,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       status: display.label,
       statusTone,
       description: order.description || 'No work description recorded',
-      total: `$${(partsTotal + laborTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+      total: order.source === 'easy_truck_shop_import'
+        ? importedMoney(order.imported_invoice_total_amount)
+        : `$${(partsTotal + laborTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
       updated: format(new Date(order.updated_at), 'MMM d, h:mm a'),
       internal: Boolean(order.is_internal),
       customerName: order.customer_company_name
@@ -3301,6 +3303,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
             ? `${REPAIR_ORDERS_QUEUE_LABEL[workQueueLane]} · today`
             : 'Order ledger'}
           compact={workbenchScope === 'daily'}
+          hideValueSummary={!isQueueWorkset && (repairOrderValueQuery.data?.has_imported_orders !== false || (filteredOrders ?? []).some(order => order.source === 'easy_truck_shop_import'))}
           valueSummary={activeValueQuery.data}
           valueSummaryLoading={activeValueQuery.isLoading || searchQuery.trim() !== debouncedSearch}
           valueSummaryError={Boolean(activeValueQuery.error)}
@@ -4857,6 +4860,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     schedule={orderDetail ?? selectedOrder}
                     orderStatus={(orderDetail ?? selectedOrder).status}
                     orderSource={activeOrder?.source}
+                    importedBilling={importedBilling}
+                    importedBillingFailed={importedBillingQuery.isError}
                     canEdit={canEditPriceBuilderByRole}
                     isInternalOrder={!!(orderDetail ?? selectedOrder).is_internal}
                     defaultLaborRate={taxFeeSettings?.labor_rate}
@@ -5172,7 +5177,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 {/* Parts and labor: use detail when available. Shown for draft/
                     quoted (price builder) and for internal orders through their
                     active statuses (e.g. an in-progress PM). */}
-                {(showPriceBuilder || showInternalLineItems) && (() => {
+                {!importedEtsOrder && (showPriceBuilder || showInternalLineItems) && (() => {
                   const displayOrder = orderDetail ?? selectedOrder
                   const partsUsage = orderDetail?.parts_usage ?? []
                   const laborItems = orderDetail?.labor_items ?? []
@@ -5392,7 +5397,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                   )
                 })()}
 
-                {showPriceBuilder && (() => {
+                {!importedEtsOrder && showPriceBuilder && (() => {
                   const totalsOrder = orderDetail ?? selectedOrder
                   const backendParts = parseFloat(totalsOrder?.total_parts_cost ?? '0') || 0
                   const backendLabor = parseFloat(totalsOrder?.total_labor_cost ?? '0') || 0
@@ -5654,11 +5659,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 {/* Create Invoice Button for completed customer orders */}
                 {!priceBuilderOwnsShell && importedEtsOrder && (
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                    <p className="font-semibold text-slate-900">{invoiceForOrder?.source === 'easy_truck_shop_import' ? 'ETS invoice on file' : 'ETS invoice unavailable'}</p>
-                    <p>{invoiceForOrder?.source === 'easy_truck_shop_import' && invoiceForOrder.status !== 'cancelled'
-                      ? `ETS invoice total ${formatMoney(invoiceForOrder.total_amount)}`
-                      : 'ETS invoice amount unavailable'}</p>
-                    <p className="mt-1">Work completion does not confirm payment. Payment status awaits ETS and QuickBooks reconciliation.</p>
+                    <p className="font-semibold text-slate-900">ETS invoice total {importedMoney(importedBilling?.total_amount)}</p>
+                    <ImportedBillingDetails billing={importedBilling} failed={importedBillingQuery.isError} />
                   </div>
                 )}
                 {!priceBuilderOwnsShell && (orderDetail ?? selectedOrder).status === 'completed' && !selectedOrder.is_internal && !importedEtsOrder && (
