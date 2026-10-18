@@ -1,6 +1,6 @@
 # DB-135 / B1 customer receivables verification
 
-Status: Implementation correction after independent QA/Security RETURN; no GO, PR, merge, deployment, or authenticated runtime acceptance yet. Accountable owner: Backend & Integrations. A1 stays queued.
+Status: Independent QA/Security source and test GO; PR, merge, deployment, fixed production cohort, and authenticated runtime acceptance remain open. Accountable owner: Backend & Integrations. A1 stays queued.
 
 ## Source intake (2026-10-18 UTC)
 
@@ -26,3 +26,5 @@ Independent gate RETURN (2026-10-18 UTC): the fresh QA/Security reviewer found a
 Focused correction checks (2026-10-18 03:42 UTC): DB-135/customer backend regressions **14 passed**, customer-account frontend tests **24 passed**, changed-source ESLint passed, TypeScript/Vite production build passed, and `git diff --check` passed. These are local checks, not independent GO or release proof. Runtime preflight reconfirmed Vite PID 47952 and uvicorn reload PID 48221/child 56022 from this worktree, with effective process database `127.0.0.1/truckpitstop_db135`, frontend and proxied `/health/ready` HTTP 200. Exact local URL: `http://127.0.0.1:5173`. **Aligned but browser-unverified**; Work browser control remains disabled.
 
 Second independent gate RETURN (2026-10-18 UTC): one cursor negative was flaky because changing the last base64url character can preserve the decoded signature through unused pad bits. This was noncanonical-token acceptance, not a signature bypass. The owner now rejects any token whose canonical re-encoding differs from the received token; focused backend regressions again pass 14/14. Fresh independent gate remains required.
+
+Independent re-gate GO (2026-10-18 UTC): a reviewer who made no implementation edits examined clean, pushed `e37e2127ec23004e24c8e2ccec34d72436d740ae` and issued separate **QA GO** and **Security GO** for the source/test candidate. Their focused run passed six DB-135 backend tests and 24 customer frontend tests. The reviewer confirmed the four prior findings closed, tenant-constrained reads, owner/admin plus payments permission, `REPEATABLE READ READ ONLY` with rollback, ETS/native separation, masked orphan identity, verified settlement, no payment double count, and no writer/provider call. Their GO does not cover signed-in browser rendering, fixed production cohort, protected PR CI, merge, deployment, or production acceptance.
