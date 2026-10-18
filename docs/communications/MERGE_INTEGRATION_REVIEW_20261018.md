@@ -17,3 +17,7 @@ GO covers dormant deployment with all three rollout flags false. It does not aut
 Enabling automation requires recovery readiness and coverage of every producing tenant. Keep automation enabled after adoption; pause recovery for operational rollback. Routing enabled without automation adoption fails closed for legacy staff sends without customer identity. Real handset delivery, public signed-callback acceptance, provider registration and channel activation remain separate gates. Protected checks on the final main integration remain mandatory.
 
 No provider calls, production changes, server changes, secret disclosure or shared-database changes occurred during this independent review.
+
+## Independent test-fixture follow-up
+
+GO on test-only commit `7065cbdc54371e5a81f48a4d5cc0a1a7f1bb0345`. Supplemental full backend run under a sealed environment found one fixture failure (3,781 passed,295 skipped): quote-decline branding expected an outbox call without enabling the rollout flag. Both rollout modes now retain branding assertions, require exactly one SMS and verify only the selected mocked transport runs. Other quote tests mock both transports. Independent price-locking file rerun:17 passed; parent combined price/rollout rerun:32 passed. Application and migration source is unchanged from reviewed `ed9c363c`; previous dormant-deployment GO and activation restrictions remain applicable. Final protected CI must provide the full-suite result on the integrated candidate.
