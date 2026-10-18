@@ -88,6 +88,9 @@ def render_statement_pdf(snapshot: dict) -> bytes:
     line("No statement was sent or issued. Current snapshot; no historical opening balance.")
     y -= 10
     native = snapshot["native"]
+    if native.get("reviewed_attestation_count", 0):
+        line(f"{native['reviewed_attestation_count']} invoice(s) use reviewed historical receivable evidence.")
+        line("This evidence is time-limited and is not a payment-provider receipt.")
     if native["collectible_complete"]:
         line(f"DieselBridge native collectible: ${native['collectible']}", size=12)
     else:
@@ -116,6 +119,8 @@ def render_statement_pdf(snapshot: dict) -> bytes:
         invoice_ref = row.get("invoice_number") or row.get("invoice_id")
         action = f" ({row['credit_action']})" if row.get("credit_action") else ""
         line(f"{when[:10]} · {row['source_owner']} {row['kind']}{action}")
+        if row.get("reconciliation_basis") == "reviewed_attestation":
+            line("Reviewed historical receivable; not a native settlement")
         line(f"Entry {row['id']} · invoice {invoice_ref or 'unlinked'}")
         line(f"Amount {amount}{remaining}")
     if omitted:

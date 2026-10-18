@@ -62,6 +62,18 @@ describe('customer account', () => {
     expect(within(view).queryByText(/Native balance incomplete/)).not.toBeInTheDocument()
   })
 
+  it('labels reviewed historical receivables without presenting them as provider receipts', async () => {
+    api.get.mockResolvedValue({ data: { ...account,
+      native: { ...account.native, reviewed_attestation_count: 1 },
+      transactions: [{ ...account.transactions[0], reconciliation_basis: 'reviewed_attestation' }],
+    } })
+    setup()
+    const view = await screen.findByRole('region', { name: 'Customer account' })
+    expect(within(view).getByText('Reviewed historical receivable')).toBeVisible()
+    expect(within(view).getByText(/time-limited reviewed historical receivable evidence, not a payment-provider receipt/)).toBeVisible()
+    expect(within(view).getByRole('alert')).toHaveTextContent('Native balance incomplete')
+  })
+
   it('rejects a mismatched customer reply instead of showing another account', async () => {
     api.get.mockResolvedValue({ data: { ...account, customer: { id: 'customer-b', name: 'Other' } } })
     setup()

@@ -17,6 +17,7 @@ const accountSchema = z.object({
     collectible: moneySchema,
     collectible_complete: z.boolean(),
     unverified_invoice_count: z.number().int().nonnegative(),
+    reviewed_attestation_count: z.number().int().nonnegative().optional(),
     current: moneySchema,
     days_1_30: moneySchema,
     days_31_60: moneySchema,
@@ -44,6 +45,7 @@ const accountSchema = z.object({
     remaining_principal: moneySchema.nullable(),
     principal_total: moneySchema.nullable().optional(),
     settled_principal: moneySchema.nullable().optional(),
+    reconciliation_basis: z.enum(['native_settlement', 'reviewed_attestation']).nullable().optional(),
     drilldown_route: z.string().nullable(),
     review_reason: z.string().nullable().optional(),
     payment_status: z.string().optional(),
@@ -99,6 +101,8 @@ function Activity({ row }: { row: Transaction }) {
       : paymentUnconfirmed && row.payment_status === 'refunded' ? 'Refunded payment'
         : paymentUnconfirmed ? 'Unconfirmed payment' : null
   const source = paymentState ?? (row.source_owner === 'native' ? 'DieselBridge' : row.source_owner === 'ets_history' ? 'ETS history' : 'Needs review')
+  const basisLabel = row.kind === 'invoice' && row.reconciliation_basis === 'reviewed_attestation'
+    ? 'Reviewed historical receivable' : source
   const creditLabel = row.credit_action === 'issued' ? 'Credit issued'
     : row.credit_action === 'applied' ? 'Credit applied'
       : row.credit_action === 'refunded' ? 'Credit refunded'
@@ -108,7 +112,7 @@ function Activity({ row }: { row: Transaction }) {
   return <li className="db-customer-account__transaction">
     <div className="db-customer-account__transaction-main">
       <strong>{creditLabel ?? KIND_LABEL[row.kind]}</strong>
-      <span className={`db-customer-account__source db-customer-account__source--${row.source_owner}`}>{source}</span>
+      <span className={`db-customer-account__source db-customer-account__source--${row.source_owner}`}>{basisLabel}</span>
       <span className="db-customer-account__date">{transactionDate(row.source_date ?? row.occurred_at)}</span>
     </div>
     {paymentUnconfirmed ? <p>Payment not confirmed; does not reduce the collectible balance.</p>
@@ -199,12 +203,13 @@ export default function CustomerAccount({ customerId }: { customerId: string }) 
     </div>
     {downloadError && <p role="alert">Statement unavailable. Try the download again.</p>}
     <div className="db-customer-account__summary">
-      <div className="db-customer-account__collectible"><span>{account.native.collectible_complete ? 'DieselBridge collectible' : 'Verified native subtotal'}</span><strong>{money(account.native.collectible)}</strong><small>{account.native.collectible_complete ? 'Confirmed native invoice principal only' : 'Balance incomplete · do not collect from this subtotal'}</small></div>
+      <div className="db-customer-account__collectible"><span>{account.native.collectible_complete ? 'DieselBridge collectible' : 'Verified native subtotal'}</span><strong>{money(account.native.collectible)}</strong><small>{account.native.collectible_complete ? 'Verified native invoice principal' : 'Balance incomplete · do not collect from this subtotal'}</small></div>
       <div><span>Unapplied credit</span><strong>{money(account.native.unapplied_credit)}</strong><small>Not deducted from aging</small></div>
     </div>
     <section className="db-customer-account__section" aria-label="Native aging">
       <h4>{account.native.collectible_complete ? 'Overdue aging' : 'Verified overdue aging only'}</h4>
       {!account.native.collectible_complete && <p role="alert">Native balance incomplete: {account.native.unverified_invoice_count} {account.native.unverified_invoice_count === 1 ? 'invoice is' : 'invoices are'} unverified and excluded from this subtotal and aging.</p>}
+      {Boolean(account.native.reviewed_attestation_count) && <p>{account.native.reviewed_attestation_count} {account.native.reviewed_attestation_count === 1 ? 'invoice uses' : 'invoices use'} time-limited reviewed historical receivable evidence, not a payment-provider receipt.</p>}
       <div className="db-customer-account__buckets">{buckets.map(([label, amount]) => <div key={label}><span>{label}</span><strong>{money(amount)}</strong></div>)}</div>
       <div className="db-customer-account__exceptions"><span>Due date unavailable</span><strong>{money(account.native.undated_due)}</strong></div>
       {account.native.review_required_count > 0 && <p>{account.native.review_required_count} native {account.native.review_required_count === 1 ? 'item needs' : 'items need'} review and {account.native.review_required_count === 1 ? 'is' : 'are'} excluded from these totals.</p>}

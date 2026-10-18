@@ -13,6 +13,13 @@ import json
 from typing import Any, Sequence
 from uuid import UUID
 
+from fastapi import HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models.receivable_attestation import (
+    InvoiceReceivableAttestation, InvoiceReceivableAttestationRun,
+)
 from app.services.receivable_attestation_eligibility import triage_receivable_source
 from app.services.receivable_attestation_fingerprint import FINGERPRINT_VERSION, fingerprint_source_bundle
 from app.services.receivable_attestation_source import ReceivableSourceBundle
@@ -32,6 +39,39 @@ ENTRY_KEYS = frozenset({
     "fingerprint_version", "version", "supersedes_id", "reviewed_at",
     "valid_until", "audit_reference",
 })
+MAX_ACCOUNT_ATTESTATIONS = 10_000
+MAX_ACCOUNT_ATTESTED_INVOICES = 100
+
+
+async def load_account_attestations(db: AsyncSession, *, tenant_id: UUID,
+                                    invoice_ids: list[UUID]) -> dict[UUID, tuple[list[InvoiceReceivableAttestation],
+                                                                                 InvoiceReceivableAttestationRun | None]]:
+    """Load every version and run in the caller's existing account snapshot.
+
+    Never select only an unexpired version: a later failed head must not reveal
+    an older approval. Bounds fail the entire account read instead of truncating.
+    """
+    if not invoice_ids:
+        return {}
+    versions = list((await db.execute(select(InvoiceReceivableAttestation).where(
+        InvoiceReceivableAttestation.tenant_id == tenant_id,
+        InvoiceReceivableAttestation.invoice_id.in_(invoice_ids),
+    ).limit(MAX_ACCOUNT_ATTESTATIONS + 1))).scalars())
+    if len(versions) > MAX_ACCOUNT_ATTESTATIONS:
+        raise HTTPException(status_code=413, detail="Receivable approvals exceed safe read limit")
+    run_ids = {row.run_id for row in versions}
+    runs = {} if not run_ids else {row.id: row for row in (await db.execute(
+        select(InvoiceReceivableAttestationRun).where(
+            InvoiceReceivableAttestationRun.tenant_id == tenant_id,
+            InvoiceReceivableAttestationRun.id.in_(run_ids),
+        ).limit(MAX_ACCOUNT_ATTESTATIONS + 1))).scalars()}
+    grouped: dict[UUID, list[InvoiceReceivableAttestation]] = {}
+    for row in versions:
+        grouped.setdefault(row.invoice_id, []).append(row)
+    if len(grouped) > MAX_ACCOUNT_ATTESTED_INVOICES:
+        raise HTTPException(status_code=413, detail="Receivable approvals exceed safe read limit")
+    return {invoice_id: (items, runs.get(max(items, key=lambda row: row.version).run_id))
+            for invoice_id, items in grouped.items()}
 
 
 def compute_manifest_digest(*, tenant_id: UUID, invoice_ids: list[str],

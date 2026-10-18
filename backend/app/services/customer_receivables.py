@@ -25,6 +25,8 @@ from app.db.models.payment import Payment, PaymentStatus
 from app.db.models.repair_order import RepairOrder
 from app.db.models.tenant import Tenant
 from app.services.invoice_settlement_service import invoice_money_snapshot, money
+from app.services.receivable_attestation_reader import load_account_attestations, verify_receivable_head
+from app.services.receivable_attestation_source import load_receivable_source
 
 
 ZERO = Decimal("0.00")
@@ -187,7 +189,7 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
     if len(invoices) > MAX_ACCOUNT_INVOICES:
         raise HTTPException(status_code=413, detail="Account activity exceeds safe read limit")
     invoice_ids = [invoice.id for invoice, _, _ in invoices]
-    settlements: dict[UUID, InvoiceSettlement] = {}
+    settlement_rows: dict[UUID, list[InvoiceSettlement]] = {}
     bad_baseline: set[UUID] = set()
     superseded_ids: set[UUID] = set()
     payments: list[Payment] = []
@@ -196,9 +198,10 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
             Invoice.tenant_id == tenant_id, Invoice.deleted_at.is_(None),
             Invoice.supersedes_invoice_id.in_(invoice_ids),
         ))).scalars())
-        settlements = {row.invoice_id: row for row in (await db.execute(select(InvoiceSettlement).where(
+        for row in (await db.execute(select(InvoiceSettlement).where(
             InvoiceSettlement.tenant_id == tenant_id, InvoiceSettlement.invoice_id.in_(invoice_ids),
-        ))).scalars()}
+        ))).scalars():
+            settlement_rows.setdefault(row.invoice_id, []).append(row)
         bad_baseline = set((await db.execute(select(InvoicePaymentLedgerEvent.invoice_id).where(
             InvoicePaymentLedgerEvent.tenant_id == tenant_id,
             InvoicePaymentLedgerEvent.invoice_id.in_(invoice_ids),
@@ -209,6 +212,7 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
         ).limit(MAX_ACCOUNT_PAYMENTS + 1))).scalars())
         if len(payments) > MAX_ACCOUNT_PAYMENTS:
             raise HTTPException(status_code=413, detail="Account activity exceeds safe read limit")
+    attestations = await load_account_attestations(db, tenant_id=tenant_id, invoice_ids=invoice_ids)
     credits = list((await db.execute(select(CustomerCreditEntry).where(
         CustomerCreditEntry.tenant_id == tenant_id, CustomerCreditEntry.customer_id == customer_id,
     ).limit(MAX_ACCOUNT_CREDITS + 1))).scalars())
@@ -225,6 +229,7 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
     collectible = ZERO
     review_native = review_ets = 0
     unverified_native_invoices = 0
+    reviewed_attestation_count = 0
     rows: list[dict] = []
     source_by_invoice: dict[UUID, str] = {}
     masked_invoice_ids: set[UUID] = set()
@@ -266,14 +271,32 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
             continue
         if invoice.billed_customer_id is None and order.customer_id != customer_id:
             continue
+        # Invoice.is_internal alone is not authoritative: a legacy invoice can
+        # look external while its order/customer belongs to the house fleet.
+        internal_source_conflict = order.is_internal or customer.is_internal_fleet
         imported = invoice.source == "easy_truck_shop_import" or invoice.accounting_policy == "historical_export_hold"
         if imported:
             source = "ets_history"
             if invoice.accounting_policy == "historical_export_hold" and invoice.source != "easy_truck_shop_import":
                 review_ets += 1
         elif invoice.status in {InvoiceStatus.SENT, InvoiceStatus.PAID, InvoiceStatus.OVERDUE} and not invoice.is_internal and not invoice.voided_at and invoice.id not in superseded_ids:
-            source = "native" if invoice.id not in mixed_payment_invoice_ids and trusted_settlement(invoice, settlements.get(invoice.id),
-                                                      customer_id=customer_id, bad_baseline=invoice.id in bad_baseline) else "review_required"
+            linked_settlements = settlement_rows.get(invoice.id, [])
+            settlement = linked_settlements[0] if len(linked_settlements) == 1 else None
+            verified_attestation = None
+            if not internal_source_conflict and not linked_settlements and invoice.id in attestations:
+                versions, run = attestations[invoice.id]
+                bundle = await load_receivable_source(db, tenant_id=tenant_id, invoice_id=invoice.id)
+                verified_attestation = verify_receivable_head(bundle, versions, run, now=now)
+            trusted_native = (not internal_source_conflict
+                              and invoice.id not in mixed_payment_invoice_ids
+                              and len(linked_settlements) == 1
+                              and trusted_settlement(invoice, settlement, customer_id=customer_id,
+                                                     bad_baseline=invoice.id in bad_baseline))
+            basis = "native_settlement" if trusted_native else (
+                verified_attestation.basis if verified_attestation else None)
+            source = "native" if basis else "review_required"
+            if basis == "reviewed_attestation":
+                reviewed_attestation_count += 1
             if source == "review_required":
                 review_native += 1
                 unverified_native_invoices += 1
@@ -283,8 +306,9 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
         source_by_invoice[invoice.id] = source
         remaining = None
         if source == "native":
-            settlement = settlements[invoice.id]
-            remaining = max(ZERO, money(settlement.principal_total) - money(settlement.confirmed_principal))
+            principal = money(settlement.principal_total) if basis == "native_settlement" else verified_attestation.principal
+            confirmed = money(settlement.confirmed_principal) if basis == "native_settlement" else verified_attestation.confirmed
+            remaining = max(ZERO, money(principal - confirmed))
             collectible = money(collectible + remaining)
             due = (invoice.due_date.replace(tzinfo=invoice.due_date.tzinfo or timezone.utc)
                    .astimezone(local_zone).date()) if invoice.due_date else None
@@ -296,8 +320,9 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
                          f"/dashboard/repair-orders?selected={order.id}",
                          source_date=invoice.ets_invoiced_at if source == "ets_history" else None,
                          invoice_number=invoice.invoice_number))
-        rows[-1]["principal_total"] = _money(settlements[invoice.id].principal_total) if source == "native" else None
-        rows[-1]["settled_principal"] = _money(settlements[invoice.id].confirmed_principal) if source == "native" else None
+        rows[-1]["principal_total"] = _money(principal) if source == "native" else None
+        rows[-1]["settled_principal"] = _money(confirmed) if source == "native" else None
+        rows[-1]["reconciliation_basis"] = basis if source == "native" else None
     for payment in payments:
         if payment.invoice_id in masked_invoice_ids:
             continue
@@ -338,6 +363,7 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
         "customer": {"id": str(customer.id), "name": name},
         "native": {"collectible": _money(collectible), "collectible_complete": unverified_native_invoices == 0,
                    "unverified_invoice_count": unverified_native_invoices,
+                   "reviewed_attestation_count": reviewed_attestation_count,
                    **{key: _money(value) for key, value in buckets.items()},
                    "unapplied_credit": _money(_credit_remaining(credits, overpayments)),
                    "review_required_count": review_native},

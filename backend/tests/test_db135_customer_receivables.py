@@ -120,6 +120,11 @@ def test_statement_identifies_entries_and_discloses_truncation(monkeypatch):
     incomplete_pdf = render_statement_pdf(snapshot)
     assert b"Native balance incomplete" in incomplete_pdf
     assert b"Verified native subtotal only" in incomplete_pdf
+    snapshot["native"]["reviewed_attestation_count"] = 1
+    snapshot["transactions"][0] = {**row, "reconciliation_basis": "reviewed_attestation"}
+    reviewed_pdf = render_statement_pdf(snapshot)
+    assert b"time-limited" in reviewed_pdf.lower()
+    assert b"Reviewed historical receivable; not a native settlement" in reviewed_pdf
 
 
 @pytest.mark.asyncio

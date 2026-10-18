@@ -50,6 +50,7 @@ from app.db.models.recommended_service import RecommendedService, RecommendedSer
 from app.db.models.recommendation_conversion import RecommendationConversion
 from app.db.models.quote import Quote
 from app.db.models.invoice import Invoice
+from app.db.models.receivable_attestation import InvoiceReceivableAttestation, InvoiceReceivableAttestationRun
 from app.db.models.invoice_charge_adjustment import InvoiceChargeAdjustment
 from app.db.models.quickbooks_shop_activation import QuickBooksShopActivation
 from app.db.models.payment import Payment
