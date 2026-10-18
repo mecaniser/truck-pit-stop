@@ -76,6 +76,8 @@ def decode_cursor(token: str | None, tenant_id: UUID, customer_id: UUID, source_
         return None
     try:
         decoded = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))
+        if base64.urlsafe_b64encode(decoded).decode().rstrip("=") != token:
+            raise ValueError("noncanonical")
         raw, signature = decoded[:-32], decoded[-32:]
         if not hmac.compare_digest(signature, hmac.new(settings.SECRET_KEY.encode(), raw, hashlib.sha256).digest()):
             raise ValueError("signature")
