@@ -7,6 +7,7 @@ from fastapi import HTTPException
 
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
+from app.db.models.invoice_settlement import CustomerCreditEntry
 from app.db.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
@@ -68,6 +69,22 @@ async def test_source_loader_is_complete_tenant_scoped_and_tombstone_aware(db_se
     await db_session.flush()
     due_drift = await load_receivable_source(db_session, tenant_id=tenant_id, invoice_id=invoice_id)
     assert due_drift.fingerprint != tombstoned.fingerprint
+
+    # A misattributed same-tenant credit targeting this invoice is evidence,
+    # even though it belongs to a different customer account.
+    other_customer = Customer(id=uuid4(), tenant_id=tenant_id, first_name="B", last_name="Customer",
+                              email=f"other-{uuid4().hex[:8]}@example.test")
+    db_session.add(other_customer)
+    await db_session.flush()
+    conflicting_credit = CustomerCreditEntry(id=uuid4(), tenant_id=tenant_id, customer_id=other_customer.id,
+                                             target_invoice_id=invoice_id, entry_type="applied",
+                                             amount=Decimal("5.00"), actor_name_snapshot="Test",
+                                             idempotency_key=f"test-{uuid4().hex}", request_hash="a" * 64)
+    db_session.add(conflicting_credit)
+    await db_session.flush()
+    conflict = await load_receivable_source(db_session, tenant_id=tenant_id, invoice_id=invoice_id)
+    assert any(row.id == conflicting_credit.id for row in conflict.linked_rows["customer_credits"])
+    assert conflict.fingerprint != due_drift.fingerprint
 
     second_payment = Payment(id=uuid4(), tenant_id=tenant_id, invoice_id=invoice_id,
                              payment_number=f"PAY-{uuid4().hex[:8]}", amount=Decimal("5.00"),

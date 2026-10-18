@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import select, text
+from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.customer import Customer
@@ -90,10 +90,16 @@ async def load_receivable_source(db: AsyncSession, *, tenant_id: UUID, invoice_i
             PaymentRefund.tenant_id == tenant_id, PaymentRefund.invoice_id == invoice_id)),
         "overpayments": await _bounded(db, select(PaymentOverpayment).where(
             PaymentOverpayment.tenant_id == tenant_id, PaymentOverpayment.invoice_id == invoice_id)),
-        # Customer-wide credit rows can change the account's available credit;
-        # including all of them deliberately invalidates each invoice proof.
+        # Customer-wide credit rows can change available credit. A credit that
+        # targets this invoice under another customer is also evidence of an
+        # identity conflict; never omit it from the fingerprint/review.
         "customer_credits": await _bounded(db, select(CustomerCreditEntry).where(
-            CustomerCreditEntry.tenant_id == tenant_id, CustomerCreditEntry.customer_id == customer.id)),
+            CustomerCreditEntry.tenant_id == tenant_id,
+            or_(CustomerCreditEntry.customer_id == customer.id,
+                CustomerCreditEntry.target_invoice_id == invoice_id,
+                CustomerCreditEntry.origin_overpayment_id.in_(select(PaymentOverpayment.id).where(
+                    PaymentOverpayment.tenant_id == tenant_id,
+                    PaymentOverpayment.invoice_id == invoice_id))))),
         "superseding_invoices": await _bounded(db, select(Invoice).where(
             Invoice.tenant_id == tenant_id, Invoice.supersedes_invoice_id == invoice_id)),
     }
