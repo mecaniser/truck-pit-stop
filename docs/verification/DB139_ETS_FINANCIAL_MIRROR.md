@@ -1,6 +1,6 @@
 # DB-139 ETS financial mirror — verification boundary
 
-2026-10-18. Owner: Backend & Integrations. Branch: `codex/db139-ets-financial-mirror`. Draft [PR #576](https://github.com/mecaniser/truck-pit-stop/pull/576). Status: source/test approved; not released or Done.
+2026-10-18. Owner: Backend & Integrations. Branch: `codex/db139-ets-financial-mirror`. [PR #576](https://github.com/mecaniser/truck-pit-stop/pull/576). Status: source/test approved; not released or Done.
 
 ## Root cause and read-only source inspection
 
@@ -20,7 +20,7 @@ Private 0600 audit receipts and cohort hashes are outside Git under the operator
 - A fresh, identity/digest/manifest/shop-bound source snapshot supplies total, unique completed allocations, balance and observed state. Unsupported, stale, incomplete or conflicting evidence stays unverified. Imported financial columns alone never assert paid/partial/unpaid or a remaining debt.
 - Batched list/workspace total enrichment; full-filter imported-row metadata hides misleading mixed aggregates even when imported rows are on unloaded pages. Daily queue endpoints already exclude imported orders.
 - Imported detail, including full-detail History, hides unsupported zero labor/parts prices and native invoice/edit/payment/QBO actions. Source-paid and remaining amounts retain exact decimal cents. Source observations and imported-row update timestamps have distinct labels. QuickBooks remains explicitly not checked by the runtime reader.
-- Future operational insert calculations use a verified invoice breakdown, fix labor-line value and avoid repeating a full invoice across sibling orders. Disputed future invoice/payment inserts hold before writes. Existing orders are skipped; no historical backfill runs.
+- Future operational/financial insert changes are preserved separately on `codex/db139-importer-money-held` at `06086f72`. They are excluded from the reader-only #576 release; no importer code, image or configuration is changed by this release.
 
 ## Independent gates and checks
 
@@ -41,3 +41,9 @@ Local runtime preflight found another task's frontend at port 5173 and no aligne
 Current-head CI found one legacy presentation test with a pre-extension value-summary fixture. The native fixture now explicitly returns `has_imported_orders=false`; its two-total assertion remains intact. Mixed/missing-metadata regressions continue to require aggregate suppression. No production behavior or CI configuration was relaxed. Corrected fixture file: **16 passed**; full local critical frontend gate: **210 passed**. Browser permission remained disabled after a fresh tool connection despite the operator reporting enabled.
 
 Remaining: final exact-head protected CI, approved Web binding/release configuration, aligned runtime and signed-in browser acceptance, merge/deploy identity and health, fixed-cohort financial/source-capture retention, and production Light/Night desktop/mobile checks. Roll back application code/binding on false paid status, tenant leakage, source identity failure or native-action exposure. Preserve financial/source records during rollback. DB-135 native receivable reconciliation remains a separate outcome.
+
+## Reader-only release correction
+
+Live effective ETS manifest confirms `/railway.ets-sync.json` and collector watch patterns including `backend/scripts/easytruck_sync/**`; the service-level empty watch list is not the effective deployed file configuration. Architecture therefore approved splitting all importer changes and their dedicated test out of #576. Exact proposed changes remain on the pushed held branch above. The existing-payment sync must receive a guard and independent review before any importer rollout. The reader/API/UI and native-action protections remain in #576. No collector watched path may differ from released main. Capture collector deployment/image/configuration before merge and prove retention afterward.
+
+Driver release #577 passed all six checks and merged as `1cb16a7f`; coordinator acceptance/explicit slot handback precedes this reader release. PR576 previously passed all six on `06086f72`; integrated reader-only head requires fresh protected CI. Browser inventory and direct in-app browser access both still reject with the Work-settings disabled error. No browser acceptance is claimed.

@@ -1,6 +1,6 @@
 # DB-139 — ETS financial mirror and imported-order presentation
 
-Status: Architecture and independent QA/Security source/test GO for the read-only display and future-insert guard; release pending. Accountable implementation owner: Backend & Integrations. High-risk lane because invoice, payment, tenant and external accounting identities are involved. No existing financial record rewrite, QuickBooks mutation, statement send or importer execution is authorized by this document.
+Status: Architecture and independent QA/Security source/test GO for the read-only display; reader-only release pending. Future-insert changes are preserved separately and held. Accountable implementation owner: Backend & Integrations. High-risk lane because invoice, payment, tenant and external accounting identities are involved. No existing financial record rewrite, QuickBooks mutation, statement send or importer execution is authorized by this document.
 
 ## Outcome and distinct states
 
@@ -22,7 +22,7 @@ Validated source totals/balances override stale imported columns in this read re
 
 `ETS_IMPORTED_BILLING_SHOPS` is a presentation-only tenant-to-ETS-shop JSON binding. Its default is `{}`; a missing dedicated tenant may use the existing completion mapping. Malformed or conflicting mappings hold safely. The exact Web-only release binding is prepared privately from the collector's existing verified tenant/shop configuration. It does not enable, change or restart collection, outcome delivery or QuickBooks actions.
 
-Future operational inserts use invoice labor/parts for a consistent labor line and work subtotal; source fees and tax remain on the source invoice. Existing repair orders are skipped, with no backfill. Future invoice/payment inserts are held when source identity, total, complete breakdown or allocations disagree; a source grand total alone cannot invent subtotal or tax. The existing `_sync_payments_for_existing_invoices` writer is unchanged and excluded from this source approval. Do not run or roll out the importer/collector under this approval: that existing writer requires its own reviewed guard before any execution claim. Tests exercise pure inputs and fake cursors only; no importer execution or invoice creation is used for QA.
+**Reader-only release boundary:** PR #576 contains no collector watched paths. The proposed future operational labor/sibling-total corrections and invoice/payment insert guards are preserved at `06086f72` on `codex/db139-importer-money-held`, outside this release. The effective ETS service uses `/railway.ets-sync.json`; its deployed manifest watches `backend/scripts/easytruck_sync/**`. Including the importer would activate a collector rollout before its unchanged `_sync_payments_for_existing_invoices` writer is independently guarded. That outcome remains queued, not approved for execution. Release the application reader and native-action guards only; prove the ETS deployment/image/configuration remain unchanged. No historical backfill or importer execution is authorized.
 
 ## Proposed read contract and gates
 
