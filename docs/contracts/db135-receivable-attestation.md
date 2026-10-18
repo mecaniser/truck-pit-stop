@@ -1,6 +1,6 @@
-# DB-135 legacy receivable attestation contract (draft for Architecture)
+# DB-135 legacy receivable attestation contract
 
-Status: **draft, not approved for implementation or production apply**. Owner: Backend & Integrations; Architecture & API Contracts is the contract gate. This is a narrow B1 dependency for native finalized invoices whose historical settlement is absent. It never transfers ETS-owned history, rewrites tender, changes an invoice or payment, sends a statement, contacts a provider, or collects money. The [source review](../verification/DB135_SETTLEMENT_RECONCILIATION_REVIEW.md) is the intake evidence.
+Status: **Architecture GO for implementation; no production apply or release approval** (2026-10-18 UTC). Owner: Backend & Integrations; Architecture & API Contracts approved this contract after two returned trust-rule revisions. This is a narrow B1 dependency for native finalized invoices whose historical settlement is absent. It never transfers ETS-owned history, rewrites tender, changes an invoice or payment, sends a statement, contacts a provider, or collects money. The [source review](../verification/DB135_SETTLEMENT_RECONCILIATION_REVIEW.md) is the intake evidence.
 
 ## Boundary and decision
 
