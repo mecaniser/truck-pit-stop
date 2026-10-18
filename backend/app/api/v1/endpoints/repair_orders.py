@@ -1,3 +1,5 @@
+from app.services import maintenance
+from app.schemas.maintenance import MaintenanceReview
 from app.services import customer_pricing as account_pricing
 import base64
 import math
@@ -1948,6 +1950,8 @@ async def update_repair_order(
 
     if order_data.status is not None and order_data.status != RepairOrderStatus.CANCELLED:
         await recommendation_conversion.guard_reactivation(db, order, current_user)
+        if order.status == RepairOrderStatus.CANCELLED:
+            await maintenance.order_lifecycle(db, current_user, order, 'restore', intended_status=order_data.status)
     if order_data.status is not None and order_data.status != order.status and order_data.status not in operation_execution.FINAL | {RepairOrderStatus.PENDING_REVIEW}:
         operation_execution.clear_completion_snapshot(order)
     cancelling_now = (
@@ -1956,6 +1960,7 @@ async def update_repair_order(
     )
     if cancelling_now:
         _require_cancelable_ro(order)
+        await maintenance.order_lifecycle(db, current_user, order, 'cancel')
         await operation_execution.stop_order_sessions(db, order, current_user, reason="manual")
         # Cancelling an *early* order (draft/quoted) means the work never happened,
         # so give the parts' stock back and drop the part rows. But once the order
@@ -1998,6 +2003,8 @@ async def update_repair_order(
         if invoice_exists is not None or order.status in (RepairOrderStatus.INVOICED, RepairOrderStatus.PAID):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Attribution is locked after invoice finalization")
 
+    if not cancelling_now and {'mileage_in', 'mileage_out', 'work_completed_at', 'status', 'is_pm'}.intersection(update_data):
+        await maintenance.order_lifecycle(db, current_user, order, 'source_update')
     # Update fields
     for field, value in update_data.items():
         setattr(order, field, value)
@@ -3051,6 +3058,7 @@ async def admin_complete_unassigned_work(
 
 
 class ApproveCompletionRequest(BaseModel):
+    maintenance_review: MaintenanceReview | None = None
     review_notes: Optional[str] = None
     mileage_out: Optional[int] = None  # odometer at completion
     # Completion normally means ready for pickup, not custody release. When
@@ -3104,6 +3112,8 @@ async def approve_completion(
         )
 
     await service_checklist.guard_completion(db, order)
+    from app.services import maintenance
+    maintenance_prepared = await maintenance.prepare_finalization(db, current_user, order, body.maintenance_review if body else None, channel='fleet' if current_user.role == UserRole.FLEET_MANAGER else 'shop')
     await operation_execution.finish_order(db, order, current_user)
 
     # Finalization shares the repair-order row lock with every price mutation.
@@ -3182,7 +3192,7 @@ async def approve_completion(
         )
 
     # Completing an internal preventive-maintenance order advances the truck's next PM.
-    if order.is_internal and order.is_pm:
+    if order.is_internal and order.is_pm and maintenance_prepared is None and not await maintenance.has_vehicle_program(db, order):
         veh_result = await db.execute(select(Vehicle).where(Vehicle.id == order.vehicle_id))
         veh = veh_result.scalar_one_or_none()
         if veh:
@@ -3301,6 +3311,7 @@ async def approve_completion(
     )
     # One commit owns the manager review, PM update, pricing lock, immutable
     # invoice snapshot, and final status. Any error above rolls everything back.
+    maintenance_result = await maintenance.finish_finalization(db, current_user, order, maintenance_prepared)
     await db.commit()
     await db.refresh(order)
     await db.refresh(order, attribute_names=["customer", "vehicle"])
@@ -3335,7 +3346,7 @@ async def approve_completion(
         except Exception:
             logger.exception("approve_completion: broadcast failed for order %s", order_id)
 
-    return RepairOrderResponse.model_validate(order)
+    return RepairOrderResponse.model_validate(order).model_copy(update={"maintenance": maintenance_result})
 
 
 @router.delete("/{order_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -3363,6 +3374,7 @@ async def delete_repair_order(
         )
 
     _require_deletable_ro(order)
+    await maintenance.order_lifecycle(db, current_user, order, 'delete')
 
     # Save identifiers before commit so we can broadcast cache invalidation.
     tenant_id = str(order.tenant_id)
@@ -3433,6 +3445,7 @@ async def restore_repair_order(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Repair order is not deleted")
 
     await recommendation_conversion.guard_reactivation(db, order, current_user)
+    await maintenance.order_lifecycle(db, current_user, order, 'restore')
     order.deleted_at = None
     order.deleted_by_user_id = None
 
@@ -3496,6 +3509,7 @@ async def reopen_repair_order(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only completed work orders can be reopened")
 
     await recommendation_conversion.guard_reactivation(db, order, current_user)
+    await maintenance.order_lifecycle(db, current_user, order, 'reopen')
     order.status = RepairOrderStatus.IN_PROGRESS
     operation_execution.clear_completion_snapshot(order)
     await db.commit()
@@ -4059,6 +4073,7 @@ async def delete_price_build_line(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*PRICE_BUILD_EDIT_ROLES)),
     pricing_presentation: Optional[Literal["shop", "fleet"]] = None,
+    expected_maintenance_fingerprint: Optional[str] = None,
 ):
     try:
         order = await _load_tenant_price_build_order(db, order_id, current_user)
@@ -4067,7 +4082,7 @@ async def delete_price_build_line(
         # removed rather than only that something was.
         removed = next((li for li in order.labor_items if li.id == line_id), None)
         removed_label = removed.description if removed else None
-        result = await price_build_service.remove_line(db, order, line_id=line_id, actor=current_user)
+        result = await price_build_service.remove_line(db, order, line_id=line_id, actor=current_user, expected_maintenance_fingerprint=expected_maintenance_fingerprint, maintenance_channel=pricing_presentation)
         _record_repair_order_history_event(
             db,
             order=result.order,
@@ -4310,6 +4325,7 @@ async def force_void_repair_order(
             ),
         )
 
+    await maintenance.order_lifecycle(db, current_user, order, 'void')
     actor_name = f"{current_user.first_name} {current_user.last_name}".strip() or current_user.email
     voided_numbers = []
     for invoice in invoices:
@@ -5249,6 +5265,8 @@ async def remove_labor_from_repair_order(
     current_user: User = Depends(require_role(
         *PRICE_BUILD_EDIT_ROLES,
     )),
+    expected_maintenance_fingerprint: Optional[str] = None,
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None,
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
@@ -5271,6 +5289,7 @@ async def remove_labor_from_repair_order(
     labor = result.scalar_one_or_none()
     if not labor:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Labor item not found")
+    await maintenance.guard_operation_removal(db, current_user, order, [labor.id], expected=expected_maintenance_fingerprint, channel=pricing_presentation)
     await service_checklist.archive_labor(db, order, labor, current_user)
     await db.delete(labor)
     await _refresh_repair_order_totals(db, order_id)

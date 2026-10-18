@@ -68,6 +68,8 @@ it('searches all truck history on the server and resets pagination without touch
   api.get.mockImplementation((_url, config) => Promise.resolve({data:{items:[{...order, order_number: config.params.search ? 'FOUND-99' : 'RO-1'}],total:26,has_more:true}}))
   show(<CustomerVehicleDetail customer={customer} vehicle={vehicle} onOpenOrder={vi.fn()}/>, '/?queue=on_floor&search=directory&historyFor=c1%3Av1&historyPage=2')
   await screen.findByRole('button', {name:'Open repair order RO-1'})
+  expect(screen.getByRole('searchbox', { name: 'Search this truck’s repair history' })).toBeEnabled()
+  expect(screen.getByRole('combobox', { name: 'Repair history status' })).toBeEnabled()
   expect(api.get).toHaveBeenLastCalledWith('/repair-orders', expect.objectContaining({params:expect.objectContaining({skip:50})}))
   fireEvent.change(screen.getByRole('searchbox'), {target:{value:'  fan belt  '}})
   expect(screen.queryByRole('button', {name:'Open repair order RO-1'})).not.toBeInTheDocument()

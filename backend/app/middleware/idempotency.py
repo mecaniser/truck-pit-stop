@@ -65,6 +65,10 @@ class IdempotencyMiddleware:
         # and current permission checks belong to the database transaction.
         if is_receipt_path(path):
             return False
+        # DB134 reconstructs only currently authorized results from durable
+        # outcome identities; a Redis response must never bypass that check.
+        if path.startswith('/api/v1/vehicles/') and '/maintenance-' in path:
+            return False
         # Telemetry has durable actor/membership-aware replay checks.
         if path.startswith("/api/v1/fleet/trucks/") and path.endswith("/telemetry-snapshots"):
             return False

@@ -15,6 +15,7 @@ os.environ.setdefault("TWILIO_PHONE_NUMBER", "+15555550100")
 
 from app.api.v1.endpoints import repair_orders
 from app.db.models.fleet import FleetIncident
+from app.db.models.maintenance import MaintenanceWorkLink
 from app.db.models.repair_order_history import RepairOrderHistoryEvent
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
@@ -66,7 +67,9 @@ class _FakeAsyncSession:
     async def commit(self):
         self.commit_count += 1
 
-    async def scalar(self, _statement):
+    async def scalar(self, statement):
+        if statement.column_descriptions[0].get("entity") is MaintenanceWorkLink:
+            return None
         return "Test Garage"
 
     async def refresh(self, _obj, **_kwargs):
@@ -109,7 +112,9 @@ class _FakeOverrideSession:
     async def commit(self):
         self.commit_count += 1
 
-    async def scalar(self, _statement):
+    async def scalar(self, statement):
+        if statement.column_descriptions[0].get("entity") is MaintenanceWorkLink:
+            return None
         return "Test Garage"
 
     async def refresh(self, _obj, **_kwargs):

@@ -43,6 +43,7 @@ const lineIdentity = {
   availability: z.object({ state: z.enum(['available', 'shortage', 'not_stocked', 'unknown']), requested_packages: z.number().nonnegative().nullable(), available_packages: z.number().nonnegative().nullable(), reserved_packages: z.number().nonnegative().nullable(), included: z.boolean() }).strict(),
 }
 const previewBase = {
+  maintenance: z.object({ affected_work: z.array(z.object({ work_link_id: id, version: z.number().int().positive(), cycle: z.number().int().positive(), repair_order_id: id.nullable(), order_number: z.string().nullable(), state: z.enum(['active', 'pending_evidence', 'review_required', 'completed', 'detached']), operation_ids: z.array(id), can_open: z.boolean(), program_id: id, program_name: z.string() }).strict()) }).strict().optional(),
   schema_version: z.literal(1), plan_kind: z.enum(['parts_add', 'service_apply', 'pm_replace', 'fleet_create', 'counter_draft']),
   pricing_preview_fingerprint: z.string().min(1), confirmation_required: z.boolean(), currency: z.literal('USD'), expected_sale_version: z.number().int().nonnegative().nullable(),
   availability: z.object({ state: z.enum(['ready', 'requires_stock_acknowledgement', 'partial_bundle']), omitted_line_keys: z.array(z.string()) }).strict(),
@@ -59,6 +60,9 @@ export const previewSchema = z.discriminatedUnion('projection', [
 export type PricingPreview = z.infer<typeof previewSchema>
 export function parsePricingPreview(input: unknown, request: ResolveRequest, role?: string, conflict = false): PricingPreview {
   const preview = previewSchema.parse(input)
+  if (preview.maintenance && request.plan.kind !== 'pm_replace') throw new Error('Unexpected maintenance removal scope')
+  const maintenanceOrder = request.context.kind === 'repair_order' ? request.context.repair_order_id : null
+  if (preview.maintenance?.affected_work.length && (!preview.confirmation_required || new Set(preview.maintenance.affected_work.map(work => work.work_link_id)).size !== preview.maintenance.affected_work.length || (maintenanceOrder !== null && preview.maintenance.affected_work.some(work => work.repair_order_id !== maintenanceOrder)))) throw new Error('Invalid maintenance removal review')
   const fleet = role === 'fleet_manager' || request.pricing_presentation === 'fleet'
   if (preview.projection !== (fleet ? 'fleet' : 'shop') || preview.plan_kind !== request.plan.kind) throw new Error('Invalid pricing preview')
   if ((request.context.kind === 'counter_sale') !== (preview.totals.kind === 'counter_sale')) throw new Error('Invalid pricing context')

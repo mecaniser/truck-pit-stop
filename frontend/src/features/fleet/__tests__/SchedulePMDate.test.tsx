@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { BoardTruck } from '../types'
 
@@ -11,6 +11,14 @@ vi.mock('@/lib/api', () => ({ default: { get: apiMocks.get, post: apiMocks.post 
 vi.mock('react-hot-toast', () => ({ default: { success: vi.fn(), error: vi.fn() } }))
 
 import { SchedulePMModal } from '../FleetModals'
+
+// Calendar cases exercise fixed November dates. Keep them independent of the
+// runner's current month and of mileage-based default dates drifting over time.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-10-01T12:00:00Z'))
+})
+afterEach(() => vi.useRealTimers())
 
 const truck: BoardTruck = {
   id: 'truck-603',

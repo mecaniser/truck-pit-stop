@@ -60,3 +60,6 @@ api_router.include_router(communications.router, prefix='/communications', tags=
 
 from app.api.v1.endpoints import sms_onboarding
 api_router.include_router(sms_onboarding.router, prefix='/communications/sms', tags=['communications'])
+from app.api.v1.endpoints import maintenance
+api_router.include_router(maintenance.router, tags=["maintenance"])
+api_router.include_router(maintenance.work_router, tags=["maintenance"])

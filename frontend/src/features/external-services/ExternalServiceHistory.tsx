@@ -80,10 +80,10 @@ function ScopedHistory({ vehicleId, scope }: { vehicleId: string; scope: (string
     <p className="db-external-services__muted">Work performed elsewhere · Not billed by this shop.</p>
     <div className="db-external-services__search">
       <input ref={searchInput} type="search" aria-label="Search outside-shop history" aria-describedby={searchHint} placeholder="Shop, work, or reference" maxLength={200} value={search} disabled={Boolean(editor)} onChange={event => changeSearch(event.target.value)} />
+      <span id={searchHint} className="sr-only">Search all outside-shop records for this vehicle by shop, work performed, or reference.</span>
       {search && <button type="button" disabled={Boolean(editor)} onClick={clearSearch}>Clear search</button>}
       <label className="db-external-services__toggle"><input type="checkbox" checked={includeVoided} disabled={Boolean(editor)} onChange={event => { setIncludeVoided(event.target.checked); setPage(0) }} />Show voided</label>
     </div>
-    <span id={searchHint} className="sr-only">Search all outside-shop records for this vehicle by shop, work performed, or reference.</span>
     {message && <p role="status" className="db-external-services__success">{message}</p>}
     {(searching || query.isPending) && <p role="status">{normalizedSearch ? 'Searching outside-shop history…' : 'Loading outside-shop history…'}</p>}
     {!searching && query.isError && <div role="alert">Could not load outside-shop history. <button type="button" disabled={query.isFetching} onClick={() => void query.refetch()}>Retry outside history</button></div>}
