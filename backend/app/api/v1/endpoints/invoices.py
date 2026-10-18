@@ -1077,13 +1077,17 @@ async def _list_invoices_legacy(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    query = select(Invoice).join(RepairOrder, Invoice.repair_order_id == RepairOrder.id)
-    count_query = select(func.count(Invoice.id)).join(RepairOrder, Invoice.repair_order_id == RepairOrder.id)
+    invoice_order_join = and_(Invoice.repair_order_id == RepairOrder.id,
+                              Invoice.tenant_id == RepairOrder.tenant_id)
+    query = select(Invoice).join(RepairOrder, invoice_order_join)
+    count_query = select(func.count(Invoice.id)).join(RepairOrder, invoice_order_join)
     if current_user.role == UserRole.CUSTOMER:
-        if not current_user.customer_id:
+        if not current_user.customer_id or not current_user.tenant_id:
             return paginated_or_list([], 0, skip, limit, paginated)
-        query = query.where(RepairOrder.customer_id == current_user.customer_id)
-        count_query = count_query.where(RepairOrder.customer_id == current_user.customer_id)
+        selected_scope = and_(RepairOrder.customer_id == current_user.customer_id,
+                              Invoice.tenant_id == current_user.tenant_id)
+        query = query.where(selected_scope)
+        count_query = count_query.where(selected_scope)
     else:
         if not current_user.tenant_id:
             return paginated_or_list([], 0, skip, limit, paginated)
@@ -1113,6 +1117,7 @@ async def _list_invoices_legacy(
             .options(selectinload(Payment.recorded_by_user))
             .where(
                 Payment.invoice_id.in_(paid_ids),
+                Payment.tenant_id == current_user.tenant_id,
                 Payment.status == PaymentStatus.COMPLETED,
             )
             .order_by(Payment.created_at.desc())

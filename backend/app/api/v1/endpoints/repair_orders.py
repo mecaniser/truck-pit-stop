@@ -1003,8 +1003,10 @@ def _ledger_filters(actor, *, customer_id=None, vehicle_id=None, status=None, de
         raise HTTPException(403, "Access denied")
     if actor.role == UserRole.CUSTOMER:
         identity = actor.customer_id
-        source = [RepairOrder.customer_id == identity] if identity else [False]
-        projection = [RepairOrderReadModel.customer_id == identity] if identity else [False]
+        source = [RepairOrder.customer_id == identity,
+                  RepairOrder.tenant_id == actor.tenant_id] if identity and actor.tenant_id else [False]
+        projection = [RepairOrderReadModel.customer_id == identity,
+                      RepairOrderReadModel.tenant_id == actor.tenant_id] if identity and actor.tenant_id else [False]
     else:
         identity = actor.tenant_id
         source = [RepairOrder.tenant_id == identity] if identity else [False]
