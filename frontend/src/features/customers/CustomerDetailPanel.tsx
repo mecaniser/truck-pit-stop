@@ -1,4 +1,4 @@
-import React, { type ReactNode } from 'react'
+import React, { useEffect, useState, type ReactNode } from 'react'
 import type { ViewMode } from '@/components/ViewToggle'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 
 import { LoadingLine } from '@/components/ui'
+import { useAuthStore } from '@/stores/authStore'
 import ViewToggle from '@/components/ViewToggle'
 import { formatUSPhone } from '@/utils/phone'
 import { vehicleDisplayLabel } from '@/lib/vehicleName'
@@ -21,6 +22,7 @@ import {
 import type { CustomerHistoryResponse } from './customerDetailFormat'
 import CustomerLoadError from './CustomerLoadError'
 import CustomerBusinessSettings from './CustomerBusinessSettings'
+import CustomerAccount from './CustomerAccount'
 import './customer-workspace.css'
 
 /**
@@ -140,6 +142,12 @@ export default function CustomerDetailPanel({
   openEditVehicleModal,
   handleDeleteVehicleClick,
 }: CustomerDetailPanelProps) {
+  const user = useAuthStore(state => state.user)
+  const canReadAccount = user?.role === 'garage_owner'
+    || (user?.role === 'garage_admin' && user.permissions?.payments === true)
+  const [accountOpen, setAccountOpen] = useState(false)
+  useEffect(() => setAccountOpen(false), [selectedCustomer.id])
+  useEffect(() => { if (!canReadAccount) setAccountOpen(false) }, [canReadAccount])
   return (
     <div className="db-customer-record">
       <div className="db-customer-record__summary">
@@ -148,8 +156,8 @@ export default function CustomerDetailPanel({
           {selectedCustomer.email && <a href={`mailto:${selectedCustomer.email}`}><Mail aria-hidden="true" /><span>{selectedCustomer.email}</span></a>}
           {!selectedCustomer.phone && !selectedCustomer.email && <span className="text-gray-500">No company contact details</span>}
         </div>
-        <div className="db-customer-record__balance" aria-label="Customer balance">
-          <span>{numericBalance(selectedCustomer.balance) > 0 ? 'Balance due' : numericBalance(selectedCustomer.balance) < 0 ? 'Account credit' : 'Balance'}</span>
+        <div className="db-customer-record__balance" aria-label="Listed balance, mixed sources">
+          <span>{numericBalance(selectedCustomer.balance) < 0 ? 'Listed credit' : 'Listed balance'} · mixed sources</span>
           <strong className={balanceLabelClass(selectedCustomer.balance)}>{selectedCustomer.balance != null ? balanceAmountLabel(selectedCustomer.balance) : '—'}</strong>
         </div>
       </div>
@@ -158,10 +166,10 @@ export default function CustomerDetailPanel({
       <div className="db-customer-record__tabs" role="group" aria-label="Customer views">
         <button
           type="button"
-          onClick={() => setDetailTab('overview')}
-          aria-pressed={detailTab === 'overview'}
+          onClick={() => { setAccountOpen(false); setDetailTab('overview') }}
+          aria-pressed={!accountOpen && detailTab === 'overview'}
           className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
-            detailTab === 'overview'
+            !accountOpen && detailTab === 'overview'
               ? 'border-amber-500 text-amber-700'
               : 'border-transparent text-gray-500 hover:text-gray-700'
           }`}
@@ -170,19 +178,31 @@ export default function CustomerDetailPanel({
         </button>
         <button
           type="button"
-          onClick={() => setDetailTab('history')}
-          aria-pressed={detailTab === 'history'}
+          onClick={() => { setAccountOpen(false); setDetailTab('history') }}
+          aria-pressed={!accountOpen && detailTab === 'history'}
           className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
-            detailTab === 'history'
+            !accountOpen && detailTab === 'history'
               ? 'border-amber-500 text-amber-700'
               : 'border-transparent text-gray-500 hover:text-gray-700'
           }`}
         >
           History
         </button>
+        {canReadAccount && <button
+          type="button"
+          onClick={() => setAccountOpen(true)}
+          aria-pressed={accountOpen}
+          className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
+            accountOpen
+              ? 'border-amber-500 text-amber-700'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >Account</button>}
       </div>
 
-      {detailTab === 'history' && historyError ? <div role="alert">Could not load customer history. <button type="button" onClick={onRetryHistory}>Retry customer history</button></div> : detailTab === 'history' ? (
+      {accountOpen && canReadAccount && <CustomerAccount key={selectedCustomer.id} customerId={selectedCustomer.id} />}
+
+      {!accountOpen && detailTab === 'history' && historyError ? <div role="alert">Could not load customer history. <button type="button" onClick={onRetryHistory}>Retry customer history</button></div> : !accountOpen && detailTab === 'history' ? (
         <div className="db-customer-record__history">
           {/* Lifetime stats */}
           <div className="db-customer-history__stats grid grid-cols-3 gap-3">
@@ -290,7 +310,7 @@ export default function CustomerDetailPanel({
             )}
           </div>
         </div>
-      ) : (
+      ) : accountOpen && canReadAccount ? null : (
       <>
       <section className="db-customer-record__account" aria-label="Account details">
           <dl className="db-customer-record__facts">

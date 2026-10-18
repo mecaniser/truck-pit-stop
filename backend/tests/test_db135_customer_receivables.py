@@ -1,0 +1,216 @@
+from __future__ import annotations
+
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
+from types import SimpleNamespace
+from uuid import uuid4
+
+import pytest
+from fastapi import HTTPException
+
+from app.api.v1.endpoints.customer_receivables import render_statement_pdf
+from app.api.v1.endpoints import customer_receivables as account_endpoints
+from app.core.dependencies import get_current_active_user
+from app.db.models.customer import Customer
+from app.db.models.invoice import Invoice, InvoiceStatus
+from app.db.models.invoice_settlement import CustomerCreditEntry, InvoiceSettlement, PaymentOverpayment
+from app.db.models.payment import Payment, PaymentMethod, PaymentStatus
+from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.db.models.tenant import Tenant
+from app.db.models.user import UserRole
+from app.db.models.vehicle import Vehicle
+from app.services.customer_receivables import (
+    _credit_remaining, account_snapshot, bucket_for, decode_cursor, encode_cursor, trusted_settlement,
+)
+
+
+def test_bucket_edges_and_cursor_scope():
+    today = date(2026, 10, 17)
+    assert bucket_for(None, today) == "undated_due"
+    assert bucket_for(today + timedelta(days=1), today) == "current"
+    for days, expected in ((0, "current"), (1, "days_1_30"), (30, "days_1_30"),
+                           (31, "days_31_60"), (60, "days_31_60"), (61, "days_61_90"),
+                           (90, "days_61_90"), (91, "days_90_plus")):
+        assert bucket_for(today - timedelta(days=days), today) == expected
+    tenant_id, customer_id = uuid4(), uuid4()
+    cursor = encode_cursor(tenant_id, customer_id, "native", 50)
+    assert decode_cursor(cursor, tenant_id, customer_id, "native") == 50
+    with pytest.raises(Exception) as wrong_customer:
+        decode_cursor(cursor, tenant_id, uuid4(), "native")
+    assert wrong_customer.value.status_code == 422
+    with pytest.raises(Exception) as tampered:
+        decode_cursor(cursor[:-1] + ("A" if cursor[-1] != "A" else "B"), tenant_id, customer_id, "native")
+    assert tampered.value.status_code == 422
+
+
+def test_trusted_settlement_requires_exact_principal_and_no_paid_baseline():
+    tenant_id, customer_id, invoice_id = uuid4(), uuid4(), uuid4()
+    invoice = Invoice(id=invoice_id, tenant_id=tenant_id, repair_order_id=uuid4(),
+                      invoice_number="INV-TRUST", status=InvoiceStatus.PAID,
+                      subtotal=Decimal("100.00"), total_amount=Decimal("100.00"))
+    settlement = InvoiceSettlement(id=uuid4(), tenant_id=tenant_id, customer_id=customer_id,
+                                   invoice_id=invoice_id, principal_total=Decimal("100.00"),
+                                   confirmed_principal=Decimal("40.00"),
+                                   legacy_reconciliation_status="reconciled", currency="USD")
+    assert trusted_settlement(invoice, settlement, customer_id=customer_id, bad_baseline=False)
+    assert not trusted_settlement(invoice, settlement, customer_id=customer_id, bad_baseline=True)
+    settlement.legacy_reconciliation_status = "legacy_paid_snapshot"
+    assert not trusted_settlement(invoice, settlement, customer_id=customer_id, bad_baseline=False)
+    settlement.legacy_reconciliation_status = "native"
+    settlement.principal_total = Decimal("99.99")
+    assert not trusted_settlement(invoice, settlement, customer_id=customer_id, bad_baseline=False)
+    settlement.principal_total = Decimal("100.00")
+    settlement.customer_id = uuid4()
+    assert not trusted_settlement(invoice, settlement, customer_id=customer_id, bad_baseline=False)
+
+
+def test_credit_only_direct_origin_children_reduce_available_balance():
+    tenant_id, customer_id, overpayment_id, issue_id, application_id = (uuid4() for _ in range(5))
+    overpayment = PaymentOverpayment(id=overpayment_id, tenant_id=tenant_id, customer_id=customer_id,
+                                     state="credited", consented_at=datetime.now(timezone.utc))
+    issue = CustomerCreditEntry(id=issue_id, tenant_id=tenant_id, customer_id=customer_id,
+                                entry_type="issued", amount=Decimal("20.00"),
+                                origin_overpayment_id=overpayment_id, consent_channel="phone")
+    applied = CustomerCreditEntry(id=application_id, tenant_id=tenant_id, customer_id=customer_id,
+                                  entry_type="applied", amount=Decimal("7.00"), source_entry_id=issue_id)
+    reversal = CustomerCreditEntry(id=uuid4(), tenant_id=tenant_id, customer_id=customer_id,
+                                   entry_type="reversed", amount=Decimal("7.00"), source_entry_id=application_id)
+    assert _credit_remaining([issue, applied, reversal], {overpayment_id: overpayment}) == Decimal("13.00")
+    overpayment.state = "refund_required"
+    assert _credit_remaining([issue, applied, reversal], {overpayment_id: overpayment}) == Decimal("0.00")
+
+
+@pytest.mark.asyncio
+async def test_account_api_denies_receptionist_and_ungranted_admin_then_pages(client, monkeypatch):
+    from app.main import app
+
+    tenant_id, customer_id = uuid4(), uuid4()
+    principal = SimpleNamespace(role=UserRole.RECEPTIONIST, tenant_id=tenant_id, permissions={})
+
+    async def fake_user():
+        return principal
+
+    async def fake_snapshot(_tenant_id, _customer_id):
+        assert _tenant_id == tenant_id and _customer_id == customer_id
+        return {
+            "as_of_date": "2026-10-17", "generated_at": "2026-10-17T12:00:00+00:00",
+            "currency": "USD", "customer": {"id": str(customer_id), "name": "Customer"},
+            "native": {"collectible": "0.00", "current": "0.00", "days_1_30": "0.00",
+                       "days_31_60": "0.00", "days_61_90": "0.00", "days_90_plus": "0.00",
+                       "undated_due": "0.00", "unapplied_credit": "0.00", "review_required_count": 0},
+            "ets_history": {"observed_open_balance": None, "balance_basis": "unavailable",
+                            "review_required_count": 0, "collectible": False},
+            "transactions": [{"id": str(uuid4()), "source_owner": "native", "kind": "invoice",
+                              "occurred_at": "2026-10-17T12:00:00+00:00", "source_date": None,
+                              "amount": "10.00", "remaining_principal": "10.00"},
+                             {"id": str(uuid4()), "source_owner": "ets_history", "kind": "invoice",
+                              "occurred_at": None, "source_date": "2025-01-05",
+                              "amount": "20.00", "remaining_principal": None}],
+        }
+
+    app.dependency_overrides[get_current_active_user] = fake_user
+    monkeypatch.setattr(account_endpoints, "_snapshot", fake_snapshot)
+    path = f"/api/v1/customers/{customer_id}/account"
+    assert (await client.get(path)).status_code == 403
+    assert (await client.get(f"{path}/statement.pdf")).status_code == 403
+    principal.role = UserRole.GARAGE_ADMIN
+    assert (await client.get(path)).status_code == 403
+    principal.permissions = {"payments": True}
+    assert (await client.get(path, params={"source_filter": "invalid"})).status_code == 422
+    first_response = await client.get(path, params={"limit": 1})
+    assert set(part.strip() for part in first_response.headers["cache-control"].split(",")) == {"private", "no-store"}
+    first = first_response.json()
+    assert len(first["transactions"]) == 1 and first["next_cursor"]
+    second = (await client.get(path, params={"limit": 1, "cursor": first["next_cursor"]})).json()
+    assert len(second["transactions"]) == 1 and second["next_cursor"] is None
+    assert first["transactions"][0]["id"] != second["transactions"][0]["id"]
+    assert (await client.get(path.replace(str(customer_id), str(uuid4())),
+                             params={"cursor": first["next_cursor"]})).status_code == 422
+    assert (await client.get(f"{path}/statement.pdf")).headers["content-type"] == "application/pdf"
+
+
+@pytest.mark.asyncio
+async def test_account_separates_native_ets_and_orphan_bill_to_without_double_count(db_session):
+    tenant_id, customer_id, other_id = uuid4(), uuid4(), uuid4()
+    tenant = Tenant(id=tenant_id, name="Account Garage", slug=f"account-{uuid4().hex[:8]}", timezone="UTC")
+    customer = Customer(id=customer_id, tenant_id=tenant_id, first_name="A", last_name="Customer",
+                        email=f"a-{uuid4().hex[:8]}@example.test")
+    other = Customer(id=other_id, tenant_id=tenant_id, first_name="B", last_name="Customer",
+                     email=f"b-{uuid4().hex[:8]}@example.test")
+    vehicle = Vehicle(id=uuid4(), tenant_id=tenant_id, customer_id=customer_id, make="Volvo", model="VNR")
+    db_session.add_all([tenant, customer, other, vehicle])
+    await db_session.flush()
+    orders = [RepairOrder(id=uuid4(), tenant_id=tenant_id, customer_id=customer_id,
+                          vehicle_id=vehicle.id, order_number=f"RO-{uuid4().hex[:8]}",
+                          status=RepairOrderStatus.INVOICED) for _ in range(4)]
+    db_session.add_all(orders)
+    await db_session.flush()
+    now = datetime.now(timezone.utc)
+    native = Invoice(id=uuid4(), tenant_id=tenant_id, repair_order_id=orders[0].id,
+                     billed_customer_id=None, invoice_number=f"INV-{uuid4().hex[:8]}",
+                     status=InvoiceStatus.SENT, subtotal=Decimal("100.00"), total_amount=Decimal("100.00"),
+                     due_date=now - timedelta(days=31))
+    imported = Invoice(id=uuid4(), tenant_id=tenant_id, repair_order_id=orders[1].id,
+                       billed_customer_id=customer_id, invoice_number=f"INV-{uuid4().hex[:8]}",
+                       status=InvoiceStatus.PAID, subtotal=Decimal("500.00"), total_amount=Decimal("500.00"),
+                       source="easy_truck_shop_import", ets_invoiced_at=date(2025, 1, 5))
+    orphan = Invoice(id=uuid4(), tenant_id=tenant_id, repair_order_id=orders[2].id,
+                     billed_customer_id=uuid4(), invoice_number=f"INV-{uuid4().hex[:8]}",
+                     status=InvoiceStatus.SENT, subtotal=Decimal("900.00"), total_amount=Decimal("900.00"))
+    reassigned = Invoice(id=uuid4(), tenant_id=tenant_id, repair_order_id=orders[3].id,
+                         billed_customer_id=other_id, invoice_number=f"INV-{uuid4().hex[:8]}",
+                         status=InvoiceStatus.SENT, subtotal=Decimal("300.00"), total_amount=Decimal("300.00"))
+    db_session.add_all([native, imported, orphan, reassigned])
+    await db_session.flush()
+    db_session.add(InvoiceSettlement(id=uuid4(), tenant_id=tenant_id, invoice_id=native.id,
+                                     customer_id=customer_id, principal_total=Decimal("100.00"),
+                                     confirmed_principal=Decimal("25.00"), legacy_reconciliation_status="native"))
+    db_session.add(Payment(id=uuid4(), tenant_id=tenant_id, invoice_id=native.id,
+                           payment_number=f"PAY-{uuid4().hex[:8]}", amount=Decimal("25.00"),
+                           method=PaymentMethod.CASH, status=PaymentStatus.COMPLETED))
+    orphan_payment = Payment(id=uuid4(), tenant_id=tenant_id, invoice_id=orphan.id,
+                             payment_number=f"PAY-{uuid4().hex[:8]}", amount=Decimal("900.00"),
+                             method=PaymentMethod.CASH, status=PaymentStatus.COMPLETED)
+    db_session.add(orphan_payment)
+    pending_payment = Payment(id=uuid4(), tenant_id=tenant_id, invoice_id=native.id,
+                              payment_number=f"PAY-{uuid4().hex[:8]}", amount=Decimal("70.00"),
+                              method=PaymentMethod.ZELLE, status=PaymentStatus.PENDING)
+    db_session.add(pending_payment)
+    mixed_history_payment = Payment(id=uuid4(), tenant_id=tenant_id, invoice_id=imported.id,
+                                    payment_number=f"PAY-{uuid4().hex[:8]}", amount=Decimal("10.00"),
+                                    method=PaymentMethod.CASH, status=PaymentStatus.COMPLETED)
+    db_session.add(mixed_history_payment)
+    await db_session.flush()
+
+    snapshot = await account_snapshot(db_session, tenant_id=tenant_id, customer_id=customer_id)
+    tenant.timezone = "Invalid/Shop_Timezone"
+    await db_session.flush()
+    with pytest.raises(HTTPException) as invalid_timezone:
+        await account_snapshot(db_session, tenant_id=tenant_id, customer_id=customer_id)
+    assert invalid_timezone.value.status_code == 503
+    tenant.timezone = "UTC"
+    await db_session.flush()
+    with pytest.raises(HTTPException) as hidden:
+        await account_snapshot(db_session, tenant_id=uuid4(), customer_id=customer_id)
+    assert hidden.value.status_code == 404
+    assert snapshot["native"]["collectible"] == "75.00"
+    assert snapshot["native"]["days_31_60"] == "75.00"
+    assert snapshot["native"]["review_required_count"] == 2
+    assert snapshot["ets_history"]["observed_open_balance"] is None
+    assert snapshot["ets_history"]["collectible"] is False
+    assert snapshot["ets_history"]["review_required_count"] == 1
+    assert not any(row["invoice_id"] == str(reassigned.id) for row in snapshot["transactions"])
+    orphan_row = next(row for row in snapshot["transactions"] if row["invoice_id"] == str(orphan.id))
+    assert orphan_row["source_owner"] == "review_required"
+    assert orphan_row["amount"] is None and orphan_row["drilldown_route"] is None
+    assert all(row["id"] != str(orphan_payment.id) for row in snapshot["transactions"])
+    pending_row = next(row for row in snapshot["transactions"] if row["id"] == str(pending_payment.id))
+    assert pending_row["source_owner"] == "review_required" and pending_row["payment_status"] == "pending"
+    assert next(row for row in snapshot["transactions"] if row["id"] == str(mixed_history_payment.id))["source_owner"] == "review_required"
+    imported_row = next(row for row in snapshot["transactions"] if row["id"] == str(imported.id))
+    assert imported_row["source_date"] == "2025-01-05"
+    assert imported_row["source_owner"] == "ets_history"
+    assert any(row["drilldown_route"] == f"/dashboard/repair-orders?selected={orders[0].id}"
+               for row in snapshot["transactions"])
+    pdf = render_statement_pdf(snapshot)
+    assert pdf.startswith(b"%PDF-") and len(pdf) < 2_000_000

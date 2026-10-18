@@ -36,8 +36,8 @@ Last updated: 2026-10-17. Program owner: Product & Delivery Lead. Discovery inve
   - Status: **Done — PR #571 and Night correction #572 merged, deployed and production verified; independent QA/Security GO**. Board: **DB-134**. Owner: Backend & Integrations.
   - Evidence: [M1 contract](contracts/db134-maintenance-programs.md); [implementation receipt](verification/DB134_MAINTENANCE_PROGRAMS.md).
 - [ ] **B1 — Customer transaction ledger, statements and overdue-balance aging**
-  - Status: **Discovery — source intake and contract drafted; implementation and gates pending**. Board: **DB-135**. Owner: Backend & Integrations.
-  - Evidence: [B1 cross-layer contract](contracts/db135-customer-receivables.md). Native collectible, unapplied credit and ETS-owned history have separate totals; source and merge-identity checks remain before implementation.
+  - Status: **Implementation — Architecture contract GO; independent gates and release pending**. Board: **DB-135**. Owner: Backend & Integrations.
+  - Evidence: [B1 cross-layer contract](contracts/db135-customer-receivables.md) and [verification receipt](verification/DB135_CUSTOMER_RECEIVABLES.md). Native collectible, unapplied credit and ETS-owned history remain separate; unresolved bill-to/settlement identity stays review-required rather than collectible.
 - [ ] **A1 — Actual labor cost and defensible job contribution**
   - Status: **Queued**. Board: **DB-136**. Owner: Backend & Integrations.
   - Evidence: Not started.
