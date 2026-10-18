@@ -2,13 +2,13 @@
 
 # ETS parity implementation tracker
 
-Last updated: 2026-10-17. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
+Last updated: 2026-10-18. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
 
-**Progress: 4/29 completed; 4/6 selected outcomes completed. Current: B1 intake. Next: A1 after B1.**
+**Progress: 4/30 completed; 4/6 selected outcomes completed. Current: B1 intake, with B4 source defect intake. Next: A1 after B1.**
 
 ## Approved delivery order
 
-**R1 → P1 → C1 → M1 → B1 → A1.** A1 is last in this selected wave. The other 23 items remain in the delivery backlog after this priority wave; retain every discovery and refine their order when the priority wave closes.
+**R1 → P1 → C1 → M1 → B1 → A1.** A1 is last in this selected wave. The other 24 items remain in the delivery backlog after this priority wave; retain every discovery and refine their order when the priority wave closes. B4 is a newly surfaced imported-order defect tracked separately from this selected wave.
 
 ## Operating rules
 
@@ -45,6 +45,8 @@ Last updated: 2026-10-17. Program owner: Product & Delivery Lead. Discovery inve
 Dependencies: P1 precedes C1 parts-price defaults. M1 must retain existing PM/telemetry provenance. B1 must distinguish native collectible balances from ETS-owned history. A1 requires explicit effective-date labor-cost policy and follows the operational work.
 
 ## Retained backlog
+
+- [ ] **B4 — ETS-owned invoice/payment mirror and imported-order billing guard** — New source-backed defect, DB-139 intake. The an imported PM order screenshot shows a zero labor line, negative footer and native invoice action on a completed historical order. Correct source-total display and block duplicate native issuance first; then mirror supported ETS unpaid/partial/paid states with read-only QuickBooks corroboration and review holds. Work completion alone never proves paid. [Contract](contracts/db139-ets-financial-mirror.md). B1 native reconciliation and A1 queue remain distinct.
 
 - [ ] **R2 — Repeat or selectively copy a prior repair order/estimate** — Backlog; after the priority wave. Relative value/size: Medium / M. See audit for evidence and dependencies.
 - [ ] **R3 — Defer an existing operation into tracked recommended work** — Backlog; after the priority wave. Relative value/size: High / L. See audit for evidence and dependencies.

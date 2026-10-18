@@ -437,6 +437,7 @@ class InvoiceResponse(BaseModel):
     tenant_id: UUID
     repair_order_id: UUID
     invoice_number: str
+    source: Optional[str] = None
     status: str
     is_internal: bool = False
     payment: Optional[PaymentSummary] = None
@@ -669,6 +670,8 @@ async def auto_create_invoice_for_order(
     The order must have .customer and .vehicle relationships already loaded.
     created_by_user_id is the staff member approving completion, if known.
     """
+    if order.source == "easy_truck_shop_import":
+        raise HTTPException(status_code=409, detail="Imported ETS orders cannot create DieselBridge invoices")
     latest_result = await db.execute(
         select(Invoice)
         .where(Invoice.repair_order_id == order.id)
@@ -816,6 +819,8 @@ async def create_invoice(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         )
+    if order.source == "easy_truck_shop_import":
+        raise HTTPException(status_code=409, detail="Imported ETS orders cannot create DieselBridge invoices")
     if order.status != RepairOrderStatus.COMPLETED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1008,8 +1013,8 @@ async def list_invoices(
     if current_user.role == UserRole.CUSTOMER:
         if not current_user.customer_id:
             return paginated_or_list([], 0, skip, limit, paginated)
-        source_filters = [RepairOrder.customer_id == current_user.customer_id]
-        projection_filters = [InvoiceReadModel.customer_id == current_user.customer_id]
+        source_filters = [RepairOrder.customer_id == current_user.customer_id, Invoice.tenant_id == current_user.tenant_id]
+        projection_filters = [InvoiceReadModel.customer_id == current_user.customer_id, InvoiceReadModel.tenant_id == current_user.tenant_id]
     else:
         if not current_user.tenant_id:
             return paginated_or_list([], 0, skip, limit, paginated)
@@ -1026,8 +1031,8 @@ async def list_invoices(
         await db.execute(
             select(func.count(Invoice.id), func.count(InvoiceReadModel.invoice_id))
             .select_from(Invoice)
-            .join(RepairOrder, Invoice.repair_order_id == RepairOrder.id)
-            .outerjoin(InvoiceReadModel, InvoiceReadModel.invoice_id == Invoice.id)
+            .join(RepairOrder, and_(Invoice.repair_order_id == RepairOrder.id, Invoice.tenant_id == RepairOrder.tenant_id))
+            .outerjoin(InvoiceReadModel, and_(InvoiceReadModel.invoice_id == Invoice.id, InvoiceReadModel.tenant_id == Invoice.tenant_id))
             .where(*source_filters)
         )
     ).one()
@@ -1039,13 +1044,19 @@ async def list_invoices(
         )
 
     rows = await db.execute(
-        select(InvoiceReadModel.payload)
+        select(InvoiceReadModel.payload, Invoice.source)
+        .join(Invoice, and_(Invoice.id == InvoiceReadModel.invoice_id, Invoice.tenant_id == InvoiceReadModel.tenant_id))
+        .join(RepairOrder, and_(RepairOrder.id == Invoice.repair_order_id, RepairOrder.tenant_id == Invoice.tenant_id))
         .where(*projection_filters)
         .order_by(InvoiceReadModel.created_at.desc(), InvoiceReadModel.invoice_id.desc())
         .offset(skip)
         .limit(limit)
     )
-    items = [InvoiceResponse.model_validate(payload) for payload in rows.scalars().all()]
+    items = []
+    for payload, source in rows.all():
+        item = InvoiceResponse.model_validate(payload)
+        item.source = source
+        items.append(item)
     for item in items:
         item.cash_receipt = await load_cash_receipt(db, item)
     return paginated_or_list(
@@ -1192,7 +1203,7 @@ async def update_invoice(
     await lock_tenant_financials(db, current_user.tenant_id)
     _require_staff(current_user)
     
-    result = await db.execute(select(Invoice).where(Invoice.id == invoice_id))
+    result = await db.execute(select(Invoice).options(selectinload(Invoice.repair_order)).where(Invoice.id == invoice_id))
     invoice = result.scalar_one_or_none()
     
     if not invoice:
@@ -1200,6 +1211,8 @@ async def update_invoice(
     
     if current_user.tenant_id != invoice.tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if invoice.source == "easy_truck_shop_import" or invoice.repair_order.source == "easy_truck_shop_import":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Imported ETS invoices are read-only")
     
     if invoice.status == InvoiceStatus.PAID:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot modify a paid invoice")
@@ -1265,6 +1278,8 @@ async def void_invoice(
     
     if current_user.tenant_id != invoice.tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if invoice.source == "easy_truck_shop_import" or invoice.repair_order.source == "easy_truck_shop_import":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Imported ETS invoices are read-only")
     
     if invoice.status == InvoiceStatus.PAID:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Paid invoices require a refund or credit note")
@@ -1358,6 +1373,8 @@ async def resend_invoice(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         )
+    if invoice.source == "easy_truck_shop_import" or order.source == "easy_truck_shop_import":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Imported ETS invoices cannot be resent")
     if invoice.status == InvoiceStatus.CANCELLED:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot resend a voided invoice")
     

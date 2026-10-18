@@ -401,6 +401,7 @@ class RepairOrderResponse(RepairOrderBase):
     customer_id: UUID
     vehicle_id: UUID
     order_number: str
+    source: Optional[str] = None
     status: RepairOrderStatus
     assigned_mechanic_id: Optional[UUID]
     total_parts_cost: Decimal

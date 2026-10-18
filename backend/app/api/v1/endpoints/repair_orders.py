@@ -1178,11 +1178,11 @@ async def list_repair_orders(
                 [RepairOrderReadModel.created_at.desc(), RepairOrderReadModel.repair_order_id.desc()])
     result = await db.execute(
         select(RepairOrderReadModel.payload, RepairOrder.scheduled_start_at, RepairOrder.promised_finish_at,
-               RepairOrder.status, RepairOrder.deleted_at, RepairOrder.vehicle_released_at)
+               RepairOrder.status, RepairOrder.deleted_at, RepairOrder.vehicle_released_at, RepairOrder.source)
         .select_from(RepairOrderReadModel).join(RepairOrder, _schedule_projection_join())
         .where(*projection_filters).order_by(*ordering).offset(skip).limit(limit))
     zone = await repair_order_schedule.tenant_timezone(db, current_user.tenant_id) if repair_order_schedule.can_read(current_user) else None
-    items = [RepairOrderResponse.model_validate({**row.payload,
+    items = [RepairOrderResponse.model_validate({**row.payload, "source": row.source,
         **repair_order_schedule.fields(row, zone, now, visible=repair_order_schedule.can_read(current_user))})
         for row in result.all()]
     if not staff_work_hold.can_read(current_user):
@@ -1477,7 +1477,7 @@ async def get_repair_order_workspace(
         _check_ro_access(current_user, access_order)
     projection_row = (await db.execute(
         select(RepairOrderReadModel, RepairOrder.scheduled_start_at, RepairOrder.promised_finish_at,
-               RepairOrder.status, RepairOrder.deleted_at, RepairOrder.vehicle_released_at, Tenant.timezone.label("schedule_timezone"))
+               RepairOrder.status, RepairOrder.deleted_at, RepairOrder.vehicle_released_at, Tenant.timezone.label("schedule_timezone"), RepairOrder.source)
         .select_from(RepairOrderReadModel).join(RepairOrder, _schedule_projection_join())
         .join(Tenant, Tenant.id == RepairOrderReadModel.tenant_id)
         .where(RepairOrderReadModel.repair_order_id == order_id)
@@ -1485,7 +1485,7 @@ async def get_repair_order_workspace(
     projection = projection_row[0] if projection_row else None
     if projection:
         zone = repair_order_schedule.valid_timezone(projection_row.schedule_timezone) if repair_order_schedule.can_read(current_user) else None
-        item = RepairOrderResponse.model_validate({**projection.payload,
+        item = RepairOrderResponse.model_validate({**projection.payload, "source": projection_row.source,
             **repair_order_schedule.fields(projection_row, zone, repair_order_schedule.now_utc(), visible=repair_order_schedule.can_read(current_user))})
         if not staff_work_hold.can_read(current_user):
             item.hold_reason = None

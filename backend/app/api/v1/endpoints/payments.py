@@ -990,6 +990,8 @@ async def revert_pending_zelle(
     invoice = result.scalar_one_or_none()
     if not invoice:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
+    if invoice.source == "easy_truck_shop_import" or invoice.repair_order.source == "easy_truck_shop_import":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Imported ETS invoices are read-only")
     if invoice.status == InvoiceStatus.PAID:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invoice is already paid")
     if not invoice.zelle_pending_submitted_at:

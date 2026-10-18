@@ -321,6 +321,7 @@ export interface RepairOrder {
   customer_email?: string | null
   customer_phone?: string | null
   order_number: string
+  source?: string | null
   status: RepairOrderStatus
   description: string | null
   customer_notes: string | null
@@ -643,6 +644,7 @@ export interface Invoice {
   tenant_id: string
   repair_order_id: string
   invoice_number: string
+  source?: string | null
   status: InvoiceStatus
   subtotal: string
   shop_supplies_amount: string
