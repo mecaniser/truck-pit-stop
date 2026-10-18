@@ -213,10 +213,12 @@ function AppToaster() {
         style: {
           background: '#1f2937',
           color: '#fff',
-          borderRadius: '0.75rem',
+          borderRadius: '0.625rem',
           maxWidth: 'min(480px, calc(100vw - 32px))',
           width: 'auto',
-          padding: '12px 16px',
+          padding: '6px 12px',
+          fontSize: '14px',
+          lineHeight: '20px',
         },
         success: {
           iconTheme: { primary: '#10b981', secondary: '#fff' },
@@ -237,7 +239,7 @@ function AppToaster() {
                   type="button"
                   onClick={() => toast.dismiss(t.id)}
                   aria-label="Dismiss notification"
-                  className="ml-2 -mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+                  className="ml-1 -mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-white/60 hover:text-white hover:bg-white/10 transition-colors"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
