@@ -48,6 +48,41 @@ test('Live can precede overview; empty startup retries but timeouts and ambiguit
  const timed=pageFor([loading]);await assert.rejects(readReviewedPageIdentity(timed,link),e=>e.name==='TimeoutError'&&e.message==='vehicle_overview_timeout');assert.deepEqual(timed.counts(),{reads:60,waits:59});
  const duplicate=pageFor([{...ready(),units:['26','26']}]);await assert.rejects(readReviewedPageIdentity(duplicate,link),/vehicle_identity_changed/);assert.deepEqual(duplicate.counts(),{reads:1,waits:0});
 });
+test('loaded profile with a single blank breadcrumb waits for its own identity',async()=>{
+ // Observed on two fresh Motive pages: profile and Live route are ready before
+ // Angular fills the existing breadcrumb-title node. Blank is not a new unit.
+ const pending={...ready(),breadcrumbs:['']};
+ assert.throws(()=>summaryIdentity(pending,link),/vehicle_overview_not_ready/);
+ let reads=0,waits=0;
+ const locator={filter(){return this},first(){return this},async waitFor(){}};
+ const page={getByRole:()=>locator,evaluate:async()=>++reads===1?pending:ready(),waitForTimeout:async()=>{waits++}};
+ assert.deepEqual(await readReviewedPageIdentity(page,link),{vin:null,source_vin_state:'not_displayed'});
+ assert.equal(reads,2);assert.equal(waits,1);
+});
+test('blank breadcrumb has a bounded timeout; wrong or duplicate identity still fails immediately',async()=>{
+ const locator={filter(){return this},first(){return this},async waitFor(){}};
+ function pageFor(breadcrumbs){let reads=0,waits=0;return {getByRole:()=>locator,evaluate:async()=>{reads++;return {...ready(),breadcrumbs}},waitForTimeout:async()=>{waits++},counts:()=>({reads,waits})};}
+ const blank=pageFor([' \n ']);
+ await assert.rejects(readReviewedPageIdentity(blank,link),e=>e.name==='TimeoutError'&&e.message==='vehicle_overview_timeout');
+ assert.deepEqual(blank.counts(),{reads:60,waits:59});
+ for(const breadcrumbs of [['27 (Volvo)'],['26 (Volvo)','26 (Volvo)'],['',''],['26 (Volvo)','']]){
+  const wrong=pageFor(breadcrumbs);
+  await assert.rejects(readReviewedPageIdentity(wrong,link),/vehicle_identity_changed/);
+  assert.deepEqual(wrong.counts(),{reads:1,waits:0});
+ }
+});
+test('waiting for breadcrumb cannot hide later route, VIN, or identity contradictions',async()=>{
+ const locator={filter(){return this},first(){return this},async waitFor(){}};
+ function afterBlank(final){let reads=0;return {getByRole:()=>locator,evaluate:async()=>++reads===1?{...ready(),breadcrumbs:['']}:final,waitForTimeout:async()=>{}};}
+ for(const mutate of [s=>s.units=['27'],s=>s.breadcrumbs=['27 (Volvo)'],s=>s.breadcrumbs=['26','26'],s=>s.url='https://app.gomotive.com/en-US/#/fleetview/vehicles/summary/124',s=>s.live_links=['#/fleetview/map/vehicle/124-null-null/124/live'],s=>s.fields.push({label:'VIN',value:vin},{label:'VIN',value:vin})]){
+  const final=ready();mutate(final);
+  await assert.rejects(readReviewedPageIdentity(afterBlank(final),link));
+ }
+ const withVin=ready();withVin.fields.push({label:'VIN',value:vin});
+ const identity=await readReviewedPageIdentity(afterBlank(withVin),link);
+ assert.deepEqual(identity,{vin,source_vin_state:null});
+ assert.throws(()=>sameIdentity({vin:null,source_vin_state:'not_displayed'},identity),/vin_changed/);
+});
 test('DOM reader scopes the overview title and treats hidden responsive VIN honestly',()=>{
  const vm=require('node:vm');
  const el=(text,shown=true)=>({textContent:text,getClientRects:()=>shown?[{}]:[],children:[],querySelectorAll:()=>[]});

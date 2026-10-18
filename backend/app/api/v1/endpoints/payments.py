@@ -1092,42 +1092,39 @@ async def submit_customer_zelle_payment(
     was_pending = invoice.pending_zelle_confirmation
     zelle_amount = invoice.total_amount - (invoice.service_fee_amount or 0)
 
-    invoice.zelle_pending_submitted_at = compatibility_submitted_at
+    if not was_pending:
+        invoice.zelle_pending_submitted_at = compatibility_submitted_at
     invoice.zelle_pending_sender_email = sender_email
     invoice.zelle_pending_sender_phone = sender_phone
-    invoice.zelle_pending_last_reminder_at = None
-    invoice.zelle_pending_reminder_count = 0
+    if not was_pending:
+        invoice.zelle_pending_last_reminder_at = None
+        invoice.zelle_pending_reminder_count = 0
     if notes:
         existing_notes = (invoice.notes or "").strip()
         note_line = f"[Customer portal Zelle submit] {notes}"
         invoice.notes = f"{existing_notes}\n{note_line}".strip() if existing_notes else note_line
 
+    customer_name = f"{current_user.first_name} {current_user.last_name}".strip() or "Customer"
+    alert_args = dict(
+        db=db,
+        tenant_id=invoice.tenant_id,
+        order_id=invoice.repair_order.id,
+        order_number=invoice.repair_order.order_number,
+        invoice_number=invoice.invoice_number,
+        customer_name=customer_name,
+        amount=zelle_amount,
+        source_label="customer portal",
+        sender_email=sender_email,
+        sender_phone=sender_phone,
+        domain_event_id=f"invoice:{invoice.id}:zelle-submitted:{invoice.zelle_pending_submitted_at.isoformat()}",
+    )
+    if not was_pending:
+        await send_pending_zelle_submission_alert(**alert_args, phase="enqueue")
     await db.commit()
     await db.refresh(invoice)
     await db.refresh(invoice.repair_order)
-
-    customer_name = f"{current_user.first_name} {current_user.last_name}".strip() or "Customer"
     if not was_pending:
-        try:
-            await send_pending_zelle_submission_alert(
-                db=db,
-                tenant_id=invoice.tenant_id,
-                order_id=invoice.repair_order.id,
-                order_number=invoice.repair_order.order_number,
-                invoice_number=invoice.invoice_number,
-                customer_name=customer_name,
-                amount=zelle_amount,
-                source_label="customer portal",
-                sender_email=sender_email,
-                sender_phone=sender_phone,
-            )
-        except Exception as exc:
-            logger.warning(
-                "pending_zelle_submission_alert_failed",
-                invoice_id=str(invoice.id),
-                source="customer_portal",
-                error=str(exc),
-            )
+        await send_pending_zelle_submission_alert(**alert_args, phase="email")
 
     await broadcast_repair_order_update(
         tenant_id=str(invoice.tenant_id),

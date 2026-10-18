@@ -237,7 +237,7 @@ async def test_pending_operations_guard_every_completion_entrypoint(db_session,m
     await db_session.commit()
     side_effect=AsyncMock(side_effect=AssertionError('Completion side effect before operation gate'))
     monkeypatch.setattr(repair_orders,'broadcast_repair_order_update',side_effect)
-    monkeypatch.setattr(repair_orders,'send_sms',side_effect)
+    monkeypatch.setattr(repair_orders,'enqueue_automated_sms',side_effect)
     monkeypatch.setattr(fleet,'_load_fleet_ro_or_404',AsyncMock(return_value=a.order))
     if route=='mechanic':call=repair_orders.complete_work(a.order.id,db_session,a.lead)
     elif route=='admin':call=repair_orders.admin_complete_unassigned_work(a.order.id,db_session,a.owner)
@@ -316,7 +316,7 @@ async def test_operation_reopen_review_loop_credits_order_only_once(db_session,m
     from unittest.mock import AsyncMock
     from app.db.models.mechanic_points import MechanicPoints,MechanicPointsBalance
     a=await seed(db_session)
-    for name in ['send_email','send_sms','broadcast_repair_order_update','broadcast_mechanic_timer_update']:
+    for name in ['send_email','enqueue_automated_sms','broadcast_repair_order_update','broadcast_mechanic_timer_update']:
         monkeypatch.setattr(repair_orders,name,AsyncMock())
     for line in a.lines:
         await ops.complete(db_session,a.order.id,line.id,a.owner,Complete(is_completed=True,expected_version=0))

@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-16T19:09:24.340248+00:00",
+  "title": "DieselBridge Communications Prototype",
+  "extensions": {
+    "shadows": [
+      {
+        "name": "context",
+        "value": "-8px 0 24px #13233d12",
+        "purpose": "Contact details overlay."
+      },
+      {
+        "name": "channels",
+        "value": "-10px 0 40px #0b172820",
+        "purpose": "Channel setup sheet."
+      },
+      {
+        "name": "feedback",
+        "value": "0 5px 20px #132c2320",
+        "purpose": "Local preview feedback."
+      }
+    ],
+    "motion": [
+      {
+        "name": "switch",
+        "value": "transform 0.15s ease-out",
+        "purpose": "Service-event visibility toggle; disabled with reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "phone-max",
+        "value": "700px"
+      },
+      {
+        "name": "context-overlay-max",
+        "value": "1200px"
+      },
+      {
+        "name": "wide-min",
+        "value": "1600px"
+      }
+    ]
+  },
+  "components": [],
+  "narrative": {
+    "northStar": "Established DieselBridge staff presentation",
+    "overview": "A compact operational inbox extending the existing navy rail, road-white workspace, and green actions. Direction is fixed; no new visual world was approved. Documentation applies only to the isolated communications prototype.",
+    "keyCharacteristics": [
+      "Queue, thread, and repair context",
+      "Desktop staff density",
+      "Explicit mobile pane navigation",
+      "Visible sample/no-send boundary"
+    ],
+    "rules": [],
+    "dos": [
+      "Preserve contact/channel draft separation within preview memory.",
+      "Keep delivery and channel restrictions explicit.",
+      "Use source and review evidence with their stated limits."
+    ],
+    "donts": [
+      "Do not imply persistence after reload.",
+      "Do not imply API, authentication, application network transport, or provider integration.",
+      "Do not describe the planned backend migration or durable outbox as implemented.",
+      "Do not replace root product-wide design guidance."
+    ]
+  }
+}

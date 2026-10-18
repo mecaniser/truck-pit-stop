@@ -1,0 +1,49 @@
+# SMS reliability assessment — DB-COMMS-001
+
+Date: 2026-10-16. Owner: Architecture & API Contracts.
+Baseline: `1875a71d41d08784666b1d3b02281d68b38cc5ef` on `codex/communications-foundation`.
+
+This is a source assessment, not a production delivery audit. No credentials, provider receipts, live customer records, or outbound sends were accessed. Prior conversation descriptions of delivered/failed rows and repeated pickup notices are not independently verified evidence here. The findings below identify code behavior and exposure; they do not prove customer impact or identify why a particular historical notice repeated. Line references are to the baseline above; implementation in this branch may move or correct them.
+
+## Findings and priority
+
+| ID | Priority | Evidence at baseline | Implication and action |
+|---|---|---|---|
+| SMS-01 | P1 | `backend/app/api/v1/endpoints/twilio_webhooks.py:123-139` catches all callback processing errors and returns success. Its comment about retry does not match the successful HTTP response. | Failed persistence is acknowledged. Return non-2xx on processing failure, rollback, and prove with exception tests. Provider retry configuration still requires separate verification. Selected bounded correction. |
+| SMS-02 | P1 | `backend/app/services/messaging_service.py:633-648` overwrites delivery_status on every receipt; mapping at 113-125 maps unknown values to pending. | Delayed queued/unknown callbacks can overwrite delivered. Add serialized monotonic transitions, sticky terminal states, stable duplicate timestamps and unknown-status no-op. Selected bounded correction. |
+| SMS-03 | P1 | `backend/app/schemas/message.py` SendSMSRequest has no idempotency key; `messages.py:277-286` invokes a new send; `messaging_service.py:393` calls provider before commit at 453. Generic exceptions become failed at 438-451. | Lost response, timeout or crash can mean accepted remotely but failed/missing locally. A user retry can send twice. Add durable send operations/outbox, intent keys and unknown outcome holds. Do not automatically resend old failed records. Separate foundation slice. |
+| SMS-04 | P1 | `messaging_service.py:633-636` returns None when SID not found; webhook returns success. Provider SID is persisted only after provider response, at 399-453. | Fast callback can arrive before local commit and be lost. In bounded correction return retryable 503 for a SID absent from both SMSMessage and SMS Notification; acknowledge a uniquely matched legacy Notification-only SID without mutation; durable receipt inbox is the longer-term fix. |
+| SMS-05 | P2 | `message_thread.py:10-11` enforces tenant/customer uniqueness; `messaging_service.py:205-208` replaces thread phone with current customer phone. Inbound picks newest matching thread/customer at 523-556. | Thread identity is customer-centric and ambiguous shared numbers choose a person silently. Historical addresses exist on messages but are not explicit conversation identities. Introduce scoped contact identities and unresolved triage, with explicit links and migration collision report. |
+| SMS-06 | P2 | `messaging_service.py:314` falls back to global sender; service does not check tenant sms_enabled/messaging_enabled, while manual endpoint checks messaging_enabled at `messages.py:48-58`. Tenant lookup for inbound requires sms_enabled at `messaging_service.py:168`. | Manual, automation and inbound readiness rules differ. A configured number is not proof of an enabled or inbound-routable account. Consolidate channel readiness at dispatch; verify deployment configuration separately. |
+| SMS-07 | P2 | `frontend/src/features/messages/MessagesInboxPage.tsx:117` stores one replyBody; `223-232` sends it to the currently selected thread. Selection effect at 338-340 only loads messages. | A draft can follow selection to another recipient. New foundation must key drafts by tenant/user/conversation/account/identity, preserve after failures, and clear only submitted revision. Prototype acceptance includes this. |
+| SMS-08 | P2 | `messages.py:219-229` message GET resets shared unread count; `messaging_service.py:590-594` increments an in-memory loaded counter without lock. | Fetching can clear shared unread for every staff member; concurrent inbound/read changes can lose counts. Adopt explicit per-user read watermark and concurrency test in inbox backend slice. |
+| SMS-09 | P2 | `backend/tests/test_messaging_service.py` covers mapping, phone normalization, opt keywords, rate limit, callback URL and optional credentials, but no callback persistence/order/replay or sender crash path. | Existing helper tests do not establish delivery reliability. Add focused callback tests now, transaction/concurrency/outbox tests with backend foundation. |
+
+P1 means first remediation priority for communications reliability, not an observed production outage. P2 means follow-on design/implementation work. Source findings involving identity and account readiness require Security review before production behavior changes.
+
+## Existing protections to retain
+
+- Authenticated messaging checks role/grant and tenant feature setting (`messages.py:33-59`); customer/thread access includes tenant predicates (87-99, 184-195, 263-275).
+- Public Twilio routes validate signatures before handling (`twilio_webhooks.py:64-81`, 104-121); production without configured token fails closed (`messaging_service.py:262-273`). Do not relax authentication to test callbacks.
+- Existing inbound SID check plus unique SMS SID provide duplicate storage protection (`messaging_service.py:494-516`, `sms_message.py` twilio_message_sid). Concurrent duplicate insert handling still needs transaction tests; uniqueness alone does not mean graceful idempotent response.
+- Opt-out prevents customer-associated sends (`messaging_service.py:351-361`), STOP/START updates local consent (233-243), provider code 21610 also marks opt-out (424-427, 666-672). Keep consent independent of delivery status progression.
+- Manual sends have tenant rate limit (`messages.py:252-257`). Rate limiting is not duplicate protection, and this endpoint limit is not universal automation throttling.
+- Thread archive reopens on new activity (`messaging_service.py:209-212`). Preserve audit history when introducing open/resolved.
+
+## Notification and retry review
+
+`backend/app/services/twilio_service.py:13-35` is a wrapper around tracked sending, with `raise_on_failure=False`. `backend/app/tasks/notifications.py:20-29` calls this wrapper without a customer_id; these sends can produce Notification rows without a threaded SMSMessage. The reviewed task has no explicit retry policy. Baseline callbacks do not update these Notification-only rows because the handler returns when SMSMessage is absent. The bounded correction preserves their successful acknowledgement without mutation; it must not treat this known legacy path as an unknown SID and return perpetual 503. Multiple SMS Notifications sharing a SID fail closed instead of choosing a tenant. Monotonic Notification-only tracking and recipient-scoped consent need a separate implementation.  This is not evidence about deployment-level worker configuration.
+
+Repair completion sends use the same service. `backend/app/api/v1/endpoints/repair_orders.py:3355-3375` emits ready_pickup_sms with a customer ID and catches exceptions; `2963-2979` emits work_complete_sms. Those calls have no durable domain-event idempotency key. This creates risk under repeated/concurrent triggering, but assessing any specific repeat also requires transition history, domain event IDs and provider SIDs. Similar content across two notices does not prove a duplicate send. `invoice_notification_service.py` inspected here is an email flow, not evidence of a second SMS sender.
+
+No resend endpoint or SMS-specific retry scheduler was found by searching `backend/app` for send_notification_sms, retry SMS, or SMS retry. Direct provider call succeeds before local commit; absence of automated retry does not remove duplicate risk from browser retries or workflow re-entry.
+
+## Safe sequence and evidence still required
+
+1. Correct callback acknowledgement and monotonic status handling using the bounded contract in [SHARED_INBOX_CONTRACT.md](SHARED_INBOX_CONTRACT.md). Backend owns implementation/tests; independent review and release evidence are still required. Test entirely with synthetic provider responses.
+2. Demonstrate the shared inbox with synthetic customers, explicit SMS channel, assignment, open/resolved, context, draft isolation, failure/unknown states and disabled future channels. It is a prototype, not proof that the shared inbox backend exists.
+3. Implement account/identity mapping and durable send operations/outbox. Add concurrent-key, crash-after-accept, duplicate webhook, stale callback, shared-phone, cross-tenant and opt-out race tests before routing real sends through it.
+4. Perform a separately scoped read-only provider/deployment audit: sender ownership and normalized collisions; sms/messaging flags; callback public URL and signature handling behind proxy; masked SID-level accepted/sent/delivered/error receipts; status callback failure counts; old pending/unknown rows. Record measured periods and denominators. Do not infer these from screenshots or configuration names.
+5. Reconcile historical failed/duplicate-looking rows by provider SID and originating domain event. A reconciliation may update evidence but must not create a new delivery attempt. Actual outbound acceptance testing requires a designated test recipient and authorization.
+
+No local service startup was needed for this documentation-only assessment. This document records baseline findings, not a claim that fixes have passed or deployed; the parent delivery receipt must record final automated, independent review, PR/merge and release status.

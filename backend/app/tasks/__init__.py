@@ -20,6 +20,7 @@ celery_app.conf.update(
     # Explicitly import task modules so decorators register on worker/beat boot.
     imports=(
         "app.tasks.notifications",
+        "app.tasks.sms_recovery",
         "app.tasks.invoice_reminders",
         "app.tasks.pending_zelle_reminders",
         "app.tasks.mechanic_timer_maintenance",
@@ -93,6 +94,15 @@ celery_app.conf.update(
     task_reject_on_worker_lost=True,
     worker_prefetch_multiplier=1,
 )
+
+# Register no recovery cadence until explicitly enabled. The task rechecks this
+# switch too, so a stale Beat/broker message cannot bypass a rollout pause.
+if settings.SMS_RECOVERY_ENABLED:
+    celery_app.conf.beat_schedule["process-sms-recovery"] = {
+        "task": "process_sms_recovery",
+        "schedule": timedelta(seconds=60),
+        "options": {"expires": 60},
+    }
 
 # Import tasks to register them
 celery_app.autodiscover_tasks(["app.tasks"])

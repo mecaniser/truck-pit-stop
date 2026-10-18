@@ -27,6 +27,9 @@ function summaryIdentity(snapshot,link){
  if(!Array.isArray(snapshot.units)||snapshot.units.length===0)throw new Error('vehicle_overview_not_ready');
  if(snapshot.units.length!==1||clean(snapshot.units[0])!==clean(link.unit))throw new Error('vehicle_identity_changed');
  if(!Array.isArray(snapshot.breadcrumbs)||snapshot.breadcrumbs.length===0)throw new Error('vehicle_overview_not_ready');
+ // The profile and exact Live route can load before Angular fills this node.
+ // Wait only for one blank title; contradictory or duplicate titles still fail.
+ if(snapshot.breadcrumbs.length===1&&!clean(snapshot.breadcrumbs[0]))throw new Error('vehicle_overview_not_ready');
  if(snapshot.breadcrumbs.length!==1||!(clean(snapshot.breadcrumbs[0])===clean(link.unit)||(clean(snapshot.breadcrumbs[0]).startsWith(clean(link.unit)+' (')&&clean(snapshot.breadcrumbs[0]).endsWith(')'))))throw new Error('vehicle_identity_changed');
  if(!Array.isArray(snapshot.live_links)||snapshot.live_links.length!==1)throw new Error('vehicle_source_changed');
  const live=new URL(snapshot.live_links[0],ORIGIN+'/en-US/');

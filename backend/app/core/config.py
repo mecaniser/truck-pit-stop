@@ -215,6 +215,20 @@ class Settings(BaseSettings):
     TWILIO_PHONE_NUMBER: str = ""
     DEVELOPMENT_PHONE_NUMBER: str = ""
     
+    # Managed multi-shop routing remains dormant until reviewed migration.
+    SMS_TENANT_ROUTING_ENABLED: bool = False
+    # Server-owned opaque reference -> {account_sid, auth_token}; never tenant input.
+    SMS_TENANT_CREDENTIALS_JSON: str = "{}"
+
+    # Preserve existing immediate automation until durable dispatch is reviewed.
+    SMS_AUTOMATION_OUTBOX_ENABLED: bool = False
+
+    # Durable SMS recovery is deployed dormant until real-SMS acceptance.
+    SMS_RECOVERY_ENABLED: bool = False
+    SMS_RECOVERY_TENANT_IDS: str = ""  # Required explicit allowlist in production.
+    SMS_RECOVERY_BATCH_SIZE: int = Field(default=10, ge=1, le=25)
+    SMS_RECOVERY_BUDGET_SECONDS: float = Field(default=50.0, ge=1, le=50)
+
     # Resend
     RESEND_API_KEY: str = ""
     RESEND_FROM_EMAIL: str = "noreply@dieselbridge.network"
