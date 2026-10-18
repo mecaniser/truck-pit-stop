@@ -23,6 +23,7 @@ from app.services.receivable_attestation_fingerprint import FINGERPRINT_VERSION
 from app.services.receivable_attestation_reader import compute_manifest_digest
 from app.services.receivable_attestation_source import load_receivable_source
 from app.api.v1.endpoints.customer_receivables import render_statement_pdf
+from scripts.db135_private_source_review import collect_source_review
 
 
 def stamp(value: datetime) -> str:
@@ -41,6 +42,18 @@ async def read_snapshot(url, tenant_id, customer_id, invoice_id=None):
                 result = await account_snapshot(db, tenant_id=tenant_id, customer_id=customer_id)
             await db.rollback()
             return result
+    finally:
+        await engine.dispose()
+
+
+async def read_source_review(url, tenant_id):
+    engine = create_async_engine(url.render_as_string(hide_password=False))
+    try:
+        async with AsyncSession(engine, expire_on_commit=False) as db:
+            try:
+                return await collect_source_review(db, tenant_id=tenant_id, expected_count=1)
+            finally:
+                await db.rollback()
     finally:
         await engine.dispose()
 
@@ -70,6 +83,12 @@ def main():
             conn.execute(text("INSERT INTO repair_orders (id,tenant_id,customer_id,vehicle_id,order_number,status,is_internal,is_pm,labor_discount_amount,order_discount_amount) VALUES (:id,:tenant,:customer,:vehicle,'DB135-READER','completed',false,false,0,0)"), {"id": ids["order"], "tenant": ids["tenant"], "customer": ids["customer"], "vehicle": ids["vehicle"]})
             conn.execute(text("INSERT INTO invoices (id,tenant_id,repair_order_id,invoice_number,status,subtotal,total_amount,due_date,zelle_pending_reminder_count) VALUES (:id,:tenant,:order,'DB135-READER','overdue',100,100,now() - interval '91 days',0)"), {"id": ids["invoice"], "tenant": ids["tenant"], "order": ids["order"]})
         source = asyncio.run(read_snapshot(disposable, ids["tenant"], ids["customer"], ids["invoice"]))
+        review = asyncio.run(read_source_review(disposable, ids["tenant"]))
+        assert review["read_only"] is True and review["invoice_count"] == 1
+        assert review["review_paths"] == {"open_operator_review": 1}
+        assert review["rows"][0]["disposition"] == "unresolved"
+        assert review["rows"][0]["potential_bucket"] == "days_90_plus"
+        print("PostgreSQL read-only private source review: pass")
         reviewed = datetime.now(timezone.utc) - timedelta(hours=1)
         expiry = reviewed + timedelta(days=2)
         entry = {"repair_order_id": str(ids["order"]), "customer_id": str(ids["customer"]),
