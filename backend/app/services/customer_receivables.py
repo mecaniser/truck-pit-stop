@@ -31,6 +31,9 @@ ZERO = Decimal("0.00")
 BUCKETS = ("current", "days_1_30", "days_31_60", "days_61_90", "days_90_plus")
 BAD_BASELINE_EVENTS = {"legacy_paid_snapshot", "legacy_invalid_payment_baseline"}
 TRUSTED_SETTLEMENT_STATES = {"native", "reconciled"}
+MAX_ACCOUNT_INVOICES = 5000
+MAX_ACCOUNT_PAYMENTS = 10000
+MAX_ACCOUNT_CREDITS = 10000
 
 
 def _money(value: Decimal | None) -> str:
@@ -56,28 +59,33 @@ def _cursor_key(tenant_id: UUID, customer_id: UUID, source_filter: str) -> bytes
     return f"{tenant_id}:{customer_id}:{source_filter}".encode()
 
 
-def encode_cursor(tenant_id: UUID, customer_id: UUID, source_filter: str, offset: int) -> str:
-    payload = {"v": 1, "scope": hashlib.sha256(_cursor_key(tenant_id, customer_id, source_filter)).hexdigest(), "offset": offset}
+def row_sort_key(row: dict) -> tuple[str, str, str]:
+    return (row["occurred_at"] or row["source_date"] or "", row["kind"], row["id"])
+
+
+def encode_cursor(tenant_id: UUID, customer_id: UUID, source_filter: str, row: dict) -> str:
+    payload = {"v": 2, "scope": hashlib.sha256(_cursor_key(tenant_id, customer_id, source_filter)).hexdigest(),
+               "after": list(row_sort_key(row))}
     raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
     signature = hmac.new(settings.SECRET_KEY.encode(), raw, hashlib.sha256).digest()
     return base64.urlsafe_b64encode(raw + signature).decode().rstrip("=")
 
 
-def decode_cursor(token: str | None, tenant_id: UUID, customer_id: UUID, source_filter: str) -> int:
+def decode_cursor(token: str | None, tenant_id: UUID, customer_id: UUID, source_filter: str) -> tuple[str, str, str] | None:
     if token is None:
-        return 0
+        return None
     try:
         decoded = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))
         raw, signature = decoded[:-32], decoded[-32:]
         if not hmac.compare_digest(signature, hmac.new(settings.SECRET_KEY.encode(), raw, hashlib.sha256).digest()):
             raise ValueError("signature")
         payload = json.loads(raw)
-        if payload != {"v": 1, "scope": hashlib.sha256(_cursor_key(tenant_id, customer_id, source_filter)).hexdigest(), "offset": payload.get("offset")}:
+        after = payload.get("after")
+        if payload.get("v") != 2 or payload.get("scope") != hashlib.sha256(_cursor_key(tenant_id, customer_id, source_filter)).hexdigest():
             raise ValueError("scope")
-        offset = payload["offset"]
-        if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
-            raise ValueError("offset")
-        return offset
+        if not isinstance(after, list) or len(after) != 3 or any(not isinstance(part, str) or len(part) > 100 for part in after):
+            raise ValueError("position")
+        return tuple(after)
     except (ValueError, TypeError, KeyError, UnicodeDecodeError, binascii.Error, json.JSONDecodeError):
         raise HTTPException(status_code=422, detail="Invalid account cursor")
 
@@ -97,6 +105,14 @@ def trusted_settlement(invoice: Invoice, settlement: InvoiceSettlement | None, *
     return money(settlement.principal_total) == principal and ZERO <= confirmed <= principal
 
 
+def eligible_credit_issue(entry: CustomerCreditEntry, overpayments: dict[UUID, PaymentOverpayment]) -> bool:
+    if entry.entry_type != "issued" or not entry.origin_overpayment_id:
+        return False
+    origin = overpayments.get(entry.origin_overpayment_id)
+    return bool(origin and origin.state == "credited" and origin.consented_at and entry.consent_channel
+                and origin.customer_id == entry.customer_id and origin.tenant_id == entry.tenant_id)
+
+
 def _credit_remaining(entries: list[CustomerCreditEntry], overpayments: dict[UUID, PaymentOverpayment]) -> Decimal:
     direct_used: dict[UUID, Decimal] = {}
     for entry in entries:
@@ -104,23 +120,32 @@ def _credit_remaining(entries: list[CustomerCreditEntry], overpayments: dict[UUI
             direct_used[entry.source_entry_id] = money(direct_used.get(entry.source_entry_id, ZERO) + money(entry.amount))
     total = ZERO
     for entry in entries:
-        if entry.entry_type != "issued" or not entry.origin_overpayment_id:
-            continue
-        origin = overpayments.get(entry.origin_overpayment_id)
-        if not origin or origin.state != "credited" or not origin.consented_at or not entry.consent_channel or origin.customer_id != entry.customer_id or origin.tenant_id != entry.tenant_id:
+        if not eligible_credit_issue(entry, overpayments):
             continue
         total = money(total + max(ZERO, money(entry.amount) - direct_used.get(entry.id, ZERO)))
     return total
 
 
+def credit_effect(entry: CustomerCreditEntry, entries_by_id: dict[UUID, CustomerCreditEntry],
+                  overpayments: dict[UUID, PaymentOverpayment]) -> str:
+    if eligible_credit_issue(entry, overpayments):
+        return "increase"
+    parent = entries_by_id.get(entry.source_entry_id)
+    if parent and eligible_credit_issue(parent, overpayments) and entry.entry_type in {"applied", "refunded", "reversed"}:
+        return "decrease"
+    return "audit"
+
+
 def _row(kind: str, source: str, id_: UUID, occurred: datetime | None, date_basis: str,
          invoice_id: UUID | None, amount: Decimal | None, remaining: Decimal | None,
-         route: str | None, reason: str | None = None, source_date: date | None = None) -> dict:
+         route: str | None, reason: str | None = None, source_date: date | None = None,
+         invoice_number: str | None = None) -> dict:
     return {
         "id": str(id_), "kind": kind, "source_owner": source,
         "occurred_at": occurred.isoformat() if occurred else None,
         "source_date": source_date.isoformat() if source_date else None,
         "date_basis": date_basis, "invoice_id": str(invoice_id) if invoice_id else None,
+        "invoice_number": invoice_number,
         "amount": _money(amount) if amount is not None else None,
         "remaining_principal": _money(remaining) if remaining is not None else None,
         "drilldown_route": route, "review_reason": reason,
@@ -156,7 +181,10 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
                    and_(Invoice.billed_customer_id.is_(None), RepairOrder.customer_id == customer_id),
                    and_(RepairOrder.customer_id == customer_id,
                         Invoice.billed_customer_id.is_not(None), Customer.id.is_(None))))
+        .limit(MAX_ACCOUNT_INVOICES + 1)
     )).all()
+    if len(invoices) > MAX_ACCOUNT_INVOICES:
+        raise HTTPException(status_code=413, detail="Account activity exceeds safe read limit")
     invoice_ids = [invoice.id for invoice, _, _ in invoices]
     settlements: dict[UUID, InvoiceSettlement] = {}
     bad_baseline: set[UUID] = set()
@@ -178,11 +206,16 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
         ))).scalars())
         payments = list((await db.execute(select(Payment).where(
             Payment.tenant_id == tenant_id, Payment.invoice_id.in_(invoice_ids), Payment.deleted_at.is_(None),
-        ))).scalars())
+        ).limit(MAX_ACCOUNT_PAYMENTS + 1))).scalars())
+        if len(payments) > MAX_ACCOUNT_PAYMENTS:
+            raise HTTPException(status_code=413, detail="Account activity exceeds safe read limit")
     credits = list((await db.execute(select(CustomerCreditEntry).where(
         CustomerCreditEntry.tenant_id == tenant_id, CustomerCreditEntry.customer_id == customer_id,
-    ))).scalars())
+    ).limit(MAX_ACCOUNT_CREDITS + 1))).scalars())
+    if len(credits) > MAX_ACCOUNT_CREDITS:
+        raise HTTPException(status_code=413, detail="Account activity exceeds safe read limit")
     origin_ids = {row.origin_overpayment_id for row in credits if row.origin_overpayment_id}
+    credit_by_id = {row.id: row for row in credits}
     overpayments = {} if not origin_ids else {row.id: row for row in (await db.execute(select(PaymentOverpayment).where(
         PaymentOverpayment.tenant_id == tenant_id, PaymentOverpayment.id.in_(origin_ids),
         PaymentOverpayment.deleted_at.is_(None),
@@ -195,6 +228,7 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
     source_by_invoice: dict[UUID, str] = {}
     masked_invoice_ids: set[UUID] = set()
     order_by_invoice: dict[UUID, UUID] = {invoice.id: order.id for invoice, order, _ in invoices}
+    number_by_invoice: dict[UUID, str] = {invoice.id: invoice.invoice_number for invoice, _, _ in invoices}
     mixed_payment_invoice_ids = {payment.invoice_id for payment in payments if payment.source == "easy_truck_shop_import"}
     for invoice, order, bill_to in invoices:
         orphan = invoice.billed_customer_id is not None and bill_to is None
@@ -236,7 +270,8 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
                          "created_at" if occurred else ("ets_invoiced_at" if invoice.ets_invoiced_at else "source_date_unavailable"), invoice.id,
                          money(invoice.total_amount), remaining,
                          f"/dashboard/repair-orders?selected={order.id}",
-                         source_date=invoice.ets_invoiced_at if source == "ets_history" else None))
+                         source_date=invoice.ets_invoiced_at if source == "ets_history" else None,
+                         invoice_number=invoice.invoice_number))
         rows[-1]["principal_total"] = _money(settlements[invoice.id].principal_total) if source == "native" else None
         rows[-1]["settled_principal"] = _money(settlements[invoice.id].confirmed_principal) if source == "native" else None
     for payment in payments:
@@ -258,19 +293,22 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
         rows.append(_row("payment", source, payment.id, occurred,
                          "created_at" if occurred else "source_date_unavailable", payment.invoice_id,
                          money(payment.amount), None, f"/dashboard/repair-orders?selected={order_by_invoice[payment.invoice_id]}",
-                         None if payment.status == PaymentStatus.COMPLETED else f"payment_{payment.status.value}"))
+                         None if payment.status == PaymentStatus.COMPLETED else f"payment_{payment.status.value}",
+                         invoice_number=number_by_invoice.get(payment.invoice_id)))
         rows[-1]["payment_status"] = payment.status.value
     for credit in credits:
         kind = "refund" if credit.entry_type == "refunded" else "credit"
         credit_source = "native"
-        if credit.entry_type == "issued" and (not credit.origin_overpayment_id or credit.origin_overpayment_id not in overpayments or overpayments[credit.origin_overpayment_id].state != "credited" or not credit.consent_channel):
+        if credit.entry_type == "issued" and not eligible_credit_issue(credit, overpayments):
             credit_source = "review_required"
             review_native += 1
         rows.append(_row(kind, credit_source, credit.id, credit.occurred_at, "occurred_at",
                          credit.target_invoice_id, money(credit.amount), None,
                          f"/dashboard/repair-orders?selected={order_by_invoice[credit.target_invoice_id]}" if credit.target_invoice_id in order_by_invoice else None,
-                         credit.entry_type))
-    rows.sort(key=lambda row: (row["occurred_at"] or row["source_date"] or "", row["kind"], row["id"]), reverse=True)
+                         credit.entry_type, invoice_number=number_by_invoice.get(credit.target_invoice_id)))
+        rows[-1]["credit_action"] = credit.entry_type
+        rows[-1]["credit_effect"] = credit_effect(credit, credit_by_id, overpayments)
+    rows.sort(key=row_sort_key, reverse=True)
     return {
         "as_of_date": as_of.isoformat(), "generated_at": now.isoformat(), "currency": "USD",
         "customer": {"id": str(customer.id), "name": name},

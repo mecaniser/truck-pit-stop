@@ -12,7 +12,7 @@ from sqlalchemy import text
 from app.core.dependencies import CurrentUser, get_current_active_user, user_has_permission
 from app.db.models.user import UserRole
 from app.db.session import AsyncSessionLocal
-from app.services.customer_receivables import account_snapshot, decode_cursor, encode_cursor
+from app.services.customer_receivables import account_snapshot, decode_cursor, encode_cursor, row_sort_key
 
 
 router = APIRouter()
@@ -51,16 +51,18 @@ async def read_customer_account(
     tenant_id = _authorize(user)
     if source_filter not in {"all", "native", "ets_history", "review_required"}:
         raise HTTPException(status_code=422, detail="Invalid account source filter")
-    offset = decode_cursor(cursor, tenant_id, customer_id, source_filter)
+    after = decode_cursor(cursor, tenant_id, customer_id, source_filter)
     snapshot = await _snapshot(tenant_id, customer_id)
     rows = snapshot.pop("transactions")
     if source_filter != "all":
         rows = [row for row in rows if row["source_owner"] == source_filter]
-    page = rows[offset:offset + limit]
+    if after is not None:
+        rows = [row for row in rows if row_sort_key(row) < after]
+    page = rows[:limit]
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
     snapshot["transactions"] = page
-    snapshot["next_cursor"] = encode_cursor(tenant_id, customer_id, source_filter, offset + limit) if offset + limit < len(rows) else None
+    snapshot["next_cursor"] = encode_cursor(tenant_id, customer_id, source_filter, page[-1]) if len(rows) > limit and page else None
     return snapshot
 
 
@@ -105,7 +107,11 @@ def render_statement_pdf(snapshot: dict) -> bytes:
         when = row["occurred_at"] or row["source_date"] or "date unavailable"
         amount = f"${row['amount']}" if row["amount"] is not None else "amount held"
         remaining = f" · remaining ${row['remaining_principal']}" if row["remaining_principal"] is not None else ""
-        line(f"{when[:10]} · {row['source_owner']} {row['kind']} · {amount}{remaining}")
+        invoice_ref = row.get("invoice_number") or row.get("invoice_id")
+        action = f" ({row['credit_action']})" if row.get("credit_action") else ""
+        line(f"{when[:10]} · {row['source_owner']} {row['kind']}{action}")
+        line(f"Entry {row['id']} · invoice {invoice_ref or 'unlinked'}")
+        line(f"Amount {amount}{remaining}")
     if omitted:
         line(f"{omitted} activity rows omitted. Displayed rows do not reconcile to full-account totals.")
     pdf.save()

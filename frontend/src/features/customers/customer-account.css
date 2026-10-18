@@ -14,7 +14,8 @@
 .db-customer-account__summary span, .db-customer-account__buckets span, .db-customer-account__exceptions span { color: var(--workspace-muted, #52647c); }
 .db-customer-account__summary strong { font-size: calc(var(--font-size-body, 16px) * 1.3); font-variant-numeric: tabular-nums; }
 .db-customer-account__summary small { color: var(--workspace-muted, #52647c); }
-.db-customer-account__collectible strong { color: var(--product-copper-700, #9b3d10); }
+.db-customer-account__summary > .db-customer-account__collectible { border-left: 3px solid var(--product-copper-500, #df5a13); }
+.db-customer-account__collectible strong { color: var(--workspace-text, #13233d); }
 .db-customer-account__buckets { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
 .db-customer-account__buckets > div { min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 7px; border-radius: 6px; background: var(--workspace-surface, #fff); }
 .db-customer-account__buckets strong, .db-customer-account__exceptions strong { font-variant-numeric: tabular-nums; }

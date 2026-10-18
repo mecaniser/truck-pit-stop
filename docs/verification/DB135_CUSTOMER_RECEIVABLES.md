@@ -1,6 +1,6 @@
 # DB-135 / B1 customer receivables verification
 
-Status: Discovery; no B1 application implementation, QA/Security GO, PR, merge, deployment, or runtime acceptance yet. Accountable owner: Backend & Integrations. A1 stays queued.
+Status: Implementation correction after independent QA/Security RETURN; no GO, PR, merge, deployment, or authenticated runtime acceptance yet. Accountable owner: Backend & Integrations. A1 stays queued.
 
 ## Source intake (2026-10-18 UTC)
 
@@ -20,3 +20,7 @@ Local-runtime receipt (2026-10-18 03:14 UTC): on `codex/db135-customer-receivabl
 Implementation receipt (2026-10-17 local): the revised contract received Architecture GO. Focused backend DB-135/customer regressions: 13 passed; customer-account frontend tests: 23 passed; changed frontend ESLint and production build passed. Browser testing is still outstanding: the local Work computer/browser control tool reports “Local browser use is disabled in Work settings.” This is a tooling access limit, not a rendered UI pass. The two implementation agents hit their usage limit after drafting source; the accountable owner is completing integration and will request fresh independent QA/Security review before release.
 
 Runtime recheck (2026-10-18 03:34 UTC): branch `codex/db135-customer-receivables` at `0e076a3c` with uncommitted implementation. Vite PID 47952 serves this worktree's `frontend` on `127.0.0.1:5173`, stamped with that branch/SHA; uvicorn reload PID 48221 and child 51989 serve this worktree's `backend` on `127.0.0.1:8000` using isolated local database `127.0.0.1/truckpitstop_db135`. Backend and Vite-proxied readiness returned 200 with database/Redis healthy; frontend HTTP returned 200. This is **aligned but browser-unverified**; no feature-specific signed-in render was observed.
+
+Independent gate RETURN (2026-10-18 UTC): the fresh QA/Security reviewer found an offset cursor that could repeat/skip rows after insertion, credits that all appeared positive, PDF activity without invoice/payment identifiers, and unbounded account reads despite `limit=1`. No GO was issued. The owner changed to signed keyset pagination, distinct credit actions/effects, PDF entry and invoice references, and 413 caps at 5,000 invoices / 10,000 payments / 10,000 credits. The credit-effect correction now uses the same consent and origin eligibility as the available-credit total; invalid-origin activity does not claim an increase/decrease. Fresh independent review remains required.
+
+Focused correction checks (2026-10-18 03:42 UTC): DB-135/customer backend regressions **14 passed**, customer-account frontend tests **24 passed**, changed-source ESLint passed, TypeScript/Vite production build passed, and `git diff --check` passed. These are local checks, not independent GO or release proof. Runtime preflight reconfirmed Vite PID 47952 and uvicorn reload PID 48221/child 56022 from this worktree, with effective process database `127.0.0.1/truckpitstop_db135`, frontend and proxied `/health/ready` HTTP 200. Exact local URL: `http://127.0.0.1:5173`. **Aligned but browser-unverified**; Work browser control remains disabled.

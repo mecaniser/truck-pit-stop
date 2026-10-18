@@ -45,6 +45,8 @@ const accountSchema = z.object({
     drilldown_route: z.string().nullable(),
     review_reason: z.string().nullable().optional(),
     payment_status: z.string().optional(),
+    credit_action: z.enum(['issued', 'applied', 'refunded', 'reversed']).optional(),
+    credit_effect: z.enum(['increase', 'decrease', 'audit']).optional(),
   })),
   next_cursor: z.string().nullable(),
 })
@@ -95,18 +97,25 @@ function Activity({ row }: { row: Transaction }) {
       : paymentUnconfirmed && row.payment_status === 'refunded' ? 'Refunded payment'
         : paymentUnconfirmed ? 'Unconfirmed payment' : null
   const source = paymentState ?? (row.source_owner === 'native' ? 'DieselBridge' : row.source_owner === 'ets_history' ? 'ETS history' : 'Needs review')
+  const creditLabel = row.credit_action === 'issued' ? 'Credit issued'
+    : row.credit_action === 'applied' ? 'Credit applied'
+      : row.credit_action === 'refunded' ? 'Credit refunded'
+        : row.credit_action === 'reversed' ? 'Credit reversal' : null
+  const activityAmount = row.amount === null ? null
+    : `${row.credit_effect === 'increase' ? '+' : row.credit_effect === 'decrease' ? '−' : ''}${money(row.amount)}`
   return <li className="db-customer-account__transaction">
     <div className="db-customer-account__transaction-main">
-      <strong>{KIND_LABEL[row.kind]}</strong>
+      <strong>{creditLabel ?? KIND_LABEL[row.kind]}</strong>
       <span className={`db-customer-account__source db-customer-account__source--${row.source_owner}`}>{source}</span>
       <span className="db-customer-account__date">{transactionDate(row.source_date ?? row.occurred_at)}</span>
     </div>
     {paymentUnconfirmed ? <p>Payment not confirmed; does not reduce the collectible balance.</p>
       : row.source_owner === 'review_required' ? <p>Identity or settlement needs review. Excluded from totals.</p>
       : row.source_owner === 'ets_history' ? <p>Imported activity; outstanding balance unavailable.</p>
+        : row.credit_effect === 'audit' ? <p>Audit activity; no separate change to available credit.</p>
         : null}
     <div className="db-customer-account__transaction-side">
-      {row.amount !== null && <span>{money(row.amount)}</span>}
+      {activityAmount !== null && <span>{activityAmount}</span>}
       {row.kind === 'invoice' && row.remaining_principal !== null && row.source_owner === 'native'
         && <small>Principal {money(row.principal_total ?? null)} · Settled {money(row.settled_principal ?? null)} · {money(row.remaining_principal)} remaining</small>}
       {route && <Link to={route}>Open order <ExternalLink aria-hidden="true" /></Link>}

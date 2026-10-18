@@ -80,6 +80,21 @@ describe('customer account', () => {
     expect(screen.queryByRole('link', { name: /Open order/ })).not.toBeInTheDocument()
   })
 
+  it('distinguishes issued, used, and audit-only credit activity', async () => {
+    api.get.mockResolvedValue({ data: { ...account, native: { ...account.native, unapplied_credit: '13.00' }, transactions: [
+      { id: 'credit-issued', kind: 'credit', credit_action: 'issued', credit_effect: 'increase', source_owner: 'native', occurred_at: '2026-10-17T12:00:00Z', date_basis: 'occurred_at', invoice_id: null, amount: '20.00', remaining_principal: null, drilldown_route: null },
+      { id: 'credit-applied', kind: 'credit', credit_action: 'applied', credit_effect: 'decrease', source_owner: 'native', occurred_at: '2026-10-17T12:01:00Z', date_basis: 'occurred_at', invoice_id: 'invoice-a', amount: '7.00', remaining_principal: null, drilldown_route: null },
+      { id: 'credit-reversed', kind: 'credit', credit_action: 'reversed', credit_effect: 'audit', source_owner: 'native', occurred_at: '2026-10-17T12:02:00Z', date_basis: 'occurred_at', invoice_id: 'invoice-a', amount: '7.00', remaining_principal: null, drilldown_route: null },
+    ] } })
+    setup()
+    const view = await screen.findByRole('region', { name: 'Customer account' })
+    expect(within(view).getByText('+$20.00')).toBeVisible()
+    expect(within(view).getByText('−$7.00')).toBeVisible()
+    expect(within(view).getByText('Credit reversal')).toBeVisible()
+    expect(within(view).getByText('Audit activity; no separate change to available credit.')).toBeVisible()
+    expect(within(view).getAllByText('$7.00')).toHaveLength(1)
+  })
+
   it('paginates with the opaque server cursor and preserves source separation', async () => {
     api.get.mockImplementation((_path: string, config: { params: { cursor?: string } }) => Promise.resolve({ data: config.params.cursor
       ? { ...account, transactions: [], next_cursor: null }
