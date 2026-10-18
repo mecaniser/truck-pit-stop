@@ -2,9 +2,9 @@
 
 # ETS parity implementation tracker
 
-Last updated: 2026-10-17. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
+Last updated: 2026-10-18. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
 
-**Progress: 4/29 completed; 4/6 selected outcomes completed. Current: B1 intake. Next: A1 after B1.**
+**Progress: 4/29 completed; 4/6 selected outcomes completed. Current: B1 review. Next: A1 after B1.**
 
 ## Approved delivery order
 
@@ -36,7 +36,7 @@ Last updated: 2026-10-17. Program owner: Product & Delivery Lead. Discovery inve
   - Status: **Done — PR #571 and Night correction #572 merged, deployed and production verified; independent QA/Security GO**. Board: **DB-134**. Owner: Backend & Integrations.
   - Evidence: [M1 contract](contracts/db134-maintenance-programs.md); [implementation receipt](verification/DB134_MAINTENANCE_PROGRAMS.md).
 - [ ] **B1 — Customer transaction ledger, statements and overdue-balance aging**
-  - Status: **Implementation — Architecture contract GO; independent gates and release pending**. Board: **DB-135**. Owner: Backend & Integrations.
+  - Status: **Review — Architecture contract and independent QA/Security source gates GO; protected CI, merge, deployment and production acceptance pending**. Board: **DB-135**. Owner: Backend & Integrations.
   - Evidence: [B1 cross-layer contract](contracts/db135-customer-receivables.md) and [verification receipt](verification/DB135_CUSTOMER_RECEIVABLES.md). Native collectible, unapplied credit and ETS-owned history remain separate; unresolved bill-to/settlement identity stays review-required rather than collectible.
 - [ ] **A1 — Actual labor cost and defensible job contribution**
   - Status: **Queued**. Board: **DB-136**. Owner: Backend & Integrations.
