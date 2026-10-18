@@ -13,7 +13,7 @@ Twilio submissions and real-SMS/channel enablement remain held.
 
 ## PR536 — compact toast UI
 
-Refreshed onto the PR534 merge as `824eed6d816bdae6e51408d0639548f38f591b80`; fresh protected run39161150482 pending. Merge/deploy not yet claimed.
+All six protected checks passed on `824eed6d816bdae6e51408d0639548f38f591b80` in run39161150482. Squash merge `74211d57e78e1919439362f071cfc360450a4381` at21:06:50 UTC. Exact Web `b2817366-620a-4516-85a0-c738909ca78e` is building; deployment acceptance pending. Main push run39166381213 canceled only after main and checked-head Git trees matched `3775c56337bdda83180ead17b3b6e6f840347c97`; canceled run is not a test pass.
 
 ## PR560 — communications foundation
 
