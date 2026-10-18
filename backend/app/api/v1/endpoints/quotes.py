@@ -40,7 +40,9 @@ from app.services.email_service import send_email
 from app.services.discount_limits import validate_discounts
 from app.services.provider_outbox_service import enqueue_email_notification
 from app.services.tenant_branding import build_tenant_contact_html, get_tenant_display_name
+from app.services.automated_sms_service import enqueue_automated_sms
 from app.services.twilio_service import send_sms
+from app.services.messaging_service import _normalize_for_twilio
 from app.services.pricing import (
     apply_canonical_order_totals,
     get_order_checkout_breakdown,
@@ -1410,6 +1412,26 @@ async def send_quote_to_customer(
             sender_name=shop_name,
         )
 
+    # SMS notification for quote with approval link
+    if settings.SMS_AUTOMATION_OUTBOX_ENABLED and customer.phone:
+        vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
+        if auto_approved:
+            sms_body = f"Your repair for {vi} (${quote.total_amount:,.2f}) has been auto-approved. Work will begin shortly. Order #{order.order_number} - {shop_name}"
+        elif is_additional:
+            sms_body = f"Additional work for {vi}: +${quote.delta_amount:,.2f}, new total ${quote.total_amount:,.2f}. Tap to approve: {approval_url} - {shop_name}"
+        else:
+            sms_body = f"Repair estimate for {vi}: ${quote.total_amount:,.2f}. Tap to approve: {approval_url} - {shop_name}"
+        await enqueue_automated_sms(
+            db,
+            tenant_id=current_tenant_id,
+            domain_event_id=f"quote:{quote.id}:revision:{quote.revision}:published",
+            to=customer.phone,
+            body=sms_body,
+            template_name="quote_sent_sms",
+            customer_id=customer.id,
+        )
+
+
     await db.commit()
     await db.refresh(quote)
     if auto_approved:
@@ -1429,28 +1451,30 @@ async def send_quote_to_customer(
             sender_name=shop_name,
         )
     
-    # SMS notification for quote with approval link
-    if customer.phone:
-        vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
-        if auto_approved:
-            sms_body = f"Your repair for {vi} (${quote.total_amount:,.2f}) has been auto-approved. Work will begin shortly. Order #{order.order_number} - {shop_name}"
-        elif is_additional:
-            sms_body = f"Additional work for {vi}: +${quote.delta_amount:,.2f}, new total ${quote.total_amount:,.2f}. Tap to approve: {approval_url} - {shop_name}"
-        else:
-            sms_body = f"Repair estimate for {vi}: ${quote.total_amount:,.2f}. Tap to approve: {approval_url} - {shop_name}"
-        try:
-            await send_sms(
-                db,
-                str(current_tenant_id),
-                customer.phone,
-                sms_body,
-                template_name="quote_sent_sms",
-                customer_id=customer.id,
-                source="automated",
-            )
-        except Exception:
-            pass
-    
+    if not settings.SMS_AUTOMATION_OUTBOX_ENABLED:
+        # SMS notification for quote with approval link
+        if customer.phone:
+            vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
+            if auto_approved:
+                sms_body = f"Your repair for {vi} (${quote.total_amount:,.2f}) has been auto-approved. Work will begin shortly. Order #{order.order_number} - {shop_name}"
+            elif is_additional:
+                sms_body = f"Additional work for {vi}: +${quote.delta_amount:,.2f}, new total ${quote.total_amount:,.2f}. Tap to approve: {approval_url} - {shop_name}"
+            else:
+                sms_body = f"Repair estimate for {vi}: ${quote.total_amount:,.2f}. Tap to approve: {approval_url} - {shop_name}"
+            try:
+                await send_sms(
+                    db,
+                    str(current_tenant_id),
+                    customer.phone,
+                    sms_body,
+                    template_name="quote_sent_sms",
+                    customer_id=customer.id,
+                    source="automated",
+                )
+            except Exception:
+                pass
+
+
     # Broadcast WebSocket event to notify customer portal.
     # If auto-approved, emit quote_approved to avoid "review quote" UX.
     ws_event_type = WSEventType.QUOTE_APPROVED if auto_approved else WSEventType.QUOTE_CREATED
@@ -1559,12 +1583,50 @@ async def decline_quote(
         actor_name=_actor_name(current_user),
         source="customer_portal",
     )
+    if settings.SMS_AUTOMATION_OUTBOX_ENABLED:
+        # Notify shop managers via SMS (same as token-based decline)
+        customer = order.customer
+        vehicle = order.vehicle
+        vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "vehicle"
+        customer_name = f"{customer.first_name} {customer.last_name}" if customer else "Customer"
+        shop_name = await get_tenant_display_name(db, order.tenant_id)
+
+        # Find managers to notify
+        result = await db.execute(
+            select(User).where(
+                and_(
+                    User.tenant_id == order.tenant_id,
+                    User.role.in_([UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN]),
+                    User.is_active.is_(True),
+                    User.deleted_at.is_(None),
+                )
+            )
+        )
+        managers = result.scalars().all()
+
+        notes_snippet = ""
+        if body.notes:
+            notes_snippet = f' Notes: "{body.notes[:50]}{"..." if len(body.notes) > 50 else ""}"'
+
+        seen_phones = set()
+        for manager in sorted(managers, key=lambda user: str(user.id)):
+            phone = _normalize_for_twilio(manager.phone) if manager.phone else None
+            if phone and phone not in seen_phones:
+                seen_phones.add(phone)
+                await enqueue_automated_sms(
+                    db, tenant_id=order.tenant_id,
+                    domain_event_id=f"quote:{quote.id}:revision:{quote.revision}:declined",
+                    to=phone, recipient_user_id=manager.id,
+                    body=f"Quote DECLINED: {customer_name} declined ${quote.total_amount:,.2f} for {vi}. Order #{order.order_number}.{notes_snippet} - {shop_name}",
+                    template_name="quote_declined_shop",
+                )
+
     await db.commit()
     await db.refresh(quote)
     await db.refresh(order)
     await db.refresh(order, attribute_names=["customer", "vehicle"])
     record_quote(status="declined", tenant_id=str(order.tenant_id))
-    
+
     # Broadcast WebSocket updates
     await broadcast_quote_event(
         tenant_id=str(order.tenant_id),
@@ -1583,40 +1645,42 @@ async def decline_quote(
         updated_at=order.updated_at.isoformat() if order.updated_at else None,
     )
     
-    # Notify shop managers via SMS (same as token-based decline)
-    customer = order.customer
-    vehicle = order.vehicle
-    vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "vehicle"
-    customer_name = f"{customer.first_name} {customer.last_name}" if customer else "Customer"
-    shop_name = await get_tenant_display_name(db, order.tenant_id)
-    
-    # Find managers to notify
-    result = await db.execute(
-        select(User).where(
-            and_(
-                User.tenant_id == order.tenant_id,
-                User.role.in_([UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN]),
-                User.is_active == True,
+    if not settings.SMS_AUTOMATION_OUTBOX_ENABLED:
+        # Notify shop managers via SMS (same as token-based decline)
+        customer = order.customer
+        vehicle = order.vehicle
+        vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "vehicle"
+        customer_name = f"{customer.first_name} {customer.last_name}" if customer else "Customer"
+        shop_name = await get_tenant_display_name(db, order.tenant_id)
+
+        # Find managers to notify
+        result = await db.execute(
+            select(User).where(
+                and_(
+                    User.tenant_id == order.tenant_id,
+                    User.role.in_([UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN]),
+                    User.is_active == True,
+                )
             )
         )
-    )
-    managers = result.scalars().all()
-    
-    notes_snippet = ""
-    if body.notes:
-        notes_snippet = f' Notes: "{body.notes[:50]}{"..." if len(body.notes) > 50 else ""}"'
-    
-    for manager in managers:
-        if manager.phone:
-            try:
-                await send_sms(
-                    db, str(order.tenant_id), manager.phone,
-                    f"Quote DECLINED: {customer_name} declined ${quote.total_amount:,.2f} for {vi}. Order #{order.order_number}.{notes_snippet} - {shop_name}",
-                    template_name="quote_declined_shop"
-                )
-            except Exception:
-                pass
-    
+        managers = result.scalars().all()
+
+        notes_snippet = ""
+        if body.notes:
+            notes_snippet = f' Notes: "{body.notes[:50]}{"..." if len(body.notes) > 50 else ""}"'
+
+        for manager in managers:
+            if manager.phone:
+                try:
+                    await send_sms(
+                        db, str(order.tenant_id), manager.phone,
+                        f"Quote DECLINED: {customer_name} declined ${quote.total_amount:,.2f} for {vi}. Order #{order.order_number}.{notes_snippet} - {shop_name}",
+                        template_name="quote_declined_shop"
+                    )
+                except Exception:
+                    pass
+
+
     return QuoteResponse.model_validate(quote)
 
 
@@ -1982,12 +2046,50 @@ async def decline_quote_by_token(
         source="magic_link",
     )
     # Keep the token viewable as a record of the customer's decision.
+    if settings.SMS_AUTOMATION_OUTBOX_ENABLED:
+        # Notify shop managers via SMS
+        customer = order.customer
+        vehicle = order.vehicle
+        vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "vehicle"
+        customer_name = f"{customer.first_name} {customer.last_name}" if customer else "Customer"
+        shop_name = await get_tenant_display_name(db, order.tenant_id)
+
+        # Find managers to notify
+        result = await db.execute(
+            select(User).where(
+                and_(
+                    User.tenant_id == order.tenant_id,
+                    User.role.in_([UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN]),
+                    User.is_active.is_(True),
+                    User.deleted_at.is_(None),
+                )
+            )
+        )
+        managers = result.scalars().all()
+
+        notes_snippet = ""
+        if body.notes:
+            notes_snippet = f' Notes: "{body.notes[:50]}{"..." if len(body.notes) > 50 else ""}"'
+
+        seen_phones = set()
+        for manager in sorted(managers, key=lambda user: str(user.id)):
+            phone = _normalize_for_twilio(manager.phone) if manager.phone else None
+            if phone and phone not in seen_phones:
+                seen_phones.add(phone)
+                await enqueue_automated_sms(
+                    db, tenant_id=order.tenant_id,
+                    domain_event_id=f"quote:{quote.id}:revision:{quote.revision}:declined",
+                    to=phone, recipient_user_id=manager.id,
+                    body=f"Quote DECLINED: {customer_name} declined ${quote.total_amount:,.2f} for {vi}. Order #{order.order_number}.{notes_snippet} - {shop_name}",
+                    template_name="quote_declined_shop",
+                )
+
     await db.commit()
     await db.refresh(quote)
     await db.refresh(order)
     await db.refresh(order, attribute_names=["customer", "vehicle"])
     record_quote(status="declined", tenant_id=str(order.tenant_id))
-    
+
     # Broadcast WebSocket updates
     await broadcast_quote_event(
         tenant_id=str(order.tenant_id),
@@ -2006,38 +2108,40 @@ async def decline_quote_by_token(
         updated_at=order.updated_at.isoformat() if order.updated_at else None,
     )
     
-    # Notify shop managers via SMS
-    customer = order.customer
-    vehicle = order.vehicle
-    vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "vehicle"
-    customer_name = f"{customer.first_name} {customer.last_name}" if customer else "Customer"
-    shop_name = await get_tenant_display_name(db, order.tenant_id)
-    
-    # Find managers to notify
-    result = await db.execute(
-        select(User).where(
-            and_(
-                User.tenant_id == order.tenant_id,
-                User.role.in_([UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN]),
-                User.is_active == True,
+    if not settings.SMS_AUTOMATION_OUTBOX_ENABLED:
+        # Notify shop managers via SMS
+        customer = order.customer
+        vehicle = order.vehicle
+        vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "vehicle"
+        customer_name = f"{customer.first_name} {customer.last_name}" if customer else "Customer"
+        shop_name = await get_tenant_display_name(db, order.tenant_id)
+
+        # Find managers to notify
+        result = await db.execute(
+            select(User).where(
+                and_(
+                    User.tenant_id == order.tenant_id,
+                    User.role.in_([UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN]),
+                    User.is_active == True,
+                )
             )
         )
-    )
-    managers = result.scalars().all()
-    
-    notes_snippet = ""
-    if body.notes:
-        notes_snippet = f' Notes: "{body.notes[:50]}{"..." if len(body.notes) > 50 else ""}"'
-    
-    for manager in managers:
-        if manager.phone:
-            try:
-                await send_sms(
-                    db, str(order.tenant_id), manager.phone,
-                    f"Quote DECLINED: {customer_name} declined ${quote.total_amount:,.2f} for {vi}. Order #{order.order_number}.{notes_snippet} - {shop_name}",
-                    template_name="quote_declined_shop"
-                )
-            except Exception:
-                pass
-    
+        managers = result.scalars().all()
+
+        notes_snippet = ""
+        if body.notes:
+            notes_snippet = f' Notes: "{body.notes[:50]}{"..." if len(body.notes) > 50 else ""}"'
+
+        for manager in managers:
+            if manager.phone:
+                try:
+                    await send_sms(
+                        db, str(order.tenant_id), manager.phone,
+                        f"Quote DECLINED: {customer_name} declined ${quote.total_amount:,.2f} for {vi}. Order #{order.order_number}.{notes_snippet} - {shop_name}",
+                        template_name="quote_declined_shop"
+                    )
+                except Exception:
+                    pass
+
+
     return QuoteResponse.model_validate(quote)

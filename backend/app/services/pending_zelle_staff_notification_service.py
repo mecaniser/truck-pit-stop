@@ -11,6 +11,8 @@ from app.core.config import settings
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.services.email_service import send_email
+from app.services.automated_sms_service import enqueue_automated_sms
+from app.services.messaging_service import _normalize_for_twilio
 
 
 def _staff_order_url(order_id: UUID) -> str:
@@ -47,51 +49,83 @@ async def collect_staff_contacts(
     return emails, phones
 
 
-async def _send_staff_alert(
-    db: AsyncSession,
-    tenant_id: UUID,
-    emails: set[str],
-    phones: set[str],
-    *,
-    subject: str,
-    email_body: str,
-    sms_body: str,
-    email_template_name: str,
-    sms_template_name: str,
-) -> None:
-    send_sms_fn = None
-    try:
-        # Twilio client initialization is import-time in twilio_service.
-        # Keep SMS delivery best-effort without failing callers if misconfigured.
-        from app.services.twilio_service import send_sms as send_sms_fn
-    except Exception:
-        send_sms_fn = None
-
-    for email in sorted(emails):
-        try:
-            await send_email(
-                db=db,
-                tenant_id=str(tenant_id),
-                to=email,
-                subject=subject,
-                body=email_body,
-                template_name=email_template_name,
+async def enqueue_staff_sms(db, *, tenant_id, domain_event_id, template_name, body, mechanic_id=None):
+    """Explicit staff identities, one normalized address per business event."""
+    if not settings.SMS_AUTOMATION_OUTBOX_ENABLED:
+        return
+    result = await db.execute(select(User).where(
+        User.tenant_id == tenant_id, User.is_active.is_(True), User.deleted_at.is_(None),
+        User.role.in_([UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST]
+                      + ([UserRole.MECHANIC] if mechanic_id else [])),
+    ))
+    users = result.scalars().all()
+    seen = set()
+    has_staff_phone = False
+    for user in sorted(users, key=lambda item: str(item.id)):
+        if user.role == UserRole.MECHANIC and user.id != mechanic_id:
+            continue
+        phone = _normalize_for_twilio(user.phone) if user.phone else None
+        if phone and user.role != UserRole.MECHANIC:
+            has_staff_phone = True
+        if not phone or phone in seen:
+            continue
+        seen.add(phone)
+        await enqueue_automated_sms(
+            db, tenant_id=tenant_id, domain_event_id=domain_event_id,
+            template_name=template_name, to=phone, body=body, recipient_user_id=user.id,
+        )
+    if not has_staff_phone:
+        tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one_or_none()
+        phone = _normalize_for_twilio(tenant.phone) if tenant and tenant.phone else None
+        if phone and phone not in seen:
+            await enqueue_automated_sms(
+                db, tenant_id=tenant_id, domain_event_id=domain_event_id,
+                template_name=template_name, to=phone, body=body, recipient_tenant_contact=True,
             )
-        except Exception:
-            pass
 
-    if send_sms_fn:
-        for phone in sorted(phones):
+
+async def _send_staff_alert(
+    db: AsyncSession, tenant_id: UUID, emails: set[str], phones: set[str], *,
+    subject: str, email_body: str, sms_body: str, email_template_name: str,
+    sms_template_name: str, domain_event_id: str, phase: str,
+) -> None:
+    if phase == "enqueue":
+        await enqueue_staff_sms(
+            db, tenant_id=tenant_id, domain_event_id=domain_event_id,
+            template_name=sms_template_name, body=sms_body,
+        )
+    elif phase == "email":
+        for email in sorted(emails):
             try:
-                await send_sms_fn(
-                    db=db,
-                    tenant_id=str(tenant_id),
-                    to=phone,
-                    body=sms_body,
-                    template_name=sms_template_name,
+                await send_email(
+                    db=db, tenant_id=str(tenant_id), to=email, subject=subject,
+                    body=email_body, template_name=email_template_name,
                 )
             except Exception:
                 pass
+        if not settings.SMS_AUTOMATION_OUTBOX_ENABLED:
+            send_sms_fn = None
+            try:
+                # Twilio client initialization is import-time in twilio_service.
+                # Keep SMS delivery best-effort without failing callers if misconfigured.
+                from app.services.twilio_service import send_sms as send_sms_fn
+            except Exception:
+                send_sms_fn = None
+
+            if send_sms_fn:
+                for phone in sorted(phones):
+                    try:
+                        await send_sms_fn(
+                            db=db,
+                            tenant_id=str(tenant_id),
+                            to=phone,
+                            body=sms_body,
+                            template_name=sms_template_name,
+                        )
+                    except Exception:
+                        pass
+    else:
+        raise ValueError("Unknown staff notification phase")
 
 
 async def send_pending_zelle_submission_alert(
@@ -106,6 +140,8 @@ async def send_pending_zelle_submission_alert(
     source_label: str,
     sender_email: Optional[str],
     sender_phone: Optional[str],
+    domain_event_id: str,
+    phase: str = "enqueue",
 ) -> None:
     emails, phones = await collect_staff_contacts(db, tenant_id)
     if not emails and not phones:
@@ -157,6 +193,7 @@ async def send_pending_zelle_submission_alert(
         sms_body=sms_body,
         email_template_name="pending_zelle_staff_submit_email",
         sms_template_name="pending_zelle_staff_submit_sms",
+        domain_event_id=domain_event_id, phase=phase,
     )
 
 
@@ -170,6 +207,8 @@ async def send_pending_zelle_reminder_alert(
     customer_name: str,
     amount: Decimal,
     reminder_stage_hours: int,
+    domain_event_id: str,
+    phase: str = "enqueue",
 ) -> None:
     emails, phones = await collect_staff_contacts(db, tenant_id)
     if not emails and not phones:
@@ -217,4 +256,5 @@ async def send_pending_zelle_reminder_alert(
         sms_body=sms_body,
         email_template_name="pending_zelle_staff_reminder_email",
         sms_template_name="pending_zelle_staff_reminder_sms",
+        domain_event_id=domain_event_id, phase=phase,
     )

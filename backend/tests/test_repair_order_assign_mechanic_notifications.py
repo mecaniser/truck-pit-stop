@@ -187,6 +187,11 @@ def _build_context(mechanic_phone: str | None):
     return order, mechanic, manager
 
 
+@pytest.fixture(autouse=True)
+def durable_automation_enabled(monkeypatch):
+    monkeypatch.setattr(repair_orders.settings, "SMS_AUTOMATION_OUTBOX_ENABLED", True)
+
+
 @pytest.mark.asyncio
 async def test_assign_mechanic_sends_sms_when_mechanic_has_phone(monkeypatch):
     order, mechanic, manager = _build_context(mechanic_phone="14145550123")
@@ -200,7 +205,7 @@ async def test_assign_mechanic_sends_sms_when_mechanic_has_phone(monkeypatch):
         email_calls.append(kwargs)
         return None
 
-    async def _capture_sms(**kwargs):
+    async def _capture_sms(*args, **kwargs):
         sms_calls.append(kwargs)
         return None
 
@@ -208,7 +213,7 @@ async def test_assign_mechanic_sends_sms_when_mechanic_has_phone(monkeypatch):
         broadcast_calls.append(kwargs)
 
     monkeypatch.setattr(repair_orders, "send_email", _capture_email)
-    monkeypatch.setattr(repair_orders, "send_sms", _capture_sms)
+    monkeypatch.setattr(repair_orders, "enqueue_automated_sms", _capture_sms)
     monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", _capture_broadcast)
 
     response = await repair_orders.assign_mechanic(
@@ -245,7 +250,7 @@ async def test_assign_mechanic_skips_sms_when_no_mechanic_phone(monkeypatch):
     async def _capture_email(**_kwargs):
         return None
 
-    async def _capture_sms(**kwargs):
+    async def _capture_sms(*args, **kwargs):
         sms_calls.append(kwargs)
         return None
 
@@ -253,7 +258,7 @@ async def test_assign_mechanic_skips_sms_when_no_mechanic_phone(monkeypatch):
         return None
 
     monkeypatch.setattr(repair_orders, "send_email", _capture_email)
-    monkeypatch.setattr(repair_orders, "send_sms", _capture_sms)
+    monkeypatch.setattr(repair_orders, "enqueue_automated_sms", _capture_sms)
     monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", _noop_broadcast)
 
     response = await repair_orders.assign_mechanic(
@@ -277,7 +282,7 @@ async def test_assign_mechanic_from_checked_in_order_without_quote(monkeypatch):
         return None
 
     monkeypatch.setattr(repair_orders, "send_email", _noop)
-    monkeypatch.setattr(repair_orders, "send_sms", _noop)
+    monkeypatch.setattr(repair_orders, "enqueue_automated_sms", _noop)
     monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", _noop)
 
     response = await repair_orders.assign_mechanic(
@@ -426,7 +431,7 @@ async def test_admin_approval_of_internal_override_ro_records_admin_history(monk
 
     monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", _noop_broadcast)
     monkeypatch.setattr(repair_orders, "send_email", _noop_email)
-    monkeypatch.setattr(repair_orders, "send_sms", _noop_sms)
+    monkeypatch.setattr(repair_orders, "enqueue_automated_sms", _noop_sms)
 
     response = await repair_orders.approve_completion(
         order_id=order.id,
@@ -472,7 +477,7 @@ async def test_approving_completion_resolves_incidents_linked_to_the_order(monke
 
     monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", _noop)
     monkeypatch.setattr(repair_orders, "send_email", _noop)
-    monkeypatch.setattr(repair_orders, "send_sms", _noop)
+    monkeypatch.setattr(repair_orders, "enqueue_automated_sms", _noop)
     monkeypatch.setattr(repair_orders, "resolve_incidents_for_completed_order", _spy, raising=False)
 
     await repair_orders.approve_completion(
@@ -495,3 +500,66 @@ def isolate_operation_services_in_notification_unit_tests(monkeypatch):
         order.work_completed_at = order.work_completed_at or datetime.now(timezone.utc)
     monkeypatch.setattr(operation_execution, "finish_order", finish_order)
     monkeypatch.setattr(operation_execution, "stop_order_sessions", AsyncMock(return_value=[]))
+
+
+@pytest.mark.asyncio
+async def test_assignment_retry_does_not_change_occurrence_or_enqueue_again(monkeypatch):
+    from unittest.mock import AsyncMock
+    order, mechanic, manager = _build_context(mechanic_phone="14145550123")
+    fake_db = _FakeAsyncSession(order, mechanic)
+    intents = []
+
+    async def enqueue(db, **kwargs):
+        assert db.commit_count == 0
+        intents.append(kwargs)
+
+    monkeypatch.setattr(repair_orders, "enqueue_automated_sms", enqueue)
+    monkeypatch.setattr(repair_orders, "send_email", AsyncMock())
+    monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", AsyncMock())
+    body = repair_orders.AssignMechanicRequest(mechanic_id=mechanic.id)
+    await repair_orders.assign_mechanic(order.id, body, fake_db, manager)
+    occurrence = order.assigned_at
+    fake_db.execute_calls = 0
+    await repair_orders.assign_mechanic(order.id, body, fake_db, manager)
+    assert order.assigned_at == occurrence
+    assert fake_db.commit_count == 1
+    assert len(intents) == 1
+    assert intents[0]["recipient_user_id"] == mechanic.id
+    assert "customer_id" not in intents[0]
+    assert occurrence.isoformat() in intents[0]["domain_event_id"]
+
+
+@pytest.mark.asyncio
+async def test_assignment_enqueue_error_prevents_domain_commit_and_email(monkeypatch):
+    from unittest.mock import AsyncMock
+    order, mechanic, manager = _build_context(mechanic_phone="14145550123")
+    fake_db = _FakeAsyncSession(order, mechanic)
+    email = AsyncMock()
+    monkeypatch.setattr(repair_orders, "enqueue_automated_sms", AsyncMock(side_effect=RuntimeError("storage unavailable")))
+    monkeypatch.setattr(repair_orders, "send_email", email)
+    with pytest.raises(RuntimeError, match="storage unavailable"):
+        await repair_orders.assign_mechanic(
+            order.id, repair_orders.AssignMechanicRequest(mechanic_id=mechanic.id), fake_db, manager,
+        )
+    assert fake_db.commit_count == 0
+    email.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_rollout_disabled_assignment_keeps_sms_after_commit(monkeypatch):
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr(repair_orders.settings, "SMS_AUTOMATION_OUTBOX_ENABLED", False)
+    order, mechanic, manager = _build_context(mechanic_phone="14145550123")
+    db = _FakeAsyncSession(order, mechanic)
+    sends = []
+    async def send(*args, **kwargs):
+        assert db.commit_count == 1
+        sends.append(kwargs)
+    enqueue = AsyncMock(side_effect=AssertionError("Outbox must stay dormant"))
+    monkeypatch.setattr(repair_orders, "send_sms", send)
+    monkeypatch.setattr(repair_orders, "enqueue_automated_sms", enqueue)
+    monkeypatch.setattr(repair_orders, "send_email", AsyncMock())
+    monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", AsyncMock())
+    await repair_orders.assign_mechanic(order.id, repair_orders.AssignMechanicRequest(mechanic_id=mechanic.id), db, manager)
+    assert len(sends) == 1
+    enqueue.assert_not_awaited()

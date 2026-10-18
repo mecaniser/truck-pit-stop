@@ -60,7 +60,7 @@ def _silence_delivery(monkeypatch):
 
     monkeypatch.setattr(quotes.settings, "PROVIDER_OUTBOX_ENABLED", False)
     monkeypatch.setattr(quotes, "send_email", _capture_email)
-    monkeypatch.setattr(quotes, "send_sms", _noop)
+    monkeypatch.setattr(quotes, "enqueue_automated_sms", _noop)
     monkeypatch.setattr(quotes, "broadcast_quote_event", _noop)
     monkeypatch.setattr(quotes, "broadcast_repair_order_update", _noop)
     return delivered

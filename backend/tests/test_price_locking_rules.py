@@ -196,6 +196,7 @@ async def test_quote_send_does_not_lock_live_order_pricing(db_session, monkeypat
         return None
 
     monkeypatch.setattr(quotes_endpoint, "send_email", _noop_email)
+    monkeypatch.setattr(quotes_endpoint, "enqueue_automated_sms", _noop_sms)
     monkeypatch.setattr(quotes_endpoint, "send_sms", _noop_sms)
     monkeypatch.setattr(quotes_endpoint, "broadcast_quote_event", _noop_broadcast)
     monkeypatch.setattr(quotes_endpoint, "broadcast_repair_order_update", _noop_broadcast)
@@ -321,6 +322,7 @@ async def test_quote_send_uses_discounted_order_total(db_session, monkeypatch):
         return None
 
     monkeypatch.setattr(quotes_endpoint, "send_email", _noop_email)
+    monkeypatch.setattr(quotes_endpoint, "enqueue_automated_sms", _noop_sms)
     monkeypatch.setattr(quotes_endpoint, "send_sms", _noop_sms)
     monkeypatch.setattr(quotes_endpoint, "broadcast_quote_event", _noop_broadcast)
     monkeypatch.setattr(quotes_endpoint, "broadcast_repair_order_update", _noop_broadcast)
@@ -360,6 +362,7 @@ async def test_quote_send_email_uses_tenant_branding(db_session, monkeypatch):
         return None
 
     monkeypatch.setattr(quotes_endpoint, "send_email", _capture_email)
+    monkeypatch.setattr(quotes_endpoint, "enqueue_automated_sms", _noop_sms)
     monkeypatch.setattr(quotes_endpoint, "send_sms", _noop_sms)
     monkeypatch.setattr(quotes_endpoint, "broadcast_quote_event", _noop_broadcast)
     monkeypatch.setattr(quotes_endpoint, "broadcast_repair_order_update", _noop_broadcast)
@@ -402,6 +405,7 @@ async def test_quote_send_queues_email_without_calling_resend(db_session, monkey
 
     monkeypatch.setattr(quotes_endpoint.settings, "PROVIDER_OUTBOX_ENABLED", True)
     monkeypatch.setattr(quotes_endpoint, "send_email", _must_not_send_email)
+    monkeypatch.setattr(quotes_endpoint, "enqueue_automated_sms", _noop_sms)
     monkeypatch.setattr(quotes_endpoint, "send_sms", _noop_sms)
     monkeypatch.setattr(quotes_endpoint, "broadcast_quote_event", _noop_broadcast)
     monkeypatch.setattr(quotes_endpoint, "broadcast_repair_order_update", _noop_broadcast)
@@ -429,7 +433,9 @@ async def test_quote_send_queues_email_without_calling_resend(db_session, monkey
 
 
 @pytest.mark.asyncio
-async def test_quote_decline_sms_uses_tenant_shop_name(db_session, monkeypatch):
+@pytest.mark.parametrize("outbox_enabled", [False, True])
+async def test_quote_decline_sms_uses_tenant_shop_name(db_session, monkeypatch, outbox_enabled):
+    monkeypatch.setattr(quotes_endpoint.settings, "SMS_AUTOMATION_OUTBOX_ENABLED", outbox_enabled)
     staff_user, _order, _service, quote = await _seed_quote_context(db_session)
     staff_user.phone = "5558675309"
     quote.sent_to_customer = True
@@ -444,7 +450,11 @@ async def test_quote_decline_sms_uses_tenant_shop_name(db_session, monkeypatch):
     async def _noop_broadcast(*_args, **_kwargs):
         return None
 
-    monkeypatch.setattr(quotes_endpoint, "send_sms", _capture_sms)
+    from unittest.mock import AsyncMock
+    queued_sms = AsyncMock(side_effect=_capture_sms)
+    legacy_sms = AsyncMock(side_effect=_capture_sms)
+    monkeypatch.setattr(quotes_endpoint, "enqueue_automated_sms", queued_sms)
+    monkeypatch.setattr(quotes_endpoint, "send_sms", legacy_sms)
     monkeypatch.setattr(quotes_endpoint, "broadcast_quote_event", _noop_broadcast)
     monkeypatch.setattr(quotes_endpoint, "broadcast_repair_order_update", _noop_broadcast)
 
@@ -455,7 +465,9 @@ async def test_quote_decline_sms_uses_tenant_shop_name(db_session, monkeypatch):
         db=db_session,
     )
 
-    assert sent_sms
+    assert len(sent_sms) == 1
+    assert queued_sms.await_count == int(outbox_enabled)
+    assert legacy_sms.await_count == int(not outbox_enabled)
     assert sent_sms[0].endswith(" - Lock Test Garage")
     assert "DieselBridge Network" not in sent_sms[0]
 
@@ -514,6 +526,7 @@ async def test_quote_send_email_includes_customer_savings(db_session, monkeypatc
         return None
 
     monkeypatch.setattr(quotes_endpoint, "send_email", _capture_email)
+    monkeypatch.setattr(quotes_endpoint, "enqueue_automated_sms", _noop_sms)
     monkeypatch.setattr(quotes_endpoint, "send_sms", _noop_sms)
     monkeypatch.setattr(quotes_endpoint, "broadcast_quote_event", _noop_broadcast)
     monkeypatch.setattr(quotes_endpoint, "broadcast_repair_order_update", _noop_broadcast)
