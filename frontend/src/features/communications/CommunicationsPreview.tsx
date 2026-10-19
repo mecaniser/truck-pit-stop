@@ -661,7 +661,7 @@ export default function CommunicationsPreview({
                 </select>
                 <ChevronDown size={12} />
               </label>
-              <button
+              {selected.conversationKind !== "inquiry" && <button
                 className={`automation-toggle ${showAutomation ? "active" : ""}`}
                 aria-pressed={showAutomation}
                 onClick={() => setShowAutomation(!showAutomation)}
@@ -669,7 +669,7 @@ export default function CommunicationsPreview({
                 <Bell size={13} />
                 <span>Service updates</span>
                 <span className="switch-track" />
-              </button>
+              </button>}
             </div>
             {failed && (
               <div className="delivery-alert">

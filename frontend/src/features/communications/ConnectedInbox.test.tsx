@@ -100,11 +100,13 @@ describe("connected inbox sending", () => {
     vi.mocked(inboxApi.detail).mockImplementation(async (id) => id === inquiry.id ? inquiry : row);
     render(<ConnectedInbox />);
     await screen.findByRole("textbox", { name: "Message draft" });
+    expect(screen.getByRole("button", { name: "Service updates" })).toBeInTheDocument();
     const filter = screen.getByRole("button", { name: "New inquiries 1" });
     fireEvent.click(filter);
     expect(screen.queryByRole("button", { name: /James Miller.*Carolina/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /New inquiry.*15005550002/ }));
     const conversation = screen.getByRole("region", { name: "Conversation with New inquiry" });
+    expect(screen.queryByRole("button", { name: "Service updates" })).not.toBeInTheDocument();
     expect(within(conversation).getByRole("heading", { name: "New inquiry" })).toBeInTheDocument();
     expect(within(conversation).getByText(/CallRail · To \+15005550001/)).toBeInTheDocument();
     expect(within(conversation).queryByRole("combobox", { name: "SMS sender" })).not.toBeInTheDocument();
@@ -115,6 +117,7 @@ describe("connected inbox sending", () => {
     expect(screen.getByText("141/140")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^Open \d/ }));
     fireEvent.click(screen.getByRole("button", { name: new RegExp(row.customerName) }));
+    expect(screen.getByRole("button", { name: "Service updates" })).toBeInTheDocument();
     fireEvent.change(draft, { target: { value: "Existing customer draft" } });
     fireEvent.click(screen.getByRole("button", { name: /New inquiries/ }));
     fireEvent.click(screen.getByRole("button", { name: /New inquiry.*15005550002/ }));
