@@ -68,6 +68,7 @@ const time = (value: string) =>
   });
 
 export interface InboxConnection {
+  embedded?: boolean;
   onSMSSetup?: () => void;
   rows: Conversation[];
   searchIds?: string[] | null;
@@ -295,40 +296,44 @@ export default function CommunicationsPreview({
     );
   }
   return (
-    <div className="comms-app">
-      <aside className="app-rail" aria-label="DieselBridge workspace">
-        <div className="brand-mark">
-          D<span>B</span>
-        </div>
-        <div className="shop-mark">TP</div>
-        <div className="rail-icons">
-          <Wrench />
-          <Truck />
-          <UsersRound />
-          <span className="rail-current">
-            <MessageSquare />
-          </span>
-        </div>
-        <div className="rail-bottom">
-          <span className="rail-avatar">
-            {connection ? initials(people[userId] || "Staff") : "AP"}
-          </span>
-        </div>
-      </aside>
+    <div className={`comms-app${connection ? "" : " communications-surface"}`}>
+      {!connection?.embedded && (
+        <aside className="app-rail" aria-label="DieselBridge workspace">
+          <div className="brand-mark">
+            D<span>B</span>
+          </div>
+          <div className="shop-mark">TP</div>
+          <div className="rail-icons">
+            <Wrench />
+            <Truck />
+            <UsersRound />
+            <span className="rail-current">
+              <MessageSquare />
+            </span>
+          </div>
+          <div className="rail-bottom">
+            <span className="rail-avatar">
+              {connection ? initials(people[userId] || "Staff") : "AP"}
+            </span>
+          </div>
+        </aside>
+      )}
       <main className="comms-workspace">
-        <div className="preview-strip">
-          <span>
-            <span className="preview-dot" />{" "}
-            {connection ? "Connected inbox" : "Interactive prototype"}
-          </span>
-          <span>
-            {connection
-              ? connection.deliveryMode === "simulated"
-                ? "Isolated workspace · Simulated SMS"
-                : "Live SMS delivery"
-              : "Sample conversations · No messages are sent"}
-          </span>
-        </div>
+        {!connection?.embedded && (
+          <div className="preview-strip">
+            <span>
+              <span className="preview-dot" />{" "}
+              {connection ? "Connected inbox" : "Interactive prototype"}
+            </span>
+            <span>
+              {connection
+                ? connection.deliveryMode === "simulated"
+                  ? "Isolated workspace · Simulated SMS"
+                  : "Live SMS delivery"
+                : "Sample conversations · No messages are sent"}
+            </span>
+          </div>
+        )}
         <header className="page-header">
           <div>
             <div className="breadcrumb">
@@ -340,9 +345,23 @@ export default function CommunicationsPreview({
             </h1>
           </div>
           <div className="page-actions">
+            {connection?.embedded && (
+              <a
+                className="subtle-button previous-inbox"
+                href="/dashboard/messages/previous"
+                title="Previous inbox: start new SMS, view archived conversations"
+              >
+                Previous inbox
+              </a>
+            )}
             {connection?.onSMSSetup && (
-              <button className="subtle-button" onClick={connection.onSMSSetup}>
-                <Settings2 size={16} /> SMS setup
+              <button
+                className="subtle-button"
+                aria-label="SMS setup"
+                title="SMS setup"
+                onClick={connection.onSMSSetup}
+              >
+                <Settings2 size={16} /> <span>SMS setup</span>
               </button>
             )}
             <button
@@ -356,13 +375,15 @@ export default function CommunicationsPreview({
             </button>
             <button
               className="primary-button"
+              aria-label={connection ? "Open conversation" : "New message"}
+              title={connection ? "Open conversation" : "New message"}
               onClick={() => {
                 setShowNew(!showNew);
                 setMobileThread(false);
               }}
             >
               <Plus size={17} />
-              {connection ? "Open conversation" : "New message"}
+              <span>{connection ? "Open conversation" : "New message"}</span>
             </button>
           </div>
         </header>
@@ -802,7 +823,8 @@ export default function CommunicationsPreview({
               {composeConversation.sendPolicy.reason && (
                 <div className="compose-restriction" role="status">
                   <Info size={15} />
-                  {restrictionLabels[composeConversation.sendPolicy.reason]}
+                  {restrictionLabels[composeConversation.sendPolicy.reason] ??
+                    "SMS connection or consent requires review."}
                 </div>
               )}
               <div className="composer-box">
@@ -1052,8 +1074,9 @@ export default function CommunicationsPreview({
             <div className="connection-summary">
               <ShieldCheck size={18} />
               <p>
-                Provider setup and live messaging are separate from this
-                prototype. No account changes are made here.
+                {connection
+                  ? "New channels require setup and approval before messages can be sent."
+                  : "Provider setup and live messaging are separate from this prototype. No account changes are made here."}
               </p>
             </div>
           </section>

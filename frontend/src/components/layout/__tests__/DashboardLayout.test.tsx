@@ -43,7 +43,8 @@ vi.mock('../../../features/platform-admin/GarageAnalyticsPage', () => ({ default
 vi.mock('../../../features/platform-admin/PlatformAnalyticsPage', () => ({ default: () => null }))
 vi.mock('../../../features/platform-admin/PendingEnrollmentsPage', () => ({ default: () => null }))
 vi.mock('../../../features/platform-admin/PaymentControlCenter', () => ({ default: () => null }))
-vi.mock('../../../features/messages/MessagesInboxPage', () => ({ default: () => <h1>Messages surface</h1> }))
+vi.mock('../../../features/messages/MessagesInboxPage', () => ({ default: () => <h1>Previous Messages surface</h1> }))
+vi.mock('../../../features/communications/DashboardInboxPage', () => ({ default: () => <h1>Messages surface</h1> }))
 vi.mock('../../../features/dashboard/MechanicsBoardPage', () => ({ default: () => null }))
 vi.mock('../../../features/dashboard/MechanicBoardDetailPage', () => ({ default: () => null }))
 
@@ -92,6 +93,23 @@ describe('DB-035 authenticated staff shell', () => {
       logoutInProgress: false,
     })
   })
+
+  it.each([
+    ['/dashboard/messages', 'Messages surface'],
+    ['/dashboard/messages/previous', 'Previous Messages surface'],
+  ])('keeps the authorized inbox route available at %s', async (path, heading) => {
+    renderShell(path)
+    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
+  })
+
+  it.each(['/dashboard/messages', '/dashboard/messages/previous'])(
+    'retains the shop messaging permission gate at %s', async (path) => {
+      useAuthStore.setState({ user: { ...garageOwnerSession, messaging_enabled: false } as never })
+      renderShell(path)
+      expect(await screen.findByRole('heading', { name: 'Dashboard surface' })).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: /Messages surface/ })).not.toBeInTheDocument()
+    },
+  )
 
   it('expands and collapses the staff rail with accessible persisted controls', async () => {
     window.localStorage.setItem('db-staff-rail-expanded', '0')

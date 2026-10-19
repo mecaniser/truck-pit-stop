@@ -1,4 +1,4 @@
-:root {
+.communications-surface {
   font-family:
     ui-sans-serif,
     -apple-system,
@@ -13,19 +13,19 @@
   --green: #126b59;
   --canvas: #f6f8fb;
 }
-* {
+:where(.communications-surface) * {
   box-sizing: border-box;
 }
-body {
+:where(.communications-surface) {
   margin: 0;
 }
-button,
-input,
-textarea,
-select {
+:where(.communications-surface) button,
+:where(.communications-surface) input,
+:where(.communications-surface) textarea,
+:where(.communications-surface) select {
   font: inherit;
 }
-button {
+:where(.communications-surface) button {
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -36,65 +36,66 @@ button {
   color: inherit;
   white-space: nowrap;
 }
-button:disabled {
+:where(.communications-surface) button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
-button:not(:disabled):hover {
+:where(.communications-surface) button:not(:disabled):hover {
   filter: brightness(0.94);
 }
-button:focus-visible,
-input:focus-visible,
-textarea:focus-visible,
-select:focus-visible {
+:where(.communications-surface) button:focus-visible,
+:where(.communications-surface) input:focus-visible,
+:where(.communications-surface) textarea:focus-visible,
+:where(.communications-surface) select:focus-visible {
   outline: 2px solid #bd4910;
   outline-offset: 3px;
 }
-svg {
+:where(.communications-surface) svg {
   flex-shrink: 0;
   stroke-width: 1.7;
 }
-::selection {
+:where(.communications-surface) ::selection {
   background: #c9e9df;
   color: #12392d;
 }
-input,
-textarea {
+:where(.communications-surface) input,
+:where(.communications-surface) textarea {
   caret-color: var(--green);
 }
-::-webkit-scrollbar {
+:where(.communications-surface) ::-webkit-scrollbar {
   width: 5px;
   height: 5px;
 }
-::-webkit-scrollbar-thumb {
+:where(.communications-surface) ::-webkit-scrollbar-thumb {
   background: #c6d0d9;
   border-radius: 8px;
 }
-h1,
-h2,
-h3,
-h4,
-p {
+:where(.communications-surface) h1,
+:where(.communications-surface) h2,
+:where(.communications-surface) h3,
+:where(.communications-surface) h4,
+:where(.communications-surface) p {
   margin: 0;
 }
-select {
+:where(.communications-surface) select {
   appearance: none;
   border: 0;
   background: transparent;
   color: inherit;
   cursor: pointer;
 }
-input::placeholder,
-textarea::placeholder {
+:where(.communications-surface) input::placeholder,
+:where(.communications-surface) textarea::placeholder {
   color: #68798a;
 }
-.comms-app {
+:where(.communications-surface) .comms-app,
+.communications-surface.comms-app {
   display: flex;
   height: 100dvh;
   min-height: 580px;
   padding: 10px 10px 10px 0;
 }
-.app-rail {
+:where(.communications-surface) .app-rail {
   width: 68px;
   flex-shrink: 0;
   display: flex;
@@ -103,16 +104,16 @@ textarea::placeholder {
   color: #94a7bd;
   padding: 15px 0;
 }
-.brand-mark {
+:where(.communications-surface) .brand-mark {
   font-weight: 800;
   font-size: 20px;
   letter-spacing: -0.6px;
   color: white;
 }
-.brand-mark span {
+:where(.communications-surface) .brand-mark span {
   color: #f17836;
 }
-.shop-mark {
+:where(.communications-surface) .shop-mark {
   font-size: 11px;
   letter-spacing: 1px;
   margin: 24px 0 35px;
@@ -120,28 +121,28 @@ textarea::placeholder {
   border-radius: 7px;
   padding: 7px;
 }
-.rail-icons {
+:where(.communications-surface) .rail-icons {
   display: flex;
   flex-direction: column;
   gap: 30px;
   align-items: center;
 }
-.rail-icons > svg {
+:where(.communications-surface) .rail-icons > svg {
   width: 19px;
 }
-.rail-current {
+:where(.communications-surface) .rail-current {
   padding: 11px;
   border-radius: 10px;
   background: #19392f;
   color: #a7e0cc;
 }
-.rail-current svg {
+:where(.communications-surface) .rail-current svg {
   width: 20px;
 }
-.rail-bottom {
+:where(.communications-surface) .rail-bottom {
   margin-top: auto;
 }
-.rail-avatar {
+:where(.communications-surface) .rail-avatar {
   display: flex;
   width: 34px;
   height: 34px;
@@ -152,7 +153,7 @@ textarea::placeholder {
   border-radius: 50%;
   font-size: 11px;
 }
-.comms-workspace {
+:where(.communications-surface) .comms-workspace {
   position: relative;
   background: var(--canvas);
   flex: 1;
@@ -162,7 +163,7 @@ textarea::placeholder {
   display: flex;
   flex-direction: column;
 }
-.preview-strip {
+:where(.communications-surface) .preview-strip {
   height: 30px;
   flex-shrink: 0;
   background: #edf1f5;
@@ -174,25 +175,25 @@ textarea::placeholder {
   font-size: 11px;
   color: #526276;
 }
-.preview-strip > span {
+:where(.communications-surface) .preview-strip > span {
   display: flex;
   align-items: center;
   gap: 7px;
 }
-.preview-dot {
+:where(.communications-surface) .preview-dot {
   width: 6px;
   height: 6px;
   background: #bf641f;
   border-radius: 50%;
 }
-.page-header {
+:where(.communications-surface) .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 22px 28px 23px;
   flex-shrink: 0;
 }
-.breadcrumb {
+:where(.communications-surface) .breadcrumb {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -200,7 +201,7 @@ textarea::placeholder {
   color: var(--muted);
   margin-bottom: 8px;
 }
-.page-header h1 {
+:where(.communications-surface) .page-header h1 {
   font-size: 27px;
   font-weight: 650;
   letter-spacing: -0.8px;
@@ -208,7 +209,7 @@ textarea::placeholder {
   align-items: center;
   gap: 10px;
 }
-.heading-count {
+:where(.communications-surface) .heading-count {
   border-radius: 7px;
   background: #e7ecef;
   font-size: 12px;
@@ -217,12 +218,12 @@ textarea::placeholder {
   letter-spacing: 0;
   color: #607080;
 }
-.page-actions {
+:where(.communications-surface) .page-actions {
   display: flex;
   gap: 10px;
   align-items: center;
 }
-.primary-button {
+:where(.communications-surface) .primary-button {
   border-radius: 7px;
   background: var(--green);
   color: #fff;
@@ -231,7 +232,7 @@ textarea::placeholder {
   min-height: 37px;
   font-weight: 550;
 }
-.subtle-button {
+:where(.communications-surface) .subtle-button {
   border: 1px solid #d8e0e7;
   background: #fff;
   border-radius: 7px;
@@ -239,7 +240,7 @@ textarea::placeholder {
   font-size: 12px;
   min-height: 37px;
 }
-.inbox-layout {
+:where(.communications-surface) .inbox-layout {
   display: grid;
   grid-template-columns: 330px minmax(330px, 1fr) 258px;
   min-height: 0;
@@ -247,38 +248,38 @@ textarea::placeholder {
   border-top: 1px solid var(--line);
   background: #fff;
 }
-.conversation-list {
+:where(.communications-surface) .conversation-list {
   display: flex;
   flex-direction: column;
   min-height: 0;
   border-right: 1px solid var(--line);
   background: #fbfcfd;
 }
-.list-tools {
+:where(.communications-surface) .list-tools {
   padding: 16px 16px 13px;
 }
-.view-tabs {
+:where(.communications-surface) .view-tabs {
   display: flex;
   gap: 4px;
   margin-bottom: 17px;
 }
-.view-tabs button {
+:where(.communications-surface) .view-tabs button {
   padding: 7px 8px;
   font-size: 12px;
   border-radius: 6px;
   gap: 5px;
   color: #58677a;
 }
-.view-tabs button > span {
+:where(.communications-surface) .view-tabs button > span {
   font-size: 10px;
   color: #6a7785;
 }
-.view-tabs button[aria-pressed="true"] {
+:where(.communications-surface) .view-tabs button[aria-pressed="true"] {
   background: #e8f0ed;
   color: #205b4c;
   font-weight: 600;
 }
-.search-field {
+:where(.communications-surface) .search-field {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -288,33 +289,33 @@ textarea::placeholder {
   padding: 9px 10px;
   color: #728092;
 }
-.search-field input {
+:where(.communications-surface) .search-field input {
   width: 100%;
   min-width: 0;
   border: 0;
   background: transparent;
   font-size: 12px;
 }
-.search-field button {
+:where(.communications-surface) .search-field button {
   padding: 0;
 }
-.channel-filters {
+:where(.communications-surface) .channel-filters {
   display: flex;
   gap: 3px;
   margin-top: 11px;
 }
-.channel-filters button {
+:where(.communications-surface) .channel-filters button {
   padding: 6px 8px;
   font-size: 11px;
   color: #647184;
   border-radius: 5px;
 }
-.channel-filters button[aria-pressed="true"] {
+:where(.communications-surface) .channel-filters button[aria-pressed="true"] {
   background: #e9edf1;
   color: #26394a;
   font-weight: 600;
 }
-.list-heading {
+:where(.communications-surface) .list-heading {
   display: flex;
   justify-content: space-between;
   padding: 2px 18px 10px;
@@ -323,11 +324,11 @@ textarea::placeholder {
   color: #657587;
   font-weight: 600;
 }
-.thread-rows {
+:where(.communications-surface) .thread-rows {
   flex: 1;
   overflow: auto;
 }
-.thread-row {
+:where(.communications-surface) .thread-row {
   display: flex;
   align-items: flex-start;
   gap: 11px;
@@ -337,11 +338,11 @@ textarea::placeholder {
   border-top: 1px solid #eaf0f3;
   white-space: normal;
 }
-.thread-row.selected {
+:where(.communications-surface) .thread-row.selected {
   background: #eaf3ef;
   box-shadow: inset 2px 0 #30745d;
 }
-.avatar {
+:where(.communications-surface) .avatar {
   display: inline-flex;
   position: relative;
   align-items: center;
@@ -355,27 +356,27 @@ textarea::placeholder {
   font-weight: 600;
   font-size: 12px;
 }
-.avatar-02 {
+:where(.communications-surface) .avatar-02 {
   background: #eee8df;
   color: #795c32;
 }
-.avatar-03 {
+:where(.communications-surface) .avatar-03 {
   background: #e7e9f5;
   color: #5b5c83;
 }
-.avatar-04 {
+:where(.communications-surface) .avatar-04 {
   background: #eee4e8;
   color: #7f4e66;
 }
-.avatar-05 {
+:where(.communications-surface) .avatar-05 {
   background: #e1edf3;
   color: #39637d;
 }
-.avatar-06 {
+:where(.communications-surface) .avatar-06 {
   background: #ecebe4;
   color: #6c694b;
 }
-.channel-mark {
+:where(.communications-surface) .channel-mark {
   position: absolute;
   right: -4px;
   bottom: -4px;
@@ -388,40 +389,40 @@ textarea::placeholder {
   border-radius: 50%;
   border: 2px solid #fbfcfd;
 }
-.channel-mark svg {
+:where(.communications-surface) .channel-mark svg {
   width: 11px;
   height: 11px;
 }
-.thread-copy {
+:where(.communications-surface) .thread-copy {
   flex: 1;
   min-width: 0;
 }
-.thread-top {
+:where(.communications-surface) .thread-top {
   display: flex;
   gap: 8px;
   align-items: center;
   justify-content: space-between;
 }
-.thread-top strong {
+:where(.communications-surface) .thread-top strong {
   font-size: 12px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.thread-top > span {
+:where(.communications-surface) .thread-top > span {
   font-size: 9px;
   color: #6b7a88;
   white-space: nowrap;
   flex-shrink: 0;
 }
-.thread-company {
+:where(.communications-surface) .thread-company {
   display: block;
   color: #657383;
   font-size: 10px;
   margin-top: 4px;
 }
-.thread-preview {
+:where(.communications-surface) .thread-preview {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -434,10 +435,10 @@ textarea::placeholder {
   white-space: nowrap;
   max-width: 230px;
 }
-.thread-preview svg {
+:where(.communications-surface) .thread-preview svg {
   color: #a24a25;
 }
-.thread-meta {
+:where(.communications-surface) .thread-meta {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -446,12 +447,12 @@ textarea::placeholder {
   font-size: 9px;
   color: #607282;
 }
-.thread-meta > span {
+:where(.communications-surface) .thread-meta > span {
   border: 1px solid #d9e2e5;
   border-radius: 4px;
   padding: 2px 5px;
 }
-.unread-dot {
+:where(.communications-surface) .unread-dot {
   margin-left: auto;
   background: #176d59;
   color: white;
@@ -463,7 +464,7 @@ textarea::placeholder {
   justify-content: center;
   font-size: 9px;
 }
-.list-footer {
+:where(.communications-surface) .list-footer {
   display: flex;
   gap: 7px;
   align-items: center;
@@ -472,20 +473,20 @@ textarea::placeholder {
   font-size: 10px;
   color: #6a7a88;
 }
-.connection-dot {
+:where(.communications-surface) .connection-dot {
   width: 5px;
   height: 5px;
   background: #2f8566;
   border-radius: 50%;
   margin-left: auto;
 }
-.conversation {
+:where(.communications-surface) .conversation {
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
 }
-.conversation-header {
+:where(.communications-surface) .conversation-header {
   display: flex;
   align-items: center;
   gap: 11px;
@@ -494,49 +495,49 @@ textarea::placeholder {
   min-height: 76px;
   flex-shrink: 0;
 }
-.header-avatar {
+:where(.communications-surface) .header-avatar {
   width: 35px;
   height: 35px;
 }
-.conversation-title {
+:where(.communications-surface) .conversation-title {
   min-width: 0;
 }
-.conversation-title h2 {
+:where(.communications-surface) .conversation-title h2 {
   font-size: 14px;
   font-weight: 650;
   letter-spacing: -0.15px;
 }
-.conversation-title > span {
+:where(.communications-surface) .conversation-title > span {
   display: block;
   font-size: 10px;
   color: #667587;
   margin-top: 5px;
 }
-.separator {
+:where(.communications-surface) .separator {
   margin: 0 4px;
   color: #7b8996;
 }
-.conversation-actions {
+:where(.communications-surface) .conversation-actions {
   display: flex;
   gap: 8px;
   margin-left: auto;
 }
-.resolve-button {
+:where(.communications-surface) .resolve-button {
   border: 1px solid #dce4df;
   border-radius: 6px;
   padding: 7px 10px;
   font-size: 11px;
   color: #2e6350;
 }
-.resolve-button.resolved {
+:where(.communications-surface) .resolve-button.resolved {
   color: #55677c;
 }
-.icon-button {
+:where(.communications-surface) .icon-button {
   width: 32px;
   height: 32px;
   border-radius: 6px;
 }
-.conversation-toolbar {
+:where(.communications-surface) .conversation-toolbar {
   display: flex;
   align-items: center;
   gap: 14px;
@@ -545,7 +546,7 @@ textarea::placeholder {
   font-size: 10px;
   flex-shrink: 0;
 }
-.channel-chip {
+:where(.communications-surface) .channel-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -553,31 +554,31 @@ textarea::placeholder {
   color: #51677b;
   white-space: nowrap;
 }
-.channel-chip.whatsapp,
-.channel-mark.whatsapp {
+:where(.communications-surface) .channel-chip.whatsapp,
+:where(.communications-surface) .channel-mark.whatsapp {
   color: #287b52;
 }
-.channel-chip.telegram,
-.channel-mark.telegram {
+:where(.communications-surface) .channel-chip.telegram,
+:where(.communications-surface) .channel-mark.telegram {
   color: #327c9c;
 }
-.assigned-label {
+:where(.communications-surface) .assigned-label {
   display: flex;
   align-items: center;
   gap: 5px;
   color: #687788;
 }
-.assigned-label select {
+:where(.communications-surface) .assigned-label select {
   font-size: 10px;
   max-width: 105px;
 }
-.automation-toggle {
+:where(.communications-surface) .automation-toggle {
   margin-left: auto;
   font-size: 10px;
   color: #617184;
   gap: 5px;
 }
-.switch-track {
+:where(.communications-surface) .switch-track {
   display: block;
   width: 23px;
   height: 13px;
@@ -586,7 +587,7 @@ textarea::placeholder {
   margin-left: 3px;
   position: relative;
 }
-.switch-track:after {
+:where(.communications-surface) .switch-track:after {
   content: "";
   position: absolute;
   left: 2px;
@@ -597,40 +598,40 @@ textarea::placeholder {
   background: white;
   transition: transform 0.15s ease-out;
 }
-.automation-toggle.active .switch-track {
+:where(.communications-surface) .automation-toggle.active .switch-track {
   background: #407a64;
 }
-.automation-toggle.active .switch-track:after {
+:where(.communications-surface) .automation-toggle.active .switch-track:after {
   transform: translateX(10px);
 }
-.message-scroll {
+:where(.communications-surface) .message-scroll {
   flex: 1;
   overflow: auto;
   padding: 22px 26px 12px;
   background: #fff;
 }
-.day-divider {
+:where(.communications-surface) .day-divider {
   display: flex;
   justify-content: center;
   color: #68798a;
   font-size: 10px;
   margin-bottom: 29px;
 }
-.message-stack {
+:where(.communications-surface) .message-stack {
   max-width: 780px;
   margin: auto;
 }
-.message-line {
+:where(.communications-surface) .message-line {
   display: flex;
   align-items: flex-start;
   flex-direction: column;
   margin-bottom: 23px;
   gap: 6px;
 }
-.message-line.outbound {
+:where(.communications-surface) .message-line.outbound {
   align-items: flex-end;
 }
-.message-bubble {
+:where(.communications-surface) .message-bubble {
   max-width: 83%;
   font-size: 12px;
   line-height: 1.65;
@@ -641,12 +642,12 @@ textarea::placeholder {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.outbound .message-bubble {
+:where(.communications-surface) .outbound .message-bubble {
   background: #e7f2ec;
   color: #244e3d;
   border-radius: 11px 11px 3px 11px;
 }
-.message-meta {
+:where(.communications-surface) .message-meta {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -654,48 +655,48 @@ textarea::placeholder {
   color: #68798a;
   padding: 0 2px;
 }
-.message-meta svg {
+:where(.communications-surface) .message-meta svg {
   color: #3a8168;
 }
-.message-line.automated {
+:where(.communications-surface) .message-line.automated {
   align-items: center;
   margin: 27px 0;
 }
-.service-event {
+:where(.communications-surface) .service-event {
   border-top: 1px solid #e9edef;
   border-bottom: 1px solid #e9edef;
   width: 94%;
   padding: 12px 4px;
   color: #617181;
 }
-.service-event > span {
+:where(.communications-surface) .service-event > span {
   display: flex;
   gap: 6px;
   align-items: center;
   font-size: 10px;
 }
-.service-event > span > span {
+:where(.communications-surface) .service-event > span > span {
   margin-left: auto;
   font-size: 9px;
 }
-.service-event p {
+:where(.communications-surface) .service-event p {
   font-size: 11px;
   line-height: 1.7;
   margin-top: 7px;
 }
-.delivery-detail {
+:where(.communications-surface) .delivery-detail {
   padding: 6px 0 0;
   font-size: 9px;
   text-transform: capitalize;
   color: #637c6d;
 }
-.composer-area {
+:where(.communications-surface) .composer-area {
   flex-shrink: 0;
   padding: 13px 22px 15px;
   background: #fff;
   border-top: 1px solid #edf0f3;
 }
-.composer-heading {
+:where(.communications-surface) .composer-heading {
   display: flex;
   justify-content: space-between;
   gap: 8px;
@@ -703,30 +704,30 @@ textarea::placeholder {
   color: #627587;
   margin-bottom: 10px;
 }
-.composer-heading > label {
+:where(.communications-surface) .composer-heading > label {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.channel-select {
+:where(.communications-surface) .channel-select {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   color: #355b4c;
 }
-.channel-select select {
+:where(.communications-surface) .channel-select select {
   font-size: 10px;
   font-weight: 600;
 }
-.composer-box {
+:where(.communications-surface) .composer-box {
   border: 1px solid #d8e1e5;
   border-radius: 9px;
   position: relative;
 }
-.composer-box:focus-within {
+:where(.communications-surface) .composer-box:focus-within {
   border-color: #608b78;
 }
-.composer-box textarea {
+:where(.communications-surface) .composer-box textarea {
   display: block;
   width: 100%;
   min-height: 70px;
@@ -741,7 +742,7 @@ textarea::placeholder {
   line-height: 1.6;
   outline: 0;
 }
-.composer-controls {
+:where(.communications-surface) .composer-controls {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -749,24 +750,24 @@ textarea::placeholder {
   padding: 9px 10px;
   border-top: 1px solid #eff2f4;
 }
-.reply-options {
+:where(.communications-surface) .reply-options {
   display: flex;
   align-items: center;
   gap: 12px;
   font-size: 9px;
   color: #637586;
 }
-.reply-options button {
+:where(.communications-surface) .reply-options button {
   font-size: 10px;
   color: #5a6f7e;
   padding: 4px;
 }
-.send-button {
+:where(.communications-surface) .send-button {
   padding: 8px 11px;
   font-size: 11px;
   min-height: 31px;
 }
-.composer-footnote {
+:where(.communications-surface) .composer-footnote {
   display: flex;
   justify-content: space-between;
   gap: 10px;
@@ -774,72 +775,72 @@ textarea::placeholder {
   color: #637586;
   margin-top: 8px;
 }
-.customer-context {
+:where(.communications-surface) .customer-context {
   border-left: 1px solid var(--line);
   background: #fafbfd;
   overflow: auto;
   min-height: 0;
   padding: 0 20px;
 }
-.customer-context > header {
+:where(.communications-surface) .customer-context > header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   height: 58px;
 }
-.customer-context h3 {
+:where(.communications-surface) .customer-context h3 {
   font-size: 11px;
   font-weight: 600;
 }
-.contact-profile {
+:where(.communications-surface) .contact-profile {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 7px;
   padding: 12px 0 24px;
 }
-.context-avatar {
+:where(.communications-surface) .context-avatar {
   width: 51px;
   height: 51px;
   font-size: 16px;
   margin-bottom: 5px;
 }
-.contact-profile > strong {
+:where(.communications-surface) .contact-profile > strong {
   font-size: 13px;
 }
-.contact-profile > span:last-child {
+:where(.communications-surface) .contact-profile > span:last-child {
   font-size: 11px;
   color: #657587;
 }
-.customer-context section {
+:where(.communications-surface) .customer-context section {
   border-top: 1px solid var(--line);
   padding: 20px 0;
 }
-.customer-context h4 {
+:where(.communications-surface) .customer-context h4 {
   font-size: 10px;
   color: #657587;
   font-weight: 500;
   margin-bottom: 14px;
 }
-.identity-row {
+:where(.communications-surface) .identity-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
   font-size: 9px;
   color: #657587;
 }
-.identity-value {
+:where(.communications-surface) .identity-value {
   font-size: 11px;
   margin-top: 9px;
 }
-.order-title {
+:where(.communications-surface) .order-title {
   display: flex;
   gap: 7px;
   align-items: center;
   font-size: 12px;
   color: #2d4255;
 }
-.repair-status {
+:where(.communications-surface) .repair-status {
   display: inline-block;
   background: #e9f1e8;
   color: #476841;
@@ -848,7 +849,7 @@ textarea::placeholder {
   padding: 4px 6px;
   margin-top: 10px;
 }
-.vehicle-context {
+:where(.communications-surface) .vehicle-context {
   display: flex;
   gap: 8px;
   align-items: flex-start;
@@ -856,43 +857,43 @@ textarea::placeholder {
   line-height: 1.6;
   margin-top: 16px;
 }
-.vehicle-context svg {
+:where(.communications-surface) .vehicle-context svg {
   color: #657587;
   margin-top: 2px;
 }
-.concern {
+:where(.communications-surface) .concern {
   font-size: 10px;
   line-height: 1.6;
   color: #657587;
   margin: 8px 0 0 25px;
 }
-.customer-context dl {
+:where(.communications-surface) .customer-context dl {
   margin: 0;
   font-size: 10px;
 }
-.customer-context dl > div {
+:where(.communications-surface) .customer-context dl > div {
   display: flex;
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 13px;
 }
-.customer-context dt {
+:where(.communications-surface) .customer-context dt {
   color: #657587;
 }
-.customer-context dd {
+:where(.communications-surface) .customer-context dd {
   margin: 0;
 }
-.context-note {
+:where(.communications-surface) .context-note {
   display: flex;
   gap: 8px;
   color: #657587;
   padding-top: 7px;
 }
-.context-note p {
+:where(.communications-surface) .context-note p {
   font-size: 10px;
   line-height: 1.6;
 }
-.delivery-alert {
+:where(.communications-surface) .delivery-alert {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -901,11 +902,11 @@ textarea::placeholder {
   padding: 10px 22px;
   font-size: 11px;
 }
-.delivery-alert button {
+:where(.communications-surface) .delivery-alert button {
   margin-left: auto;
   font-size: 10px;
 }
-.message-details {
+:where(.communications-surface) .message-details {
   background: #fff9f1;
   padding: 13px;
   font-size: 10px;
@@ -917,7 +918,7 @@ textarea::placeholder {
   flex-direction: column;
   gap: 4px;
 }
-.compose-restriction {
+:where(.communications-surface) .compose-restriction {
   display: flex;
   gap: 7px;
   align-items: center;
@@ -926,12 +927,12 @@ textarea::placeholder {
   font-size: 11px;
   line-height: 1.6;
 }
-.context-warning,
-.over-limit {
+:where(.communications-surface) .context-warning,
+:where(.communications-surface) .over-limit {
   color: #a34025 !important;
 }
-.empty-list,
-.empty-channel {
+:where(.communications-surface) .empty-list,
+:where(.communications-surface) .empty-channel {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -941,53 +942,53 @@ textarea::placeholder {
   color: #637586;
   font-size: 12px;
 }
-.empty-list button,
-.empty-channel button {
+:where(.communications-surface) .empty-list button,
+:where(.communications-surface) .empty-channel button {
   color: var(--green);
   font-size: 11px;
   margin-top: 5px;
 }
-.empty-channel {
+:where(.communications-surface) .empty-channel {
   padding-top: 60px;
 }
-.empty-channel > svg {
+:where(.communications-surface) .empty-channel > svg {
   width: 32px;
   height: 32px;
   color: #668474;
 }
-.empty-channel h3 {
+:where(.communications-surface) .empty-channel h3 {
   font-size: 17px;
   color: #2e4b57;
   font-weight: 600;
 }
-.empty-channel p {
+:where(.communications-surface) .empty-channel p {
   max-width: 280px;
   line-height: 1.7;
   font-size: 12px;
 }
-.new-conversation {
+:where(.communications-surface) .new-conversation {
   padding: 14px;
   background: #f0f5f2;
   border-block: 1px solid #d5e3db;
 }
-.new-conversation > div {
+:where(.communications-surface) .new-conversation > div {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 10px;
   font-size: 12px;
 }
-.new-conversation > button {
+:where(.communications-surface) .new-conversation > button {
   display: flex;
   width: 100%;
   justify-content: flex-start;
   padding: 9px 4px;
   font-size: 11px;
 }
-.new-conversation > button svg:last-child {
+:where(.communications-surface) .new-conversation > button svg:last-child {
   margin-left: auto;
 }
-.feedback {
+:where(.communications-surface) .feedback {
   position: absolute;
   bottom: 16px;
   left: 50%;
@@ -1003,11 +1004,11 @@ textarea::placeholder {
   max-width: 90%;
   line-height: 1.5;
 }
-.feedback:not(:empty) {
+:where(.communications-surface) .feedback:not(:empty) {
   padding: 12px 14px;
   box-shadow: 0 5px 20px #132c2320;
 }
-.saved-replies {
+:where(.communications-surface) .saved-replies {
   position: absolute;
   bottom: 48px;
   left: 10px;
@@ -1018,7 +1019,7 @@ textarea::placeholder {
   padding: 6px;
   z-index: 3;
 }
-.saved-replies button {
+:where(.communications-surface) .saved-replies button {
   display: block;
   text-align: left;
   width: 100%;
@@ -1028,10 +1029,10 @@ textarea::placeholder {
   line-height: 1.6;
   border-radius: 5px;
 }
-.saved-replies button:hover {
+:where(.communications-surface) .saved-replies button:hover {
   background: #f0f5f2;
 }
-.sheet-backdrop {
+:where(.communications-surface) .sheet-backdrop {
   position: fixed;
   inset: 0;
   background: #0b172855;
@@ -1039,7 +1040,7 @@ textarea::placeholder {
   display: flex;
   justify-content: flex-end;
 }
-.connections-sheet {
+:where(.communications-surface) .connections-sheet {
   width: 470px;
   max-width: 100%;
   height: 100%;
@@ -1048,43 +1049,43 @@ textarea::placeholder {
   box-shadow: -10px 0 40px #0b172820;
   overflow: auto;
 }
-.connections-sheet > header {
+:where(.communications-surface) .connections-sheet > header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 28px;
 }
-.connections-sheet h2 {
+:where(.communications-surface) .connections-sheet h2 {
   font-size: 21px;
   letter-spacing: -0.4px;
 }
-.connections-sheet header p {
+:where(.communications-surface) .connections-sheet header p {
   font-size: 12px;
   color: #637586;
   margin-top: 8px;
 }
-.connection-row {
+:where(.communications-surface) .connection-row {
   display: flex;
   align-items: flex-start;
   gap: 13px;
   padding: 23px 0;
   border-top: 1px solid var(--line);
 }
-.connection-row > .channel-chip {
+:where(.communications-surface) .connection-row > .channel-chip {
   padding: 9px;
   background: #edf4f0;
   border-radius: 8px;
 }
-.connection-row h3 {
+:where(.communications-surface) .connection-row h3 {
   font-size: 13px;
 }
-.connection-row p {
+:where(.communications-surface) .connection-row p {
   font-size: 11px;
   line-height: 1.7;
   color: #637586;
   margin-top: 6px;
 }
-.connection-state {
+:where(.communications-surface) .connection-state {
   margin-left: auto;
   font-size: 9px;
   padding: 4px 6px;
@@ -1093,11 +1094,11 @@ textarea::placeholder {
   white-space: nowrap;
   color: #637586;
 }
-.connection-state.ready {
+:where(.communications-surface) .connection-state.ready {
   background: #e7f1eb;
   color: #2b6d4c;
 }
-.connection-summary {
+:where(.communications-surface) .connection-summary {
   display: flex;
   gap: 10px;
   line-height: 1.7;
@@ -1106,54 +1107,54 @@ textarea::placeholder {
   padding: 20px 0;
   border-top: 1px solid var(--line);
 }
-.mobile-back,
-.close-context,
-.context-toggle {
+:where(.communications-surface) .mobile-back,
+:where(.communications-surface) .close-context,
+:where(.communications-surface) .context-toggle {
   display: none;
 }
-.muted {
+:where(.communications-surface) .muted {
   font-size: 11px;
   color: #657587;
 }
 @media (min-width: 1600px) {
-  .inbox-layout {
+  :where(.communications-surface) .inbox-layout {
     grid-template-columns: 360px minmax(400px, 1fr) 280px;
   }
-  .message-bubble {
+  :where(.communications-surface) .message-bubble {
     font-size: 14px;
   }
-  .message-meta,
-  .service-event > span,
-  .day-divider {
+  :where(.communications-surface) .message-meta,
+  :where(.communications-surface) .service-event > span,
+  :where(.communications-surface) .day-divider {
     font-size: 11px;
   }
-  .service-event p {
+  :where(.communications-surface) .service-event p {
     font-size: 13px;
   }
-  .thread-top strong {
+  :where(.communications-surface) .thread-top strong {
     font-size: 14px;
   }
-  .thread-preview {
+  :where(.communications-surface) .thread-preview {
     font-size: 12px;
   }
-  .thread-company {
+  :where(.communications-surface) .thread-company {
     font-size: 11px;
   }
-  .thread-row {
+  :where(.communications-surface) .thread-row {
     padding-block: 21px;
   }
 }
 @media (max-width: 1200px) {
-  .inbox-layout {
+  :where(.communications-surface) .inbox-layout {
     grid-template-columns: 300px minmax(320px, 1fr);
   }
-  .customer-context {
+  :where(.communications-surface) .customer-context {
     display: none;
   }
-  .context-toggle {
+  :where(.communications-surface) .context-toggle {
     display: inline-flex;
   }
-  .context-open .customer-context {
+  :where(.communications-surface) .context-open .customer-context {
     display: block;
     position: absolute;
     right: 0;
@@ -1163,239 +1164,241 @@ textarea::placeholder {
     z-index: 6;
     box-shadow: -8px 0 24px #13233d12;
   }
-  .close-context {
+  :where(.communications-surface) .close-context {
     display: flex;
   }
-  .thread-preview {
+  :where(.communications-surface) .thread-preview {
     max-width: 203px;
   }
-  .composer-footnote > span:last-child {
+  :where(.communications-surface) .composer-footnote > span:last-child {
     display: none;
   }
-  .conversation-toolbar {
+  :where(.communications-surface) .conversation-toolbar {
     gap: 10px;
   }
 }
 @media (max-width: 700px) {
-  .comms-app {
+  :where(.communications-surface) .comms-app,
+  .communications-surface.comms-app {
     padding: 0;
     min-height: 100dvh;
     height: 100dvh;
   }
-  .app-rail {
+  :where(.communications-surface) .app-rail {
     display: none;
   }
-  .comms-workspace {
+  :where(.communications-surface) .comms-workspace {
     border-radius: 0;
   }
-  .preview-strip {
+  :where(.communications-surface) .preview-strip {
     padding: 0 15px;
     font-size: 9px;
     height: 28px;
   }
-  .preview-strip > span:last-child {
+  :where(.communications-surface) .preview-strip > span:last-child {
     font-size: 9px;
   }
-  .page-header {
+  :where(.communications-surface) .page-header {
     padding: 16px 16px 17px;
   }
-  .breadcrumb {
+  :where(.communications-surface) .breadcrumb {
     font-size: 10px;
     margin-bottom: 5px;
   }
-  .page-header h1 {
+  :where(.communications-surface) .page-header h1 {
     font-size: 23px;
   }
-  .page-actions {
+  :where(.communications-surface) .page-actions {
     gap: 7px;
   }
-  .page-actions .primary-button {
+  :where(.communications-surface) .page-actions .primary-button {
     font-size: 11px;
     padding: 9px 10px;
   }
-  .page-actions .subtle-button {
+  :where(.communications-surface) .page-actions .subtle-button {
     padding: 9px;
   }
-  .page-actions .subtle-button > span {
+  :where(.communications-surface) .page-actions .primary-button > span,
+  :where(.communications-surface) .page-actions .subtle-button > span {
     display: none;
   }
-  .inbox-layout {
+  :where(.communications-surface) .inbox-layout {
     display: flex;
     position: relative;
   }
-  .conversation-list {
+  :where(.communications-surface) .conversation-list {
     width: 100%;
     border: 0;
   }
-  .conversation {
+  :where(.communications-surface) .conversation {
     display: none;
     width: 100%;
   }
-  .mobile-thread .conversation-list {
+  :where(.communications-surface) .mobile-thread .conversation-list {
     display: none;
   }
-  .mobile-thread .conversation {
+  :where(.communications-surface) .mobile-thread .conversation {
     display: flex;
   }
-  .mobile-back {
+  :where(.communications-surface) .mobile-back {
     display: flex;
   }
-  .conversation-header {
+  :where(.communications-surface) .conversation-header {
     padding: 13px 12px;
     gap: 8px;
     min-height: 70px;
   }
-  .header-avatar {
+  :where(.communications-surface) .header-avatar {
     display: none;
   }
-  .conversation-title h2 {
+  :where(.communications-surface) .conversation-title h2 {
     font-size: 13px;
   }
-  .conversation-title > span {
+  :where(.communications-surface) .conversation-title > span {
     font-size: 10px;
   }
-  .conversation-actions {
+  :where(.communications-surface) .conversation-actions {
     gap: 4px;
   }
-  .resolve-button {
+  :where(.communications-surface) .resolve-button {
     padding: 7px;
   }
-  .resolve-button > span {
+  :where(.communications-surface) .resolve-button > span {
     display: none;
   }
-  .conversation-toolbar {
+  :where(.communications-surface) .conversation-toolbar {
     padding: 11px 15px;
     gap: 10px;
   }
-  .automation-toggle {
+  :where(.communications-surface) .automation-toggle {
     font-size: 9px;
     gap: 4px;
   }
-  .automation-toggle > svg {
+  :where(.communications-surface) .automation-toggle > svg {
     display: none;
   }
-  .assigned-label {
+  :where(.communications-surface) .assigned-label {
     gap: 3px;
   }
-  .assigned-label select {
+  :where(.communications-surface) .assigned-label select {
     max-width: 82px;
   }
-  .message-scroll {
+  :where(.communications-surface) .message-scroll {
     padding: 20px 17px 8px;
   }
-  .message-bubble {
+  :where(.communications-surface) .message-bubble {
     font-size: 12px;
     max-width: 91%;
   }
-  .message-line {
+  :where(.communications-surface) .message-line {
     margin-bottom: 20px;
   }
-  .composer-area {
+  :where(.communications-surface) .composer-area {
     padding: 12px 13px;
   }
-  .composer-heading > span {
+  :where(.communications-surface) .composer-heading > span {
     font-size: 9px;
   }
-  .composer-footnote {
+  :where(.communications-surface) .composer-footnote {
     font-size: 9px;
   }
-  .reply-options {
+  :where(.communications-surface) .reply-options {
     gap: 8px;
   }
-  .composer-box textarea {
+  :where(.communications-surface) .composer-box textarea {
     min-height: 65px;
   }
-  .customer-context {
+  :where(.communications-surface) .customer-context {
     display: none;
   }
-  .context-open .customer-context {
+  :where(.communications-surface) .context-open .customer-context {
     top: 0;
     bottom: 0;
     width: min(300px, 100%);
     position: absolute;
   }
-  .thread-preview {
+  :where(.communications-surface) .thread-preview {
     max-width: calc(100vw - 100px);
   }
-  .thread-top strong {
+  :where(.communications-surface) .thread-top strong {
     font-size: 13px;
   }
-  .thread-row {
+  :where(.communications-surface) .thread-row {
     padding: 18px 19px;
   }
-  .list-tools {
+  :where(.communications-surface) .list-tools {
     padding: 15px 18px;
   }
-  .view-tabs {
+  :where(.communications-surface) .view-tabs {
     justify-content: space-between;
   }
-  .view-tabs button {
+  :where(.communications-surface) .view-tabs button {
     padding: 8px 10px;
   }
-  .channel-filters {
+  :where(.communications-surface) .channel-filters {
     gap: 7px;
   }
-  .channel-filters button {
+  :where(.communications-surface) .channel-filters button {
     padding: 7px 10px;
   }
-  .search-field {
+  :where(.communications-surface) .search-field {
     padding: 11px;
   }
-  .thread-company {
+  :where(.communications-surface) .thread-company {
     font-size: 11px;
   }
-  .thread-top > span {
+  :where(.communications-surface) .thread-top > span {
     font-size: 10px;
   }
-  .thread-meta {
+  :where(.communications-surface) .thread-meta {
     font-size: 10px;
   }
-  .feedback {
+  :where(.communications-surface) .feedback {
     bottom: 10px;
     font-size: 10px;
     width: max-content;
     max-width: 94%;
   }
-  .connections-sheet {
+  :where(.communications-surface) .connections-sheet {
     padding: 23px;
   }
-  .connection-row {
+  :where(.communications-surface) .connection-row {
     gap: 9px;
   }
-  .connection-state {
+  :where(.communications-surface) .connection-state {
     font-size: 8px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  * {
+  :where(.communications-surface) * {
     transition: none !important;
     scroll-behavior: auto !important;
   }
 }
 
-.inbox-entry {
+:where(.communications-surface) .inbox-entry {
   max-width: 420px;
   margin: 12vh auto;
   padding: 28px;
   font-family: system-ui, sans-serif;
   color: #172b3a;
 }
-.inbox-entry form,
-.inbox-entry label {
+:where(.communications-surface) .inbox-entry form,
+:where(.communications-surface) .inbox-entry label {
   display: grid;
   gap: 12px;
 }
-.inbox-entry form {
+:where(.communications-surface) .inbox-entry form {
   gap: 24px;
 }
-.inbox-entry input {
+:where(.communications-surface) .inbox-entry input {
   padding: 12px;
   border: 1px solid #cbd5db;
   border-radius: 8px;
   font: inherit;
 }
 
-.sms-setup {
+:where(.communications-surface) .sms-setup {
   max-width: 1080px;
   margin: 0 auto;
   padding: 36px;
@@ -1403,37 +1406,37 @@ textarea::placeholder {
   background: #f8fafb;
   min-height: 100vh;
 }
-.sms-setup button {
+:where(.communications-surface) .sms-setup button {
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
-.sms-setup-header {
+:where(.communications-surface) .sms-setup-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
   margin: 24px 0;
 }
-.sms-setup h1 {
+:where(.communications-surface) .sms-setup h1 {
   font-size: 30px;
   margin: 5px 0;
   letter-spacing: -0.7px;
 }
-.sms-setup h2 {
+:where(.communications-surface) .sms-setup h2 {
   font-size: 17px;
   margin: 0 0 18px;
 }
-.sms-setup-header p {
+:where(.communications-surface) .sms-setup-header p {
   color: #65717e;
   margin: 8px 0;
 }
-.sms-eyebrow {
+:where(.communications-surface) .sms-eyebrow {
   font-size: 12px;
   font-weight: 600;
 }
-.sms-state {
+:where(.communications-surface) .sms-state {
   text-transform: capitalize;
   padding: 7px 12px;
   background: #e9edf1;
@@ -1441,7 +1444,7 @@ textarea::placeholder {
   font-size: 12px;
   white-space: nowrap;
 }
-.sms-hold {
+:where(.communications-surface) .sms-hold {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -1451,37 +1454,37 @@ textarea::placeholder {
   border-radius: 10px;
   font-size: 13px;
 }
-.sms-connection,
-.sms-form-section {
+:where(.communications-surface) .sms-connection,
+:where(.communications-surface) .sms-form-section {
   padding: 24px;
   background: white;
   border: 1px solid #e1e6eb;
   border-radius: 12px;
   margin-top: 20px;
 }
-.sms-connection {
+:where(.communications-surface) .sms-connection {
   font-size: 13px;
 }
-.sms-connection li {
+:where(.communications-surface) .sms-connection li {
   margin: 7px 0;
   text-transform: capitalize;
 }
-.sms-field-grid {
+:where(.communications-surface) .sms-field-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 18px 24px;
 }
-.sms-setup label,
-.sms-consent-form label {
+:where(.communications-surface) .sms-setup label,
+:where(.communications-surface) .sms-consent-form label {
   display: flex;
   flex-direction: column;
   gap: 7px;
   font-size: 12px;
   font-weight: 600;
 }
-.sms-setup input,
-.sms-setup textarea,
-.sms-consent-form input:not([type="checkbox"]) {
+:where(.communications-surface) .sms-setup input,
+:where(.communications-surface) .sms-setup textarea,
+:where(.communications-surface) .sms-consent-form input:not([type="checkbox"]) {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
@@ -1493,81 +1496,129 @@ textarea::placeholder {
   font-weight: 400;
   color: #182330;
 }
-.sms-setup input:focus,
-.sms-setup textarea:focus {
+:where(.communications-surface) .sms-setup input:focus,
+:where(.communications-surface) .sms-setup textarea:focus {
   outline: 2px solid #a3c4ff;
   outline-offset: 1px;
 }
-.sms-form-section > label {
+:where(.communications-surface) .sms-form-section > label {
   margin-top: 18px;
 }
-.sms-setup textarea {
+:where(.communications-surface) .sms-setup textarea {
   resize: vertical;
 }
-.sms-actions {
+:where(.communications-surface) .sms-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
   margin: 24px 0;
 }
-.sms-actions span {
+:where(.communications-surface) .sms-actions span {
   font-size: 12px;
   color: #65717e;
 }
-.sms-error {
+:where(.communications-surface) .sms-error {
   color: #a33d3d !important;
   font-size: 13px;
 }
-.sms-consent-form {
+:where(.communications-surface) .sms-consent-form {
   display: grid;
   gap: 12px;
   margin-top: 14px;
 }
-.sms-consent-actions {
+:where(.communications-surface) .sms-consent-actions {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
 }
-.sms-consent-actions button {
+:where(.communications-surface) .sms-consent-actions button {
   white-space: nowrap;
   font-size: 11px;
   padding: 7px;
 }
-.sms-consent-form .sms-checkbox {
+:where(.communications-surface) .sms-consent-form .sms-checkbox {
   flex-direction: row;
   align-items: flex-start;
   font-weight: 400;
   line-height: 1.5;
 }
-.sms-checkbox input {
+:where(.communications-surface) .sms-checkbox input {
   margin-top: 3px;
 }
-.sms-consent p {
+:where(.communications-surface) .sms-consent p {
   font-size: 12px;
 }
 @media (max-width: 640px) {
-  .sms-setup {
+  :where(.communications-surface) .sms-setup {
     padding: 20px 16px;
   }
-  .sms-field-grid {
+  :where(.communications-surface) .sms-field-grid {
     grid-template-columns: 1fr;
   }
-  .sms-setup-header {
+  :where(.communications-surface) .sms-setup-header {
     align-items: flex-start;
   }
-  .sms-connection,
-  .sms-form-section {
+  :where(.communications-surface) .sms-connection,
+  :where(.communications-surface) .sms-form-section {
     padding: 18px;
   }
-  .sms-setup h1 {
+  :where(.communications-surface) .sms-setup h1 {
     font-size: 26px;
   }
-  .sms-hold {
+  :where(.communications-surface) .sms-hold {
     align-items: flex-start;
     line-height: 1.5;
   }
-  .sms-hold svg {
+  :where(.communications-surface) .sms-hold svg {
     flex-shrink: 0;
+  }
+}
+
+/* Embedded inbox uses the dashboard's navigation and available content height. */
+.communications-surface.communications-embedded {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 16px;
+}
+.communications-embedded .comms-app {
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  flex: 1;
+}
+.communications-embedded .comms-workspace {
+  min-height: 0;
+}
+.communications-embedded .inbox-entry {
+  margin: auto;
+  background: var(--canvas);
+}
+.communications-embedded .sms-setup {
+  min-height: 0;
+  width: 100%;
+  overflow-y: auto;
+}
+
+:where(.communications-surface) .previous-inbox {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .communications-embedded .page-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .communications-embedded .page-actions {
+    flex-wrap: wrap;
+  }
+  .communications-embedded .previous-inbox {
+    font-size: 11px;
   }
 }

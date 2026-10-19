@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ConnectedInbox from "./ConnectedInbox";
+import DashboardInboxPage from "./DashboardInboxPage";
 import { inboxApi } from "./api";
 import { useAuthStore } from "../../stores/authStore";
 import { createDemoConversations, DEMO_TENANT, DEMO_USER } from "./fixtures";
@@ -35,6 +36,8 @@ vi.mock("./api", async (original) => {
     },
   };
 });
+const unreadCache = vi.hoisted(() => ({ setQueryData: vi.fn() }));
+vi.mock("@tanstack/react-query", () => ({ useQueryClient: () => unreadCache }));
 const row = { ...createDemoConversations()[0], version: 2 };
 const storeKey = `inbox-send:${DEMO_TENANT}:${DEMO_USER}`;
 beforeEach(() => {
@@ -170,5 +173,60 @@ describe("SMS setup entry", () => {
     expect(
       screen.queryByRole("button", { name: "SMS setup" }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("dashboard inbox integration", () => {
+  it("explains the existing routing hold without enabling sending", async () => {
+    const held = {
+      ...row,
+      sendPolicy: { canSend: false, reason: "routing_disabled" as const },
+    };
+    vi.mocked(inboxApi.list).mockResolvedValue([held]);
+    vi.mocked(inboxApi.detail).mockResolvedValue(held);
+    render(<DashboardInboxPage />);
+    expect(
+      await screen.findByText(
+        "SMS routing for this shop is awaiting activation.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send SMS" })).toBeDisabled();
+    expect(inboxApi.send).not.toHaveBeenCalled();
+  });
+
+  it("loads real API rows inside the dashboard without prototype chrome or sample contacts", async () => {
+    render(<DashboardInboxPage />);
+    await screen.findByRole("textbox", { name: "Message draft" });
+    expect(inboxApi.bootstrap).toHaveBeenCalledTimes(1);
+    expect(inboxApi.list).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByLabelText("DieselBridge workspace"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Connected inbox")).not.toBeInTheDocument();
+    expect(screen.queryByText("Interactive prototype")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: row.customerName }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Message draft" })).toHaveValue(
+      "",
+    );
+    expect(inboxApi.send).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(unreadCache.setQueryData).toHaveBeenLastCalledWith(
+        ["messages-unread-summary"],
+        { unread_count_staff: 0 },
+      ),
+    );
+  });
+
+  it("shows an empty API inbox without falling back to demo conversations", async () => {
+    vi.mocked(inboxApi.list).mockResolvedValue([]);
+    render(<DashboardInboxPage />);
+    expect(await screen.findByText(/No conversations yet/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("textbox", { name: "Message draft" }),
+    ).not.toBeInTheDocument();
+    expect(inboxApi.detail).not.toHaveBeenCalled();
+    expect(inboxApi.send).not.toHaveBeenCalled();
   });
 });

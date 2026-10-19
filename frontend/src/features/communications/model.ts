@@ -15,7 +15,13 @@ export type SendRestriction =
   | "identity_unverified"
   | "ambiguous_outcome"
   | "template_required"
-  | "not_started";
+  | "not_started"
+  | "routing_disabled"
+  | "credentials_unavailable"
+  | "tenant_disabled"
+  | "binding_changed"
+  | "registration_required"
+  | "consent_required";
 export interface Message {
   id: string;
   conversationId: string;
@@ -63,6 +69,12 @@ export const channelLabels: Record<Channel, string> = {
 };
 export const restrictionLabels: Record<SendRestriction, string> = {
   not_connected: "This channel is not connected yet.",
+  routing_disabled: "SMS routing for this shop is awaiting activation.",
+  credentials_unavailable: "This shop’s SMS connection needs review.",
+  tenant_disabled: "SMS is disabled for this shop.",
+  binding_changed: "The SMS connection changed. Refresh before replying.",
+  registration_required: "This shop’s SMS registration needs approval.",
+  consent_required: "Record this contact’s SMS consent before replying.",
   opted_out: "This contact has opted out of SMS.",
   identity_unverified: "Verify and link this contact before replying.",
   ambiguous_outcome:
