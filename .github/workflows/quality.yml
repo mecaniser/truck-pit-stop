@@ -17,17 +17,34 @@ concurrency:
 jobs:
   migration-graph:
     name: Migration graph
+    outputs:
+      backend_required: ${{ steps.scope.outputs.backend_required }}
     # Forks retain all checks on free hosted runners. VM isolation is the
     # security boundary even if a fork edits this routing expression.
     runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Classify PR changes
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT_NAME" = pull_request ]; then
+            python .github/scripts/ci_scope.py --base "$BASE_SHA" --head "$HEAD_SHA" | tee "$GITHUB_OUTPUT"
+          else
+            echo 'backend_required=true' | tee "$GITHUB_OUTPUT"
+            echo 'reason=main or manual run' | tee -a "$GITHUB_OUTPUT"
+          fi
       - name: Install Alembic
         run: python -m pip install --upgrade pip alembic==1.12.1 sqlalchemy==2.0.23
       - name: Verify one Alembic head
@@ -56,17 +73,25 @@ jobs:
     # security boundary even if a fork edits this routing expression.
     runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
     steps:
+      - name: Frontend-only PR; backend suite covered on main
+        if: needs.migration-graph.outputs.backend_required == 'false'
+        run: echo 'Backend pytest omitted for frontend-and-docs-only PR; main still runs it.'
       - uses: actions/checkout@v4
+        if: needs.migration-graph.outputs.backend_required != 'false'
       - uses: actions/setup-python@v5
+        if: needs.migration-graph.outputs.backend_required != 'false'
         with:
           python-version: '3.11'
       - name: Install dependencies
+        if: needs.migration-graph.outputs.backend_required != 'false'
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r backend/requirements-dev.txt
       - name: Compile backend modules
+        if: needs.migration-graph.outputs.backend_required != 'false'
         run: python -m compileall -q backend/app backend/scripts
       - name: Run critical regression suite
+        if: needs.migration-graph.outputs.backend_required != 'false'
         working-directory: backend
         run: |
           python -m pytest \
@@ -97,15 +122,22 @@ jobs:
     runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
     continue-on-error: true
     steps:
+      - name: Frontend-only PR; backend suite covered on main
+        if: needs.migration-graph.outputs.backend_required == 'false'
+        run: echo 'Full backend pytest omitted for frontend-and-docs-only PR; main still runs it.'
       - uses: actions/checkout@v4
+        if: needs.migration-graph.outputs.backend_required != 'false'
       - uses: actions/setup-python@v5
+        if: needs.migration-graph.outputs.backend_required != 'false'
         with:
           python-version: '3.11'
       - name: Install dependencies
+        if: needs.migration-graph.outputs.backend_required != 'false'
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r backend/requirements-dev.txt
       - name: Run full backend suite
+        if: needs.migration-graph.outputs.backend_required != 'false'
         working-directory: backend
         run: python -m pytest
 
