@@ -3,13 +3,19 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ReactNode } from 'react'
 import api from '@/lib/api'
 import GarageAnalyticsPage from '../GarageAnalyticsPage'
 
 vi.mock('@/lib/api', () => ({ default: { get: vi.fn() } }))
 vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ accentColors: { 500: '#087252' } }) }))
 vi.mock('../../analytics/ChartKit', () => ({ ChartCard: () => null, ProfitabilityScatter: () => null, QuoteFunnel: () => null, RankedBar: () => null, ParetoChart: () => null }))
-vi.mock('recharts', () => ({ BarChart: () => null, Bar: () => null, XAxis: () => null, YAxis: () => null, Tooltip: () => null, ResponsiveContainer: () => null }))
+vi.mock('recharts', () => ({
+  BarChart: ({ children }: { children: ReactNode }) => <>{children}</>,
+  ResponsiveContainer: ({ children }: { children: ReactNode }) => <>{children}</>,
+  Bar: () => null, XAxis: () => null, YAxis: () => null, Tooltip: () => null,
+  ReferenceLine: ({ y }: { y: number }) => <div data-testid="median-line" data-y={y} />,
+}))
 const metric = { value: '0', trend: [] }
 const report = {
   range_start: '2024-02-29', range_end: '2024-03-10', rows: [], summary: {},
@@ -26,6 +32,19 @@ function show(tab: string) {
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter initialEntries={[`/?tab=${tab}&range=custom&from_date=2024-02-29&to_date=2024-03-10`]}><GarageAnalyticsPage /></MemoryRouter></QueryClientProvider>)
 }
 describe('Analytics report date contract', () => {
+  it('labels the median from the displayed revenue weeks, including zero weeks', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: {
+      ...report,
+      revenue: { value: '70000', trend: [
+        { label: 'W1', value: '0' }, { label: 'W2', value: '10000' },
+        { label: 'W3', value: '20000' }, { label: 'W4', value: '40000' },
+      ] },
+    } })
+    show('dashboard')
+    expect(await screen.findByText('Median weekly revenue $15,000.00')).toBeVisible()
+    expect(screen.getByTestId('median-line')).toHaveAttribute('data-y', '15000')
+  })
+
   it('shows cash received separately with expandable receipt evidence, without changing sales totals', async () => {
     vi.mocked(api.get).mockResolvedValue({ data: { ...report,
       summary: { net_sales: '1000.00' }, cash_received: '224.62',
