@@ -118,7 +118,7 @@ async def send(context, body, to, *, source="manual"):
         if 400 <= response.status_code < 500 and response.status_code not in {408, 429}:
             raise CallRailRejected(str(response.status_code))
         raise RuntimeError('CallRail outcome unknown')
-    if response.status_code != 201:
+    if response.status_code not in {200, 201}:
         raise RuntimeError('CallRail outcome unknown')
     result = response.json()
     identifier = result.get('id')
