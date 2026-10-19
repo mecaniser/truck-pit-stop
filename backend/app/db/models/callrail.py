@@ -1,5 +1,5 @@
 """Explicit manual-only provider bindings; never infer a shop from a phone match."""
-from sqlalchemy import Column, String, ForeignKey, Boolean, Text, JSON, UniqueConstraint
+from sqlalchemy import Column, String, ForeignKey, Boolean, Text, JSON, UniqueConstraint, Index, text
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.base import BaseModel
 
@@ -19,7 +19,12 @@ class CallRailNumberBinding(BaseModel):
 
 class CallRailConversation(BaseModel):
     __tablename__ = 'callrail_conversations'
-    __table_args__ = (UniqueConstraint('thread_id'), UniqueConstraint('binding_id', 'customer_phone'))
+    __table_args__ = (UniqueConstraint('thread_id', 'binding_id', name='uq_callrail_thread_binding'),
+        UniqueConstraint('binding_id', 'customer_phone'),
+        Index('uq_callrail_selected_thread', 'thread_id', unique=True,
+              postgresql_where=text('selected_for_sending AND deleted_at IS NULL'),
+              sqlite_where=text('selected_for_sending AND deleted_at IS NULL')))
+    selected_for_sending = Column(Boolean, nullable=False, default=True, server_default='true')
     tenant_id = Column(UUID(as_uuid=True), ForeignKey('tenants.id'), nullable=False, index=True)
     thread_id = Column(UUID(as_uuid=True), ForeignKey('message_threads.id'), nullable=False)
     binding_id = Column(UUID(as_uuid=True), ForeignKey('callrail_number_bindings.id'), nullable=False)

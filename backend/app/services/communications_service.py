@@ -145,7 +145,7 @@ async def send_policy(db, tenant, thread, sender, *, ignore_operation=None):
             }
             if (not callrail_context and any(_normalize_for_twilio(p) == phone for p in others)) or len(remotes) > 1 or (remotes and phone not in remotes):
                 reason = 'identity_unverified'
-    held = select(SMSSendOperation.id).where(SMSSendOperation.tenant_id == tenant.id, SMSSendOperation.thread_id == thread.id, SMSSendOperation.state.in_(['unknown', 'dispatching']))
+    held = select(SMSSendOperation.id).where(SMSSendOperation.tenant_id == tenant.id, or_(SMSSendOperation.thread_id == thread.id, SMSSendOperation.to_number == phone), SMSSendOperation.state.in_(['unknown', 'dispatching']))
     if ignore_operation:
         held = held.where(SMSSendOperation.id != ignore_operation)
     if await db.scalar(held.limit(1)):
@@ -203,13 +203,7 @@ async def message_json(db, message):
 async def conversation_json(db, tenant, user, thread, sender):
     policy, account, identity, _, phone, customer = await send_policy(db, tenant, thread, sender)
     wf = await db.scalar(select(ConversationWorkflow).where(ConversationWorkflow.tenant_id == tenant.id, ConversationWorkflow.thread_id == thread.id))
-    context = {}
-    try:
-        selected = await callrail.resolve_for_thread(db, tenant.id, thread.id)
-        if selected:
-            context = {'sms_provider': 'callrail', 'sender_number': selected.sender_phone}
-    except HTTPException:
-        pass  # Policy carries the hold; never expose credentials or hidden provider details.
+    context = await callrail.sender_context(db, tenant, thread)
     return dict(id=thread.id, tenant_id=tenant.id, customer_id=thread.customer_id, customer_name=f'{customer.first_name} {customer.last_name}' if customer else 'Unavailable customer', company=customer.company_name if customer else None, channel='sms', channel_account_id=account, contact_identity_id=identity, identity_label=phone, status=wf.status if wf else 'open', assignee_id=wf.assignee_id if wf else None, unread_count=await unread_count(db, thread, user.id), last_message_at=thread.last_message_at or thread.created_at, preview=thread.last_message_preview or '', version=wf.version if wf else 1, messages=[], send_policy=policy, context=context)
 
 

@@ -4,7 +4,7 @@ import hashlib
 import hmac
 import os
 from datetime import datetime, timezone, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 import httpx
 import pytest
 import pytest_asyncio
@@ -346,3 +346,253 @@ async def test_live_sci_only_receipt_deduplicates_api_import(mapped):
     assert await db.scalar(select(func.count()).select_from(SMSMessage).where(SMSMessage.thread_id == thread.id)) == 1
     numeric_only = event(); numeric_only.pop('resource_id')
     assert (await svc.apply_event(db, binding.id, numeric_only, 'received'))['reason'] == 'missing_message_identity'
+
+
+@isolated
+@pytest.mark.asyncio
+async def test_sender_options_tenant_scope_noop_restore_and_phone_conflict(mapped):
+    from app.db.models.tenant import Tenant
+    from app.db.models.customer import Customer
+    from app.db.models.message_thread import MessageThread
+    db, binding, mapping, customer, thread = mapped
+    tenant = await db.get(Tenant, binding.tenant_id)
+    tenant.sms_phone_number = '+1'+str(2000000000 + uuid4().int % 7000000000)
+    other_tenant = Tenant(name='Other tenant', slug='cr-other-'+uuid4().hex)
+    db.add(other_tenant); await db.flush()
+    foreign = CallRailNumberBinding(tenant_id=other_tenant.id, account_id='ACC'+uuid4().hex, company_id='COMother',
+        tracker_id='TRKother', sender_phone='+15005550999', credential_ref='CALLRAIL_TEST', signing_secret_ref='CALLRAIL_SIGNING', enabled=True)
+    db.add(foreign); await db.commit()
+    await svc.lock_sender_bindings(db, tenant.id)
+    options = await svc.sender_context(db, tenant, thread)
+    assert options['selected_sender_id'] == str(binding.id)
+    assert {row['id'] for row in options['sms_sender_options']} == {'twilio', str(binding.id)}
+    assert await svc.set_sender(db, tenant, thread, binding.id) is False
+    assert await svc.set_sender(db, tenant, thread, None) is True
+    await db.flush()
+    assert (await svc.sender_context(db, tenant, thread))['selected_sender_id'] == 'twilio'
+    assert await svc.set_sender(db, tenant, thread, None) is False
+    assert await svc.set_sender(db, tenant, thread, binding.id) is True
+    assert mapping.deleted_at is None
+    with pytest.raises(HTTPException) as error:
+        await svc.set_sender(db, tenant, thread, foreign.id)
+    assert error.value.status_code == 404
+    duplicate = Customer(tenant_id=tenant.id, first_name='ETS', last_name='Preserved',
+        email=uuid4().hex+'@example.test', phone=customer.phone)
+    db.add(duplicate); await db.flush()
+    other_thread = MessageThread(tenant_id=tenant.id, customer_id=duplicate.id, customer_phone=customer.phone)
+    db.add(other_thread); await db.flush()
+    with pytest.raises(HTTPException) as error:
+        await svc.set_sender(db, tenant, other_thread, binding.id)
+    assert error.value.detail['code'] == 'callrail_phone_conflict'
+    binding.enabled = False
+    await db.flush()
+    options = await svc.sender_context(db, tenant, thread)
+    assert options['selected_sender_id'] == str(binding.id)
+    assert options['sms_sender_options'][1]['enabled'] is False
+    with pytest.raises(HTTPException) as error:
+        await svc.set_sender(db, tenant, thread, binding.id)
+    assert error.value.detail['code'] == 'callrail_binding_disabled'
+
+
+@isolated
+@pytest.mark.asyncio
+async def test_sender_patch_stale_version_and_pending_switch_hold(mapped, monkeypatch):
+    from app.db.models.tenant import Tenant
+    from app.db.models.user import User
+    from app.db.models.communication import SMSSendOperation
+    from app.db.models.sms_message import SMSMessageDirection, SMSMessageSource, SMSDeliveryStatus
+    from app.api.v1.endpoints.communications import patch_sender, SenderPatch
+    from app.services import communications_service as communication
+    db, binding, mapping, customer, thread = mapped
+    tenant = await db.get(Tenant, binding.tenant_id)
+    tenant.messaging_enabled = True
+    user = User(tenant_id=tenant.id, first_name='Test', last_name='Staff', email=uuid4().hex+'@example.test',
+        hashed_password='disabled', role='garage_owner', is_active=True)
+    db.add(user); await db.commit()
+    class Sender:
+        mode = 'simulated'
+        ready = True
+    with pytest.raises(HTTPException) as error:
+        await patch_sender(thread.id, SenderPatch(expected_version=99, binding_id=None), db, user, Sender())
+    assert error.value.detail['code'] == 'stale_version'
+    await db.rollback()
+    await db.refresh(thread); await db.refresh(tenant); await db.refresh(user); await db.refresh(binding)
+    # Stub serialization only: the mutation still exercises real auth/version/locks.
+    async def conversation_json(*args):
+        wf = await communication.workflow(db, thread)
+        return {'version': wf.version}
+    monkeypatch.setattr(communication, 'conversation_json', conversation_json)
+    result = await patch_sender(thread.id, SenderPatch(expected_version=1, binding_id=None), db, user, Sender())
+    assert result['version'] == 2
+    result = await patch_sender(thread.id, SenderPatch(expected_version=2, binding_id=None), db, user, Sender())
+    assert result['version'] == 2
+    message = SMSMessage(tenant_id=tenant.id, thread_id=thread.id, customer_id=customer.id,
+        direction=SMSMessageDirection.OUTBOUND, source=SMSMessageSource.MANUAL, body='Pending',
+        delivery_status=SMSDeliveryStatus.PENDING)
+    db.add(message); await db.flush()
+    operation = SMSSendOperation(tenant_id=tenant.id, thread_id=thread.id, message_id=message.id, actor_id=user.id,
+        idempotency_key=uuid4().hex, payload_hash='a'*64, channel_account_id=uuid4(), contact_identity_id=uuid4(),
+        from_number=binding.sender_phone, to_number=customer.phone, body='Pending', state='pending', attempt_count=0)
+    db.add(operation); await db.commit()
+    with pytest.raises(HTTPException) as error:
+        await patch_sender(thread.id, SenderPatch(expected_version=2, binding_id=binding.id), db, user, Sender())
+    assert error.value.detail['code'] == 'ambiguous_outcome'
+
+
+@isolated
+@pytest.mark.asyncio
+async def test_competing_sender_selection_serializes_same_phone(mapped):
+    import asyncio
+    from app.db.session import AsyncSessionLocal
+    from app.db.models.tenant import Tenant
+    from app.db.models.customer import Customer
+    from app.db.models.message_thread import MessageThread
+    db, binding, mapping, customer, thread = mapped
+    other = Customer(tenant_id=binding.tenant_id, first_name='Other', last_name='Source',
+        email=uuid4().hex+'@example.test', phone=customer.phone)
+    alternate = CallRailNumberBinding(tenant_id=binding.tenant_id, account_id=binding.account_id,
+        company_id=binding.company_id, tracker_id='TRKsecond', sender_phone='+15005550003',
+        credential_ref='CALLRAIL_TEST', signing_secret_ref='CALLRAIL_SIGNING', enabled=True)
+    db.add_all([other, alternate]); await db.flush()
+    other_thread = MessageThread(tenant_id=binding.tenant_id, customer_id=other.id, customer_phone=customer.phone)
+    db.add(other_thread); await db.commit()
+    tenant_id, target_id = binding.tenant_id, alternate.id
+    async def select_sender(thread_id):
+        async with AsyncSessionLocal() as session:
+            tenant = await session.get(Tenant, tenant_id)
+            await svc.lock_sender_bindings(session, tenant_id)
+            locked_thread = await session.scalar(select(MessageThread).where(MessageThread.id == thread_id).with_for_update())
+            try:
+                await svc.set_sender(session, tenant, locked_thread, target_id)
+                await session.commit()
+                return 'selected'
+            except HTTPException as error:
+                await session.rollback()
+                return error.detail['code']
+    results = await asyncio.gather(select_sender(thread.id), select_sender(other_thread.id))
+    assert sorted(results) == ['callrail_phone_conflict', 'selected']
+
+
+@isolated
+@pytest.mark.asyncio
+async def test_sender_change_holds_unknown_automated_recipient(mapped):
+    from app.db.models.tenant import Tenant
+    from app.db.models.notification import Notification
+    from app.db.models.automated_sms import AutomatedSMSOperation
+    db, binding, mapping, customer, thread = mapped
+    tenant = await db.get(Tenant, binding.tenant_id)
+    receipt = Notification(tenant_id=tenant.id, type='sms', status='pending', body='Automated fixture', recipient_phone=customer.phone)
+    db.add(receipt); await db.flush()
+    operation = AutomatedSMSOperation(tenant_id=tenant.id, event_key=uuid4().hex, domain_event_id=uuid4().hex,
+        template_name='test', template_version='1', recipient_kind='customer', recipient_id=customer.id,
+        from_number='+15005550000', to_number=customer.phone, body='Automated fixture', payload_hash='a'*64,
+        notification_id=receipt.id, state='unknown', attempt_count=1, reconciliation_state='required', delivery_status='pending')
+    db.add(operation); await db.commit()
+    await svc.lock_sender_bindings(db, tenant.id)
+    with pytest.raises(HTTPException) as error:
+        await svc.set_sender(db, tenant, thread, None)
+    assert error.value.detail['code'] == 'ambiguous_outcome'
+    assert mapping.deleted_at is None
+
+
+@isolated
+@pytest.mark.asyncio
+async def test_sender_change_holds_unknown_manual_same_phone_other_thread(mapped):
+    from app.db.models.tenant import Tenant
+    from app.db.models.customer import Customer
+    from app.db.models.message_thread import MessageThread
+    from app.db.models.user import User
+    from app.db.models.communication import SMSSendOperation
+    from app.db.models.sms_message import SMSMessageDirection, SMSMessageSource, SMSDeliveryStatus
+    db, binding, mapping, customer, thread = mapped
+    tenant = await db.get(Tenant, binding.tenant_id)
+    duplicate = Customer(tenant_id=tenant.id, first_name='ETS', last_name='Duplicate',
+        email=uuid4().hex+'@example.test', phone=customer.phone)
+    user = User(tenant_id=tenant.id, first_name='Staff', last_name='Test', email=uuid4().hex+'@example.test',
+        hashed_password='disabled', role='garage_owner', is_active=True)
+    alternate = CallRailNumberBinding(tenant_id=tenant.id, account_id=binding.account_id,
+        company_id=binding.company_id, tracker_id='TRKalternate', sender_phone='+15005550004',
+        credential_ref='CALLRAIL_TEST', signing_secret_ref='CALLRAIL_SIGNING', enabled=True)
+    db.add_all([duplicate, user, alternate]); await db.flush()
+    duplicate_thread = MessageThread(tenant_id=tenant.id, customer_id=duplicate.id, customer_phone=duplicate.phone)
+    db.add(duplicate_thread); await db.flush()
+    message = SMSMessage(tenant_id=tenant.id, thread_id=thread.id, customer_id=customer.id,
+        direction=SMSMessageDirection.OUTBOUND, source=SMSMessageSource.MANUAL, body='Held fixture',
+        delivery_status=SMSDeliveryStatus.PENDING)
+    db.add(message); await db.flush()
+    operation = SMSSendOperation(tenant_id=tenant.id, thread_id=thread.id, message_id=message.id, actor_id=user.id,
+        idempotency_key=uuid4().hex, payload_hash='a'*64, channel_account_id=uuid4(), contact_identity_id=uuid4(),
+        from_number=binding.sender_phone, to_number=customer.phone, body='Held fixture', state='unknown', attempt_count=1)
+    db.add(operation); await db.commit()
+    await svc.lock_sender_bindings(db, tenant.id)
+    with pytest.raises(HTTPException) as error:
+        await svc.set_sender(db, tenant, duplicate_thread, alternate.id)
+    assert error.value.detail['code'] == 'ambiguous_outcome'
+    assert await db.scalar(select(CallRailConversation.id).where(CallRailConversation.thread_id == duplicate_thread.id)) is None
+    assert mapping.binding_id == binding.id and mapping.deleted_at is None
+
+
+@isolated
+@pytest.mark.asyncio
+async def test_inbound_routes_survive_outbound_sender_changes_and_twilio(mapped):
+    from app.db.models.tenant import Tenant
+    from app.db.models.customer import Customer
+    from app.db.models.message_thread import MessageThread
+    db, binding, mapping, customer, thread = mapped
+    tenant = await db.get(Tenant, binding.tenant_id)
+    alternate = CallRailNumberBinding(tenant_id=tenant.id, account_id=binding.account_id,
+        company_id=binding.company_id, tracker_id='TRKpreserved', sender_phone='+15005550005',
+        credential_ref='CALLRAIL_TEST', signing_secret_ref='CALLRAIL_SIGNING', enabled=True)
+    duplicate = Customer(tenant_id=tenant.id, first_name='ETS', last_name='Source',
+        email=uuid4().hex+'@example.test', phone=customer.phone)
+    db.add_all([alternate, duplicate]); await db.flush()
+    duplicate_thread = MessageThread(tenant_id=tenant.id, customer_id=duplicate.id, customer_phone=customer.phone)
+    db.add(duplicate_thread); await db.commit()
+    await svc.lock_sender_bindings(db, tenant.id)
+    assert await svc.set_sender(db, tenant, thread, alternate.id)
+    await db.commit()
+    assert mapping.binding_id == binding.id and mapping.deleted_at is None and not mapping.selected_for_sending
+    assert (await svc.resolve_for_thread(db, tenant.id, thread.id)).binding_id == alternate.id
+    receipt_a = event(); receipt_a.update(id=98701, resource_id='SCIafterB', content='Reply to original A')
+    result = await svc.apply_event(db, binding.id, receipt_a, 'received'); await db.commit()
+    assert result['status'] == 'received'
+    assert (await db.get(SMSMessage, UUID(result['message_id']))).thread_id == thread.id
+    await svc.lock_sender_bindings(db, tenant.id)
+    assert await svc.set_sender(db, tenant, thread, None)
+    await db.commit()
+    assert await svc.resolve_for_thread(db, tenant.id, thread.id) is None
+    assert (await svc.sender_context(db, tenant, thread))['selected_sender_id'] == 'twilio'
+    receipt_a.update(id=98702, resource_id='SCIafterTwilioA', content='A after Twilio')
+    assert (await svc.apply_event(db, binding.id, receipt_a, 'received'))['status'] == 'received'
+    receipt_b = dict(receipt_a, id=98703, resource_id='SCIafterTwilioB', destination_number=alternate.sender_phone,
+                     content='B after Twilio')
+    assert (await svc.apply_event(db, alternate.id, receipt_b, 'received'))['status'] == 'received'
+    await db.commit()
+    # Previous sender reservations still belong to the canonical DBN thread.
+    await svc.lock_sender_bindings(db, tenant.id)
+    with pytest.raises(HTTPException) as error:
+        await svc.set_sender(db, tenant, duplicate_thread, binding.id)
+    assert error.value.detail['code'] == 'callrail_phone_conflict'
+    assert await svc.set_sender(db, tenant, thread, binding.id)
+    await db.commit()
+    routes = (await db.scalars(select(CallRailConversation).where(CallRailConversation.thread_id == thread.id))).all()
+    assert len(routes) == 2 and sum(row.selected_for_sending for row in routes) == 1
+    assert next(row for row in routes if row.selected_for_sending).binding_id == binding.id
+    # Concurrent outbound choices serialize and retain exactly one selection.
+    import asyncio
+    from app.db.session import AsyncSessionLocal
+    tenant_id, thread_id = tenant.id, thread.id
+    async def choose(binding_id):
+        async with AsyncSessionLocal() as session:
+            current_tenant = await session.get(Tenant, tenant_id)
+            await svc.lock_sender_bindings(session, tenant_id)
+            locked = await session.scalar(select(MessageThread).where(MessageThread.id == thread_id).with_for_update())
+            await svc.set_sender(session, current_tenant, locked, binding_id)
+            await session.commit()
+    binding_a_id, binding_b_id = binding.id, alternate.id
+    await db.rollback()
+    await asyncio.gather(choose(binding_a_id), choose(binding_b_id))
+    selected_count = await db.scalar(select(func.count()).select_from(CallRailConversation).where(
+        CallRailConversation.thread_id == thread_id, CallRailConversation.selected_for_sending.is_(True),
+        CallRailConversation.deleted_at.is_(None)))
+    assert selected_count == 1

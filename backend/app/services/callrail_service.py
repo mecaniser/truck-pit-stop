@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 from uuid import UUID
 import httpx
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from app.db.models.callrail import CallRailNumberBinding, CallRailConversation, CallRailMessageAlias, CallRailQuarantine
 from app.db.models.communication import ConversationWorkflow, SMSSendOperation
 from app.db.models.customer import Customer
@@ -61,9 +61,14 @@ class CallRailContext:
 async def resolve_for_thread(db, tenant_id, thread_id, *, allow_opt_out=False):
     mapping = await db.scalar(select(CallRailConversation).where(
         CallRailConversation.thread_id == thread_id, CallRailConversation.tenant_id == tenant_id,
-        CallRailConversation.deleted_at.is_(None)))
+        CallRailConversation.deleted_at.is_(None), CallRailConversation.selected_for_sending.is_(True)))
     if not mapping:
         return None
+    return await _context_for_mapping(db, mapping, allow_opt_out=allow_opt_out)
+
+
+async def _context_for_mapping(db, mapping, *, allow_opt_out=False):
+    tenant_id, thread_id = mapping.tenant_id, mapping.thread_id
     binding = await db.get(CallRailNumberBinding, mapping.binding_id)
     thread = await db.get(MessageThread, thread_id)
     customer = await db.get(Customer, mapping.customer_id)
@@ -177,7 +182,7 @@ async def apply_event(db, binding_id, payload, event_kind, *, historical=False, 
     if not mapping:
         return await _quarantine(db, binding, payload, 'unmapped_contact')
     try:
-        context = await resolve_for_thread(db, binding.tenant_id, mapping.thread_id, allow_opt_out=True)
+        context = await _context_for_mapping(db, mapping, allow_opt_out=True)
     except HTTPException:
         return await _quarantine(db, binding, payload, 'contact_changed')
     if not context or context.binding_id != binding.id:
@@ -304,7 +309,10 @@ async def import_conversation(db, binding_id, thread_id, record, *, verified_mes
                               .with_for_update().execution_options(populate_existing=True))
     if not binding:
         raise HTTPException(404, 'Unknown CallRail binding')
-    context = await resolve_for_thread(db, binding.tenant_id, thread_id, allow_opt_out=True)
+    route = await db.scalar(select(CallRailConversation).where(CallRailConversation.tenant_id == binding.tenant_id,
+        CallRailConversation.thread_id == thread_id, CallRailConversation.binding_id == binding_id,
+        CallRailConversation.deleted_at.is_(None)))
+    context = await _context_for_mapping(db, route, allow_opt_out=True) if route else None
     if (not context or context.binding_id != binding_id or record.get('company_id') != context.company_id
         or _current_tracker(record) != context.tracker_id
         or _phone(record.get('current_tracking_number')) != context.sender_phone
@@ -339,3 +347,84 @@ async def import_conversation(db, binding_id, thread_id, record, *, verified_mes
         results.append(await apply_event(db, binding_id, payload, 'received' if incoming else 'sent', historical=True,
                                         failed=item.get('status') in {'error', 'failed'}))
     return results
+
+
+async def sender_context(db, tenant, thread):
+    """Tenant-local choices, including a disabled current selection for clarity."""
+    mapping = await db.scalar(select(CallRailConversation).where(CallRailConversation.tenant_id == tenant.id,
+        CallRailConversation.thread_id == thread.id, CallRailConversation.deleted_at.is_(None),
+        CallRailConversation.selected_for_sending.is_(True)))
+    bindings = list((await db.scalars(select(CallRailNumberBinding).where(
+        CallRailNumberBinding.tenant_id == tenant.id, CallRailNumberBinding.enabled.is_(True),
+        CallRailNumberBinding.deleted_at.is_(None)).order_by(CallRailNumberBinding.sender_phone))).all())
+    current = await db.get(CallRailNumberBinding, mapping.binding_id) if mapping else None
+    if current and current.tenant_id == tenant.id and all(row.id != current.id for row in bindings):
+        bindings.append(current)
+    options = [{'id': 'twilio', 'provider': 'twilio', 'sender_number': _phone(tenant.sms_phone_number), 'enabled': True}]
+    options.extend({'id': str(row.id), 'provider': 'callrail', 'sender_number': row.sender_phone,
+                    'enabled': bool(row.enabled and row.deleted_at is None)} for row in bindings)
+    return {'sms_sender_options': options, 'selected_sender_id': str(mapping.binding_id) if mapping else 'twilio',
+            'sms_provider': 'callrail' if mapping else 'twilio',
+            'sender_number': current.sender_phone if current and current.tenant_id == tenant.id else _phone(tenant.sms_phone_number)}
+
+
+async def lock_sender_bindings(db, tenant_id):
+    """Lock before the thread, matching the callback binding -> thread lock order."""
+    return (await db.scalars(select(CallRailNumberBinding).where(
+        CallRailNumberBinding.tenant_id == tenant_id).order_by(CallRailNumberBinding.id).with_for_update()
+        .execution_options(populate_existing=True))).all()
+
+
+async def set_sender(db, tenant, thread, binding_id):
+    """Caller holds tenant binding locks and thread lock; never sends or changes history."""
+    from app.db.models.automated_sms import AutomatedSMSOperation
+    mapping = await db.scalar(select(CallRailConversation).where(CallRailConversation.thread_id == thread.id,
+        CallRailConversation.tenant_id == tenant.id, CallRailConversation.deleted_at.is_(None),
+        CallRailConversation.selected_for_sending.is_(True)))
+    if binding_id is None and (not mapping or mapping.deleted_at is not None):
+        return False
+    binding = None
+    if binding_id is not None:
+        binding = await db.scalar(select(CallRailNumberBinding).where(CallRailNumberBinding.id == binding_id,
+            CallRailNumberBinding.tenant_id == tenant.id))
+        if not binding:
+            raise HTTPException(404, detail={'code': 'not_found', 'message': 'Sender not found.'})
+        if not binding.enabled or binding.deleted_at is not None:
+            deny('callrail_binding_disabled')
+        if mapping and mapping.deleted_at is None and mapping.binding_id == binding_id:
+            return False
+    customer = await db.scalar(select(Customer).where(Customer.id == thread.customer_id, Customer.tenant_id == tenant.id,
+        Customer.deleted_at.is_(None)))
+    phone = _phone(customer.phone) if customer else ''
+    if (not re.fullmatch(r'\+1\d{10}', phone) or (thread.customer_phone and _phone(thread.customer_phone) != phone)
+        or (mapping and mapping.customer_phone != phone)):
+        deny('callrail_contact_changed')
+    if await db.scalar(select(SMSSendOperation.id).where(SMSSendOperation.tenant_id == tenant.id,
+        or_(SMSSendOperation.thread_id == thread.id, SMSSendOperation.to_number == phone),
+        SMSSendOperation.state.in_(['pending', 'dispatching', 'unknown'])).limit(1)):
+        deny('ambiguous_outcome')
+    if await db.scalar(select(AutomatedSMSOperation.id).where(AutomatedSMSOperation.tenant_id == tenant.id,
+        AutomatedSMSOperation.to_number == phone, AutomatedSMSOperation.state.in_(['pending', 'dispatching', 'unknown'])).limit(1)):
+        deny('ambiguous_outcome')
+    if binding is None:
+        mapping.selected_for_sending = False
+        await db.flush()
+        return True
+    conflict = await db.scalar(select(CallRailConversation.id).where(CallRailConversation.binding_id == binding.id,
+        CallRailConversation.customer_phone == phone, CallRailConversation.thread_id != thread.id))
+    if conflict:
+        deny('callrail_phone_conflict')
+    if mapping:
+        mapping.selected_for_sending = False
+        await db.flush()  # Release the partial unique selection before selecting another route.
+    target = await db.scalar(select(CallRailConversation).where(CallRailConversation.tenant_id == tenant.id,
+        CallRailConversation.thread_id == thread.id, CallRailConversation.binding_id == binding.id))
+    if target:
+        if target.customer_id != customer.id or target.customer_phone != phone or target.deleted_at is not None:
+            deny('callrail_contact_changed')
+        target.selected_for_sending = True
+    else:
+        db.add(CallRailConversation(tenant_id=tenant.id, thread_id=thread.id, customer_id=customer.id,
+            binding_id=binding.id, customer_phone=phone, selected_for_sending=True))
+    await db.flush()
+    return True

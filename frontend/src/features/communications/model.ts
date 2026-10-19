@@ -57,6 +57,8 @@ export interface Conversation {
   context: {
     smsProvider?: string;
     senderNumber?: string;
+    selectedSenderId?: string;
+    smsSenderOptions?: { id: string; provider: "twilio" | "callrail"; enabled?: boolean; senderNumber: string }[];
     vehicleLabel?: string;
     repairOrderLabel?: string;
     repairStatus?: string;

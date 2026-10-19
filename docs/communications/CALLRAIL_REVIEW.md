@@ -73,3 +73,68 @@ Superseding final delta SHA256:
 - `backend/tests/test_callrail_service.py`: `de5764ff553790931c2f01088976db3ca9cd88f451c413005441af0610f863ff`
 
 No new actionable source finding. Real pilot provenance must be recorded for each operator-allowlisted historical ID; only the two approved test-message IDs are in the planned import scope. All prior production/CI/live-acceptance gate boundaries remain unchanged. Reviewer made no implementation, provider or deployment mutation.
+
+## Staff sender selection independent gate
+
+2026-10-19: **GO for the final source and isolated test scope**, after correction of one additional gate finding. Reviewed the new authenticated PATCH sender endpoint, backend selection/context helpers, changed conversation serialization and frontend selection/draft flow against5e928028. No implementation edits were made by this reviewer.
+
+**Finding closed:** initial selection held uncertain manual sends only by thread. An independent PostgreSQL reproduction showed a duplicate ETS-like customer/thread sharing the DBN phone could choose an alternate sender around an existing unknown manual outcome. Owner corrected sender-switch holds to tenant plus thread-or-phone for pending/dispatching/unknown; manual send policy now also holds dispatching/unknown outcomes by phone. The independent reproduction now receives409 and a previously mapped duplicate conversation also cannot send around that hold.
+
+The endpoint retains existing active-user messaging authorization and optimistic version guards. Actual isolated HTTP challenges confirmed403 for an unauthorized customer-role user,404 for foreign-tenant thread/binding targets, and409 for a disabled binding. Binding locks are ordered before the thread to match callback lock order; competing same-phone selection serializes and retains the unique phone ownership guard. Idempotent same-selection requests do not increment version. No forwarding, customer identity, message history or automated transport is updated by selection.
+
+Frontend sends only after server confirmation using the returned account/version, blocks both click/keyboard sends during change, preserves over-limit drafts, and represents a disabled current option as unavailable. The reviewer independently re-ran:
+
+```
+/tmp/db134-test-venv/bin/python scripts/communications_local.py exec python -m pytest /tmp/test_callrail_sender_gate.py tests/test_callrail_service.py tests/test_callrail_dispatch.py /tmp/test_callrail_independent.py -q -p no:cacheprovider
+npm exec vitest run src/features/communications/ConnectedInbox.test.tsx src/features/communications/api.test.ts src/features/communications/communications.test.tsx
+```
+
+Results: **42 isolated backend cases passed**, two existing deprecation warnings,6.50 seconds; **29 frontend cases passed** across3files,3.07 seconds. New independent challenges include actual endpoint authorization/foreign targets/disabled binding, duplicate-phone unknown routing bypass, an already-mapped duplicate's send hold, and automated pending/dispatching/unknown phone holds.
+
+Final reviewed source SHA256 for this delta:
+
+| File | SHA256 |
+|---|---|
+| backend/app/services/callrail_service.py | 9a8257ac0bf8eb9c5817880df829ab5cbf9adb7851f4c342e6825fe1aaea578e |
+| backend/app/services/communications_service.py | 6f5fa8710dd78121d27638560b255c9ceacbae559570a2bebf563d4c2bdad64f |
+| backend/app/api/v1/endpoints/communications.py | 96b0a663d6e63482520c820cd993ba2813f1546b3e4b8da7aeb16c2593eab44d |
+| frontend/src/features/communications/ConnectedInbox.tsx | a228fc347b5b4fb76d21245a3dd1ccd22ee49ed0d706b4ba0e988653caef6fe9 |
+| frontend/src/features/communications/CommunicationsPreview.tsx | 5bfc633aa04dc986b2f9d6d110548102be886cbdc14dbf60c088767ea63f7cd5 |
+| frontend/src/features/communications/api.ts | 4a55787718415fa66fd690a305e183cc284ea0c6421d37de31b67b113bd25105 |
+| frontend/src/features/communications/model.ts | d095e64723e62b223f9a86808e91365792868c7b697d2f511f0300a5e8b52320 |
+
+Behavior boundary communicated to Product/Delivery: selecting a different binding or restoring Twilio replaces/soft-deletes the sole active CallRail conversation mapping. Existing messages remain intact, but later replies to the former CallRail binding are held as unmapped contact rather than automatically attributed to the new sender. This gate does not claim simultaneous inbound routing across historical bindings. Protected CI, actual browser acceptance and deployed/live pilot gates remain separate; automation remains disabled.
+
+## Final preservation and stale-poll correction gate
+
+2026-10-19: **GO for the final preservation delta. The former-number reply limitation in the previous section is closed.** Selection now changes only `selected_for_sending`; previous CallRail routes remain active for inbound replies on their original binding, independently of the selected outbound sender. Canonical customer/phone and tenant checks apply to each route. Restoring Twilio leaves both CallRail inbound routes intact. ETS-like duplicate threads cannot claim reserved bindings; switching back reuses the original route, and concurrent outbound choices retain exactly one selected route.
+
+Independent isolated evidence:
+
+- **45 backend cases passed**, two existing deprecation warnings,7.90 seconds. Includes prior provider/dispatch/security challenges plus actual raw-signed HTTP replies to both historical CallRail numbers after restoring Twilio. Each reply reached the original thread, replay deduplicated, and STOP on an old number still suppressed the canonical customer's SMS.
+- Independently rehearsed migration183 against182-shaped active and soft-deleted rows in a throwaway PostgreSQL schema. Existing IDs/thread/binding/phone/deleted timestamps remained identical; the added selection column defaults true. Adding a second preserved route succeeds; lossy downgrade refuses with all rows retained. The entire scratch-schema transaction was rolled back.
+- **30 frontend cases passed** across3files,3.61 seconds. The in-flight older-poll regression retains confirmed sender/account/version8 and the draft/140-character policy, then sends with the confirmed account/version. No implementation changes by this reviewer.
+- `git diff --check` passed.
+
+Commands:
+
+```
+/tmp/db134-test-venv/bin/python scripts/communications_local.py exec python -m pytest /tmp/test_callrail_preservation_gate.py /tmp/test_callrail_sender_gate.py tests/test_callrail_service.py tests/test_callrail_dispatch.py /tmp/test_callrail_independent.py -q -p no:cacheprovider
+npm exec vitest run src/features/communications/ConnectedInbox.test.tsx src/features/communications/api.test.ts src/features/communications/communications.test.tsx
+```
+
+Superseding final reviewed source SHA256:
+
+| File | SHA256 |
+|---|---|
+| backend/app/services/callrail_service.py | a9b1705bcf692cc68b3f40edeafa4618b83aea82605149a64e557afcffddb274 |
+| backend/app/db/models/callrail.py | 7ce1df8a8138e2cde7543c619ad85be380abc278cd353df702e99cd07c0bbc4b |
+| backend/alembic/versions/183_callrail_preserve_reply_routes.py | 8ebd91145919c7a3eae18b539dc4632097c723ce15c50d1922442fab6a0325fa |
+| backend/app/services/communications_service.py | 6f5fa8710dd78121d27638560b255c9ceacbae559570a2bebf563d4c2bdad64f |
+| backend/app/api/v1/endpoints/communications.py | 96b0a663d6e63482520c820cd993ba2813f1546b3e4b8da7aeb16c2593eab44d |
+| frontend/src/features/communications/ConnectedInbox.tsx | 8cb1b32502533c093cea2062b54ef82a3cfd5765a14b2c8a8558d5132fbcb551 |
+| frontend/src/features/communications/CommunicationsPreview.tsx | 5bfc633aa04dc986b2f9d6d110548102be886cbdc14dbf60c088767ea63f7cd5 |
+| frontend/src/features/communications/api.ts | 4a55787718415fa66fd690a305e183cc284ea0c6421d37de31b67b113bd25105 |
+| frontend/src/features/communications/model.ts | d095e64723e62b223f9a86808e91365792868c7b697d2f511f0300a5e8b52320 |
+
+No unresolved actionable source finding in this delta. Protected CI, deployed migration/health, actual browser acceptance, preservation of external provider settings and real send/reply evidence remain release gates. No production/provider mutation or automation activation was performed by the independent reviewer.

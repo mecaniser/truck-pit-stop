@@ -184,3 +184,25 @@ async def get_operation(operation_id: UUID, db=Depends(get_db), user=Depends(get
         service.fail('not_found', 'Send operation not found.', 404)
     await service.thread_for(db, tenant.id, op.thread_id)
     return await service.operation_json(db, op)
+
+
+class SenderPatch(BaseModel):
+    expected_version: int = Field(ge=1)
+    binding_id: UUID | None
+
+
+@router.patch('/conversations/{conversation_id}/sender')
+async def patch_sender(conversation_id: UUID, body: SenderPatch, db=Depends(get_db),
+                       user=Depends(get_current_active_user), sender=Depends(service.get_sms_sender)):
+    from app.services import callrail_service
+    tenant = await service.authorize(db, user)
+    await callrail_service.lock_sender_bindings(db, tenant.id)
+    thread = await service.thread_for(db, tenant.id, conversation_id, lock=True)
+    wf = await service.workflow(db, thread)
+    if wf.version != body.expected_version:
+        service.fail('stale_version', 'Conversation changed. Refresh and try again.')
+    changed = await callrail_service.set_sender(db, tenant, thread, body.binding_id)
+    if changed:
+        wf.version += 1
+    await db.commit()
+    return await service.conversation_json(db, tenant, user, thread, sender)
