@@ -1,5 +1,5 @@
 import SMSConsentPanel from "./SMSConsentPanel";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -64,6 +64,15 @@ const time = (value: string) =>
   new Date(value).toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
+    timeZone: "America/New_York",
+  });
+
+const day = (value: string) =>
+  new Date(value).toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
     timeZone: "America/New_York",
   });
 
@@ -661,16 +670,6 @@ export default function CommunicationsPreview({
               </div>
             )}
             <div className="message-scroll">
-              <div className="day-divider">
-                <span>
-                  {messages[0]
-                    ? new Date(messages[0].createdAt).toLocaleDateString(
-                        "en-US",
-                        { weekday: "long", month: "long", day: "numeric" },
-                      )
-                    : "Conversation"}
-                </span>
-              </div>
               <div className="message-stack">
                 {connection && selected.messagesHasMore && (
                   <button
@@ -680,72 +679,82 @@ export default function CommunicationsPreview({
                     Load older messages
                   </button>
                 )}
-                {messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`message-line ${message.direction} ${message.source === "automation" ? "automated" : ""}`}
-                  >
-                    {message.source === "automation" ? (
-                      <div className="service-event">
-                        <span>
-                          <Bell size={13} />
-                          Service update<span>{time(message.createdAt)}</span>
-                        </span>
-                        <p>{message.body}</p>
-                        <button
-                          className="delivery-detail"
-                          onClick={() =>
-                            setDetailsId(
-                              detailsId === message.id ? null : message.id,
-                            )
-                          }
-                        >
-                          <DeliveryStatus status={message.deliveryStatus} />
-                          {message.deliveryStatus}
-                          <ChevronDown size={11} />
-                        </button>
+                {messages.map((message, index) => (
+                  <Fragment key={message.id}>
+                    {(index === 0 ||
+                      day(messages[index - 1].createdAt) !==
+                        day(message.createdAt)) && (
+                      <div className="day-divider">
+                        <span>{day(message.createdAt)}</span>
                       </div>
-                    ) : (
-                      <>
-                        <div className="message-bubble">{message.body}</div>
-                        <div className="message-meta">
-                          {message.direction === "outbound" && (
-                            <>
-                              <span>{connection ? "Team" : "Alex"}</span>
-                              <span>·</span>
-                              <DeliveryStatus status={message.deliveryStatus} />
-                            </>
-                          )}
-                          {time(message.createdAt)}
-                          {message.direction === "outbound" && (
-                            <span>
-                              {!connection &&
-                              message.deliveryStatus === "queued"
-                                ? "Preview only"
-                                : message.deliveryStatus}
-                            </span>
-                          )}
+                    )}
+                    <div
+                      className={`message-line ${message.direction} ${message.source === "automation" ? "automated" : ""}`}
+                    >
+                      {message.source === "automation" ? (
+                        <div className="service-event">
+                          <span>
+                            <Bell size={13} />
+                            Service update<span>{time(message.createdAt)}</span>
+                          </span>
+                          <p>{message.body}</p>
+                          <button
+                            className="delivery-detail"
+                            onClick={() =>
+                              setDetailsId(
+                                detailsId === message.id ? null : message.id,
+                              )
+                            }
+                          >
+                            <DeliveryStatus status={message.deliveryStatus} />
+                            {message.deliveryStatus}
+                            <ChevronDown size={11} />
+                          </button>
                         </div>
-                      </>
-                    )}
-                    {detailsId === message.id && (
-                      <div className="message-details">
-                        <strong>Delivery details</strong>
-                        <span>Status: {message.deliveryStatus}</span>
-                        <span>
-                          {message.errorCode
-                            ? `Provider code: ${message.errorCode}${connection ? "" : " (sample)"}`
-                            : connection
-                              ? "No provider error code"
-                              : "Sample delivery event"}
-                        </span>
-                        <p>
-                          Check the recipient and provider record before
-                          retrying. Uncertain messages must not be resent.
-                        </p>
-                      </div>
-                    )}
-                  </div>
+                      ) : (
+                        <>
+                          <div className="message-bubble">{message.body}</div>
+                          <div className="message-meta">
+                            {message.direction === "outbound" && (
+                              <>
+                                <span>{connection ? "Team" : "Alex"}</span>
+                                <span>·</span>
+                                <DeliveryStatus
+                                  status={message.deliveryStatus}
+                                />
+                              </>
+                            )}
+                            {time(message.createdAt)}
+                            {message.direction === "outbound" && (
+                              <span>
+                                {!connection &&
+                                message.deliveryStatus === "queued"
+                                  ? "Preview only"
+                                  : message.deliveryStatus}
+                              </span>
+                            )}
+                          </div>
+                        </>
+                      )}
+                      {detailsId === message.id && (
+                        <div className="message-details">
+                          <strong>Delivery details</strong>
+                          <span>Status: {message.deliveryStatus}</span>
+                          <span>
+                            {message.errorCode
+                              ? `Provider code: ${message.errorCode}${connection ? "" : " (sample)"}`
+                              : connection
+                                ? "No provider error code"
+                                : "Sample delivery event"}
+                          </span>
+                          <p>
+                            Check the recipient and provider record before
+                            retrying. Uncertain messages must not be resent.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </Fragment>
                 ))}
                 {!messages.length && (
                   <div className="empty-channel">
