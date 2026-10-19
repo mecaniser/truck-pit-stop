@@ -2,7 +2,7 @@ import { Spinner } from '@/components/ui'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
 import { ReactNode } from 'react'
 import { ChevronDown, Download, Lightbulb } from 'lucide-react'
@@ -16,6 +16,7 @@ import ReportingDatePicker from './ReportingDatePicker'
 import CostContributionBreakdown, { type ProfitabilityResp } from './CostContributionBreakdown'
 import CashReceiptsByCustomer, { type CashReceipt } from './CashReceiptsByCustomer'
 import { readReportRange, type ReportRange } from './reportRange'
+import { weeklyRevenueMedian } from './weeklyRevenueMedian'
 
 // ============ SHARED TYPES ============
 
@@ -320,6 +321,7 @@ function DashboardTab({ range }: { range: ReportRange }) {
     label: p.label,
     revenue: parseFloat(p.value ?? '0'),
   }))
+  const medianRevenue = weeklyRevenueMedian(trendRows.map((row) => row.revenue))
 
   return (
     <div className="space-y-4">
@@ -329,6 +331,12 @@ function DashboardTab({ range }: { range: ReportRange }) {
         accent={accent}
         insight="Revenue recognized each week across the period, from paid invoices."
       >
+        {medianRevenue !== null && (
+          <div className="flex items-center justify-end gap-2 text-xs text-amber-300" aria-label={`Median weekly revenue ${fmtMoney(medianRevenue)}`}>
+            <span className="w-5 border-t-2 border-dashed border-amber-300" aria-hidden="true" />
+            Median weekly revenue {fmtMoney(medianRevenue)}
+          </div>
+        )}
         <div className="h-56">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={trendRows} margin={{ top: 6, right: 6, left: -12, bottom: 0 }}>
@@ -342,6 +350,7 @@ function DashboardTab({ range }: { range: ReportRange }) {
                 offset={18}
                 allowEscapeViewBox={{ x: true, y: false }}
               />
+              {medianRevenue !== null && <ReferenceLine y={medianRevenue} stroke="#fcd34d" strokeWidth={2} strokeDasharray="6 4" ifOverflow="extendDomain" />}
               <Bar dataKey="revenue" name="Revenue" fill={accent} radius={[4, 4, 0, 0]} maxBarSize={30} isAnimationActive={false} activeBar={{ fill: accent, stroke: '#fff', strokeOpacity: 0.35, strokeWidth: 1 }} />
             </BarChart>
           </ResponsiveContainer>
