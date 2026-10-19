@@ -42,8 +42,13 @@ export interface WireConversation {
   send_policy: {
     can_send: boolean;
     reason: Conversation["sendPolicy"]["reason"];
+    max_length?: number;
   };
   context: {
+    sms_provider?: string;
+    sender_number?: string;
+    selected_sender_id?: string;
+    sms_sender_options?: { id: string; provider: "twilio" | "callrail"; enabled?: boolean; sender_number: string }[];
     vehicle_label?: string;
     repair_order_label?: string;
     repair_status?: string;
@@ -81,8 +86,16 @@ export const mapConversation = (r: WireConversation): Conversation => ({
   messages: (r.messages || []).map(mapMessage),
   messagesHasMore: r.messages_has_more,
   messagesNextCursor: r.messages_next_cursor,
-  sendPolicy: { canSend: r.send_policy.can_send, reason: r.send_policy.reason },
+  sendPolicy: {
+    canSend: r.send_policy.can_send,
+    reason: r.send_policy.reason,
+    maxLength: r.send_policy.max_length,
+  },
   context: {
+    smsProvider: r.context?.sms_provider,
+    senderNumber: r.context?.sender_number,
+    selectedSenderId: r.context?.selected_sender_id,
+    smsSenderOptions: r.context?.sms_sender_options?.map((option) => ({ id: option.id, provider: option.provider, enabled: option.enabled, senderNumber: option.sender_number })),
     vehicleLabel: r.context?.vehicle_label,
     repairOrderLabel: r.context?.repair_order_label,
     repairStatus: r.context?.repair_status,
@@ -186,6 +199,11 @@ export const inboxApi = {
         )
       ).data,
     ),
+  changeSender: async (row: Conversation, bindingId: string | null) =>
+    mapConversation((await api.patch<WireConversation>(
+      `/communications/conversations/${row.id}/sender`,
+      { expected_version: row.version, binding_id: bindingId },
+    )).data),
   read: async (row: Conversation) =>
     row.messages.length
       ? (

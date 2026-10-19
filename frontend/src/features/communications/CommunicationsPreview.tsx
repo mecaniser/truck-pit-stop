@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import {
   canCompose,
+  composeMaxLength,
   channelLabels,
   draftKey,
   filterConversations,
@@ -104,6 +105,7 @@ export interface InboxConnection {
   ) => void;
   onOlder: (id: string) => void;
   onRecover: () => void;
+  onSenderChange?: (row: Conversation, bindingId: string | null) => Promise<Conversation | null>;
 }
 export default function CommunicationsPreview({
   connection,
@@ -138,6 +140,7 @@ export default function CommunicationsPreview({
   const [feedback, setFeedback] = useState("");
   const [detailsId, setDetailsId] = useState<string | null>(null);
   const [showReplies, setShowReplies] = useState(false);
+  const [senderChanging, setSenderChanging] = useState(false);
   const channelSheetRef = useRef<HTMLElement>(null);
   const channelsButtonRef = useRef<HTMLButtonElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -170,6 +173,11 @@ export default function CommunicationsPreview({
         };
   const key = draftKey(tenantId, userId, composeConversation);
   const draft = drafts[key] || "";
+  const maxLength = composeMaxLength(composeConversation);
+  const senderOptions = selected.context.smsSenderOptions ?? [];
+  const selectedSenderId = selected.context.selectedSenderId ?? "twilio";
+  const showSenderSelect = !!connection?.onSenderChange && composeChannel === "sms" &&
+    (selected.context.smsProvider === "callrail" || senderOptions.some((option) => option.provider === "callrail"));
   const counts = {
     open: rows.filter((r) => r.status === "open").length,
     unread: rows.filter((r) => r.status === "open" && r.unreadCount > 0).length,
@@ -249,6 +257,7 @@ export default function CommunicationsPreview({
     );
   }
   async function sendPreview() {
+    if (senderChanging) return;
     if (!canCompose(composeConversation, draft)) return;
     if (connection) {
       const submitted = draft;
@@ -829,6 +838,46 @@ export default function CommunicationsPreview({
                     : "Not connected"}
                 </span>
               </div>
+              {showSenderSelect && (
+                <label className="sms-sender">
+                  Send from{" "}
+                  <select
+                    aria-label="SMS sender"
+                    value={selectedSenderId}
+                    disabled={senderChanging || connection?.busy || connection?.pending}
+                    onChange={async (event) => {
+                      const nextId = event.target.value;
+                      setSenderChanging(true);
+                      try {
+                        const updated = await connection?.onSenderChange?.(selected, nextId === "twilio" ? null : nextId);
+                        if (updated) {
+                          const nextKey = draftKey(tenantId, userId, updated);
+                          setDrafts((previous) => previous[nextKey] || !previous[key]
+                            ? previous : { ...previous, [nextKey]: previous[key] });
+                        }
+                      } finally {
+                        setSenderChanging(false);
+                      }
+                    }}
+                  >
+                    {!senderOptions.some((option) => option.id === selectedSenderId) && (
+                      <option value={selectedSenderId} disabled>
+                        {selected.context.smsProvider === "callrail" ? "CallRail" : "Twilio"} {selected.context.senderNumber} (unavailable)
+                      </option>
+                    )}
+                    {senderOptions.map((option) => (
+                      <option key={option.id} value={option.id} disabled={option.enabled === false}>
+                        {option.provider === "callrail" ? "CallRail" : "Twilio"} {option.senderNumber}{option.enabled === false ? " (unavailable)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {!showSenderSelect && composeChannel === "sms" && selected.context.smsProvider === "callrail" && (
+                <p className="sms-sender" aria-label="SMS sender">
+                  CallRail{selected.context.senderNumber ? ` · ${selected.context.senderNumber}` : ""}
+                </p>
+              )}
               {composeConversation.sendPolicy.reason && (
                 <div className="compose-restriction" role="status">
                   <Info size={15} />
@@ -868,14 +917,15 @@ export default function CommunicationsPreview({
                       Saved replies
                       <ChevronDown size={12} />
                     </button>
-                    <span className={draft.length > 1600 ? "over-limit" : ""}>
-                      {draft.length}/1600
+                    <span className={draft.trim().length > maxLength ? "over-limit" : ""}>
+                      {draft.length}/{maxLength}
                     </span>
                   </div>
                   <button
                     className="primary-button send-button"
                     disabled={
                       !canCompose(composeConversation, draft) ||
+                      senderChanging ||
                       connection?.busy ||
                       connection?.pending
                     }
