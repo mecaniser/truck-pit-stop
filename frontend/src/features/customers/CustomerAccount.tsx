@@ -18,6 +18,10 @@ const accountSchema = z.object({
     collectible_complete: z.boolean(),
     unverified_invoice_count: z.number().int().nonnegative(),
     reviewed_attestation_count: z.number().int().nonnegative().optional(),
+    classification_policy_available: z.boolean().optional(),
+    excluded_test_invoice_count: z.number().int().nonnegative().optional(),
+    unclassified_invoice_count: z.number().int().nonnegative().optional(),
+    quarantined_credit_count: z.number().int().nonnegative().optional(),
     current: moneySchema,
     days_1_30: moneySchema,
     days_31_60: moneySchema,
@@ -202,6 +206,10 @@ export default function CustomerAccount({ customerId }: { customerId: string }) 
       </div>
     </div>
     {downloadError && <p role="alert">Statement unavailable. Try the download again.</p>}
+    {account.native.classification_policy_available === false && <p role="alert">Business classification unavailable. Native balances are held for review.</p>}
+    {Boolean(account.native.excluded_test_invoice_count) && <p>{account.native.excluded_test_invoice_count} test {account.native.excluded_test_invoice_count === 1 ? 'invoice excluded' : 'invoices excluded'} from balances, aging and statement activity.</p>}
+    {Boolean(account.native.unclassified_invoice_count) && <p>{account.native.unclassified_invoice_count} unclassified {account.native.unclassified_invoice_count === 1 ? 'invoice held' : 'invoices held'} for review.</p>}
+    {Boolean(account.native.quarantined_credit_count) && <p>Credit activity with unresolved business classification is held for review.</p>}
     <div className="db-customer-account__summary">
       <div className="db-customer-account__collectible"><span>{account.native.collectible_complete ? 'DieselBridge collectible' : 'Verified native subtotal'}</span><strong>{money(account.native.collectible)}</strong><small>{account.native.collectible_complete ? 'Verified native invoice principal' : 'Balance incomplete · do not collect from this subtotal'}</small></div>
       <div><span>Unapplied credit</span><strong>{money(account.native.unapplied_credit)}</strong><small>Not deducted from aging</small></div>

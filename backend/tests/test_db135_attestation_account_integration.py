@@ -13,6 +13,9 @@ from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
 from app.db.models.vehicle import Vehicle
 from app.services.customer_receivables import account_snapshot
+from app.services.native_record_classification import policy_digest
+from app.core.config import settings
+import json
 from app.services.receivable_attestation_fingerprint import FINGERPRINT_VERSION
 from app.services.receivable_attestation_reader import compute_manifest_digest
 from app.services.receivable_attestation_source import load_receivable_source
@@ -91,6 +94,14 @@ async def test_account_uses_only_current_source_matching_reviewed_head(db_sessio
         reviewed_at=reviewed, applied_at=applied, valid_until=expiry,
         audit_reference="DB135-local-fixture", created_at=applied))
     await db_session.flush()
+    policy = {"version": 1, "review_reference": "synthetic-test-review",
+              "review_snapshot_sha256": "a" * 64, "entries": [{
+                  "tenant_id": str(tenant_id), "invoice_id": str(invoice.id),
+                  "invoice_number": invoice.invoice_number, "repair_order_id": str(order_id),
+                  "billed_customer_id": str(customer_id), "resolved_customer_id": str(customer_id),
+                  "classification": "real"}]}
+    policy["policy_sha256"] = policy_digest(policy)
+    monkeypatch.setattr(settings, "DB135_NATIVE_RECORD_POLICY_JSON", json.dumps(policy))
     snapshot = await account_snapshot(db_session, tenant_id=tenant_id, customer_id=customer_id)
     assert snapshot["native"]["collectible"] == "100.00"
     assert snapshot["native"]["collectible_complete"] is True

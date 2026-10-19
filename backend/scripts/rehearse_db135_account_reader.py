@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.core.config import settings
 from app.services.customer_receivables import account_snapshot
+from app.services.native_record_classification import policy_digest
 from app.services.receivable_attestation_fingerprint import FINGERPRINT_VERSION
 from app.services.receivable_attestation_reader import compute_manifest_digest
 from app.services.receivable_attestation_source import load_receivable_source
@@ -82,6 +83,14 @@ def main():
             conn.execute(text("INSERT INTO vehicles (id,tenant_id,customer_id,make,model,pm_interval_miles) VALUES (:id,:tenant,:customer,'Test','Truck',10000)"), {"id": ids["vehicle"], "tenant": ids["tenant"], "customer": ids["customer"]})
             conn.execute(text("INSERT INTO repair_orders (id,tenant_id,customer_id,vehicle_id,order_number,status,is_internal,is_pm,labor_discount_amount,order_discount_amount) VALUES (:id,:tenant,:customer,:vehicle,'DB135-READER','completed',false,false,0,0)"), {"id": ids["order"], "tenant": ids["tenant"], "customer": ids["customer"], "vehicle": ids["vehicle"]})
             conn.execute(text("INSERT INTO invoices (id,tenant_id,repair_order_id,invoice_number,status,subtotal,total_amount,due_date,zelle_pending_reminder_count) VALUES (:id,:tenant,:order,'DB135-READER','overdue',100,100,now() - interval '91 days',0)"), {"id": ids["invoice"], "tenant": ids["tenant"], "order": ids["order"]})
+        policy = {"version": 1, "review_reference": "synthetic-reader-only",
+                  "review_snapshot_sha256": "a" * 64, "entries": [{
+                      "tenant_id": str(ids["tenant"]), "invoice_id": str(ids["invoice"]),
+                      "invoice_number": "DB135-READER", "repair_order_id": str(ids["order"]),
+                      "billed_customer_id": None, "resolved_customer_id": str(ids["customer"]),
+                      "classification": "real"}]}
+        policy["policy_sha256"] = policy_digest(policy)
+        settings.DB135_NATIVE_RECORD_POLICY_JSON = json.dumps(policy)
         source = asyncio.run(read_snapshot(disposable, ids["tenant"], ids["customer"], ids["invoice"]))
         review = asyncio.run(read_source_review(disposable, ids["tenant"]))
         assert review["read_only"] is True and review["invoice_count"] == 1

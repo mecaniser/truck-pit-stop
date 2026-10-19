@@ -88,6 +88,14 @@ def render_statement_pdf(snapshot: dict) -> bytes:
     line("No statement was sent or issued. Current snapshot; no historical opening balance.")
     y -= 10
     native = snapshot["native"]
+    if native.get("classification_policy_available") is False:
+        line("Business classification unavailable; native balances held for review.")
+    if native.get("excluded_test_invoice_count", 0):
+        line(f"{native['excluded_test_invoice_count']} test invoice(s) excluded from balances, aging and activity.")
+    if native.get("unclassified_invoice_count", 0):
+        line(f"{native['unclassified_invoice_count']} unclassified invoice(s) held for review.")
+    if native.get("quarantined_credit_count", 0):
+        line("Credit activity with unresolved business classification is held for review.")
     if native.get("reviewed_attestation_count", 0):
         line(f"{native['reviewed_attestation_count']} invoice(s) use reviewed historical receivable evidence.")
         line("This evidence is time-limited and is not a payment-provider receipt.")

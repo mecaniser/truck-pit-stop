@@ -23,6 +23,9 @@ from app.services.customer_receivables import (
     _credit_remaining, account_snapshot, bucket_for, credit_effect, decode_cursor, encode_cursor, trusted_settlement,
 )
 from app.services import customer_receivables as account_service
+from app.services.native_record_classification import policy_digest
+from app.core.config import settings
+import json
 
 
 def test_bucket_edges_and_cursor_scope():
@@ -253,6 +256,17 @@ async def test_account_separates_native_ets_and_orphan_bill_to_without_double_co
         with pytest.raises(HTTPException) as oversized:
             await account_snapshot(db_session, tenant_id=tenant_id, customer_id=customer_id)
         assert oversized.value.status_code == 413
+    policy = {"version": 1, "review_reference": "synthetic-test-review",
+              "review_snapshot_sha256": "a" * 64, "entries": sorted([
+                  {"tenant_id": str(tenant_id), "invoice_id": str(item.id),
+                   "invoice_number": item.invoice_number, "repair_order_id": str(item.repair_order_id),
+                   "billed_customer_id": str(item.billed_customer_id) if item.billed_customer_id else None,
+                   "resolved_customer_id": str(other_id if item is reassigned else customer_id),
+                   "classification": "real"}
+                  for item in (native, imported, orphan, reassigned, missing_settlement, deleted_order_invoice)
+              ], key=lambda x: (x["tenant_id"], x["invoice_id"]))}
+    policy["policy_sha256"] = policy_digest(policy)
+    monkeypatch.setattr(settings, "DB135_NATIVE_RECORD_POLICY_JSON", json.dumps(policy))
     snapshot = await account_snapshot(db_session, tenant_id=tenant_id, customer_id=customer_id)
     tenant.timezone = "Invalid/Shop_Timezone"
     await db_session.flush()

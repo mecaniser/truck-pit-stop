@@ -34,6 +34,20 @@ beforeEach(() => { api.get.mockReset(); auth.session = 'tenant-a:owner-a' })
 afterEach(() => { vi.restoreAllMocks() })
 
 describe('customer account', () => {
+  it('discloses excluded tests and held classifications without treating them as paid', async () => {
+    api.get.mockResolvedValue({ data: { ...account, native: { ...account.native,
+      classification_policy_available: false, excluded_test_invoice_count: 2,
+      unclassified_invoice_count: 1, quarantined_credit_count: 1,
+    }, transactions: [] } })
+    setup()
+    const view = await screen.findByRole('region', { name: 'Customer account' })
+    expect(within(view).getByText('Business classification unavailable. Native balances are held for review.')).toBeVisible()
+    expect(within(view).getByText('2 test invoices excluded from balances, aging and statement activity.')).toBeVisible()
+    expect(within(view).getByText('1 unclassified invoice held for review.')).toBeVisible()
+    expect(within(view).getByText('Credit activity with unresolved business classification is held for review.')).toBeVisible()
+    expect(within(view).queryByText('DieselBridge collectible')).not.toBeInTheDocument()
+    expect(within(view).queryByRole('link', { name: /Open order/ })).not.toBeInTheDocument()
+  })
   it('keeps native collectible, unapplied credit and unknown ETS balance separate', async () => {
     api.get.mockResolvedValue({ data: account })
     setup()

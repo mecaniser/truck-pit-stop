@@ -1,5 +1,7 @@
 # DB-135 customer receivables contract (B1)
 
+Current scope (2026-10-19): the [native record classification revision](db135-native-record-classification.md) governs the owner's latest instruction: classify exact real/test/unknown records and exclude tests through read-only account/statement filtering, without changing financial records. The earlier proposed production reconciliation/attestation apply is deferred and is not a prerequisite for this revised read-only path. Classification does not establish payment or collectible balance; unsupported real records remain explicitly incomplete. Owner selections and Architecture approval of the policy loader remain pending.
+
 Status: Discovery contract; no financial writer, provider call, statement delivery, or collection action is authorized by this item. Accountable owner: Backend & Integrations. Architecture & API Contracts owns this cross-layer contract before frontend/backend implementation. High-risk lane: financial identity, tenant isolation, and sensitive customer account data.
 
 ## User outcome and source boundary
