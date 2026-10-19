@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import Column, String, ForeignKey, DateTime, Text, Enum as SQLEnum, Index, UniqueConstraint, text
+from sqlalchemy import Column, String, ForeignKey, DateTime, Text, Enum as SQLEnum, Index, UniqueConstraint, text, CheckConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -30,6 +30,7 @@ class SMSDeliveryStatus(str, enum.Enum):
 class SMSMessage(BaseModel):
     __tablename__ = "sms_messages"
     __table_args__ = (
+        CheckConstraint("customer_id IS NOT NULL OR (provider IS NOT NULL AND provider = 'callrail' AND callrail_binding_id IS NOT NULL)", name='ck_sms_customer_or_inquiry'),
         Index("ix_sms_messages_thread_created_at", "thread_id", "created_at"),
         UniqueConstraint("twilio_account_sid", "twilio_message_sid", name="uq_sms_messages_account_sid"),
         Index("uq_sms_messages_legacy_sid", "twilio_message_sid", unique=True, postgresql_where=text("twilio_account_sid IS NULL"), sqlite_where=text("twilio_account_sid IS NULL")),
@@ -45,7 +46,7 @@ class SMSMessage(BaseModel):
     messaging_service_sid = Column(String(34), nullable=True)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     thread_id = Column(UUID(as_uuid=True), ForeignKey("message_threads.id"), nullable=False, index=True)
-    customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=False, index=True)
+    customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=True, index=True)
     created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
 
     direction = Column(

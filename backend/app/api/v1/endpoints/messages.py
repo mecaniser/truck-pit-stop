@@ -114,6 +114,8 @@ async def list_message_threads(
     conditions = [
         MessageThread.tenant_id == current_user.tenant_id,
         MessageThread.deleted_at.is_(None),
+                MessageThread.thread_kind == 'customer',
+                MessageThread.customer_id.is_not(None),
     ]
     if not include_archived:
         conditions.append(MessageThread.archived_at.is_(None))
@@ -162,6 +164,8 @@ async def get_unread_sms_summary(
             and_(
                 MessageThread.tenant_id == current_user.tenant_id,
                 MessageThread.deleted_at.is_(None),
+                MessageThread.thread_kind == 'customer',
+                MessageThread.customer_id.is_not(None),
                 MessageThread.archived_at.is_(None),
             )
         )
@@ -187,6 +191,8 @@ async def list_thread_messages(
                 MessageThread.id == thread_id,
                 MessageThread.tenant_id == current_user.tenant_id,
                 MessageThread.deleted_at.is_(None),
+                MessageThread.thread_kind == 'customer',
+                MessageThread.customer_id.is_not(None),
             )
         )
     )
@@ -268,6 +274,8 @@ async def send_message(
                     MessageThread.tenant_id == current_user.tenant_id,
                     MessageThread.customer_id == body.customer_id,
                     MessageThread.deleted_at.is_(None),
+                MessageThread.thread_kind == 'customer',
+                MessageThread.customer_id.is_not(None),
                 )
             )
         )
@@ -318,6 +326,8 @@ async def archive_thread(
                 MessageThread.id == thread_id,
                 MessageThread.tenant_id == current_user.tenant_id,
                 MessageThread.deleted_at.is_(None),
+                MessageThread.thread_kind == 'customer',
+                MessageThread.customer_id.is_not(None),
             )
         )
     )
@@ -359,6 +369,8 @@ async def unarchive_thread(
                 MessageThread.id == thread_id,
                 MessageThread.tenant_id == current_user.tenant_id,
                 MessageThread.deleted_at.is_(None),
+                MessageThread.thread_kind == 'customer',
+                MessageThread.customer_id.is_not(None),
             )
         )
     )
@@ -402,6 +414,8 @@ async def delete_thread(
                 MessageThread.id == thread_id,
                 MessageThread.tenant_id == current_user.tenant_id,
                 MessageThread.deleted_at.is_(None),
+                MessageThread.thread_kind == 'customer',
+                MessageThread.customer_id.is_not(None),
             )
         )
     )

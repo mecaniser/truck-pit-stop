@@ -71,8 +71,24 @@ async def authorize(db, user):
     return tenant
 
 
+def valid_thread_identity(tenant_id):
+    from app.db.models.callrail import CallRailConversation, CallRailNumberBinding
+    customer = and_(MessageThread.thread_kind == 'customer', MessageThread.inquiry_binding_id.is_(None),
+        select(Customer.id).where(Customer.id == MessageThread.customer_id, Customer.tenant_id == tenant_id,
+            Customer.deleted_at.is_(None)).correlate(MessageThread).exists())
+    inquiry = and_(MessageThread.thread_kind == 'inquiry', MessageThread.customer_id.is_(None),
+        MessageThread.customer_phone.is_not(None),
+        select(CallRailConversation.id).join(CallRailNumberBinding, CallRailNumberBinding.id == CallRailConversation.binding_id).where(
+            CallRailConversation.thread_id == MessageThread.id, CallRailConversation.tenant_id == tenant_id,
+            CallRailConversation.binding_id == MessageThread.inquiry_binding_id, CallRailConversation.customer_id.is_(None),
+            CallRailConversation.customer_phone == MessageThread.customer_phone, CallRailConversation.deleted_at.is_(None),
+            CallRailNumberBinding.tenant_id == tenant_id).exists())
+    return or_(customer, inquiry)
+
+
 async def thread_for(db, tenant_id, thread_id, *, lock=False):
-    query = select(MessageThread).where(MessageThread.id == thread_id, MessageThread.tenant_id == tenant_id, MessageThread.deleted_at.is_(None), select(Customer.id).where(Customer.id == MessageThread.customer_id, Customer.tenant_id == tenant_id, Customer.deleted_at.is_(None)).exists())
+    query = select(MessageThread).where(MessageThread.id == thread_id, MessageThread.tenant_id == tenant_id,
+        MessageThread.deleted_at.is_(None), valid_thread_identity(tenant_id))
     if lock:
         query = query.with_for_update().execution_options(populate_existing=True)
     thread = await db.scalar(query)
@@ -93,7 +109,8 @@ async def workflow(db, thread):
 
 async def send_policy(db, tenant, thread, sender, *, ignore_operation=None):
     customer = await db.scalar(select(Customer).where(Customer.id == thread.customer_id, Customer.tenant_id == tenant.id, Customer.deleted_at.is_(None)))
-    phone = _normalize_for_twilio(customer.phone or '') if customer else ''
+    inquiry = thread.thread_kind == 'inquiry'
+    phone = _normalize_for_twilio(thread.customer_phone or '') if inquiry else _normalize_for_twilio(customer.phone or '') if customer else ''
     from_number = _normalize_for_twilio(tenant.sms_phone_number or '')
     account_id = uuid5(NAMESPACE_URL, f'dieselbridge:sms-account:{tenant.id}:{from_number}')
     identity_id = uuid5(NAMESPACE_URL, f'dieselbridge:sms-identity:{tenant.id}:{thread.id}:{phone}')
@@ -110,6 +127,9 @@ async def send_policy(db, tenant, thread, sender, *, ignore_operation=None):
     if callrail_context:
         from_number = callrail_context.sender_phone
         account_id = callrail_account_id(callrail_context)
+    elif inquiry:
+        if reason is None:
+            reason = 'callrail_binding_changed'
     elif not callrail_mapped and routing.enabled():
         try:
             context = await routing.resolve(db, tenant.id)
@@ -119,18 +139,18 @@ async def send_policy(db, tenant, thread, sender, *, ignore_operation=None):
             reason = exc.detail['code']
     elif not callrail_mapped and (not tenant.sms_enabled or not re.fullmatch(r'\+[1-9]\d{7,14}', from_number) or not getattr(sender, 'ready', True)):
         reason = 'not_connected'
-    if not callrail_mapped and not routing.enabled():
+    if not inquiry and not callrail_mapped and not routing.enabled():
         try:
             await routing.require_legacy_tenant(db, tenant.id)
         except HTTPException as exc:
             reason = exc.detail['code']
     if reason is None:
-        if not customer or customer.sms_opt_out:
-            reason = 'opted_out' if customer else 'identity_unverified'
+        if (thread.inquiry_opted_out if inquiry else not customer or customer.sms_opt_out):
+            reason = 'opted_out' if inquiry or customer else 'identity_unverified'
         elif not re.fullmatch(r'\+[1-9]\d{7,14}', phone):
             reason = 'identity_unverified'
         else:
-            others = (await db.execute(select(Customer.phone).where(Customer.tenant_id == tenant.id, Customer.id != customer.id, Customer.deleted_at.is_(None), Customer.phone.is_not(None)))).scalars().all()
+            others = [] if inquiry else (await db.execute(select(Customer.phone).where(Customer.tenant_id == tenant.id, Customer.id != customer.id, Customer.deleted_at.is_(None), Customer.phone.is_not(None)))).scalars().all()
             remote_rows = (await db.execute(select(SMSMessage.direction, SMSMessage.from_number, SMSMessage.to_number, SMSMessage.delivery_status, SMSMessage.error_code, SMSMessage.twilio_message_sid).where(SMSMessage.tenant_id == tenant.id, SMSMessage.thread_id == thread.id, SMSMessage.deleted_at.is_(None)))).all()
             # A conclusive invalid-To rejection without a provider receipt never
             # established a remote identity. Keep the row/history intact and retain
@@ -204,7 +224,7 @@ async def conversation_json(db, tenant, user, thread, sender):
     policy, account, identity, _, phone, customer = await send_policy(db, tenant, thread, sender)
     wf = await db.scalar(select(ConversationWorkflow).where(ConversationWorkflow.tenant_id == tenant.id, ConversationWorkflow.thread_id == thread.id))
     context = await callrail.sender_context(db, tenant, thread)
-    return dict(id=thread.id, tenant_id=tenant.id, customer_id=thread.customer_id, customer_name=f'{customer.first_name} {customer.last_name}' if customer else 'Unavailable customer', company=customer.company_name if customer else None, channel='sms', channel_account_id=account, contact_identity_id=identity, identity_label=phone, status=wf.status if wf else 'open', assignee_id=wf.assignee_id if wf else None, unread_count=await unread_count(db, thread, user.id), last_message_at=thread.last_message_at or thread.created_at, preview=thread.last_message_preview or '', version=wf.version if wf else 1, messages=[], send_policy=policy, context=context)
+    return dict(id=thread.id, tenant_id=tenant.id, customer_id=thread.customer_id, conversation_kind=thread.thread_kind, customer_name='New inquiry' if thread.thread_kind == 'inquiry' else f'{customer.first_name} {customer.last_name}' if customer else 'Unavailable customer', company=customer.company_name if customer else None, channel='sms', channel_account_id=account, contact_identity_id=identity, identity_label=phone, status=wf.status if wf else 'open', assignee_id=wf.assignee_id if wf else None, unread_count=await unread_count(db, thread, user.id), last_message_at=thread.last_message_at or thread.created_at, preview=thread.last_message_preview or '', version=wf.version if wf else 1, messages=[], send_policy=policy, context=context)
 
 
 async def operation_json(db, op, replayed=False):

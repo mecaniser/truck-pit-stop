@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ConnectedInbox from "./ConnectedInbox";
@@ -41,6 +42,13 @@ vi.mock("./api", async (original) => {
 const unreadCache = vi.hoisted(() => ({ setQueryData: vi.fn() }));
 vi.mock("@tanstack/react-query", () => ({ useQueryClient: () => unreadCache }));
 const row = { ...createDemoConversations()[0], version: 2 };
+const inquiry = {
+  ...row, id: "new-inquiry", conversationKind: "inquiry" as const,
+  customerId: null, customerName: "New inquiry", company: null,
+  identityLabel: "+15005550002", unreadCount: 1,
+  context: { smsProvider: "callrail", senderNumber: "+15005550001", selectedSenderId: "receiving-binding", senderSelectionAllowed: false, smsSenderOptions: [{ id: "receiving-binding", provider: "callrail" as const, senderNumber: "+15005550001", enabled: true }] },
+  sendPolicy: { canSend: true, reason: null, maxLength: 140 },
+};
 const storeKey = `inbox-send:${DEMO_TENANT}:${DEMO_USER}`;
 beforeEach(() => {
   localStorage.clear();
@@ -67,6 +75,71 @@ async function compose() {
   });
 }
 describe("connected inbox sending", () => {
+  it("explains an inquiry STOP hold without allowing a reply or offering opt-in", async () => {
+    const stopped = {
+      ...inquiry,
+      messages: [{ ...inquiry.messages[0], id: "stop-message", conversationId: inquiry.id, body: "STOP", direction: "inbound" as const, deliveryStatus: "received" as const }],
+      sendPolicy: { canSend: false, reason: "recipient_opted_out" as const, maxLength: 140 },
+    };
+    vi.mocked(inboxApi.list).mockResolvedValue([stopped]);
+    vi.mocked(inboxApi.detail).mockResolvedValue(stopped);
+    render(<ConnectedInbox />);
+    await compose();
+    expect(screen.getByText("This contact opted out of SMS. Replies are blocked.")).toBeInTheDocument();
+    expect(screen.getByText("STOP")).toBeInTheDocument();
+    expect(screen.queryByText("SMS connection or consent requires review.")).not.toBeInTheDocument();
+    expect(screen.queryByText("recipient_opted_out")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /opt.in/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Message draft" })).toHaveValue("A safe reply");
+    expect(screen.getByRole("button", { name: "Send SMS" })).toBeDisabled();
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Message draft" }), { key: "Enter", ctrlKey: true });
+    expect(inboxApi.send).not.toHaveBeenCalled();
+  });
+  it("lists new inquiries with unread count and phone evidence, retaining drafts across customer and inquiry filters", async () => {
+    vi.mocked(inboxApi.list).mockResolvedValue([row, inquiry]);
+    vi.mocked(inboxApi.detail).mockImplementation(async (id) => id === inquiry.id ? inquiry : row);
+    render(<ConnectedInbox />);
+    await screen.findByRole("textbox", { name: "Message draft" });
+    const filter = screen.getByRole("button", { name: "New inquiries 1" });
+    fireEvent.click(filter);
+    expect(screen.queryByRole("button", { name: /James Miller.*Carolina/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /New inquiry.*15005550002/ }));
+    const conversation = screen.getByRole("region", { name: "Conversation with New inquiry" });
+    expect(within(conversation).getByRole("heading", { name: "New inquiry" })).toBeInTheDocument();
+    expect(within(conversation).getByText(/CallRail · To \+15005550001/)).toBeInTheDocument();
+    expect(within(conversation).queryByRole("combobox", { name: "SMS sender" })).not.toBeInTheDocument();
+    expect(within(conversation).queryByRole("link")).not.toBeInTheDocument();
+    const draft = screen.getByRole("textbox", { name: "Message draft" });
+    fireEvent.change(draft, { target: { value: "x".repeat(141) } });
+    expect(screen.getByRole("button", { name: "Send SMS" })).toBeDisabled();
+    expect(screen.getByText("141/140")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Open \d/ }));
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(row.customerName) }));
+    fireEvent.change(draft, { target: { value: "Existing customer draft" } });
+    fireEvent.click(screen.getByRole("button", { name: /New inquiries/ }));
+    fireEvent.click(screen.getByRole("button", { name: /New inquiry.*15005550002/ }));
+    expect(draft).toHaveValue("x".repeat(141));
+    expect(inboxApi.changeSender).not.toHaveBeenCalled();
+    await waitFor(() => expect(inboxApi.read).toHaveBeenCalledWith(expect.objectContaining({ id: inquiry.id, customerId: null })));
+  });
+  it("retains manual reply and workflow actions for a null-customer inquiry", async () => {
+    vi.mocked(inboxApi.bootstrap).mockResolvedValue({ tenant_id: DEMO_TENANT, user_id: DEMO_USER, delivery_mode: "simulated", assignees: [{ id: "staff-2", name: "Staff member" }], channels: [] });
+    vi.mocked(inboxApi.list).mockResolvedValue([inquiry]);
+    vi.mocked(inboxApi.detail).mockResolvedValue(inquiry);
+    vi.mocked(inboxApi.send).mockResolvedValue({ id: "inquiry-operation", conversation_id: inquiry.id, state: "pending", delivery_status: "pending" });
+    render(<ConnectedInbox />);
+    await compose();
+    fireEvent.click(screen.getByRole("button", { name: "Send SMS" }));
+    await waitFor(() => expect(inboxApi.send).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(inboxApi.send).mock.calls[0][0]).toMatchObject({ conversationId: inquiry.id, payload: { channel_account_id: inquiry.channelAccountId, contact_identity_id: inquiry.contactIdentityId } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Resolve" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Resolve" }));
+    await waitFor(() => expect(inboxApi.patch).toHaveBeenCalledWith(expect.objectContaining({ id: inquiry.id, customerId: null }), { status: "resolved" }));
+    await waitFor(() => expect(screen.getByLabelText("Assign conversation")).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("Assign conversation"), { target: { value: "staff-2" } });
+    await waitFor(() => expect(inboxApi.patch).toHaveBeenCalledWith(expect.objectContaining({ id: inquiry.id, customerId: null }), { assignee_id: "staff-2" }));
+    expect(inboxApi.changeSender).not.toHaveBeenCalled();
+  });
   it("ignores an older in-flight poll after a confirmed sender change without reverting policy or draft", async () => {
     const options = [{ id: "twilio", provider: "twilio" as const, senderNumber: "+17045550000" }, { id: "binding-1", provider: "callrail" as const, senderNumber: "+19809071896" }];
     const initial = { ...row, context: { ...row.context, selectedSenderId: "twilio", smsSenderOptions: options } };

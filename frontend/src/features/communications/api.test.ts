@@ -3,6 +3,10 @@ import api from '../../lib/api';
 import { inboxApi, mapConversation, type WireConversation } from './api';
 vi.mock('../../lib/api', () => ({ default: { get: vi.fn(), post: vi.fn(), patch: vi.fn() } }));
 describe('inbox wire adapter', () => {
+  it('maps a null-customer inquiry without company guesses and retains its pinned sender contract', () => {
+    const row = mapConversation({ id: 'inquiry', tenant_id: 'tenant', conversation_kind: 'inquiry', customer_id: null, customer_name: 'Unavailable customer', company: 'Unproven company', messages: [], send_policy: { can_send: true, reason: null, max_length: 140 }, context: { sms_provider: 'callrail', sender_number: '+15005550001', sender_selection_allowed: false }, version: 2 } as unknown as WireConversation);
+    expect(row).toMatchObject({ conversationKind: 'inquiry', customerId: null, customerName: 'New inquiry', company: null, context: { smsProvider: 'callrail', senderNumber: '+15005550001', senderSelectionAllowed: false } });
+  });
   it('patches explicit sender with optimistic version and maps the returned sender options', async () => {
     vi.mocked(api.patch).mockResolvedValue({ data: { id: 'thread', tenant_id: 'tenant', messages: [], send_policy: { can_send: true, reason: null }, context: { selected_sender_id: 'binding', sms_sender_options: [{ id: 'binding', provider: 'callrail', sender_number: '+19809071896', enabled: false }] }, version: 8 } });
     const row = mapConversation({ id: 'thread', tenant_id: 'tenant', messages: [], send_policy: { can_send: true, reason: null }, context: {}, version: 7 } as unknown as WireConversation);

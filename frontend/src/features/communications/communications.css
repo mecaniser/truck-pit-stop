@@ -268,10 +268,12 @@
 }
 :where(.communications-surface) .view-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 17px;
 }
 :where(.communications-surface) .view-tabs button {
+  white-space: nowrap;
   padding: 7px 8px;
   font-size: 12px;
   border-radius: 6px;

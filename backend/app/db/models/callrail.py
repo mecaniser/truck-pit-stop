@@ -15,6 +15,7 @@ class CallRailNumberBinding(BaseModel):
     credential_ref = Column(String(128), nullable=False)
     signing_secret_ref = Column(String(128), nullable=False)
     enabled = Column(Boolean, nullable=False, default=False, server_default='false')
+    accept_new_inquiries = Column(Boolean, nullable=False, default=False, server_default='false')
 
 
 class CallRailConversation(BaseModel):
@@ -28,7 +29,7 @@ class CallRailConversation(BaseModel):
     tenant_id = Column(UUID(as_uuid=True), ForeignKey('tenants.id'), nullable=False, index=True)
     thread_id = Column(UUID(as_uuid=True), ForeignKey('message_threads.id'), nullable=False)
     binding_id = Column(UUID(as_uuid=True), ForeignKey('callrail_number_bindings.id'), nullable=False)
-    customer_id = Column(UUID(as_uuid=True), ForeignKey('customers.id'), nullable=False)
+    customer_id = Column(UUID(as_uuid=True), ForeignKey('customers.id'), nullable=True)
     customer_phone = Column(String(20), nullable=False)
     provider_conversation_id = Column(String(80))
 
