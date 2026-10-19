@@ -63,3 +63,6 @@ api_router.include_router(sms_onboarding.router, prefix='/communications/sms', t
 from app.api.v1.endpoints import maintenance
 api_router.include_router(maintenance.router, tags=["maintenance"])
 api_router.include_router(maintenance.work_router, tags=["maintenance"])
+
+from app.api.v1.endpoints import callrail
+api_router.include_router(callrail.router, prefix='/webhooks/callrail', tags=['webhooks'])
