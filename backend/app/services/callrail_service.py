@@ -85,6 +85,13 @@ async def resolve_for_thread(db, tenant_id, thread_id, *, allow_opt_out=False):
                            binding.sender_phone, mapping.customer_phone, binding.credential_ref)
 
 
+def _current_tracker(record):
+    # CallRail documents JSON null as "initial_tracker_id is the current tracker".
+    # A present but different/malformed current identifier must never fall back.
+    current = record.get('current_tracker_id')
+    return record.get('initial_tracker_id') if current is None else current
+
+
 async def send(context, body, to, *, source="manual"):
     """One HTTP attempt only. Caller durably claims an intent before invoking."""
     if source != 'manual':
@@ -114,7 +121,7 @@ async def send(context, body, to, *, source="manual"):
         or result.get('company_id') != context.company_id
         or _phone(result.get('customer_phone_number')) != context.customer_phone
         or _phone(result.get('current_tracking_number')) != context.sender_phone
-        or result.get('current_tracker_id') != context.tracker_id):
+        or _current_tracker(result) != context.tracker_id):
         raise RuntimeError('CallRail outcome requires reconciliation')
     return {'conversation_id': identifier}
 
@@ -290,7 +297,7 @@ async def import_conversation(db, binding_id, thread_id, record):
         raise HTTPException(404, 'Unknown CallRail binding')
     context = await resolve_for_thread(db, binding.tenant_id, thread_id, allow_opt_out=True)
     if (not context or context.binding_id != binding_id or record.get('company_id') != context.company_id
-        or record.get('current_tracker_id') != context.tracker_id
+        or _current_tracker(record) != context.tracker_id
         or _phone(record.get('current_tracking_number')) != context.sender_phone
         or _phone(record.get('customer_phone_number')) != context.customer_phone):
         deny('callrail_import_scope_mismatch')

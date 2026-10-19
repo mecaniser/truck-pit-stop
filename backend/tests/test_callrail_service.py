@@ -260,3 +260,39 @@ async def test_sent_suffix_reconciles_once_and_ambiguous_or_late_holds(mapped):
     second, _ = await make_operation('Ambiguous hello', now)
     ambiguous = dict(sent, id=54322, resource_id='SCIambiguous', content='Ambiguous hello')
     assert (await svc.apply_event(db, binding.id, ambiguous, 'sent'))['reason'] == 'ambiguous_send_receipt'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('current_tracker, initial_tracker, accepted', [
+    (None, 'TRK123', True), (None, 'TRKother', False), ('TRKother', 'TRK123', False), ('', 'TRK123', False)])
+async def test_send_documented_null_tracker_fallback(monkeypatch, context, current_tracker, initial_tracker, accepted):
+    monkeypatch.setenv('CALLRAIL_TEST', 'synthetic-key')
+    async def handler(request):
+        return httpx.Response(201, json={'id': 'conversation1', 'company_id': context.company_id,
+            'customer_phone_number': context.customer_phone, 'current_tracking_number': context.sender_phone,
+            'current_tracker_id': current_tracker, 'initial_tracker_id': initial_tracker})
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(svc.httpx, 'AsyncClient', lambda **kwargs: client)
+    if accepted:
+        assert await svc.send(context, 'manual test', context.customer_phone) == {'conversation_id': 'conversation1'}
+    else:
+        with pytest.raises(RuntimeError):
+            await svc.send(context, 'manual test', context.customer_phone)
+
+
+@isolated
+@pytest.mark.asyncio
+async def test_import_documented_tracker_fallback_preserves_sender_guard(mapped):
+    db, binding, mapping, customer, thread = mapped
+    record = {'id': 'conversation1', 'company_id': binding.company_id, 'current_tracker_id': None,
+        'initial_tracker_id': binding.tracker_id, 'current_tracking_number': binding.sender_phone,
+        'customer_phone_number': customer.phone, 'messages': []}
+    assert await svc.import_conversation(db, binding.id, thread.id, record) == []
+    record['current_tracker_id'] = 'TRKwrong'
+    with pytest.raises(HTTPException):
+        await svc.import_conversation(db, binding.id, thread.id, record)
+    record['current_tracker_id'] = None
+    record['current_tracking_number'] = None
+    record['initial_tracking_number'] = binding.sender_phone
+    with pytest.raises(HTTPException):
+        await svc.import_conversation(db, binding.id, thread.id, record)
