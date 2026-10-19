@@ -14,7 +14,28 @@ import {
 import type { Conversation } from "./model";
 import "./communications.css";
 
-export default function ConnectedInbox() {
+interface InboxProps {
+  embedded?: boolean;
+  onUnreadCountChange?: (count: number) => void;
+}
+
+export default function ConnectedInbox({
+  embedded = false,
+  onUnreadCountChange,
+}: InboxProps) {
+  return (
+    <div
+      className={`communications-surface${embedded ? " communications-embedded" : ""}`}
+    >
+      <InboxContent
+        embedded={embedded}
+        onUnreadCountChange={onUnreadCountChange}
+      />
+    </div>
+  );
+}
+
+function InboxContent({ embedded, onUnreadCountChange }: InboxProps) {
   const sessionEpoch = useAuthStore((state) => state.authSessionEpoch);
   const user = useAuthStore((state) => state.user);
   const canSetup =
@@ -186,6 +207,12 @@ export default function ConnectedInbox() {
       clearInterval(timer);
     };
   }, [bootstrap]);
+  useEffect(() => {
+    if (bootstrap)
+      onUnreadCountChange?.(
+        rows.reduce((count, row) => count + row.unreadCount, 0),
+      );
+  }, [bootstrap, rows, onUnreadCountChange]);
   async function submit(intent: SendIntent): Promise<boolean> {
     const epoch = useAuthStore.getState().authSessionEpoch;
     if (lock.current) return false;
@@ -337,6 +364,7 @@ export default function ConnectedInbox() {
     <CommunicationsPreview
       key={`${bootstrap.tenant_id}:${bootstrap.user_id}`}
       connection={{
+        embedded,
         rows,
         onSMSSetup: canSetup ? () => setShowSetup(true) : undefined,
         searchIds,
