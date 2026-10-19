@@ -121,12 +121,13 @@ def receipt(pr_number: int) -> str:
             lines.append(f"- Merge SHA matches Railway source: {'yes' if deployed_sha == merge else 'no/unknown'}")
     version, version_error = attempt("build-version", lambda: http_json("/build-version"))
     health, health_error = attempt("health", lambda: http_json("/health"))
-    lines.append(f"- Served build SHA: `{version.get('sha', 'unknown')}`" if version else
-                 f"- Served build SHA: unknown ({version_error})")
+    served_sha = version.get("sha") if version else None
+    lines.append(f"- Served build SHA: `{served_sha}`" if served_sha else
+                 f"- Served build SHA: unknown ({version_error or 'missing sha'})")
     lines.append(f"- Health: {health.get('status', 'unknown')}" if health else
                  f"- Health: unknown ({health_error})")
-    if merge and version:
-        lines.append(f"- Merge SHA matches served build: {'yes' if version.get('sha') == merge else 'no'}")
+    if merge:
+        lines.append(f"- Merge SHA matches served build: {'yes' if served_sha == merge else 'no' if served_sha else 'unknown'}")
     lines.extend(["", "Browser acceptance: not measured by this command.",
                   "A successful CI run, Railway status, and HTTP response are distinct evidence."])
     return "\n".join(lines) + "\n"

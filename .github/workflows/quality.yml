@@ -40,7 +40,15 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           if [ "$EVENT_NAME" = pull_request ]; then
-            python .github/scripts/ci_scope.py --base "$BASE_SHA" --head "$HEAD_SHA" | tee "$GITHUB_OUTPUT"
+            # The PR checkout is untrusted. Execute the classifier from the
+            # protected base commit, never from the proposed PR files.
+            if git cat-file -e "$BASE_SHA:.github/scripts/ci_scope.py" 2>/dev/null; then
+              git show "$BASE_SHA:.github/scripts/ci_scope.py" > "$RUNNER_TEMP/ci_scope.py"
+              python "$RUNNER_TEMP/ci_scope.py" --base "$BASE_SHA" --head "$HEAD_SHA" | tee "$GITHUB_OUTPUT"
+            else
+              echo 'backend_required=true' | tee "$GITHUB_OUTPUT"
+              echo 'reason=trusted classifier unavailable; fail closed' | tee -a "$GITHUB_OUTPUT"
+            fi
           else
             echo 'backend_required=true' | tee "$GITHUB_OUTPUT"
             echo 'reason=main or manual run' | tee -a "$GITHUB_OUTPUT"

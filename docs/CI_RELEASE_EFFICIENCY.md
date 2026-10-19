@@ -7,7 +7,9 @@ still run. The six existing protected check names remain stable. On a backend,
 shared, CI, deployment, or ambiguous change, all backend tests run. Every push to
 `main` and manual workflow dispatch runs the full suites. The scope check uses
 the PR merge base, includes both sides of renames, and requires backend tests if
-it cannot determine scope.
+it cannot determine scope. The workflow loads the classifier from the protected
+base commit. If that version does not exist, backend tests run; the PR that
+introduces the classifier therefore receives the full suite.
 
 Run a read-only release receipt from this repository:
 
