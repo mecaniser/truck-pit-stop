@@ -98,6 +98,7 @@ describe('RepairOrdersPage request cancellation', () => {
         data: {
           order_count: 1,
           order_value: '4280.50',
+          has_imported_orders: false,
           currency: 'USD',
           amount_basis: 'repair_order_net',
         },

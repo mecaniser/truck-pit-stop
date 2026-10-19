@@ -133,6 +133,8 @@ async def invoice_for_principal(
         or invoice.repair_order.deleted_at is not None
     ):
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    if invoice.source == "easy_truck_shop_import" or invoice.repair_order.source == "easy_truck_shop_import":
+        raise SettlementDomainError("source_owned_invoice", "ETS invoices cannot use DieselBridge payment actions.", status_code=409)
     tenant = (await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id, Tenant.is_active.is_(True)))).scalar_one_or_none()
     if not tenant:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)

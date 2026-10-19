@@ -45,7 +45,9 @@ async def _eligible_invoice(db: AsyncSession, tenant_id: UUID, invoice_id: UUID)
             RepairOrder.tenant_id == tenant_id))).one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    invoice, _ = row
+    invoice, order = row
+    if invoice.source == "easy_truck_shop_import" or order.source == "easy_truck_shop_import":
+        raise HTTPException(status_code=409, detail="Imported ETS invoices are read-only")
     if (invoice.deleted_at is not None or invoice.is_internal
             or invoice.status == InvoiceStatus.DRAFT):
         raise HTTPException(status_code=422, detail="Invoice is not eligible for historical export")
