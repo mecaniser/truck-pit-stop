@@ -8,7 +8,10 @@ import CustomerDetailFooter from './CustomerDetailFooter'
 import { useCustomerVehicleGroups } from './useCustomerVehicleGroups'
 import type { Customer, Vehicle } from '@/types'
 
-vi.mock('@/stores/authStore', () => ({ useAuthStore: (select: (s: unknown) => unknown) => select({ user: { role: 'garage_owner', tenant_id: 'tenant-a', id: 'owner-a' } }) }))
+vi.mock('@/stores/authStore', () => ({
+  useAuthStore: (select: (s: unknown) => unknown) => select({ user: { role: 'garage_owner', tenant_id: 'tenant-a', id: 'owner-a' } }),
+  getAuthenticatedSessionIdentity: () => 'test-session',
+}))
 const api = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn() }))
 vi.mock('@/lib/api', () => ({ default: api }))
 const customer = { id: 'customer-a', company_name: 'Northline', first_name: 'Nora', last_name: 'North', email: 'dispatch@example.invalid', phone: '5550100001', balance: '145.00', billing_address_line1: '1 Fleet Road', billing_address_line2: 'Suite 2', billing_city: 'Raleigh', billing_state: 'NC', billing_zip: '27601', created_at: '2026-10-12T12:00:00Z' } as Customer
@@ -78,9 +81,9 @@ describe('compact customer record', () => {
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
     expect(api.put).not.toHaveBeenCalled()
   })
-  it.each([['-50', 'Account credit', '$50.00'], [undefined, 'Balance', '—']])('keeps %s balance meaning', (balance, label, amount) => {
+  it.each([['-50', 'Listed credit', '$50.00'], [undefined, 'Listed balance', '—']])('keeps %s balance meaning without calling mixed-source data collectible', (balance, label, amount) => {
     setup({ selectedCustomer: { ...customer, balance } as Customer })
-    const balanceRegion = screen.getByLabelText('Customer balance')
+    const balanceRegion = screen.getByLabelText('Listed balance, mixed sources')
     expect(balanceRegion).toHaveTextContent(label!)
     expect(balanceRegion).toHaveTextContent(amount!)
   })
