@@ -258,6 +258,8 @@ class Settings(BaseSettings):
     ETS_COMPLETED_OUTCOMES_ENABLED: bool = False
     # Explicit tenant UUID -> verified public ETS shop ID; empty means disabled.
     ETS_COMPLETED_OUTCOME_SHOPS: str = "{}"
+    # Presentation-only trusted tenant/shop bindings; does not enable collection.
+    ETS_IMPORTED_BILLING_SHOPS: str = "{}"
     SHOP_HISTORY_CAPTURE_ENABLED: bool = False
     SHOP_HISTORY_CAPTURE_TENANT_IDS: str = ""
     SHOP_HISTORY_CAPTURE_BATCH_SIZE: int = Field(default=50, ge=1, le=200)

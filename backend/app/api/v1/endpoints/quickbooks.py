@@ -608,9 +608,11 @@ async def sync_quickbooks_invoice_now(
     from app.services.financial_transaction_lock import lock_tenant_financials
     await lock_tenant_financials(db, current_user.tenant_id)
     _require_quickbooks_admin(current_user)
-    invoice, _order, customer = await _invoice_accounting_context(db, invoice_id)
+    invoice, order, customer = await _invoice_accounting_context(db, invoice_id)
     if invoice.tenant_id != current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if invoice.source == "easy_truck_shop_import" or order.source == "easy_truck_shop_import":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Imported ETS invoices cannot be exported")
     if invoice.status == InvoiceStatus.DRAFT:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only finalized invoices can be synchronized")
     from app.services.invoice_accounting_policy import locked_policy, HISTORICAL_HOLD
@@ -679,6 +681,8 @@ async def charge_quickbooks_invoice(
     )).scalar_one_or_none()
     if not invoice or not invoice.repair_order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
+    if invoice.source == "easy_truck_shop_import" or invoice.repair_order.source == "easy_truck_shop_import":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Imported ETS invoices cannot be charged")
 
     tenant = invoice.tenant or await db.get(Tenant, invoice.tenant_id)
     settlement = await settlement_for_compatibility_route(

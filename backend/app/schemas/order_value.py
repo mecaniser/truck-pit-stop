@@ -13,3 +13,7 @@ class FilteredRepairOrderValueSummary(BaseModel):
     @field_serializer("order_value")
     def serialize_order_value(self, value: Decimal) -> str:
         return str(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+class RepairOrderValueSummary(FilteredRepairOrderValueSummary):
+    has_imported_orders: bool = False

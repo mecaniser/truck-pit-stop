@@ -86,7 +86,9 @@ from app.core.work_value_validation import validate_labor_hours, validate_part_q
 from app.core.websocket import broadcast_repair_order_update
 from app.core.websocket import broadcast_mechanic_timer_update
 from app.core.websocket import broadcast_mechanic_attendance_update
-from app.schemas.order_value import FilteredRepairOrderValueSummary
+from app.schemas.order_value import RepairOrderValueSummary
+from app.schemas.imported_billing import ImportedBillingResponse
+from app.services import imported_billing
 from app.schemas.recommended_work import RecommendedWorkPage
 from app.services.recommended_work import list_recommended_work
 from app.services import repair_intake_reference
@@ -1001,8 +1003,10 @@ def _ledger_filters(actor, *, customer_id=None, vehicle_id=None, status=None, de
         raise HTTPException(403, "Access denied")
     if actor.role == UserRole.CUSTOMER:
         identity = actor.customer_id
-        source = [RepairOrder.customer_id == identity] if identity else [False]
-        projection = [RepairOrderReadModel.customer_id == identity] if identity else [False]
+        source = [RepairOrder.customer_id == identity,
+                  RepairOrder.tenant_id == actor.tenant_id] if identity and actor.tenant_id else [False]
+        projection = [RepairOrderReadModel.customer_id == identity,
+                      RepairOrderReadModel.tenant_id == actor.tenant_id] if identity and actor.tenant_id else [False]
     else:
         identity = actor.tenant_id
         source = [RepairOrder.tenant_id == identity] if identity else [False]
@@ -1096,7 +1100,7 @@ async def repair_order_status_counts(
     return counts
 
 
-@router.get("/value-summary", response_model=FilteredRepairOrderValueSummary)
+@router.get("/value-summary", response_model=RepairOrderValueSummary)
 async def repair_order_value_summary(
     customer_id: Optional[UUID] = Query(None),
     vehicle_id: Optional[UUID] = Query(None),
@@ -1118,14 +1122,17 @@ async def repair_order_value_summary(
     if source_count == projected_count:
         _projection_search(projection, search)
         statement = (select(func.count(RepairOrderReadModel.repair_order_id),
-                            func.coalesce(func.sum(visible_value), Decimal("0.00")))
+                            func.coalesce(func.sum(visible_value), Decimal("0.00")),
+                            func.count().filter(RepairOrder.source == imported_billing.SOURCE))
                      .select_from(RepairOrderReadModel).join(RepairOrder, _schedule_projection_join()).where(*projection))
     else:
         statement = _legacy_ledger_search(select(func.count(RepairOrder.id),
-            func.coalesce(func.sum(visible_value), Decimal("0.00"))).select_from(RepairOrder).where(*source), search)
-    order_count, order_value = (await db.execute(statement)).one()
-    return FilteredRepairOrderValueSummary(order_count=int(order_count or 0),
-        order_value=Decimal(str(order_value or 0)).quantize(Decimal("0.01")))
+            func.coalesce(func.sum(visible_value), Decimal("0.00")),
+            func.count().filter(RepairOrder.source == imported_billing.SOURCE)).select_from(RepairOrder).where(*source), search)
+    order_count, order_value, imported_count = (await db.execute(statement)).one()
+    return RepairOrderValueSummary(order_count=int(order_count or 0),
+        order_value=Decimal(str(order_value or 0)).quantize(Decimal("0.01")),
+        has_imported_orders=bool(imported_count))
 
 
 @router.get("", response_model=List[RepairOrderResponse])
@@ -1179,11 +1186,11 @@ async def list_repair_orders(
                 [RepairOrderReadModel.created_at.desc(), RepairOrderReadModel.repair_order_id.desc()])
     result = await db.execute(
         select(RepairOrderReadModel.payload, RepairOrder.scheduled_start_at, RepairOrder.promised_finish_at,
-               RepairOrder.status, RepairOrder.deleted_at, RepairOrder.vehicle_released_at)
+               RepairOrder.status, RepairOrder.deleted_at, RepairOrder.vehicle_released_at, RepairOrder.source)
         .select_from(RepairOrderReadModel).join(RepairOrder, _schedule_projection_join())
         .where(*projection_filters).order_by(*ordering).offset(skip).limit(limit))
     zone = await repair_order_schedule.tenant_timezone(db, current_user.tenant_id) if repair_order_schedule.can_read(current_user) else None
-    items = [RepairOrderResponse.model_validate({**row.payload,
+    items = [RepairOrderResponse.model_validate({**row.payload, "source": row.source,
         **repair_order_schedule.fields(row, zone, now, visible=repair_order_schedule.can_read(current_user))})
         for row in result.all()]
     if not staff_work_hold.can_read(current_user):
@@ -1205,6 +1212,7 @@ async def list_repair_orders(
             else item
             for item in items
         ]
+    await imported_billing.attach_imported_invoice_totals(db, items, current_user)
     return paginated_or_list(items, total, skip, limit, paginated)
 
 
@@ -1419,6 +1427,7 @@ async def _list_repair_orders_legacy(
                 item.total_parts_cost = Decimal("0.00")
                 item.total_labor_cost = Decimal("0.00")
                 item.total_cost = Decimal("0.00")
+    await imported_billing.attach_imported_invoice_totals(db, items, current_user)
     return paginated_or_list(items, total, skip, limit, paginated)
 
 
@@ -1456,6 +1465,22 @@ async def update_repair_order_schedule(
     return response
 
 
+@router.get("/{order_id}/imported-billing", response_model=ImportedBillingResponse)
+async def get_imported_billing(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*parts_pricing.STAFF)),
+):
+    """Read existing imported evidence without settlement or provider writers."""
+    order = await db.scalar(tenant_repair_order_statement(order_id, current_user))
+    if order is None:
+        raise HTTPException(404, "Repair order not found")
+    _check_ro_access(current_user, order)
+    if order.source != imported_billing.SOURCE:
+        raise HTTPException(409, "Repair order is not imported from ETS")
+    return await imported_billing.load_imported_billing(db, order)
+
+
 @router.get("/{order_id}/workspace", response_model=RepairOrderResponse)
 async def get_repair_order_workspace(
     order_id: UUID,
@@ -1478,7 +1503,7 @@ async def get_repair_order_workspace(
         _check_ro_access(current_user, access_order)
     projection_row = (await db.execute(
         select(RepairOrderReadModel, RepairOrder.scheduled_start_at, RepairOrder.promised_finish_at,
-               RepairOrder.status, RepairOrder.deleted_at, RepairOrder.vehicle_released_at, Tenant.timezone.label("schedule_timezone"))
+               RepairOrder.status, RepairOrder.deleted_at, RepairOrder.vehicle_released_at, Tenant.timezone.label("schedule_timezone"), RepairOrder.source)
         .select_from(RepairOrderReadModel).join(RepairOrder, _schedule_projection_join())
         .join(Tenant, Tenant.id == RepairOrderReadModel.tenant_id)
         .where(RepairOrderReadModel.repair_order_id == order_id)
@@ -1486,7 +1511,7 @@ async def get_repair_order_workspace(
     projection = projection_row[0] if projection_row else None
     if projection:
         zone = repair_order_schedule.valid_timezone(projection_row.schedule_timezone) if repair_order_schedule.can_read(current_user) else None
-        item = RepairOrderResponse.model_validate({**projection.payload,
+        item = RepairOrderResponse.model_validate({**projection.payload, "source": projection_row.source,
             **repair_order_schedule.fields(projection_row, zone, repair_order_schedule.now_utc(), visible=repair_order_schedule.can_read(current_user))})
         if not staff_work_hold.can_read(current_user):
             item.hold_reason = None
@@ -1507,6 +1532,7 @@ async def get_repair_order_workspace(
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
         elif current_user.role == UserRole.FLEET_MANAGER and not (item.is_fleet_work or item.is_internal):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        await imported_billing.attach_imported_invoice_totals(db, [item], current_user)
         return item
 
     # A new repair order can be opened before the read-model maintainer has
@@ -1560,6 +1586,7 @@ async def get_repair_order_workspace(
     zone = await repair_order_schedule.tenant_timezone(db, current_user.tenant_id) if repair_order_schedule.can_read(current_user) else None
     for key, value in repair_order_schedule.fields(order, zone, repair_order_schedule.now_utc(), visible=repair_order_schedule.can_read(current_user)).items():
         setattr(item, key, value)
+    await imported_billing.attach_imported_invoice_totals(db, [item], current_user)
     return item
 
 

@@ -8,6 +8,8 @@ import { enteredMoney } from '@/features/parts-pricing/configuration'
 import RepairOrderScheduleControl from './RepairOrderScheduleControl'
 import type { OrderScheduleSummary } from './repairOrderSchedule'
 import RepairOrderActivity from './RepairOrderActivity'
+import { ImportedBillingDetails } from './ImportedBillingDetails'
+import { importedMoney, type ImportedBilling } from './importedBilling'
 import { OperationExecutionControls, OperationExecutionFeedback, OperationExecutionStatus } from '@/features/operation-execution/OperationExecution'
 import { useOperationExecution } from '@/features/operation-execution/queries'
 import { OperationNotes } from '@/features/operation-execution/OperationNotes'
@@ -158,6 +160,9 @@ type Props = {
   workspaceNotice?: ReactNode
   orderId: string
   orderStatus: RepairOrderStatus
+  orderSource?: string | null
+  importedBilling?: ImportedBilling | null
+  importedBillingFailed?: boolean
   canEdit: boolean
   schedule?: OrderScheduleSummary
   workHoldOrder?: WorkHoldOrder
@@ -493,10 +498,11 @@ function PartQtyStepper({
 const STEPPER_COMMIT_DEBOUNCE_MS = 500
 
 function LaborLineEditor({
-  line, canMutate, onUpdate, onLocalChange,
+  line, canMutate, importedEtsOrder = false, onUpdate, onLocalChange,
 }: {
   line: { id: string; description: string; hours: string; hourly_rate: string; total_cost: string; pricing?: SafeLaborPricing }
   canMutate: boolean
+  importedEtsOrder?: boolean
   onUpdate: (body: { description?: string; hours?: number; hourly_rate?: number }) => void
   // Fires with the optimistic hours/rate on every step, ahead of the
   // debounced `onUpdate` write, so the parent can recompute rollups
@@ -506,6 +512,13 @@ function LaborLineEditor({
 }) {
   const lineHours = parseFloat(line.hours) || 0
   const lineRate = parseFloat(line.hourly_rate) || 0
+
+  if (importedEtsOrder) {
+    return <div className="space-y-1 text-sm text-gray-600">
+      {line.description && <p className="font-medium text-gray-800">{line.description}</p>}
+      <p>{formatHoursMinutes(lineHours)} booked · ETS billed breakdown unavailable</p>
+    </div>
+  }
 
   // Read-only order (invoiced / paid / any customer order past quoted): the labor
   // can't be changed, so show a clean static read-out instead of disabled
@@ -787,6 +800,9 @@ function PartPricePopover({ part, disabled, saving, onApply }: { part: PartsUsag
 export default function PriceBuilderPanel({
   orderId,
   orderStatus,
+  orderSource,
+  importedBilling,
+  importedBillingFailed = false,
   canEdit,
   workHoldOrder,
   schedule,
@@ -1394,7 +1410,8 @@ export default function PriceBuilderPanel({
     }
   }, [isDeleted])
   const isLocked = !!summary?.pricing_locked
-  const hasInvoice = !!invoice && ['invoiced', 'paid'].includes(orderStatus)
+  const isEtsImported = orderSource === 'easy_truck_shop_import'
+  const hasInvoice = !isEtsImported && !!invoice && ['invoiced', 'paid'].includes(orderStatus)
   const invoiceDisplayTotal = invoiceSettlement
     ? parseFloat(invoiceSettlement.allocatable_balance || '0')
     : invoice
@@ -1407,14 +1424,14 @@ export default function PriceBuilderPanel({
   const invoiceFinanciallyPaid = invoiceSettlement
     ? invoiceSettlement.state === 'paid'
     : orderStatus === 'paid'
-  const canCreateInvoice = !isInternalOrder && orderStatus === 'completed' && !!onCreateInvoice
+  const canCreateInvoice = !isEtsImported && !isInternalOrder && orderStatus === 'completed' && !!onCreateInvoice
   const recommendationsReadOnly = isDeleted || ['completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus)
   const showRecommendedServicesPanel = !recommendationsReadOnly || !!focusedRecommendationId
   // Work-first: the repair order is editable throughout active shop work. The
   // server capability is authoritative; the fallback supports older responses.
   const INTERNAL_FROZEN_STATUSES: RepairOrderStatus[] = ['completed', 'invoiced', 'paid', 'cancelled']
   const isEditableStatus = summary?.can_edit_work ?? !INTERNAL_FROZEN_STATUSES.includes(orderStatus)
-  const canMutate = canEdit && !isDeleted && !isLocked && isEditableStatus
+  const canMutate = canEdit && !isEtsImported && !isDeleted && !isLocked && isEditableStatus
   const canManageHold = !!workHoldOrder && canMutate && !isDeleted && !hasInvoice && canManageWorkHold(staffRole, workHoldOrder)
   const holdAction = (beforeOpen?: () => void) => canManageHold && <button type="button" onClick={() => { beforeOpen?.(); setHoldDialogOrderId(orderId) }} className="db-stage-action inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">{isOnHold ? 'Release hold' : 'Put on hold'}</button>
   useEffect(() => {
@@ -3503,7 +3520,7 @@ export default function PriceBuilderPanel({
                             </button>
                           </div>
                         </div>
-                        {shortage && (
+                        {!isEtsImported && shortage && (
                           <StockShortageCallout
                             shortage={shortage}
                             unitLabel={unitAbbr}
@@ -3633,7 +3650,7 @@ export default function PriceBuilderPanel({
         }
 
         const renderPartsRows = (parts: typeof allParts) => {
-          const hasSavings = parts.some((part) => parseFloat(part.savings || '0') > 0)
+          const hasSavings = !isEtsImported && parts.some((part) => parseFloat(part.savings || '0') > 0)
           return (
           <div className="db-parts-table overflow-x-auto">
             <table role="table" aria-label="Parts" className="w-full text-sm">
@@ -3665,7 +3682,7 @@ export default function PriceBuilderPanel({
                             </span>
                           )}
                         </div>
-                        {shortage && (
+                        {!isEtsImported && shortage && (
                           <StockShortageCallout
                             shortage={shortage}
                             unitLabel={UNIT_ABBR[pu.unit_type] || pu.unit_type}
@@ -3720,7 +3737,7 @@ export default function PriceBuilderPanel({
                       </td>
                       <td role="cell" className="db-part-unit-price py-1.5 px-2.5 text-right text-gray-600">
                         <span aria-hidden="true" className="db-part-mobile-label">Unit price</span>
-                        {canMutate ? (
+                        {isEtsImported ? 'Unavailable' : canMutate ? (
                           (() => {
                             const saving = priceSavingId === pu.id
                             return (
@@ -3747,7 +3764,7 @@ export default function PriceBuilderPanel({
                         ) : (
                           <>${parseFloat(pu.unit_price).toFixed(2)}</>
                         )}
-                        {pu.pricing && <span className="db-parts-pricing__source ml-1">{priceSourceLabel(pu.pricing.current_source, pu.pricing.policy_source)}</span>}
+                        {!isEtsImported && pu.pricing && <span className="db-parts-pricing__source ml-1">{priceSourceLabel(pu.pricing.current_source, pu.pricing.policy_source)}</span>}
                       </td>
                       {hasSavings && <td role="cell" className="db-part-savings py-1.5 px-2.5 text-right">
                         <span aria-hidden="true" className="db-part-mobile-label">Savings</span>
@@ -3759,7 +3776,7 @@ export default function PriceBuilderPanel({
                           <span className="text-slate-500">—</span>
                         )}
                       </td>}
-                      <td role="cell" className="db-part-total py-1.5 px-2.5 text-right text-gray-900 font-medium"><span aria-hidden="true" className="db-part-mobile-label">Line total</span>${parseFloat(pu.total_price).toFixed(2)}</td>
+                      <td role="cell" className="db-part-total py-1.5 px-2.5 text-right text-gray-900 font-medium"><span aria-hidden="true" className="db-part-mobile-label">Line total</span>{isEtsImported ? 'Unavailable' : `$${parseFloat(pu.total_price).toFixed(2)}`}</td>
                     </tr>
                   )
                 })}
@@ -3936,6 +3953,7 @@ export default function PriceBuilderPanel({
           <LaborLineEditor
             line={line}
             canMutate={canMutate}
+            importedEtsOrder={isEtsImported}
             onLocalChange={(patch) => setLaborOverride(line.id, patch)}
             onUpdate={(body) => updateLine.mutate({ lineId: line.id, body })}
           />
@@ -4003,7 +4021,7 @@ export default function PriceBuilderPanel({
                 <p className="font-['Barlow_Condensed',sans-serif] text-sm font-extrabold uppercase tracking-[0.16em] text-slate-700">Services & Parts</p>
                 <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">{lines.length + (orphanParts.length ? 1 : 0)} lines</span>
               </span>
-              <SectionInfoTooltip text="Each card is one billable item. Service packages bundle labor with their required parts — edit hours, rate, or part quantity inline. Stock adjusts automatically." tooltipClassName="w-72" />
+              <SectionInfoTooltip text={isEtsImported ? 'Imported work details. ETS billed line amounts are unavailable here.' : 'Each card is one billable item. Service packages bundle labor with their required parts — edit hours, rate, or part quantity inline. Stock adjusts automatically.'} tooltipClassName="w-72" />
             </div>
             <OperationExecutionFeedback query={operationExecution} />
             <div className="db-service-list divide-y divide-gray-100 border-y border-gray-100">
@@ -4039,15 +4057,17 @@ export default function PriceBuilderPanel({
                           <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">{lineTypeLabel(line)}</span>
                         </span>
                         <span className="db-service-execution-meta mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-600">
-                          <span className="min-w-0">{formatHoursMinutes(line.hours)} booked{groupedParts.length > 0 ? ` · ${groupedParts.length} parts` : ''}{partSavings > 0 ? ` · saves ${money(partSavings)}` : ''}</span>
+                          <span className="min-w-0">{formatHoursMinutes(line.hours)} booked{groupedParts.length > 0 ? ` · ${groupedParts.length} parts` : ''}{!isEtsImported && partSavings > 0 ? ` · saves ${money(partSavings)}` : ''}</span>
                           {execution && <OperationExecutionStatus item={execution} />}
                         </span>
                       </span>
                       <span className="text-right">
-                        <span className="db-service-total block text-base font-bold tabular-nums text-gray-900">{money(lineTotal)}</span>
-                        <span className="db-service-breakdown block text-[11px] text-slate-600">
-                          {money(line.total_cost)} labor · {money(partTotal)} parts
-                        </span>
+                        {isEtsImported ? <span className="db-service-breakdown block text-[11px] text-slate-600">ETS billed breakdown unavailable</span> : <>
+                          <span className="db-service-total block text-base font-bold tabular-nums text-gray-900">{money(lineTotal)}</span>
+                          <span className="db-service-breakdown block text-[11px] text-slate-600">
+                            {money(line.total_cost)} labor · {money(partTotal)} parts
+                          </span>
+                        </>}
                       </span>
                     </button>
                     {line.recommendation_source && <RecommendationSourceLink source={line.recommendation_source} currentDescription={line.description} />}
@@ -4113,7 +4133,7 @@ export default function PriceBuilderPanel({
                     </span>
                     <div>
                       <p className="font-semibold text-gray-900">Standalone parts</p>
-                      <p className="text-xs text-gray-500">{orphanParts.length} parts · {money(orphanParts.reduce((sum, p) => sum + (parseFloat(p.total_price || '0') || 0), 0))}</p>
+                      <p className="text-xs text-gray-500">{orphanParts.length} parts · {isEtsImported ? 'ETS billed breakdown unavailable' : money(orphanParts.reduce((sum, p) => sum + (parseFloat(p.total_price || '0') || 0), 0))}</p>
                     </div>
                   </div>
                   <div className="db-standalone-table">{renderPartsRows(orphanParts)}</div>
@@ -4560,7 +4580,7 @@ export default function PriceBuilderPanel({
                   summaryLoadFailed ? 'text-red-600' : totalMotionActive || isInitialSummaryLoad ? 'text-orange-700' : 'text-gray-400'
                 }`}>
                   {(totalMotionActive || isInitialSummaryLoad) && <Spinner size="xs" />}
-                  {summaryLoadFailed ? 'Failed to load' : isInitialSummaryLoad ? 'Loading' : totalMotionActive ? 'Calculating' : 'Order Total'}
+                  {isEtsImported ? 'ETS invoice total' : summaryLoadFailed ? 'Failed to load' : isInitialSummaryLoad ? 'Loading' : totalMotionActive ? 'Calculating' : 'Order Total'}
                   {summaryLoadFailed && (
                     <button
                       type="button"
@@ -4577,12 +4597,13 @@ export default function PriceBuilderPanel({
                   totalJustChanged ? 'price-total-amount--changed' : totalMotionActive ? 'price-total-amount--updating' : ''
                 }`}
               >
-                {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(orderTotalValue)}
+                {isEtsImported ? importedMoney(importedBillingFailed ? null : importedBilling?.total_amount) : isInitialSummaryLoad || summaryLoadFailed ? '…' : money(orderTotalValue)}
               </p>
+              {isEtsImported && <ImportedBillingDetails billing={importedBilling} failed={importedBillingFailed} />}
             </div>
             {!compactWorkspace && operationProgress}
             {(!isInternalOrder || hasInvoice || completionMode) && (
-              canCreateInvoice ? (
+              isEtsImported ? <span className="text-sm font-semibold text-slate-600">{importedBilling?.invoice_id && !importedBillingFailed ? 'ETS invoice on file' : 'ETS invoice unavailable'} · no new invoice</span> : canCreateInvoice ? (
                 <div className="relative">
                   <button
                     type="button"
