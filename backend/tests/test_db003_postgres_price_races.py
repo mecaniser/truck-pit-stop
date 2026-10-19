@@ -271,7 +271,7 @@ async def test_price_mutation_serializes_with_invoice_finalization(monkeypatch):
     monkeypatch.setattr(repair_orders, "_refresh_repair_order_totals", _pause_before_price_commit)
     monkeypatch.setattr(invoices.settings, "PROVIDER_OUTBOX_ENABLED", True)
     monkeypatch.setattr(invoices, "notify_invoice_created", _noop)
-    monkeypatch.setattr(repair_orders, "send_sms", _noop)
+    monkeypatch.setattr(repair_orders, "enqueue_automated_sms", _noop)
 
     async def _finalize():
         async with factory() as db:

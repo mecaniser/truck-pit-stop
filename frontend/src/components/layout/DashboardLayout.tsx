@@ -6,8 +6,7 @@ import { lazy, Suspense, type MouseEvent as ReactMouseEvent, type TouchEvent, us
 import { useAuthStore } from '../../stores/authStore'
 import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown, MessageSquare, CreditCard, MoreHorizontal, ChevronLeft, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { useTheme } from '../../contexts/ThemeContext'
-import api from '@/lib/api'
-import type { MessagesUnreadSummary } from '@/types'
+import { inboxApi } from '@/features/communications/api'
 import BrandLogo from '../brand/BrandLogo'
 import DieselBridgeWordmark from '../brand/DieselBridgeWordmark'
 import TenantBrandLogo from '../brand/TenantBrandLogo'
@@ -27,7 +26,8 @@ const GarageAnalyticsPage = lazy(lazyRouteLoader(() => import('@/features/platfo
 const PlatformAnalyticsPage = lazy(lazyRouteLoader(() => import('@/features/platform-admin/PlatformAnalyticsPage')))
 const PendingEnrollmentsPage = lazy(lazyRouteLoader(() => import('@/features/platform-admin/PendingEnrollmentsPage')))
 const PaymentControlCenter = lazy(lazyRouteLoader(() => import('@/features/platform-admin/PaymentControlCenter')))
-const MessagesInboxPage = lazy(lazyRouteLoader(() => import('@/features/messages/MessagesInboxPage')))
+const MessagesInboxPage = lazy(lazyRouteLoader(() => import('@/features/communications/DashboardInboxPage')))
+const PreviousMessagesInboxPage = lazy(lazyRouteLoader(() => import('@/features/messages/MessagesInboxPage')))
 const MechanicsBoardPage = lazy(lazyRouteLoader(() => import('@/features/dashboard/MechanicsBoardPage')))
 const MechanicBoardDetailPage = lazy(lazyRouteLoader(() => import('@/features/dashboard/MechanicBoardDetailPage')))
 
@@ -66,8 +66,8 @@ export default function DashboardLayout() {
   const { data: unreadSummary } = useQuery({
     queryKey: ['messages-unread-summary'],
     queryFn: async () => {
-      const { data } = await api.get<MessagesUnreadSummary>('/messages/unread-summary')
-      return data
+      const rows = await inboxApi.list()
+      return { unread_count_staff: rows.reduce((count, row) => count + row.unreadCount, 0) }
     },
     enabled: shouldFetchMessagesUnread,
     staleTime: 0,
@@ -205,7 +205,7 @@ export default function DashboardLayout() {
     if (location.pathname.startsWith('/dashboard/mechanics/')) return 'Technician Detail'
     if (location.pathname === '/dashboard/customers' || location.pathname.startsWith('/dashboard/customers/')) return 'Customers'
     if (location.pathname === '/dashboard/repair-orders') return 'Repair Orders'
-    if (location.pathname === '/dashboard/messages') return 'Messages'
+    if (location.pathname === '/dashboard/messages' || location.pathname.startsWith('/dashboard/messages/')) return 'Messages'
     if (location.pathname === '/dashboard/garage' || location.pathname.startsWith('/dashboard/garage/')) return 'My Shop'
     const current = navLinks.find(link => location.pathname === link.to)
     return current?.label || ''
@@ -216,7 +216,7 @@ export default function DashboardLayout() {
     if (location.pathname === '/dashboard/settings') return 'profile-settings'
     if (location.pathname === '/dashboard/customers' || location.pathname.startsWith('/dashboard/customers/')) return 'customers'
     if (location.pathname === '/dashboard/repair-orders') return 'repair-orders'
-    if (location.pathname === '/dashboard/messages') return 'messages'
+    if (location.pathname === '/dashboard/messages' || location.pathname.startsWith('/dashboard/messages/')) return 'messages'
     if (location.pathname === '/dashboard/garage' || location.pathname.startsWith('/dashboard/garage/')) return 'my-shop'
     return getCurrentPageLabel().toLowerCase().replace(/\s+/g, '-') || 'dashboard'
   }
@@ -531,6 +531,10 @@ export default function DashboardLayout() {
               <>
                 <Route path="customers" element={<CustomersPage />} />
                 <Route path="repair-orders" element={<RepairOrdersPage />} />
+                <Route
+                  path="messages/previous"
+                  element={canAccessMessaging ? <PreviousMessagesInboxPage /> : <Navigate to="/dashboard" replace />}
+                />
                 <Route
                   path="messages"
                   element={canAccessMessaging ? <MessagesInboxPage /> : <Navigate to="/dashboard" replace />}

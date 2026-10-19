@@ -1,0 +1,1632 @@
+.communications-surface {
+  font-family:
+    ui-sans-serif,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  color: #17283b;
+  background: #0b1728;
+  font-size: 14px;
+  --muted: #617084;
+  --line: #e2e7ec;
+  --green: #126b59;
+  --canvas: #f6f8fb;
+  /* The inbox is a light canvas inside either dashboard appearance. Shell
+     heading/control rules read these variables from their nearest surface. */
+  --text-primary: #17283b;
+  --text-secondary: #617084;
+  --workspace-text: #17283b;
+  --workspace-muted: #617084;
+  --workspace-border: #e2e7ec;
+  --product-road-white: #fff;
+}
+:where(.communications-surface) * {
+  box-sizing: border-box;
+}
+:where(.communications-surface) {
+  margin: 0;
+}
+:where(.communications-surface) button,
+:where(.communications-surface) input,
+:where(.communications-surface) textarea,
+:where(.communications-surface) select {
+  font: inherit;
+}
+:where(.communications-surface) button {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 0;
+  background: none;
+  color: inherit;
+  white-space: nowrap;
+}
+:where(.communications-surface) button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+:where(.communications-surface) button:not(:disabled):hover {
+  filter: brightness(0.94);
+}
+:where(.communications-surface) button:focus-visible,
+:where(.communications-surface) input:focus-visible,
+:where(.communications-surface) textarea:focus-visible,
+:where(.communications-surface) select:focus-visible {
+  outline: 2px solid #bd4910;
+  outline-offset: 3px;
+}
+:where(.communications-surface) svg {
+  flex-shrink: 0;
+  stroke-width: 1.7;
+}
+:where(.communications-surface) ::selection {
+  background: #c9e9df;
+  color: #12392d;
+}
+:where(.communications-surface) input,
+:where(.communications-surface) textarea {
+  caret-color: var(--green);
+}
+:where(.communications-surface) ::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+:where(.communications-surface) ::-webkit-scrollbar-thumb {
+  background: #c6d0d9;
+  border-radius: 8px;
+}
+:where(.communications-surface) h1,
+:where(.communications-surface) h2,
+:where(.communications-surface) h3,
+:where(.communications-surface) h4,
+:where(.communications-surface) p {
+  margin: 0;
+}
+:where(.communications-surface) select {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+:where(.communications-surface) input::placeholder,
+:where(.communications-surface) textarea::placeholder {
+  color: #68798a;
+}
+:where(.communications-surface) .comms-app,
+.communications-surface.comms-app {
+  display: flex;
+  height: 100dvh;
+  min-height: 580px;
+  padding: 10px 10px 10px 0;
+}
+:where(.communications-surface) .app-rail {
+  width: 68px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: #94a7bd;
+  padding: 15px 0;
+}
+:where(.communications-surface) .brand-mark {
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: -0.6px;
+  color: white;
+}
+:where(.communications-surface) .brand-mark span {
+  color: #f17836;
+}
+:where(.communications-surface) .shop-mark {
+  font-size: 11px;
+  letter-spacing: 1px;
+  margin: 24px 0 35px;
+  border: 1px solid #344153;
+  border-radius: 7px;
+  padding: 7px;
+}
+:where(.communications-surface) .rail-icons {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  align-items: center;
+}
+:where(.communications-surface) .rail-icons > svg {
+  width: 19px;
+}
+:where(.communications-surface) .rail-current {
+  padding: 11px;
+  border-radius: 10px;
+  background: #19392f;
+  color: #a7e0cc;
+}
+:where(.communications-surface) .rail-current svg {
+  width: 20px;
+}
+:where(.communications-surface) .rail-bottom {
+  margin-top: auto;
+}
+:where(.communications-surface) .rail-avatar {
+  display: flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  background: #243951;
+  color: #d8e2ee;
+  border-radius: 50%;
+  font-size: 11px;
+}
+:where(.communications-surface) .comms-workspace {
+  position: relative;
+  background: var(--canvas);
+  flex: 1;
+  min-width: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+:where(.communications-surface) .preview-strip {
+  height: 30px;
+  flex-shrink: 0;
+  background: #edf1f5;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  padding: 0 26px;
+  align-items: center;
+  font-size: 11px;
+  color: #526276;
+}
+:where(.communications-surface) .preview-strip > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+:where(.communications-surface) .preview-dot {
+  width: 6px;
+  height: 6px;
+  background: #bf641f;
+  border-radius: 50%;
+}
+:where(.communications-surface) .page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 22px 28px 23px;
+  flex-shrink: 0;
+}
+:where(.communications-surface) .breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+:where(.communications-surface) .page-header h1 {
+  font-size: 27px;
+  font-weight: 650;
+  letter-spacing: -0.8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+:where(.communications-surface) .heading-count {
+  border-radius: 7px;
+  background: #e7ecef;
+  font-size: 12px;
+  padding: 4px 7px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: #607080;
+}
+:where(.communications-surface) .page-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+:where(.communications-surface) .primary-button {
+  border-radius: 7px;
+  background: var(--green);
+  color: #fff;
+  padding: 10px 14px;
+  font-size: 12px;
+  min-height: 37px;
+  font-weight: 550;
+}
+:where(.communications-surface) .subtle-button {
+  border: 1px solid #d8e0e7;
+  background: #fff;
+  border-radius: 7px;
+  padding: 9px 12px;
+  font-size: 12px;
+  min-height: 37px;
+}
+:where(.communications-surface) .inbox-layout {
+  display: grid;
+  grid-template-columns: 330px minmax(330px, 1fr) 258px;
+  min-height: 0;
+  flex: 1;
+  border-top: 1px solid var(--line);
+  background: #fff;
+}
+:where(.communications-surface) .conversation-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: #fbfcfd;
+}
+:where(.communications-surface) .list-tools {
+  padding: 16px 16px 13px;
+}
+:where(.communications-surface) .view-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 17px;
+}
+:where(.communications-surface) .view-tabs button {
+  padding: 7px 8px;
+  font-size: 12px;
+  border-radius: 6px;
+  gap: 5px;
+  color: #58677a;
+}
+:where(.communications-surface) .view-tabs button > span {
+  font-size: 10px;
+  color: #6a7785;
+}
+:where(.communications-surface) .view-tabs button[aria-pressed="true"] {
+  background: #e8f0ed;
+  color: #205b4c;
+  font-weight: 600;
+}
+:where(.communications-surface) .search-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: white;
+  border: 1px solid #dbe2e8;
+  border-radius: 7px;
+  padding: 9px 10px;
+  color: #728092;
+}
+:where(.communications-surface) .search-field input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+}
+:where(.communications-surface) .search-field button {
+  padding: 0;
+}
+:where(.communications-surface) .channel-filters {
+  display: flex;
+  gap: 3px;
+  margin-top: 11px;
+}
+:where(.communications-surface) .channel-filters button {
+  padding: 6px 8px;
+  font-size: 11px;
+  color: #647184;
+  border-radius: 5px;
+}
+:where(.communications-surface) .channel-filters button[aria-pressed="true"] {
+  background: #e9edf1;
+  color: #26394a;
+  font-weight: 600;
+}
+:where(.communications-surface) .list-heading {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 18px 10px;
+  font-size: 9px;
+  letter-spacing: 0.7px;
+  color: #657587;
+  font-weight: 600;
+}
+:where(.communications-surface) .thread-rows {
+  flex: 1;
+  overflow: auto;
+}
+:where(.communications-surface) .thread-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  width: 100%;
+  padding: 17px 16px;
+  text-align: left;
+  border-top: 1px solid #eaf0f3;
+  white-space: normal;
+}
+:where(.communications-surface) .thread-row.selected {
+  background: #eaf3ef;
+  box-shadow: inset 2px 0 #30745d;
+}
+:where(.communications-surface) .avatar {
+  display: inline-flex;
+  position: relative;
+  align-items: center;
+  justify-content: center;
+  width: 37px;
+  height: 37px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #e3ece9;
+  color: #315d50;
+  font-weight: 600;
+  font-size: 12px;
+}
+:where(.communications-surface) .avatar-02 {
+  background: #eee8df;
+  color: #795c32;
+}
+:where(.communications-surface) .avatar-03 {
+  background: #e7e9f5;
+  color: #5b5c83;
+}
+:where(.communications-surface) .avatar-04 {
+  background: #eee4e8;
+  color: #7f4e66;
+}
+:where(.communications-surface) .avatar-05 {
+  background: #e1edf3;
+  color: #39637d;
+}
+:where(.communications-surface) .avatar-06 {
+  background: #ecebe4;
+  color: #6c694b;
+}
+:where(.communications-surface) .channel-mark {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  border: 2px solid #fbfcfd;
+}
+:where(.communications-surface) .channel-mark svg {
+  width: 11px;
+  height: 11px;
+}
+:where(.communications-surface) .thread-copy {
+  flex: 1;
+  min-width: 0;
+}
+:where(.communications-surface) .thread-top {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+:where(.communications-surface) .thread-top strong {
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:where(.communications-surface) .thread-top > span {
+  font-size: 9px;
+  color: #6b7a88;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+:where(.communications-surface) .thread-company {
+  display: block;
+  color: #657383;
+  font-size: 10px;
+  margin-top: 4px;
+}
+:where(.communications-surface) .thread-preview {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  line-height: 1.5;
+  margin-top: 8px;
+  color: #5c6c7a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 230px;
+}
+:where(.communications-surface) .thread-preview svg {
+  color: #a24a25;
+}
+:where(.communications-surface) .thread-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  min-height: 15px;
+  font-size: 9px;
+  color: #607282;
+}
+:where(.communications-surface) .thread-meta > span {
+  border: 1px solid #d9e2e5;
+  border-radius: 4px;
+  padding: 2px 5px;
+}
+:where(.communications-surface) .unread-dot {
+  margin-left: auto;
+  background: #176d59;
+  color: white;
+  border-radius: 50%;
+  min-width: 17px;
+  height: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+}
+:where(.communications-surface) .list-footer {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  padding: 13px 17px;
+  font-size: 10px;
+  color: #6a7a88;
+}
+:where(.communications-surface) .connection-dot {
+  width: 5px;
+  height: 5px;
+  background: #2f8566;
+  border-radius: 50%;
+  margin-left: auto;
+}
+:where(.communications-surface) .conversation {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+:where(.communications-surface) .conversation-header {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--line);
+  min-height: 76px;
+  flex-shrink: 0;
+}
+:where(.communications-surface) .header-avatar {
+  width: 35px;
+  height: 35px;
+}
+:where(.communications-surface) .conversation-title {
+  min-width: 0;
+}
+:where(.communications-surface) .conversation-title h2 {
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.15px;
+}
+:where(.communications-surface) .conversation-title > span {
+  display: block;
+  font-size: 10px;
+  color: #667587;
+  margin-top: 5px;
+}
+:where(.communications-surface) .separator {
+  margin: 0 4px;
+  color: #7b8996;
+}
+:where(.communications-surface) .conversation-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+:where(.communications-surface) .resolve-button {
+  border: 1px solid #dce4df;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 11px;
+  color: #2e6350;
+}
+:where(.communications-surface) .resolve-button.resolved {
+  color: #55677c;
+}
+:where(.communications-surface) .icon-button {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+}
+:where(.communications-surface) .conversation-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 22px;
+  border-bottom: 1px solid #edf0f3;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+:where(.communications-surface) .channel-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: #51677b;
+  white-space: nowrap;
+}
+:where(.communications-surface) .channel-chip.whatsapp,
+:where(.communications-surface) .channel-mark.whatsapp {
+  color: #287b52;
+}
+:where(.communications-surface) .channel-chip.telegram,
+:where(.communications-surface) .channel-mark.telegram {
+  color: #327c9c;
+}
+:where(.communications-surface) .assigned-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #687788;
+}
+:where(.communications-surface) .assigned-label select {
+  font-size: 10px;
+  max-width: 105px;
+}
+:where(.communications-surface) .automation-toggle {
+  margin-left: auto;
+  font-size: 10px;
+  color: #617184;
+  gap: 5px;
+}
+:where(.communications-surface) .switch-track {
+  display: block;
+  width: 23px;
+  height: 13px;
+  border-radius: 10px;
+  background: #c8d1d8;
+  margin-left: 3px;
+  position: relative;
+}
+:where(.communications-surface) .switch-track:after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: white;
+  transition: transform 0.15s ease-out;
+}
+:where(.communications-surface) .automation-toggle.active .switch-track {
+  background: #407a64;
+}
+:where(.communications-surface) .automation-toggle.active .switch-track:after {
+  transform: translateX(10px);
+}
+:where(.communications-surface) .message-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 22px 26px 12px;
+  background: #fff;
+}
+:where(.communications-surface) .day-divider {
+  display: flex;
+  justify-content: center;
+  color: #68798a;
+  font-size: 10px;
+  margin-bottom: 29px;
+}
+:where(.communications-surface) .message-stack {
+  max-width: 780px;
+  margin: auto;
+}
+:where(.communications-surface) .message-line {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  margin-bottom: 23px;
+  gap: 6px;
+}
+:where(.communications-surface) .message-line.outbound {
+  align-items: flex-end;
+}
+:where(.communications-surface) .message-bubble {
+  max-width: 83%;
+  font-size: 12px;
+  line-height: 1.65;
+  padding: 12px 15px;
+  background: #f0f3f6;
+  border-radius: 11px 11px 11px 3px;
+  color: #34465a;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+:where(.communications-surface) .outbound .message-bubble {
+  background: #e7f2ec;
+  color: #244e3d;
+  border-radius: 11px 11px 3px 11px;
+}
+:where(.communications-surface) .message-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  color: #68798a;
+  padding: 0 2px;
+}
+:where(.communications-surface) .message-meta svg {
+  color: #3a8168;
+}
+:where(.communications-surface) .message-line.automated {
+  align-items: center;
+  margin: 27px 0;
+}
+:where(.communications-surface) .service-event {
+  border-top: 1px solid #e9edef;
+  border-bottom: 1px solid #e9edef;
+  width: 94%;
+  padding: 12px 4px;
+  color: #617181;
+}
+:where(.communications-surface) .service-event > span {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 10px;
+}
+:where(.communications-surface) .service-event > span > span {
+  margin-left: auto;
+  font-size: 9px;
+}
+:where(.communications-surface) .service-event p {
+  font-size: 11px;
+  line-height: 1.7;
+  margin-top: 7px;
+}
+:where(.communications-surface) .delivery-detail {
+  padding: 6px 0 0;
+  font-size: 9px;
+  text-transform: capitalize;
+  color: #637c6d;
+}
+:where(.communications-surface) .composer-area {
+  flex-shrink: 0;
+  padding: 13px 22px 15px;
+  background: #fff;
+  border-top: 1px solid #edf0f3;
+}
+:where(.communications-surface) .composer-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+  color: #627587;
+  margin-bottom: 10px;
+}
+:where(.communications-surface) .composer-heading > label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+:where(.communications-surface) .channel-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #355b4c;
+}
+:where(.communications-surface) .channel-select select {
+  font-size: 10px;
+  font-weight: 600;
+}
+:where(.communications-surface) .composer-box {
+  border: 1px solid #d8e1e5;
+  border-radius: 9px;
+  position: relative;
+}
+:where(.communications-surface) .composer-box:focus-within {
+  border-color: #608b78;
+}
+:where(.communications-surface) .composer-box textarea {
+  display: block;
+  width: 100%;
+  min-height: 70px;
+  max-height: 130px;
+  resize: vertical;
+  border: 0;
+  border-radius: 9px;
+  background: white;
+  padding: 13px 14px;
+  color: #263d4f;
+  font-size: 12px;
+  line-height: 1.6;
+  outline: 0;
+}
+:where(.communications-surface) .composer-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 10px;
+  border-top: 1px solid #eff2f4;
+}
+:where(.communications-surface) .reply-options {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 9px;
+  color: #637586;
+}
+:where(.communications-surface) .reply-options button {
+  font-size: 10px;
+  color: #5a6f7e;
+  padding: 4px;
+}
+:where(.communications-surface) .send-button {
+  padding: 8px 11px;
+  font-size: 11px;
+  min-height: 31px;
+}
+:where(.communications-surface) .composer-footnote {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 9px;
+  color: #637586;
+  margin-top: 8px;
+}
+:where(.communications-surface) .customer-context {
+  border-left: 1px solid var(--line);
+  background: #fafbfd;
+  overflow: auto;
+  min-height: 0;
+  padding: 0 20px;
+}
+:where(.communications-surface) .customer-context > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 58px;
+}
+:where(.communications-surface) .customer-context h3 {
+  font-size: 11px;
+  font-weight: 600;
+}
+:where(.communications-surface) .contact-profile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 12px 0 24px;
+}
+:where(.communications-surface) .context-avatar {
+  width: 51px;
+  height: 51px;
+  font-size: 16px;
+  margin-bottom: 5px;
+}
+:where(.communications-surface) .contact-profile > strong {
+  font-size: 13px;
+}
+:where(.communications-surface) .contact-profile > span:last-child {
+  font-size: 11px;
+  color: #657587;
+}
+:where(.communications-surface) .customer-context section {
+  border-top: 1px solid var(--line);
+  padding: 20px 0;
+}
+:where(.communications-surface) .customer-context h4 {
+  font-size: 10px;
+  color: #657587;
+  font-weight: 500;
+  margin-bottom: 14px;
+}
+:where(.communications-surface) .identity-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 9px;
+  color: #657587;
+}
+:where(.communications-surface) .identity-value {
+  font-size: 11px;
+  margin-top: 9px;
+}
+:where(.communications-surface) .order-title {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 12px;
+  color: #2d4255;
+}
+:where(.communications-surface) .repair-status {
+  display: inline-block;
+  background: #e9f1e8;
+  color: #476841;
+  border-radius: 4px;
+  font-size: 9px;
+  padding: 4px 6px;
+  margin-top: 10px;
+}
+:where(.communications-surface) .vehicle-context {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 11px;
+  line-height: 1.6;
+  margin-top: 16px;
+}
+:where(.communications-surface) .vehicle-context svg {
+  color: #657587;
+  margin-top: 2px;
+}
+:where(.communications-surface) .concern {
+  font-size: 10px;
+  line-height: 1.6;
+  color: #657587;
+  margin: 8px 0 0 25px;
+}
+:where(.communications-surface) .customer-context dl {
+  margin: 0;
+  font-size: 10px;
+}
+:where(.communications-surface) .customer-context dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 13px;
+}
+:where(.communications-surface) .customer-context dt {
+  color: #657587;
+}
+:where(.communications-surface) .customer-context dd {
+  margin: 0;
+}
+:where(.communications-surface) .context-note {
+  display: flex;
+  gap: 8px;
+  color: #657587;
+  padding-top: 7px;
+}
+:where(.communications-surface) .context-note p {
+  font-size: 10px;
+  line-height: 1.6;
+}
+:where(.communications-surface) .delivery-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff5e8;
+  color: #89551e;
+  padding: 10px 22px;
+  font-size: 11px;
+}
+:where(.communications-surface) .delivery-alert button {
+  margin-left: auto;
+  font-size: 10px;
+}
+:where(.communications-surface) .message-details {
+  background: #fff9f1;
+  padding: 13px;
+  font-size: 10px;
+  line-height: 1.6;
+  max-width: 94%;
+  border-radius: 7px;
+  color: #74572d;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+:where(.communications-surface) .compose-restriction {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  margin: 3px 0 10px;
+  color: #8a582c;
+  font-size: 11px;
+  line-height: 1.6;
+}
+:where(.communications-surface) .context-warning,
+:where(.communications-surface) .over-limit {
+  color: #a34025 !important;
+}
+:where(.communications-surface) .empty-list,
+:where(.communications-surface) .empty-channel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  text-align: center;
+  padding: 42px 20px;
+  color: #637586;
+  font-size: 12px;
+}
+:where(.communications-surface) .empty-list button,
+:where(.communications-surface) .empty-channel button {
+  color: var(--green);
+  font-size: 11px;
+  margin-top: 5px;
+}
+:where(.communications-surface) .empty-channel {
+  padding-top: 60px;
+}
+:where(.communications-surface) .empty-channel > svg {
+  width: 32px;
+  height: 32px;
+  color: #668474;
+}
+:where(.communications-surface) .empty-channel h3 {
+  font-size: 17px;
+  color: #2e4b57;
+  font-weight: 600;
+}
+:where(.communications-surface) .empty-channel p {
+  max-width: 280px;
+  line-height: 1.7;
+  font-size: 12px;
+}
+:where(.communications-surface) .new-conversation {
+  padding: 14px;
+  background: #f0f5f2;
+  border-block: 1px solid #d5e3db;
+}
+:where(.communications-surface) .new-conversation > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+:where(.communications-surface) .new-conversation > button {
+  display: flex;
+  width: 100%;
+  justify-content: flex-start;
+  padding: 9px 4px;
+  font-size: 11px;
+}
+:where(.communications-surface) .new-conversation > button svg:last-child {
+  margin-left: auto;
+}
+:where(.communications-surface) .feedback {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #173c32;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  z-index: 7;
+  max-width: 90%;
+  line-height: 1.5;
+}
+:where(.communications-surface) .feedback:not(:empty) {
+  padding: 12px 14px;
+  box-shadow: 0 5px 20px #132c2320;
+}
+:where(.communications-surface) .saved-replies {
+  position: absolute;
+  bottom: 48px;
+  left: 10px;
+  right: 10px;
+  background: #fff;
+  border: 1px solid #d6e0dd;
+  border-radius: 8px;
+  padding: 6px;
+  z-index: 3;
+}
+:where(.communications-surface) .saved-replies button {
+  display: block;
+  text-align: left;
+  width: 100%;
+  padding: 10px;
+  white-space: normal;
+  font-size: 11px;
+  line-height: 1.6;
+  border-radius: 5px;
+}
+:where(.communications-surface) .saved-replies button:hover {
+  background: #f0f5f2;
+}
+:where(.communications-surface) .sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: #0b172855;
+  z-index: 20;
+  display: flex;
+  justify-content: flex-end;
+}
+:where(.communications-surface) .connections-sheet {
+  width: 470px;
+  max-width: 100%;
+  height: 100%;
+  background: #fff;
+  padding: 29px;
+  box-shadow: -10px 0 40px #0b172820;
+  overflow: auto;
+}
+:where(.communications-surface) .connections-sheet > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 28px;
+}
+:where(.communications-surface) .connections-sheet h2 {
+  font-size: 21px;
+  letter-spacing: -0.4px;
+}
+:where(.communications-surface) .connections-sheet header p {
+  font-size: 12px;
+  color: #637586;
+  margin-top: 8px;
+}
+:where(.communications-surface) .connection-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  padding: 23px 0;
+  border-top: 1px solid var(--line);
+}
+:where(.communications-surface) .connection-row > .channel-chip {
+  padding: 9px;
+  background: #edf4f0;
+  border-radius: 8px;
+}
+:where(.communications-surface) .connection-row h3 {
+  font-size: 13px;
+}
+:where(.communications-surface) .connection-row p {
+  font-size: 11px;
+  line-height: 1.7;
+  color: #637586;
+  margin-top: 6px;
+}
+:where(.communications-surface) .connection-state {
+  margin-left: auto;
+  font-size: 9px;
+  padding: 4px 6px;
+  background: #eff2f4;
+  border-radius: 4px;
+  white-space: nowrap;
+  color: #637586;
+}
+:where(.communications-surface) .connection-state.ready {
+  background: #e7f1eb;
+  color: #2b6d4c;
+}
+:where(.communications-surface) .connection-summary {
+  display: flex;
+  gap: 10px;
+  line-height: 1.7;
+  font-size: 11px;
+  color: #637586;
+  padding: 20px 0;
+  border-top: 1px solid var(--line);
+}
+:where(.communications-surface) .mobile-back,
+:where(.communications-surface) .close-context,
+:where(.communications-surface) .context-toggle {
+  display: none;
+}
+:where(.communications-surface) .muted {
+  font-size: 11px;
+  color: #657587;
+}
+@media (min-width: 1600px) {
+  :where(.communications-surface) .inbox-layout {
+    grid-template-columns: 360px minmax(400px, 1fr) 280px;
+  }
+  :where(.communications-surface) .message-bubble {
+    font-size: 14px;
+  }
+  :where(.communications-surface) .message-meta,
+  :where(.communications-surface) .service-event > span,
+  :where(.communications-surface) .day-divider {
+    font-size: 11px;
+  }
+  :where(.communications-surface) .service-event p {
+    font-size: 13px;
+  }
+  :where(.communications-surface) .thread-top strong {
+    font-size: 14px;
+  }
+  :where(.communications-surface) .thread-preview {
+    font-size: 12px;
+  }
+  :where(.communications-surface) .thread-company {
+    font-size: 11px;
+  }
+  :where(.communications-surface) .thread-row {
+    padding-block: 21px;
+  }
+}
+@media (max-width: 1200px) {
+  :where(.communications-surface) .inbox-layout {
+    grid-template-columns: 300px minmax(320px, 1fr);
+  }
+  :where(.communications-surface) .customer-context {
+    display: none;
+  }
+  :where(.communications-surface) .context-toggle {
+    display: inline-flex;
+  }
+  :where(.communications-surface) .context-open .customer-context {
+    display: block;
+    position: absolute;
+    right: 0;
+    top: 142px;
+    bottom: 0;
+    width: 280px;
+    z-index: 6;
+    box-shadow: -8px 0 24px #13233d12;
+  }
+  :where(.communications-surface) .close-context {
+    display: flex;
+  }
+  :where(.communications-surface) .thread-preview {
+    max-width: 203px;
+  }
+  :where(.communications-surface) .composer-footnote > span:last-child {
+    display: none;
+  }
+  :where(.communications-surface) .conversation-toolbar {
+    gap: 10px;
+  }
+}
+@media (max-width: 700px) {
+  :where(.communications-surface) .comms-app,
+  .communications-surface.comms-app {
+    padding: 0;
+    min-height: 100dvh;
+    height: 100dvh;
+  }
+  :where(.communications-surface) .app-rail {
+    display: none;
+  }
+  :where(.communications-surface) .comms-workspace {
+    border-radius: 0;
+  }
+  :where(.communications-surface) .preview-strip {
+    padding: 0 15px;
+    font-size: 9px;
+    height: 28px;
+  }
+  :where(.communications-surface) .preview-strip > span:last-child {
+    font-size: 9px;
+  }
+  :where(.communications-surface) .page-header {
+    padding: 16px 16px 17px;
+  }
+  :where(.communications-surface) .breadcrumb {
+    font-size: 10px;
+    margin-bottom: 5px;
+  }
+  :where(.communications-surface) .page-header h1 {
+    font-size: 23px;
+  }
+  :where(.communications-surface) .page-actions {
+    gap: 7px;
+  }
+  :where(.communications-surface) .page-actions .primary-button {
+    font-size: 11px;
+    padding: 9px 10px;
+  }
+  :where(.communications-surface) .page-actions .subtle-button {
+    padding: 9px;
+  }
+  :where(.communications-surface) .page-actions .primary-button > span,
+  :where(.communications-surface) .page-actions .subtle-button > span {
+    display: none;
+  }
+  :where(.communications-surface) .inbox-layout {
+    display: flex;
+    position: relative;
+  }
+  :where(.communications-surface) .conversation-list {
+    width: 100%;
+    border: 0;
+  }
+  :where(.communications-surface) .conversation {
+    display: none;
+    width: 100%;
+  }
+  :where(.communications-surface) .mobile-thread .conversation-list {
+    display: none;
+  }
+  :where(.communications-surface) .mobile-thread .conversation {
+    display: flex;
+  }
+  :where(.communications-surface) .mobile-back {
+    display: flex;
+  }
+  :where(.communications-surface) .conversation-header {
+    padding: 13px 12px;
+    gap: 8px;
+    min-height: 70px;
+  }
+  :where(.communications-surface) .header-avatar {
+    display: none;
+  }
+  :where(.communications-surface) .conversation-title h2 {
+    font-size: 13px;
+  }
+  :where(.communications-surface) .conversation-title > span {
+    font-size: 10px;
+  }
+  :where(.communications-surface) .conversation-actions {
+    gap: 4px;
+  }
+  :where(.communications-surface) .resolve-button {
+    padding: 7px;
+  }
+  :where(.communications-surface) .resolve-button > span {
+    display: none;
+  }
+  :where(.communications-surface) .conversation-toolbar {
+    padding: 11px 15px;
+    gap: 10px;
+  }
+  :where(.communications-surface) .automation-toggle {
+    font-size: 9px;
+    gap: 4px;
+  }
+  :where(.communications-surface) .automation-toggle > svg {
+    display: none;
+  }
+  :where(.communications-surface) .assigned-label {
+    gap: 3px;
+  }
+  :where(.communications-surface) .assigned-label select {
+    max-width: 82px;
+  }
+  :where(.communications-surface) .message-scroll {
+    padding: 20px 17px 8px;
+  }
+  :where(.communications-surface) .message-bubble {
+    font-size: 12px;
+    max-width: 91%;
+  }
+  :where(.communications-surface) .message-line {
+    margin-bottom: 20px;
+  }
+  :where(.communications-surface) .composer-area {
+    padding: 12px 13px;
+  }
+  :where(.communications-surface) .composer-heading > span {
+    font-size: 9px;
+  }
+  :where(.communications-surface) .composer-footnote {
+    font-size: 9px;
+  }
+  :where(.communications-surface) .reply-options {
+    gap: 8px;
+  }
+  :where(.communications-surface) .composer-box textarea {
+    min-height: 65px;
+  }
+  :where(.communications-surface) .customer-context {
+    display: none;
+  }
+  :where(.communications-surface) .context-open .customer-context {
+    top: 0;
+    bottom: 0;
+    width: min(300px, 100%);
+    position: absolute;
+  }
+  :where(.communications-surface) .thread-preview {
+    max-width: calc(100vw - 100px);
+  }
+  :where(.communications-surface) .thread-top strong {
+    font-size: 13px;
+  }
+  :where(.communications-surface) .thread-row {
+    padding: 18px 19px;
+  }
+  :where(.communications-surface) .list-tools {
+    padding: 15px 18px;
+  }
+  :where(.communications-surface) .view-tabs {
+    justify-content: space-between;
+  }
+  :where(.communications-surface) .view-tabs button {
+    padding: 8px 10px;
+  }
+  :where(.communications-surface) .channel-filters {
+    gap: 7px;
+  }
+  :where(.communications-surface) .channel-filters button {
+    padding: 7px 10px;
+  }
+  :where(.communications-surface) .search-field {
+    padding: 11px;
+  }
+  :where(.communications-surface) .thread-company {
+    font-size: 11px;
+  }
+  :where(.communications-surface) .thread-top > span {
+    font-size: 10px;
+  }
+  :where(.communications-surface) .thread-meta {
+    font-size: 10px;
+  }
+  :where(.communications-surface) .feedback {
+    bottom: 10px;
+    font-size: 10px;
+    width: max-content;
+    max-width: 94%;
+  }
+  :where(.communications-surface) .connections-sheet {
+    padding: 23px;
+  }
+  :where(.communications-surface) .connection-row {
+    gap: 9px;
+  }
+  :where(.communications-surface) .connection-state {
+    font-size: 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :where(.communications-surface) * {
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+:where(.communications-surface) .inbox-entry {
+  max-width: 420px;
+  margin: 12vh auto;
+  padding: 28px;
+  font-family: system-ui, sans-serif;
+  color: #172b3a;
+}
+:where(.communications-surface) .inbox-entry form,
+:where(.communications-surface) .inbox-entry label {
+  display: grid;
+  gap: 12px;
+}
+:where(.communications-surface) .inbox-entry form {
+  gap: 24px;
+}
+:where(.communications-surface) .inbox-entry input {
+  padding: 12px;
+  border: 1px solid #cbd5db;
+  border-radius: 8px;
+  font: inherit;
+}
+
+:where(.communications-surface) .sms-setup {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 36px;
+  color: #182330;
+  background: #f8fafb;
+  min-height: 100vh;
+}
+:where(.communications-surface) .sms-setup button {
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+:where(.communications-surface) .sms-setup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 24px 0;
+}
+:where(.communications-surface) .sms-setup h1 {
+  font-size: 30px;
+  margin: 5px 0;
+  letter-spacing: -0.7px;
+}
+:where(.communications-surface) .sms-setup h2 {
+  font-size: 17px;
+  margin: 0 0 18px;
+}
+:where(.communications-surface) .sms-setup-header p {
+  color: #65717e;
+  margin: 8px 0;
+}
+:where(.communications-surface) .sms-eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+}
+:where(.communications-surface) .sms-state {
+  text-transform: capitalize;
+  padding: 7px 12px;
+  background: #e9edf1;
+  border-radius: 20px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+:where(.communications-surface) .sms-hold {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 16px;
+  background: #edf5f0;
+  color: #32644c;
+  border-radius: 10px;
+  font-size: 13px;
+}
+:where(.communications-surface) .sms-connection,
+:where(.communications-surface) .sms-form-section {
+  padding: 24px;
+  background: white;
+  border: 1px solid #e1e6eb;
+  border-radius: 12px;
+  margin-top: 20px;
+}
+:where(.communications-surface) .sms-connection {
+  font-size: 13px;
+}
+:where(.communications-surface) .sms-connection li {
+  margin: 7px 0;
+  text-transform: capitalize;
+}
+:where(.communications-surface) .sms-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px 24px;
+}
+:where(.communications-surface) .sms-setup label,
+:where(.communications-surface) .sms-consent-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+}
+:where(.communications-surface) .sms-setup input,
+:where(.communications-surface) .sms-setup textarea,
+:where(.communications-surface) .sms-consent-form input:not([type="checkbox"]) {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid #dce2e8;
+  background: #fff;
+  border-radius: 7px;
+  padding: 10px 12px;
+  font: inherit;
+  font-weight: 400;
+  color: #182330;
+}
+:where(.communications-surface) .sms-setup input:focus,
+:where(.communications-surface) .sms-setup textarea:focus {
+  outline: 2px solid #a3c4ff;
+  outline-offset: 1px;
+}
+:where(.communications-surface) .sms-form-section > label {
+  margin-top: 18px;
+}
+:where(.communications-surface) .sms-setup textarea {
+  resize: vertical;
+}
+:where(.communications-surface) .sms-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 24px 0;
+}
+:where(.communications-surface) .sms-actions span {
+  font-size: 12px;
+  color: #65717e;
+}
+:where(.communications-surface) .sms-error {
+  color: #a33d3d !important;
+  font-size: 13px;
+}
+:where(.communications-surface) .sms-consent-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+:where(.communications-surface) .sms-consent-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+:where(.communications-surface) .sms-consent-actions button {
+  white-space: nowrap;
+  font-size: 11px;
+  padding: 7px;
+}
+:where(.communications-surface) .sms-consent-form .sms-checkbox {
+  flex-direction: row;
+  align-items: flex-start;
+  font-weight: 400;
+  line-height: 1.5;
+}
+:where(.communications-surface) .sms-checkbox input {
+  margin-top: 3px;
+}
+:where(.communications-surface) .sms-consent p {
+  font-size: 12px;
+}
+@media (max-width: 640px) {
+  :where(.communications-surface) .sms-setup {
+    padding: 20px 16px;
+  }
+  :where(.communications-surface) .sms-field-grid {
+    grid-template-columns: 1fr;
+  }
+  :where(.communications-surface) .sms-setup-header {
+    align-items: flex-start;
+  }
+  :where(.communications-surface) .sms-connection,
+  :where(.communications-surface) .sms-form-section {
+    padding: 18px;
+  }
+  :where(.communications-surface) .sms-setup h1 {
+    font-size: 26px;
+  }
+  :where(.communications-surface) .sms-hold {
+    align-items: flex-start;
+    line-height: 1.5;
+  }
+  :where(.communications-surface) .sms-hold svg {
+    flex-shrink: 0;
+  }
+}
+
+/* Embedded inbox uses the dashboard's navigation and available content height. */
+.communications-surface.communications-embedded {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 16px;
+}
+.communications-embedded .comms-app {
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  flex: 1;
+}
+.communications-embedded .comms-workspace {
+  min-height: 0;
+}
+.communications-embedded .inbox-entry {
+  margin: auto;
+  background: var(--canvas);
+}
+.communications-embedded .sms-setup {
+  min-height: 0;
+  width: 100%;
+  overflow-y: auto;
+}
+
+:where(.communications-surface) .previous-inbox {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .communications-embedded .page-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .communications-embedded .page-actions {
+    flex-wrap: wrap;
+  }
+  .communications-embedded .previous-inbox {
+    font-size: 11px;
+  }
+}

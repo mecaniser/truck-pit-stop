@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Optional
+from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import json
 
@@ -1759,6 +1760,7 @@ async def evaluate_idle_alerts(
     *,
     now_utc: Optional[datetime] = None,
     threshold_minutes: int = 30,
+    tenant_id: Optional[UUID] = None,
 ) -> list[dict[str, Any]]:
     now = now_utc or datetime.now(timezone.utc)
     mech_result = await db.execute(
@@ -1769,8 +1771,11 @@ async def evaluate_idle_alerts(
                 User.role == UserRole.MECHANIC,
                 User.is_active.is_(True),
                 User.tenant_id.is_not(None),
+                User.tenant_id == tenant_id if tenant_id is not None else True,
             )
         )
+        .order_by(User.id)
+        .with_for_update(of=User, skip_locked=True)
     )
     rows = mech_result.all()
     alerts: list[dict[str, Any]] = []
@@ -1928,6 +1933,7 @@ async def evaluate_idle_alerts(
                 await db.flush()
                 alerts.append(
                     {
+                        "streak_id": str(streak.id),
                         "tenant_id": str(tenant.id),
                         "mechanic_id": str(mechanic.id),
                         "mechanic_name": f"{mechanic.first_name} {mechanic.last_name}".strip(),

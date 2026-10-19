@@ -1003,6 +1003,49 @@ describe('PriceBuilderPanel pending feedback', () => {
     expect(screen.queryByRole('button', { name: 'Start work…' })).not.toBeInTheDocument()
   })
 
+  it('uses a linked ETS invoice total and never offers native invoice or payment actions', async () => {
+    apiMocks.get.mockImplementation((url: string) => Promise.resolve({
+      data: url.endsWith('/price-build')
+        ? { ...emptySummary, labor_total: '0.00', total_cost: '-150.00', lines: [{
+            id: 'ets-labor-1', repair_order_id: 'order-1', description: 'PM service',
+            hours: '1.25', hourly_rate: '120.00', total_cost: '0.00',
+            line_type: 'manual', source_service_id: null,
+          }], parts: [{
+            id: 'ets-part-1', inventory_id: 'inventory-1', inventory_name: 'PM filter',
+            inventory_sku: 'PM-1', quantity: '1', unit_type: 'each', unit_price: '42.00',
+            total_price: '42.00', source_line_id: 'ets-labor-1', savings: '0.00',
+          }] }
+        : [],
+    }))
+    const invoice = {
+      id: 'ets-invoice', source: 'easy_truck_shop_import', status: 'paid',
+      repair_order_id: 'order-1', invoice_number: 'ETSINV-118833', total_amount: '150.00',
+    } as ComponentProps<typeof PriceBuilderPanel>['invoice']
+    const { container } = renderPanel({
+      orderStatus: 'completed', orderSource: 'easy_truck_shop_import', invoice,
+      importedBilling: { source: 'easy_truck_shop_import', evidence_basis: 'imported_records', reconciliation_status: 'not_checked', invoice_id: 'ets-invoice', total_amount: '534.41', recorded_completed_amount: '534.41', recorded_remaining_amount: '0.00', payment_status: 'paid', review_required: false, review_reasons: [] },
+      onCreateInvoice: vi.fn(), onRecordPayment: vi.fn(),
+    })
+    const footer = container.querySelector('.db-workspace-footer') as HTMLElement
+
+    expect(within(footer).getByText('ETS invoice total')).toBeVisible()
+    expect(within(footer).getAllByText('$534.41')).toHaveLength(2)
+    expect(within(footer).getByText('Paid in ETS')).toBeVisible()
+    expect(within(footer).getByText('$0.00')).toBeVisible()
+    expect(within(footer).getByText('ETS invoice on file · no new invoice')).toBeVisible()
+    expect(within(footer).queryByText('$-150.00')).not.toBeInTheDocument()
+    expect(await screen.findByText('ETS billed breakdown unavailable')).toBeVisible()
+    expect(container.querySelector('.db-service-list')).not.toHaveTextContent('$0.00 labor')
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: /PM service/ }))
+    const parts = screen.getByRole('table', { name: 'Parts' })
+    expect(parts).toHaveTextContent('PM filter')
+    expect(parts).toHaveTextContent('Unavailable')
+    expect(parts).not.toHaveTextContent('$42.00')
+    expect(screen.queryByRole('button', { name: 'Create Invoice' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Record payment' })).not.toBeInTheDocument()
+  })
+
   it('respects unavailable assignment capability and does not expose an absent override callback', async () => {
     apiMocks.get.mockResolvedValue({ data: emptySummary })
     const user = userEvent.setup()

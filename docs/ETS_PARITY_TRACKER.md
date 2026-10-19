@@ -4,11 +4,11 @@
 
 Last updated: 2026-10-18. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
 
-**Progress: 4/29 completed; 4/6 selected outcomes completed. Current: B1 review. Next: A1 after B1.**
+**Progress: 4/30 completed; 4/6 selected outcomes completed. Current: B1 review; B4 reader deployed with browser acceptance open and importer held. Next: A1 after B1.**
 
 ## Approved delivery order
 
-**R1 → P1 → C1 → M1 → B1 → A1.** A1 is last in this selected wave. The other 23 items remain in the delivery backlog after this priority wave; retain every discovery and refine their order when the priority wave closes.
+**R1 → P1 → C1 → M1 → B1 → A1.** A1 is last in this selected wave. The other 24 items remain in the delivery backlog after this priority wave; retain every discovery and refine their order when the priority wave closes. B4 is a newly surfaced imported-order defect tracked separately from this selected wave.
 
 ## Operating rules
 
@@ -45,6 +45,8 @@ Last updated: 2026-10-18. Program owner: Product & Delivery Lead. Discovery inve
 Dependencies: P1 precedes C1 parts-price defaults. M1 must retain existing PM/telemetry provenance. B1 must distinguish native collectible balances from ETS-owned history. A1 requires explicit effective-date labor-cost policy and follows the operational work.
 
 ## Retained backlog
+
+- [ ] **B4 — ETS-owned invoice/payment mirror and imported-order billing guard** — DB-139 reader-only release in review, [PR576](https://github.com/mecaniser/truck-pit-stop/pull/576). Source-aware totals and paid/partial/unpaid displays, tenant/identity/freshness holds, and duplicate-native-issuance guards have Architecture and independent QA/Security source GO. Six protected checks passed on pre-split head `06086f72`; Released driver main `1cb16a7f` is integrated with both board histories and acceptance docs preserved; selected-shop fallback read omissions are corrected with six SQLite regressions. Final integrated reader CI, browser/deployment/retention gates remain. Collector-watched importer corrections are preserved separately on `codex/db139-importer-money-held`; do not roll them out before the unchanged existing-payment sync receives a guard and independent review. No financial record writes, invoice creation or collector setting changes. [Contract](contracts/db139-ets-financial-mirror.md), [receipt](verification/DB139_ETS_FINANCIAL_MIRROR.md). B1 native reconciliation and A1 queue remain distinct.
 
 - [ ] **R2 — Repeat or selectively copy a prior repair order/estimate** — Backlog; after the priority wave. Relative value/size: Medium / M. See audit for evidence and dependencies.
 - [ ] **R3 — Defer an existing operation into tracked recommended work** — Backlog; after the priority wave. Relative value/size: High / L. See audit for evidence and dependencies.

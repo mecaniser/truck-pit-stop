@@ -25,6 +25,9 @@ STATEMENT_TIMEOUT_MS = 2000
 LOCK_TIMEOUT_MS = 1000
 EXIT_UNAVAILABLE = 78
 REQUIRED_COLUMNS = {
+    "sms_send_operations": {"id", "tenant_id", "state", "attempt_count", "dispatch_started_at"},
+    "automated_sms_operations": {"id", "tenant_id", "event_key", "state", "attempt_count", "dispatch_started_at", "notification_id"},
+    "conversation_workflows": {"thread_id", "tenant_id", "version"},
     "customers": {
         "ets_contact_phone_snapshot", "pricing_labor_rate", "parts_price_matrix_id",
         "pricing_version", "pricing_updated_at", "pricing_updated_by",

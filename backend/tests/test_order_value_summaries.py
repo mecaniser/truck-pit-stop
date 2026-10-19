@@ -147,7 +147,19 @@ async def test_repair_order_summary_matches_full_search_and_status_scope(client,
         "order_value": "678.70",
         "currency": "USD",
         "amount_basis": "repair_order_net",
+        "has_imported_orders": False,
     }
+
+
+@pytest.mark.asyncio
+async def test_repair_order_summary_detects_imported_rows_beyond_loaded_page(client, db_session):
+    tenant, owner, _, _, orders = await _seed_shop(db_session, count=55)
+    orders[-1].source = "easy_truck_shop_import"
+    await db_session.commit()
+    response = await client.get("/api/v1/repair-orders/value-summary", headers=_headers(owner, tenant))
+    assert response.status_code == 200, response.text
+    assert response.json()["has_imported_orders"] is True
+    assert response.json()["order_count"] == 55
 
 
 @pytest.mark.asyncio
@@ -240,6 +252,7 @@ async def test_repair_order_summary_projection_and_legacy_fallback_are_identical
         "order_value": "54.75",
         "currency": "USD",
         "amount_basis": "repair_order_net",
+        "has_imported_orders": False,
     }
 
 
@@ -331,6 +344,7 @@ async def test_fleet_manager_summary_includes_only_internal_orders(client, db_se
         "order_value": "25.00",
         "currency": "USD",
         "amount_basis": "repair_order_net",
+        "has_imported_orders": False,
     }
 
 

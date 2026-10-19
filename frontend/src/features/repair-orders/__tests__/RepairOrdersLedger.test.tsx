@@ -119,6 +119,13 @@ const renderLedger = (overrides: Partial<React.ComponentProps<typeof RepairOrder
 }
 
 describe('DB-035 Stage 4 Repair Orders presentation', () => {
+  it('can hide a mixed native/imported aggregate without hiding individual order amounts', () => {
+    renderLedger({ hideValueSummary: true, valueSummary: { order_count: 63, order_value: '102345.67' } })
+    expect(screen.queryByText('Filtered order value')).not.toBeInTheDocument()
+    expect(screen.queryByText('$102,345.67')).not.toBeInTheDocument()
+    expect(screen.getByText('$4,280.50')).toBeVisible()
+  })
+
   it('renders the complete filtered server value independently from loaded rows', () => {
     renderLedger({
       loadedCount: 1,

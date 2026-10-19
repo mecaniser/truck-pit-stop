@@ -52,6 +52,8 @@ import { useCustomerVehicleGroups } from '../customers/useCustomerVehicleGroups'
 import type { ViewMode } from '@/components/ViewToggle'
 import type { CustomerHistoryResponse } from '../customers/customerDetailFormat'
 import PriceBuilderPanel from './PriceBuilderPanel'
+import { ImportedBillingDetails } from './ImportedBillingDetails'
+import { importedMoney, useImportedBilling } from './importedBilling'
 import RecommendedWorkPanel from './RecommendedWorkPanel'
 import { recommendationErrorMessage } from './recommendationConversion'
 import RepairOrdersLedger, { type RepairOrdersLedgerRow } from './RepairOrdersLedger'
@@ -171,6 +173,7 @@ type OrderValueSummary = {
   order_value: string
   currency: 'USD'
   amount_basis: 'repair_order_net'
+  has_imported_orders?: boolean
 }
 
 type WorkQueueOrdersField =
@@ -1076,17 +1079,21 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     ),
   })
 
+  const activeOrder = orderDetail?.id === selectedOrder?.id ? orderDetail : selectedOrder
+  const importedEtsOrder = activeOrder?.source === 'easy_truck_shop_import'
+  const importedBillingQuery = useImportedBilling(selectedOrder?.id, importedEtsOrder && isDetailOpen && !selectedOrder?.deleted_at)
+  const importedBilling = importedBillingQuery.isError ? undefined : importedBillingQuery.data
   const { data: invoiceForOrder } = useQuery<Invoice | null>({
-    queryKey: ['invoice-for-order', selectedOrder?.id],
+    queryKey: ['invoice-for-order', selectedOrder?.id, currentUser?.tenant_id, currentUser?.id, currentUser?.role, authSessionEpoch, importedEtsOrder],
     queryFn: async ({ signal }) => {
       const response = await api.get(`/invoices?repair_order_id=${selectedOrder!.id}`, { signal })
-      const invoices = response.data
-      return invoices.length > 0 ? invoices[0] : null
+      const invoices = response.data as Invoice[]
+      return invoices.find(invoice => invoice.repair_order_id === selectedOrder!.id && invoice.status !== 'cancelled') ?? null
     },
-    enabled: !!(selectedOrder?.id && isDetailOpen && !selectedOrder.deleted_at && ['invoiced', 'paid'].includes(selectedOrder?.status || '')),
+    enabled: !!(selectedOrder?.id && isDetailOpen && !selectedOrder.deleted_at && !importedEtsOrder && ['invoiced', 'paid'].includes(selectedOrder.status)),
   })
 
-  const settlementAccess = invoiceForOrder?.id
+  const settlementAccess = !importedEtsOrder && invoiceForOrder?.id
     ? { kind: 'authenticated' as const, invoiceId: invoiceForOrder.id }
     : null
   const invoiceSettlementQuery = useInvoiceSettlement(settlementAccess)
@@ -3153,7 +3160,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       status: display.label,
       statusTone,
       description: order.description || 'No work description recorded',
-      total: `$${(partsTotal + laborTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+      total: order.source === 'easy_truck_shop_import'
+        ? importedMoney(order.imported_invoice_total_amount)
+        : `$${(partsTotal + laborTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
       updated: format(new Date(order.updated_at), 'MMM d, h:mm a'),
       internal: Boolean(order.is_internal),
       customerName: order.customer_company_name
@@ -3294,6 +3303,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
             ? `${REPAIR_ORDERS_QUEUE_LABEL[workQueueLane]} · today`
             : 'Order ledger'}
           compact={workbenchScope === 'daily'}
+          hideValueSummary={!isQueueWorkset && (repairOrderValueQuery.data?.has_imported_orders !== false || (filteredOrders ?? []).some(order => order.source === 'easy_truck_shop_import'))}
           valueSummary={activeValueQuery.data}
           valueSummaryLoading={activeValueQuery.isLoading || searchQuery.trim() !== debouncedSearch}
           valueSummaryError={Boolean(activeValueQuery.error)}
@@ -4849,6 +4859,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     workHoldOrder={orderDetail ?? selectedOrder}
                     schedule={orderDetail ?? selectedOrder}
                     orderStatus={(orderDetail ?? selectedOrder).status}
+                    orderSource={activeOrder?.source}
+                    importedBilling={importedBilling}
+                    importedBillingFailed={importedBillingQuery.isError}
                     canEdit={canEditPriceBuilderByRole}
                     isInternalOrder={!!(orderDetail ?? selectedOrder).is_internal}
                     defaultLaborRate={taxFeeSettings?.labor_rate}
@@ -5164,7 +5177,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 {/* Parts and labor: use detail when available. Shown for draft/
                     quoted (price builder) and for internal orders through their
                     active statuses (e.g. an in-progress PM). */}
-                {(showPriceBuilder || showInternalLineItems) && (() => {
+                {!importedEtsOrder && (showPriceBuilder || showInternalLineItems) && (() => {
                   const displayOrder = orderDetail ?? selectedOrder
                   const partsUsage = orderDetail?.parts_usage ?? []
                   const laborItems = orderDetail?.labor_items ?? []
@@ -5384,7 +5397,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                   )
                 })()}
 
-                {showPriceBuilder && (() => {
+                {!importedEtsOrder && showPriceBuilder && (() => {
                   const totalsOrder = orderDetail ?? selectedOrder
                   const backendParts = parseFloat(totalsOrder?.total_parts_cost ?? '0') || 0
                   const backendLabor = parseFloat(totalsOrder?.total_labor_cost ?? '0') || 0
@@ -5644,7 +5657,13 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 })()}
 
                 {/* Create Invoice Button for completed customer orders */}
-                {!priceBuilderOwnsShell && (orderDetail ?? selectedOrder).status === 'completed' && !selectedOrder.is_internal && (
+                {!priceBuilderOwnsShell && importedEtsOrder && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                    <p className="font-semibold text-slate-900">ETS invoice total {importedMoney(importedBilling?.total_amount)}</p>
+                    <ImportedBillingDetails billing={importedBilling} failed={importedBillingQuery.isError} />
+                  </div>
+                )}
+                {!priceBuilderOwnsShell && (orderDetail ?? selectedOrder).status === 'completed' && !selectedOrder.is_internal && !importedEtsOrder && (
                   <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
@@ -5705,7 +5724,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 )}
 
                 {/* Invoice section for invoiced orders */}
-                {!priceBuilderOwnsShell && (orderDetail ?? selectedOrder).status === 'invoiced' && invoiceForOrder && (
+                {!priceBuilderOwnsShell && !importedEtsOrder && (orderDetail ?? selectedOrder).status === 'invoiced' && invoiceForOrder && (
                   <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
@@ -5936,7 +5955,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 )}
 
                 {/* Paid confirmation for paid orders */}
-                {!priceBuilderOwnsShell && (orderDetail ?? selectedOrder).status === 'paid' && invoiceForOrder && (
+                {!priceBuilderOwnsShell && !importedEtsOrder && (orderDetail ?? selectedOrder).status === 'paid' && invoiceForOrder && (
                   <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
@@ -6338,7 +6357,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       )}
 
       {/* Record payment method modal */}
-      {showInvoicePaymentOptions && priceBuilderOwnsShell && invoiceForOrder && (
+      {showInvoicePaymentOptions && priceBuilderOwnsShell && !importedEtsOrder && invoiceForOrder && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 p-4">
           <div className="relative w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
             <button
@@ -6426,7 +6445,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         </div>
       )}
 
-      {showManualPaymentConfirmation && invoiceForOrder && (() => {
+      {showManualPaymentConfirmation && !importedEtsOrder && invoiceForOrder && (() => {
         const method = selectedPaymentMethod as EvidencePaymentMethod
         const isFleetPayment = method === 'fleet_payment'
         const resolvedProvider = manualPaymentProvider === 'Other'
@@ -6593,7 +6612,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         )
       })()}
 
-      {invoiceForOrder && (
+      {!importedEtsOrder && invoiceForOrder && (
         <StaffSettlementDialog
           invoiceId={invoiceForOrder.id}
           invoiceNumber={invoiceForOrder.invoice_number}
@@ -6607,7 +6626,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         />
       )}
 
-      {canVoidInvoices && showVoidInvoiceConfirm && invoiceForOrder && (
+      {canVoidInvoices && showVoidInvoiceConfirm && !importedEtsOrder && invoiceForOrder && (
         <div className="fixed inset-0 z-[60] overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
             <div 
@@ -6678,7 +6697,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       )}
 
       {/* Zelle QR Code Modal */}
-      {showZelleQrModal && (
+      {showZelleQrModal && !importedEtsOrder && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
           <div className="relative bg-white rounded-xl shadow-xl max-w-sm w-full mx-4 overflow-hidden">
               <button
