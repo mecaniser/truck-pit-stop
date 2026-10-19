@@ -717,6 +717,12 @@
   align-items: center;
   gap: 8px;
 }
+:where(.communications-surface) .sms-sender {
+  margin: 0 0 10px;
+  font-size: 11px;
+  color: #627587;
+  overflow-wrap: anywhere;
+}
 :where(.communications-surface) .channel-select {
   display: inline-flex;
   align-items: center;

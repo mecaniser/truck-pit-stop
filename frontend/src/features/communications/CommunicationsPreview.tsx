@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import {
   canCompose,
+  composeMaxLength,
   channelLabels,
   draftKey,
   filterConversations,
@@ -170,6 +171,7 @@ export default function CommunicationsPreview({
         };
   const key = draftKey(tenantId, userId, composeConversation);
   const draft = drafts[key] || "";
+  const maxLength = composeMaxLength(composeConversation);
   const counts = {
     open: rows.filter((r) => r.status === "open").length,
     unread: rows.filter((r) => r.status === "open" && r.unreadCount > 0).length,
@@ -829,6 +831,11 @@ export default function CommunicationsPreview({
                     : "Not connected"}
                 </span>
               </div>
+              {composeChannel === "sms" && selected.context.smsProvider === "callrail" && (
+                <p className="sms-sender" aria-label="SMS sender">
+                  CallRail{selected.context.senderNumber ? ` · ${selected.context.senderNumber}` : ""}
+                </p>
+              )}
               {composeConversation.sendPolicy.reason && (
                 <div className="compose-restriction" role="status">
                   <Info size={15} />
@@ -868,8 +875,8 @@ export default function CommunicationsPreview({
                       Saved replies
                       <ChevronDown size={12} />
                     </button>
-                    <span className={draft.length > 1600 ? "over-limit" : ""}>
-                      {draft.length}/1600
+                    <span className={draft.trim().length > maxLength ? "over-limit" : ""}>
+                      {draft.length}/{maxLength}
                     </span>
                   </div>
                   <button

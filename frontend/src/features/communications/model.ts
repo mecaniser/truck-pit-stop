@@ -53,8 +53,10 @@ export interface Conversation {
   lastMessageAt: string;
   preview: string;
   messages: Message[];
-  sendPolicy: { canSend: boolean; reason: SendRestriction | null };
+  sendPolicy: { canSend: boolean; reason: SendRestriction | null; maxLength?: number };
   context: {
+    smsProvider?: string;
+    senderNumber?: string;
     vehicleLabel?: string;
     repairOrderLabel?: string;
     repairStatus?: string;
@@ -128,11 +130,16 @@ export function filterConversations(
     )
     .sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt));
 }
+export function composeMaxLength(conversation: Conversation): number {
+  if (conversation.channel !== "sms") return 1600;
+  const providerLimit = conversation.context.smsProvider === "callrail" ? 140 : 1600;
+  return Math.min(providerLimit, conversation.sendPolicy.maxLength ?? 1600);
+}
 export function canCompose(conversation: Conversation, body: string): boolean {
   return (
     conversation.sendPolicy.canSend &&
     conversation.sendPolicy.reason === null &&
     body.trim().length > 0 &&
-    body.trim().length <= 1600
+    body.trim().length <= composeMaxLength(conversation)
   );
 }

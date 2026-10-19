@@ -77,6 +77,9 @@ async def bootstrap(db=Depends(get_db), user=Depends(get_current_active_user), s
             connected = True
         except HTTPException:
             connected = False
+    from app.db.models.callrail import CallRailNumberBinding
+    if await db.scalar(select(CallRailNumberBinding.id).where(CallRailNumberBinding.tenant_id == tenant.id, CallRailNumberBinding.enabled.is_(True), CallRailNumberBinding.deleted_at.is_(None)).limit(1)):
+        connected = True
     return dict(tenant_id=tenant.id, user_id=user.id, delivery_mode=sender.mode, assignees=[dict(id=u.id, name=f'{u.first_name} {u.last_name}') for u in users if service.permitted(u)], channels=[dict(channel='sms', connected=connected), dict(channel='whatsapp', connected=False), dict(channel='telegram', connected=False)])
 
 

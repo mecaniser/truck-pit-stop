@@ -65,6 +65,59 @@ async function compose() {
   });
 }
 describe("connected inbox sending", () => {
+  it("shows the CallRail sender, preserves drafts, and blocks 141 characters on click and keyboard", async () => {
+    const callrailRow = {
+      ...row,
+      context: { ...row.context, smsProvider: "callrail", senderNumber: "+19809071896" },
+      sendPolicy: { ...row.sendPolicy, maxLength: 140 },
+    };
+    vi.mocked(inboxApi.list).mockResolvedValue([callrailRow]);
+    vi.mocked(inboxApi.detail).mockResolvedValue(callrailRow);
+    render(<ConnectedInbox />);
+    const draft = await screen.findByRole("textbox", { name: "Message draft" });
+    expect(screen.getByLabelText("SMS sender")).toHaveTextContent("CallRail · +19809071896");
+    fireEvent.change(draft, { target: { value: "x".repeat(141) } });
+    expect(screen.getByText("141/140")).toHaveClass("over-limit");
+    const send = screen.getByRole("button", { name: "Send SMS" });
+    expect(send).toBeDisabled();
+    fireEvent.click(send);
+    fireEvent.keyDown(draft, { key: "Enter", ctrlKey: true });
+    expect(inboxApi.send).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Reply channel"), { target: { value: "whatsapp" } });
+    expect(screen.queryByLabelText("SMS sender")).not.toBeInTheDocument();
+    expect(screen.getByText("0/1600")).toBeInTheDocument();
+    fireEvent.change(draft, { target: { value: "WhatsApp draft" } });
+    fireEvent.change(screen.getByLabelText("Reply channel"), { target: { value: "sms" } });
+    expect(draft).toHaveValue("x".repeat(141));
+    expect(inboxApi.send).not.toHaveBeenCalled();
+  });
+  it("allows exactly 140 CallRail characters through the keyboard send path", async () => {
+    const callrailRow = {
+      ...row,
+      context: { ...row.context, smsProvider: "callrail", senderNumber: "+19809071896" },
+      sendPolicy: { ...row.sendPolicy, maxLength: 140 },
+    };
+    vi.mocked(inboxApi.list).mockResolvedValue([callrailRow]);
+    vi.mocked(inboxApi.detail).mockResolvedValue(callrailRow);
+    vi.mocked(inboxApi.send).mockResolvedValue({ id: "operation", conversation_id: row.id, state: "pending", delivery_status: "pending" });
+    render(<ConnectedInbox />);
+    const draft = await screen.findByRole("textbox", { name: "Message draft" });
+    fireEvent.change(draft, { target: { value: "x".repeat(140) } });
+    expect(screen.getByRole("button", { name: "Send SMS" })).toBeEnabled();
+    fireEvent.keyDown(draft, { key: "Enter", ctrlKey: true });
+    await waitFor(() => expect(inboxApi.send).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(inboxApi.send).mock.calls[0][0].payload.body).toBe("x".repeat(140));
+  });
+  it("keeps existing SMS defaults at 1600 without inventing provider metadata", async () => {
+    render(<ConnectedInbox />);
+    const draft = await screen.findByRole("textbox", { name: "Message draft" });
+    fireEvent.change(draft, { target: { value: "x".repeat(1600) } });
+    expect(screen.getByText("1600/1600")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send SMS" })).toBeEnabled();
+    expect(screen.queryByLabelText("SMS sender")).not.toBeInTheDocument();
+    fireEvent.change(draft, { target: { value: "x".repeat(1601) } });
+    expect(screen.getByRole("button", { name: "Send SMS" })).toBeDisabled();
+  });
   it("locks concurrent clicks until durable acceptance, never inventing delivery", async () => {
     let finish!: (value: {
       id: string;

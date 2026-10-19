@@ -21,6 +21,7 @@ from app.db.models.user import User, UserRole
 from app.services.messaging_service import _normalize_for_twilio, _get_twilio_client, _status_callback_url, enforce_tenant_send_rate_limit
 
 from app.services import tenant_sms_routing as routing
+from app.services import callrail_service as callrail
 
 STAFF_ROLES = {UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST, UserRole.MECHANIC}
 DISPATCH_TIMEOUT = timedelta(minutes=5)  # Provider I/O is bounded to 30 seconds.
@@ -97,16 +98,28 @@ async def send_policy(db, tenant, thread, sender, *, ignore_operation=None):
     account_id = uuid5(NAMESPACE_URL, f'dieselbridge:sms-account:{tenant.id}:{from_number}')
     identity_id = uuid5(NAMESPACE_URL, f'dieselbridge:sms-identity:{tenant.id}:{thread.id}:{phone}')
     reason = None
-    if routing.enabled():
+    callrail_context = None
+    callrail_mapped = False
+    try:
+        callrail_context = await callrail.resolve_for_thread(db, tenant.id, thread.id)
+        callrail_mapped = callrail_context is not None
+    except HTTPException as exc:
+        # A disabled/invalid CallRail mapping must never fall back to Twilio.
+        callrail_mapped = True
+        reason = exc.detail['code']
+    if callrail_context:
+        from_number = callrail_context.sender_phone
+        account_id = callrail_account_id(callrail_context)
+    elif not callrail_mapped and routing.enabled():
         try:
             context = await routing.resolve(db, tenant.id)
             account_id, from_number = context.binding_id, context.sender_phone
             await routing.require_consent(db, tenant.id, 'customer', thread.customer_id, phone)
         except HTTPException as exc:
             reason = exc.detail['code']
-    elif not tenant.sms_enabled or not re.fullmatch(r'\+[1-9]\d{7,14}', from_number) or not getattr(sender, 'ready', True):
+    elif not callrail_mapped and (not tenant.sms_enabled or not re.fullmatch(r'\+[1-9]\d{7,14}', from_number) or not getattr(sender, 'ready', True)):
         reason = 'not_connected'
-    if not routing.enabled():
+    if not callrail_mapped and not routing.enabled():
         try:
             await routing.require_legacy_tenant(db, tenant.id)
         except HTTPException as exc:
@@ -130,7 +143,7 @@ async def send_policy(db, tenant, thread, sender, *, ignore_operation=None):
                          and status == SMSDeliveryStatus.FAILED
                          and error_code == '21211' and sid is None)
             }
-            if any(_normalize_for_twilio(p) == phone for p in others) or len(remotes) > 1 or (remotes and phone not in remotes):
+            if (not callrail_context and any(_normalize_for_twilio(p) == phone for p in others)) or len(remotes) > 1 or (remotes and phone not in remotes):
                 reason = 'identity_unverified'
     held = select(SMSSendOperation.id).where(SMSSendOperation.tenant_id == tenant.id, SMSSendOperation.thread_id == thread.id, SMSSendOperation.state.in_(['unknown', 'dispatching']))
     if ignore_operation:
@@ -139,7 +152,15 @@ async def send_policy(db, tenant, thread, sender, *, ignore_operation=None):
         reason = 'ambiguous_outcome'
     if await db.scalar(select(AutomatedSMSOperation.id).where(AutomatedSMSOperation.tenant_id == tenant.id, AutomatedSMSOperation.to_number == phone, AutomatedSMSOperation.state.in_(['unknown', 'dispatching'])).limit(1)):
         reason = 'ambiguous_outcome'
-    return {'can_send': reason is None, 'reason': reason}, account_id, identity_id, from_number, phone, customer
+    policy = {'can_send': reason is None, 'reason': reason}
+    if callrail_mapped:
+        policy['max_length'] = 140
+    return policy, account_id, identity_id, from_number, phone, customer
+
+
+def callrail_account_id(context):
+    # Config changes invalidate queued intents, even when a binding row is edited in place.
+    return uuid5(NAMESPACE_URL, json.dumps(['dieselbridge:callrail', str(context.binding_id), context.account_id, context.company_id, context.tracker_id, context.sender_phone]))
 
 
 def cursor_encode(binding, dt, row_id):
@@ -182,7 +203,14 @@ async def message_json(db, message):
 async def conversation_json(db, tenant, user, thread, sender):
     policy, account, identity, _, phone, customer = await send_policy(db, tenant, thread, sender)
     wf = await db.scalar(select(ConversationWorkflow).where(ConversationWorkflow.tenant_id == tenant.id, ConversationWorkflow.thread_id == thread.id))
-    return dict(id=thread.id, tenant_id=tenant.id, customer_id=thread.customer_id, customer_name=f'{customer.first_name} {customer.last_name}' if customer else 'Unavailable customer', company=customer.company_name if customer else None, channel='sms', channel_account_id=account, contact_identity_id=identity, identity_label=phone, status=wf.status if wf else 'open', assignee_id=wf.assignee_id if wf else None, unread_count=await unread_count(db, thread, user.id), last_message_at=thread.last_message_at or thread.created_at, preview=thread.last_message_preview or '', version=wf.version if wf else 1, messages=[], send_policy=policy, context={})
+    context = {}
+    try:
+        selected = await callrail.resolve_for_thread(db, tenant.id, thread.id)
+        if selected:
+            context = {'sms_provider': 'callrail', 'sender_number': selected.sender_phone}
+    except HTTPException:
+        pass  # Policy carries the hold; never expose credentials or hidden provider details.
+    return dict(id=thread.id, tenant_id=tenant.id, customer_id=thread.customer_id, customer_name=f'{customer.first_name} {customer.last_name}' if customer else 'Unavailable customer', company=customer.company_name if customer else None, channel='sms', channel_account_id=account, contact_identity_id=identity, identity_label=phone, status=wf.status if wf else 'open', assignee_id=wf.assignee_id if wf else None, unread_count=await unread_count(db, thread, user.id), last_message_at=thread.last_message_at or thread.created_at, preview=thread.last_message_preview or '', version=wf.version if wf else 1, messages=[], send_policy=policy, context=context)
 
 
 async def operation_json(db, op, replayed=False):
@@ -214,7 +242,10 @@ async def create_operation(db, user, tenant, thread_id, body, key, sender):
         fail(policy['reason'], 'This conversation cannot send messages right now.')
     if not await enforce_tenant_send_rate_limit(tenant.id, limit=30, window_seconds=60):
         raise HTTPException(429, detail={'code': 'rate_limited', 'message': 'SMS send rate limit exceeded.'}, headers={'Retry-After': '60'})
-    snapshot = (await routing.resolve(db, tenant.id)).snapshots() if routing.enabled() else {}
+    selected = await callrail.resolve_for_thread(db, tenant.id, thread.id)
+    if selected and len(canonical) > 140:
+        fail('message_too_long', 'CallRail messages are limited to 140 characters.', 422)
+    snapshot = dict(provider='callrail', provider_account_id=selected.account_id, callrail_binding_id=selected.binding_id) if selected else (await routing.resolve(db, tenant.id)).snapshots() if routing.enabled() else {}
     now = datetime.now(timezone.utc)
     sms = SMSMessage(id=uuid4(), tenant_id=tenant.id, thread_id=thread.id, customer_id=thread.customer_id, created_by_user_id=user.id, direction=SMSMessageDirection.OUTBOUND, source=SMSMessageSource.MANUAL, body=canonical, from_number=from_number, to_number=phone, delivery_status=SMSDeliveryStatus.PENDING, created_at=now, **snapshot)
     db.add(sms)
@@ -252,7 +283,7 @@ async def dispatch_operation(db, operation_id, sender):
     context = None
     if op.binding_id and not routing.enabled():
         policy = {'can_send': False, 'reason': 'routing_disabled'}
-    if routing.enabled():
+    if op.provider != 'callrail' and routing.enabled():
         try:
             context = await routing.for_operation(db, op)
         except HTTPException as exc:
@@ -265,6 +296,18 @@ async def dispatch_operation(db, operation_id, sender):
         sms.error_code = op.error_code
         await db.commit()
         return
+    selected = None
+    if op.provider == 'callrail':
+        selected = await callrail.resolve_for_thread(db, op.tenant_id, op.thread_id)
+        sms = await db.scalar(select(SMSMessage).where(SMSMessage.id == op.message_id, SMSMessage.tenant_id == op.tenant_id))
+        if (not selected or selected.binding_id != op.callrail_binding_id
+            or selected.account_id != op.provider_account_id or sms.source != SMSMessageSource.MANUAL
+            or len(op.body) > 140):
+            op.state, op.error_code = 'rejected', 'callrail_binding_changed'
+            sms.delivery_status = SMSDeliveryStatus.FAILED
+            sms.error_code = op.error_code
+            await db.commit()
+            return
     op.state = 'dispatching'
     op.attempt_count = 1
     op.dispatch_started_at = datetime.now(timezone.utc)
@@ -274,16 +317,27 @@ async def dispatch_operation(db, operation_id, sender):
     await db.commit()  # Never hold a database transaction across provider I/O.
     outcome, error = None, None
     try:
-        outcome = await asyncio.wait_for(sender.send(**payload), timeout=35)
-        if not outcome or not outcome.get('sid'):
-            raise ValueError('Provider returned no receipt')
+        if selected:
+            outcome = await asyncio.wait_for(callrail.send(selected, payload['body'], payload['to_number']), timeout=35)
+            if not outcome or not outcome.get('conversation_id'):
+                raise ValueError('CallRail returned no conversation receipt')
+        else:
+            outcome = await asyncio.wait_for(sender.send(**payload), timeout=35)
+            if not outcome or not outcome.get('sid'):
+                raise ValueError('Provider returned no receipt')
     except TwilioRestException as exc:
         error = ('rejected', str(exc.code or 'provider_rejected')) if 400 <= exc.status < 500 and exc.status not in (408, 429) else ('unknown', 'provider_outcome_unknown')
+    except callrail.CallRailRejected:
+        error = ('rejected', 'callrail_rejected')
     except Exception:
         error = ('unknown', 'provider_outcome_unknown')
     op = await db.scalar(select(SMSSendOperation).where(SMSSendOperation.id == operation_id).with_for_update().execution_options(populate_existing=True))
-    sms = await db.scalar(select(SMSMessage).where(SMSMessage.id == op.message_id, SMSMessage.tenant_id == op.tenant_id).with_for_update())
-    if error:
+    sms = await db.scalar(select(SMSMessage).where(SMSMessage.id == op.message_id, SMSMessage.tenant_id == op.tenant_id).with_for_update().execution_options(populate_existing=True))
+    if error and op.provider == 'callrail' and op.provider_message_id:
+        # A signed receipt can arrive while the HTTP response is in flight.
+        # Do not downgrade its authoritative acceptance to a timeout hold.
+        op.state, op.reconciliation_state = 'accepted', 'none'
+    elif error:
         op.state, op.error_code = error
         op.reconciliation_state = 'required' if op.state == 'unknown' else 'none'
         if op.state == 'rejected':
@@ -298,9 +352,15 @@ async def dispatch_operation(db, operation_id, sender):
     else:
         op.state = 'accepted'
         op.reconciliation_state = 'none'
-        sms.twilio_message_sid = outcome['sid']
-        # Acceptance is not delivery: callbacks are authoritative for terminal state.
-        sms.delivery_status = SMSDeliveryStatus.QUEUED
+        if op.provider == 'callrail':
+            op.provider_conversation_id = outcome['conversation_id']
+            sms.provider_conversation_id = outcome['conversation_id']
+            if sms.delivery_status not in (SMSDeliveryStatus.FAILED, SMSDeliveryStatus.UNDELIVERED, SMSDeliveryStatus.DELIVERED):
+                sms.delivery_status = SMSDeliveryStatus.SENT
+        else:
+            sms.twilio_message_sid = outcome['sid']
+            # Acceptance is not delivery: callbacks are authoritative for terminal state.
+            sms.delivery_status = SMSDeliveryStatus.QUEUED
     await db.commit()
 
 
