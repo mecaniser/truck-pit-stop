@@ -1,0 +1,19 @@
+# DB-139 compact ETS billing summary
+
+Owner: Frontend & UX. Fast UI lane; existing read-only billing contract. Branch `codex/ets-billing-compact` from released main `aa9fbe24`.
+
+The footer keeps ETS invoice total and supported paid/partial/unpaid/unverified status visible. An info-button popover holds source paid and remaining amounts, invoice availability/no-new-invoice explanation, source/QuickBooks disclaimer, observation time and review note. The shared component also covers full History detail. Failure alerts remain visible. Native invoice/payment controls and every amount/status calculation are unchanged.
+
+Focused checks:100 tests passed across importedBilling, PriceBuilderPanel pending feedback and RepairOrdersPage imported billing. Tests cover default collapsed details, status variants and missing values, keyboard activation, Escape/focus restoration and outside dismissal, full History and native-action exclusion. Changed-source ESLint passed with no output; TypeScript and production build passed. No backend, migration, provider, collector or financial write change.
+
+Local runtime 2026-10-19: dedicated checkout/frontend PID27914 serves localhost5173 with branch and baseline SHA stamps. No5173/8000 listener existed at preflight; no shared server was stopped. No approved backend environment exists in this checkout, so no backend/database configuration was invented or copied. A temporary synthetic HTML entry renders the actual changed component and existing CSS, with no API requests. Actual browser checks at desktop1280 and390px mobile verify collapsed summary, opening above footer, readable content, Enter/Escape/outside dismissal and no horizontal overflow (390px document/viewport). This is component browser evidence, **not** full signed-in local-app acceptance. Temporary preview files are excluded from the commit. Production browser authorization is available again; actual signed-in deployed journey remains a release gate.
+
+Protected CI, PR/merge and deployment evidence remain pending. No financial records or invoices were created or changed. The importer branch stays on hold; DB-135 review remains separate.
+
+## Production release — 2026-10-19, browser acceptance held for sign-in
+
+All six protected checks in run39275030096 passed on `dda0a463f6dbe3e00d32211d12ef4b4f5990c304`. Normal squash merge #582 produced `b994794b03291ca38f57d88b1c04712ab870fc6d` at12:20EDT. Checked and released trees both equal `9ecb55762b95795f0483653905a0a08af843a3df`. Repository linear-history policy rejected the first merge-commit request; normal squash succeeded without bypass or protection changes.
+
+Automatic Web deployment `9326c771-73c2-4ca4-86d4-ee08a6807745` reports SUCCESS at that exact commit. Public build-version matches b994794b; readiness returns ready with database/Redis healthy. One readiness request timed out during the deployment observation, then a focused retry returned ready (uptime91seconds). No backend, Worker, provider or collector setting was changed for this UI release.
+
+The signed-in production session displayed the user's existing imported-order footer before release. During the CI wait it expired and now displays the normal login page. A user sign-in was requested; actual deployed desktop/mobile popover acceptance is still open and no Done claim is made. Existing synthetic component browser proof is not substituted for that final gate. B1 #575 includes this record while integrating released main and retaining both board histories. No financial record was changed and no invoice was created.

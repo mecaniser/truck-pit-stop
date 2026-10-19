@@ -91,7 +91,10 @@ describe('imported repair-order billing page', () => {
 
     expect(container.querySelector('.db-workspace-footer')).toHaveTextContent('$534.41')
     expect(screen.getByText('Paid in ETS')).toBeVisible()
+    expect(screen.queryByText('ETS source snapshot · QuickBooks not checked')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'ETS billing details' }))
     expect(screen.getByText('ETS source snapshot · QuickBooks not checked')).toBeVisible()
+    await user.keyboard('{Escape}')
     for (const stale of ['$489.52', '$-150.00', 'STALE imported labor', 'STALE imported part']) {
       expect(screen.queryByText(stale, { exact: true })).not.toBeInTheDocument()
     }
