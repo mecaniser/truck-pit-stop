@@ -118,8 +118,18 @@ async def send_policy(db, tenant, thread, sender, *, ignore_operation=None):
             reason = 'identity_unverified'
         else:
             others = (await db.execute(select(Customer.phone).where(Customer.tenant_id == tenant.id, Customer.id != customer.id, Customer.deleted_at.is_(None), Customer.phone.is_not(None)))).scalars().all()
-            remote_rows = (await db.execute(select(SMSMessage.direction, SMSMessage.from_number, SMSMessage.to_number).where(SMSMessage.tenant_id == tenant.id, SMSMessage.thread_id == thread.id, SMSMessage.deleted_at.is_(None)))).all()
-            remotes = {_normalize_for_twilio(f if d == SMSMessageDirection.INBOUND else t) for d, f, t in remote_rows if (f if d == SMSMessageDirection.INBOUND else t)}
+            remote_rows = (await db.execute(select(SMSMessage.direction, SMSMessage.from_number, SMSMessage.to_number, SMSMessage.delivery_status, SMSMessage.error_code, SMSMessage.twilio_message_sid).where(SMSMessage.tenant_id == tenant.id, SMSMessage.thread_id == thread.id, SMSMessage.deleted_at.is_(None)))).all()
+            # A conclusive invalid-To rejection without a provider receipt never
+            # established a remote identity. Keep the row/history intact and retain
+            # every inbound, accepted, uncertain, or differently failed address.
+            remotes = {
+                _normalize_for_twilio(f if d == SMSMessageDirection.INBOUND else t)
+                for d, f, t, status, error_code, sid in remote_rows
+                if (f if d == SMSMessageDirection.INBOUND else t)
+                and not (d == SMSMessageDirection.OUTBOUND
+                         and status == SMSDeliveryStatus.FAILED
+                         and error_code == '21211' and sid is None)
+            }
             if any(_normalize_for_twilio(p) == phone for p in others) or len(remotes) > 1 or (remotes and phone not in remotes):
                 reason = 'identity_unverified'
     held = select(SMSSendOperation.id).where(SMSSendOperation.tenant_id == tenant.id, SMSSendOperation.thread_id == thread.id, SMSSendOperation.state.in_(['unknown', 'dispatching']))
