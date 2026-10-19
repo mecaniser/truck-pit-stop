@@ -348,6 +348,14 @@ function InboxContent({ embedded, onUnreadCountChange }: InboxProps) {
             : error ||
               "No conversations yet. Incoming SMS conversations will appear here."}
         </p>
+        {!loading && bootstrap && embedded && (
+          <a
+            className="subtle-button previous-inbox"
+            href="/dashboard/messages/previous"
+          >
+            Previous inbox
+          </a>
+        )}
         {!loading && bootstrap && canSetup && (
           <button className="subtle-button" onClick={() => setShowSetup(true)}>
             SMS setup

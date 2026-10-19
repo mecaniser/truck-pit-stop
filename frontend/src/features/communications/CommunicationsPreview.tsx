@@ -1074,8 +1074,9 @@ export default function CommunicationsPreview({
             <div className="connection-summary">
               <ShieldCheck size={18} />
               <p>
-                Provider setup and live messaging are separate from this
-                prototype. No account changes are made here.
+                {connection
+                  ? "New channels require setup and approval before messages can be sent."
+                  : "Provider setup and live messaging are separate from this prototype. No account changes are made here."}
               </p>
             </div>
           </section>
