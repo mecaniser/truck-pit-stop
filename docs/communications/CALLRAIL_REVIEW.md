@@ -43,3 +43,33 @@ Reviewed source SHA256:
 ## Remaining release gates
 
 Owner must record integrated desktop/mobile runtime evidence, all required protected CI, additive production migration/deployment health, explicit pilot mapping to the canonical DBN conversation with ETS/history retained, existing CallRail forwarding/webhook preservation, and one manual send/reply test to the authorized recipient ending0486. Keep new Twilio routing, automation outbox and recovery disabled. No general campaign/automation enablement is approved by this source gate.
+
+## Scoped final delta re-review after c95292ce
+
+2026-10-19: **GO** for the two-file tracker-null compatibility correction. Independently checked the official [Send a Text Message response documentation](https://apidocs.callrail.com/#send-a-text-message), which defines a null `current_tracker_id` as using `initial_tracker_id`. The helper adopts that documented fallback; a present different or malformed current tracker never falls back. Company, current sender number and recipient matching remain strict; a null sender number cannot borrow the initial sender. No credential, callback, automation or tenant-binding changes are included.
+
+Independent re-run of `tests/test_callrail_service.py` through the isolated harness: **19 passed**, two existing deprecation warnings,1.29 seconds. Tests include accepted documented null tracker, wrong initial tracker, present conflicting/empty current tracker, import fallback, and missing current sender rejection.
+
+Superseding reviewed hashes for this delta:
+
+- `backend/app/services/callrail_service.py`: `c7288e31e5973a494501960b4d6d534c0075c711624a6ba0d9f06d9dbd1e2850`
+- `backend/tests/test_callrail_service.py`: `bec6eaec6e1c8b18d039d9ee0a2b4144b13c1ad2a21740ac6c514ca3cbb43109`
+
+Previous source-gate boundaries and remaining release gates are unchanged. No provider or deployment mutation was performed by this reviewer.
+
+## Actual API receipt-shape and historical attribution delta
+
+2026-10-19: **GO** for the final service/test delta adapting the read-only provider response shape. Historical API SCI message IDs become resource aliases; live signed events still require a valid SCI resource ID (numeric aliases are optional). API imports no longer infer historical local senders from the conversation's current tracker: unknown historical messages are quarantined unless an operator explicitly verified their IDs. The allowlist is server/operator-only, with no HTTP/client acceptance path. Previously known aliases still undergo tenant/thread/body/direction/from/to identity checks. Actual `message_type` is respected so MMS is quarantined rather than misrepresented as SMS. Company/current sender/recipient guards remain strict.
+
+Independent isolated provider+dispatch suites plus the seven independent challenge cases: **32 passed**, two existing deprecation warnings,4.25 seconds. Command:
+
+```
+/tmp/db134-test-venv/bin/python scripts/communications_local.py exec python -m pytest tests/test_callrail_service.py tests/test_callrail_dispatch.py /tmp/test_callrail_independent.py -q -p no:cacheprovider
+```
+
+Superseding final delta SHA256:
+
+- `backend/app/services/callrail_service.py`: `d89efda00ec8920812462e2f544a752836c7980fa0dfba488ce01d1a65f445de`
+- `backend/tests/test_callrail_service.py`: `de5764ff553790931c2f01088976db3ca9cd88f451c413005441af0610f863ff`
+
+No new actionable source finding. Real pilot provenance must be recorded for each operator-allowlisted historical ID; only the two approved test-message IDs are in the planned import scope. All prior production/CI/live-acceptance gate boundaries remain unchanged. Reviewer made no implementation, provider or deployment mutation.

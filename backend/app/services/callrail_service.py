@@ -201,9 +201,11 @@ async def apply_event(db, binding_id, payload, event_kind, *, historical=False, 
     if isinstance(numeric, int) and not isinstance(numeric, bool) and numeric > 0:
         aliases.append(f'id:{numeric}')
     resource = payload.get('resource_id')
+    if historical and not resource and isinstance(numeric, str) and numeric.startswith('SCI'):
+        resource = numeric
     if isinstance(resource, str) and re.fullmatch(r'SCI[A-Za-z0-9]{1,77}', resource):
         aliases.append(f'resource:{resource}')
-    if not aliases or (not historical and len(aliases) != 2):
+    if not aliases or (not historical and not any(alias.startswith('resource:') for alias in aliases)):
         return await _quarantine(db, binding, payload, 'missing_message_identity')
     existing_aliases = (await db.scalars(select(CallRailMessageAlias).where(
         CallRailMessageAlias.account_id == binding.account_id, CallRailMessageAlias.alias.in_(aliases)))).all()
@@ -290,9 +292,16 @@ async def apply_event(db, binding_id, payload, event_kind, *, historical=False, 
     return {'status': 'duplicate' if replayed else 'received', 'message_id': str(message.id)}
 
 
-async def import_conversation(db, binding_id, thread_id, record):
-    """Import an authenticated API response for one explicitly mapped conversation."""
-    binding = await db.get(CallRailNumberBinding, binding_id)
+async def import_conversation(db, binding_id, thread_id, record, *, verified_message_ids=frozenset()):
+    """Import only receipts with proven sender provenance.
+
+    API conversation-level current_tracking_number does not identify historical
+    message senders. New rows require an explicit operator-verified ID allowlist;
+    existing aliases may be reconciled without re-attributing prior history.
+    This helper is server/operator-only, never accepts client-provided allowlists.
+    """
+    binding = await db.scalar(select(CallRailNumberBinding).where(CallRailNumberBinding.id == binding_id)
+                              .with_for_update().execution_options(populate_existing=True))
     if not binding:
         raise HTTPException(404, 'Unknown CallRail binding')
     context = await resolve_for_thread(db, binding.tenant_id, thread_id, allow_opt_out=True)
@@ -310,7 +319,23 @@ async def import_conversation(db, binding_id, thread_id, record):
         payload = dict(item, company_resource_id=context.company_id, conversation_id=record.get('id'),
             source_number=context.customer_phone if incoming else context.sender_phone,
             destination_number=context.sender_phone if incoming else context.customer_phone,
-            timestamp=item.get('created_at'), message_type=item.get('type', 'sms'))
+            timestamp=item.get('created_at'), message_type=item.get('message_type', item.get('type', 'sms')))
+        identifier = item.get('id')
+        aliases = []
+        if isinstance(identifier, int) and not isinstance(identifier, bool) and identifier > 0:
+            aliases.append(f'id:{identifier}')
+        if isinstance(identifier, str) and re.fullmatch(r'SCI[A-Za-z0-9]{1,77}', identifier):
+            aliases.append(f'resource:{identifier}')
+        resource = item.get('resource_id')
+        if isinstance(resource, str) and re.fullmatch(r'SCI[A-Za-z0-9]{1,77}', resource):
+            aliases.append(f'resource:{resource}')
+        known = await db.scalar(select(CallRailMessageAlias.id).where(
+            CallRailMessageAlias.account_id == binding.account_id, CallRailMessageAlias.tenant_id == binding.tenant_id,
+            CallRailMessageAlias.alias.in_(aliases))) if aliases else None
+        verified = isinstance(identifier, (int, str)) and not isinstance(identifier, bool) and identifier in verified_message_ids
+        if not known and not verified:
+            results.append(await _quarantine(db, binding, payload, 'historical_sender_unproven'))
+            continue
         results.append(await apply_event(db, binding_id, payload, 'received' if incoming else 'sent', historical=True,
                                         failed=item.get('status') in {'error', 'failed'}))
     return results

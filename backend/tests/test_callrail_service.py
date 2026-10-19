@@ -296,3 +296,53 @@ async def test_import_documented_tracker_fallback_preserves_sender_guard(mapped)
     record['initial_tracking_number'] = binding.sender_phone
     with pytest.raises(HTTPException):
         await svc.import_conversation(db, binding.id, thread.id, record)
+
+
+@isolated
+@pytest.mark.asyncio
+async def test_api_actual_sci_shape_requires_sender_proof_and_preserves_mms(mapped):
+    db, binding, mapping, customer, thread = mapped
+    now = datetime.now(timezone.utc).isoformat()
+    record = {'id': 'allcontacthistory', 'company_id': binding.company_id, 'current_tracker_id': binding.tracker_id,
+        'current_tracking_number': binding.sender_phone, 'customer_phone_number': customer.phone,
+        'messages': [
+            {'id': 'SCIolderOtherTracker', 'content': 'Old website conversation', 'created_at': now,
+             'direction': 'incoming', 'message_type': 'sms', 'sms_thread': {'id': 'SMTday1'}},
+            {'id': 'SCIverifiedIncoming', 'content': 'Synthetic reply', 'created_at': now,
+             'direction': 'incoming', 'message_type': 'sms', 'sms_thread': {'id': 'SMTday2'}},
+            {'id': 'SCIverifiedMms', 'content': 'Attachment caption', 'created_at': now,
+             'direction': 'incoming', 'message_type': 'mms', 'media_urls': []},
+        ]}
+    results = await svc.import_conversation(db, binding.id, thread.id, record,
+        verified_message_ids={'SCIverifiedIncoming', 'SCIverifiedMms'})
+    await db.commit()
+    assert [row.get('reason', row['status']) for row in results] == ['historical_sender_unproven', 'received', 'unsupported_message']
+    message = await db.scalar(select(SMSMessage).where(SMSMessage.thread_id == thread.id))
+    assert message.provider_message_id == 'SCIverifiedIncoming'
+    assert message.body == 'Synthetic reply' and message.twilio_message_sid is None
+    # API SCI id and signed webhook SCI resource are one message, even when the
+    # webhook adds a previously unknown numeric alias.
+    callback = event(); callback.update(id=777, resource_id='SCIverifiedIncoming', content='Synthetic reply', timestamp=now)
+    assert (await svc.apply_event(db, binding.id, callback, 'received'))['status'] == 'duplicate'
+    await db.commit()
+    results = await svc.import_conversation(db, binding.id, thread.id, record)
+    assert results[1]['status'] == 'duplicate'
+    assert await db.scalar(select(func.count()).select_from(SMSMessage).where(SMSMessage.thread_id == thread.id)) == 1
+
+
+@isolated
+@pytest.mark.asyncio
+async def test_live_sci_only_receipt_deduplicates_api_import(mapped):
+    db, binding, mapping, customer, thread = mapped
+    payload = event(); payload.pop('id')
+    payload['resource_id'] = 'SCIliveOnly'
+    first = await svc.apply_event(db, binding.id, payload, 'received'); await db.commit()
+    record = {'id': 'conversation1', 'company_id': binding.company_id, 'current_tracker_id': binding.tracker_id,
+        'current_tracking_number': binding.sender_phone, 'customer_phone_number': customer.phone,
+        'messages': [{'id': 'SCIliveOnly', 'content': payload['content'], 'created_at': payload['timestamp'],
+                      'direction': 'incoming', 'message_type': 'sms'}]}
+    imported = await svc.import_conversation(db, binding.id, thread.id, record)
+    assert imported[0]['status'] == 'duplicate' and imported[0]['message_id'] == first['message_id']
+    assert await db.scalar(select(func.count()).select_from(SMSMessage).where(SMSMessage.thread_id == thread.id)) == 1
+    numeric_only = event(); numeric_only.pop('resource_id')
+    assert (await svc.apply_event(db, binding.id, numeric_only, 'received'))['reason'] == 'missing_message_identity'
