@@ -119,3 +119,36 @@ Independent nonimplementing merge gate GO:198migration nodes, sole184 exactparen
 After #585 and #583 passed final CI, merged and completed production acceptance, Release integrated exact main `7eb078e314e5c7826509ba9965aa089d2bf90007` into the existing `4f48210c` B1 candidate. Git merges cleanly; incoming changes are released CI routing/receipts and report intervals. B1 customer account/classification implementation and the sole pass-only184 migration remain unchanged. Fresh independent integration review and protected CI apply to this final head.
 
 Local runtime preflight resolves this registered checkout and `codex/db135-customer-receivables`, initially clean at4f48210c. Neither5173 nor8000 has a listener. Configuration identifies localhost/truckpitstop; it was not migrated, reseeded or started against a new schema. Frontend proxy defaults to127.0.0.1:8000. Runtime remains blocked/browser-unverified locally; no stale server claim. Production acceptance follows normal deployment and uses only READ ONLY financial checks and unsent statement download.
+
+
+## Merged, deployed and accepted — 2026-10-19
+
+Independent integration QA/Security GO covers final head `e95c6b66`. Run
+`39318838589` has all six checks green: backend full 3,957 passed / 314 skipped;
+only the full frontend job was retried after an unchanged loading-state async
+timeout, then 191 files / 1,986 tests passed. Five successful results were
+retained; no whole-workflow restart or source push occurred for that retry.
+Merge `c66cabf230e54370fdcfeb083b9b767148ee00ca` has the exact checked tree.
+Web `7c03b7cd-d427-45b1-9a88-121ce8c45b7a` and Worker
+`f36cbc7b-d550-481d-b1d6-e5c3665afd54` are SUCCESS on that revision; served SHA
+and database/Redis readiness match.
+
+Fresh production PostgreSQL REPEATABLE READ READ ONLY verification observes
+sole `184_db135_callrail_merge`, all six approved customer accounts, policy
+available everywhere, all 34 test invoices excluded and six valid PDFs. Exact
+Web policy entries match the approved private 47-entry map. Before/after full
+row fingerprints are unchanged for all 47 invoices, 15 settlements, 33 payments,
+10 ledger events and zero overpayments/credit entries. Receipts remain private.
+No financial apply, invoice/payment mutation, provider action or statement send
+occurred.
+
+Authenticated NC shop owner acceptance passed in the in-app browser after the
+separate Chrome session expired. Actual Account navigation and refresh returned
+200; the real-record account retains the incomplete-balance collection warning,
+review holds and separate ETS history. The test-only account visibly excludes its
+one test invoice and has zero native collectible, credit and aging. Desktop and
+390×844 Light/Night layouts fit without horizontal overflow; aging is readable.
+The actual unsent statement download returned 200 application/pdf with a valid
+`%PDF-` header. Night was an unsaved preview, discarded back to Day; no appearance
+PUT, financial write, invoice creation, provider action or statement send occurred.
+Private screenshots and browser receipt are retained outside Git. B1 is Done.
