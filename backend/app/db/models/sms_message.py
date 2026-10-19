@@ -35,6 +35,11 @@ class SMSMessage(BaseModel):
         Index("uq_sms_messages_legacy_sid", "twilio_message_sid", unique=True, postgresql_where=text("twilio_account_sid IS NULL"), sqlite_where=text("twilio_account_sid IS NULL")),
     )
 
+    provider = Column(String(16), nullable=True)
+    provider_account_id = Column(String(64), nullable=True)
+    provider_message_id = Column(String(80), nullable=True)
+    provider_conversation_id = Column(String(80), nullable=True)
+    callrail_binding_id = Column(UUID(as_uuid=True), ForeignKey('callrail_number_bindings.id'), nullable=True)
     binding_id = Column(UUID(as_uuid=True), ForeignKey('tenant_sms_bindings.id'), nullable=True)
     twilio_account_sid = Column(String(34), nullable=True)
     messaging_service_sid = Column(String(34), nullable=True)

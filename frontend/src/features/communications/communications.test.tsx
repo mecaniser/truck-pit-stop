@@ -66,6 +66,13 @@ describe("shared inbox foundation", () => {
       ),
     ).toBe(false);
   });
+  it("keeps CallRail's provider cap when optional policy is absent and existing Twilio capacity unchanged", () => {
+    const row = createDemoConversations()[0];
+    const callrail = { ...row, context: { ...row.context, smsProvider: "callrail" } };
+    expect(canCompose(callrail, "x".repeat(140))).toBe(true);
+    expect(canCompose(callrail, "x".repeat(141))).toBe(false);
+    expect(canCompose({ ...row, context: { ...row.context, smsProvider: "twilio" } }, "x".repeat(1600))).toBe(true);
+  });
   it("keeps separate drafts across contacts and channels and blocks unavailable channel sends", () => {
     render(<CommunicationsPreview />);
     const draft = screen.getByRole("textbox", { name: "Message draft" });

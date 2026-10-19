@@ -77,7 +77,9 @@ function InboxContent({ embedded, onUnreadCountChange }: InboxProps) {
     : "";
   const merge = useCallback(
     (row: Conversation) =>
-      setRows((previous) => previous.map((r) => (r.id === row.id ? row : r))),
+      setRows((previous) => previous.map((r) =>
+        r.id === row.id && (row.version ?? 0) >= (r.version ?? 0) ? row : r,
+      )),
     [],
   );
   const select = useCallback(
@@ -171,6 +173,8 @@ function InboxContent({ embedded, onUnreadCountChange }: InboxProps) {
         setRows((previous) =>
           list.map((row) => {
             const old = previous.find((r) => r.id === row.id);
+            const incoming = detail?.id === row.id ? detail : row;
+            if (old && (incoming.version ?? 0) < (old.version ?? 0)) return old;
             if (detail?.id === row.id)
               return {
                 ...detail,
@@ -302,6 +306,35 @@ function InboxContent({ embedded, onUnreadCountChange }: InboxProps) {
       setBusy(false);
     }
   }
+  async function changeSender(row: Conversation, bindingId: string | null) {
+    if (lock.current || pending || blocked) return null;
+    const epoch = useAuthStore.getState().authSessionEpoch;
+    lock.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      const updated = await inboxApi.changeSender(row, bindingId);
+      if (epoch !== useAuthStore.getState().authSessionEpoch) return null;
+      merge(updated);
+      return updated;
+    } catch (e) {
+      if (epoch !== useAuthStore.getState().authSessionEpoch) return null;
+      setError(errorMessage(e));
+      try {
+        const updated = await inboxApi.detail(row.id);
+        if (epoch !== useAuthStore.getState().authSessionEpoch) return null;
+        merge(updated);
+        return updated;
+      } catch {
+        if (epoch === useAuthStore.getState().authSessionEpoch)
+          merge({ ...row, sendPolicy: { ...row.sendPolicy, canSend: false, reason: "binding_changed" } });
+      }
+      return null;
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  }
   async function older(id: string) {
     const epoch = useAuthStore.getState().authSessionEpoch;
     const row = rows.find((r) => r.id === id);
@@ -401,6 +434,7 @@ function InboxContent({ embedded, onUnreadCountChange }: InboxProps) {
             ? Promise.resolve(false)
             : submit(createIntent(row, body, draftKey)),
         onPatch: (row, values) => void patch(row, values),
+        onSenderChange: changeSender,
         onOlder: (id) => void older(id),
         onRecover: () => {
           if (pending) void submit(pending);
