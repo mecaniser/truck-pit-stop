@@ -4603,7 +4603,7 @@ export default function PriceBuilderPanel({
             </div>
             {!compactWorkspace && operationProgress}
             {(!isInternalOrder || hasInvoice || completionMode) && (
-              isEtsImported ? <span className="text-sm font-semibold text-slate-600">{importedBilling?.invoice_id && !importedBillingFailed ? 'ETS invoice on file' : 'ETS invoice unavailable'} · no new invoice</span> : canCreateInvoice ? (
+              isEtsImported ? null : canCreateInvoice ? (
                 <div className="relative">
                   <button
                     type="button"

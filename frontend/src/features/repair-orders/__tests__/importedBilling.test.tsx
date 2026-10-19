@@ -1,3 +1,4 @@
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -31,9 +32,11 @@ describe('Imported ETS billing', () => {
     ['paid', '534.41', '0.00', 'Paid in ETS'],
     ['partially_paid', '100.00', '434.41', 'Partially paid in ETS'],
     ['unpaid', '0.00', '534.41', 'Unpaid in ETS'],
-  ] as const)('shows %s imported payment evidence separately from work state', (status, completed, remaining, label) => {
+  ] as const)('shows %s imported payment evidence separately from work state', async (status, completed, remaining, label) => {
     render(<ImportedBillingDetails billing={{ ...paid, payment_status: status, recorded_completed_amount: completed, recorded_remaining_amount: remaining }} />)
     expect(screen.getByText(label)).toBeVisible()
+    expect(screen.queryByText('Imported ETS records · QuickBooks not checked')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'ETS billing details' }))
     expect(screen.getByText('Imported ETS records · QuickBooks not checked')).toBeVisible()
     expect(screen.getAllByText(importedMoney(completed)).length).toBeGreaterThan(0)
     expect(screen.getAllByText(importedMoney(remaining)).length).toBeGreaterThan(0)
@@ -42,21 +45,40 @@ describe('Imported ETS billing', () => {
     get.mockResolvedValue({ data: { ...paid, evidence_basis: 'ets_source_snapshot', observed_at: '2026-10-18T20:00:00Z' } })
     renderQuery()
     await screen.findByText('Paid in ETS')
+    expect(screen.queryByText('ETS source snapshot · QuickBooks not checked')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'ETS billing details' }))
     expect(screen.getByText('ETS source snapshot · QuickBooks not checked')).toBeVisible()
     expect(document.querySelector('time')).toHaveAttribute('datetime', '2026-10-18T20:00:00Z')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
-  it('shows review separately from the supported imported payment state', () => {
+  it('shows review separately from the supported imported payment state', async () => {
     render(<ImportedBillingDetails billing={{ ...paid, payment_status: 'unpaid', recorded_completed_amount: '0.00', recorded_remaining_amount: '534.41', review_required: true }} />)
     expect(screen.getByText('Unpaid in ETS')).toBeVisible()
+    expect(screen.queryByText('Review needed')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'ETS billing details' }))
     expect(screen.getByText('Review needed')).toBeVisible()
     expect(screen.queryByText('Paid in ETS')).not.toBeInTheDocument()
   })
-  it('does not replace missing amounts with zero', () => {
+  it('does not replace missing amounts with zero', async () => {
     render(<ImportedBillingDetails />)
     expect(screen.getByText('Payment unverified')).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'ETS billing details' }))
     expect(screen.getAllByText('Unavailable')).toHaveLength(2)
     expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
+  })
+  it('opens by keyboard and dismisses with Escape or an outside click', async () => {
+    const user = userEvent.setup()
+    render(<><button>Outside</button><ImportedBillingDetails billing={paid} /></>)
+    const trigger = screen.getByRole('button', { name: 'ETS billing details' })
+    trigger.focus()
+    await user.keyboard('{Enter}')
+    expect(screen.getByText('ETS invoice on file · no new invoice')).toBeVisible()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByText('ETS invoice on file · no new invoice')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+    await user.click(trigger)
+    await user.click(screen.getByRole('button', { name: 'Outside' }))
+    expect(screen.queryByText('Remaining')).not.toBeInTheDocument()
   })
   it('fetches the read-only scoped endpoint and holds on error', async () => {
     get.mockRejectedValue(new Error('503'))
