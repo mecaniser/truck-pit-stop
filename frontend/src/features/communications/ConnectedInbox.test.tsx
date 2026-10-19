@@ -177,6 +177,35 @@ describe("SMS setup entry", () => {
 });
 
 describe("dashboard inbox integration", () => {
+  it("separates real history by the same New York calendar days as message times", async () => {
+    const history = {
+      ...row,
+      messages: [
+        {
+          ...row.messages[0],
+          id: "friday",
+          body: "Before midnight",
+          createdAt: "2026-10-17T03:55:00Z",
+        },
+        {
+          ...row.messages[0],
+          id: "saturday",
+          body: "After midnight",
+          createdAt: "2026-10-17T04:05:00Z",
+        },
+      ],
+    };
+    vi.mocked(inboxApi.list).mockResolvedValue([history]);
+    vi.mocked(inboxApi.detail).mockResolvedValue(history);
+    render(<DashboardInboxPage />);
+    expect(
+      await screen.findByText("Friday, October 16, 2026"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Saturday, October 17, 2026")).toBeInTheDocument();
+    expect(screen.getByText("Before midnight")).toBeInTheDocument();
+    expect(screen.getByText("After midnight")).toBeInTheDocument();
+  });
+
   it("explains the existing routing hold without enabling sending", async () => {
     const held = {
       ...row,
