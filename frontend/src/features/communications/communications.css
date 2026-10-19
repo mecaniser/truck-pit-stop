@@ -12,6 +12,14 @@
   --line: #e2e7ec;
   --green: #126b59;
   --canvas: #f6f8fb;
+  /* The inbox is a light canvas inside either dashboard appearance. Shell
+     heading/control rules read these variables from their nearest surface. */
+  --text-primary: #17283b;
+  --text-secondary: #617084;
+  --workspace-text: #17283b;
+  --workspace-muted: #617084;
+  --workspace-border: #e2e7ec;
+  --product-road-white: #fff;
 }
 :where(.communications-surface) * {
   box-sizing: border-box;
