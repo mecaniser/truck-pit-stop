@@ -17,7 +17,7 @@
 .db-customer-account__summary > .db-customer-account__collectible { border-left: 3px solid var(--product-copper-500, #df5a13); }
 .db-customer-account__collectible strong { color: var(--workspace-text, #13233d); }
 .db-customer-account__buckets { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
-.db-customer-account__buckets > div { min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 7px; border-radius: 6px; background: var(--workspace-surface, #fff); }
+.db-customer-account__buckets > div { min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 7px; border-radius: 6px; background: var(--surface-canvas, #fff); }
 .db-customer-account__buckets strong, .db-customer-account__exceptions strong { font-variant-numeric: tabular-nums; }
 .db-customer-account__exceptions { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 8px; }
 .db-customer-account__ets { border-style: dashed; }
@@ -25,7 +25,7 @@
 .db-customer-account__transaction { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 8px 16px; padding: 9px 0; border-top: 1px solid var(--workspace-border, #d5dde6); }
 .db-customer-account__transaction-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 8px; min-width: 0; }
 .db-customer-account__transaction-main strong { font-weight: 650; }
-.db-customer-account__source { font-size: calc(var(--font-size-body, 16px) * .6875); padding: 2px 6px; border-radius: 999px; background: var(--workspace-surface, #fff); border: 1px solid var(--workspace-border, #d5dde6); white-space: nowrap; }
+.db-customer-account__source { font-size: calc(var(--font-size-body, 16px) * .6875); padding: 2px 6px; border-radius: 999px; background: var(--surface-canvas, #fff); border: 1px solid var(--workspace-border, #d5dde6); white-space: nowrap; }
 .db-customer-account__source--ets_history, .db-customer-account__source--review_required { color: var(--workspace-muted, #52647c); }
 .db-customer-account__date { color: var(--workspace-muted, #52647c); }
 .db-customer-account__transaction > p { flex: 1 1 100%; }
