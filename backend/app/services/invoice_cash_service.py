@@ -347,9 +347,9 @@ def cash_staff(actor):
 
 
 async def ancestor_financial_events(db, parent, *, lock=False):
-    from app.services.provider_outbox_service import EMAIL_NOTIFICATION_EVENT
+    from app.services.invoice_outbox_policy import financial_invoice_outbox_clause
     query = select(ProviderOutboxEvent).where(ProviderOutboxEvent.tenant_id == parent.tenant_id,
-        ProviderOutboxEvent.aggregate_id == parent.id, ProviderOutboxEvent.event_type != EMAIL_NOTIFICATION_EVENT)
+        ProviderOutboxEvent.aggregate_id == parent.id, financial_invoice_outbox_clause())
     if lock:
         query = query.with_for_update(nowait=True)
     return list((await db.scalars(query.execution_options(populate_existing=True))).all())
@@ -511,15 +511,14 @@ async def cash_eligibility(db, invoice, settlement, *, lock=False):
         if await db.scalar(select(model.id).where(model.tenant_id == invoice.tenant_id,
                 model.invoice_id == invoice.id).limit(1)):
             return "Cash cannot be mixed with existing or historical payments.", []
+    from app.services.invoice_outbox_policy import financial_invoice_outbox_clause
+    # Known nonfinancial events remain durable, but need no financial lock.
     query = select(ProviderOutboxEvent).where(ProviderOutboxEvent.tenant_id == invoice.tenant_id,
-        ProviderOutboxEvent.aggregate_id == invoice.id)
+        ProviderOutboxEvent.aggregate_id == invoice.id, financial_invoice_outbox_clause())
     if lock:
         query = query.with_for_update()
-    all_events = list((await db.scalars(query)).all())
-    from app.services.provider_outbox_service import EMAIL_NOTIFICATION_EVENT
-    # Only known nonfinancial delivery events are ignored, never suppressed.
     # SMS delivery is currently immediate and has no invoice provider-outbox type.
-    events = [event for event in all_events if event.event_type != EMAIL_NOTIFICATION_EVENT]
+    events = list((await db.scalars(query)).all())
     if not events and invoice.quickbooks_sync_status not in {None, "pending", "not_synced", "not_required", "awaiting_payment"}:
         return "Previous accounting activity must be reviewed before local cash.", events
     for event in events:
