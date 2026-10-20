@@ -34,12 +34,13 @@ def context():
 
 
 @pytest.mark.asyncio
-async def test_send_one_http_attempt_conversation_is_not_message_id(monkeypatch, context):
+@pytest.mark.parametrize("status", [200, 201])
+async def test_send_one_http_attempt_conversation_is_not_message_id(monkeypatch, context, status):
     monkeypatch.setenv('CALLRAIL_TEST', 'synthetic-key')
     calls = []
     async def handler(request):
         calls.append(request)
-        return httpx.Response(201, json={'id': 'conversation1', 'company_id': context.company_id,
+        return httpx.Response(status, json={'id': 'conversation1', 'company_id': context.company_id,
             'customer_phone_number': context.customer_phone, 'current_tracking_number': context.sender_phone,
             'current_tracker_id': context.tracker_id})
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
@@ -51,7 +52,7 @@ async def test_send_one_http_attempt_conversation_is_not_message_id(monkeypatch,
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('status', [302, 408, 429, 500])
+@pytest.mark.parametrize('status', [202, 204, 302, 408, 429, 500])
 async def test_uncertain_response_never_retries(monkeypatch, context, status):
     monkeypatch.setenv('CALLRAIL_TEST', 'synthetic-key')
     calls = []
@@ -61,6 +62,59 @@ async def test_uncertain_response_never_retries(monkeypatch, context, status):
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     monkeypatch.setattr(svc.httpx, 'AsyncClient', lambda **kwargs: client)
     with pytest.raises(RuntimeError):
+        await svc.send(context, 'manual test', context.customer_phone)
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('status', [200, 201])
+@pytest.mark.parametrize('changed', [
+    {'id': ''}, {'id': 'foreign/id'}, {'company_id': 'COMforeign'},
+    {'customer_phone_number': '+15005559999'},
+    {'current_tracking_number': '+15005559999'},
+    {'current_tracker_id': 'TRKforeign'},
+])
+async def test_success_status_keeps_scope_validation_and_one_attempt(monkeypatch, context, status, changed):
+    monkeypatch.setenv('CALLRAIL_TEST', 'synthetic-key')
+    calls = []
+    async def handler(request):
+        calls.append(request)
+        payload = {'id': 'conversation1', 'company_id': context.company_id,
+            'customer_phone_number': context.customer_phone, 'current_tracking_number': context.sender_phone,
+            'current_tracker_id': context.tracker_id}
+        return httpx.Response(status, json={**payload, **changed})
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(svc.httpx, 'AsyncClient', lambda **kwargs: client)
+    with pytest.raises(RuntimeError, match='requires reconciliation'):
+        await svc.send(context, 'manual test', context.customer_phone)
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('status', [200, 201])
+async def test_malformed_success_body_remains_unknown_without_retry(monkeypatch, context, status):
+    monkeypatch.setenv('CALLRAIL_TEST', 'synthetic-key')
+    calls = []
+    async def handler(request):
+        calls.append(request)
+        return httpx.Response(status, content=b'not json')
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(svc.httpx, 'AsyncClient', lambda **kwargs: client)
+    with pytest.raises(ValueError):
+        await svc.send(context, 'manual test', context.customer_phone)
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_forbidden_remains_definitive_rejection_without_retry(monkeypatch, context):
+    monkeypatch.setenv('CALLRAIL_TEST', 'synthetic-key')
+    calls = []
+    async def handler(request):
+        calls.append(request)
+        return httpx.Response(403, json={})
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(svc.httpx, 'AsyncClient', lambda **kwargs: client)
+    with pytest.raises(svc.CallRailRejected):
         await svc.send(context, 'manual test', context.customer_phone)
     assert len(calls) == 1
 
@@ -263,12 +317,13 @@ async def test_sent_suffix_reconciles_once_and_ambiguous_or_late_holds(mapped):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('status', [200, 201])
 @pytest.mark.parametrize('current_tracker, initial_tracker, accepted', [
     (None, 'TRK123', True), (None, 'TRKother', False), ('TRKother', 'TRK123', False), ('', 'TRK123', False)])
-async def test_send_documented_null_tracker_fallback(monkeypatch, context, current_tracker, initial_tracker, accepted):
+async def test_send_documented_null_tracker_fallback(monkeypatch, context, current_tracker, initial_tracker, accepted, status):
     monkeypatch.setenv('CALLRAIL_TEST', 'synthetic-key')
     async def handler(request):
-        return httpx.Response(201, json={'id': 'conversation1', 'company_id': context.company_id,
+        return httpx.Response(status, json={'id': 'conversation1', 'company_id': context.company_id,
             'customer_phone_number': context.customer_phone, 'current_tracking_number': context.sender_phone,
             'current_tracker_id': current_tracker, 'initial_tracker_id': initial_tracker})
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
