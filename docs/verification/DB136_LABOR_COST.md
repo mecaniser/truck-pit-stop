@@ -39,3 +39,7 @@ Backend cloned the schema-only isolated A1 database at sole185 into a separate l
 - All16 fixed synthetic financial/time/audit/stock source-table row counts and whole-row hashes remain identical after policy/review/appearance/authentication UI actions. Private local receipts and screenshots remain outside Git; no real customer, tenant, rate or credential is published.
 
 Local URL `http://127.0.0.1:5175/dashboard/garage/analytics?tab=job-contribution` is aligned and browser-verified against uncommitted source at base9ce2e6b. This is a synthetic development preview, not deployed production. Actual rates remain unset in production. ETS importer/collector state remains held and untouched. Protected final-head CI, authorized merge/deploy and production acceptance remain open; A1 is Review, not Done.
+
+## Released-main integration
+
+Integrated released main `0195e36f06f60e40b5fe5db0e3e17868040075b8` after implementation commit `26c492b4`. The sole conflict was additive board history; both histories are retained. All A1 app/test/migration files remain byte-identical to the locally accepted candidate. Released Twilio pilot scripts/tests and receipts are preserved without invoking them. Migration graph and financial/provider/collector boundaries are unchanged. Protected CI must run on the resulting integrated head.
