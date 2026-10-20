@@ -12,6 +12,7 @@ export type DeliveryStatus =
 export type SendRestriction =
   | "not_connected"
   | "opted_out"
+  | "recipient_opted_out"
   | "identity_unverified"
   | "ambiguous_outcome"
   | "template_required"
@@ -41,8 +42,9 @@ export interface Conversation {
   id: string;
   tenantId: string;
   customerId: string | null;
+  conversationKind?: "customer" | "inquiry";
   customerName: string;
-  company: string;
+  company: string | null;
   channel: Channel;
   channelAccountId: string;
   contactIdentityId: string;
@@ -58,6 +60,7 @@ export interface Conversation {
     smsProvider?: string;
     senderNumber?: string;
     selectedSenderId?: string;
+    senderSelectionAllowed?: boolean;
     smsSenderOptions?: { id: string; provider: "twilio" | "callrail"; enabled?: boolean; senderNumber: string }[];
     vehicleLabel?: string;
     repairOrderLabel?: string;
@@ -65,7 +68,7 @@ export interface Conversation {
     concern?: string;
   };
 }
-export type InboxView = "open" | "unread" | "mine" | "resolved";
+export type InboxView = "open" | "unread" | "mine" | "resolved" | "inquiries";
 export const channelLabels: Record<Channel, string> = {
   sms: "SMS",
   whatsapp: "WhatsApp",
@@ -80,6 +83,7 @@ export const restrictionLabels: Record<SendRestriction, string> = {
   registration_required: "This shop’s SMS registration needs approval.",
   consent_required: "Record this contact’s SMS consent before replying.",
   opted_out: "This contact has opted out of SMS.",
+  recipient_opted_out: "This contact opted out of SMS. Replies are blocked.",
   identity_unverified: "Verify and link this contact before replying.",
   ambiguous_outcome:
     "Delivery is uncertain. Check the provider before sending again.",
@@ -120,11 +124,13 @@ export function filterConversations(
           : row.status === "open") &&
         (view !== "unread" || row.unreadCount > 0) &&
         (view !== "mine" || row.assigneeId === userId) &&
+        (view !== "inquiries" || row.conversationKind === "inquiry") &&
         (!term ||
           [
             row.customerName,
             row.company,
             row.identityLabel,
+            row.context.senderNumber,
             row.context.vehicleLabel,
             row.context.repairOrderLabel,
             ...row.messages.map((m) => m.body),

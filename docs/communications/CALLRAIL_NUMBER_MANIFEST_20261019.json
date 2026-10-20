@@ -1,0 +1,111 @@
+{
+  "observed_at": "2026-10-19",
+  "tenant_id": "828acd84-38bf-4a66-8fa1-cdf076f4e241",
+  "account_id": "853761647",
+  "company_id": "COMa12fc37df84649039cd882aa67f2cfef",
+  "company_name": "Truck Pit Stop",
+  "credential_ref": "CALLRAIL_TPS_API_KEY",
+  "signing_secret_ref": "CALLRAIL_TPS_SIGNING_KEY",
+  "activation": "review_only_until_release_gates_pass",
+  "excluded_disabled_trackers": [
+    "TRK6ae9f4f46a064f50a6104cc6b6996043"
+  ],
+  "numbers": [
+    {
+      "source": "Facebook",
+      "tracker_id": "TRK019ec1cf05b078da9c40e51465f3e2d7",
+      "sender_phone": "+19804007983",
+      "accept_new_inquiries": true
+    },
+    {
+      "source": "Google Ads Extensions",
+      "tracker_id": "TRKd94270e5c9be4aa9ad76a17c8f78bc1b",
+      "sender_phone": "+19804144048",
+      "accept_new_inquiries": true
+    },
+    {
+      "source": "TPH/DB App",
+      "tracker_id": "TRK019ed3509d627a9dace8dddd563e2e58",
+      "sender_phone": "+19809071896",
+      "accept_new_inquiries": true
+    },
+    {
+      "source": "GMB Truck Repair",
+      "tracker_id": "TRKabf1059ae89346bb85bb0d6170f07916",
+      "sender_phone": "+19803046600",
+      "accept_new_inquiries": true
+    },
+    {
+      "source": "Website",
+      "tracker_id": "TRK08fbee7986ab416ba442dd6cca59bd9a",
+      "sender_phone": "+19805773328",
+      "accept_new_inquiries": true
+    },
+    {
+      "source": "Website",
+      "tracker_id": "TRK08fbee7986ab416ba442dd6cca59bd9a",
+      "sender_phone": "+19803517342",
+      "accept_new_inquiries": true
+    },
+    {
+      "source": "Website",
+      "tracker_id": "TRK08fbee7986ab416ba442dd6cca59bd9a",
+      "sender_phone": "+19807059028",
+      "accept_new_inquiries": true
+    },
+    {
+      "source": "Website",
+      "tracker_id": "TRK08fbee7986ab416ba442dd6cca59bd9a",
+      "sender_phone": "+19809903418",
+      "accept_new_inquiries": true
+    },
+    {
+      "source": "Website",
+      "tracker_id": "TRK08fbee7986ab416ba442dd6cca59bd9a",
+      "sender_phone": "+19804806292",
+      "accept_new_inquiries": true
+    },
+    {
+      "source": "Website",
+      "tracker_id": "TRK08fbee7986ab416ba442dd6cca59bd9a",
+      "sender_phone": "+19809822815",
+      "accept_new_inquiries": true
+    },
+    {
+      "source": "Website",
+      "tracker_id": "TRK08fbee7986ab416ba442dd6cca59bd9a",
+      "sender_phone": "+19803512105",
+      "accept_new_inquiries": true
+    },
+    {
+      "source": "Website",
+      "tracker_id": "TRK08fbee7986ab416ba442dd6cca59bd9a",
+      "sender_phone": "+19804705852",
+      "accept_new_inquiries": true
+    },
+    {
+      "source": "Website",
+      "tracker_id": "TRK08fbee7986ab416ba442dd6cca59bd9a",
+      "sender_phone": "+19803509433",
+      "accept_new_inquiries": true
+    },
+    {
+      "source": "Website",
+      "tracker_id": "TRK08fbee7986ab416ba442dd6cca59bd9a",
+      "sender_phone": "+19804053818",
+      "accept_new_inquiries": true
+    },
+    {
+      "source": "Instagram App",
+      "tracker_id": "TRK019ec1aaf07e700da48425121f110ac3",
+      "sender_phone": "+19804006636",
+      "accept_new_inquiries": true
+    },
+    {
+      "source": "Google Ads Location",
+      "tracker_id": "TRK019ba9f57b1e7ca6981005c8bb789492",
+      "sender_phone": "+19804805702",
+      "accept_new_inquiries": true
+    }
+  ]
+}
