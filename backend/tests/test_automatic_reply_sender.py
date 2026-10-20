@@ -1,4 +1,5 @@
 """Synthetic automatic-route evidence; no provider credentials or network."""
+import os
 from datetime import datetime, timezone, timedelta
 from uuid import uuid4
 import pytest
@@ -10,6 +11,8 @@ from app.db.models.callrail import CallRailNumberBinding, CallRailConversation
 from app.db.models.communication import ConversationWorkflow
 from app.api.v1.endpoints.communications import patch_sender, SenderPatch
 from test_callrail_dispatch import setup, TwilioMustNotSend, request_for
+
+pytestmark = pytest.mark.skipif(os.getenv('COMMUNICATIONS_ISOLATED_LOCAL') != '1', reason='isolated PostgreSQL only')
 
 
 @pytest.fixture(autouse=True)
