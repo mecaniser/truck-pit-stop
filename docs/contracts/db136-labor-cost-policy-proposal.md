@@ -1,8 +1,8 @@
 # DB-136 / A1 — labor cost policy proposal
 
-Status: proposed for owner review, 2026-10-20. No application implementation, schema migration, rate configuration or financial record change is authorized by this document.
+Status: owner policy approved, 2026-10-20. Owner authorized loaded hourly cost from October20 shop-local date, owner-only access, separate shop overhead and implementation after the finalized Architecture contract. This historical proposal does not authorize changing invoices, payments, settlements, credits or other financial records. Actual technician rates remain unset until the owner supplies them.
 
-Accountable owner: Backend & Integrations. Architecture completed a read-only source and proposal-fidelity review: GO for owner review only, not implementation. Any implementation needs its finalized API/data contract, sensitive-cost permission design, independent QA/security and normal release gates. This document is the policy proposal, not implementation approval.
+Accountable owner: Backend & Integrations. The discovery review below is historical. The owner has since approved the policy and Architecture has finalized the [implementation contract](db136-labor-cost-contract.md), which now governs implementation. Independent QA/security and normal release gates remain required; this proposal does not establish delivery or production acceptance.
 
 ## Existing evidence
 
@@ -44,11 +44,13 @@ For a finalized eligible job: recorded net labor + parts + sublet revenue after 
 
 Before implementation Architecture must specify deterministic order-discount allocation, void/revision source selection, rounding, returns/credits and cost-coverage semantics. Retain the existing cash-sales charts and current-lines component report semantics; add a clearly named/versioned A1 response rather than silently redefining them. Missing labor/parts/sublet expense blocks final combined contribution; show known components and coverage instead of a misleading margin percentage.
 
-## Decisions requested before implementation
+## Owner decisions received
 
-- Adopt owner-declared **loaded direct hourly cost** or **base hourly cost**? Recommendation: loaded direct cost, with assumptions labeled and supplied by the owner.
-- Approve **prospective-only activation** and provide the intended start date/timezone. Actual per-technician rates must be supplied through the future protected configuration flow, not public docs or chat.
-- Approve **owner-only cost visibility** initially and **separate idle/misc/break overhead** in V1. No broad admin access by inheritance.
+- **Approved:** loaded direct hourly cost, with explicit owner-declared inclusions and no inferred payroll burden.
+- **Approved:** activation date October20,2026 in the shop timezone. No costing before the approved activation boundary.
+- **Approved:** owner-only cost visibility, separate observed idle/misc/break time, and no shop-overhead allocation in V1. No implicit admin grant.
+- **Placement clarified:** new Job Contribution tab in Shop Analytics beside Sales, with owner-only Technician Costs settings inside it. Existing Sales, Service Types, Inventory and Internal Fleet Costs remain unchanged.
+- **Current:** Architecture finalized `db136-labor-cost-contract.md`; implementation is in progress under that contract. No actual technician rates have been provided or entered.
 
 ## Future implementation acceptance
 
@@ -61,4 +63,4 @@ Before implementation Architecture must specify deterministic order-discount all
 
 ## This intake's verification boundary
 
-Documentation and read-only source/database inspection only. No application code, tests, migration, cost-rate writer, local server, production financial mutation, provider call or collector action was introduced. Local-runtime skill was read; its documentation/read-only exception applies, so no services were started or restarted. Product implementation remains unstarted pending owner policy decisions and the finalized Architecture contract.
+Documentation and read-only source/database inspection only. No application code, tests, migration, cost-rate writer, local server, production financial mutation, provider call or collector action was introduced. Local-runtime skill was read; its documentation/read-only exception applies, so no services were started or restarted. That discovery receipt predates the approved implementation now tracked in the final contract and [current verification receipt](../verification/DB136_LABOR_COST.md).
