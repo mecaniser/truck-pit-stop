@@ -4,6 +4,38 @@ DB-COMMS-004 · 2026-10-16 · Owner: Backend & Integrations
 
 Status: diagnosis complete; corrections drafted, not submitted. Deployment HOLD. No additional SMS, provider mutations, publication, or application changes in this investigation.
 
+## Dedicated repair replies — current direction (2026-10-20)
+
+Fresh provider GETs confirm two owned SMS-capable numbers, not a need to purchase a third:
+
+| Number | Effective inbound | Registration | Proposed handling |
+| --- | --- | --- | --- |
+| +17755358774 | Service override to TrucksParkingHub hiring | VERIFIED sole-proprietor parking campaign | Preserve number membership, service, webhooks, forwarding, consent and hiring history. Do not repoint for repair replies. |
+| +19129223939 | Service uses number webhook to DieselBridge `/api/v1/webhooks/twilio/sms/inbound` | Existing repair campaign FAILED30907, website/brand mismatch | Candidate dedicated repair sender after ownership/registration review; preserve existing message history. No purchase is proposed. |
+
+The ten most recent outbound records from the912 sender are undelivered30034. It has historical inbound activity, so it is not an untouched spare. Inventory and these bounded logs do not prove that no other workflow references it. Verify current app/tenant use before changing any assignment.
+
+A new phone number, a Messaging Service and an approved A2P campaign are different resources. A separate repair number prevents ambiguous cross-product reply delivery; buying a number does not grant campaign approval. Twilio allows only one campaign per number. The current parking campaign is specifically SOLE_PROPRIETOR; do not attach or move a repair sender into it. Use the existing repair campaign correction path only if its Brand actually belongs to the correct legal operator; otherwise prepare a correctly owned Brand and repair campaign under the ISV structure below. The user’s Elis Tech LLC clarification means the recorded Elis Logistics Brand is not an interchangeable identity. Do not assume a new Twilio account, company or Brand is required merely to obtain a second number.
+
+### Review package before submission
+
+1. The user identifies Elis Tech LLC as Truck Pit Stop’s legal operator. Prepare registration under Elis Tech LLC with the supported Truck Pit Stop trade-name relationship and matching repair website/consent. The existing Elis Logistics identity is a different legal entity and must not be relabeled or borrowed merely because ownership is shared. Reuse an existing correctly verified Elis Tech profile/Brand if present; otherwise prepare one. Leave the working parking registration intact.
+2. Scope the campaign to the repair business's service updates and replies: work started, repair review/ready for pickup, and customer questions about that repair. Do not claim it covers every independent DieselBridge shop.
+3. Replace platform-wide placeholder sample names with the actual shop brand. Proposed copy: “Truck Pit Stop: Work has started on repair order [order]. Reply STOP to unsubscribe.” and “Truck Pit Stop: Repair order [order] is ready for pickup. Reply HELP for help or STOP to unsubscribe.”
+4. Describe only implemented, optional SMS consent, supported by actual website/check-in evidence and stored consent records. Do not submit an unimplemented checkbox or implied consent claim. Verify actual HELP contact, privacy and terms before including them.
+5. Review correction eligibility and charges in Twilio before an explicitly approved resubmission. If the necessary account/Brand/use-case changes cannot be edited, review replacement registration first. Do not delete or edit the working parking campaign.
+6. Once registration and dedicated assignment are approved, verify effective service-level inbound behavior and number-level status callback. The currently configured URL alone is not proof of public callback acceptance.
+
+### Reply test and preservation
+
+Architecture contract: [owner reply route](TWILIO_REPAIR_REPLY_CONTRACT.md). The approved tester has both DBN and ETS customer identities. Add an explicit, expiring reply-only account/receiving-number/sender/tenant/customer/thread approval. Pin the DBN conversation; preserve the ETS duplicate and TPH records. Reserved receiver mismatches must hold instead of guessing or creating a placeholder.
+
+Prepare and independently test this in a separate synthetic database with all customer rollout flags false and no provider calls. Do not seed a live binding until reviewed registration, sender ownership and fresh test authorization exist. Actual send-and-reply acceptance remains pending. Previous two-event technical-send budgets are consumed and must never be reset. Customer automation remains a separate approval gate.
+
+Twilio support question remains DRAFT ONLY per user. No registration submission, support outreach, number purchase, provider setting change or live SMS is performed by this preparation.
+
+Sources: [multiple messaging use cases](https://help.twilio.com/articles/4403014741403-I-have-multiple-messaging-use-cases-How-should-I-register-my-use-cases-for-A2P-10DLC-), [associate numbers with a campaign](https://help.twilio.com/articles/4402888763803-How-can-I-associate-Twilio-numbers-to-an-A2P-10DLC-Campaign-), [correct rejected campaigns](https://www.twilio.com/docs/messaging/compliance/a2p-10dlc/troubleshooting-a2p-brands/troubleshooting-and-rectifying-a2p-campaigns).
+
 ## Confirmed cause
 
 Live authenticated Twilio reads returned campaign FAILED with error30907 on MESSAGE_FLOW: website URL does not match the registered brand and campaign. Brand status is APPROVED, identity VERIFIED, type STANDARD. Underlying customer profile: business name Elis Logistics, identity direct_customer, industry TECHNOLOGY, website https://dieselbridge.com. No tax IDs, credentials, or personal profile details were retrieved for this report.
@@ -143,6 +175,25 @@ Privacy addition: “Mobile numbers and SMS opt-in consent data are not sold or 
 - Editing eligibility and cautions: https://www.twilio.com/docs/messaging/compliance/a2p-10dlc/troubleshooting-a2p-brands/troubleshooting-and-rectifying-a2p-campaigns
 
 This is a review draft, not a submitted registration or certification of production consent compliance. No runtime test is applicable to these documentation-only corrections.
+
+## Business ownership clarification and platform growth
+
+The user identified Elis Tech LLC as the legal repair-business operator. Registration represents the legal entity behind the messages; common personal ownership does not combine Elis Logistics LLC and Elis Tech LLC into one Brand. Keep current approved programs intact rather than changing their identity in place.
+
+Resource model for review:
+
+| Resource | Meaning | Direction |
+| --- | --- | --- |
+| Twilio account/login/billing | Container and commercial relationship | A separate login/account is not inherently required per company. Preserve current account/programs while planning profiles/subaccounts. Do not silently change its primary legal owner. |
+| Customer Profile and A2P Brand | Verified business identity | Elis Tech LLC for its own repair program; Elis Logistics for its own programs. A public trade name must be supported by the correct legal business and website. |
+| Campaign and Messaging Service | Message purpose, consent and effective reply handler | Separate repair-status program from the existing parking/hiring flow. Do not treat the currently approved parking samples as repair approval. |
+| Phone number | Customer-facing calling/texting identity | Preserve775 for current TPH replies. Review reusing owned912 for repair after correct approval and routing; no new purchase proposed. |
+
+If Elis Tech LLC also operates DieselBridge as the software provider, use its truthful primary ISV profile in the long-term structure. Independently owned repair businesses receive their own customer profiles/Brands and scoped subaccounts/services. Multiple locations of the same legal business need not be treated as unrelated legal entities. Audit existing account ownership and opt-out retention before any restructure; Twilio warns that moving to subaccounts resets provider-managed account-level opt-outs. No restructure is performed here.
+
+Voice configuration is separate from SMS A2P registration. A suitably capable number can serve both calls and texts with separate handlers. A repair SMS campaign is not approval for every voice, WhatsApp or future messaging use case. Preserve current voice URLs and forwarding when reviewing any number move.
+
+Sources: [ISV profiles and account architectures](https://www.twilio.com/docs/messaging/compliance/a2p-10dlc/onboarding-isv), [Brand onboarding](https://www.twilio.com/docs/messaging/compliance/a2p-10dlc/onboarding-isv-api), [Voice and messaging webhooks](https://www.twilio.com/docs/usage/webhooks). All registrations, identity/account changes, provider settings and customer automation remain held for review.
 
 ## Current sender distinction — 2026-10-20 review update
 
