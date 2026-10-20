@@ -64,3 +64,20 @@ Candidate301c5831 full frontend job118416053856 and its actual Run full frontend
 suite step both completed success in run39357582299. This certifies the worker
 cap at that head; the consolidated test correction still requires fresh exact-
 head protected CI. No second local full suite is run.
+
+
+### Focused pricing interaction cases
+
+Candidatebdbb6e5d critical CI passed209/210. The corrected picker cases passed;
+a different pricing-segment case hit the whole-test5000ms deadline. Its six
+pointer/click sequences tested label selection, direct radio selection and
+press/release focus in one case. Local step profiling completed the original
+case in2308ms, including1567ms cold render; this demonstrates setup cost and
+provides no evidence of a failing product assertion. Split those independent
+input paths into three focused cases, preserving every original assertion and
+real userEvent pointer-event checks. No timeout, retry or application change.
+All seven selected pricing/picker cases pass in24.33s total; the slowest label
+case is3376ms. Fresh independent QA (not the participating investigator) reviewed
+assertion parity and gives source GO; exact corrected-head protected CI and
+production acceptance remain required. The two additional cases bring the full
+frontend inventory to1992 tests. No duplicate local full suite is run.
