@@ -18,6 +18,7 @@ export interface ActionQueueOrder extends OrderScheduleSummary {
   id: string
   order_number: string
   status: string
+  source?: string | null
   pending_zelle_confirmation?: boolean
   description: string | null
   customer_name: string
@@ -59,6 +60,7 @@ const LANE_LABEL: Record<ActionQueueLane, string> = {
 }
 
 const statusLabel = (order: ActionQueueOrder) => {
+  if (order.source === 'easy_truck_shop_import' && ['completed', 'invoiced'].includes(order.status)) return 'ETS history'
   if (order.pending_zelle_confirmation) return 'Zelle Review'
   if (order.status === 'pending_review') return 'Needs Review'
   if (order.status === 'in_progress' && order.hold_reason) return 'On Hold'

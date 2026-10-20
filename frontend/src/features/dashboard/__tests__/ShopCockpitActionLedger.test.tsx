@@ -72,6 +72,17 @@ const renderLedger = (overrides: Partial<ComponentProps<typeof ShopCockpitAction
 }
 
 describe('DB-035 Stage 3 Action Ledger', () => {
+  it.each(['completed', 'invoiced'])('labels imported %s history without a native billing instruction', (status) => {
+    renderLedger({ projection: { ...projection, orders_ready_to_close: [
+      order('ets-history', 'ETS-EXAMPLE', status, 'Synthetic carrier', 'Synthetic truck', { source: 'easy_truck_shop_import', pending_zelle_confirmation: true }),
+    ] } })
+    expect(screen.getByText('ETS history')).toBeInTheDocument()
+    expect(screen.queryByText('Invoice Customer')).not.toBeInTheDocument()
+    expect(screen.queryByText('Payment Due')).not.toBeInTheDocument()
+    expect(screen.queryByText('Zelle Review')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open ETS-EXAMPLE in Repair Orders' })).toBeInTheDocument()
+  })
+
   it('uses operator-facing guidance instead of implementation terminology', () => {
     renderLedger()
 

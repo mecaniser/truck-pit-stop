@@ -61,6 +61,10 @@ export default defineConfig(({ command, mode }) => {
     environment: 'jsdom',
     setupFiles: ['./src/__tests__/setup.ts'],
     css: true,
+    // Local CI VMs share the Mac with other jobs. Parallel jsdom workers
+    // starve interaction tests and turn their existing deadlines into flakes.
+    // Keep job-level parallelism; run each CI suite without worker contention.
+    maxWorkers: process.env.CI ? 1 : undefined,
   },
   }
 })

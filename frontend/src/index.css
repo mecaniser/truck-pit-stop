@@ -3115,6 +3115,7 @@ html::-webkit-scrollbar-thumb:hover {
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-action-ledger > header, .db-action-ledger__caption) h2,
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__number,
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__identity strong,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__status strong,
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__amount,
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new--state > strong {
   color: var(--shop-work-ink);

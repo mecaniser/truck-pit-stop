@@ -53,6 +53,8 @@ jobs:
             echo 'backend_required=true' | tee "$GITHUB_OUTPUT"
             echo 'reason=main or manual run' | tee -a "$GITHUB_OUTPUT"
           fi
+      - name: Verify backend test partitions and scope guards
+        run: python -m unittest discover -s .github/scripts -p "test_*.py"
       - name: Install Alembic
         run: python -m pip install --upgrade pip alembic==1.12.1 sqlalchemy==2.0.23
       - name: Verify one Alembic head
@@ -98,37 +100,22 @@ jobs:
       - name: Compile backend modules
         if: needs.migration-graph.outputs.backend_required != 'false'
         run: python -m compileall -q backend/app backend/scripts
+      - name: Verify backend test partition coverage
+        if: needs.migration-graph.outputs.backend_required != 'false'
+        working-directory: backend
+        run: python ../.github/scripts/run_backend_tests.py verify
       - name: Run critical regression suite
         if: needs.migration-graph.outputs.backend_required != 'false'
         working-directory: backend
         run: |
-          python -m pytest \
-            tests/test_schema_preflight.py \
-            tests/test_db036*.py \
-            tests/test_db107_recommendation_conversion.py \
-            tests/test_operation_execution.py \
-            tests/test_fleet_driver_records.py \
-            tests/test_motive_driver_worker.py \
-            tests/test_motive_driver_worker_process.py \
-            tests/test_motive_driver_journal.py \
-            tests/test_motive_sync_import.py \
-            tests/test_database_resilience.py \
-            tests/test_dashboard_performance.py \
-            tests/test_dashboard_zelle_queue.py \
-            tests/test_fleet_board.py \
-            tests/test_fleet_board_projection.py \
-            tests/test_ro_pricing_discounts.py \
-            tests/test_discount_cost_floor.py \
-            tests/test_workspace_typeaheads.py \
-            tests/test_request_performance.py
+          python ../.github/scripts/run_backend_tests.py critical
 
   backend-full-suite:
     name: Backend full suite (informational)
-    needs: migration-graph
+    needs: [migration-graph, backend-tests]
     # Forks retain all checks on free hosted runners. VM isolation is the
     # security boundary even if a fork edits this routing expression.
     runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
-    continue-on-error: true
     steps:
       - name: Frontend-only PR; backend suite covered on main
         if: needs.migration-graph.outputs.backend_required == 'false'
@@ -147,7 +134,7 @@ jobs:
       - name: Run full backend suite
         if: needs.migration-graph.outputs.backend_required != 'false'
         working-directory: backend
-        run: python -m pytest
+        run: python ../.github/scripts/run_backend_tests.py remaining
 
   frontend-checks:
     name: Frontend checks
@@ -172,6 +159,9 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.sha }}
         run: npm run lint:changed
+      - name: Verify frontend test partition coverage
+        working-directory: frontend
+        run: node --test scripts/verify-partition-guards.mjs && node scripts/verify-test-partitions.mjs
       - name: Run critical regression suite
         working-directory: frontend
         run: npm run test:critical
@@ -181,10 +171,10 @@ jobs:
 
   frontend-full-suite:
     name: Frontend full suite (informational)
+    needs: frontend-checks
     # Forks retain all checks on free hosted runners. VM isolation is the
     # security boundary even if a fork edits this routing expression.
     runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -197,15 +187,15 @@ jobs:
         run: npm ci
       - name: Run full frontend suite
         working-directory: frontend
-        run: npm test -- --run
+        run: node scripts/run-remaining-tests.mjs
 
   playwright-smoke:
     name: Playwright smoke
-    needs: migration-graph
+    needs: [migration-graph, frontend-checks, backend-tests]
     # Forks retain all checks on free hosted runners. VM isolation is the
     # security boundary even if a fork edits this routing expression.
     runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
-    timeout-minutes: 15
+    timeout-minutes: 25
     services:
       postgres:
         image: public.ecr.aws/docker/library/postgres:15@sha256:c961aa287d8698297cb26cdfadfbe9fd2cbaf77e53cfffe9636e8d8a1e4d842c
@@ -273,10 +263,11 @@ jobs:
         working-directory: backend
         run: python -m alembic upgrade head
       - name: Run Playwright smoke suite
+        timeout-minutes: 5
         working-directory: e2e
         run: npm run test:smoke
       - name: Upload Playwright diagnostics on failure
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-smoke-diagnostics
