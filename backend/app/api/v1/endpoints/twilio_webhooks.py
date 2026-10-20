@@ -64,7 +64,20 @@ def _has_valid_signature(request: Request, values: dict[str, str], signature: Op
     return False
 
 
+def _authenticated_legacy_account(request, values, signature):
+    """Pilot approval never inherits the development signature bypass."""
+    account = values.get('AccountSid')
+    token = routing.settings.TWILIO_AUTH_TOKEN
+    if not account or account != routing.settings.TWILIO_ACCOUNT_SID or not token or not signature:
+        return None
+    validator = RequestValidator(token)
+    return account if any(validator.validate(url, values, signature)
+                          for url in _candidate_signature_urls(request)) else None
+
+
 async def _signature_for_account(db, request, values, signature):
+    if values.get('AccountSid') and values['AccountSid'] == routing.settings.TWILIO_ACCOUNT_SID:
+        return bool(_authenticated_legacy_account(request, values, signature))
     token = await routing.account_token(db, values.get('AccountSid')) if values.get('AccountSid') else None
     if not token and not routing.enabled():
         # The legacy token authenticates only the configured legacy account.
@@ -101,6 +114,7 @@ async def twilio_inbound_sms(
             from_number=values.get("From", ""),
             body=values.get("Body", ""),
             twilio_message_sid=values.get("MessageSid"),
+            authenticated_legacy_account_sid=_authenticated_legacy_account(request, values, signature),
             **(dict(account_sid=values.get("AccountSid"), messaging_service_sid=values.get("MessagingServiceSid")) if managed_receipt else {}),
         )
     except HTTPException:
