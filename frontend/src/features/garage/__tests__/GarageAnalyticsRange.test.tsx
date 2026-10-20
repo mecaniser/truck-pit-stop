@@ -14,7 +14,7 @@ vi.mock('recharts', () => ({
   BarChart: ({ children }: { children: ReactNode }) => <>{children}</>,
   ResponsiveContainer: ({ children }: { children: ReactNode }) => <>{children}</>,
   Bar: () => null, XAxis: () => null, YAxis: () => null, Tooltip: () => null,
-  ReferenceLine: ({ y }: { y: number }) => <div data-testid="median-line" data-y={y} />,
+  ReferenceLine: ({ y }: { y: number }) => <div data-testid="average-line" data-y={y} />,
 }))
 const metric = { value: '0', trend: [] }
 const report = {
@@ -32,17 +32,30 @@ function show(tab: string) {
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter initialEntries={[`/?tab=${tab}&range=custom&from_date=2024-02-29&to_date=2024-03-10`]}><GarageAnalyticsPage /></MemoryRouter></QueryClientProvider>)
 }
 describe('Analytics report date contract', () => {
-  it('labels the median from the displayed revenue weeks, including zero weeks', async () => {
+  it.each([
+    ['day', 'daily'], ['week', 'weekly'], ['month', 'monthly'],
+  ] as const)('labels the %s bucket average from displayed revenue, including zero periods', async (interval, adjective) => {
     vi.mocked(api.get).mockResolvedValue({ data: {
       ...report,
+      revenue_interval: interval,
       revenue: { value: '70000', trend: [
-        { label: 'W1', value: '0' }, { label: 'W2', value: '10000' },
-        { label: 'W3', value: '20000' }, { label: 'W4', value: '40000' },
+        { label: 'P1', value: '0' }, { label: 'P2', value: '10000' },
+        { label: 'P3', value: '20000' }, { label: 'P4', value: '40000' },
       ] },
     } })
     show('dashboard')
-    expect(await screen.findByText('Median weekly revenue $15,000.00')).toBeVisible()
-    expect(screen.getByTestId('median-line')).toHaveAttribute('data-y', '15000')
+    expect(await screen.findByText(`Average ${adjective} revenue $17,500.00`)).toBeVisible()
+    expect(screen.getByTestId('average-line')).toHaveAttribute('data-y', '17500')
+  })
+
+  it('keeps the weekly label while an older API response has no interval field', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: {
+      ...report,
+      revenue: { value: '4000', trend: [{ label: 'W1', value: '1000' }, { label: 'W2', value: '3000' }] },
+    } })
+    show('dashboard')
+    expect(await screen.findByText('Average weekly revenue $2,000.00')).toBeVisible()
+    expect(screen.getByTestId('average-line')).toHaveAttribute('data-y', '2000')
   })
 
   it('shows cash received separately with expandable receipt evidence, without changing sales totals', async () => {

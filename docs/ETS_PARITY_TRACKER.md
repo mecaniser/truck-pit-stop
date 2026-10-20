@@ -4,7 +4,7 @@
 
 Last updated: 2026-10-18. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
 
-**Progress: 4/30 completed; 4/6 selected outcomes completed. Current: B1 intake, with B4 source defect intake. Next: A1 after B1.**
+**Progress: 4/30 completed; 4/6 selected outcomes completed. Current: B1 review; B4 reader deployed with browser acceptance open and importer held. Next: A1 after B1.**
 
 ## Approved delivery order
 
@@ -36,8 +36,8 @@ Last updated: 2026-10-18. Program owner: Product & Delivery Lead. Discovery inve
   - Status: **Done — PR #571 and Night correction #572 merged, deployed and production verified; independent QA/Security GO**. Board: **DB-134**. Owner: Backend & Integrations.
   - Evidence: [M1 contract](contracts/db134-maintenance-programs.md); [implementation receipt](verification/DB134_MAINTENANCE_PROGRAMS.md).
 - [ ] **B1 — Customer transaction ledger, statements and overdue-balance aging**
-  - Status: **Queued**. Board: **DB-135**. Owner: Backend & Integrations.
-  - Evidence: Not started.
+  - Status: **Review — PR #575 open; source QA/Security GO, production settlement coverage RETURN; reconciliation plan reviewed, writer contract and production apply not approved; protected CI and release pending**. Board: **DB-135**. Owner: Backend & Integrations.
+  - Evidence: [B1 cross-layer contract](contracts/db135-customer-receivables.md), [verification receipt](verification/DB135_CUSTOMER_RECEIVABLES.md), and [reconciliation review proposal](verification/DB135_SETTLEMENT_RECONCILIATION_REVIEW.md). Native collectible, unapplied credit and ETS-owned history remain separate; unresolved bill-to/settlement identity stays review-required rather than collectible.
 - [ ] **A1 — Actual labor cost and defensible job contribution**
   - Status: **Queued**. Board: **DB-136**. Owner: Backend & Integrations.
   - Evidence: Not started.
@@ -98,4 +98,6 @@ Acceptance before editing application code:
 
 See [contract](contracts/db132-parts-pricing-matrix.md) for full scope, writer coverage, locking, inactive defaults and safe production verification limits. P1 application changes and additive migration174 are deployed through PR542; correction PR544 is live at70530bda. Both themes passed desktop and emulated mobile production acceptance. Pricing remains inactive; no guessed rates or defaults were configured. The later inventory fingerprint change is attributed to the normal ETS sync; retained usages/invoices are unchanged. See the receipt for exact evidence and limits.
 
-DB-139 presentation follow-up (2026-10-19): compact footer retains source total/status and moves support details into an accessible popover. Frontend & UX owns this Fast UI slice; existing source boundaries and held importer remain unchanged. [Receipt](verification/DB139_COMPACT_BILLING_SUMMARY.md). CI and signed-in deployed acceptance pending.
+DB-139 presentation follow-up (2026-10-19): compact footer retains source total/status and moves support details into an accessible popover. Frontend & UX owns this Fast UI slice; existing source boundaries and held importer remain unchanged. [Receipt](verification/DB139_COMPACT_BILLING_SUMMARY.md). PR582 CI passed; merged/deployed b994794b is healthy. Signed-in production desktop/mobile acceptance passed after session renewal; compact-footer presentation slice Done. Broader B4/importer and B1 holds remain.
+
+B1 owner steering (2026-10-19): finish read-only with reviewed real/test classification; real billing remains ETS/QuickBooks. All47 native candidates are listed privately, original32 gaps unchanged. Owner selections pending; no financial apply authorized. [Classification proposal](contracts/db135-native-record-classification.md).
