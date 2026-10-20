@@ -16,7 +16,7 @@ import ReportingDatePicker from './ReportingDatePicker'
 import CostContributionBreakdown, { type ProfitabilityResp } from './CostContributionBreakdown'
 import CashReceiptsByCustomer, { type CashReceipt } from './CashReceiptsByCustomer'
 import { readReportRange, type ReportRange } from './reportRange'
-import { weeklyRevenueMedian } from './weeklyRevenueMedian'
+import { revenueAverage } from './revenueAverage'
 
 // ============ SHARED TYPES ============
 
@@ -33,6 +33,7 @@ interface DashboardMetric {
 interface ReportsDashboardResponse {
   range_start: string
   range_end: string
+  revenue_interval?: 'day' | 'week' | 'month'
   revenue: DashboardMetric
   labor_revenue: DashboardMetric
   part_revenue: DashboardMetric
@@ -312,8 +313,9 @@ function DashboardTab({ range }: { range: ReportRange }) {
   if (isLoading || !data) return <LoadingBlock />
 
   const accent = accentColors[500]
-  // Revenue per week, straight off the paid invoices the hero total is drawn
-  // from. This used to stack labor and parts, but those come from denormalized
+  // Revenue by the report's display interval, from the same cash receipts as
+  // the hero total. The other dashboard metric trends remain weekly.
+  // This used to stack labor and parts, but those come from denormalized
   // per-order columns that imported orders never populate — the labor lines
   // carry hours with a zero hourly rate. On an import-heavy shop that charted
   // a flat zero underneath a six-figure total. Chart what the invoices know.
@@ -321,7 +323,9 @@ function DashboardTab({ range }: { range: ReportRange }) {
     label: p.label,
     revenue: parseFloat(p.value ?? '0'),
   }))
-  const medianRevenue = weeklyRevenueMedian(trendRows.map((row) => row.revenue))
+  const interval = data.revenue_interval ?? 'week'
+  const intervalAdjective = { day: 'daily', week: 'weekly', month: 'monthly' }[interval]
+  const averageRevenue = revenueAverage(trendRows.map((row) => row.revenue))
 
   return (
     <div className="space-y-4">
@@ -329,12 +333,12 @@ function DashboardTab({ range }: { range: ReportRange }) {
         label="Total Revenue"
         value={fmtMoney(data.revenue.value)}
         accent={accent}
-        insight="Revenue recognized each week across the period, from paid invoices."
+        insight={`Revenue recognized each ${interval} across the period, from completed payments.`}
       >
-        {medianRevenue !== null && (
-          <div className="flex items-center justify-end gap-2 text-xs text-amber-300" aria-label={`Median weekly revenue ${fmtMoney(medianRevenue)}`}>
+        {averageRevenue !== null && (
+          <div className="flex items-center justify-end gap-2 text-xs text-amber-300" aria-label={`Average ${intervalAdjective} revenue ${fmtMoney(averageRevenue)}`}>
             <span className="w-5 border-t-2 border-dashed border-amber-300" aria-hidden="true" />
-            Median weekly revenue {fmtMoney(medianRevenue)}
+            Average {intervalAdjective} revenue {fmtMoney(averageRevenue)}
           </div>
         )}
         <div className="h-56">
@@ -350,7 +354,7 @@ function DashboardTab({ range }: { range: ReportRange }) {
                 offset={18}
                 allowEscapeViewBox={{ x: true, y: false }}
               />
-              {medianRevenue !== null && <ReferenceLine y={medianRevenue} stroke="#fcd34d" strokeWidth={2} strokeDasharray="6 4" ifOverflow="extendDomain" />}
+              {averageRevenue !== null && <ReferenceLine y={averageRevenue} stroke="#fcd34d" strokeWidth={2} strokeDasharray="6 4" ifOverflow="extendDomain" />}
               <Bar dataKey="revenue" name="Revenue" fill={accent} radius={[4, 4, 0, 0]} maxBarSize={30} isAnimationActive={false} activeBar={{ fill: accent, stroke: '#fff', strokeOpacity: 0.35, strokeWidth: 1 }} />
             </BarChart>
           </ResponsiveContainer>

@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     # DB-045 deployment rollout gate. A tenant gate and verified Activity
     # backfill are required in addition to this default-off switch.
     COUNTER_SALES_ENABLED: bool = False
+    # Private exact-identity, read-only B1 classification. Never a financial writer.
+    DB135_NATIVE_RECORD_POLICY_JSON: str = ""
     # DB-048 repair-invoice allocation rollout. Both this deployment switch and
     # the tenant switch must be on. Provider approvals are independent.
     INVOICE_SPLIT_PAYMENTS_ENABLED: bool = False

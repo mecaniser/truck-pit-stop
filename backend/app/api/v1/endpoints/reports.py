@@ -62,7 +62,7 @@ async def _resolve_range(
 
 
 # ---------------------------------------------------------------------------
-# Dashboard tab: headline cards + weekly trend series
+# Dashboard tab: headline cards + trend series
 # ---------------------------------------------------------------------------
 
 class TrendPoint(BaseModel):
@@ -78,6 +78,7 @@ class DashboardMetric(BaseModel):
 class ReportsDashboardResponse(BaseModel):
     range_start: date
     range_end: date
+    revenue_interval: Literal["day", "week", "month"] = "week"
     revenue: DashboardMetric
     labor_revenue: DashboardMetric
     part_revenue: DashboardMetric
@@ -105,6 +106,33 @@ def _week_buckets(rng: DateRange) -> List[tuple[date, date, str]]:
     return buckets
 
 
+def _revenue_interval(preset: str, rng: DateRange) -> Literal["day", "week", "month"]:
+    if preset in ("this_year", "last_year"):
+        return "month"
+    if preset in ("this_quarter", "last_quarter"):
+        return "week"
+    if preset == "custom":
+        days = (rng.end - rng.start).days + 1
+        return "day" if days <= 31 else "week" if days <= 120 else "month"
+    return "day"
+
+
+def _revenue_buckets(rng: DateRange, interval: Literal["day", "week", "month"]) -> List[tuple[date, date, str]]:
+    if interval == "week":
+        return _week_buckets(rng)
+    buckets = []
+    cursor = rng.start
+    while cursor <= rng.end:
+        if interval == "day":
+            buckets.append((cursor, cursor, cursor.strftime("%b %-d")))
+            cursor += timedelta(days=1)
+        else:
+            next_month = date(cursor.year + (cursor.month // 12), (cursor.month % 12) + 1, 1)
+            buckets.append((cursor, next_month - timedelta(days=1), cursor.strftime("%b %Y")))
+            cursor = next_month
+    return buckets
+
+
 @router.get("/dashboard", response_model=ReportsDashboardResponse)
 async def get_reports_dashboard(
     range: str = Query("this_month"),
@@ -119,6 +147,8 @@ async def get_reports_dashboard(
     tenant_id = current_user.tenant_id
     rng = await _resolve_range(db, tenant_id, range, from_date, to_date)
     weeks = _week_buckets(rng)
+    revenue_interval = _revenue_interval(range, rng)
+    revenue_buckets = _revenue_buckets(rng, revenue_interval)
 
     # Cash basis: recognise money when it is RECEIVED, per payment.
     #
@@ -159,13 +189,13 @@ async def get_reports_dashboard(
         )
         parts_cost_by_order = {rid: _money(cost) for rid, cost in cost_result.all()}
 
-    def week_index(d: date) -> Optional[int]:
-        for i, (wstart, wend, _label) in enumerate(weeks):
-            if wstart <= d <= wend:
+    def bucket_index(d: date, buckets: List[tuple[date, date, str]]) -> Optional[int]:
+        for i, (start, end, _label) in enumerate(buckets):
+            if start <= d <= end:
                 return i
         return None
 
-    revenue_by_week = [Decimal("0.00") for _ in weeks]
+    revenue_by_period = [Decimal("0.00") for _ in revenue_buckets]
     labor_by_week = [Decimal("0.00") for _ in weeks]
     parts_rev_by_week = [Decimal("0.00") for _ in weeks]
     fees_by_week = [Decimal("0.00") for _ in weeks]
@@ -183,7 +213,8 @@ async def get_reports_dashboard(
     counted_invoices: set = set()
     for payment, invoice, order in paid_rows:
         paid_date = rng.local_date(payment.created_at) if payment.created_at else rng.start
-        idx = week_index(paid_date)
+        idx = bucket_index(paid_date, weeks)
+        revenue_idx = bucket_index(paid_date, revenue_buckets)
 
         # Share of the invoice this payment settles. A fully-paid invoice gives
         # 1.0 and behaves exactly as before; a part payment recognises only its
@@ -209,8 +240,9 @@ async def get_reports_dashboard(
         total_fees += fees
         total_parts_profit += parts_profit
 
+        if revenue_idx is not None:
+            revenue_by_period[revenue_idx] += net_sales
         if idx is not None:
-            revenue_by_week[idx] += net_sales
             labor_by_week[idx] += labor_rev
             parts_rev_by_week[idx] += parts_rev
             fees_by_week[idx] += fees
@@ -272,7 +304,7 @@ async def get_reports_dashboard(
         for oid, hours in hours_by_order.items():
             hours_dec = Decimal(str(hours or 0))
             invoiced_hours_total += hours_dec
-            idx = week_index(hours_ro_dates.get(oid, rng.start))
+            idx = bucket_index(hours_ro_dates.get(oid, rng.start), weeks)
             if idx is not None:
                 invoiced_hours_by_week[idx] += hours_dec
 
@@ -295,10 +327,13 @@ async def get_reports_dashboard(
     def trend_int(values: List[int]) -> List[TrendPoint]:
         return [TrendPoint(label=weeks[i][2], value=str(v)) for i, v in enumerate(values)]
 
+    revenue_trend = [TrendPoint(label=revenue_buckets[i][2], value=str(v)) for i, v in enumerate(revenue_by_period)]
+
     return ReportsDashboardResponse(
         range_start=rng.start,
         range_end=rng.end,
-        revenue=DashboardMetric(value=str(total_revenue), trend=trend(revenue_by_week)),
+        revenue_interval=revenue_interval,
+        revenue=DashboardMetric(value=str(total_revenue), trend=revenue_trend),
         labor_revenue=DashboardMetric(value=str(total_labor), trend=trend(labor_by_week)),
         part_revenue=DashboardMetric(value=str(total_parts_rev), trend=trend(parts_rev_by_week)),
         fees_revenue=DashboardMetric(value=str(total_fees), trend=trend(fees_by_week)),
