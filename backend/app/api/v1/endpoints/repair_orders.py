@@ -2455,6 +2455,11 @@ async def start_work(
             detail=f"Cannot start work on job in '{order.status.value}' status",
         )
 
+    # Production sessions disable autoflush. Timer validation reloads this row
+    # with populate_existing, so persist the stage before it checks eligibility.
+    # The flush stays in the same transaction as the timer and notification.
+    await db.flush()
+
     # Auto-start mechanic repair-order timer (single active timer policy).
     started_session = None
     auto_clocked_in = False
@@ -2763,6 +2768,9 @@ async def resume_repair_order(
 
     order.hold_reason = None
     order.held_at = None
+
+    # Timer validation reloads the order; make the cleared hold visible first.
+    await db.flush()
 
     # Restart the RO timer.
     started_session = None

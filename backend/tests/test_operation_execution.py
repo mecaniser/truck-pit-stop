@@ -214,6 +214,7 @@ async def test_review_approval_does_not_count_review_wait_as_hold(db_session):
 async def test_order_timer_failure_does_not_commit_stage_change(db_session,monkeypatch,transition):
     from unittest.mock import AsyncMock
     a=await seed(db_session)
+    db_session.autoflush=False
     if transition=='start':a.order.status=Status.ASSIGNED
     else:a.order.hold_reason='Waiting for parts'
     await db_session.commit()
@@ -224,6 +225,35 @@ async def test_order_timer_failure_does_not_commit_stage_change(db_session,monke
     await db_session.rollback()
     await db_session.refresh(a.order)
     assert (a.order.status==Status.ASSIGNED) if transition=='start' else a.order.hold_reason=='Waiting for parts'
+
+
+@pytest.mark.parametrize('transition, initial_status', [
+    ('start', Status.ASSIGNED),
+    ('start', Status.ACKNOWLEDGED),
+    ('resume', Status.IN_PROGRESS),
+])
+async def test_mechanic_order_transition_starts_timer_with_autoflush_disabled(db_session, monkeypatch, transition, initial_status):
+    from unittest.mock import AsyncMock
+    a = await seed(db_session)
+    db_session.autoflush = False  # Production AsyncSessionLocal does not autoflush.
+    a.order.status = initial_status
+    if transition == 'resume':
+        a.order.hold_reason = 'Waiting for parts'
+    await db_session.commit()
+    monkeypatch.setattr(repair_orders, 'broadcast_repair_order_update', AsyncMock())
+    monkeypatch.setattr(repair_orders, 'broadcast_mechanic_timer_update', AsyncMock())
+    monkeypatch.setattr(repair_orders, 'broadcast_mechanic_attendance_update', AsyncMock())
+    monkeypatch.setattr(repair_orders, '_enqueue_order_customer_sms', AsyncMock())
+
+    action = repair_orders.start_work if transition == 'start' else repair_orders.resume_repair_order
+    await action(a.order.id, db_session, a.lead)
+
+    await db_session.refresh(a.order)
+    assert a.order.status == Status.IN_PROGRESS
+    assert a.order.hold_reason is None
+    session = await times.get_active_session(db_session, tenant_id=a.tenant.id, mechanic_id=a.lead.id)
+    assert session is not None and session.repair_order_id == a.order.id
+    assert session.ended_at is None
 
 @pytest.mark.parametrize('route',['mechanic','admin','approve','fleet','pending_review','completed','invoiced','paid','invoice_helper','invoice_manual'])
 async def test_pending_operations_guard_every_completion_entrypoint(db_session,monkeypatch,route):
