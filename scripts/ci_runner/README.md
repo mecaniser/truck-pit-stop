@@ -68,6 +68,29 @@ hosted hardware. To stop, boot out the launch agent and allow cleanup. To resume
 bootstrap it. Force-killed or power-interrupted worker VMs are discarded on the
 next supervisor startup. Never remove unrelated VMs/containers or worktrees.
 
+## Verification once per candidate
+
+Use focused local tests for the files and behavior being changed. The protected
+GitHub workflow is the complete integration gate; do not repeat its full suites
+manually before pushing. Run a local reproduction only for a concrete failure.
+
+The six check names remain stable. Critical frontend/backend jobs execute the
+existing lists in `.github/critical-tests.json`; jobs with the legacy “full suite
+(informational)” names execute the remaining files. Collection checks prove that
+critical plus remaining equals the complete discovered suite, with no overlap.
+Both jobs must pass: test failures are not wrapped in `continue-on-error`. The
+normal `npm test -- --run` and `python -m pytest` commands still run full suites.
+
+Critical failures prevent their remaining-suite jobs and the smoke setup from
+starting. Frontend-and-documentation-only PRs keep passing explicit backend
+no-op checks; unknown/shared/backend changes and main run the backend partitions.
+The classifier still comes from the protected base commit.
+
+Playwright has a25-minute total job budget for isolated dependency/database
+setup, and a separate5-minute smoke-step limit. Individual Playwright/test
+deadlines are unchanged. Inspect the actual test step when diagnosing old runs
+created before failure propagation was corrected.
+
 ## Release scope
 
 Release quality gates and production bundle compilation run on these workers.
