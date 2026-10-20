@@ -75,6 +75,17 @@ async function compose() {
   });
 }
 describe("connected inbox sending", () => {
+  it("keeps the loading frame until inbox initialization finishes, then shows conversations", async () => {
+    let finish!: (value: Awaited<ReturnType<typeof inboxApi.bootstrap>>) => void;
+    vi.mocked(inboxApi.bootstrap).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    render(<ConnectedInbox />);
+    expect(screen.getByRole("status")).toHaveTextContent("Loading your inbox…");
+    expect(screen.getByRole("region", { name: "Messages" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.queryByRole("textbox", { name: "Message draft" })).not.toBeInTheDocument();
+    await act(async () => finish({ tenant_id: DEMO_TENANT, user_id: DEMO_USER, delivery_mode: "simulated", assignees: [], channels: [] }));
+    await compose();
+    expect(screen.queryByText("Loading your inbox…")).not.toBeInTheDocument();
+  });
   it("explains an inquiry STOP hold without allowing a reply or offering opt-in", async () => {
     const stopped = {
       ...inquiry,
