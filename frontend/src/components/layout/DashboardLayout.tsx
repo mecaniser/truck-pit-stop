@@ -1,3 +1,4 @@
+import InboxLoading from "@/features/communications/InboxLoading"
 import { useWorkspaceViewport } from '@/hooks/useWorkspaceViewport'
 import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
 import { lazyRouteLoader } from '@/lib/staleDeploy'
@@ -513,7 +514,7 @@ export default function DashboardLayout() {
             isGarageWorkspaceRoute ? 'overflow-y-auto lg:overflow-hidden' : 'overflow-y-auto'
           }`}
         >
-          <Suspense fallback={<div className="min-h-24" role="status" aria-live="polite">Loading workspace…</div>}>
+          <Suspense fallback={location.pathname === "/dashboard/messages" ? <InboxLoading /> : <div className="min-h-24" role="status" aria-live="polite">Loading workspace…</div>}>
           <Routes>
             {/* Platform Admin Routes (SUPER_ADMIN only) */}
             {user?.role === 'super_admin' ? (
