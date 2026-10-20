@@ -93,7 +93,8 @@ async def eligibility(db, invoice, settlement, *, lock=False, adjustment=False):
                     or event.attempt_count and not (event.payload or {}).get("cash_no_dispatch"))
                 and not valid_sandbox_cash_review(event, invoice)):
             return "Previous invoice export attempts require review before changing tax."
-    if not events and invoice.quickbooks_sync_status not in {None, "pending", "not_synced", "not_required", "awaiting_payment"}:
+    if not events and (invoice.quickbooks_sync_error is not None
+            or invoice.quickbooks_sync_status not in {None, "pending", "not_synced", "not_required", "awaiting_payment"}):
         return "Previous invoice export history requires review before changing tax."
     seen, parent_id = {invoice.id}, invoice.supersedes_invoice_id
     while parent_id:
@@ -113,6 +114,9 @@ async def eligibility(db, invoice, settlement, *, lock=False, adjustment=False):
         if lock:
             parent_query = parent_query.with_for_update(nowait=True)
         parent_events = list((await db.scalars(parent_query.execution_options(populate_existing=True))).all())
+        if not parent_events and (parent.quickbooks_sync_error is not None
+                or parent.quickbooks_sync_status not in {None, "pending", "not_synced", "not_required", "awaiting_payment"}):
+            return "A previous invoice has unresolved export activity."
         reviews = [event.payload[CASH_REVIEW_KEY] for event in events if valid_sandbox_cash_review(event, invoice)]
         local_snapshot = await local_void_ancestor_snapshot(db, parent, lock=lock) if parent.quickbooks_synced_at else None
         local_reviewed = bool(local_snapshot and reviews and all(any(

@@ -13,7 +13,8 @@ async def mark_awaiting_payment(db, invoice):
     """Change presentation without laundering orphan historical export evidence."""
     from app.db.models.provider_outbox import ProviderOutboxEvent
     from app.services.invoice_outbox_policy import financial_invoice_outbox_clause
-    if invoice.quickbooks_sync_status not in {None, "pending", "not_synced", "not_required", AWAITING_PAYMENT}:
+    if (invoice.quickbooks_sync_error is not None
+            or invoice.quickbooks_sync_status not in {None, "pending", "not_synced", "not_required", AWAITING_PAYMENT}):
         history = await db.scalar(select(ProviderOutboxEvent.id).where(
             ProviderOutboxEvent.tenant_id == invoice.tenant_id,
             ProviderOutboxEvent.aggregate_id == invoice.id,
