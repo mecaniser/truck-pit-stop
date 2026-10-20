@@ -77,6 +77,30 @@ def is_pending_zelle_confirmation(invoice_status: InvoiceStatus, submitted_at: O
     return submitted_at is not None and invoice_status != InvoiceStatus.PAID
 
 
+def _native_billing_work_predicate():
+    """Ready to Close belongs to DBN; imported provenance remains history.
+
+    Deleted/cancelled invoices retain ownership evidence. Correlate on both
+    tenant and order so another tenant's invalid link cannot veto local work.
+    """
+    provenance_invoice = aliased(Invoice)
+    imported_invoice = (
+        select(provenance_invoice.id)
+        .where(
+            provenance_invoice.tenant_id == RepairOrder.tenant_id,
+            provenance_invoice.repair_order_id == RepairOrder.id,
+            or_(provenance_invoice.source == "easy_truck_shop_import",
+                provenance_invoice.accounting_policy == "historical_export_hold"),
+        )
+        .correlate(RepairOrder)
+        .exists()
+    )
+    return and_(
+        or_(RepairOrder.source.is_(None), RepairOrder.source != "easy_truck_shop_import"),
+        ~imported_invoice,
+    )
+
+
 def require_manager(current_user: User) -> None:
     if current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
         raise HTTPException(status_code=403, detail="Shop owner/admin access required")
@@ -101,6 +125,7 @@ class RecentOrder(BaseModel):
     id: str
     order_number: str
     status: str
+    source: Optional[str] = None
     pending_zelle_confirmation: bool = False
     description: Optional[str]
     customer_name: str
@@ -251,6 +276,7 @@ def _dashboard_order(
         id=str(order.id),
         order_number=order.order_number,
         status=order.status.value if hasattr(order.status, "value") else order.status,
+        source=order.source,
         pending_zelle_confirmation=pending_zelle_confirmation,
         description=order.description,
         customer_name=fleet_display_name(customer, fleet_company_name),
@@ -300,6 +326,7 @@ def _action_queue_load_options(mechanic):
             RepairOrder.id,
             RepairOrder.order_number,
             RepairOrder.status,
+            RepairOrder.source,
             RepairOrder.description,
             RepairOrder.total_parts_cost,
             RepairOrder.total_labor_cost,
@@ -478,12 +505,7 @@ async def _load_dashboard_action_queue(
             RepairOrder.tenant_id == tenant_id,
             RepairOrder.deleted_at.is_(None),
             RepairOrder.status.in_([RepairOrderStatus.COMPLETED, RepairOrderStatus.INVOICED]),
-            or_(
-                RepairOrder.source.is_(None),
-                RepairOrder.source != "easy_truck_shop_import",
-                RepairOrder.status != RepairOrderStatus.COMPLETED,
-                RepairOrder.total_cost > 0,
-            ),
+            _native_billing_work_predicate(),
             ~pending_zelle,
         )
         .order_by(ready_priority.asc(), RepairOrder.updated_at.desc())
@@ -681,12 +703,7 @@ async def get_dashboard_daily_workset_value_summary(
     ])
     ready_to_close = and_(
         RepairOrder.status.in_([RepairOrderStatus.COMPLETED, RepairOrderStatus.INVOICED]),
-        or_(
-            RepairOrder.source.is_(None),
-            RepairOrder.source != "easy_truck_shop_import",
-            RepairOrder.status != RepairOrderStatus.COMPLETED,
-            RepairOrder.total_cost > 0,
-        ),
+        _native_billing_work_predicate(),
         ~pending_zelle,
     )
     lane_predicates = {
@@ -924,6 +941,7 @@ async def get_dashboard_stats(
             id=str(order.id),
             order_number=order.order_number,
             status=order.status.value if hasattr(order.status, "value") else order.status,
+            source=order.source,
             description=order.description,
             customer_name=fleet_display_name(customer, fleet_company_name),
             vehicle_info=vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number),
@@ -947,6 +965,7 @@ async def get_dashboard_stats(
             id=str(order.id),
             order_number=order.order_number,
             status=order.status.value if hasattr(order.status, "value") else order.status,
+            source=order.source,
             pending_zelle_confirmation=pending_zelle_confirmation,
             description=order.description,
             customer_name=fleet_display_name(customer, fleet_company_name),
@@ -1088,15 +1107,7 @@ async def get_dashboard_stats(
                     RepairOrderStatus.COMPLETED,
                     RepairOrderStatus.INVOICED,
                 ]),
-                # ETS includes closed historical service records as completed
-                # $0 orders without a local invoice. They are history, not work
-                # that the shop still needs to invoice.
-                or_(
-                    RepairOrder.source.is_(None),
-                    RepairOrder.source != "easy_truck_shop_import",
-                    RepairOrder.status != RepairOrderStatus.COMPLETED,
-                    RepairOrder.total_cost > 0,
-                ),
+                _native_billing_work_predicate(),
             )
         )
         .order_by(ready_to_close_priority.asc(), RepairOrder.updated_at.desc())
