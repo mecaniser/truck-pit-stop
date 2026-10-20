@@ -16,7 +16,7 @@ import { useOperationExecution } from '@/features/operation-execution/queries'
 import { OperationNotes } from '@/features/operation-execution/OperationNotes'
 import OrderChecklist from '@/features/service-checklists/OrderChecklist'
 import { type ReactNode, type ChangeEvent, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
-import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
+import { Menu, MenuButton, MenuItem, MenuItems, Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
 import WorkspaceActionOverflow from '@/components/WorkspaceActionOverflow'
 import { useCompactWorkspace } from '@/hooks/useCompactWorkspace'
 import DatePicker from '@/components/DatePicker'
@@ -40,6 +40,7 @@ import {
   Gauge,
   History,
   Mail,
+  MoreHorizontal,
   Play,
   Plus,
   RotateCcw,
@@ -985,6 +986,7 @@ export default function PriceBuilderPanel({
     descriptionWasEditing.current = descriptionEditing
   }, [descriptionEditing])
   const [forceVoidOpen, setForceVoidOpen] = useState(false)
+  const invoiceActionsRef = useRef<HTMLButtonElement>(null)
   useEffect(() => setForceVoidOpen(false), [orderId])
   const [noteComposerOpen, setNoteComposerOpen] = useState(false)
   const [noteAudience, setNoteAudience] = useState<'customer' | 'shop'>('shop')
@@ -2884,10 +2886,23 @@ export default function PriceBuilderPanel({
             </button>
 
             {canForceVoid && onForceVoidOrder && !isDeleted && (
-              <button type="button" onClick={() => setForceVoidOpen(true)} aria-label="Void entire order" title="Void entire order" className="inline-flex h-11 w-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-semibold text-red-700 hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto sm:px-3">
-                <CircleSlash className="h-4 w-4" aria-hidden="true" />
-                <span className="hidden sm:inline">Void entire order</span>
-              </button>
+              <Menu as="div" className="shrink-0">
+                <MenuButton ref={invoiceActionsRef} type="button" aria-label="Invoice actions" title="Invoice actions" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-purple-700 hover:bg-purple-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-700">
+                  <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
+                </MenuButton>
+                <MenuItems anchor="bottom end" modal={false} aria-label="Invoice actions" className="z-[100] w-56 max-w-[calc(100vw-32px)] rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-lg outline-none [--anchor-gap:6px] [--anchor-padding:16px]">
+                  <MenuItem>
+                    <button type="button" onClick={() => {
+                      // The menu item unmounts; restore dialog focus to its stable trigger.
+                      invoiceActionsRef.current?.focus()
+                      setForceVoidOpen(true)
+                    }} className="flex min-h-11 w-full items-center gap-2 whitespace-nowrap rounded-lg px-3 text-left font-medium text-red-700 data-[focus]:bg-red-50">
+                      <CircleSlash className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      Void entire order…
+                    </button>
+                  </MenuItem>
+                </MenuItems>
+              </Menu>
             )}
           </div>
 
