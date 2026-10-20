@@ -49,7 +49,7 @@ class CallRailContext:
     binding_id: UUID
     tenant_id: UUID
     thread_id: UUID
-    customer_id: UUID
+    customer_id: UUID | None
     account_id: str
     company_id: str
     tracker_id: str
@@ -71,21 +71,33 @@ async def _context_for_mapping(db, mapping, *, allow_opt_out=False):
     tenant_id, thread_id = mapping.tenant_id, mapping.thread_id
     binding = await db.get(CallRailNumberBinding, mapping.binding_id)
     thread = await db.get(MessageThread, thread_id)
-    customer = await db.get(Customer, mapping.customer_id)
+    customer = await db.get(Customer, mapping.customer_id) if mapping.customer_id else None
     tenant = await db.get(Tenant, tenant_id)
     if not binding or not binding.enabled or binding.deleted_at is not None:
         deny('callrail_binding_disabled')
     if (binding.tenant_id != tenant_id or not thread or thread.tenant_id != tenant_id
         or thread.deleted_at is not None or thread.customer_id != mapping.customer_id
-        or not customer or customer.tenant_id != tenant_id or customer.deleted_at is not None
-        or not tenant or not tenant.is_active or tenant.deleted_at is not None):
+        or not tenant or not tenant.is_active or tenant.deleted_at is not None or not tenant.messaging_enabled):
         deny('callrail_binding_changed')
-    if (_phone(customer.phone) != mapping.customer_phone
-        or (thread.customer_phone and _phone(thread.customer_phone) != mapping.customer_phone)):
-        deny('callrail_contact_changed')
-    if customer.sms_opt_out and not allow_opt_out:
+    if thread.thread_kind == 'inquiry':
+        if (thread.customer_id is not None or mapping.customer_id is not None
+            or thread.inquiry_binding_id != binding.id or _phone(thread.customer_phone) != mapping.customer_phone
+            or not re.fullmatch(r'\+1\d{10}', mapping.customer_phone)):
+            deny('callrail_binding_changed')
+        opted_out = thread.inquiry_opted_out
+    elif thread.thread_kind == 'customer':
+        if (not customer or customer.tenant_id != tenant_id or customer.deleted_at is not None
+            or thread.inquiry_binding_id is not None):
+            deny('callrail_binding_changed')
+        if (_phone(customer.phone) != mapping.customer_phone
+            or (thread.customer_phone and _phone(thread.customer_phone) != mapping.customer_phone)):
+            deny('callrail_contact_changed')
+        opted_out = customer.sms_opt_out
+    else:
+        deny('callrail_binding_changed')
+    if opted_out and not allow_opt_out:
         deny('recipient_opted_out')
-    return CallRailContext(binding.id, tenant_id, thread_id, customer.id,
+    return CallRailContext(binding.id, tenant_id, thread_id, mapping.customer_id,
                            binding.account_id, binding.company_id, binding.tracker_id,
                            binding.sender_phone, mapping.customer_phone, binding.credential_ref)
 
@@ -118,7 +130,7 @@ async def send(context, body, to, *, source="manual"):
         if 400 <= response.status_code < 500 and response.status_code not in {408, 429}:
             raise CallRailRejected(str(response.status_code))
         raise RuntimeError('CallRail outcome unknown')
-    if response.status_code != 201:
+    if response.status_code not in {200, 201}:
         raise RuntimeError('CallRail outcome unknown')
     result = response.json()
     identifier = result.get('id')
@@ -176,17 +188,6 @@ async def apply_event(db, binding_id, payload, event_kind, *, historical=False, 
     if (recipient if inbound else sender) != binding.sender_phone:
         return await _quarantine(db, binding, payload, 'sender_mismatch')
     contact_phone = sender if inbound else recipient
-    mapping = await db.scalar(select(CallRailConversation).where(
-        CallRailConversation.binding_id == binding.id, CallRailConversation.tenant_id == binding.tenant_id,
-        CallRailConversation.customer_phone == contact_phone, CallRailConversation.deleted_at.is_(None)))
-    if not mapping:
-        return await _quarantine(db, binding, payload, 'unmapped_contact')
-    try:
-        context = await _context_for_mapping(db, mapping, allow_opt_out=True)
-    except HTTPException:
-        return await _quarantine(db, binding, payload, 'contact_changed')
-    if not context or context.binding_id != binding.id:
-        return await _quarantine(db, binding, payload, 'binding_changed')
     conversation_id = payload.get('conversation_id')
     if (not isinstance(conversation_id, str) or not re.fullmatch(r'[A-Za-z0-9]{1,80}', conversation_id)):
         return await _quarantine(db, binding, payload, 'conversation_mismatch')
@@ -214,6 +215,35 @@ async def apply_event(db, binding_id, payload, event_kind, *, historical=False, 
         return await _quarantine(db, binding, payload, 'missing_message_identity')
     existing_aliases = (await db.scalars(select(CallRailMessageAlias).where(
         CallRailMessageAlias.account_id == binding.account_id, CallRailMessageAlias.alias.in_(aliases)))).all()
+    if not re.fullmatch(r'\+1\d{10}', contact_phone or ''):
+        return await _quarantine(db, binding, payload, 'invalid_contact_phone')
+    mapping = await db.scalar(select(CallRailConversation).where(
+        CallRailConversation.binding_id == binding.id, CallRailConversation.tenant_id == binding.tenant_id,
+        CallRailConversation.customer_phone == contact_phone))
+    if mapping and mapping.deleted_at is not None:
+        return await _quarantine(db, binding, payload, 'contact_changed')
+    if not mapping:
+        tenant = await db.get(Tenant, binding.tenant_id)
+        if (not inbound or historical or not binding.accept_new_inquiries):
+            return await _quarantine(db, binding, payload, 'unmapped_contact')
+        if not tenant or not tenant.is_active or tenant.deleted_at is not None or not tenant.messaging_enabled:
+            return await _quarantine(db, binding, payload, 'tenant_inactive')
+        if existing_aliases:
+            return await _quarantine(db, binding, payload, 'identity_conflict')
+        inquiry = MessageThread(tenant_id=binding.tenant_id, thread_kind='inquiry', customer_id=None,
+            inquiry_binding_id=binding.id, customer_phone=contact_phone, inquiry_opted_out=False)
+        db.add(inquiry)
+        await db.flush()
+        mapping = CallRailConversation(tenant_id=binding.tenant_id, thread_id=inquiry.id, customer_id=None,
+            binding_id=binding.id, customer_phone=contact_phone, selected_for_sending=True)
+        db.add(mapping)
+        await db.flush()
+    try:
+        context = await _context_for_mapping(db, mapping, allow_opt_out=True)
+    except HTTPException:
+        return await _quarantine(db, binding, payload, 'contact_changed')
+    if not context or context.binding_id != binding.id:
+        return await _quarantine(db, binding, payload, 'binding_changed')
     if len({row.message_id for row in existing_aliases}) > 1:
         return await _quarantine(db, binding, payload, 'identity_conflict')
     message = await db.get(SMSMessage, existing_aliases[0].message_id) if existing_aliases else None
@@ -252,7 +282,8 @@ async def apply_event(db, binding_id, payload, event_kind, *, historical=False, 
         message = SMSMessage(tenant_id=binding.tenant_id, thread_id=mapping.thread_id, customer_id=mapping.customer_id,
             direction=SMSMessageDirection.INBOUND if inbound else SMSMessageDirection.OUTBOUND,
             source=SMSMessageSource.INBOUND if inbound else SMSMessageSource.MANUAL,
-            body=content, from_number=sender, to_number=recipient, created_at=timestamp)
+            body=content, from_number=sender, to_number=recipient, created_at=timestamp,
+            provider='callrail', callrail_binding_id=binding.id, provider_account_id=binding.account_id)
         db.add(message)
     message.provider = 'callrail'
     message.provider_account_id = binding.account_id
@@ -289,10 +320,13 @@ async def apply_event(db, binding_id, payload, event_kind, *, historical=False, 
         else:
             db.add(ConversationWorkflow(tenant_id=binding.tenant_id, thread_id=thread.id, status='open', version=2))
         if content.strip().upper() in {'STOP', 'CANCEL', 'UNSUBSCRIBE', 'QUIT', 'END'}:
-            customer = await db.get(Customer, mapping.customer_id)
-            customer.sms_opt_out = True
-            customer.sms_opted_out_at = timestamp
-            customer.sms_opt_out_source = 'callrail_inbound'
+            if thread.thread_kind == 'inquiry':
+                thread.inquiry_opted_out = True
+            else:
+                customer = await db.get(Customer, mapping.customer_id)
+                customer.sms_opt_out = True
+                customer.sms_opted_out_at = timestamp
+                customer.sms_opt_out_source = 'callrail_inbound'
     await db.flush()
     return {'status': 'duplicate' if replayed else 'received', 'message_id': str(message.id)}
 
@@ -351,6 +385,14 @@ async def import_conversation(db, binding_id, thread_id, record, *, verified_mes
 
 async def sender_context(db, tenant, thread):
     """Tenant-local choices, including a disabled current selection for clarity."""
+    if thread.thread_kind == 'inquiry':
+        binding = await db.get(CallRailNumberBinding, thread.inquiry_binding_id) if thread.inquiry_binding_id else None
+        valid = binding is not None and binding.tenant_id == tenant.id
+        return {'sms_sender_options': [{'id': str(binding.id), 'provider': 'callrail', 'sender_number': binding.sender_phone,
+                'enabled': bool(binding.enabled and binding.deleted_at is None)}] if valid else [],
+                'selected_sender_id': str(thread.inquiry_binding_id) if thread.inquiry_binding_id else None,
+                'sms_provider': 'callrail', 'sender_number': binding.sender_phone if valid else '',
+                'sender_selection_allowed': False}
     mapping = await db.scalar(select(CallRailConversation).where(CallRailConversation.tenant_id == tenant.id,
         CallRailConversation.thread_id == thread.id, CallRailConversation.deleted_at.is_(None),
         CallRailConversation.selected_for_sending.is_(True)))
@@ -363,7 +405,7 @@ async def sender_context(db, tenant, thread):
     options = [{'id': 'twilio', 'provider': 'twilio', 'sender_number': _phone(tenant.sms_phone_number), 'enabled': True}]
     options.extend({'id': str(row.id), 'provider': 'callrail', 'sender_number': row.sender_phone,
                     'enabled': bool(row.enabled and row.deleted_at is None)} for row in bindings)
-    return {'sms_sender_options': options, 'selected_sender_id': str(mapping.binding_id) if mapping else 'twilio',
+    return {'sender_selection_allowed': True, 'sms_sender_options': options, 'selected_sender_id': str(mapping.binding_id) if mapping else 'twilio',
             'sms_provider': 'callrail' if mapping else 'twilio',
             'sender_number': current.sender_phone if current and current.tenant_id == tenant.id else _phone(tenant.sms_phone_number)}
 
@@ -378,6 +420,13 @@ async def lock_sender_bindings(db, tenant_id):
 async def set_sender(db, tenant, thread, binding_id):
     """Caller holds tenant binding locks and thread lock; never sends or changes history."""
     from app.db.models.automated_sms import AutomatedSMSOperation
+    if thread.thread_kind == 'inquiry':
+        if binding_id == thread.inquiry_binding_id:
+            await resolve_for_thread(db, tenant.id, thread.id, allow_opt_out=True)
+            return False
+        deny('inquiry_sender_locked')
+    if thread.thread_kind != 'customer':
+        deny('callrail_binding_changed')
     mapping = await db.scalar(select(CallRailConversation).where(CallRailConversation.thread_id == thread.id,
         CallRailConversation.tenant_id == tenant.id, CallRailConversation.deleted_at.is_(None),
         CallRailConversation.selected_for_sending.is_(True)))

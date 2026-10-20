@@ -12,6 +12,16 @@ import { canCompose, draftKey, filterConversations } from "./model";
 
 afterEach(cleanup);
 describe("shared inbox foundation", () => {
+  it("filters inquiries without guessing customers and searches remote and receiving phone numbers", () => {
+    const customer = createDemoConversations()[0];
+    const inquiry = { ...customer, id: "inquiry", conversationKind: "inquiry" as const, customerId: null, customerName: "New inquiry", company: null, identityLabel: "+15005550002", context: { smsProvider: "callrail", senderNumber: "+15005550001" } };
+    const foreign = { ...inquiry, id: "foreign", tenantId: "other-tenant" };
+    const resolved = { ...inquiry, id: "resolved", status: "resolved" as const };
+    expect(filterConversations([customer, inquiry, foreign, resolved], DEMO_TENANT, "inquiries", "all", "", DEMO_USER).map((r) => r.id)).toEqual(["inquiry"]);
+    for (const phone of ["15005550002", "15005550001"])
+      expect(filterConversations([inquiry], DEMO_TENANT, "open", "sms", phone, DEMO_USER)).toEqual([inquiry]);
+    expect(filterConversations([inquiry], DEMO_TENANT, "resolved", "sms", "", DEMO_USER)).toEqual([]);
+  });
   it("isolates tenant records and supports repair-order and message search", () => {
     const rows = createDemoConversations();
     const otherTenant = { ...rows[0], id: "other", tenantId: "other-shop" };

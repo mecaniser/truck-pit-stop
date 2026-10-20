@@ -176,7 +176,10 @@ export default function CommunicationsPreview({
   const maxLength = composeMaxLength(composeConversation);
   const senderOptions = selected.context.smsSenderOptions ?? [];
   const selectedSenderId = selected.context.selectedSenderId ?? "twilio";
-  const showSenderSelect = !!connection?.onSenderChange && composeChannel === "sms" &&
+  const showSenderSelect =
+    selected.conversationKind !== "inquiry" &&
+    selected.context.senderSelectionAllowed !== false &&
+    !!connection?.onSenderChange && composeChannel === "sms" &&
     (selected.context.smsProvider === "callrail" || senderOptions.some((option) => option.provider === "callrail"));
   const counts = {
     open: rows.filter((r) => r.status === "open").length,
@@ -184,6 +187,7 @@ export default function CommunicationsPreview({
     mine: rows.filter((r) => r.status === "open" && r.assigneeId === userId)
       .length,
     resolved: rows.filter((r) => r.status === "resolved").length,
+    inquiries: rows.filter((r) => r.tenantId === tenantId && r.status === "open" && r.conversationKind === "inquiry" && r.unreadCount > 0).length,
   };
   const messages = selected.messages.filter(
     (message) => showAutomation || message.source !== "automation",
@@ -417,6 +421,7 @@ export default function CommunicationsPreview({
                     ["unread", "Unread"],
                     ["mine", "Mine"],
                     ["resolved", "Resolved"],
+                    ["inquiries", "New inquiries"],
                   ] as const
                 ).map(([value, label]) => (
                   <button
@@ -493,6 +498,7 @@ export default function CommunicationsPreview({
               <span>
                 {view === "mine"
                   ? "ASSIGNED TO YOU"
+                  : view === "inquiries" ? "NEW INQUIRIES"
                   : view.toUpperCase() + " CONVERSATIONS"}
               </span>
               <span>{visible.length}</span>
@@ -519,7 +525,9 @@ export default function CommunicationsPreview({
                       <strong>{row.customerName}</strong>
                       <span>{time(row.lastMessageAt)}</span>
                     </span>
-                    <span className="thread-company">{row.company}</span>
+                    {(row.company || row.conversationKind === "inquiry") && (
+                      <span className="thread-company">{row.conversationKind === "inquiry" ? row.identityLabel : row.company}</span>
+                    )}
                     <span className="thread-preview">
                       {row.messages.some(
                         (m) => m.deliveryStatus === "undelivered",
@@ -527,6 +535,7 @@ export default function CommunicationsPreview({
                       {row.preview}
                     </span>
                     <span className="thread-meta">
+                      {row.conversationKind === "inquiry" && <span>To {row.context.senderNumber}</span>}
                       {row.context.repairOrderLabel && (
                         <span>{row.context.repairOrderLabel}</span>
                       )}
@@ -585,9 +594,10 @@ export default function CommunicationsPreview({
               <div className="conversation-title">
                 <h2>{selected.customerName}</h2>
                 <span>
-                  {selected.company} <span className="separator">·</span>{" "}
+                  {(selected.conversationKind === "inquiry" || selected.company) && <>{selected.conversationKind === "inquiry" ? selected.identityLabel : selected.company} <span className="separator">·</span>{" "}</>}
                   {channelLabels[selected.channel]}
                 </span>
+                {selected.conversationKind === "inquiry" && <span>CallRail · To {selected.context.senderNumber}</span>}
               </div>
               <div className="conversation-actions">
                 <button
@@ -651,7 +661,7 @@ export default function CommunicationsPreview({
                 </select>
                 <ChevronDown size={12} />
               </label>
-              <button
+              {selected.conversationKind !== "inquiry" && <button
                 className={`automation-toggle ${showAutomation ? "active" : ""}`}
                 aria-pressed={showAutomation}
                 onClick={() => setShowAutomation(!showAutomation)}
@@ -659,7 +669,7 @@ export default function CommunicationsPreview({
                 <Bell size={13} />
                 <span>Service updates</span>
                 <span className="switch-track" />
-              </button>
+              </button>}
             </div>
             {failed && (
               <div className="delivery-alert">
@@ -978,7 +988,7 @@ export default function CommunicationsPreview({
                 {initials(selected.customerName)}
               </span>
               <strong>{selected.customerName}</strong>
-              <span>{selected.company}</span>
+              {selected.company && <span>{selected.company}</span>}
             </div>
             <section>
               <h4>Contact</h4>
@@ -1000,7 +1010,7 @@ export default function CommunicationsPreview({
                 <p className="context-warning">SMS opted out</p>
               )}
             </section>
-            {connection && selected.customerId && (
+            {connection && selected.customerId && selected.conversationKind !== "inquiry" && (
               <SMSConsentPanel
                 key={`${connection.tenantId}:${connection.userId}:${selected.customerId}`}
                 customerId={selected.customerId}

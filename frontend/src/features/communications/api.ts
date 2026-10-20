@@ -24,8 +24,9 @@ export interface WireConversation {
   id: string;
   tenant_id: string;
   customer_id: string | null;
+  conversation_kind?: "customer" | "inquiry";
   customer_name: string;
-  company: string;
+  company: string | null;
   channel: Conversation["channel"];
   channel_account_id: string;
   contact_identity_id: string;
@@ -48,6 +49,7 @@ export interface WireConversation {
     sms_provider?: string;
     sender_number?: string;
     selected_sender_id?: string;
+    sender_selection_allowed?: boolean;
     sms_sender_options?: { id: string; provider: "twilio" | "callrail"; enabled?: boolean; sender_number: string }[];
     vehicle_label?: string;
     repair_order_label?: string;
@@ -71,8 +73,9 @@ export const mapConversation = (r: WireConversation): Conversation => ({
   id: r.id,
   tenantId: r.tenant_id,
   customerId: r.customer_id,
-  customerName: r.customer_name,
-  company: r.company,
+  conversationKind: r.conversation_kind ?? "customer",
+  customerName: r.conversation_kind === "inquiry" ? "New inquiry" : r.customer_name,
+  company: r.conversation_kind === "inquiry" ? null : r.company,
   channel: r.channel,
   channelAccountId: r.channel_account_id,
   contactIdentityId: r.contact_identity_id,
@@ -95,6 +98,7 @@ export const mapConversation = (r: WireConversation): Conversation => ({
     smsProvider: r.context?.sms_provider,
     senderNumber: r.context?.sender_number,
     selectedSenderId: r.context?.selected_sender_id,
+    senderSelectionAllowed: r.context?.sender_selection_allowed,
     smsSenderOptions: r.context?.sms_sender_options?.map((option) => ({ id: option.id, provider: option.provider, enabled: option.enabled, senderNumber: option.sender_number })),
     vehicleLabel: r.context?.vehicle_label,
     repairOrderLabel: r.context?.repair_order_label,

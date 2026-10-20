@@ -64,6 +64,7 @@ function renderPanel(props: Partial<ComponentProps<typeof PriceBuilderPanel>> = 
 
   return {
     ...view,
+    queryClient,
     rerenderPanel(nextProps: Partial<ComponentProps<typeof PriceBuilderPanel>>) {
       view.rerender(
         <QueryClientProvider client={queryClient}>
@@ -72,6 +73,14 @@ function renderPanel(props: Partial<ComponentProps<typeof PriceBuilderPanel>> = 
       )
     },
   }
+}
+
+async function waitForInventorySearch(queryClient: QueryClient, term: string) {
+  // A result for an intermediate search term may already be visible. Wait for
+  // the final debounced request before interacting with its results.
+  await waitFor(() => expect(queryClient.getQueryState(['inventory-typeahead', term])).toMatchObject({
+    status: 'success', fetchStatus: 'idle',
+  }))
 }
 
 describe('PriceBuilderPanel pending feedback', () => {
@@ -191,7 +200,7 @@ describe('PriceBuilderPanel pending feedback', () => {
       order_discount_amount: name === 'Order discount' ? '1234.50' : '0',
     })
   })
-  it('selects a pricing segment without persisting until Apply', async () => {
+  it.each(['label', 'radio'] as const)('selects a pricing segment by %s without persisting until Apply', async target => {
     apiMocks.get.mockResolvedValue({ data: emptySummary })
     const user = userEvent.setup()
     renderPanel()
@@ -199,26 +208,40 @@ describe('PriceBuilderPanel pending feedback', () => {
     await user.click(screen.getByRole('button', { name: 'Discounts & pricing' }))
     const list = screen.getByRole('radio', { name: 'List price' })
     const stock = screen.getByRole('radio', { name: 'Stock price' })
+    const apply = screen.getByRole('button', { name: 'Apply', exact: true })
+    expect(list).toBeChecked()
+    expect(apply).toBeDisabled()
+    await user.click(target === 'label' ? screen.getByText('Stock price', { exact: true }) : stock)
+    expect(stock).toBeChecked()
+    expect(stock).toHaveFocus()
+    expect(list).not.toBeChecked()
+    expect(apply).toBeEnabled()
+    await user.click(target === 'label' ? screen.getByText('List price', { exact: true }) : list)
+    expect(list).toBeChecked()
+    expect(list).toHaveFocus()
+    expect(apply).toBeDisabled()
+    expect(apiMocks.post).not.toHaveBeenCalled()
+    expect(apiMocks.patch).not.toHaveBeenCalled()
+  })
+  it('focuses the pricing radio on pointer down and selects it on release', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(screen.getByText('Pricing', { exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Discounts & pricing' }))
+    const list = screen.getByRole('radio', { name: 'List price' })
+    const stock = screen.getByRole('radio', { name: 'Stock price' })
+    const apply = screen.getByRole('button', { name: 'Apply', exact: true })
     expect(stock).toHaveClass('absolute', 'inset-0', 'w-full', 'h-full')
     expect(list).toBeChecked()
-    expect(screen.getByRole('button', { name: 'Apply', exact: true })).toBeDisabled()
+    expect(apply).toBeDisabled()
     await user.pointer({ target: screen.getByText('Stock price', { exact: true }), keys: '[MouseLeft>]' })
     expect(stock).toHaveFocus()
     await user.pointer({ keys: '[/MouseLeft]' })
     expect(stock).toBeChecked()
     expect(stock).toHaveFocus()
     expect(list).not.toBeChecked()
-    expect(screen.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled()
-    await user.click(screen.getByText('List price', { exact: true }))
-    expect(list).toBeChecked()
-    expect(list).toHaveFocus()
-    expect(screen.getByRole('button', { name: 'Apply', exact: true })).toBeDisabled()
-    await user.click(stock)
-    expect(stock).toBeChecked()
-    expect(screen.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled()
-    await user.click(list)
-    expect(list).toBeChecked()
-    expect(screen.getByRole('button', { name: 'Apply', exact: true })).toBeDisabled()
+    expect(apply).toBeEnabled()
     expect(apiMocks.post).not.toHaveBeenCalled()
     expect(apiMocks.patch).not.toHaveBeenCalled()
   })
@@ -742,11 +765,12 @@ describe('PriceBuilderPanel pending feedback', () => {
       return Promise.resolve({ data: [] })
     })
     const user = userEvent.setup()
-    renderPanel()
+    const { queryClient } = renderPanel()
     if (picker === 'operation') await user.click(await screen.findByRole('button', { name: /Initial inspection/ }))
     await user.click(await screen.findByRole('button', { name: picker === 'main' ? 'Part' : 'Add part to this operation', exact: true }))
     const search = await screen.findByPlaceholderText(picker === 'main' ? /add part/i : 'Search parts, or type a name to add a new one')
     await user.type(search, 'connector')
+    await waitForInventorySearch(queryClient, 'connector')
     for (const item of matches) expect(await screen.findByText(item.name)).toBeInTheDocument()
     const create = await screen.findByRole('button', { name: 'Add “connector” as a new part' })
     create.focus()
@@ -762,7 +786,10 @@ describe('PriceBuilderPanel pending feedback', () => {
     expect(screen.getByRole('button', { name: 'Add “connector” as a new part' })).toBeInTheDocument()
     await user.clear(search)
     await user.type(search, 'unique hose')
-    expect(await screen.findByRole('button', { name: 'Add “unique hose” as a new part' })).toBeInTheDocument()
+    await waitForInventorySearch(queryClient, 'unique hose')
+    // The debounced search can replace the picker between an async lookup and
+    // its assertion. Query and assert the current DOM in one callback.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add “unique hose” as a new part' })).toBeInTheDocument())
     await user.clear(search)
     expect(screen.queryByRole('button', { name: /as a new part/ })).not.toBeInTheDocument()
   })
@@ -795,7 +822,7 @@ describe('PriceBuilderPanel pending feedback', () => {
     })
 
     const user = userEvent.setup()
-    renderPanel()
+    const { queryClient } = renderPanel()
 
     await user.click(await screen.findByRole('button', { name: 'Part' }))
     const search = await screen.findByPlaceholderText(/add part/i)
@@ -806,6 +833,7 @@ describe('PriceBuilderPanel pending feedback', () => {
       resolveInventory?.()
       await pendingInventory
     })
+    await waitForInventorySearch(queryClient, 'brake')
     await user.click(await screen.findByRole('button', { name: 'Add Brake Pad' }))
 
     await waitFor(() => {
@@ -855,11 +883,14 @@ describe('PriceBuilderPanel pending feedback', () => {
     })
 
     const user = userEvent.setup()
-    renderPanel()
+    const { queryClient } = renderPanel()
 
     await user.click(await screen.findByRole('button', { name: 'Part' }))
     const search = await screen.findByPlaceholderText(/add part/i)
-    await user.type(search, 'brake')
+    await user.type(search, 'br')
+    await screen.findByRole('button', { name: 'Add Brake Pad' })
+    await user.type(search, 'ake')
+    await waitForInventorySearch(queryClient, 'brake')
     await screen.findByRole('button', { name: 'Add Brake Pad' })
 
     await user.click(screen.getByRole('button', { name: /increase quantity for brake pad/i }))

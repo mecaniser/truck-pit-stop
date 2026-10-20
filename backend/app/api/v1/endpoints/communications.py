@@ -84,20 +84,22 @@ async def bootstrap(db=Depends(get_db), user=Depends(get_current_active_user), s
 
 
 @router.get('/conversations')
-async def list_conversations(limit: int = Query(100, ge=1, le=100), cursor: str | None = None, channel: str | None = None, status: Literal['open', 'resolved'] | None = None, search: str = Query('', max_length=200), db=Depends(get_db), user=Depends(get_current_active_user), sender=Depends(service.get_sms_sender)):
+async def list_conversations(limit: int = Query(100, ge=1, le=100), cursor: str | None = None, channel: str | None = None, conversation_kind: Literal['customer', 'inquiry'] | None = None, status: Literal['open', 'resolved'] | None = None, search: str = Query('', max_length=200), db=Depends(get_db), user=Depends(get_current_active_user), sender=Depends(service.get_sms_sender)):
     tenant = await service.authorize(db, user)
-    binding = hashlib.sha256(json.dumps([str(tenant.id), channel, status, search]).encode()).hexdigest()
+    binding = hashlib.sha256(json.dumps([str(tenant.id), channel, conversation_kind, status, search]).encode()).hexdigest()
     decoded = service.cursor_decode(cursor, binding)
     if channel and channel != 'sms':
         return dict(items=[], has_more=False, next_cursor=None)
     ordering = func.coalesce(MessageThread.last_message_at, MessageThread.created_at)
-    query = select(MessageThread).join(Customer, and_(Customer.id == MessageThread.customer_id, Customer.tenant_id == tenant.id)).outerjoin(ConversationWorkflow, and_(ConversationWorkflow.thread_id == MessageThread.id, ConversationWorkflow.tenant_id == tenant.id)).where(MessageThread.tenant_id == tenant.id, MessageThread.deleted_at.is_(None), MessageThread.archived_at.is_(None), Customer.deleted_at.is_(None))
+    query = select(MessageThread).outerjoin(Customer, and_(Customer.id == MessageThread.customer_id, Customer.tenant_id == tenant.id)).outerjoin(ConversationWorkflow, and_(ConversationWorkflow.thread_id == MessageThread.id, ConversationWorkflow.tenant_id == tenant.id)).where(MessageThread.tenant_id == tenant.id, MessageThread.deleted_at.is_(None), MessageThread.archived_at.is_(None), service.valid_thread_identity(tenant.id))
+    if conversation_kind:
+        query = query.where(MessageThread.thread_kind == conversation_kind)
     if status:
         query = query.where(func.coalesce(ConversationWorkflow.status, 'open') == status)
     if search:
         term = '%' + search.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
         body_match = select(SMSMessage.id).where(SMSMessage.tenant_id == tenant.id, SMSMessage.thread_id == MessageThread.id, SMSMessage.deleted_at.is_(None), SMSMessage.body.ilike(term)).exists()
-        query = query.where(or_(func.concat(Customer.first_name, ' ', Customer.last_name).ilike(term), Customer.company_name.ilike(term), Customer.phone.ilike(term), body_match))
+        query = query.where(or_(func.concat(Customer.first_name, ' ', Customer.last_name).ilike(term), Customer.company_name.ilike(term), Customer.phone.ilike(term), MessageThread.customer_phone.ilike(term), body_match))
     if decoded:
         dt, row_id = decoded
         query = query.where(or_(ordering < dt, and_(ordering == dt, MessageThread.id < row_id)))

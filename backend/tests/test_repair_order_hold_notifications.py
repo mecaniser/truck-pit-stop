@@ -29,6 +29,7 @@ class _FakeAsyncSession:
     def __init__(self, order: RepairOrder):
         self.order = order
         self.commit_count = 0
+        self.flush_count = 0
 
     async def execute(self, statement):
         entity = statement.column_descriptions[0].get("entity")
@@ -37,6 +38,9 @@ class _FakeAsyncSession:
 
     async def commit(self):
         self.commit_count += 1
+
+    async def flush(self):
+        self.flush_count += 1
 
     async def refresh(self, _obj):
         return None
@@ -135,6 +139,8 @@ async def test_resume_repair_order_broadcast_is_staff_only(monkeypatch):
         return object(), object()
 
     async def _fake_start_session(*_args, **_kwargs):
+        assert fake_db.flush_count == 1
+        assert order.hold_reason is None
         return None, False, None, None
 
     monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", _capture_broadcast)
@@ -149,6 +155,7 @@ async def test_resume_repair_order_broadcast_is_staff_only(monkeypatch):
     )
 
     assert response.hold_reason is None
+    assert fake_db.flush_count == 1
     assert fake_db.commit_count == 1
     assert len(broadcast_calls) == 1
     assert broadcast_calls[0]["send_to_customer"] is False

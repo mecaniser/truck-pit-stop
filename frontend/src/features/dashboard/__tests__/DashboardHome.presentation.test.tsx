@@ -153,6 +153,16 @@ describe('DashboardHome DB-035 presentation boundary', () => {
     )
   })
 
+  it.each(['completed', 'invoiced'])('keeps legacy imported %s history free of billing instructions', (status) => {
+    testState.presentationVariant = 'legacy'
+    testState.query.data = { ...dashboardFixture, orders_ready_to_close: [order({ status, source: 'easy_truck_shop_import', pending_zelle_confirmation: true })] }
+    render(<DashboardHome />)
+    expect(screen.getByText('ETS history')).toBeInTheDocument()
+    expect(screen.queryByText('Invoice Customer')).not.toBeInTheDocument()
+    expect(screen.queryByText('Payment Due')).not.toBeInTheDocument()
+    expect(screen.queryByText('Customer marked payment sent. Confirm receipt before closing.')).not.toBeInTheDocument()
+  })
+
   it('preserves the existing three-lane DashboardHome when the presentation flag is legacy', () => {
     testState.presentationVariant = 'legacy'
     render(<DashboardHome />)

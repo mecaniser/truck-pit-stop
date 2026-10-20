@@ -3,6 +3,7 @@ import api from "../../lib/api";
 import { useAuthStore } from "../../stores/authStore";
 import CommunicationsPreview from "./CommunicationsPreview";
 import SMSSetup from "./SMSSetup";
+import InboxLoading from "./InboxLoading";
 import {
   createIntent,
   errorMessage,
@@ -371,15 +372,13 @@ function InboxContent({ embedded, onUnreadCountChange }: InboxProps) {
         onClose={() => setShowSetup(false)}
       />
     );
-  if (loading || !bootstrap || !rows.length)
+  if (loading) return <InboxLoading />;
+  if (!bootstrap || !rows.length)
     return (
       <main className="inbox-entry">
         <h1>Messages</h1>
         <p>
-          {loading
-            ? "Loading your inbox…"
-            : error ||
-              "No conversations yet. Incoming SMS conversations will appear here."}
+          {error || "No conversations yet. Incoming SMS conversations will appear here."}
         </p>
         {!loading && bootstrap && embedded && (
           <a
