@@ -1,0 +1,41 @@
+{
+  "frontend": [
+    "src/__tests__/LandingPage.test.tsx",
+    "src/__tests__/RouteGuards.test.tsx",
+    "src/__tests__/TenantBrandLogo.test.tsx",
+    "src/__tests__/authStore.test.ts",
+    "src/__tests__/authTokens.test.ts",
+    "src/__tests__/password.test.ts",
+    "src/__tests__/passwordPolicy.test.ts",
+    "src/__tests__/phone.test.ts",
+    "src/components/__tests__/CustomerSelect.typeahead.test.tsx",
+    "src/features/auth/__tests__/LoginPage.test.tsx",
+    "src/features/mechanics/__tests__/MechanicsPage.test.tsx",
+    "src/features/operation-execution/__tests__/OperationExecution.test.tsx",
+    "src/features/mechanic-portal/__tests__/MechanicPortal.operations.test.tsx",
+    "src/hooks/__tests__/useWebSocket.test.tsx",
+    "src/features/repair-orders/__tests__/RepairOrdersPage.abort.test.tsx",
+    "src/features/repair-orders/__tests__/PriceBuilderPanel.pending-feedback.test.tsx",
+    "src/lib/__tests__/apiCancellation.test.ts"
+  ],
+  "backend": [
+    "tests/test_schema_preflight.py",
+    "tests/test_db036*.py",
+    "tests/test_db107_recommendation_conversion.py",
+    "tests/test_operation_execution.py",
+    "tests/test_fleet_driver_records.py",
+    "tests/test_motive_driver_worker.py",
+    "tests/test_motive_driver_worker_process.py",
+    "tests/test_motive_driver_journal.py",
+    "tests/test_motive_sync_import.py",
+    "tests/test_database_resilience.py",
+    "tests/test_dashboard_performance.py",
+    "tests/test_dashboard_zelle_queue.py",
+    "tests/test_fleet_board.py",
+    "tests/test_fleet_board_projection.py",
+    "tests/test_ro_pricing_discounts.py",
+    "tests/test_discount_cost_floor.py",
+    "tests/test_workspace_typeaheads.py",
+    "tests/test_request_performance.py"
+  ]
+}

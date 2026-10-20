@@ -81,3 +81,29 @@ case is3376ms. Fresh independent QA (not the participating investigator) reviewe
 assertion parity and gives source GO; exact corrected-head protected CI and
 production acceptance remain required. The two additional cases bring the full
 frontend inventory to1992 tests. No duplicate local full suite is run.
+
+
+### Single-pass CI gate return
+
+Run39359777590 atbdbb6e5d is not a passing release: critical209/210 failed one
+whole-test deadline; full1981/1990 failed9 across5 files in1203.73s, versus prior
+301c5831 full1990/1990 in637.23s. Playwright exhausted its15-minute job budget
+during dependencies/database setup and cancelled27s after smoke startup.
+These results cannot certify the feature. No unchanged run was retried.
+
+User broadened DB-CI-001 to remove duplicate local/GitHub cycles and pipeline
+waste. Critical lists are preserved in a shared manifest; remaining jobs exclude
+exactly those files. Actual collection verifies frontend17+174=191 and backend
+33+265=298 with no overlap. Missing/duplicate/unsafe/glob-zero guards pass
+(5 Python and1 Node checks), and actionlint/diff checks pass. Legacy informational
+contexts now propagate failures. Critical jobs gate their expensive dependents;
+trusted scope/no-op behavior and disposable-worker isolation are retained.
+Smoke now has25 minutes total setup budget and5 minutes for actual smoke;
+Playwright assertion/webserver deadlines stay unchanged. Architecture and fresh
+independent QA/Security source GO; corrected exact-head CI remains required.
+No local full test execution or production application change is added.
+
+The nine failures from bdbb6e5d full CI all pass unchanged in a focused local
+CI-mode run:9/9 across5files,40.42s. No blanket test rewrite or assertion/deadline
+change is justified by that result. Host resource contention is observed; the
+new scheduling/partition correction still requires actual exact-head CI proof.
