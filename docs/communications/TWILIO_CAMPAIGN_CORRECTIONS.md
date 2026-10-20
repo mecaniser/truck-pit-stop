@@ -194,3 +194,14 @@ If Elis Tech LLC also operates DieselBridge as the software provider, use its tr
 Voice configuration is separate from SMS A2P registration. A suitably capable number can serve both calls and texts with separate handlers. A repair SMS campaign is not approval for every voice, WhatsApp or future messaging use case. Preserve current voice URLs and forwarding when reviewing any number move.
 
 Sources: [ISV profiles and account architectures](https://www.twilio.com/docs/messaging/compliance/a2p-10dlc/onboarding-isv), [Brand onboarding](https://www.twilio.com/docs/messaging/compliance/a2p-10dlc/onboarding-isv-api), [Voice and messaging webhooks](https://www.twilio.com/docs/usage/webhooks). All registrations, identity/account changes, provider settings and customer automation remain held for review.
+
+## Current sender distinction — 2026-10-20 review update
+
+Read-only production/provider verification separates two numbers that must not be conflated:
+
+- Truck Pit Stop's legacy sender **+17755358774** is SMS-capable and belongs to a VERIFIED campaign without provider-reported errors. However, that campaign describes **Right Solution Truck Parking reservation updates**, with booking/START consent, and parking-specific sample messages. Its Messaging Service inbound URL remains TrucksParkingHub. Working transport and VERIFIED state do not establish approval for Truck Pit Stop repair-status automation or unrelated shops.
+- The separate global configured sender **+19129223939** belongs to the other service with FAILED campaign/error30907 (website does not match brand/campaign). This earlier rejection remains unresolved.
+
+Do not move either sender, replace the parking campaign, change inbound forwarding or reuse its purpose as a platform-wide repair registration. Preserve existing parking conversations and suppression. Prepare the repair business's truthful service-notification registration, sender ownership and consent binding for review using the existing multi-shop plan above. No submission, provisioning, legal-identity change or customer activation occurred in this update.
+
+The authorized owner-only technical pilot uses explicitly simulated status events and no real order transitions. Its results can establish only limited transport/outbox behavior. Campaign-purpose approval, genuine tenant binding/consent, canonical customer reply identity and controlled production producer rollout remain gates before customer repair automation.
