@@ -59,6 +59,13 @@ function renderRevision() {
   return client
 }
 
+async function openVoid(user: ReturnType<typeof userEvent.setup>) {
+  const trigger = await screen.findByRole('button', { name: 'Invoice actions', exact: true })
+  await user.click(trigger)
+  await user.click(await screen.findByRole('menuitem', { name: 'Void entire order…', exact: true }))
+  return trigger
+}
+
 describe('Void and revise work editing', () => {
   beforeEach(() => {
     vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} unobserve() {} })
@@ -102,16 +109,31 @@ describe('Void and revise work editing', () => {
     expect(screen.queryByText('No open recommendations on other orders.')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Order actions' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Delete', exact: true })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Void entire order', exact: true }))
+    await openVoid(user)
     expect(screen.getByRole('textbox', { name: 'Reason for voiding' })).toBeVisible()
     expect(screen.getByLabelText('Your password')).toBeVisible()
+    expect(apiMocks.post).not.toHaveBeenCalled()
+  })
+
+  it('keeps cancellation hidden until the invoice menu opens and restores focus on Escape', async () => {
+    renderRevision()
+    const user = userEvent.setup()
+    const trigger = await screen.findByRole('button', { name: 'Invoice actions' })
+    expect(screen.queryByRole('menuitem')).not.toBeInTheDocument()
+    trigger.focus()
+    await user.keyboard('{ArrowDown}')
+    expect(await screen.findByRole('menuitem', { name: 'Void entire order…' })).toBeVisible()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    expect(trigger).toHaveFocus()
+    expect(screen.getByRole('heading', { name: '#RO-000001' })).toBeVisible()
     expect(apiMocks.post).not.toHaveBeenCalled()
   })
 
   it('closes the successful void form and workspace and leaves a dismissible confirmation', async () => {
     renderRevision()
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Void entire order', exact: true }))
+    await openVoid(user)
     await user.type(screen.getByRole('textbox', { name: 'Reason for voiding' }), 'Wrong work order')
     await user.type(screen.getByLabelText('Your password'), 'test-password')
     await user.click(within(screen.getByRole('dialog', { name: 'Void entire order?' })).getByRole('button', { name: 'Void entire order', exact: true }))
@@ -126,7 +148,7 @@ describe('Void and revise work editing', () => {
     apiMocks.post.mockRejectedValueOnce(new Error('Password rejected'))
     renderRevision()
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Void entire order', exact: true }))
+    await openVoid(user)
     await user.type(screen.getByRole('textbox', { name: 'Reason for voiding' }), 'Wrong work order')
     await user.type(screen.getByLabelText('Your password'), 'test-password')
     await user.click(within(screen.getByRole('dialog', { name: 'Void entire order?' })).getByRole('button', { name: 'Void entire order', exact: true }))
@@ -139,15 +161,14 @@ describe('Void and revise work editing', () => {
   it('dismisses with Escape, restores focus, and discards sensitive fields on reopen', async () => {
     renderRevision()
     const user = userEvent.setup()
-    const trigger = await screen.findByRole('button', { name: 'Void entire order', exact: true })
-    await user.click(trigger)
+    const trigger = await openVoid(user)
     expect(screen.getByRole('dialog', { name: 'Void entire order?' })).toBeVisible()
     await user.type(screen.getByLabelText('Reason for voiding'), 'Duplicate order')
     await user.type(screen.getByLabelText('Your password'), 'test-password')
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Void entire order?' })).not.toBeInTheDocument())
     await waitFor(() => expect(trigger).toHaveFocus())
-    await user.click(trigger)
+    await openVoid(user)
     expect(screen.getByLabelText('Reason for voiding')).toHaveValue('')
     expect(screen.getByLabelText('Your password')).toHaveValue('')
     expect(apiMocks.post).not.toHaveBeenCalled()
@@ -156,7 +177,7 @@ describe('Void and revise work editing', () => {
   it('requires a nonblank reason and password and sends the existing one-time grant contract', async () => {
     renderRevision()
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Void entire order', exact: true }))
+    await openVoid(user)
     const submit = within(screen.getByRole('dialog', { name: 'Void entire order?' })).getByRole('button', { name: 'Void entire order', exact: true })
     expect(submit).toBeDisabled()
     await user.type(screen.getByLabelText('Reason for voiding'), '   ')
@@ -175,7 +196,7 @@ describe('Void and revise work editing', () => {
     apiMocks.post.mockResolvedValueOnce({ data: { grant_token: 'test-grant' } }).mockRejectedValueOnce({ response: { status: 409, data: { detail: 'This invoice is in QuickBooks. Void it there first.' } } })
     renderRevision()
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Void entire order', exact: true }))
+    await openVoid(user)
     await user.type(screen.getByLabelText('Reason for voiding'), 'Duplicate order')
     await user.type(screen.getByLabelText('Your password'), 'test-password')
     await user.click(within(screen.getByRole('dialog', { name: 'Void entire order?' })).getByRole('button', { name: 'Void entire order', exact: true }))
@@ -189,7 +210,7 @@ describe('Void and revise work editing', () => {
     useAuthStore.setState({ user: { ...owner, role: 'receptionist' } })
     renderRevision()
     expect(await screen.findByText('Invoice INV-1')).toBeVisible()
-    expect(screen.queryByRole('button', { name: 'Void entire order' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Invoice actions' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Order actions' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Delete', exact: true })).not.toBeInTheDocument()
   })
@@ -200,7 +221,7 @@ describe('Void and revise work editing', () => {
     apiMocks.post.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectGrant = reject }))
     renderRevision()
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Void entire order', exact: true }))
+    await openVoid(user)
     const dialog = screen.getByRole('dialog', { name: 'Void entire order?' })
     await user.type(screen.getByLabelText('Reason for voiding'), 'Duplicate order')
     await user.type(screen.getByLabelText('Your password'), 'test-password')
@@ -220,7 +241,7 @@ describe('Void and revise work editing', () => {
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Order actions' }))
     expect(screen.getByRole('button', { name: 'Delete', exact: true })).toBeEnabled()
-    expect(screen.queryByRole('button', { name: 'Void entire order' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Invoice actions' })).not.toBeInTheDocument()
     expect(apiMocks.post).not.toHaveBeenCalled()
   })
 
@@ -231,7 +252,7 @@ describe('Void and revise work editing', () => {
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Order actions' }))
     expect(screen.getAllByRole('button', { name: 'Restore order' }).every(button => !button.hasAttribute('disabled'))).toBe(true)
-    expect(screen.queryByRole('button', { name: 'Void entire order' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Invoice actions' })).not.toBeInTheDocument()
     expect(apiMocks.post).not.toHaveBeenCalled()
   })
 
@@ -240,7 +261,7 @@ describe('Void and revise work editing', () => {
     renderRevision()
     expect(await screen.findByRole('heading', { name: '#RO-000001' })).toBeVisible()
     expect(screen.queryByText('Invoice INV-1')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Void entire order' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Invoice actions' })).not.toBeInTheDocument()
     expect(apiMocks.post).not.toHaveBeenCalled()
   })
 
@@ -248,7 +269,9 @@ describe('Void and revise work editing', () => {
     fixtureStatus = 'paid'
     useAuthStore.setState({ user: { ...owner, role: 'garage_admin' } })
     renderRevision()
-    expect(await screen.findByRole('button', { name: 'Void entire order', exact: true })).toBeEnabled()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Invoice actions', exact: true }))
+    expect(await screen.findByRole('menuitem', { name: 'Void entire order…' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: 'Order actions' })).not.toBeInTheDocument()
     expect(apiMocks.post).not.toHaveBeenCalled()
   })

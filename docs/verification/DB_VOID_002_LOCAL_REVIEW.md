@@ -36,3 +36,21 @@ Browser geometry compares eligible and readonly fixtures: the collapsed card is 
 ## Release candidate
 
 Product approved shipment after reviewing the compact header. PR #599 contains only the frontend implementation/tests and delivery evidence. Fresh final-source tests: 108/108 pass; TypeScript/production build pass; exact-source lint has zero errors and the same two existing page hook warnings. Review found no release blockers. The branch integrated `0195e36f` from main cleanly; its unrelated Twilio pilot files are inherited base content and are outside this PR diff. Protected CI and deployment/production smoke are pending.
+
+## Merged; deployment blocked — 2026-10-20T19:40:20+00:00
+
+PR #599 passed all six protected checks at exact head `8a81f9522cdc71cf0c0254fdba3aed50bd943798`, Quality run `39478723765`, and squash-merged as `fb80ad2cd83623f1e1d264295f7cfa08898f1b7a` at 2026-10-20T19:37:11Z. Checked-head and merge trees are identical. No backend app, migration, or Railway configuration differences exist between the previously deployed Web source and this merge. Main Quality run `39485001790` is separately pending.
+
+Production Web exact-commit deployment was requested through Railway's supported `redeploy --commit` with the existing project/environment/Web service IDs. Railway rejected both attempts with `Deploys have been paused temporarily`; no new deployment ID was created. The official status page confirms a platform-wide pause of new builds, including a 19:10 UTC update on October 20, and states that attempts must be triggered again after builds resume: https://status.railway.com/. No alternative upload, provider setting change, Worker deployment, or gate bypass was attempted.
+
+The last successful Web deployment remains `eb92d1da-5ae8-4c0f-bec5-dbe00b157287`, source and served `/build-version` SHA `b772fb56399ce45f16096cb7c94d36c6215170f2`. `/health` returns HTTP 200/alive; `/health/ready` returns HTTP 200/ready with database and Redis checks OK. The new UI is therefore merged but not live. The signed-in production session and matching invoiced order were located read-only; acceptance of the new UI remains pending deployment. No financial state changed.
+
+Status: Blocked by external provider outage; not Done. Next safe action: once Railway resumes builds, re-check main/source identity, retry the reviewed merge SHA on Web only, verify successful deployment and served source, then open/cancel the new confirmation in the authenticated order without submitting a financial mutation.
+
+## Production verified — 2026-10-20
+
+PR #599 is released. Railway Web deployment `067a6d59-605b-4c78-85ca-61ef7f719e42` reached SUCCESS. Provider source and served `/build-version` both equal the approved merge `fb80ad2cd83623f1e1d264295f7cfa08898f1b7a`. `/health` is alive; `/health/ready` is ready with database and Redis OK. The release receipt separately confirms all six protected PR checks passed on the identical checked tree.
+
+Authenticated production acceptance passed in Chrome through `https://www.dieselbridge.com/dashboard/repair-orders`, using the existing Truck Pit Stop (NC) session and the previously identified invoiced order. A fresh page shows the inline **Void entire order** action and footer **Revise invoice**, with no old Order actions entry on this protected order. Invoice disclosure expands and collapses independently. The confirmation names the matching order/invoice, labels reason and password, focuses reason initially, and disables empty submission. Escape closes only the confirmation, keeps the order open and returns focus to **Void entire order**. No password was entered and no void/payment/invoice-send action was submitted. Earlier cached tabs retained the old frontend; a fresh page on the working www hostname loaded the released UI. The bare hostname timed out from the terminal during this check; no DNS/provider change was made.
+
+Status: Done for this focused UI release. Frontend & UX accountable; no contract or migration impact. Local desktop/compact geometry and interaction evidence above plus this production smoke satisfy the Fast UI acceptance. The recovery heartbeat can stop. Postmerge board/evidence edits remain local; the PR release comment is the durable release receipt.
