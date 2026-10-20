@@ -1,5 +1,6 @@
 """Synthetic SQL integration for historical SMS identity evidence, no provider I/O."""
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -86,11 +87,31 @@ async def test_unsent_invalid_to_rejection_is_not_remote_identity_and_history_is
     {'twilio_message_sid': f'SM{"a" * 32}'},
     {'twilio_message_sid': ''},
 ])
-async def test_only_conclusive_failed_outbound_without_receipt_is_excluded(db_session, conversation, overrides):
+async def test_only_conclusive_failed_outbound_without_receipt_is_excluded(db_session, conversation, overrides, monkeypatch):
+    # Exercise recipient identity independently of the earlier sender-route gate.
+    # Missing receipt/address evidence is covered against the real resolver below.
+    monkeypatch.setattr(svc.automatic, 'resolve', AsyncMock(
+        return_value=svc.automatic.Route('twilio', SENDER, 'initiation')))
     db_session.add_all([message(conversation, CANONICAL), message(conversation, **overrides)])
     await db_session.commit()
     before = await history(db_session)
     assert await policy(db_session, conversation) == {'can_send': False, 'reason': 'identity_unverified'}
+    assert await history(db_session) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('overrides', [
+    {'direction': Direction.INBOUND, 'source': Source.INBOUND, 'from_number': OTHER, 'to_number': SENDER},
+    {'delivery_status': Status.SENT},
+    {'delivery_status': Status.DELIVERED},
+])
+async def test_unverifiable_authoritative_route_blocks_before_identity_gate(db_session, conversation, overrides):
+    # The real resolver must hold invalid newest inbound or accepted outbound
+    # evidence, rather than falling back to the shop default or an older sender.
+    db_session.add_all([message(conversation, CANONICAL), message(conversation, **overrides)])
+    await db_session.commit()
+    before = await history(db_session)
+    assert await policy(db_session, conversation) == {'can_send': False, 'reason': 'reply_route_unavailable'}
     assert await history(db_session) == before
 
 
