@@ -43,3 +43,24 @@ initially clean, with no5173/8000 listener. The existing .env identifies
 localhost/truckpitstop and was preserved. This test-harness-only correction does
 not start, migrate or reseed that populated database. No new local application
 visibility claim; actual signed-in production acceptance follows deployment.
+
+### Gate return and second confirmed cause
+
+Candidate301c5831 critical CI passed209/210 with no deadline failures. Its single
+failure at PriceBuilderPanel.pending-feedback.test.tsx:765 was different: the
+async findByRole lookup returned a button which the subsequent assertion found
+detached. The250ms debounced inventory query can replace the picker in that
+microtask gap. The assertion now re-queries and checks the exact same role/name
+inside one synchronous waitFor callback; the original1s bound and all creation,
+cancellation and clear assertions remain. Both focused main/operation cases
+pass2/2. Independent test QA GO is conditional on consolidated exact-head CI.
+No test/job retry, timeout increase, application or financial change is added.
+The affected creation, skeleton and insufficient-stock cases now also wait for
+the exact final inventory-typeahead query to reach success/idle, so visible
+intermediate results cannot satisfy final-search readiness. Each render owns a
+fresh QueryClient. All four focused affected cases pass4/4 in15.21s; independent
+QA reviewed this synchronization and retained stock-override/payload assertions.
+Candidate301c5831 full frontend job118416053856 and its actual Run full frontend
+suite step both completed success in run39357582299. This certifies the worker
+cap at that head; the consolidated test correction still requires fresh exact-
+head protected CI. No second local full suite is run.
