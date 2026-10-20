@@ -53,6 +53,7 @@ interface OrderValueSummary {
 }
 
 interface RecentOrder extends OrderScheduleSummary {
+  source?: string | null
   id: string
   order_number: string
   status: string
@@ -305,7 +306,10 @@ function OrderCard({
   )
   const holdElapsed = useElapsedTime(isOnHold ? order.held_at : null)
 
-  const badge = isOnHold
+  const isEtsHistory = order.source === 'easy_truck_shop_import' && ['completed', 'invoiced'].includes(order.status)
+  const badge = isEtsHistory
+    ? { label: 'ETS history', className: 'bg-gray-500/20 text-gray-300' }
+    : isOnHold
     ? { label: 'On Hold', className: 'bg-orange-500/20 text-orange-300' }
     : order.pending_zelle_confirmation
     ? { label: 'Zelle Review', className: 'bg-amber-500/20 text-amber-300' }
@@ -313,6 +317,7 @@ function OrderCard({
 
   // Contextual sub-note shown below the customer/vehicle line
   const contextNote: { text: string; color: string } | null = (() => {
+    if (isEtsHistory) return null
     if (order.pending_zelle_confirmation)
       return { text: 'Customer marked payment sent. Confirm receipt before closing.', color: 'text-amber-400' }
     if (order.status === 'quoted' || order.status === 'draft') {
