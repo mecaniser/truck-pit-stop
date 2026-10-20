@@ -14,3 +14,32 @@ Private read-only fixed-cohort baseline captured at sole184:47 invoices/15 settl
 TypeScript and production build passed; changed-source ESLint and diff checks passed. Temporary harness unused-import failure was removed before the clean full build.
 
 Pending: sharedCI-slot release, focusedPR/protectedCI, normalmerge/deployment, actual signed-in production Light/Night desktop/mobile queue+history, fixed financial retention. Do not mark Done before these gates. Standard native SENT/recorded-zero-remaining mismatch remains tracked separately without financial repair.
+
+## Recurring frontend CI diagnosis — Release & Reliability
+
+The user assigned this release chat to fix the recurring test failures and land
+PR590. Baseline head1d489796 retains the independently reviewed product source.
+The same four failed suites reproduced under CI-like three-worker execution:
+18 failed /134 passed in125.68s. With one worker and unchanged tests, defaults,
+fixtures and assertions, all152 passed in118.00s. Price-builder time dropped
+from the contended failure run to47.8s. Across590/586/589, failures moved between
+unrelated interaction tests at default async/test deadlines. This demonstrates
+worker contention in the functional test harness; high host Chrome CPU is an
+additional observed load, not an established sole cause.
+
+The minimal correction caps Vitest to one worker when CI is set. The separate
+GitHub jobs remain parallel; every test, assertion, default deadline, retry
+policy, protected context and disposable-worker boundary is preserved. This
+changes test execution scheduling only, not the application bundle or API.
+Independent infrastructure QA gives source/evidence GO, conditional on the full
+protected PR suite. A redundant local full run was stopped after user steering
+to avoid duplicating GitHub integration work; partial progress is not a full
+pass. The152-test before/after comparison is the local regression evidence; the
+complete1,990-test protected CI step is the final integration gate. No blind
+retry of the old failed job was requested.
+
+Fresh local preflight: this checkout is codex/ets-ready-close-ownership at1d489796,
+initially clean, with no5173/8000 listener. The existing .env identifies
+localhost/truckpitstop and was preserved. This test-harness-only correction does
+not start, migrate or reseed that populated database. No new local application
+visibility claim; actual signed-in production acceptance follows deployment.
