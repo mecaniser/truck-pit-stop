@@ -90,7 +90,7 @@ describe('Void and revise work editing', () => {
   it('refreshes the locked summary so parts, labor and operations can be added without reopening the panel', async () => {
     const client = renderRevision()
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Void & revise' }))
+    await user.click(await screen.findByRole('button', { name: 'Revise invoice' }))
     expect(screen.queryByRole('button', { name: 'Operation', exact: true })).not.toBeInTheDocument()
     await user.type(screen.getByPlaceholderText('Describe what needs to be corrected'), 'Add additional work')
     await user.click(screen.getByRole('button', { name: 'Void & reopen' }))
@@ -104,13 +104,13 @@ describe('Void and revise work editing', () => {
     apiMocks.post.mockRejectedValueOnce(new Error('Payment pending'))
     const client = renderRevision()
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Void & revise' }))
+    await user.click(await screen.findByRole('button', { name: 'Revise invoice' }))
     await user.type(screen.getByPlaceholderText('Describe what needs to be corrected'), 'Add additional work')
     await user.click(screen.getByRole('button', { name: 'Void & reopen' }))
     await waitFor(() => expect(toastMocks.error).toHaveBeenCalled())
     expect(activePriceBuild(client)).toMatchObject({ pricing_locked: true, can_edit_work: false })
     expect(screen.queryByRole('button', { name: 'Operation', exact: true })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Void & revise' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Revise invoice' })).toBeInTheDocument()
   })
 
   it('does not override a refreshed server capability that still forbids editing', async () => {
@@ -123,7 +123,7 @@ describe('Void and revise work editing', () => {
     })
     const client = renderRevision()
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Void & revise' }))
+    await user.click(await screen.findByRole('button', { name: 'Revise invoice' }))
     await user.type(screen.getByPlaceholderText('Describe what needs to be corrected'), 'Add additional work')
     await user.click(screen.getByRole('button', { name: 'Void & reopen' }))
     await waitFor(() => expect(readAfterVoid).toBe(true))
