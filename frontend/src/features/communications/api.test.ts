@@ -5,21 +5,20 @@ vi.mock('../../lib/api', () => ({ default: { get: vi.fn(), post: vi.fn(), patch:
 describe('inbox wire adapter', () => {
   it('maps a null-customer inquiry without company guesses and retains its pinned sender contract', () => {
     const row = mapConversation({ id: 'inquiry', tenant_id: 'tenant', conversation_kind: 'inquiry', customer_id: null, customer_name: 'Unavailable customer', company: 'Unproven company', messages: [], send_policy: { can_send: true, reason: null, max_length: 140 }, context: { sms_provider: 'callrail', sender_number: '+15005550001', sender_selection_allowed: false }, version: 2 } as unknown as WireConversation);
-    expect(row).toMatchObject({ conversationKind: 'inquiry', customerId: null, customerName: 'New inquiry', company: null, context: { smsProvider: 'callrail', senderNumber: '+15005550001', senderSelectionAllowed: false } });
+    expect(row).toMatchObject({ conversationKind: 'inquiry', customerId: null, customerName: 'New inquiry', company: null, context: { smsProvider: 'callrail', senderNumber: '+15005550001' } });
   });
-  it('patches explicit sender with optimistic version and maps the returned sender options', async () => {
-    vi.mocked(api.patch).mockResolvedValue({ data: { id: 'thread', tenant_id: 'tenant', messages: [], send_policy: { can_send: true, reason: null }, context: { selected_sender_id: 'binding', sms_sender_options: [{ id: 'binding', provider: 'callrail', sender_number: '+19809071896', enabled: false }] }, version: 8 } });
-    const row = mapConversation({ id: 'thread', tenant_id: 'tenant', messages: [], send_policy: { can_send: true, reason: null }, context: {}, version: 7 } as unknown as WireConversation);
-    const updated = await inboxApi.changeSender(row, 'binding');
-    expect(api.patch).toHaveBeenCalledWith('/communications/conversations/thread/sender', { expected_version: 7, binding_id: 'binding' });
-    expect(updated.version).toBe(8);
-    expect(updated.context).toMatchObject({ selectedSenderId: 'binding', smsSenderOptions: [{ id: 'binding', provider: 'callrail', senderNumber: '+19809071896', enabled: false }] });
-    await inboxApi.changeSender(updated, null);
-    expect(api.patch).toHaveBeenLastCalledWith('/communications/conversations/thread/sender', { expected_version: 8, binding_id: null });
+  it('maps derived sender modes while discarding legacy sender inventory', () => {
+    for (const mode of ['reply', 'initiation', 'unavailable'] as const) {
+      const row = mapConversation({ id: 'thread', tenant_id: 'tenant', messages: [], send_policy: { can_send: mode !== 'unavailable', reason: null }, context: { sender_mode: mode, sender_route_reason: 'reply_route_unavailable', sender_selection_allowed: true, sms_sender_options: [{ id: 'legacy', provider: 'callrail', sender_number: '+15005550001' }] }, version: 8 } as unknown as WireConversation);
+      expect(row.context).toMatchObject({ senderMode: mode, senderRouteReason: 'reply_route_unavailable' });
+      expect(row.context).not.toHaveProperty('smsSenderOptions');
+      expect(inboxApi).not.toHaveProperty('changeSender');
+    }
+    expect(api.patch).not.toHaveBeenCalled();
   });
   it('maps explicit provider and sender metadata with provider send policy', () => {
-    const row = mapConversation({ id: 'thread', tenant_id: 'tenant', messages: [], send_policy: { can_send: true, reason: null, max_length: 140 }, context: { sms_provider: 'callrail', sender_number: '+19809071896', enabled: false }, version: 1 } as unknown as WireConversation);
-    expect(row.context).toMatchObject({ smsProvider: 'callrail', senderNumber: '+19809071896' });
+    const row = mapConversation({ id: 'thread', tenant_id: 'tenant', messages: [], send_policy: { can_send: true, reason: null, max_length: 140 }, context: { sms_provider: 'callrail', sender_number: '+15005550001', enabled: false }, version: 1 } as unknown as WireConversation);
+    expect(row.context).toMatchObject({ smsProvider: 'callrail', senderNumber: '+15005550001' });
     expect(row.sendPolicy.maxLength).toBe(140);
   });
   it('consumes every conversation page and sends search to the server', async () => {

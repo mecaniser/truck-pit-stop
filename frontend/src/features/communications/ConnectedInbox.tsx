@@ -307,35 +307,6 @@ function InboxContent({ embedded, onUnreadCountChange }: InboxProps) {
       setBusy(false);
     }
   }
-  async function changeSender(row: Conversation, bindingId: string | null) {
-    if (lock.current || pending || blocked) return null;
-    const epoch = useAuthStore.getState().authSessionEpoch;
-    lock.current = true;
-    setBusy(true);
-    setError("");
-    try {
-      const updated = await inboxApi.changeSender(row, bindingId);
-      if (epoch !== useAuthStore.getState().authSessionEpoch) return null;
-      merge(updated);
-      return updated;
-    } catch (e) {
-      if (epoch !== useAuthStore.getState().authSessionEpoch) return null;
-      setError(errorMessage(e));
-      try {
-        const updated = await inboxApi.detail(row.id);
-        if (epoch !== useAuthStore.getState().authSessionEpoch) return null;
-        merge(updated);
-        return updated;
-      } catch {
-        if (epoch === useAuthStore.getState().authSessionEpoch)
-          merge({ ...row, sendPolicy: { ...row.sendPolicy, canSend: false, reason: "binding_changed" } });
-      }
-      return null;
-    } finally {
-      lock.current = false;
-      setBusy(false);
-    }
-  }
   async function older(id: string) {
     const epoch = useAuthStore.getState().authSessionEpoch;
     const row = rows.find((r) => r.id === id);
@@ -433,7 +404,6 @@ function InboxContent({ embedded, onUnreadCountChange }: InboxProps) {
             ? Promise.resolve(false)
             : submit(createIntent(row, body, draftKey)),
         onPatch: (row, values) => void patch(row, values),
-        onSenderChange: changeSender,
         onOlder: (id) => void older(id),
         onRecover: () => {
           if (pending) void submit(pending);

@@ -22,6 +22,7 @@ from app.services.messaging_service import _normalize_for_twilio, _get_twilio_cl
 
 from app.services import tenant_sms_routing as routing
 from app.services import callrail_service as callrail
+from app.services import automatic_sms_route as automatic
 
 STAFF_ROLES = {UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST, UserRole.MECHANIC}
 DISPATCH_TIMEOUT = timedelta(minutes=5)  # Provider I/O is bounded to 30 seconds.
@@ -118,35 +119,22 @@ async def send_policy(db, tenant, thread, sender, *, ignore_operation=None):
     callrail_context = None
     callrail_mapped = False
     try:
-        callrail_context = await callrail.resolve_for_thread(db, tenant.id, thread.id)
+        route = await automatic.resolve(db, tenant, thread, phone)
+        from_number = route.sender_number
+        callrail_context = route.callrail
         callrail_mapped = callrail_context is not None
-    except HTTPException as exc:
-        # A disabled/invalid CallRail mapping must never fall back to Twilio.
-        callrail_mapped = True
-        reason = exc.detail['code']
-    if callrail_context:
-        from_number = callrail_context.sender_phone
-        account_id = callrail_account_id(callrail_context)
-    elif inquiry:
-        if reason is None:
-            reason = 'callrail_binding_changed'
-    elif not callrail_mapped and routing.enabled():
-        try:
-            context = await routing.resolve(db, tenant.id)
-            account_id, from_number = context.binding_id, context.sender_phone
+        if callrail_context:
+            account_id = callrail_account_id(callrail_context)
+        elif route.twilio:
+            account_id = route.twilio.binding_id
             await routing.require_consent(db, tenant.id, 'customer', thread.customer_id, phone)
-        except HTTPException as exc:
-            reason = exc.detail['code']
-    elif not callrail_mapped and (not tenant.sms_enabled or not re.fullmatch(r'\+[1-9]\d{7,14}', from_number) or not getattr(sender, 'ready', True)):
-        reason = 'not_connected'
-    if not inquiry and not callrail_mapped and not routing.enabled():
-        try:
-            await routing.require_legacy_tenant(db, tenant.id)
-        except HTTPException as exc:
-            reason = exc.detail['code']
+        elif not tenant.sms_enabled or not getattr(sender, 'ready', True):
+            reason = 'not_connected'
+    except HTTPException as exc:
+        reason = exc.detail['code']
     if reason is None:
         if (thread.inquiry_opted_out if inquiry else not customer or customer.sms_opt_out):
-            reason = 'opted_out' if inquiry or customer else 'identity_unverified'
+            reason = 'recipient_opted_out' if callrail_context else 'opted_out' if inquiry or customer else 'identity_unverified'
         elif not re.fullmatch(r'\+[1-9]\d{7,14}', phone):
             reason = 'identity_unverified'
         else:
@@ -223,7 +211,11 @@ async def message_json(db, message):
 async def conversation_json(db, tenant, user, thread, sender):
     policy, account, identity, _, phone, customer = await send_policy(db, tenant, thread, sender)
     wf = await db.scalar(select(ConversationWorkflow).where(ConversationWorkflow.tenant_id == tenant.id, ConversationWorkflow.thread_id == thread.id))
-    context = await callrail.sender_context(db, tenant, thread)
+    try:
+        context = (await automatic.resolve(db, tenant, thread, phone)).context()
+    except HTTPException as exc:
+        context = dict(sms_provider=None, sender_number='', selected_sender_id=None,
+            sender_selection_allowed=False, sender_mode='unavailable', sender_route_reason=exc.detail['code'])
     return dict(id=thread.id, tenant_id=tenant.id, customer_id=thread.customer_id, conversation_kind=thread.thread_kind, customer_name='New inquiry' if thread.thread_kind == 'inquiry' else f'{customer.first_name} {customer.last_name}' if customer else 'Unavailable customer', company=customer.company_name if customer else None, channel='sms', channel_account_id=account, contact_identity_id=identity, identity_label=phone, status=wf.status if wf else 'open', assignee_id=wf.assignee_id if wf else None, unread_count=await unread_count(db, thread, user.id), last_message_at=thread.last_message_at or thread.created_at, preview=thread.last_message_preview or '', version=wf.version if wf else 1, messages=[], send_policy=policy, context=context)
 
 
@@ -256,10 +248,11 @@ async def create_operation(db, user, tenant, thread_id, body, key, sender):
         fail(policy['reason'], 'This conversation cannot send messages right now.')
     if not await enforce_tenant_send_rate_limit(tenant.id, limit=30, window_seconds=60):
         raise HTTPException(429, detail={'code': 'rate_limited', 'message': 'SMS send rate limit exceeded.'}, headers={'Retry-After': '60'})
-    selected = await callrail.resolve_for_thread(db, tenant.id, thread.id)
+    resolved = await automatic.resolve(db, tenant, thread, phone)
+    selected = resolved.callrail
     if selected and len(canonical) > 140:
         fail('message_too_long', 'CallRail messages are limited to 140 characters.', 422)
-    snapshot = dict(provider='callrail', provider_account_id=selected.account_id, callrail_binding_id=selected.binding_id) if selected else (await routing.resolve(db, tenant.id)).snapshots() if routing.enabled() else {}
+    snapshot = dict(provider='callrail', provider_account_id=selected.account_id, callrail_binding_id=selected.binding_id) if selected else resolved.twilio.snapshots() if resolved.twilio else {}
     now = datetime.now(timezone.utc)
     sms = SMSMessage(id=uuid4(), tenant_id=tenant.id, thread_id=thread.id, customer_id=thread.customer_id, created_by_user_id=user.id, direction=SMSMessageDirection.OUTBOUND, source=SMSMessageSource.MANUAL, body=canonical, from_number=from_number, to_number=phone, delivery_status=SMSDeliveryStatus.PENDING, created_at=now, **snapshot)
     db.add(sms)
@@ -312,7 +305,7 @@ async def dispatch_operation(db, operation_id, sender):
         return
     selected = None
     if op.provider == 'callrail':
-        selected = await callrail.resolve_for_thread(db, op.tenant_id, op.thread_id)
+        selected = (await automatic.resolve(db, tenant, thread, phone)).callrail
         sms = await db.scalar(select(SMSMessage).where(SMSMessage.id == op.message_id, SMSMessage.tenant_id == op.tenant_id))
         if (not selected or selected.binding_id != op.callrail_binding_id
             or selected.account_id != op.provider_account_id or sms.source != SMSMessageSource.MANUAL

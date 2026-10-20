@@ -47,6 +47,17 @@ const demoPeople: Record<string, string> = {
   nina: "Nina",
   unassigned: "Unassigned",
 };
+function sameDraftRecipient(left: string, right: string): boolean {
+  try {
+    const a: unknown = JSON.parse(left);
+    const b: unknown = JSON.parse(right);
+    return Array.isArray(a) && Array.isArray(b) && a.length === 6 && b.length === 6 &&
+      a.every((value) => typeof value === "string") && b.every((value) => typeof value === "string") &&
+      [0, 1, 2, 3, 5].every((index) => a[index] === b[index]);
+  } catch {
+    return false;
+  }
+}
 const channelIcon = (channel: Channel) =>
   channel === "telegram" ? (
     <Send size={14} />
@@ -105,7 +116,6 @@ export interface InboxConnection {
   ) => void;
   onOlder: (id: string) => void;
   onRecover: () => void;
-  onSenderChange?: (row: Conversation, bindingId: string | null) => Promise<Conversation | null>;
 }
 export default function CommunicationsPreview({
   connection,
@@ -140,7 +150,6 @@ export default function CommunicationsPreview({
   const [feedback, setFeedback] = useState("");
   const [detailsId, setDetailsId] = useState<string | null>(null);
   const [showReplies, setShowReplies] = useState(false);
-  const [senderChanging, setSenderChanging] = useState(false);
   const channelSheetRef = useRef<HTMLElement>(null);
   const channelsButtonRef = useRef<HTMLButtonElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -173,14 +182,17 @@ export default function CommunicationsPreview({
         };
   const key = draftKey(tenantId, userId, composeConversation);
   const draft = drafts[key] || "";
+  const previousRoute = useRef({ key, thread: selected.id, recipient: selected.contactIdentityId, channel: composeChannel, tenantId, userId });
+  const copiedDraftOrigins = useRef<Record<string, string> | null>(null);
+  if (copiedDraftOrigins.current === null) {
+    try {
+      const saved = connection ? JSON.parse(localStorage.getItem(`inbox-draft-origins:${tenantId}:${userId}`) || "{}") : {};
+      copiedDraftOrigins.current = Object.fromEntries(Object.entries(saved).filter((entry): entry is [string, string] => typeof entry[1] === "string" && sameDraftRecipient(entry[0], entry[1])));
+    } catch {
+      copiedDraftOrigins.current = {};
+    }
+  }
   const maxLength = composeMaxLength(composeConversation);
-  const senderOptions = selected.context.smsSenderOptions ?? [];
-  const selectedSenderId = selected.context.selectedSenderId ?? "twilio";
-  const showSenderSelect =
-    selected.conversationKind !== "inquiry" &&
-    selected.context.senderSelectionAllowed !== false &&
-    !!connection?.onSenderChange && composeChannel === "sms" &&
-    (selected.context.smsProvider === "callrail" || senderOptions.some((option) => option.provider === "callrail"));
   const counts = {
     open: rows.filter((r) => r.status === "open").length,
     unread: rows.filter((r) => r.status === "open" && r.unreadCount > 0).length,
@@ -221,20 +233,38 @@ export default function CommunicationsPreview({
     };
   }, [showConnections]);
   useEffect(() => {
-    if (connection)
+    const before = previousRoute.current;
+    previousRoute.current = { key, thread: selected.id, recipient: selected.contactIdentityId, channel: composeChannel, tenantId, userId };
+    if (before.key === key || before.thread !== selected.id ||
+        before.recipient !== selected.contactIdentityId || before.channel !== composeChannel ||
+        before.tenantId !== tenantId || before.userId !== userId) return;
+    setDrafts((previous) => {
+      const text = previous[before.key];
+      const confirmed = connection?.confirmedDraft;
+      if (!text || previous[key] || (confirmed?.key === before.key && confirmed.text === text)) return previous;
+      copiedDraftOrigins.current![key] = copiedDraftOrigins.current![before.key] ?? before.key;
+      return { ...previous, [key]: text };
+    });
+  }, [key, selected.id, selected.contactIdentityId, composeChannel, tenantId, userId, connection?.confirmedDraft]);
+  useEffect(() => {
+    if (connection) {
       localStorage.setItem(
         `inbox-drafts:${tenantId}:${userId}`,
         JSON.stringify(drafts),
       );
+      localStorage.setItem(`inbox-draft-origins:${tenantId}:${userId}`, JSON.stringify(copiedDraftOrigins.current));
+    }
   }, [drafts, tenantId, userId, connection]);
   useEffect(() => {
     const confirmed = connection?.confirmedDraft;
     if (confirmed)
-      setDrafts((previous) =>
-        previous[confirmed.key] === confirmed.text
-          ? { ...previous, [confirmed.key]: "" }
-          : previous,
-      );
+      setDrafts((previous) => {
+        const next = { ...previous };
+        for (const draftId of Object.keys(next))
+          if ((draftId === confirmed.key || (copiedDraftOrigins.current?.[draftId] === confirmed.key && sameDraftRecipient(draftId, confirmed.key))) && next[draftId] === confirmed.text)
+            next[draftId] = "";
+        return next;
+      });
   }, [connection?.confirmedDraft]);
   const onSearch = connection?.onSearch;
   useEffect(() => {
@@ -261,7 +291,6 @@ export default function CommunicationsPreview({
     );
   }
   async function sendPreview() {
-    if (senderChanging) return;
     if (!canCompose(composeConversation, draft)) return;
     if (connection) {
       const submitted = draft;
@@ -848,44 +877,11 @@ export default function CommunicationsPreview({
                     : "Not connected"}
                 </span>
               </div>
-              {showSenderSelect && (
-                <label className="sms-sender">
-                  Send from{" "}
-                  <select
-                    aria-label="SMS sender"
-                    value={selectedSenderId}
-                    disabled={senderChanging || connection?.busy || connection?.pending}
-                    onChange={async (event) => {
-                      const nextId = event.target.value;
-                      setSenderChanging(true);
-                      try {
-                        const updated = await connection?.onSenderChange?.(selected, nextId === "twilio" ? null : nextId);
-                        if (updated) {
-                          const nextKey = draftKey(tenantId, userId, updated);
-                          setDrafts((previous) => previous[nextKey] || !previous[key]
-                            ? previous : { ...previous, [nextKey]: previous[key] });
-                        }
-                      } finally {
-                        setSenderChanging(false);
-                      }
-                    }}
-                  >
-                    {!senderOptions.some((option) => option.id === selectedSenderId) && (
-                      <option value={selectedSenderId} disabled>
-                        {selected.context.smsProvider === "callrail" ? "CallRail" : "Twilio"} {selected.context.senderNumber} (unavailable)
-                      </option>
-                    )}
-                    {senderOptions.map((option) => (
-                      <option key={option.id} value={option.id} disabled={option.enabled === false}>
-                        {option.provider === "callrail" ? "CallRail" : "Twilio"} {option.senderNumber}{option.enabled === false ? " (unavailable)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              {!showSenderSelect && composeChannel === "sms" && selected.context.smsProvider === "callrail" && (
+              {composeChannel === "sms" && (selected.context.senderNumber || selected.context.senderMode === "unavailable") && (
                 <p className="sms-sender" aria-label="SMS sender">
-                  CallRail{selected.context.senderNumber ? ` · ${selected.context.senderNumber}` : ""}
+                  {selected.context.senderMode === "unavailable"
+                    ? "Reply number unavailable"
+                    : `${selected.context.senderMode === "initiation" ? "Sending" : "Replying"} from ${selected.context.senderNumber}`}
                 </p>
               )}
               {composeConversation.sendPolicy.reason && (
@@ -935,7 +931,6 @@ export default function CommunicationsPreview({
                     className="primary-button send-button"
                     disabled={
                       !canCompose(composeConversation, draft) ||
-                      senderChanging ||
                       connection?.busy ||
                       connection?.pending
                     }
