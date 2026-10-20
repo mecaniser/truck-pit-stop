@@ -195,15 +195,21 @@ function RouteFaviconManager() {
   return null
 }
 
-function AppToaster() {
+export function AppToaster() {
   const { notificationPosition, presentationVariant } = useTheme()
+  const { pathname } = useLocation()
+  const isMechanicRoute = /^\/mechanic(\/|$)/.test(pathname)
+  const toastPosition = isMechanicRoute ? 'top' : notificationPosition
 
   return (
     <Toaster
-      position={TOAST_POSITION_MAP[notificationPosition]}
+      position={TOAST_POSITION_MAP[toastPosition]}
       containerStyle={{
-        ...TOAST_CONTAINER_STYLE_MAP[notificationPosition],
-        ...(notificationPosition === 'bottom'
+        ...TOAST_CONTAINER_STYLE_MAP[toastPosition],
+        ...(isMechanicRoute
+          ? { top: 'calc(env(safe-area-inset-top, 0px) + 16px)' }
+          : {}),
+        ...(toastPosition === 'bottom'
           ? { bottom: presentationVariant === 'new' ? 'calc(env(safe-area-inset-bottom, 0px) + 88px)' : 16 }
           : {}),
       }}
