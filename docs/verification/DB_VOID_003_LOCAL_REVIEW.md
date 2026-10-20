@@ -11,3 +11,7 @@ Browser acceptance through the in-app browser: collapsed invoice stays70px at144
 Automated checks: focused force-void suite13/13 passes, including hidden destructive action, menu keyboard dismissal, existing step-up contract, pending lock, failure/retry, success and role/import/deleted guards. Changed-source ESLint, TypeScript noEmit and git diff --check pass. Initial test invocation from repository root lacked the frontend alias config; rerunning from frontend completed successfully.
 
 Local only. No PR, push, merge or deployment for this follow-up.
+
+## Release preparation
+
+Product approved local review and authorized shipment plus live verification. Integrated actual released main `fb93a191b615d4db68e92bf57e65d688900b5e99`, preserving its guarded reply work. The reviewed frontend source is unchanged by integration. Fresh integrated-source tests13/13 pass; changed-source ESLint, TypeScript/production build and diff check pass. Pre-landing review found no issues. No VERSION/CHANGELOG convention exists for this focused app UI change. Local preview/output files remain outside the commit. Protected PR checks, merge/deploy identity and signed-in production menu smoke remain required.
