@@ -1,10 +1,10 @@
 # Twilio repair-status review package
 
-DB-COMMS-012 · 2026-10-20 · Draft only. No submission or live pilot send.
+DB-COMMS-012 · 2026-10-20 · Registration review draft only. Two owner-only technical texts delivered and handset-confirmed; no registration submission.
 
 ## Decision to review
 
-Preserve the existing parking sender/program and its TrucksParkingHub inbound route. Establish a correctly scoped Truck Pit Stop repair-service messaging program before enabling customer repair automation. The working legacy number does not by itself resolve campaign-purpose approval.
+Preserve the existing parking sender/program and its TrucksParkingHub inbound route. Confirm whether the existing registration covers Truck Pit Stop repair-service messaging; correct it if necessary before enabling customer repair automation. The working legacy number does not by itself resolve campaign-purpose approval.
 
 ## Current evidence
 
@@ -28,10 +28,14 @@ Only include a consent channel after its implementation and stored evidence are 
 
 ## Draft question for Twilio support — not sent
 
-We operate DieselBridge as software for independent repair businesses. Existing sender +17755358774 belongs to a verified parking-reservation campaign and its current inbound behavior must stay intact. We want to evaluate two explicitly labeled simulated repair-status messages to the account owner's consenting test phone before implementing the correct repair-business registration. Does the existing campaign permit this tightly limited technical test, or must we first register a separate repair-service campaign/sender? Please confirm the supported ISV/business mapping and a route that preserves all existing parking traffic. We are not requesting a campaign or sender change in this inquiry.
+Does our existing verified parking-notification campaign also cover Truck Pit Stop repair-status updates under the same business, or is a separate campaign needed? Sender +17755358774 and its current TrucksParkingHub inbound route must remain intact. Please confirm the existing scope and any required correction; no registration, sender or forwarding change is requested.
 
-Twilio's [campaign information requirements](https://www.twilio.com/docs/messaging/compliance/a2p-10dlc/collect-business-info#message_samples) require representative samples aligned with campaign description/use case. No documented owner-test exception was established in this review. Independent Security/QA therefore holds live repair-status texts pending provider confirmation or a matching approved route. This is an evidence gate, not a legal determination.
+The user requested keeping this question as a draft. No support message was sent. Twilio's [campaign information requirements](https://www.twilio.com/docs/messaging/compliance/a2p-10dlc/collect-business-info#message_samples) require representative samples aligned with campaign description/use case. The technical delivery result does not establish repair-campaign coverage, and this review does not conclude that a separate campaign is necessarily required.
 
-## Pilot acceptance after the live gate clears
+## Owner technical test results
 
-Exactly two immutable event slots, fixed approved owner phone ending0486, reviewed sender, explicit simulated status copy and no production repair-order changes. Permanent per-event call claims precede I/O. Replays, restarts, timeouts and lost receipts cannot reopen a budget. Verify each provider receipt and handset delivery; verify exact-token reply separately. Managed routing/consent and producer tests use fake provider and synthetic identities until genuinely approved tenant configuration exists. Keep customer activation behind a separate results review.
+Exactly two simulated status texts were delivered to the approved owner phone ending0486, one work-started and one ready-for-pickup. The owner confirmed one of each. Each used one permanent budget and one provider attempt. One independently reviewed amendment removed the unused second event's reply request because inbound still routes to TrucksParkingHub. No reply was requested or tested. Full evidence: [pilot verification](TWILIO_STATUS_PILOT_VERIFICATION.md).
+
+## Customer activation gates
+
+Exactly two immutable event slots, fixed approved owner phone ending0486, reviewed sender, explicit simulated status copy and no production repair-order changes. Permanent per-event call claims precede I/O. Replays, restarts, timeouts and lost receipts cannot reopen a budget. Outbound owner receipts and handset delivery passed. Verify the intended repair reply route separately before claiming a two-way repair workflow. Managed routing/consent and producer tests use fake provider and synthetic identities until genuinely approved tenant configuration exists. Keep customer activation behind a separate results review.

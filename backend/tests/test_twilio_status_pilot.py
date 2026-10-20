@@ -21,10 +21,26 @@ TEST_RECIPIENT = '+15005550101'
 
 @pytest.fixture(autouse=True)
 def fictional_recipient_runtime(monkeypatch, tmp_path):
-    authorization = tmp_path/'authorization.json'
+    if os.getenv('DATABASE_URL','').endswith('/twilio_status_pilot_amend_test_20261020'):
+        monkeypatch.setattr(pilot,'DATABASE','twilio_status_pilot_amend_test_20261020')
+    state = tmp_path/'private-state'
+    state.mkdir(mode=0o700)
+    authorization = state/'authorization.json'
     authorization.write_text(json.dumps({'schema':1,'recipient':TEST_RECIPIENT,'recipient_sha256':pilot.fingerprint(TEST_RECIPIENT)}))
     authorization.chmod(0o600)
+    monkeypatch.setattr(pilot, 'STATE_DIR', state)
     monkeypatch.setattr(pilot, 'AUTHORIZATION', authorization)
+    monkeypatch.setattr(pilot, 'PLAN', state/'plan.json')
+    monkeypatch.setattr(pilot, 'LEDGER', state/'ledger.sqlite3')
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Real credential reads and provider HTTP are forbidden in tests')
+    import dotenv
+    import twilio.rest
+    import requests.sessions
+    monkeypatch.setattr(dotenv, 'dotenv_values', forbidden)
+    monkeypatch.setattr(twilio.rest, 'Client', forbidden)
+    monkeypatch.setattr(requests.sessions.Session, 'request', forbidden)
+    monkeypatch.setattr(requests.sessions.Session, 'send', forbidden)
     return authorization
 
 
@@ -69,7 +85,7 @@ def test_two_event_permanent_budget_concurrent_and_restart(approved):
         pilot.initialize_guard(pilot.make_plan(plan['account_hash']), ledger)
 
 
-@pytest.mark.parametrize('mutation', ['recipient','sender','account_hash','created_at','expires_at','reply_token','event','body','run_id'])
+@pytest.mark.parametrize('mutation', ['recipient','sender','account_hash','created_at','expires_at','reply_token','event','body','run_id','purpose'])
 def test_changed_plan_cannot_expand_or_reset_budget(approved, mutation):
     plan, ledger = approved
     changed = copy.deepcopy(plan)
@@ -83,6 +99,8 @@ def test_changed_plan_cannot_expand_or_reset_budget(approved, mutation):
         changed[mutation] = (datetime.fromisoformat(changed[mutation])-timedelta(seconds=1)).isoformat()
     elif mutation == 'run_id':
         changed[mutation] = str(uuid4())
+    elif mutation == 'purpose':
+        changed[mutation] = 'customer_automation'
     elif mutation == 'reply_token':
         changed[mutation] = 'TPS-PILOT-ABCDEF00'
     elif mutation == 'account_hash':
@@ -101,7 +119,9 @@ def test_expiry_blocks_send_but_status_can_validate_immutable_old_plan(approved)
     with pytest.raises(RuntimeError):
         pilot.validate_shape(plan, now=after)
     pilot.validate_shape(plan, now=after, require_unexpired=False)
-    assert all('TEST ONLY' in item['body'] and 'No real repair status changed' in item['body'] for item in plan['events'].values())
+    assert all(item['body'].isascii() and item['body'].startswith('TEST DieselBridge:') and 'No real repair changed' in item['body'] for item in plan['events'].values())
+    assert 'Reply STOP to opt out.' in plan['events']['work_started_sms']['body']
+    assert plan['purpose'] == 'owner_only_technical_test'
 
 
 def test_missing_ledger_and_symlink_state_fail_closed(approved, tmp_path):
@@ -315,19 +335,21 @@ async def test_reply_import_identity_changes_fail_without_writes(isolated_fixtur
             await db.commit()
 
 
-def test_real_provider_campaign_hold_precedes_configuration_and_network(monkeypatch):
+@pytest.mark.parametrize('campaign_approved', [False, True])
+def test_real_provider_owner_gate_precedes_configuration_and_network(monkeypatch, campaign_approved):
     calls=[]
     def forbidden():
         calls.append('configuration')
-        raise AssertionError('Must not load configuration while campaign is held')
+        raise AssertionError('Must not load configuration while owner gate is held')
     monkeypatch.setattr(pilot,'assert_isolated',forbidden)
+    monkeypatch.setattr(pilot,'OWNER_TECHNICAL_TEST_APPROVED',False)
+    monkeypatch.setattr(pilot,'LIVE_CAMPAIGN_SCOPE_APPROVED',campaign_approved)
+    monkeypatch.setenv('OWNER_TECHNICAL_TEST_APPROVED','true')
     monkeypatch.setenv('LIVE_CAMPAIGN_SCOPE_APPROVED','true')
     monkeypatch.setenv('SMS_PILOT_ENABLED','true')
-    assert pilot.LIVE_CAMPAIGN_SCOPE_APPROVED is False
-    with pytest.raises(RuntimeError,match='campaign scope is not approved'):
+    with pytest.raises(RuntimeError,match='Owner technical test is not approved'):
         pilot.provider()
     assert calls==[]
-
 
 
 @pytest.mark.parametrize('change', ['missing','bad_phone','bad_hash','unknown_field','bad_schema','duplicate_fields','bad_permissions','symlink'])
@@ -404,3 +426,51 @@ def test_private_authorization_requires_current_owner(monkeypatch):
     monkeypatch.setattr(pilot.os, 'getuid', lambda: owner+1)
     with pytest.raises(RuntimeError, match='owned private regular file'):
         pilot.approved_recipient()
+
+
+def test_owner_technical_gate_does_not_claim_campaign_approval():
+    assert pilot.OWNER_TECHNICAL_TEST_APPROVED is True
+    assert pilot.LIVE_CAMPAIGN_SCOPE_APPROVED is False
+    assert pilot.PILOT_PURPOSE == 'owner_only_technical_test'
+
+
+def test_owner_test_plan_purpose_and_claim_cannot_be_repurposed(approved):
+    plan,ledger=approved
+    changed=copy.deepcopy(plan)
+    changed['purpose']='repair_customer_rollout'
+    with pytest.raises(RuntimeError,match='purpose'):
+        pilot.claim_provider_call(changed,'work_started_sms',body=plan['events']['work_started_sms']['body'],
+            from_number=pilot.SENDER,to_number=TEST_RECIPIENT,account_hash=plan['account_hash'],ledger=ledger)
+    with sqlite3.connect(ledger) as db:
+        assert db.execute('SELECT count(*) FROM attempts').fetchone()[0] == 0
+
+
+def test_reviewed_owner_mode_provider_uses_only_explicit_fake_credentials(monkeypatch,tmp_path):
+    from app.core.config import settings
+    import dotenv
+    import twilio.rest
+    monkeypatch.setenv('TWILIO_STATUS_PILOT_LOCAL','1')
+    monkeypatch.setenv('COMMUNICATIONS_ISOLATED_LOCAL','1')
+    monkeypatch.setattr(settings,'DATABASE_URL','postgresql+asyncpg://comms_local:synthetic@127.0.0.1:55460/'+pilot.DATABASE)
+    monkeypatch.setattr(settings,'ENVIRONMENT','development')
+    monkeypatch.setattr(settings,'TWILIO_ACCOUNT_SID','')
+    monkeypatch.setattr(settings,'TWILIO_AUTH_TOKEN','')
+    for name in ('SMS_TENANT_ROUTING_ENABLED','SMS_AUTOMATION_OUTBOX_ENABLED','SMS_RECOVERY_ENABLED'):
+        monkeypatch.setattr(settings,name,False)
+    fake_source=tmp_path/'fake-credentials.env'
+    monkeypatch.setattr(pilot,'CREDENTIAL_SOURCE',fake_source)
+    reads=[]
+    def fake_values(path):
+        assert path == fake_source
+        reads.append(path)
+        return {'TWILIO_ACCOUNT_SID':ACCOUNT,'TWILIO_AUTH_TOKEN':'synthetic-test-token'}
+    sentinel=object()
+    def fake_client(account,token,**kwargs):
+        assert account == ACCOUNT and token == 'synthetic-test-token'
+        assert kwargs['http_client'].timeout == 25
+        return sentinel
+    monkeypatch.setattr(dotenv,'dotenv_values',fake_values)
+    monkeypatch.setattr(twilio.rest,'Client',fake_client)
+    assert pilot.OWNER_TECHNICAL_TEST_APPROVED is True and pilot.LIVE_CAMPAIGN_SCOPE_APPROVED is False
+    client,digest=pilot.provider()
+    assert client is sentinel and digest == pilot.fingerprint(ACCOUNT) and reads == [fake_source]

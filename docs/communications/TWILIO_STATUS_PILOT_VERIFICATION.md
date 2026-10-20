@@ -1,25 +1,32 @@
 # Twilio repair-status pilot verification
 
-2026-10-20. DB-COMMS-012. Backend & Integrations accountable. Offline verified; live and deployment held.
+2026-10-20. DB-COMMS-012. Backend & Integrations accountable. Owner-only technical test passed; customer activation and deployment held.
 
-## Runtime and isolation
+## Live results
 
-Initial branch codex/twilio-status-pilot at5fdcb3ce9a7bc3e43a4d209672562b48bce96c9b. Standard local controller refused missing backend/.env and Vite. Existing explicit synthetic communications configuration was referenced without copying provider credentials. Fresh database twilio_status_pilot_20261020 uses loopback PostgreSQL55460/user comms_local, sole schema185; populated communications_local remained184 and unchanged. Redis6386/index12. API32341 at127.0.0.1:8006 and frontend32379 at127.0.0.1:5186 serve this checkout; process/cwd corroborated. Direct and proxied readiness pass; actual browser renders the base app. No product UI changed; automated operator integration exercises the changed journey against real PostgreSQL with fake transport.
+Exactly two explicitly simulated messages were submitted from +17755358774 to the privately authorized owner phone ending0486. Work-started and ready-for-pickup each have one durable attempt, one permanent claim and one matching provider receipt. Both provider statuses are delivered, without errors or reconciliation holds. The owner confirmed receiving exactly one of each. Private receipts and authorization remain outside this public repository.
 
-Local servers have no live Twilio account and all three routing/outbox/recovery flags false. Production read-only preflight verified5fdcb3ce/schema185 and the same three false flags. Existing legacy notification behavior is unchanged: these new flags do not globally suppress historical immediate legacy sends.
+The first message included STOP instructions. Before submitting the unused second event, a read-only reply-route check found that service inbound still goes to TrucksParkingHub and the tester matches existing hiring leads. No reply was requested. An independently approved, one-time unused-slot amendment replaced the second message's reply request with a reference. It preserved the first spent budget, all event identities, expiry and receipts, and recorded an audit. Both budgets are permanently consumed; do not recreate the plan or replay sends.
 
-## Provider evidence and live gate
+These were synthetic repair events through the durable outbox and real Twilio transport. No actual repair-order progression, production customer/order/billing write, registration submission or provider configuration change occurred. This does not certify inbound repair replies, signed public callbacks, production managed registration or real repair-order producer progression.
 
-Owned SMS-capable +17755358774 belongs to a VERIFIED campaign without reported errors. Its campaign description/samples specifically cover Right Solution Truck Parking reservations with booking/START consent. Service inbound remains TrucksParkingHub; number-level inbound/status URLs remain DieselBridge. The separate global +19129223939 belongs to the FAILED30907 campaign. No current Truck Pit Stop tenant-specific Twilio binding exists. No provider setting was changed.
+## Production preservation and scope
 
-Independent Security/QA holds repair-status live messages until Twilio confirms scope or a matching approved repair route is available. VERIFIED parking transport does not establish repair campaign approval. The source-locked LIVE_CAMPAIGN_SCOPE_APPROVED=False guard rejects real provider access before settings, credentials or network. No environment/CLI bypass exists. No live plan, prepare, SMS send, real order/status/customer edit, deployment or new customer automation activation occurred.
+Fresh preflight and post-test read-only comparison matched production revision 5fdcb3ce9a7bc3e43a4d209672562b48bce96c9b, tenant settings and provider configuration. SMS_TENANT_ROUTING_ENABLED, SMS_AUTOMATION_OUTBOX_ENABLED and SMS_RECOVERY_ENABLED remain false. These flags do not suppress historical immediate legacy notifications; existing legacy behavior is unchanged.
 
-## Final owner checks
+The owned SMS-capable +17755358774 belongs to a VERIFIED campaign without reported errors. Its description/samples cover Right Solution Truck Parking reservations and booking/START consent. Service inbound remains TrucksParkingHub; number-level URLs remain DieselBridge. The separate global +19129223939 remains on FAILED30907. No tenant-specific Twilio binding exists for Truck Pit Stop. Repair-campaign coverage remains unconfirmed. The user requested keeping the Twilio support question as a draft; nothing was sent to support.
 
-84 combined tests passed (9 existing warnings,4.78s):46 pilot tests plus38 managed-routing, automated guard and producer/transport compatibility cases. Checks cover two explicitly simulated event slots, permanent call budgets, cross-process/restart/crash holds, duplicate event/dispatch replay, strict receipts, timeout outcomes, canonical reply identity and consent/tenant changes. Private authorization must be an owned0600 regular non-symlink file with bounded size, exact schema, matching private hash and approved phone. Source cannot create/edit it; no public personal phone or authorization hash is stored. Missing/unsafe/malformed authorization fails before provider access. All test contact values are fictional. Compile and diff checks pass.
+## Isolation and checks
 
-Frozen script SHA256 b600bf101cf79a909a077697103a0c09898459da27e2a5368fd214dfbe56cadf. Test SHA256 ef774f0502590d3c186e88689e41b97dcdfadfe8ba946b4b5277216672902e10. Final independent gate is recorded below. This evidence does not certify real repair-order event progression, carrier/handset delivery, production managed registration, or signed public callbacks.
+The actual test used dedicated loopback PostgreSQL database twilio_status_pilot_20261020 at schema185, Redis6386/index12, and private permanent authorization/plan/ledger files. The existing populated communications_local sandbox remained unchanged. Normal local API/frontend servers contain no live Twilio credentials; explicit operator transport loads credentials privately only for the fixed approved test. Local runtime alignment verified this checkout, API8006 and frontend5186 with direct/proxied readiness. No product UI changed, so the changed journey is verified through operator integration and handset receipts rather than a new browser UI flow.
 
-## Independent final gate
+Final owner suite:63 passed. Independent Security/QA independently reran63 cases against separate database twilio_status_pilot_amend_test_20261020. Tests cover private authorization, fixed recipient/body/purpose, tenant and consent boundaries, duplicate/restart/timeout holds, permanent budgets and guarded unused-slot amendment. Tests use fictional contacts and deny real provider access. Syntax, whitespace and added-diff privacy checks pass. Earlier84 combined checks describe an earlier source revision, not this final gate.
 
-Fresh independent Security/QA and full staged privacy review returned GO for the public draft/source only. Final46 pilot plus4 additional adversarial cases passed:50 independent checks on the exact hashes above. Review verified index/working source identity, no full personal recipient/phone hash/encoded equivalent or new host username in the added diff, strict private authorization, immutable budgets, credential isolation and exact reply ownership. Live remains NO-GO pending campaign-purpose confirmation. This gate does not imply removal of previously cached remote objects or approve any production/provider action.
+Frozen executed SHA256:
+
+- Pilot: eaa425c0deb8dacdd51a1343d5252eae2d946a6c6c9a9a36e9cc9c8cae28c102
+- Amendment helper: 48c3eb984eb7d23d3921bd320fb8baea218c28c0a754cf3bdaec8af3ce27134e
+- Pilot tests: f9a6dd409793f2af10254230e0492b636bca77077b077f028ed7d44bc35c4b83
+- Amendment tests: 41c3e676baa70ea7ac370f72814526f31a623b34fdd9bc76f2d4b52287d368b8
+
+Independent reviewer approved the bounded owner test and audited amendment before execution, then reviewed the final masked receipt and confirmed owner-only technical success. LIVE_CAMPAIGN_SCOPE_APPROVED remains false; the separate owner technical-test gate does not assert a registration exemption or authorize customer activation. PR591 remains unmerged and undeployed; protected CI on the revised head remains a separate gate.

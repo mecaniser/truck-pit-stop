@@ -24,9 +24,13 @@ PLAN = STATE_DIR / 'plan.json'
 LEDGER = STATE_DIR / 'ledger.sqlite3'
 CREDENTIAL_SOURCE = Path.home() / 'GitHub/truck-pit-stop/backend/.env'
 DATABASE = 'twilio_status_pilot_20261020'
-# Verified parking registration does not authorize repair-status traffic.
+# Verified parking registration does not establish approval for customer repair-status traffic.
 # Deliberately no environment/CLI override; changing this requires reviewed source.
 LIVE_CAMPAIGN_SCOPE_APPROVED = False
+# Reviewed authorization covers only this operator's two sealed technical TEST events.
+# Campaign approval alone never permits this tool, and no environment/CLI override exists.
+OWNER_TECHNICAL_TEST_APPROVED = True
+PILOT_PURPOSE = 'owner_only_technical_test'
 
 
 def fingerprint(value):
@@ -64,15 +68,15 @@ def plan_hash(plan):
 
 def bodies(token):
     return {
-        'work_started_sms': f'TEST ONLY: Simulated repair work started. No real repair status changed. DieselBridge test {token}.',
-        'ready_pickup_sms': f'TEST ONLY: Simulated ready for pickup. No real repair status changed. DieselBridge test. Please reply {token}.',
+        'work_started_sms': f'TEST DieselBridge: simulated repair work started. No real repair changed. Reply STOP to opt out. Ref {token}.',
+        'ready_pickup_sms': f'TEST DieselBridge: simulated ready for pickup. No real repair changed. Ref {token}.',
     }
 
 
 def validate_shape(plan, *, now=None, require_unexpired=True):
-    expected = {'schema', 'run_id', 'tenant_id', 'customer_id', 'recipient', 'sender', 'account_hash', 'created_at', 'expires_at', 'reply_token', 'events'}
-    if not isinstance(plan, dict) or set(plan) != expected or plan['schema'] != 1:
-        raise RuntimeError('Invalid pilot plan')
+    expected = {'schema', 'purpose', 'run_id', 'tenant_id', 'customer_id', 'recipient', 'sender', 'account_hash', 'created_at', 'expires_at', 'reply_token', 'events'}
+    if not isinstance(plan, dict) or set(plan) != expected or plan['schema'] != 1 or plan.get('purpose') != PILOT_PURPOSE:
+        raise RuntimeError('Invalid pilot plan or purpose')
     if plan['recipient'] != approved_recipient() or plan['sender'] != SENDER:
         raise RuntimeError('Pilot phone pair is outside authorization')
     for key in ('run_id', 'tenant_id', 'customer_id'):
@@ -122,6 +126,9 @@ def validate_plan(plan, ledger=None, *, require_unexpired=True):
     _private_file(ledger)
     with sqlite3.connect(ledger) as connection:
         approved = connection.execute('SELECT binding FROM approved WHERE slot=1').fetchone()
+        amendment_table = connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='ready_copy_amendments'").fetchone()
+        if amendment_table and connection.execute("SELECT 1 FROM ready_copy_amendments WHERE state != 'complete'").fetchone():
+            raise RuntimeError('Partial ready-copy amendment requires review; provider access held')
     if not approved or approved[0] != plan_hash(plan):
         raise RuntimeError('Pilot plan changed; provider access refused')
 
@@ -159,8 +166,9 @@ def assert_isolated():
 
 def provider():
     """Explicit operator-only access: credentials never enter server settings."""
-    if LIVE_CAMPAIGN_SCOPE_APPROVED is not True:
-        raise RuntimeError('Live repair-status pilot held: campaign scope is not approved')
+    if OWNER_TECHNICAL_TEST_APPROVED is not True:
+        raise RuntimeError('Owner technical test is not approved')
+    approved_recipient()
     assert_isolated()
     from dotenv import dotenv_values
     from twilio.http.http_client import TwilioHttpClient
@@ -176,7 +184,7 @@ def make_plan(account_hash):
     created = datetime.now(timezone.utc)
     run_id = str(uuid4())
     token = 'TPS-PILOT-' + uuid4().hex[:8].upper()
-    return dict(schema=1, run_id=run_id, tenant_id=str(uuid4()), customer_id=str(uuid4()),
+    return dict(schema=1, purpose=PILOT_PURPOSE, run_id=run_id, tenant_id=str(uuid4()), customer_id=str(uuid4()),
         recipient=approved_recipient(), sender=SENDER, account_hash=account_hash, created_at=created.isoformat(),
         expires_at=(created + timedelta(hours=24)).isoformat(), reply_token=token,
         events={event: dict(body=body, domain_event_id=f'twilio-status-pilot:{run_id}:{event}') for event, body in bodies(token).items()})
@@ -371,16 +379,7 @@ async def status(plan):
             await process_twilio_status_callback(db, message_sid=receipt.sid, message_status=receipt.status,
                 error_code=str(receipt.error_code) if receipt.error_code else None)
             print(event, 'provider status:', receipt.status, 'error code:', receipt.error_code)
-    replies = await asyncio.to_thread(client.messages.list, from_=approved_recipient(), to=SENDER,
-        date_sent_after=datetime.fromisoformat(plan['created_at']), limit=10)
-    for reply in replies:
-        if valid_reply(plan, reply):
-            async with AsyncSessionLocal() as db:
-                await import_reply(db, plan, reply)
-                await db.commit()
-            print('Exact approved reply verified and imported once into the isolated inbox.')
-            return
-    print('Awaiting exact reply:', plan['reply_token'])
+    print('Outbound-only status check complete; no SMS reply is requested or polled.')
 
 
 async def main():
