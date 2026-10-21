@@ -31,3 +31,13 @@ Initial candidate `bb052f07`, run39675036824, all seven jobs pass: npm ci84s to1
 Final correction retains shallow preparation and npm prefer-offline, restores original smoke job dependencies, and adds `--only-shell` to both local and hosted Chromium installation. Existing smoke configuration uses default headless Chromium without a channel or executable override; it already uses this same shell. Only the unused headed browser download is removed, not a tested browser. Hosted OS dependencies, FFmpeg, actual shell, tests, retries and deadlines remain. See https://playwright.dev/docs/browsers. No full suite rerun on the same source; corrected source requires its own protected candidate.
 
 Independent corrected-source QA/Security GO: original smoke dependency graph restored; same default headless Chromium runtime with unused headed download omitted; hosted system dependencies retained. Final aggregate workflow diff is only shallow preparation, prefer-offline npm install and shell-only browser installation.
+
+## Release evidence
+
+PR [614](https://github.com/mecaniser/truck-pit-stop/pull/614), checked head `d3ed2adf60a75c4c4d3620e86ed70042927188f3`, normal merge `8ddcf70e0c0477ba24a550a056f8e829f6d5769d`. Checked/merged trees identical. Independent source and runtime QA/Security GO; six strict required checks unchanged.
+
+Final run [39676560701](https://github.com/mecaniser/truck-pit-stop/actions/runs/39676560701), attempt1: all seven jobs successful. npm installation25s versus84s baseline; first candidate16s. Playwright installation11s versus24s baseline; logs confirm Headless Shell1208 and FFmpeg1011, same five smoke cases pass. Final backend3517pass/387existing skips; frontend remaining176files1826tests, critical17files213tests. No test source, selection, deadline or retry policy changed.
+
+Total15m39s (21:10:11Z–21:25:50Z) is not an end-to-end improvement: other runs39675352654 (#611) and39677263661 (#615) shared the four slots. Preparation queued3m04s after scope; smoke prerequisites completed21:19:22Z but smoke started21:23:15Z, about3m53s queued. Remaining frontend293.90s also reflects a busier execution sample. Keep the measured step gains separate from whole-pipeline latency; do not claim a clean final baseline or trigger a duplicate run to obtain one.
+
+Initial timing-regressing source and corrected source each ran once, with no same-head retries or duplicate full local suites. Owners coordinated to hold further changes during landing; release holds removed after documentation closes. No app deployment is required for workflow configuration; future eligible runs use merged changes. SMS/provider/payment/registration state untouched.
