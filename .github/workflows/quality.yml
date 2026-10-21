@@ -173,7 +173,7 @@ jobs:
       - name: Verify frontend test partition coverage
         if: needs.migration-graph.outputs.frontend_required != 'false'
         working-directory: frontend
-        run: node --test scripts/verify-partition-guards.mjs && node scripts/verify-test-partitions.mjs
+        run: node --test scripts/verify-partition-guards.mjs scripts/verify-ci-dependencies.mjs scripts/verify-build-ci.mjs && node scripts/verify-test-partitions.mjs
       - name: Run critical regression suite
         if: needs.migration-graph.outputs.frontend_required != 'false'
         working-directory: frontend
@@ -181,7 +181,19 @@ jobs:
       - name: Build production bundle
         if: needs.migration-graph.outputs.frontend_required != 'false'
         working-directory: frontend
-        run: npm run build
+        run: node scripts/build-ci.mjs
+      - name: Package exact-run frontend installation
+        if: needs.migration-graph.outputs.frontend_required != 'false'
+        working-directory: frontend
+        run: node scripts/ci-dependencies.mjs pack "$RUNNER_TEMP/frontend-dependencies"
+      - uses: actions/upload-artifact@v4
+        if: needs.migration-graph.outputs.frontend_required != 'false'
+        with:
+          name: frontend-dependencies-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/frontend-dependencies
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
 
   frontend-full-suite:
     name: Frontend full suite (informational)
@@ -199,12 +211,15 @@ jobs:
         if: needs.migration-graph.outputs.frontend_required != 'false'
         with:
           node-version: '20'
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - name: Install dependencies
+      - uses: actions/download-artifact@v4
+        if: needs.migration-graph.outputs.frontend_required != 'false'
+        with:
+          name: frontend-dependencies-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/frontend-dependencies
+      - name: Restore verified frontend installation
         if: needs.migration-graph.outputs.frontend_required != 'false'
         working-directory: frontend
-        run: npm ci
+        run: node scripts/ci-dependencies.mjs restore "$RUNNER_TEMP/frontend-dependencies"
       - name: Run full frontend suite
         if: needs.migration-graph.outputs.frontend_required != 'false'
         working-directory: frontend
@@ -265,18 +280,21 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-          cache-dependency-path: |
-            frontend/package-lock.json
-            e2e/package-lock.json
+          cache-dependency-path: e2e/package-lock.json
       - name: Install backend dependencies
         if: needs.migration-graph.outputs.smoke_required != 'false'
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r backend/requirements-dev.txt -c backend/constraints-test.txt
-      - name: Install frontend dependencies
+      - uses: actions/download-artifact@v4
+        if: needs.migration-graph.outputs.smoke_required != 'false'
+        with:
+          name: frontend-dependencies-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/frontend-dependencies
+      - name: Restore verified frontend installation
         if: needs.migration-graph.outputs.smoke_required != 'false'
         working-directory: frontend
-        run: npm ci
+        run: node scripts/ci-dependencies.mjs restore "$RUNNER_TEMP/frontend-dependencies"
       - name: Install Playwright dependencies
         if: needs.migration-graph.outputs.smoke_required != 'false'
         working-directory: e2e
