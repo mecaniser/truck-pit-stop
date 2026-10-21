@@ -115,7 +115,7 @@ jobs:
 
   backend-full-suite:
     name: Backend full suite (informational)
-    needs: [migration-graph, backend-tests]
+    needs: migration-graph
     # Forks retain all checks on free hosted runners. VM isolation is the
     # security boundary even if a fork edits this routing expression.
     runs-on: ${{ fromJSON(needs.migration-graph.outputs.backend_required != 'false' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
@@ -139,8 +139,8 @@ jobs:
         working-directory: backend
         run: python ../.github/scripts/run_backend_tests.py remaining
 
-  frontend-checks:
-    name: Frontend checks
+  frontend-dependencies:
+    name: Prepare frontend dependencies
     needs: migration-graph
     # Forks retain all checks on free hosted runners. VM isolation is the
     # security boundary even if a fork edits this routing expression.
@@ -163,6 +163,53 @@ jobs:
         if: needs.migration-graph.outputs.frontend_required != 'false'
         working-directory: frontend
         run: npm ci
+      - name: Package exact-run frontend installation
+        if: needs.migration-graph.outputs.frontend_required != 'false'
+        working-directory: frontend
+        run: node scripts/ci-dependencies.mjs pack "$RUNNER_TEMP/frontend-dependencies"
+      - uses: actions/upload-artifact@v4
+        if: needs.migration-graph.outputs.frontend_required != 'false'
+        with:
+          name: frontend-dependencies-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/frontend-dependencies
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+  frontend-checks:
+    name: Frontend checks
+    needs: [migration-graph, frontend-dependencies]
+    # A failed preparation must FAIL a required context, never merely skip it.
+    if: always() && !cancelled()
+    # Forks retain all checks on free hosted runners. VM isolation is the
+    # security boundary even if a fork edits this routing expression.
+    runs-on: ${{ fromJSON(needs.migration-graph.outputs.frontend_required != 'false' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
+    steps:
+      - name: Require successful prerequisites
+        env:
+          SCOPE_RESULT: ${{ needs.migration-graph.result }}
+          INSTALL_RESULT: ${{ needs.frontend-dependencies.result }}
+        run: test "$SCOPE_RESULT" = success && test "$INSTALL_RESULT" = success
+      - name: Markdown-only PR; application suite not affected
+        if: needs.migration-graph.outputs.frontend_required == 'false'
+        run: echo 'Application suite omitted by trusted Markdown-only scope; safety contracts still run.'
+      - uses: actions/checkout@v4
+        if: needs.migration-graph.outputs.frontend_required != 'false'
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        if: needs.migration-graph.outputs.frontend_required != 'false'
+        with:
+          node-version: '20'
+      - uses: actions/download-artifact@v4
+        if: needs.migration-graph.outputs.frontend_required != 'false'
+        with:
+          name: frontend-dependencies-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/frontend-dependencies
+      - name: Restore verified frontend installation
+        if: needs.migration-graph.outputs.frontend_required != 'false'
+        working-directory: frontend
+        run: node scripts/ci-dependencies.mjs restore "$RUNNER_TEMP/frontend-dependencies"
       - name: Lint changed frontend files
         if: needs.migration-graph.outputs.frontend_required != 'false'
         working-directory: frontend
@@ -182,22 +229,10 @@ jobs:
         if: needs.migration-graph.outputs.frontend_required != 'false'
         working-directory: frontend
         run: node scripts/build-ci.mjs
-      - name: Package exact-run frontend installation
-        if: needs.migration-graph.outputs.frontend_required != 'false'
-        working-directory: frontend
-        run: node scripts/ci-dependencies.mjs pack "$RUNNER_TEMP/frontend-dependencies"
-      - uses: actions/upload-artifact@v4
-        if: needs.migration-graph.outputs.frontend_required != 'false'
-        with:
-          name: frontend-dependencies-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/frontend-dependencies
-          compression-level: 0
-          retention-days: 1
-          if-no-files-found: error
 
   frontend-full-suite:
     name: Frontend full suite (informational)
-    needs: [migration-graph, frontend-checks]
+    needs: [migration-graph, frontend-dependencies]
     # Forks retain all checks on free hosted runners. VM isolation is the
     # security boundary even if a fork edits this routing expression.
     runs-on: ${{ fromJSON(needs.migration-graph.outputs.frontend_required != 'false' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
