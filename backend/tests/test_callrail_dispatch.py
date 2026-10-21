@@ -10,7 +10,7 @@ from sqlalchemy import select, func
 from app.services import communications_service as svc, callrail_service as cr
 from app.db.models.callrail import CallRailNumberBinding, CallRailConversation
 from app.db.models.communication import SMSSendOperation
-from app.db.models.sms_message import SMSMessage, SMSMessageSource
+from app.db.models.sms_message import SMSMessage, SMSMessageSource, SMSMessageDirection, SMSDeliveryStatus
 from app.db.models.user import User, UserRole
 from app.db.models.customer import Customer
 from app.db.models.message_thread import MessageThread
@@ -36,6 +36,11 @@ async def setup(monkeypatch):
         binding=CallRailNumberBinding(tenant_id=tenant.id,account_id='ACC'+uuid4().hex,company_id='COMtest',tracker_id='TRKtest',sender_phone='+15005550001',credential_ref='CALLRAIL_TEST',signing_secret_ref='CALLRAIL_SIGNING',enabled=True)
         db.add_all([thread,binding]); await db.flush()
         db.add(CallRailConversation(tenant_id=tenant.id,thread_id=thread.id,customer_id=customer.id,customer_phone=customer.phone,binding_id=binding.id));await db.commit()
+        db.add(SMSMessage(tenant_id=tenant.id,thread_id=thread.id,customer_id=customer.id,
+            direction=SMSMessageDirection.INBOUND,source=SMSMessageSource.INBOUND,body='Proven reply fixture',
+            from_number=customer.phone,to_number=binding.sender_phone,provider='callrail',provider_account_id=binding.account_id,
+            callrail_binding_id=binding.id,provider_message_id='SCI'+uuid4().hex,delivery_status=SMSDeliveryStatus.DELIVERED))
+        await db.commit()
         yield db,tenant,actor,customer,thread,binding
     await engine.dispose()
 
@@ -71,7 +76,7 @@ async def test_manual_replay_canonical_duplicate_and_receipt_race(setup,monkeypa
     sms=await db.get(SMSMessage,op.message_id)
     assert len(calls)==1 and op.state=='accepted' and op.provider_message_id
     assert sms.twilio_message_sid is None and sms.provider=='callrail'
-    assert await db.scalar(select(func.count()).select_from(SMSMessage).where(SMSMessage.thread_id==thread_id))==1
+    assert await db.scalar(select(func.count()).select_from(SMSMessage).where(SMSMessage.thread_id==thread_id))==2
 
 @pytest.mark.asyncio
 async def test_provider_limit_and_config_change_before_dispatch(setup,monkeypatch):

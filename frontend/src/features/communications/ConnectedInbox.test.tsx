@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ConnectedInbox from "./ConnectedInbox";
 import DashboardInboxPage from "./DashboardInboxPage";
 import { inboxApi } from "./api";
+import { draftKey } from "./model";
 import { useAuthStore } from "../../stores/authStore";
 import { createDemoConversations, DEMO_TENANT, DEMO_USER } from "./fixtures";
 vi.mock("../../lib/api", () => ({ default: { get: vi.fn(), post: vi.fn() } }));
@@ -34,7 +35,6 @@ vi.mock("./api", async (original) => {
       read: vi.fn(),
       send: vi.fn(),
       patch: vi.fn(),
-      changeSender: vi.fn(),
       older: vi.fn(),
     },
   };
@@ -133,7 +133,6 @@ describe("connected inbox sending", () => {
     fireEvent.click(screen.getByRole("button", { name: /New inquiries/ }));
     fireEvent.click(screen.getByRole("button", { name: /New inquiry.*15005550002/ }));
     expect(draft).toHaveValue("x".repeat(141));
-    expect(inboxApi.changeSender).not.toHaveBeenCalled();
     await waitFor(() => expect(inboxApi.read).toHaveBeenCalledWith(expect.objectContaining({ id: inquiry.id, customerId: null })));
   });
   it("retains manual reply and workflow actions for a null-customer inquiry", async () => {
@@ -152,118 +151,117 @@ describe("connected inbox sending", () => {
     await waitFor(() => expect(screen.getByLabelText("Assign conversation")).toBeEnabled());
     fireEvent.change(screen.getByLabelText("Assign conversation"), { target: { value: "staff-2" } });
     await waitFor(() => expect(inboxApi.patch).toHaveBeenCalledWith(expect.objectContaining({ id: inquiry.id, customerId: null }), { assignee_id: "staff-2" }));
-    expect(inboxApi.changeSender).not.toHaveBeenCalled();
   });
-  it("ignores an older in-flight poll after a confirmed sender change without reverting policy or draft", async () => {
-    const options = [{ id: "twilio", provider: "twilio" as const, senderNumber: "+17045550000" }, { id: "binding-1", provider: "callrail" as const, senderNumber: "+19809071896" }];
-    const initial = { ...row, context: { ...row.context, selectedSenderId: "twilio", smsSenderOptions: options } };
-    const updated = { ...initial, version: 8, channelAccountId: "callrail-account", sendPolicy: { ...row.sendPolicy, maxLength: 140 }, context: { ...initial.context, selectedSenderId: "binding-1", smsProvider: "callrail", senderNumber: "+19809071896" } };
-    vi.mocked(inboxApi.list).mockResolvedValue([initial]);
-    vi.mocked(inboxApi.detail).mockResolvedValue(initial);
-    vi.mocked(inboxApi.changeSender).mockResolvedValue(updated);
-    vi.mocked(inboxApi.send).mockResolvedValue({ id: "operation", conversation_id: row.id, state: "pending", delivery_status: "pending" });
-    render(<ConnectedInbox />);
-    const draft = await screen.findByRole("textbox", { name: "Message draft" });
-    await waitFor(() => expect(inboxApi.read).toHaveBeenCalled());
-    vi.useFakeTimers();
-    let finishPoll!: (value: typeof initial[]) => void;
-    vi.mocked(inboxApi.list).mockReturnValueOnce(new Promise((resolve) => { finishPoll = resolve; }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
-    fireEvent.change(draft, { target: { value: "x".repeat(141) } });
-    await act(async () => { fireEvent.change(screen.getByLabelText("SMS sender"), { target: { value: "binding-1" } }); });
-    expect(screen.getByText("141/140")).toBeInTheDocument();
-    await act(async () => { finishPoll([initial]); });
-    expect(screen.getByLabelText("SMS sender")).toHaveValue("binding-1");
-    expect(screen.getByText("141/140")).toBeInTheDocument();
-    expect(draft).toHaveValue("x".repeat(141));
-    expect(screen.getByRole("button", { name: "Send SMS" })).toBeDisabled();
-    fireEvent.change(draft, { target: { value: "A confirmed reply" } });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Send SMS" })); });
-    expect(vi.mocked(inboxApi.send).mock.calls[0][0].payload).toMatchObject({ expected_version: 8, channel_account_id: "callrail-account" });
-    expect(screen.getByLabelText("SMS sender")).toHaveValue("binding-1");
-  });
-  it("disables sender changes while an original send outcome is unknown", async () => {
-    const current = { ...row, context: { ...row.context, smsProvider: "callrail", selectedSenderId: "binding-1", smsSenderOptions: [{ id: "binding-1", provider: "callrail" as const, senderNumber: "+19809071896" }] } };
+  it("shows the derived reply number without exposing even a legacy 17-number inventory", async () => {
+    const current = { ...row, context: { smsProvider: "callrail", senderNumber: "+15005550001", senderMode: "reply" as const, senderSelectionAllowed: true, smsSenderOptions: Array.from({ length: 17 }, (_, i) => ({ id: `binding-${i}`, provider: "callrail" as const, senderNumber: `+1500555${String(i).padStart(4, "0")}` })) } };
     vi.mocked(inboxApi.list).mockResolvedValue([current]);
     vi.mocked(inboxApi.detail).mockResolvedValue(current);
-    vi.mocked(inboxApi.send).mockRejectedValue(new Error("Network unavailable"));
     render(<ConnectedInbox />);
     await compose();
-    fireEvent.click(screen.getByRole("button", { name: "Send SMS" }));
-    await screen.findByRole("alert");
-    expect(screen.getByLabelText("SMS sender")).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Send SMS" })).toBeDisabled();
-    expect(inboxApi.changeSender).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("SMS sender")).toHaveTextContent("Replying from +15005550001");
+    expect(screen.queryByRole("combobox", { name: "SMS sender" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /CallRail|Twilio/ })).not.toBeInTheDocument();
+    expect(inboxApi.patch).not.toHaveBeenCalled();
   });
-  it("blocks stale sending when a failed sender update cannot be reconciled", async () => {
-    const current = { ...row, context: { ...row.context, selectedSenderId: "twilio", smsSenderOptions: [{ id: "binding-1", provider: "callrail" as const, senderNumber: "+19809071896" }] } };
+  it("uses Sending from for a validated initiation route", async () => {
+    const current = { ...row, context: { smsProvider: "twilio", senderNumber: "+15005550003", senderMode: "initiation" as const } };
     vi.mocked(inboxApi.list).mockResolvedValue([current]);
     vi.mocked(inboxApi.detail).mockResolvedValue(current);
-    vi.mocked(inboxApi.changeSender).mockRejectedValue(new Error("Network unavailable"));
     render(<ConnectedInbox />);
     await compose();
-    await waitFor(() => expect(inboxApi.detail).toHaveBeenCalled());
-    vi.mocked(inboxApi.detail).mockRejectedValue(new Error("Network unavailable"));
-    fireEvent.change(screen.getByLabelText("SMS sender"), { target: { value: "binding-1" } });
-    await screen.findByText("The SMS connection changed. Refresh before replying.");
-    expect(screen.getByRole("textbox", { name: "Message draft" })).toHaveValue("A safe reply");
+    expect(screen.getByLabelText("SMS sender")).toHaveTextContent("Sending from +15005550003");
+    expect(screen.queryByRole("combobox", { name: "SMS sender" })).not.toBeInTheDocument();
+  });
+  it.each(["reply_route_unavailable", "reply_route_ambiguous"] as const)("holds a %s route without a fallback or sender patch", async (reason) => {
+    const held = { ...row, context: { senderMode: "unavailable" as const }, sendPolicy: { canSend: false, reason } };
+    vi.mocked(inboxApi.list).mockResolvedValue([held]);
+    vi.mocked(inboxApi.detail).mockResolvedValue(held);
+    render(<ConnectedInbox />);
+    await compose();
+    expect(screen.getByLabelText("SMS sender")).toHaveTextContent("Reply number unavailable");
+    expect(screen.getByText("This conversation’s number needs review before replying.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send SMS" })).toBeDisabled();
     fireEvent.keyDown(screen.getByRole("textbox", { name: "Message draft" }), { key: "Enter", ctrlKey: true });
     expect(inboxApi.send).not.toHaveBeenCalled();
+    expect(inboxApi.patch).not.toHaveBeenCalled();
   });
-  it("changes sender with server confirmation, preserves overlimit drafts, and sends with returned version", async () => {
-    const options = [
-      { id: "twilio", provider: "twilio" as const, senderNumber: "+17045550000" },
-      { id: "binding-1", provider: "callrail" as const, senderNumber: "+19809071896" },
-    ];
-    const initial = { ...row, context: { ...row.context, smsProvider: "twilio", selectedSenderId: "twilio", smsSenderOptions: options } };
-    const updated = { ...initial, version: 8, channelAccountId: "callrail-account", sendPolicy: { ...row.sendPolicy, maxLength: 140 }, context: { ...initial.context, smsProvider: "callrail", selectedSenderId: "binding-1", senderNumber: "+19809071896" } };
+  it.each([false, true])("retains source and existing destination drafts on automatic route changes, destination exists=%s", async (hasDestinationDraft) => {
+    const initial = { ...row, context: { smsProvider: "twilio", senderNumber: "+15005550003", senderMode: "reply" as const } };
+    const updated = { ...initial, version: 8, channelAccountId: "callrail-account", sendPolicy: { ...row.sendPolicy, maxLength: 140 }, context: { smsProvider: "callrail", senderNumber: "+15005550001", senderMode: "reply" as const } };
     vi.mocked(inboxApi.list).mockResolvedValue([initial]);
     vi.mocked(inboxApi.detail).mockResolvedValue(initial);
-    let finish!: (value: typeof updated) => void;
-    vi.mocked(inboxApi.changeSender).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
     vi.mocked(inboxApi.send).mockResolvedValue({ id: "operation", conversation_id: row.id, state: "pending", delivery_status: "pending" });
-    render(<ConnectedInbox />);
-    const draft = await screen.findByRole("textbox", { name: "Message draft" });
+    if (hasDestinationDraft) localStorage.setItem(`inbox-drafts:${DEMO_TENANT}:${DEMO_USER}`, JSON.stringify({ [draftKey(DEMO_TENANT, DEMO_USER, updated)]: "y".repeat(142) }));
+    vi.useFakeTimers();
+    await act(async () => { render(<ConnectedInbox />); });
+    const draft = screen.getByRole("textbox", { name: "Message draft" });
+    expect(inboxApi.read).toHaveBeenCalled();
     fireEvent.change(draft, { target: { value: "x".repeat(141) } });
-    fireEvent.change(screen.getByLabelText("SMS sender"), { target: { value: "binding-1" } });
-    expect(inboxApi.changeSender).toHaveBeenCalledWith(expect.objectContaining({ version: 2 }), "binding-1");
-    expect(screen.getByLabelText("SMS sender")).toBeDisabled();
-    fireEvent.keyDown(draft, { key: "Enter", ctrlKey: true });
-    expect(inboxApi.send).not.toHaveBeenCalled();
-    finish(updated);
-    await waitFor(() => expect(screen.getByText("141/140")).toBeInTheDocument());
-    expect(draft).toHaveValue("x".repeat(141));
+    vi.useFakeTimers();
+    vi.mocked(inboxApi.list).mockResolvedValue([updated]);
+    vi.mocked(inboxApi.detail).mockResolvedValue(updated);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
+    expect(screen.getByLabelText("SMS sender")).toHaveTextContent("Replying from +15005550001");
+    expect(draft).toHaveValue(hasDestinationDraft ? "y".repeat(142) : "x".repeat(141));
+    expect(screen.getByText(hasDestinationDraft ? "142/140" : "141/140")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send SMS" })).toBeDisabled();
-    fireEvent.change(draft, { target: { value: "x".repeat(140) } });
-    fireEvent.click(screen.getByRole("button", { name: "Send SMS" }));
-    await waitFor(() => expect(inboxApi.send).toHaveBeenCalledTimes(1));
+    vi.mocked(inboxApi.list).mockResolvedValue([initial]);
+    vi.mocked(inboxApi.detail).mockResolvedValue(initial);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
+    expect(screen.getByLabelText("SMS sender")).toHaveTextContent("Replying from +15005550001");
+    fireEvent.change(draft, { target: { value: "A reviewed reply" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Send SMS" })); });
     expect(vi.mocked(inboxApi.send).mock.calls[0][0].payload).toMatchObject({ expected_version: 8, channel_account_id: "callrail-account" });
+    expect(inboxApi.patch).not.toHaveBeenCalled();
   });
-  it("routes the Twilio sender choice as null", async () => {
-    const options = [{ id: "twilio", provider: "twilio" as const, senderNumber: "+17045550000" }, { id: "binding-disabled", provider: "callrail" as const, senderNumber: "+19809071896", enabled: false }];
-    const current = { ...row, context: { ...row.context, smsProvider: "callrail", selectedSenderId: "binding-disabled", senderNumber: "+19809071896", smsSenderOptions: options } };
-    vi.mocked(inboxApi.list).mockResolvedValue([current]);
-    vi.mocked(inboxApi.detail).mockResolvedValue(current);
-    vi.mocked(inboxApi.changeSender).mockResolvedValue({ ...row, context: { ...row.context, selectedSenderId: "twilio", smsSenderOptions: options } });
-    render(<ConnectedInbox />);
-    await screen.findByRole("textbox", { name: "Message draft" });
-    expect(screen.getByRole("option", { name: /CallRail.*unavailable/ })).toBeDisabled();
-    expect(screen.getByLabelText("SMS sender")).toHaveValue("binding-disabled");
-    fireEvent.change(screen.getByLabelText("SMS sender"), { target: { value: "twilio" } });
-    await waitFor(() => expect(inboxApi.changeSender).toHaveBeenCalledWith(expect.objectContaining({ id: row.id }), null));
+  it.each([false, true])("recovers the original intent after a route change and reload, preserving edits=%s", async (keepNewer) => {
+    const initial = { ...row, context: { smsProvider: "twilio", senderNumber: "+15005550003", senderMode: "reply" as const } };
+    const updated = { ...initial, version: 8, channelAccountId: "callrail-account", context: { smsProvider: "callrail", senderNumber: "+15005550001", senderMode: "reply" as const } };
+    vi.mocked(inboxApi.list).mockResolvedValue([initial]);
+    vi.mocked(inboxApi.detail).mockResolvedValue(initial);
+    vi.mocked(inboxApi.send).mockRejectedValueOnce(new Error("Network unavailable")).mockResolvedValue({ id: "operation", conversation_id: row.id, state: "pending", delivery_status: "pending" });
+    vi.useFakeTimers();
+    let mounted!: ReturnType<typeof render>;
+    await act(async () => { mounted = render(<ConnectedInbox />); });
+    fireEvent.change(screen.getByRole("textbox", { name: "Message draft" }), { target: { value: "A safe reply" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Send SMS" })); });
+    expect(screen.getAllByRole("alert").length).toBeGreaterThan(0);
+    const original = JSON.parse(localStorage.getItem(storeKey)!);
+    vi.useFakeTimers();
+    vi.mocked(inboxApi.list).mockResolvedValue([updated]);
+    vi.mocked(inboxApi.detail).mockResolvedValue(updated);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
+    mounted.unmount();
+    const unrelatedKeys = [
+      draftKey(DEMO_TENANT, DEMO_USER, { ...row, id: "another-contact", contactIdentityId: "another-recipient" }),
+      draftKey(DEMO_TENANT, DEMO_USER, { ...row, channel: "whatsapp" }),
+    ];
+    const draftStorage = `inbox-drafts:${DEMO_TENANT}:${DEMO_USER}`;
+    const originStorage = `inbox-draft-origins:${DEMO_TENANT}:${DEMO_USER}`;
+    localStorage.setItem(draftStorage, JSON.stringify({ ...JSON.parse(localStorage.getItem(draftStorage)!), ...Object.fromEntries(unrelatedKeys.map((key) => [key, "A safe reply"])) }));
+    localStorage.setItem(originStorage, JSON.stringify({ ...JSON.parse(localStorage.getItem(originStorage)!), ...Object.fromEntries(unrelatedKeys.map((key) => [key, original.draftKey])) }));
+    await act(async () => { render(<ConnectedInbox />); });
+    const draft = screen.getByRole("textbox", { name: "Message draft" });
+    expect(draft).toHaveValue("A safe reply");
+    expect(screen.getByRole("button", { name: "Send SMS" })).toBeDisabled();
+    if (keepNewer) fireEvent.change(draft, { target: { value: "A newer reviewed draft" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Check original send" })); });
+    expect(vi.mocked(inboxApi.send).mock.calls[1][0]).toEqual(original);
+    expect(draft).toHaveValue(keepNewer ? "A newer reviewed draft" : "");
+    for (const key of unrelatedKeys) expect(JSON.parse(localStorage.getItem(draftStorage)!)[key]).toBe("A safe reply");
+    expect(inboxApi.patch).not.toHaveBeenCalled();
   });
   it("shows the CallRail sender, preserves drafts, and blocks 141 characters on click and keyboard", async () => {
     const callrailRow = {
       ...row,
-      context: { ...row.context, smsProvider: "callrail", senderNumber: "+19809071896", selectedSenderId: "binding-1", smsSenderOptions: [{ id: "binding-1", provider: "callrail" as const, senderNumber: "+19809071896" }] },
+      context: { ...row.context, smsProvider: "callrail", senderNumber: "+15005550001", selectedSenderId: "binding-1", smsSenderOptions: [{ id: "binding-1", provider: "callrail" as const, senderNumber: "+15005550001" }] },
       sendPolicy: { ...row.sendPolicy, maxLength: 140 },
     };
     vi.mocked(inboxApi.list).mockResolvedValue([callrailRow]);
     vi.mocked(inboxApi.detail).mockResolvedValue(callrailRow);
     render(<ConnectedInbox />);
     const draft = await screen.findByRole("textbox", { name: "Message draft" });
-    expect(screen.getByLabelText("SMS sender")).toHaveTextContent("CallRail +19809071896");
+    expect(screen.getByLabelText("SMS sender")).toHaveTextContent("Replying from +15005550001");
     fireEvent.change(draft, { target: { value: "x".repeat(141) } });
     expect(screen.getByText("141/140")).toHaveClass("over-limit");
     const send = screen.getByRole("button", { name: "Send SMS" });
@@ -282,7 +280,7 @@ describe("connected inbox sending", () => {
   it("allows exactly 140 CallRail characters through the keyboard send path", async () => {
     const callrailRow = {
       ...row,
-      context: { ...row.context, smsProvider: "callrail", senderNumber: "+19809071896", selectedSenderId: "binding-1", smsSenderOptions: [{ id: "binding-1", provider: "callrail" as const, senderNumber: "+19809071896" }] },
+      context: { ...row.context, smsProvider: "callrail", senderNumber: "+15005550001", selectedSenderId: "binding-1", smsSenderOptions: [{ id: "binding-1", provider: "callrail" as const, senderNumber: "+15005550001" }] },
       sendPolicy: { ...row.sendPolicy, maxLength: 140 },
     };
     vi.mocked(inboxApi.list).mockResolvedValue([callrailRow]);
