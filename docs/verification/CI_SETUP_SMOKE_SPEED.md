@@ -8,7 +8,7 @@ Preserve every test and six strict required checks, current-run artifact verific
 
 2026-10-21 preflight: managed worktree `ci-throughput/truck-pit-stop`, branch `codex/ci-setup-smoke-speed`, base `636e7e91`; initially clean. Ports5173/8000 have no listeners. This changes only CI orchestration; application serving/database/browser QA is inapplicable. Real smoke executes in protected CI; unrelated primary checkout preserved.
 
-## Evidence and change
+## Initial proposal (scheduling superseded below)
 
 Baseline39671946719: whole pipeline8m20s. Preparation172s: checkout13s, setup-node16s (npm cache hit110MB), npm ci84s, package12s, upload42s. Smoke139s: containers31s, Python15s, Node7s, backend install14s, artifact14s, Playwright install24s, migrations3s, actual browser tests18s. Smoke waited until frontend critical/build ended despite starting its own source servers via `e2e/playwright.config.ts` and consuming no built bundle or test output.
 
@@ -23,3 +23,11 @@ Peak after preparation is remaining backend plus frontend critical, frontend rem
 Actionlint and whitespace validation pass. Independent reviewer must verify dependency graph, missing-cache behavior and preserved failure/scope/strict-check semantics. Final run supplies all check results, unchanged counts and observed whole-run timing. Revert this focused workflow change for routing/failure regressions; do not relax gates. No production app/provider/SMS/payment/registration changes.
 
 Independent source QA/Security GO: fresh-server smoke consumes no critical/build output; all six live strict contexts preserved; prerequisite failure guard, shallow-checkout history boundary and npm semantics intact. Up to five eligible jobs if backend critical remains active are safely queued within four slots. No full suites dispatched locally.
+
+## Timing gate correction
+
+Initial candidate `bb052f07`, run39675036824, all seven jobs pass: npm ci84s to16s, same679 installed/680 audited. Whole run8m30s regressed versus8m20s; frontend remaining queued until21:03:01 and ran252.08s versus203.45s previously. All176 files/1826 tests and five browser cases passed. Earlier smoke increased concurrent contention; restore original smoke dependencies rather than claim success from one faster step.
+
+Final correction retains shallow preparation and npm prefer-offline, restores original smoke job dependencies, and adds `--only-shell` to both local and hosted Chromium installation. Existing smoke configuration uses default headless Chromium without a channel or executable override; it already uses this same shell. Only the unused headed browser download is removed, not a tested browser. Hosted OS dependencies, FFmpeg, actual shell, tests, retries and deadlines remain. See https://playwright.dev/docs/browsers. No full suite rerun on the same source; corrected source requires its own protected candidate.
+
+Independent corrected-source QA/Security GO: original smoke dependency graph restored; same default headless Chromium runtime with unused headed download omitted; hosted system dependencies retained. Final aggregate workflow diff is only shallow preparation, prefer-offline npm install and shell-only browser installation.

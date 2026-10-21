@@ -262,9 +262,7 @@ jobs:
 
   playwright-smoke:
     name: Playwright smoke
-    # Smoke starts its own source servers; it consumes no build/test outputs.
-    # All critical/build contexts remain independently required for merging.
-    needs: [migration-graph, frontend-dependencies]
+    needs: [migration-graph, frontend-checks, backend-tests]
     # Forks retain all checks on free hosted runners. VM isolation is the
     # security boundary even if a fork edits this routing expression.
     runs-on: ${{ fromJSON(needs.migration-graph.outputs.smoke_required != 'false' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
@@ -340,9 +338,9 @@ jobs:
           if [ "${{ runner.environment }}" = "self-hosted" ]; then
             # Matching OS dependencies are baked into the pristine VM image;
             # job users deliberately cannot sudo or modify that base image.
-            npx playwright install chromium
+            npx playwright install --only-shell chromium
           else
-            npx playwright install --with-deps chromium
+            npx playwright install --with-deps --only-shell chromium
           fi
       - name: Prepare isolated test database
         if: needs.migration-graph.outputs.smoke_required != 'false'
