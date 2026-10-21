@@ -1,0 +1,94 @@
+name: dieselbridge-staging
+
+x-common: &common
+  restart: unless-stopped
+  networks: [isolated]
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: '3'
+
+services:
+  postgres:
+    <<: *common
+    image: postgres:15
+    environment:
+      POSTGRES_DB: dieselbridge_staging
+      POSTGRES_USER: staging
+      POSTGRES_PASSWORD: ${STAGING_DB_PASSWORD:?required}
+    volumes: [postgres:/var/lib/postgresql/data]
+    mem_limit: 1g
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U staging -d dieselbridge_staging']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    <<: *common
+    image: redis:7
+    command: [redis-server, --appendonly, 'yes', --maxmemory, 128mb, --maxmemory-policy, noeviction]
+    volumes: [redis:/data]
+    mem_limit: 256m
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  web:
+    <<: *common
+    image: dieselbridge-staging:${STAGING_SOURCE_SHA:?required}
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile
+      args:
+        RAILWAY_GIT_COMMIT_SHA: ${STAGING_SOURCE_SHA:?required}
+    mem_limit: 2g
+    cpus: 2
+    environment:
+      ENVIRONMENT: staging
+      DATABASE_URL: postgresql+asyncpg://staging:${STAGING_DB_PASSWORD:?required}@postgres:5432/dieselbridge_staging
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${STAGING_SECRET_KEY:?required}
+      FRONTEND_URL: http://localhost:18080
+      CORS_ORIGINS_STR: http://localhost:18080
+      COOKIE_DOMAIN: ''
+      COOKIE_SECURE: 'false'
+      WORKOS_AUTH_ENABLED: 'false'
+      MOTIVE_ENABLED: 'false'
+      TELEMATICS_PROVIDER: manual
+      SMS_TENANT_ROUTING_ENABLED: 'false'
+      SMS_AUTOMATION_OUTBOX_ENABLED: 'false'
+      SMS_RECOVERY_ENABLED: 'false'
+      PROVIDER_OUTBOX_ENABLED: 'false'
+      ETS_COMPLETED_OUTCOMES_ENABLED: 'false'
+      SHOP_HISTORY_CAPTURE_ENABLED: 'false'
+      STRIPE_CONNECT_INVOICE_PAYMENTS_APPROVED: 'false'
+      QUICKBOOKS_PAYMENTS_INVOICE_PAYMENTS_APPROVED: 'false'
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://127.0.0.1:8000/health/ready]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+  gateway:
+    <<: *common
+    image: nginx:stable-alpine
+    networks: [isolated, ingress]
+    ports: ['127.0.0.1:18080:8080']
+    volumes: ['./nginx.conf:/etc/nginx/nginx.conf:ro']
+    read_only: true
+    tmpfs: [/var/cache/nginx, /var/run]
+    mem_limit: 64m
+    depends_on:
+      web: {condition: service_healthy}
+
+networks:
+  isolated:
+    internal: true
+  ingress:
+volumes:
+  postgres:
+  redis:
