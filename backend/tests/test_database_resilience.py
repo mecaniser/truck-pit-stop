@@ -335,11 +335,122 @@ async def test_rollback_hang_is_bounded_and_falls_back_to_invalidate(monkeypatch
     elapsed = time.perf_counter() - started
 
     assert result is None
-    assert fake_session.calls == ["add", "rollback", "invalidate"]
     assert elapsed < 0.15
+    # The absolute caller deadline can expire before cleanup is scheduled.
+    # The same owner must settle and release its permit within this existing
+    # bounded wait before inspecting cleanup's final calls.
     semaphore = error_service._persistence_semaphore()
     await asyncio.wait_for(semaphore.acquire(), timeout=0.02)
     semaphore.release()
+    await asyncio.sleep(0)
+    assert fake_session.calls == ["add", "rollback", "invalidate"]
+    assert fake_session.active_steps == set()
+    assert not fake_session.overlapped_steps
+    assert not any(
+        task.get_name() in {"error-persistence-lifecycle", "error-persistence-cleanup-controller"}
+        for task in asyncio.all_tasks() if not task.done()
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("fail_at", "hang_at", "expected_calls"),
+    [
+        ("add", "rollback", ["add", "rollback", "invalidate"]),
+        (None, "close", ["add", "commit", "refresh", "close", "invalidate"]),
+        ("commit", "invalidate", ["add", "commit", "invalidate"]),
+    ],
+)
+async def test_deadline_crossed_during_cleanup_stall_still_cancels_and_releases(
+    monkeypatch, fail_at, hang_at, expected_calls,
+):
+    entered = asyncio.Event()
+    fake_session = _ControlledSession(
+        fail_at=fail_at, hang_at=hang_at, started={hang_at: entered},
+    )
+    monkeypatch.setattr(error_service, "AsyncSessionLocal", lambda: fake_session)
+    monkeypatch.setattr(settings, "ERROR_LOG_PERSIST_TIMEOUT_SECONDS", 0.06)
+    monkeypatch.setattr(settings, "ERROR_LOG_PERSIST_MAX_CONCURRENCY", 1)
+
+    async def stall_loop_after_cleanup_starts():
+        await entered.wait()
+        # Cross both cutoffs before the controller can issue even one wave.
+        time.sleep(0.09)
+
+    stall = asyncio.create_task(stall_loop_after_cleanup_starts())
+    assert await _persist_test_error() is None
+    await stall
+    assert fake_session.cancel_count_at.get(hang_at, 0) <= 2
+    # Cancellation supervision continues after return without extending the
+    # caller's budget or transferring ownership of the session to another task.
+    semaphore = error_service._persistence_semaphore()
+    await asyncio.wait_for(semaphore.acquire(), timeout=0.2)
+    semaphore.release()
+    await asyncio.sleep(0)
+    assert fake_session.calls == expected_calls
+    assert fake_session.cancel_count_at == {hang_at: 1}
+    assert not fake_session.overlapped_steps
+    assert fake_session.active_steps == set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["rollback", "commit"])
+@pytest.mark.parametrize("late_failure", [False, True])
+async def test_late_resistant_phase_retains_permit_then_cleans_up_new_phases(
+    monkeypatch, phase, late_failure,
+):
+    entered, release = asyncio.Event(), asyncio.Event()
+    fake_session = _ControlledSession(
+        fail_at="add" if phase == "rollback" else None,
+        hang_at={phase, "close", "invalidate"},
+        resist_cancel_count_at={phase: 100},
+        started={phase: entered}, release_at={phase: release},
+        fail_after_release_at={phase} if late_failure else set(),
+    )
+    created_sessions = []
+    def session_factory():
+        created_sessions.append(fake_session)
+        return fake_session
+    monkeypatch.setattr(error_service, "AsyncSessionLocal", session_factory)
+    monkeypatch.setattr(settings, "ERROR_LOG_PERSIST_TIMEOUT_SECONDS", 0.06)
+    monkeypatch.setattr(settings, "ERROR_LOG_PERSIST_MAX_CONCURRENCY", 1)
+
+    async def stall_loop():
+        await entered.wait()
+        time.sleep(0.09)
+
+    stall = asyncio.create_task(stall_loop())
+    try:
+        assert await _persist_test_error() is None
+        await stall
+        # A second request consumes its own budget waiting, without creating a
+        # new session or stealing the resistant original owner's permit.
+        assert await _persist_test_error() is None
+        assert created_sessions == [fake_session]
+        assert fake_session.calls == ["add", phase]
+        assert fake_session.cancel_count_at == {phase: 2}
+        assert error_service._persistence_semaphore().locked()
+    finally:
+        release.set()
+        semaphore = error_service._persistence_semaphore()
+        await asyncio.wait_for(semaphore.acquire(), timeout=0.2)
+        semaphore.release()
+        await asyncio.sleep(0)
+
+    expected = ["add", phase]
+    if not late_failure:
+        expected.append("close")
+    expected.append("invalidate")
+    assert fake_session.calls == expected
+    assert fake_session.calls.count("commit") == (1 if phase == "commit" else 0)
+    assert fake_session.cancel_count_at[phase] == 2
+    assert all(count <= 2 for count in fake_session.cancel_count_at.values())
+    assert not fake_session.overlapped_steps
+    assert fake_session.active_steps == set()
+    assert not any(
+        task.get_name() in {"error-persistence-lifecycle", "error-persistence-cleanup-controller"}
+        for task in asyncio.all_tasks() if not task.done()
+    )
 
 
 @pytest.mark.asyncio
