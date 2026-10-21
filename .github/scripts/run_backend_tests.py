@@ -61,7 +61,7 @@ def main():
     if args.list:
         print(json.dumps(test_args))
         return
-    subprocess.run([sys.executable, "-m", "pytest", *test_args], cwd=root, check=True)
+    subprocess.run([sys.executable, "-m", "pytest", "--durations=20", *test_args], cwd=root, check=True)
 
 
 if __name__ == "__main__":
