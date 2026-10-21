@@ -137,9 +137,9 @@ async def test_two_numbers_shared_tracker_keep_separate_inquiries_and_stop(setup
 
 
 @pytest.mark.asyncio
-async def test_invalid_intake_sent_mms_and_disabled_never_create_inquiry(setup):
+async def test_invalid_intake_sent_and_disabled_never_create_inquiry(setup):
     db, tenant, actor, binding = setup
-    cases = [({'message_type':'mms'}, 'received', 'unsupported_message'),
+    cases = [({'message_type':'unknown'}, 'received', 'unsupported_message'),
         ({'source_number':'invalid'}, 'received', 'invalid_contact_phone'),
         ({'company_resource_id':'COMforeign'}, 'received', 'company_mismatch'),
         ({'source_number':binding.sender_phone,'destination_number':'+15005550022'}, 'sent', 'unmapped_contact')]

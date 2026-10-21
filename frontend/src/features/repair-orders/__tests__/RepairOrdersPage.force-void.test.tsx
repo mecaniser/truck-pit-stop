@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
@@ -53,14 +53,21 @@ let fixtureSource: string | null = null
 let fixtureDeleted = false
 const summary = () => ({ order_id: order.id, labor_total: '0', parts_total: '0', total_cost: '0', labor_discount_amount: '0', order_discount_amount: '0', lines: [], parts: [], warnings: [], pricing_locked: !voided, can_edit_work: voided })
 
-function renderRevision() {
+async function renderRevision() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } })
-  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/?selected=order-1']}><RepairOrdersPage /></MemoryRouter></QueryClientProvider>)
+  // Settle the immediate API fixtures through React before searching the
+  // workspace; repeated whole-page role queries during loading can starve the
+  // query notifications under the full-suite worker load.
+  await act(async () => {
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/?selected=order-1']}><RepairOrdersPage /></MemoryRouter></QueryClientProvider>)
+  })
+  await waitFor(() => expect(client.isFetching()).toBe(0))
   return client
 }
 
 async function openVoid(user: ReturnType<typeof userEvent.setup>) {
-  const trigger = await screen.findByRole('button', { name: 'Invoice actions', exact: true })
+  const trigger = await screen.findByLabelText('Invoice actions', { selector: 'button' })
+  expect(trigger).toHaveRole('button')
   await user.click(trigger)
   await user.click(await screen.findByRole('menuitem', { name: 'Void entire order…', exact: true }))
   return trigger
@@ -103,7 +110,7 @@ describe('Void and revise work editing', () => {
     apiMocks.get.mockImplementation((url: string) => url === '/repair-orders/recommended-work'
       ? Promise.resolve({ data: { items: [{ description: 'Malformed row without source' }], total: 1, skip: 0, limit: 25 } })
       : defaultGet(url))
-    renderRevision()
+    await renderRevision()
     const user = userEvent.setup()
     expect(await screen.findByText('Could not load recommendations.')).toBeVisible()
     expect(screen.queryByText('No open recommendations on other orders.')).not.toBeInTheDocument()
@@ -116,7 +123,7 @@ describe('Void and revise work editing', () => {
   })
 
   it('keeps cancellation hidden until the invoice menu opens and restores focus on Escape', async () => {
-    renderRevision()
+    await renderRevision()
     const user = userEvent.setup()
     const trigger = await screen.findByRole('button', { name: 'Invoice actions' })
     expect(screen.queryByRole('menuitem')).not.toBeInTheDocument()
@@ -131,7 +138,7 @@ describe('Void and revise work editing', () => {
   })
 
   it('closes the successful void form and workspace and leaves a dismissible confirmation', async () => {
-    renderRevision()
+    await renderRevision()
     const user = userEvent.setup()
     await openVoid(user)
     await user.type(screen.getByRole('textbox', { name: 'Reason for voiding' }), 'Wrong work order')
@@ -146,7 +153,7 @@ describe('Void and revise work editing', () => {
 
   it('keeps the failed void form available and clears the password for retry', async () => {
     apiMocks.post.mockRejectedValueOnce(new Error('Password rejected'))
-    renderRevision()
+    await renderRevision()
     const user = userEvent.setup()
     await openVoid(user)
     await user.type(screen.getByRole('textbox', { name: 'Reason for voiding' }), 'Wrong work order')
@@ -159,7 +166,7 @@ describe('Void and revise work editing', () => {
   })
 
   it('dismisses with Escape, restores focus, and discards sensitive fields on reopen', async () => {
-    renderRevision()
+    await renderRevision()
     const user = userEvent.setup()
     const trigger = await openVoid(user)
     expect(screen.getByRole('dialog', { name: 'Void entire order?' })).toBeVisible()
@@ -175,7 +182,7 @@ describe('Void and revise work editing', () => {
   })
 
   it('requires a nonblank reason and password and sends the existing one-time grant contract', async () => {
-    renderRevision()
+    await renderRevision()
     const user = userEvent.setup()
     await openVoid(user)
     const submit = within(screen.getByRole('dialog', { name: 'Void entire order?' })).getByRole('button', { name: 'Void entire order', exact: true })
@@ -194,7 +201,7 @@ describe('Void and revise work editing', () => {
 
   it('shows server rejection in the dialog and never retries automatically', async () => {
     apiMocks.post.mockResolvedValueOnce({ data: { grant_token: 'test-grant' } }).mockRejectedValueOnce({ response: { status: 409, data: { detail: 'This invoice is in QuickBooks. Void it there first.' } } })
-    renderRevision()
+    await renderRevision()
     const user = userEvent.setup()
     await openVoid(user)
     await user.type(screen.getByLabelText('Reason for voiding'), 'Duplicate order')
@@ -208,7 +215,7 @@ describe('Void and revise work editing', () => {
 
   it('hides void and Delete for staff without override permission', async () => {
     useAuthStore.setState({ user: { ...owner, role: 'receptionist' } })
-    renderRevision()
+    await renderRevision()
     expect(await screen.findByText('Invoice INV-1')).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Invoice actions' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Order actions' })).not.toBeInTheDocument()
@@ -219,7 +226,7 @@ describe('Void and revise work editing', () => {
   it('locks submission and dismissal while the one-time grant request is pending', async () => {
     let rejectGrant!: (error: Error) => void
     apiMocks.post.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectGrant = reject }))
-    renderRevision()
+    await renderRevision()
     const user = userEvent.setup()
     await openVoid(user)
     const dialog = screen.getByRole('dialog', { name: 'Void entire order?' })
@@ -237,7 +244,7 @@ describe('Void and revise work editing', () => {
 
   it('keeps Delete reachable for draft orders', async () => {
     fixtureStatus = 'draft'
-    renderRevision()
+    await renderRevision()
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Order actions' }))
     expect(screen.getByRole('button', { name: 'Delete', exact: true })).toBeEnabled()
@@ -248,7 +255,7 @@ describe('Void and revise work editing', () => {
   it('keeps Restore reachable for deleted orders', async () => {
     fixtureStatus = 'draft'
     fixtureDeleted = true
-    renderRevision()
+    await renderRevision()
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Order actions' }))
     expect(screen.getAllByRole('button', { name: 'Restore order' }).every(button => !button.hasAttribute('disabled'))).toBe(true)
@@ -258,7 +265,7 @@ describe('Void and revise work editing', () => {
 
   it('does not offer native void for imported financial history', async () => {
     fixtureSource = 'easy_truck_shop_import'
-    renderRevision()
+    await renderRevision()
     expect(await screen.findByRole('heading', { name: '#RO-000001' })).toBeVisible()
     expect(screen.queryByText('Invoice INV-1')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Invoice actions' })).not.toBeInTheDocument()
@@ -268,7 +275,7 @@ describe('Void and revise work editing', () => {
   it('makes void available beside a paid invoice for a garage admin', async () => {
     fixtureStatus = 'paid'
     useAuthStore.setState({ user: { ...owner, role: 'garage_admin' } })
-    renderRevision()
+    await renderRevision()
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Invoice actions', exact: true }))
     expect(await screen.findByRole('menuitem', { name: 'Void entire order…' })).toBeEnabled()
