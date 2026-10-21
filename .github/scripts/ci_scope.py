@@ -1,7 +1,7 @@
-"""Decide whether a pull request can omit backend pytest jobs.
+"""Conservatively scope PR suites; unknown paths require all application checks.
 
-Only a frontend change, optionally accompanied by documentation, qualifies.
-Unknown paths and inspection failures deliberately require the backend suites.
+Only frontend source/assets and Markdown documentation qualify for reduced suites.
+The workflow executes this classifier from the protected base, not PR code.
 """
 
 from __future__ import annotations
@@ -11,17 +11,34 @@ import subprocess
 from pathlib import PurePosixPath
 
 
-def backend_required(paths: list[str]) -> bool:
-    if not paths or not any(path.startswith("frontend/") for path in paths):
-        return True
-    return any(
-        not (
-            path.startswith("frontend/")
-            or path.startswith("docs/")
-            or ("/" not in path and path.endswith(".md"))
-        )
+def classify(paths: list[str]) -> dict[str, bool]:
+    full = {"backend_required": True, "frontend_required": True, "smoke_required": True}
+    if not paths or any(
+        PurePosixPath(path).is_absolute()
+        or ".." in PurePosixPath(path).parts
+        or "\\" in path
+        or any(ord(char) < 32 for char in path)
         for path in paths
-    )
+    ):
+        return full
+
+    def documentation(path: str) -> bool:
+        return path.endswith(".md") and (path.startswith("docs/") or "/" not in path)
+
+    if all(documentation(path) for path in paths):
+        return {key: False for key in full}
+    # Dependencies, build/test tools and configuration can affect shared CI or
+    # API integration. Only application source/assets qualify as UI-only.
+    def frontend_ui(path: str) -> bool:
+        return path.startswith(("frontend/src/", "frontend/public/")) or path == "frontend/index.html"
+
+    if all(frontend_ui(path) or documentation(path) for path in paths):
+        return {**full, "backend_required": False}
+    return full
+
+
+def backend_required(paths: list[str]) -> bool:
+    return classify(paths)["backend_required"]
 
 
 def changed_paths(base: str, head: str) -> list[str]:
@@ -43,13 +60,16 @@ def main() -> None:
     args = parser.parse_args()
     try:
         paths = changed_paths(args.base, args.head)
-        required = backend_required(paths)
-        reason = "backend or shared change" if required else "frontend and documentation only"
+        scope = classify(paths)
+        reason = "backend or shared change" if scope["backend_required"] else (
+            "frontend and Markdown documentation only" if scope["frontend_required"] else "Markdown documentation only"
+        )
     except (OSError, subprocess.CalledProcessError, UnicodeDecodeError, ValueError) as error:
         paths = []
-        required = True
+        scope = classify([])
         reason = f"scope unavailable ({type(error).__name__}); fail closed"
-    print(f"backend_required={'true' if required else 'false'}")
+    for key, required in scope.items():
+        print(f"{key}={str(required).lower()}")
     print(f"reason={reason}")
     print(f"changed_paths={len(paths)}")
 
