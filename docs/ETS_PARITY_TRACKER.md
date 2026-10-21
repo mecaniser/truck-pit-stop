@@ -2,9 +2,9 @@
 
 # ETS parity implementation tracker
 
-Last updated: 2026-10-20. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
+Last updated: 2026-10-21. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
 
-**Progress: 5/30 completed; 5/6 selected outcomes completed. Current: A1 / DB-136 implemented with independent local QA/Security GO; final CI and release pending. B1 is Done. B4 is partially delivered; ETS importer remains held.**
+**Progress: 6/30 completed; 6/6 selected outcomes completed. A1 / DB-136 is Done: merged, deployed and production verified. The selected wave is complete. The other24 discoveries remain retained; B4 is partially delivered and ETS importer remains held.**
 
 ## Approved delivery order
 
@@ -39,10 +39,10 @@ Last updated: 2026-10-20. Program owner: Product & Delivery Lead. Discovery inve
   - Status: **Done — PR #575 merged, deployed and production verified**. Board: **DB-135**. Owner: Backend & Integrations.
   - Delivered read-only account activity, supported native balances/aging and unsent PDF statements. Owner-approved 34 Test / 13 Real classifications exclude test activity; unknown/source/settlement gaps remain held. Real does not establish payment or collection authority. ETS history remains separate. No financial records changed.
   - Evidence: [final B1 receipt](verification/DB135_CUSTOMER_RECEIVABLES.md#merged-deployed-and-accepted--2026-10-19), [PR575 final release receipt](https://github.com/mecaniser/truck-pit-stop/pull/575). All six checks, exact c66cabf2 Web/Worker, fixed financial retention and actual signed-in Light/Night desktop/mobile account/PDF acceptance passed.
-- [ ] **A1 — Actual labor cost and defensible job contribution**
-  - Status: **Review — serial release slot received; exact released-main migration integration and final CI/release pending**. Board: **DB-136**. Owner: Backend & Integrations; Architecture reviews contracts.
+- [x] **A1 — Actual labor cost and defensible job contribution**
+  - Status: **Done — PR598 merged, exact Web/Worker deployed, production Day/Night desktop/mobile acceptance and independent release gates passed**. Board: **DB-136**. Owner: Backend & Integrations; Architecture reviews contracts.
   - Source and READ ONLY aggregate intake complete. Technician cost rates are absent; billing hours/rates are not wage expense. Sparse actual job time and missing parts costs prevent a reliable historical whole-job margin.
-  - Evidence: [A1 policy proposal and intake](contracts/db136-labor-cost-policy-proposal.md). Owner approved loaded hourly cost from October20 shop-local date, owner-only access and separate overhead. [Final implementation contract](contracts/db136-labor-cost-contract.md) has Architecture GO. Backend/API and owner-only Job Contribution UI pass focused checks, real isolated PostgreSQL migration/API/retention rehearsal and actual Day/Night desktop/mobile owner/admin acceptance. [Verification](verification/DB136_LABOR_COST.md), [PR598](https://github.com/mecaniser/truck-pit-stop/pull/598). No production rates or financial changes. ETS importer remains held.
+  - Evidence: [A1 policy proposal and intake](contracts/db136-labor-cost-policy-proposal.md). Owner approved loaded hourly cost from October20 shop-local date, owner-only access and separate overhead. [Final implementation contract](contracts/db136-labor-cost-contract.md) has Architecture GO. Backend/API and owner-only Job Contribution UI pass focused checks, real isolated PostgreSQL migration/API/retention rehearsal and actual Day/Night desktop/mobile owner/admin acceptance. [Verification](verification/DB136_LABOR_COST.md), [PR598](https://github.com/mecaniser/truck-pit-stop/pull/598). No production rates/reviews or QA financial changes. All47 classified invoices retained; postrelease28-cohort hashes match. Initial premerge scheduled ETS sync differences are qualified in the final receipt. ETS importer remains held.
 
 Dependencies: P1 precedes C1 parts-price defaults. M1 must retain existing PM/telemetry provenance. B1 must distinguish native collectible balances from ETS-owned history. A1 requires explicit effective-date labor-cost policy and follows the operational work.
 
@@ -107,6 +107,6 @@ Historical B1 owner steering (2026-10-19; superseded by the completed classifica
 
 DB-139 queue follow-up Done (2026-10-20): PR590 merged76966f24, exact Web/Worker deployed, all six protected checks passed. Actual NC Day/Night desktop1280 andmobile390 acceptance verified native-only Ready to Close, consistent count/value/pagination and reachable ETS history. Financial cohort hashes unchanged, zero acceptance API writes. [Final receipt](https://github.com/mecaniser/truck-pit-stop/pull/590). Importer stays held; that release returned the selected wave to A1 discovery. The current A1 handoff below supersedes that historical stage.
 
-## Current handoff: A1 / DB-136 (2026-10-20)
+## Current handoff: selected wave complete (2026-10-21)
 
-The six-outcome order is unchanged. R1/P1/C1/M1/B1 are Done; A1 is the remaining selected outcome. A1 implementation and independent local gates are complete; protected final-head CI and production release/acceptance remain pending. It is not Done. The remaining 24 discoveries are retained, including partially delivered B4. No new feature scope, financial mutation, importer rollout or payroll integration is implied.
+R1/P1/C1/M1/B1/A1 are Done, with exact release receipts. A1 is available under Shop Analytics → Job Contribution, with owner-only Technician Costs. No actual rates were guessed or entered. The other24 discoveries remain retained; their next delivery order requires a separate priority decision. B4 remains partially delivered and its importer held. No new feature, financial mutation, importer rollout or payroll integration is implied.
