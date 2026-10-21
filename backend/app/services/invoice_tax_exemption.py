@@ -77,15 +77,13 @@ async def eligibility(db, invoice, settlement, *, lock=False, adjustment=False):
             return "Tax cannot change after payment activity has started."
     if invoice.quickbooks_invoice_id or invoice.quickbooks_synced_at:
         return "This invoice has QuickBooks accounting history. Review it before changing tax."
+    from app.services.invoice_outbox_policy import financial_invoice_outbox_clause
     query = select(ProviderOutboxEvent).where(ProviderOutboxEvent.tenant_id == invoice.tenant_id,
-                                             ProviderOutboxEvent.aggregate_id == invoice.id)
+        ProviderOutboxEvent.aggregate_id == invoice.id, financial_invoice_outbox_clause())
     if lock:
         query = query.with_for_update(nowait=True)
     events = list((await db.scalars(query.execution_options(populate_existing=True))).all())
-    from app.services.provider_outbox_service import EMAIL_NOTIFICATION_EVENT
     for event in events:
-        if event.event_type == EMAIL_NOTIFICATION_EVENT:
-            continue
         if (event.event_type != "quickbooks.invoice.sync.v1" or event.status == "processing"
                 or event.lock_token or event.locked_until or event.provider_message_id
                 or event.status == "succeeded"):
@@ -95,7 +93,8 @@ async def eligibility(db, invoice, settlement, *, lock=False, adjustment=False):
                     or event.attempt_count and not (event.payload or {}).get("cash_no_dispatch"))
                 and not valid_sandbox_cash_review(event, invoice)):
             return "Previous invoice export attempts require review before changing tax."
-    if not events and invoice.quickbooks_sync_status not in {None, "pending", "not_synced", "not_required", "awaiting_payment"}:
+    if not events and (invoice.quickbooks_sync_error is not None
+            or invoice.quickbooks_sync_status not in {None, "pending", "not_synced", "not_required", "awaiting_payment"}):
         return "Previous invoice export history requires review before changing tax."
     seen, parent_id = {invoice.id}, invoice.supersedes_invoice_id
     while parent_id:
@@ -111,10 +110,13 @@ async def eligibility(db, invoice, settlement, *, lock=False, adjustment=False):
         if parent.zelle_pending_submitted_at is not None or parent.quickbooks_invoice_id:
             return "A previous invoice has pending payment or QuickBooks history requiring review."
         parent_query = select(ProviderOutboxEvent).where(ProviderOutboxEvent.tenant_id == invoice.tenant_id,
-            ProviderOutboxEvent.aggregate_id == parent.id, ProviderOutboxEvent.event_type != EMAIL_NOTIFICATION_EVENT)
+            ProviderOutboxEvent.aggregate_id == parent.id, financial_invoice_outbox_clause())
         if lock:
             parent_query = parent_query.with_for_update(nowait=True)
         parent_events = list((await db.scalars(parent_query.execution_options(populate_existing=True))).all())
+        if not parent_events and (parent.quickbooks_sync_error is not None
+                or parent.quickbooks_sync_status not in {None, "pending", "not_synced", "not_required", "awaiting_payment"}):
+            return "A previous invoice has unresolved export activity."
         reviews = [event.payload[CASH_REVIEW_KEY] for event in events if valid_sandbox_cash_review(event, invoice)]
         local_snapshot = await local_void_ancestor_snapshot(db, parent, lock=lock) if parent.quickbooks_synced_at else None
         local_reviewed = bool(local_snapshot and reviews and all(any(

@@ -347,9 +347,9 @@ def cash_staff(actor):
 
 
 async def ancestor_financial_events(db, parent, *, lock=False):
-    from app.services.provider_outbox_service import EMAIL_NOTIFICATION_EVENT
+    from app.services.invoice_outbox_policy import financial_invoice_outbox_clause
     query = select(ProviderOutboxEvent).where(ProviderOutboxEvent.tenant_id == parent.tenant_id,
-        ProviderOutboxEvent.aggregate_id == parent.id, ProviderOutboxEvent.event_type != EMAIL_NOTIFICATION_EVENT)
+        ProviderOutboxEvent.aggregate_id == parent.id, financial_invoice_outbox_clause())
     if lock:
         query = query.with_for_update(nowait=True)
     return list((await db.scalars(query.execution_options(populate_existing=True))).all())
@@ -475,6 +475,10 @@ async def reviewed_cash_ancestry_reason(db, invoice, *, lock=False, reviews=None
                     or proof.get("evidence_manifest_sha256") != review.get("evidence_manifest_sha256")
                     for review, proof in zip(reviews, proofs)):
                 return "A replaced invoice has QuickBooks accounting history. Review it before local cash."
+        if not reviews and (parent.quickbooks_sync_error is not None
+                or parent.quickbooks_sync_status not in {None, "pending", "not_synced", "not_required", "awaiting_payment"}
+                or await ancestor_financial_events(db, parent, lock=lock)):
+            return "A replaced invoice has unresolved accounting activity. Review it before local cash."
         if not owner_reviews:
             for model in (InvoicePaymentAttempt, Payment, PaymentAccountingLink, InvoicePaymentLedgerEvent):
                 if await db.scalar(select(model.id).where(model.tenant_id == invoice.tenant_id,
@@ -511,16 +515,16 @@ async def cash_eligibility(db, invoice, settlement, *, lock=False):
         if await db.scalar(select(model.id).where(model.tenant_id == invoice.tenant_id,
                 model.invoice_id == invoice.id).limit(1)):
             return "Cash cannot be mixed with existing or historical payments.", []
+    from app.services.invoice_outbox_policy import financial_invoice_outbox_clause
+    # Known nonfinancial events remain durable, but need no financial lock.
     query = select(ProviderOutboxEvent).where(ProviderOutboxEvent.tenant_id == invoice.tenant_id,
-        ProviderOutboxEvent.aggregate_id == invoice.id)
+        ProviderOutboxEvent.aggregate_id == invoice.id, financial_invoice_outbox_clause())
     if lock:
         query = query.with_for_update()
-    all_events = list((await db.scalars(query)).all())
-    from app.services.provider_outbox_service import EMAIL_NOTIFICATION_EVENT
-    # Only known nonfinancial delivery events are ignored, never suppressed.
     # SMS delivery is currently immediate and has no invoice provider-outbox type.
-    events = [event for event in all_events if event.event_type != EMAIL_NOTIFICATION_EVENT]
-    if not events and invoice.quickbooks_sync_status not in {None, "pending", "not_synced", "not_required", "awaiting_payment"}:
+    events = list((await db.scalars(query)).all())
+    if not events and (invoice.quickbooks_sync_error is not None
+            or invoice.quickbooks_sync_status not in {None, "pending", "not_synced", "not_required", "awaiting_payment"}):
         return "Previous accounting activity must be reviewed before local cash.", events
     for event in events:
         if CASH_REVIEW_KEY in (event.payload or {}) and not valid_sandbox_cash_review(event, invoice):
@@ -539,7 +543,7 @@ async def cash_eligibility(db, invoice, settlement, *, lock=False):
                 or event.attempt_count and not (event.payload or {}).get("cash_no_dispatch")
                 and (event.payload or {}).get("cash_export_ambiguous", True)):
             return "Previous export attempts have an unverified outcome. Accounting review is required before cash.", events
-    if any(valid_sandbox_cash_review(event, invoice) or valid_owner_cash_review(event, invoice) for event in events):
+    if not events or any(valid_sandbox_cash_review(event, invoice) or valid_owner_cash_review(event, invoice) for event in events):
         reviews = [event.payload[CASH_REVIEW_KEY] for event in events if valid_sandbox_cash_review(event, invoice)]
         reviews.extend(event.payload[OWNER_CASH_REVIEW_KEY] for event in events if valid_owner_cash_review(event, invoice))
         reason = await reviewed_cash_ancestry_reason(db, invoice, lock=lock, reviews=reviews)
@@ -622,7 +626,7 @@ async def confirm_full_cash(db, *, invoice, tenant, customer_id, actor,
     await locked_policy(db, invoice, nowait=True)
     # Refresh after acquiring serialization, not from the earlier endpoint read.
     await db.refresh(invoice, attribute_names=["accounting_policy", "status", "deleted_at", "voided_at",
-        "quickbooks_invoice_id", "quickbooks_synced_at", "quickbooks_sync_status", "is_internal", "zelle_pending_submitted_at",
+        "quickbooks_invoice_id", "quickbooks_synced_at", "quickbooks_sync_status", "quickbooks_sync_error", "is_internal", "zelle_pending_submitted_at",
         "cash_export_review_required", "supersedes_invoice_id"])
     existing = await db.scalar(select(InvoicePaymentAttempt).where(
         InvoicePaymentAttempt.tenant_id == tenant.id, InvoicePaymentAttempt.idempotency_key == idempotency_key))
