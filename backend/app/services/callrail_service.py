@@ -69,10 +69,10 @@ async def resolve_for_thread(db, tenant_id, thread_id, *, allow_opt_out=False):
 
 async def _context_for_mapping(db, mapping, *, allow_opt_out=False):
     tenant_id, thread_id = mapping.tenant_id, mapping.thread_id
-    binding = await db.get(CallRailNumberBinding, mapping.binding_id)
-    thread = await db.get(MessageThread, thread_id)
-    customer = await db.get(Customer, mapping.customer_id) if mapping.customer_id else None
-    tenant = await db.get(Tenant, tenant_id)
+    binding = await db.get(CallRailNumberBinding, mapping.binding_id, populate_existing=True)
+    thread = await db.get(MessageThread, thread_id, populate_existing=True)
+    customer = await db.get(Customer, mapping.customer_id, populate_existing=True) if mapping.customer_id else None
+    tenant = await db.get(Tenant, tenant_id, populate_existing=True)
     if not binding or not binding.enabled or binding.deleted_at is not None:
         deny('callrail_binding_disabled')
     if (binding.tenant_id != tenant_id or not thread or thread.tenant_id != tenant_id
@@ -384,30 +384,14 @@ async def import_conversation(db, binding_id, thread_id, record, *, verified_mes
 
 
 async def sender_context(db, tenant, thread):
-    """Tenant-local choices, including a disabled current selection for clarity."""
-    if thread.thread_kind == 'inquiry':
-        binding = await db.get(CallRailNumberBinding, thread.inquiry_binding_id) if thread.inquiry_binding_id else None
-        valid = binding is not None and binding.tenant_id == tenant.id
-        return {'sms_sender_options': [{'id': str(binding.id), 'provider': 'callrail', 'sender_number': binding.sender_phone,
-                'enabled': bool(binding.enabled and binding.deleted_at is None)}] if valid else [],
-                'selected_sender_id': str(thread.inquiry_binding_id) if thread.inquiry_binding_id else None,
-                'sms_provider': 'callrail', 'sender_number': binding.sender_phone if valid else '',
-                'sender_selection_allowed': False}
-    mapping = await db.scalar(select(CallRailConversation).where(CallRailConversation.tenant_id == tenant.id,
-        CallRailConversation.thread_id == thread.id, CallRailConversation.deleted_at.is_(None),
-        CallRailConversation.selected_for_sending.is_(True)))
-    bindings = list((await db.scalars(select(CallRailNumberBinding).where(
-        CallRailNumberBinding.tenant_id == tenant.id, CallRailNumberBinding.enabled.is_(True),
-        CallRailNumberBinding.deleted_at.is_(None)).order_by(CallRailNumberBinding.sender_phone))).all())
-    current = await db.get(CallRailNumberBinding, mapping.binding_id) if mapping else None
-    if current and current.tenant_id == tenant.id and all(row.id != current.id for row in bindings):
-        bindings.append(current)
-    options = [{'id': 'twilio', 'provider': 'twilio', 'sender_number': _phone(tenant.sms_phone_number), 'enabled': True}]
-    options.extend({'id': str(row.id), 'provider': 'callrail', 'sender_number': row.sender_phone,
-                    'enabled': bool(row.enabled and row.deleted_at is None)} for row in bindings)
-    return {'sender_selection_allowed': True, 'sms_sender_options': options, 'selected_sender_id': str(mapping.binding_id) if mapping else 'twilio',
-            'sms_provider': 'callrail' if mapping else 'twilio',
-            'sender_number': current.sender_phone if current and current.tenant_id == tenant.id else _phone(tenant.sms_phone_number)}
+    from app.services import automatic_sms_route as automatic
+    customer = await db.get(Customer, thread.customer_id) if thread.customer_id else None
+    recipient = _phone(thread.customer_phone if thread.thread_kind == 'inquiry' else customer.phone if customer else '')
+    try:
+        return (await automatic.resolve(db, tenant, thread, recipient)).context()
+    except HTTPException as exc:
+        return dict(sms_provider=None, sender_number='', selected_sender_id=None,
+                    sender_selection_allowed=False, sender_mode='unavailable', sender_route_reason=exc.detail['code'])
 
 
 async def lock_sender_bindings(db, tenant_id):

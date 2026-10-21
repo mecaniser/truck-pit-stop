@@ -10,6 +10,8 @@ export type DeliveryStatus =
   | "failed"
   | "unknown";
 export type SendRestriction =
+  | "reply_route_unavailable"
+  | "reply_route_ambiguous"
   | "not_connected"
   | "opted_out"
   | "recipient_opted_out"
@@ -59,9 +61,8 @@ export interface Conversation {
   context: {
     smsProvider?: string;
     senderNumber?: string;
-    selectedSenderId?: string;
-    senderSelectionAllowed?: boolean;
-    smsSenderOptions?: { id: string; provider: "twilio" | "callrail"; enabled?: boolean; senderNumber: string }[];
+    senderMode?: "reply" | "initiation" | "unavailable";
+    senderRouteReason?: string;
     vehicleLabel?: string;
     repairOrderLabel?: string;
     repairStatus?: string;
@@ -75,6 +76,8 @@ export const channelLabels: Record<Channel, string> = {
   telegram: "Telegram",
 };
 export const restrictionLabels: Record<SendRestriction, string> = {
+  reply_route_unavailable: "This conversation’s number needs review before replying.",
+  reply_route_ambiguous: "This conversation’s number needs review before replying.",
   not_connected: "This channel is not connected yet.",
   routing_disabled: "SMS routing for this shop is awaiting activation.",
   credentials_unavailable: "This shop’s SMS connection needs review.",
@@ -145,6 +148,7 @@ export function composeMaxLength(conversation: Conversation): number {
 }
 export function canCompose(conversation: Conversation, body: string): boolean {
   return (
+    conversation.context.senderMode !== "unavailable" &&
     conversation.sendPolicy.canSend &&
     conversation.sendPolicy.reason === null &&
     body.trim().length > 0 &&
