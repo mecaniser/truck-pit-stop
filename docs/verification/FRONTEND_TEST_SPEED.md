@@ -23,3 +23,17 @@ Independent source QA/Security GO for one candidate: worker allocation fits VM b
 ## Rollback
 
 Restore the remaining runner's single-worker default through a focused protected PR if actual CI reveals contention or isolation failures. Keep existing deadlines and all tests; do not hide failures with retries or relaxed checks.
+
+## Release evidence
+
+PR607 merged normally as `1fb445784271073f4b8cb96f39500fe6b2c03f24` after all six checks passed on exact head `628985d70e56dc1141fadd38872b02d400023236` in run39648802098. Checked and merged trees match. Independent runtime QA/Security GO confirms unchanged176 files/1826 tests, all passing.
+
+| Measurement | Previous run39633172662 | New run39648802098 |
+|---|---:|---:|
+| Frontend remaining Vitest |316.87s|201.81s|
+| Frontend remaining job |7m10s|5m10s|
+| Full pipeline |11m33s|9m37s|
+
+The suite elapsed time fell36%; total remaining job time fell28%. Aggregate test CPU time increased under parallel execution, so these are measured wall-clock improvements rather than claims of reduced total computation. Dependency/setup cost remains. No extra CPU allocation, longer deadline, altered test environment, weakened assertion, disabled file isolation or lost coverage. Critical suite remains serial.
+
+Exactly one protected candidate run, no retries and no duplicate full local suite. Six required contexts and strict base freshness remain enabled. Test-only tooling needs no Railway application deployment; merged runner settings govern subsequent checks. Documentation-only closeout records acceptance without rerunning application suites. No SMS, payment, registration or production/provider changes.
