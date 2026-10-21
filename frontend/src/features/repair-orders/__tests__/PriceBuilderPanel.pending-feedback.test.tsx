@@ -1189,6 +1189,21 @@ describe('PriceBuilderPanel pending feedback', () => {
     expect(props.onAdminCompleteWork).not.toHaveBeenCalled()
   })
 
+  it('labels the invoice tax amount as sales tax', async () => {
+    apiMocks.get.mockImplementation((url: string) => Promise.resolve({ data: url.endsWith('/price-build') ? emptySummary : [] }))
+    renderPanel({
+      orderStatus: 'invoiced',
+      invoice: {
+        id: 'invoice-1', tenant_id: 'tenant-1', repair_order_id: 'order-1', invoice_number: 'INV-1001',
+        status: 'sent', subtotal: '100.00', tax_amount: '8.25', discount_amount: '0.00', total_amount: '108.25',
+        due_date: null, paid_at: null, notes: null, created_at: '2026-10-12T00:00:00Z', updated_at: '2026-10-12T00:00:00Z',
+      },
+    })
+    await userEvent.click(screen.getByRole('button', { name: /Invoice INV-1001/i }))
+    expect(screen.getByText('Sales tax').parentElement).toHaveTextContent('$8.25')
+    expect(screen.queryByText('Tax', { exact: true })).not.toBeInTheDocument()
+  })
+
   it('keeps the primary invoice action visible and secondary actions reachable on phones with paid and pending guards', async () => {
     apiMocks.get.mockImplementation((url: string) => Promise.resolve({ data: url.endsWith('/price-build') ? emptySummary : [] }))
     const compact = vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({

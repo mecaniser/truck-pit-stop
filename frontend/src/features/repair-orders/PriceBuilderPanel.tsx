@@ -2936,7 +2936,7 @@ export default function PriceBuilderPanel({
             )}
             {parseFloat(invoice.tax_amount || '0') > 0 && (
               <div className="flex items-center justify-between">
-                <span className="text-gray-500">Tax</span>
+                <span className="text-gray-500">Sales tax</span>
                 <span className="font-semibold text-gray-900">{money(invoice.tax_amount)}</span>
               </div>
             )}
