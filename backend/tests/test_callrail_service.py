@@ -371,8 +371,10 @@ async def test_api_actual_sci_shape_requires_sender_proof_and_preserves_mms(mapp
     results = await svc.import_conversation(db, binding.id, thread.id, record,
         verified_message_ids={'SCIverifiedIncoming', 'SCIverifiedMms'})
     await db.commit()
-    assert [row.get('reason', row['status']) for row in results] == ['historical_sender_unproven', 'received', 'unsupported_message']
-    message = await db.scalar(select(SMSMessage).where(SMSMessage.thread_id == thread.id))
+    assert [row.get('reason', row['status']) for row in results] == ['historical_sender_unproven', 'received', 'received']
+    message = await db.scalar(select(SMSMessage).where(SMSMessage.thread_id == thread.id, SMSMessage.provider_message_id == 'SCIverifiedIncoming'))
+    mms = await db.scalar(select(SMSMessage).where(SMSMessage.thread_id == thread.id, SMSMessage.provider_message_id == 'SCIverifiedMms'))
+    assert mms.body == 'Attachment caption\n\n' + svc.ATTACHMENT_NOTICE
     assert message.provider_message_id == 'SCIverifiedIncoming'
     assert message.body == 'Synthetic reply' and message.twilio_message_sid is None
     # API SCI id and signed webhook SCI resource are one message, even when the
@@ -382,7 +384,7 @@ async def test_api_actual_sci_shape_requires_sender_proof_and_preserves_mms(mapp
     await db.commit()
     results = await svc.import_conversation(db, binding.id, thread.id, record)
     assert results[1]['status'] == 'duplicate'
-    assert await db.scalar(select(func.count()).select_from(SMSMessage).where(SMSMessage.thread_id == thread.id)) == 1
+    assert await db.scalar(select(func.count()).select_from(SMSMessage).where(SMSMessage.thread_id == thread.id)) == 2
 
 
 @isolated
