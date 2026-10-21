@@ -151,8 +151,6 @@ jobs:
         run: echo 'Application suite omitted by trusted Markdown-only scope; safety contracts still run.'
       - uses: actions/checkout@v4
         if: needs.migration-graph.outputs.frontend_required != 'false'
-        with:
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         if: needs.migration-graph.outputs.frontend_required != 'false'
         with:
@@ -162,7 +160,9 @@ jobs:
       - name: Install dependencies
         if: needs.migration-graph.outputs.frontend_required != 'false'
         working-directory: frontend
-        run: npm ci
+        # Keep clean install, lockfile integrity, lifecycle scripts and audit.
+        # Prefer verified cached tarballs; fetch normally when missing.
+        run: npm ci --prefer-offline
       - name: Package exact-run frontend installation
         if: needs.migration-graph.outputs.frontend_required != 'false'
         working-directory: frontend
@@ -338,9 +338,9 @@ jobs:
           if [ "${{ runner.environment }}" = "self-hosted" ]; then
             # Matching OS dependencies are baked into the pristine VM image;
             # job users deliberately cannot sudo or modify that base image.
-            npx playwright install chromium
+            npx playwright install --only-shell chromium
           else
-            npx playwright install --with-deps chromium
+            npx playwright install --with-deps --only-shell chromium
           fi
       - name: Prepare isolated test database
         if: needs.migration-graph.outputs.smoke_required != 'false'
