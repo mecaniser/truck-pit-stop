@@ -222,6 +222,8 @@ _persistence_semaphores: weakref.WeakKeyDictionary[
     asyncio.AbstractEventLoop, asyncio.BoundedSemaphore
 ] = weakref.WeakKeyDictionary()
 _PERSISTENCE_GENERATION_ATTRIBUTE = "_dieselbridge_persistence_generation"
+# Retain deadline handoffs until the original session owner has settled.
+_persistence_cleanup_controllers: set[asyncio.Task] = set()
 
 
 def _persistence_semaphore() -> asyncio.BoundedSemaphore:
@@ -751,16 +753,49 @@ async def log_error(
             return_on_external_cancel=True,
         )
 
+    async def _continue_cancellation_after_deadline() -> None:
+        nonlocal observed_generation, phase_cancellation_waves
+
+        # A wave issued just before the deadline may still be queued. Observe
+        # its acknowledgement before deciding whether this phase needs another.
+        await _event_loop_barrier()
+        while not lifecycle.done():
+            if state.generation != observed_generation:
+                observed_generation = state.generation
+                phase_cancellation_waves = 0
+            if phase_cancellation_waves < ERROR_LOG_MAX_PHASE_CANCEL_WAVES:
+                if lifecycle.cancel():
+                    phase_cancellation_waves += 1
+                await _event_loop_barrier()
+                continue
+
+            # A resistant driver keeps the original session and permit. Await
+            # settlement or a new cleanup phase, never overlap another call or
+            # repeat cancellation indefinitely against the same driver phase.
+            signals: set[asyncio.Future] = {lifecycle}
+            if state.phase_changed is not None:
+                signals.add(state.phase_changed)
+            await asyncio.wait(signals, return_when=asyncio.FIRST_COMPLETED)
+
     if lifecycle.done():
         try:
             result = lifecycle.result()
         except BaseException:
             result = None
     else:
-        # The driver resisted both cancellation waves. The lifecycle—not this
-        # controller—continues to own the sanitized row, session, and permit.
-        # When it eventually settles, its async semaphore scope restores capacity.
+        # Loop starvation can cross the hard deadline before any wave, or
+        # before a later cleanup phase is seen. Stop new work now and transfer
+        # only cancellation supervision; the lifecycle remains the sole owner
+        # of its session and permit. The caller does not wait past its budget.
+        stop_requested.set()
         lifecycle.add_done_callback(_consume_task_result)
+        controller = asyncio.create_task(
+            _continue_cancellation_after_deadline(),
+            name="error-persistence-cleanup-controller",
+        )
+        _persistence_cleanup_controllers.add(controller)
+        controller.add_done_callback(_persistence_cleanup_controllers.discard)
+        controller.add_done_callback(_consume_task_result)
         result = None
 
     if external_cancellation is not None:
