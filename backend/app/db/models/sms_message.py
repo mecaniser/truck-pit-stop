@@ -28,6 +28,7 @@ class SMSDeliveryStatus(str, enum.Enum):
 
 
 class SMSMessage(BaseModel):
+    twilio_reply_route_id = Column(UUID(as_uuid=True), ForeignKey("twilio_reply_routes.id", ondelete="RESTRICT"), nullable=True)
     __tablename__ = "sms_messages"
     __table_args__ = (
         CheckConstraint("customer_id IS NOT NULL OR (provider IS NOT NULL AND provider = 'callrail' AND callrail_binding_id IS NOT NULL)", name='ck_sms_customer_or_inquiry'),

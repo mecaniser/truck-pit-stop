@@ -308,10 +308,10 @@ async def test_inquiry_policy_retains_stop_and_disabled_reason_without_twilio_fa
     binding.enabled = False
     await db.commit()
     policy = (await comm.send_policy(db, tenant, thread, Sender()))[0]
-    assert policy['can_send'] is False and policy['reason'] == 'callrail_binding_disabled'
+    assert policy['can_send'] is False and policy['reason'] == 'reply_route_unavailable'
     binding.enabled = True
     route = await db.scalar(select(CallRailConversation).where(CallRailConversation.thread_id == thread.id))
     route.selected_for_sending = False
     await db.commit()
     policy = (await comm.send_policy(db, tenant, thread, Sender()))[0]
-    assert policy['can_send'] is False and policy['reason'] == 'callrail_binding_changed'
+    assert policy['can_send'] is True and policy['max_length'] == 140

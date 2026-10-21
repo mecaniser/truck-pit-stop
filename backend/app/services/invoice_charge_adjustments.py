@@ -109,6 +109,7 @@ async def adjust(db, *, invoice, tenant, actor, body, idempotency_key):
     review_events = list((await db.scalars(select(ProviderOutboxEvent).where(
         ProviderOutboxEvent.tenant_id == invoice.tenant_id,
         ProviderOutboxEvent.aggregate_id == invoice.id,
+        ProviderOutboxEvent.event_type == "quickbooks.invoice.sync.v1",
     ).with_for_update(nowait=True).execution_options(populate_existing=True))).all())
     valid_owner_review_events = [event for event in review_events if valid_owner_cash_review(event, invoice)]
     try:

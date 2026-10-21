@@ -8,6 +8,7 @@ import { enteredMoney } from '@/features/parts-pricing/configuration'
 import RepairOrderScheduleControl from './RepairOrderScheduleControl'
 import type { OrderScheduleSummary } from './repairOrderSchedule'
 import RepairOrderActivity from './RepairOrderActivity'
+import VoidOrderDialog from './VoidOrderDialog'
 import { ImportedBillingDetails } from './ImportedBillingDetails'
 import { importedMoney, type ImportedBilling } from './importedBilling'
 import { OperationExecutionControls, OperationExecutionFeedback, OperationExecutionStatus } from '@/features/operation-execution/OperationExecution'
@@ -15,7 +16,7 @@ import { useOperationExecution } from '@/features/operation-execution/queries'
 import { OperationNotes } from '@/features/operation-execution/OperationNotes'
 import OrderChecklist from '@/features/service-checklists/OrderChecklist'
 import { type ReactNode, type ChangeEvent, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
-import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
+import { Menu, MenuButton, MenuItem, MenuItems, Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
 import WorkspaceActionOverflow from '@/components/WorkspaceActionOverflow'
 import { useCompactWorkspace } from '@/hooks/useCompactWorkspace'
 import DatePicker from '@/components/DatePicker'
@@ -26,6 +27,7 @@ import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 import {
   AlertTriangle,
+  CircleSlash,
   Box,
   Building2,
   Camera,
@@ -38,6 +40,7 @@ import {
   Gauge,
   History,
   Mail,
+  MoreHorizontal,
   Play,
   Plus,
   RotateCcw,
@@ -983,8 +986,8 @@ export default function PriceBuilderPanel({
     descriptionWasEditing.current = descriptionEditing
   }, [descriptionEditing])
   const [forceVoidOpen, setForceVoidOpen] = useState(false)
-  const [forceVoidReason, setForceVoidReason] = useState('')
-  const [forceVoidPassword, setForceVoidPassword] = useState('')
+  const invoiceActionsRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => setForceVoidOpen(false), [orderId])
   const [noteComposerOpen, setNoteComposerOpen] = useState(false)
   const [noteAudience, setNoteAudience] = useState<'customer' | 'shop'>('shop')
   const [noteDraft, setNoteDraft] = useState('')
@@ -2526,10 +2529,10 @@ export default function PriceBuilderPanel({
                       disabled={invoiceActionPending}
                       className="db-stage-action db-stage-action--secondary"
                       title="Preserve this invoice as voided and reopen the order for revision"
-                      aria-label="Void & revise"
+                      aria-label="Revise invoice"
                     >
                       <RotateCcw className="h-4 w-4 shrink-0" />
-                      <span>Void &amp; revise</span>
+                      <span>Revise invoice</span>
                     </button>
                   )}
   </>
@@ -2568,7 +2571,9 @@ export default function PriceBuilderPanel({
               )}
   </>
   const orderNavigation = <>
-            <button type="button" onClick={onToggleDangerActions} aria-expanded={showDangerActions} aria-label="Order actions" title="Order actions" className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/14 text-white ring-1 ring-white/20">⋯</button>
+            {(isDeleted || !['invoiced', 'paid'].includes(orderStatus)) && (
+              <button type="button" onClick={onToggleDangerActions} aria-expanded={showDangerActions} aria-label="Order actions" title="Order actions" className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/14 text-white ring-1 ring-white/20">⋯</button>
+            )}
             {onPrev && (
               <button
                 type="button"
@@ -2841,43 +2846,65 @@ export default function PriceBuilderPanel({
 
       {hasInvoice && invoice && (
         <div className="rounded-2xl border border-purple-200 bg-purple-50/70 p-3">
-          <button
-            type="button"
-            onClick={() => setInvoiceDetailsOpen((open) => !open)}
-            className="flex w-full items-center justify-between gap-3 text-left"
-            aria-expanded={invoiceDetailsOpen}
-          >
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-700">
-                <FileText className="h-5 w-5" />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setInvoiceDetailsOpen((open) => !open)}
+              className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
+              aria-expanded={invoiceDetailsOpen}
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-700 sm:flex">
+                  <FileText className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-purple-950">Invoice {invoice.invoice_number}</p>
+                  <p className="truncate text-sm text-purple-700">
+                    {invoiceSettlement
+                      ? invoiceSettlement.state.replace(/_/g, ' ')
+                      : orderStatus === 'paid'
+                        ? 'Paid'
+                        : invoice.pending_zelle_confirmation
+                          ? 'Pending Zelle confirmation'
+                          : 'Awaiting payment'}
+                  </p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="truncate font-semibold text-purple-950">Invoice {invoice.invoice_number}</p>
-                <p className="text-sm text-purple-700">
-                  {invoiceSettlement
-                    ? invoiceSettlement.state.replace(/_/g, ' ')
-                    : orderStatus === 'paid'
-                      ? 'Paid'
-                      : invoice.pending_zelle_confirmation
-                        ? 'Pending Zelle confirmation'
-                        : 'Awaiting payment'}
-                </p>
-              </div>
-            </div>
-            <span className="flex shrink-0 items-center gap-3">
-              <span className="text-right">
-                {invoice.due_date && (
-                  <span className="block text-[11px] font-semibold uppercase tracking-wide text-purple-500">
-                    Due {new Date(invoice.due_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+              <span className="flex shrink-0 items-center gap-3">
+                <span className="text-right">
+                  {invoice.due_date && (
+                    <span className="block text-[11px] font-semibold uppercase tracking-wide text-purple-500">
+                      Due {new Date(invoice.due_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    </span>
+                  )}
+                  <span className="font-['Barlow_Condensed',sans-serif] text-2xl font-extrabold leading-none text-purple-950">
+                    {money(invoiceDisplayTotal)}
                   </span>
-                )}
-                <span className="font-['Barlow_Condensed',sans-serif] text-2xl font-extrabold leading-none text-purple-950">
-                  {money(invoiceDisplayTotal)}
                 </span>
+                <ChevronRight className={`h-4 w-4 text-purple-500 transition-transform ${invoiceDetailsOpen ? 'rotate-90' : ''}`} />
               </span>
-              <ChevronRight className={`h-4 w-4 text-purple-500 transition-transform ${invoiceDetailsOpen ? 'rotate-90' : ''}`} />
-            </span>
-          </button>
+            </button>
+
+            {canForceVoid && onForceVoidOrder && !isDeleted && (
+              <Menu as="div" className="shrink-0">
+                <MenuButton ref={invoiceActionsRef} type="button" aria-label="Invoice actions" title="Invoice actions" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-purple-700 hover:bg-purple-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-700">
+                  <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
+                </MenuButton>
+                <MenuItems anchor="bottom end" modal={false} aria-label="Invoice actions" className="z-[100] w-56 max-w-[calc(100vw-32px)] rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-lg outline-none [--anchor-gap:6px] [--anchor-padding:16px]">
+                  <MenuItem>
+                    <button type="button" onClick={() => {
+                      // The menu item unmounts; restore dialog focus to its stable trigger.
+                      invoiceActionsRef.current?.focus()
+                      setForceVoidOpen(true)
+                    }} className="flex min-h-11 w-full items-center gap-2 whitespace-nowrap rounded-lg px-3 text-left font-medium text-red-700 data-[focus]:bg-red-50">
+                      <CircleSlash className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      Void entire order…
+                    </button>
+                  </MenuItem>
+                </MenuItems>
+              </Menu>
+            )}
+          </div>
 
           {!invoiceSettlement && invoice.pending_zelle_confirmation && (
             <div className="mt-3 rounded-xl border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-900">
@@ -4799,9 +4826,13 @@ export default function PriceBuilderPanel({
 
       {holdDialogOrderId === orderId && workHoldOrder && <StaffHoldDialog key={orderId} order={workHoldOrder} onClose={() => setHoldDialogOrderId(null)} onUpdated={onUpdated} />}
 
+      {forceVoidOpen && hasInvoice && invoice && canForceVoid && onForceVoidOrder && !isDeleted && (
+        <VoidOrderDialog key={orderId} orderNumber={orderNumber || orderId.slice(0, 8)} invoiceNumber={invoice.invoice_number} pending={forceVoidPending} onClose={() => setForceVoidOpen(false)} onConfirm={onForceVoidOrder} />
+      )}
+
       {/* Danger actions open as a bottom sheet on top of the panel so the page
           geometry never shifts (no inline accordion pushing content down). */}
-      {showDangerActions && (
+      {showDangerActions && (isDeleted || !['invoiced', 'paid'].includes(orderStatus)) && (
         <div className="absolute inset-0 z-40 flex flex-col justify-end">
           <button
             type="button"
@@ -4858,73 +4889,6 @@ export default function PriceBuilderPanel({
                   >
                     {deletePending ? 'Deleting...' : 'Delete'}
                   </button>
-
-                  {canForceVoid && onForceVoidOrder && (
-                    <div className="mt-5 border-t border-red-100 pt-4">
-                      <p className="text-sm text-red-700">
-                        This order is invoiced or paid, so deleting it is blocked — it counts as a
-                        financial record. Voiding keeps the record and marks it void, with your
-                        reason attached.
-                      </p>
-                      {!forceVoidOpen ? (
-                        <button
-                          type="button"
-                          onClick={() => setForceVoidOpen(true)}
-                          className="mt-3 w-full rounded-lg border border-red-300 px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50"
-                        >
-                          Void this order…
-                        </button>
-                      ) : (
-                        <div className="mt-3 space-y-2">
-                          <textarea
-                            value={forceVoidReason}
-                            onChange={(e) => setForceVoidReason(e.target.value)}
-                            rows={2}
-                            placeholder="Why is this being voided? (recorded)"
-                            className="w-full resize-none rounded-lg border border-red-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-200"
-                          />
-                          <input
-                            type="password"
-                            value={forceVoidPassword}
-                            onChange={(e) => setForceVoidPassword(e.target.value)}
-                            placeholder="Your password"
-                            autoComplete="current-password"
-                            className="w-full rounded-lg border border-red-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-200"
-                          />
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => { setForceVoidOpen(false); setForceVoidReason(''); setForceVoidPassword('') }}
-                              className="rounded-lg px-3 py-2 text-sm font-semibold text-gray-500 hover:text-gray-700"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              type="button"
-                              disabled={forceVoidPending || forceVoidReason.trim().length < 3 || !forceVoidPassword}
-                              onClick={async () => {
-                                try {
-                                  await onForceVoidOrder({
-                                    reason: forceVoidReason.trim(),
-                                    password: forceVoidPassword,
-                                  })
-                                  setForceVoidOpen(false)
-                                  setForceVoidReason('')
-                                } catch {
-                                  // The parent reports the error; retain the reason for retry.
-                                } finally {
-                                  setForceVoidPassword('')
-                                }
-                              }}
-                              className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
-                            >
-                              {forceVoidPending ? 'Voiding…' : 'Void order'}
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
                 </>
               )}
             </div>

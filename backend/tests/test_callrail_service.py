@@ -419,8 +419,9 @@ async def test_sender_options_tenant_scope_noop_restore_and_phone_conflict(mappe
     db.add(foreign); await db.commit()
     await svc.lock_sender_bindings(db, tenant.id)
     options = await svc.sender_context(db, tenant, thread)
-    assert options['selected_sender_id'] == str(binding.id)
-    assert {row['id'] for row in options['sms_sender_options']} == {'twilio', str(binding.id)}
+    assert options['selected_sender_id'] == 'twilio'
+    assert options['sender_mode'] == 'initiation' and not options['sender_selection_allowed']
+    assert 'sms_sender_options' not in options
     assert await svc.set_sender(db, tenant, thread, binding.id) is False
     assert await svc.set_sender(db, tenant, thread, None) is True
     await db.flush()
@@ -442,8 +443,8 @@ async def test_sender_options_tenant_scope_noop_restore_and_phone_conflict(mappe
     binding.enabled = False
     await db.flush()
     options = await svc.sender_context(db, tenant, thread)
-    assert options['selected_sender_id'] == str(binding.id)
-    assert options['sms_sender_options'][1]['enabled'] is False
+    assert options['selected_sender_id'] == 'twilio'
+    assert 'sms_sender_options' not in options
     with pytest.raises(HTTPException) as error:
         await svc.set_sender(db, tenant, thread, binding.id)
     assert error.value.detail['code'] == 'callrail_binding_disabled'
@@ -469,18 +470,13 @@ async def test_sender_patch_stale_version_and_pending_switch_hold(mapped, monkey
         ready = True
     with pytest.raises(HTTPException) as error:
         await patch_sender(thread.id, SenderPatch(expected_version=99, binding_id=None), db, user, Sender())
-    assert error.value.detail['code'] == 'stale_version'
+    assert error.value.detail['code'] == 'sender_managed_automatically'
     await db.rollback()
-    await db.refresh(thread); await db.refresh(tenant); await db.refresh(user); await db.refresh(binding)
-    # Stub serialization only: the mutation still exercises real auth/version/locks.
-    async def conversation_json(*args):
-        wf = await communication.workflow(db, thread)
-        return {'version': wf.version}
-    monkeypatch.setattr(communication, 'conversation_json', conversation_json)
-    result = await patch_sender(thread.id, SenderPatch(expected_version=1, binding_id=None), db, user, Sender())
-    assert result['version'] == 2
-    result = await patch_sender(thread.id, SenderPatch(expected_version=2, binding_id=None), db, user, Sender())
-    assert result['version'] == 2
+    await db.refresh(thread); await db.refresh(tenant); await db.refresh(user); await db.refresh(binding); await db.refresh(customer)
+    # Automatic sender endpoint refuses every mutation, including no-op requests.
+    with pytest.raises(HTTPException) as error:
+        await patch_sender(thread.id, SenderPatch(expected_version=1, binding_id=None), db, user, Sender())
+    assert error.value.detail['code'] == 'sender_managed_automatically'
     message = SMSMessage(tenant_id=tenant.id, thread_id=thread.id, customer_id=customer.id,
         direction=SMSMessageDirection.OUTBOUND, source=SMSMessageSource.MANUAL, body='Pending',
         delivery_status=SMSDeliveryStatus.PENDING)
@@ -491,7 +487,7 @@ async def test_sender_patch_stale_version_and_pending_switch_hold(mapped, monkey
     db.add(operation); await db.commit()
     with pytest.raises(HTTPException) as error:
         await patch_sender(thread.id, SenderPatch(expected_version=2, binding_id=binding.id), db, user, Sender())
-    assert error.value.detail['code'] == 'ambiguous_outcome'
+    assert error.value.detail['code'] == 'sender_managed_automatically'
 
 
 @isolated
@@ -616,7 +612,7 @@ async def test_inbound_routes_survive_outbound_sender_changes_and_twilio(mapped)
     assert await svc.set_sender(db, tenant, thread, None)
     await db.commit()
     assert await svc.resolve_for_thread(db, tenant.id, thread.id) is None
-    assert (await svc.sender_context(db, tenant, thread))['selected_sender_id'] == 'twilio'
+    assert (await svc.sender_context(db, tenant, thread))['selected_sender_id'] == str(binding.id)
     receipt_a.update(id=98702, resource_id='SCIafterTwilioA', content='A after Twilio')
     assert (await svc.apply_event(db, binding.id, receipt_a, 'received'))['status'] == 'received'
     receipt_b = dict(receipt_a, id=98703, resource_id='SCIafterTwilioB', destination_number=alternate.sender_phone,

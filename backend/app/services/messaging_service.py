@@ -509,9 +509,17 @@ async def handle_inbound_sms(
     twilio_message_sid: Optional[str] = None,
     account_sid: Optional[str] = None,
     messaging_service_sid: Optional[str] = None,
+    authenticated_legacy_account_sid: Optional[str] = None,
 ) -> tuple[MessageThread, Optional[SMSMessage], Customer, bool]:
+    from app.services import twilio_reply_routes
+    reply_context = await twilio_reply_routes.resolve(db, to_number=to_number, from_number=from_number,
+        authenticated_account_sid=authenticated_legacy_account_sid, message_sid=twilio_message_sid)
+    reply_route = reply_context[0] if reply_context else None
     binding = None
-    managed_receipt = routing.enabled() or account_sid is not None
+    managed_receipt = not reply_route and (routing.enabled() or account_sid is not None)
+    if reply_route:
+        _, tenant, customer, thread = reply_context
+        account_sid = reply_route.account_sid
     if managed_receipt and (not twilio_message_sid or not twilio_message_sid.strip()):
         raise HTTPException(400, detail='Missing MessageSid')
     if managed_receipt:
@@ -519,11 +527,11 @@ async def handle_inbound_sms(
         if messaging_service_sid and messaging_service_sid != binding.messaging_service_sid:
             raise HTTPException(409, detail='Inbound service mismatch')
         tenant = await db.scalar(select(Tenant).where(Tenant.id == binding.tenant_id, Tenant.is_active.is_(True), Tenant.deleted_at.is_(None)))
-    else:
+    elif not reply_route:
         tenant = await _resolve_tenant_by_to_number(db, to_number)
     if not tenant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="SMS tenant number not recognized")
-    if not managed_receipt:
+    if not managed_receipt and not reply_route:
         from app.db.models.messaging_business import TenantSMSBinding
         managed_sender = await db.scalar(select(TenantSMSBinding.id).where(TenantSMSBinding.sender_phone == _normalize_for_twilio(to_number)))
         if managed_sender:
@@ -532,11 +540,13 @@ async def handle_inbound_sms(
     if twilio_message_sid:
         # Serialize duplicate provider receipts before their unique SID is committed.
         import hashlib
-        lock_key = int.from_bytes(hashlib.sha256(f"sms-inbound:{account_sid if managed_receipt else 'legacy'}:{twilio_message_sid}".encode()).digest()[:8], "big", signed=True)
+        lock_key = int.from_bytes(hashlib.sha256(f"sms-inbound:{account_sid if managed_receipt or reply_route else 'legacy'}:{twilio_message_sid}".encode()).digest()[:8], "big", signed=True)
         await db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
-        result = await db.execute(select(SMSMessage).where(SMSMessage.twilio_message_sid == twilio_message_sid, *([SMSMessage.twilio_account_sid == account_sid] if managed_receipt else [SMSMessage.twilio_account_sid.is_(None)])))
+        result = await db.execute(select(SMSMessage).where(SMSMessage.twilio_message_sid == twilio_message_sid, *([SMSMessage.twilio_account_sid == account_sid] if managed_receipt or reply_route else [SMSMessage.twilio_account_sid.is_(None)])))
         existing = result.scalar_one_or_none()
         if existing:
+            if reply_route:
+                twilio_reply_routes.validate_duplicate(existing, reply_route, _normalize_for_twilio(to_number), _normalize_for_twilio(from_number))
             if existing.tenant_id != tenant.id:
                 raise HTTPException(status_code=409, detail="Inbound receipt does not match tenant")
             thread_result = await db.execute(
@@ -559,44 +569,46 @@ async def handle_inbound_sms(
             customer = customer_result.scalar_one()
             return thread, existing, customer, True
 
-    sender_candidates = _phone_match_candidates(from_number)
-    normalized_sender = _canonical_customer_phone(from_number)
-    if not sender_candidates or not normalized_sender:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid inbound sender number")
+    if not reply_route:
+        sender_candidates = _phone_match_candidates(from_number)
+        normalized_sender = _canonical_customer_phone(from_number)
+        if not sender_candidates or not normalized_sender:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid inbound sender number")
 
-    # Different receipts from the same previously unknown sender must not create
-    # two placeholder customers. Lock only this tenant and normalized identity.
-    import hashlib
-    identity_key = int.from_bytes(hashlib.sha256(f"sms-identity:{tenant.id}:{_normalize_for_twilio(from_number)}".encode()).digest()[:8], "big", signed=True)
-    await db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": identity_key})
+        # Different receipts from the same previously unknown sender must not create
+        # two placeholder customers. Lock only this tenant and normalized identity.
+        import hashlib
+        identity_key = int.from_bytes(hashlib.sha256(f"sms-identity:{tenant.id}:{_normalize_for_twilio(from_number)}".encode()).digest()[:8], "big", signed=True)
+        await db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": identity_key})
 
-    # Normalize E.164, US-local and formatted storage consistently. Never choose
-    # the most-recent customer when a shared phone has ambiguous ownership.
-    result = await db.execute(select(Customer).where(
-        Customer.tenant_id == tenant.id, Customer.deleted_at.is_(None),
-        Customer.phone.is_not(None),
-    ))
-    matching = [candidate for candidate in result.scalars().all()
-                if _normalize_for_twilio(candidate.phone) == _normalize_for_twilio(from_number)]
-    if len(matching) > 1:
-        raise HTTPException(status_code=409, detail="Inbound sender has ambiguous customer ownership")
-    customer = matching[0] if matching else None
-    if not customer:
-        customer = Customer(
-            tenant_id=tenant.id,
-            first_name="SMS",
-            last_name="Customer",
-            email=f"sms+{normalized_sender}@placeholder.dieselbridge.network",
-            phone=normalized_sender,
-            source="sms",
-            sms_opt_out=False,
-        )
-        db.add(customer)
-        await db.flush()
+        # Normalize E.164, US-local and formatted storage consistently. Never choose
+        # the most-recent customer when a shared phone has ambiguous ownership.
+        result = await db.execute(select(Customer).where(
+            Customer.tenant_id == tenant.id, Customer.deleted_at.is_(None),
+            Customer.phone.is_not(None),
+        ))
+        matching = [candidate for candidate in result.scalars().all()
+                    if _normalize_for_twilio(candidate.phone) == _normalize_for_twilio(from_number)]
+        if len(matching) > 1:
+            raise HTTPException(status_code=409, detail="Inbound sender has ambiguous customer ownership")
+        customer = matching[0] if matching else None
+        if not customer:
+            customer = Customer(
+                tenant_id=tenant.id,
+                first_name="SMS",
+                last_name="Customer",
+                email=f"sms+{normalized_sender}@placeholder.dieselbridge.network",
+                phone=normalized_sender,
+                source="sms",
+                sms_opt_out=False,
+            )
+            db.add(customer)
+            await db.flush()
 
-    if not (managed_receipt and _keyword_token(body) in _START_KEYWORDS):
+    if not ((managed_receipt or reply_route) and _keyword_token(body) in _START_KEYWORDS):
         _apply_opt_keyword(customer, body)
-    thread = await _get_or_create_thread(db, tenant.id, customer)
+    if not reply_route:
+        thread = await _get_or_create_thread(db, tenant.id, customer)
     thread = (await db.execute(select(MessageThread).where(
         MessageThread.id == thread.id, MessageThread.tenant_id == tenant.id,
     ).with_for_update().execution_options(populate_existing=True))).scalar_one()
@@ -612,6 +624,7 @@ async def handle_inbound_sms(
         from_number=from_number,
         to_number=to_number,
         twilio_message_sid=twilio_message_sid,
+        **(dict(twilio_reply_route_id=reply_route.id, twilio_account_sid=reply_route.account_sid) if reply_route else {}),
         **(dict(binding_id=binding.id, twilio_account_sid=binding.account_sid, messaging_service_sid=binding.messaging_service_sid) if binding else {}),
         delivery_status=SMSDeliveryStatus.DELIVERED,
         sent_at=now,
@@ -638,6 +651,8 @@ async def handle_inbound_sms(
         db.add(ConversationWorkflow(tenant_id=tenant.id, thread_id=thread.id,
                                     status="open", version=2))
 
+    if reply_route:
+        twilio_reply_routes.validate_window(reply_route)
     await db.commit()
     await db.refresh(message)
     await db.refresh(thread)
