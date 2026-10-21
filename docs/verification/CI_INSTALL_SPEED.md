@@ -37,3 +37,19 @@ Independent QA/Security GO for one candidate; reviewer verified all17 focused ch
 Run39653397692: all1826 application tests passed; both consumers restored successfully; frontend restore14s versus previous install82s. Packaging13s plus upload41s is54s producer overhead. Build66s versus68s. Vitest incorrectly discovered the new Node-only `.test.mjs` files and failed those two files. Corrected filenames use explicit verify entrypoints, matching existing Node checks, with all17 still required before application tests. No same-head retry; final corrected commit needs a new protected candidate.
 
 Correction acceptance:17 Node checks pass; actual Vitest collection returns17 critical plus176 remaining equals193 application files, no overlap. Independent correction GO confirms byte-identical renamed tests and required explicit invocation.
+
+## Release evidence
+
+PR609 merged normally as `826e6d514d650fa6642313b0b480d4c9107f9732` after final run39655183965 passed all six checks on exact head `a3c779756fb02108aeabef62e1116b8b0b310e40`. Checked and merged trees match. Independent live QA/Security GO queried GitHub directly and confirmed both real Linux consumers and browser smoke.
+
+| Measurement | Baseline39648802098 | Final39655183965 |
+|---|---:|---:|
+| Remaining frontend dependency setup |82s install|8s download +5s restore|
+| Smoke frontend dependency setup |78s install|8s download +5s restore|
+| Producer packaging/upload |none|11s +40s|
+| TypeScript + Vite build |68s|58s|
+| Whole pipeline |9m37s|8m36s|
+
+The observed pipeline improvement includes runtime variance; it is not a guaranteed61-second reduction attributable exclusively to this change. Dependency setup savings exceed the51-second one-time transfer cost. Producer still runs clean npm ci with lifecycle/audit; consumers do not skip dependency integrity checks. Remaining frontend176files1826tests pass in199.12s with no test-count loss. All17 Node integrity/failure checks execute in the required frontend gate. Strict base freshness and all six required contexts remain enabled.
+
+There were two different candidate commits: the first exposed a real Node/Vitest discovery bug, then the corrected source passed. No same-head rerun or duplicate full local suite. Docs-only completion uses scoped checks without application suites. No production app deployment, provider setting, SMS automation, registration or payment action is involved.
