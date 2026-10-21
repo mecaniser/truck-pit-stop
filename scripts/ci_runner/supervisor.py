@@ -43,7 +43,7 @@ def guest(name, *args, data=None, check=True, timeout=120):
 
 
 def owned(name):
-    return re.fullmatch(r'db-ci-worker-[12]', name) is not None
+    return re.fullmatch(r'db-ci-worker-[1-4]', name) is not None
 
 
 def destroy(name):
@@ -58,9 +58,17 @@ def destroy(name):
             api(f'repos/{REPO}/actions/runners/{runner["id"]}', 'DELETE')
 
 
-def cycle(name):
+def validate_capacity(slots, cpus, memory):
+    """Keep CPU allocation at the existing eight-vCPU budget; bound RAM."""
+    if slots not in (1, 2, 3, 4) or cpus not in (1, 2, 3, 4):
+        raise ValueError('Slots and CPUs must be between one and four')
+    if memory not in (4, 8) or slots * cpus > 8 or slots * memory > 32:
+        raise ValueError('Workers exceed the eight-vCPU / 32-GiB capacity budget')
+
+
+def cycle(name, cpus=4, memory=8):
     destroy(name)
-    command(['limactl', 'clone', BASE, name, '--mount-none', '--ssh-port=0', '-y'], timeout=180)
+    command(['limactl', 'clone', BASE, name, '--mount-none', '--ssh-port=0', f'--cpus={cpus}', f'--memory={memory}', '-y'], timeout=180)
     command(['limactl', 'start', '-y', name], timeout=180)
     # No job can start unless the root-owned firewall is active and identity is safe.
     guest(name, 'sudo', 'nft', 'list', 'table', 'inet', 'ci_isolation')
@@ -87,10 +95,13 @@ export ACTIONS_RUNNER_INPUT_TOKEN="$(cat)"
             return
 
 
-def worker(name):
+def worker(name, cpus=4, memory=8, drain_file=None):
     while not STOP.is_set():
+        if drain_file is not None and drain_file.exists():
+            STOP.wait(5)
+            continue
         try:
-            cycle(name)
+            cycle(name, cpus, memory)
         except Exception as error:
             LOG.error('%s: %s', name, error)
         finally:
@@ -104,9 +115,12 @@ def worker(name):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--slots', type=int, choices=(1, 2), default=2)
+    parser.add_argument('--slots', type=int, choices=(1, 2, 3, 4), default=2)
+    parser.add_argument('--cpus', type=int, choices=(1, 2, 3, 4), default=4)
+    parser.add_argument('--memory', type=int, choices=(4, 8), default=8)
     parser.add_argument('--state-dir', type=Path, required=True)
     args = parser.parse_args()
+    validate_capacity(args.slots, args.cpus, args.memory)
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
     args.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     with (args.state_dir / 'supervisor.lock').open('w') as lock:
@@ -115,7 +129,8 @@ def main():
         signal.signal(signal.SIGINT, lambda *_: STOP.set())
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.slots) as pool:
             for slot in range(1, args.slots + 1):
-                pool.submit(worker, PREFIX + str(slot))
+                pool.submit(worker, PREFIX + str(slot), args.cpus, args.memory,
+                            args.state_dir / 'drain')
 
 
 if __name__ == '__main__':
