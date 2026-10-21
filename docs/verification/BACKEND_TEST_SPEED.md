@@ -33,3 +33,20 @@ Revert this test-infrastructure PR through the normal protected path. Restore pe
 ## Independent gate
 
 Fresh independent QA/Security GO: schema/constraint equality, committed data and DDL isolation, read-only empty template, native PostgreSQL UUID delegation and per-test async-engine lifetime reviewed. All models register before template creation; no existing test mutates shared Base metadata.102 focused safety tests passed;11 classifier/partition unit tests passed. Collection proves33 critical plus274 remaining files cover307 files without overlap (one new safety file). No duplicate full local suite was run. Final protected CI and measured release timing remain pending.
+
+## Release evidence
+
+PR605 merged normally at2026-10-21T16:27:49Z as `46eb92bac73a7092f8fd7d5df57f287ee594cede`. All six required checks passed on head `3ca3b31349a06cc0e83b5fdc819b6e3243aa3e4e` in run39633172662; checked and merged trees match.
+
+| Measurement | Previous run39627790863 | New run39633172662 |
+|---|---:|---:|
+| Backend remaining job |20m01s|5m15s|
+| Backend remaining pytest |1101.89s|245.61s|
+| Backend critical job |5m22s|2m11s|
+| Whole Quality gates workflow |27m06s|11m33s|
+
+The backend remaining job is74% faster including setup; pytest is78% faster. These are observed comparisons, not guaranteed service levels. Remaining partition3517 passed/387 skipped (previous3514 passed/387 skipped; three new isolation tests). Critical partition587 passed/13 skipped. The existing conditional PostgreSQL integration skips were neither added nor expanded; this does not claim those skipped tests executed. Browser smoke and migration/config/contract gates passed.
+
+The new duration report shows the slowest remaining phase at4.23s; repeated per-test schema setup no longer dominates. The first template setup was1.53s. Backend work completed before frontend remaining tests, which now determine the full pipeline duration. No test selection, required gate, dependency, worker capacity or production code changed.
+
+Exactly one protected application CI run was started for this candidate, with no retry or duplicate full local suite. The normal docs-only completion PR records these receipts without rerunning application suites. No production deployment is needed for test-only source; the merged fixture is active for subsequent required backend runs.
