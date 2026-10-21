@@ -77,8 +77,21 @@ existing Tenant, User and Customer rows. Runtime acceptance remains pending.
   system sleep on AC power. Does not bypass lid sleep or FileVault/login recovery.
 - Free space after staging image installation approximately 105 GiB.
 
+## Final independent gate
+
+QA/Security independently approved private synthetic staging on final image
+`sha256:af4441619645e92619df201d3a808b40c570b0dede97331bd405af3745f1567d`.
+Readiness, source identity, migrations, networks, empty credentials, blocked
+outbound sockets and restored/live counts were independently verified. Auth
+script/results and authenticated browser screenshot were reviewed. Owner fixed
+both seed/build findings. This approval excludes the remaining gates below.
+
+Setup and evidence are in draft PR #619:
+https://github.com/mecaniser/truck-pit-stop/pull/619 . No merge or production
+deployment was performed. CI/merge approval remains separate from local staging.
+
 ## Remaining gates
 
-Independent final QA/Security and PR evidence. Unattended reboot recovery and
+Protected PR checks/merge remain pending. Unattended reboot recovery and
 extended uptime not yet tested. Live worker/provider testing is a later isolated
 stage, not authorized production access. Railway production remains untouched.

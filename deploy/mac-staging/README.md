@@ -35,6 +35,10 @@ before starting `gateway` (which starts web). Copy `nginx.conf` alongside Compos
 Inspect migration results before proceeding. Existing
 staging data requires a backup before later migrations.
 
+After replacing the web image, restart the gateway once web is healthy. Nginx
+resolves its fixed upstream when it starts; a recreated web container can have
+a different internal IP. Verify `/health/ready` through port 18080 afterward.
+
 ## Synthetic accounts
 
 Run `seed.py` with `/app` on `PYTHONPATH` inside the isolated web container.
