@@ -39,3 +39,9 @@ Local suite repetition is unnecessary: focused reproduction while editing, then 
 Fresh independent QA/Security GO:11 classifier/partition tests and13 supervisor/installer tests pass; actionlint and whitespace checks pass. Adversarial paths, backend deletion/rename, missing revisions and dependency/tooling exclusions verified.65 collector contract tests and Railway config validation pass. Gates remain unchanged in GitHub branch protection. App UI testing is inapplicable; runtime acceptance is real Actions routing and installed disposable-worker behavior.
 
 Four2-vCPU/8GiB workers retain the prior eight-vCPU total allocation, with32GiB maximum guest memory on the64GiB host. Install requires no active guest jobs; original supervisor is frozen only while guests finish, then cleaned/unloaded. Backups permit restoring the previous profile. No host mount, rootless Docker, firewall, token or ephemeral-destruction policy is relaxed.
+
+## Installed capacity acceptance
+
+Four workers installed after the prior jobs completed normally. Installer refused writes while old launch-agent unloading was incomplete, then succeeded after unload. Each new VM has2vCPU/8GiB, no host mounts/SSH forwarding, root-owned nftables network isolation and unprivileged UID1100. Installed supervisor SHA2564db69c44f3ae00662d54eefb7e8538bf934461194618fb410469509b9275b037 matches reviewed source. Independent live QA/Security GO. Original603 run assigned real backend/frontend jobs to new registrations; no active job was interrupted during installation.
+
+The unrelated Sales tax PR601 advanced main to4e2b361a during CI. Integrated it once, retaining its application changes and both board histories. Final candidate checks legitimately supersede the old-base run; no same-head retry. Six protected checks and strict up-to-date policy remain mandatory. Installed backups: ~/Library/Application Support/DieselBridge CI/backups/20261021-four-slots.
