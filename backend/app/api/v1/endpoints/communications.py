@@ -196,15 +196,6 @@ class SenderPatch(BaseModel):
 @router.patch('/conversations/{conversation_id}/sender')
 async def patch_sender(conversation_id: UUID, body: SenderPatch, db=Depends(get_db),
                        user=Depends(get_current_active_user), sender=Depends(service.get_sms_sender)):
-    from app.services import callrail_service
     tenant = await service.authorize(db, user)
-    await callrail_service.lock_sender_bindings(db, tenant.id)
-    thread = await service.thread_for(db, tenant.id, conversation_id, lock=True)
-    wf = await service.workflow(db, thread)
-    if wf.version != body.expected_version:
-        service.fail('stale_version', 'Conversation changed. Refresh and try again.')
-    changed = await callrail_service.set_sender(db, tenant, thread, body.binding_id)
-    if changed:
-        wf.version += 1
-    await db.commit()
-    return await service.conversation_json(db, tenant, user, thread, sender)
+    await service.thread_for(db, tenant.id, conversation_id)
+    service.fail('sender_managed_automatically', 'Replies use the receiving business number automatically.')

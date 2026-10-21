@@ -274,7 +274,7 @@ async def test_rollout_disable_blocks_new_sends_for_previously_managed_tenant(mo
         tenant=await db.get(Tenant,a.tid);tenant.sms_phone_number=a.sender
         thread=await messaging._get_or_create_thread(db,a.tid,await db.get(Customer,a.cid));await db.commit()
         policy,*_=await manual.send_policy(db,tenant,thread,sender)
-        assert policy=={'can_send':False,'reason':'routing_disabled'}
+        assert policy=={'can_send':False,'reason':'reply_route_unavailable'}
         with pytest.raises(HTTPException) as exc:await auto.enqueue_automated_sms(db,tenant_id=a.tid,customer_id=a.cid,domain_event_id='rollback-new:1',template_name='work_started_sms',to='+15005550888',body='Synthetic')
         assert exc.value.detail['code']=='routing_disabled';await db.rollback()
         with pytest.raises(HTTPException) as exc:await messaging.send_sms_with_tracking(db,a.tid,'+15005550888','Synthetic',customer_id=a.cid,source='manual')
