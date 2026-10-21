@@ -13,9 +13,8 @@ from dataclasses import dataclass
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import JSONB
-
 from scripts.motive_drivers.import_records import source_hash, validate
+from sqlalchemy.dialects.postgresql import JSONB
 
 metadata = sa.MetaData()
 runs = sa.Table(
@@ -61,9 +60,10 @@ class Identity:
     company_label: str
 
     @classmethod
-    def from_environment(cls):
-        company_id = os.environ["MOTIVE_COMPANY_ID"]
-        company_label = os.environ["MOTIVE_COMPANY_LABEL"]
+    def from_environment(cls, environment=None):
+        environment = os.environ if environment is None else environment
+        company_id = environment["MOTIVE_COMPANY_ID"]
+        company_label = environment["MOTIVE_COMPANY_LABEL"]
         if (
             not company_id.strip()
             or len(company_id) > 120
@@ -72,9 +72,9 @@ class Identity:
         ):
             raise ValueError("Explicit driver company configuration required")
         return cls(
-            UUID(os.environ["MOTIVE_SYNC_TENANT_ID"]),
-            UUID(os.environ["MOTIVE_SYNC_ACTOR_ID"]),
-            UUID(os.environ["MOTIVE_DRIVER_FLEET_CUSTOMER_ID"]),
+            UUID(environment["MOTIVE_SYNC_TENANT_ID"]),
+            UUID(environment["MOTIVE_SYNC_ACTOR_ID"]),
+            UUID(environment["MOTIVE_DRIVER_FLEET_CUSTOMER_ID"]),
             company_id,
             company_label,
         )
@@ -157,6 +157,73 @@ async def database_journal(engine, identity, worker_key="motive-driver"):
                     {"key": lock_key(worker_key)},
                 )
                 await connection.commit()
+
+
+async def prepare_batch(journals, document, *, commit=False):
+    """Atomically retain every fleet's source before projecting any fleet.
+
+    All journals must already hold their own advisory locks. A single transaction
+    prevents a process crash leaving only some target fleets with the source.
+    """
+    if not journals or len(journals) > 9:
+        raise ValueError("Invalid driver projection batch")
+    identity = journals[0].identity
+    shared = (
+        identity.tenant_id,
+        identity.actor_id,
+        identity.company_id,
+        identity.company_label,
+    )
+    if (
+        len({journal.worker_key for journal in journals}) != len(journals)
+        or len({journal.identity.customer_id for journal in journals}) != len(journals)
+        or any(
+            (
+                j.identity.tenant_id,
+                j.identity.actor_id,
+                j.identity.company_id,
+                j.identity.company_label,
+            )
+            != shared
+            for j in journals
+        )
+    ):
+        raise ValueError("Driver projection batch identity mismatch")
+    if len(json.dumps(document, allow_nan=False).encode()) > 16 * 1024 * 1024:
+        raise ValueError("Driver source exceeds journal limit")
+    values = []
+    for journal in journals:
+        validate(document, journal.identity.company_label, journal.identity.company_id)
+        await journal.check_binding()
+        # check_binding checks the session lock on PostgreSQL and closes its transaction.
+        source_digest = source_hash(document)
+        mode = "commit" if commit else "dry_run"
+        values.append(
+            dict(
+                id=uuid4(),
+                worker_key=journal.worker_key,
+                **journal.identity.values(),
+                mode=mode,
+                source_sha256=source_digest,
+                source_document=document,
+                stage="source_saved",
+                receipts=[
+                    {
+                        **journal.identity.receipt_identity(source_digest),
+                        "mode": mode,
+                        "stage": "source_saved",
+                        "committed": False,
+                    }
+                ],
+            )
+        )
+    async with journals[0].connection.begin():
+        await journals[0]._check_lock()
+        await journals[0].connection.execute(runs.insert(), values)
+    return [
+        DurableRun(journal, value["id"])
+        for journal, value in zip(journals, values, strict=True)
+    ]
 
 
 class Journal:

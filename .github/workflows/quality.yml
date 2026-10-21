@@ -67,7 +67,7 @@ jobs:
       - name: Verify ETS contact evidence contracts
         run: node --test backend/scripts/easytruck_sync/lib/contact_snapshot.test.js
       - name: Verify Motive location and speed collector contracts
-        run: node --test backend/scripts/motive_sync/collector.test.cjs
+        run: node --test backend/scripts/motive_sync/collector.test.cjs backend/scripts/motive_sync/tasks.test.cjs
       - name: Verify Railway deployment readiness
         run: |
           python .github/scripts/check_railway_config.py

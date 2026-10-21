@@ -2,7 +2,7 @@
 
 import copy
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -77,12 +77,16 @@ def source(stamp=None):
 
 
 def test_completed_dates_use_conservative_noon_cutoff():
-    assert worker.completed_dates(
-        datetime(2026, 10, 8, 11, 59, tzinfo=timezone.utc)
-    ) == ["2026-10-04", "2026-10-05", "2026-10-06"]
-    assert worker.completed_dates(
-        datetime(2026, 10, 8, 12, 0, tzinfo=timezone.utc)
-    ) == ["2026-10-05", "2026-10-06", "2026-10-07"]
+    assert worker.completed_dates(datetime(2026, 10, 8, 11, 59, tzinfo=UTC)) == [
+        "2026-10-04",
+        "2026-10-05",
+        "2026-10-06",
+    ]
+    assert worker.completed_dates(datetime(2026, 10, 8, 12, 0, tzinfo=UTC)) == [
+        "2026-10-05",
+        "2026-10-06",
+        "2026-10-07",
+    ]
     with pytest.raises(ValueError):
         worker.completed_dates(now(), 8)
 
@@ -371,6 +375,12 @@ async def test_fuel_read_projection_rechecks_current_vin(db_session, monkeypatch
 def test_orchestrator_saves_only_exact_true(tmp_path, monkeypatch, enabled):
     from scripts.motive_sync import run_fuel_worker as orchestrator
 
+    monkeypatch.setattr(
+        orchestrator,
+        "read_process",
+        lambda *args, **kwargs: orchestrator.subprocess.run(*args, **kwargs),
+    )
+
     monkeypatch.setenv("MOTIVE_FUEL_STATE_DIR", str(tmp_path))
     monkeypatch.delenv("MOTIVE_FUEL_COMMIT", raising=False)
     if enabled is not None:
@@ -388,6 +398,12 @@ def test_pending_recovery_precedes_new_collection_and_blocks_if_disabled(
     tmp_path, monkeypatch
 ):
     from scripts.motive_sync import run_fuel_worker as orchestrator
+
+    monkeypatch.setattr(
+        orchestrator,
+        "read_process",
+        lambda *args, **kwargs: orchestrator.subprocess.run(*args, **kwargs),
+    )
 
     previous = tmp_path / "previous"
     previous.mkdir()
