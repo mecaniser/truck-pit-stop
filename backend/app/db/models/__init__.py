@@ -1,4 +1,5 @@
 from app.db.models.tenant import Tenant
+from app.db.models.labor_cost import TechnicianCostPolicyRevision, JobCostReview
 from app.db.models.user import User
 from app.db.models.appearance import UserAppearancePreference, UserPresentationOverride
 from app.db.models.customer import Customer

@@ -2,13 +2,13 @@
 
 # ETS parity implementation tracker
 
-Last updated: 2026-10-18. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
+Last updated: 2026-10-20. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
 
-**Progress: 4/30 completed; 4/6 selected outcomes completed. Current: B1 review; B4 reader deployed with browser acceptance open and importer held. Next: A1 after B1.**
+**Progress: 5/30 completed; 5/6 selected outcomes completed. Current: A1 / DB-136 implemented with independent local QA/Security GO; final CI and release pending. B1 is Done. B4 is partially delivered; ETS importer remains held.**
 
 ## Approved delivery order
 
-**R1 → P1 → C1 → M1 → B1 → A1.** A1 is last in this selected wave. The other 24 items remain in the delivery backlog after this priority wave; retain every discovery and refine their order when the priority wave closes. B4 is a newly surfaced imported-order defect tracked separately from this selected wave.
+**R1 → P1 → C1 → M1 → B1 → A1.** A1 is last in this selected wave. The other 24 items remain in the delivery backlog after this priority wave; retain every discovery and refine their order when the priority wave closes. B4 is tracked separately from this selected wave; its completed display/queue slices do not close the held importer outcome.
 
 ## Operating rules
 
@@ -35,18 +35,21 @@ Last updated: 2026-10-18. Program owner: Product & Delivery Lead. Discovery inve
 - [x] **M1 — Multiple recurring maintenance programs per truck**
   - Status: **Done — PR #571 and Night correction #572 merged, deployed and production verified; independent QA/Security GO**. Board: **DB-134**. Owner: Backend & Integrations.
   - Evidence: [M1 contract](contracts/db134-maintenance-programs.md); [implementation receipt](verification/DB134_MAINTENANCE_PROGRAMS.md).
-- [ ] **B1 — Customer transaction ledger, statements and overdue-balance aging**
-  - Status: **Review — PR #575 open; source QA/Security GO, production settlement coverage RETURN; reconciliation plan reviewed, writer contract and production apply not approved; protected CI and release pending**. Board: **DB-135**. Owner: Backend & Integrations.
-  - Evidence: [B1 cross-layer contract](contracts/db135-customer-receivables.md), [verification receipt](verification/DB135_CUSTOMER_RECEIVABLES.md), and [reconciliation review proposal](verification/DB135_SETTLEMENT_RECONCILIATION_REVIEW.md). Native collectible, unapplied credit and ETS-owned history remain separate; unresolved bill-to/settlement identity stays review-required rather than collectible.
+- [x] **B1 — Customer transaction ledger, statements and overdue-balance aging**
+  - Status: **Done — PR #575 merged, deployed and production verified**. Board: **DB-135**. Owner: Backend & Integrations.
+  - Delivered read-only account activity, supported native balances/aging and unsent PDF statements. Owner-approved 34 Test / 13 Real classifications exclude test activity; unknown/source/settlement gaps remain held. Real does not establish payment or collection authority. ETS history remains separate. No financial records changed.
+  - Evidence: [final B1 receipt](verification/DB135_CUSTOMER_RECEIVABLES.md#merged-deployed-and-accepted--2026-10-19), [PR575 final release receipt](https://github.com/mecaniser/truck-pit-stop/pull/575). All six checks, exact c66cabf2 Web/Worker, fixed financial retention and actual signed-in Light/Night desktop/mobile account/PDF acceptance passed.
 - [ ] **A1 — Actual labor cost and defensible job contribution**
-  - Status: **Queued**. Board: **DB-136**. Owner: Backend & Integrations.
-  - Evidence: Not started.
+  - Status: **Review — serial release slot received; exact released-main migration integration and final CI/release pending**. Board: **DB-136**. Owner: Backend & Integrations; Architecture reviews contracts.
+  - Source and READ ONLY aggregate intake complete. Technician cost rates are absent; billing hours/rates are not wage expense. Sparse actual job time and missing parts costs prevent a reliable historical whole-job margin.
+  - Evidence: [A1 policy proposal and intake](contracts/db136-labor-cost-policy-proposal.md). Owner approved loaded hourly cost from October20 shop-local date, owner-only access and separate overhead. [Final implementation contract](contracts/db136-labor-cost-contract.md) has Architecture GO. Backend/API and owner-only Job Contribution UI pass focused checks, real isolated PostgreSQL migration/API/retention rehearsal and actual Day/Night desktop/mobile owner/admin acceptance. [Verification](verification/DB136_LABOR_COST.md), [PR598](https://github.com/mecaniser/truck-pit-stop/pull/598). No production rates or financial changes. ETS importer remains held.
 
 Dependencies: P1 precedes C1 parts-price defaults. M1 must retain existing PM/telemetry provenance. B1 must distinguish native collectible balances from ETS-owned history. A1 requires explicit effective-date labor-cost policy and follows the operational work.
 
 ## Retained backlog
 
-- [ ] **B4 — ETS-owned invoice/payment mirror and imported-order billing guard** — DB-139 reader-only release in review, [PR576](https://github.com/mecaniser/truck-pit-stop/pull/576). Source-aware totals and paid/partial/unpaid displays, tenant/identity/freshness holds, and duplicate-native-issuance guards have Architecture and independent QA/Security source GO. Six protected checks passed on pre-split head `06086f72`; Released driver main `1cb16a7f` is integrated with both board histories and acceptance docs preserved; selected-shop fallback read omissions are corrected with six SQLite regressions. Final integrated reader CI, browser/deployment/retention gates remain. Collector-watched importer corrections are preserved separately on `codex/db139-importer-money-held`; do not roll them out before the unchanged existing-payment sync receives a guard and independent review. No financial record writes, invoice creation or collector setting changes. [Contract](contracts/db139-ets-financial-mirror.md), [receipt](verification/DB139_ETS_FINANCIAL_MIRROR.md). B1 native reconciliation and A1 queue remain distinct.
+- [ ] **B4 — ETS-owned invoice/payment mirror and imported-order billing guard** — **Partially delivered; importer held.** Board DB-139. Reader/API/UI PR576 is merged/deployed: source-backed totals and supported payment states, identity/freshness holds and duplicate native-invoice guards. Compact footer/popover PR582 and native-only Ready to Close PR590 are merged/deployed with signed-in Light/Night desktop/mobile acceptance. History remains reachable; financial rows stayed unchanged. These child releases do not close B4's full source/payment-sync scope. Proposed importer changes remain on `codex/db139-importer-money-held` until existing-payment handling has a guard, contract and independent gates. No collector invocation, configuration change, backfill, financial apply or native invoice creation is authorized. [Contract](contracts/db139-ets-financial-mirror.md), [reader evidence](verification/DB139_ETS_FINANCIAL_MIRROR.md), [footer receipt](verification/DB139_COMPACT_BILLING_SUMMARY.md), [queue final receipt](https://github.com/mecaniser/truck-pit-stop/pull/590). Full reader-only PR576 browser coverage is not inferred solely from the later paid-example/footer checks; retain exact evidence boundaries.
+
 
 - [ ] **R2 — Repeat or selectively copy a prior repair order/estimate** — Backlog; after the priority wave. Relative value/size: Medium / M. See audit for evidence and dependencies.
 - [ ] **R3 — Defer an existing operation into tracked recommended work** — Backlog; after the priority wave. Relative value/size: High / L. See audit for evidence and dependencies.
@@ -98,8 +101,12 @@ Acceptance before editing application code:
 
 See [contract](contracts/db132-parts-pricing-matrix.md) for full scope, writer coverage, locking, inactive defaults and safe production verification limits. P1 application changes and additive migration174 are deployed through PR542; correction PR544 is live at70530bda. Both themes passed desktop and emulated mobile production acceptance. Pricing remains inactive; no guessed rates or defaults were configured. The later inventory fingerprint change is attributed to the normal ETS sync; retained usages/invoices are unchanged. See the receipt for exact evidence and limits.
 
-DB-139 presentation follow-up (2026-10-19): compact footer retains source total/status and moves support details into an accessible popover. Frontend & UX owns this Fast UI slice; existing source boundaries and held importer remain unchanged. [Receipt](verification/DB139_COMPACT_BILLING_SUMMARY.md). PR582 CI passed; merged/deployed b994794b is healthy. Signed-in production desktop/mobile acceptance passed after session renewal; compact-footer presentation slice Done. Broader B4/importer and B1 holds remain.
+DB-139 presentation follow-up (2026-10-19): compact footer retains source total/status and moves support details into an accessible popover. Frontend & UX owns this Fast UI slice; existing source boundaries and held importer remain unchanged. [Receipt](verification/DB139_COMPACT_BILLING_SUMMARY.md). PR582 CI passed; merged/deployed b994794b is healthy. Signed-in production desktop/mobile acceptance passed after session renewal; compact-footer presentation slice Done. Broader B4/importer remains held; B1 later completed through PR575.
 
-B1 owner steering (2026-10-19): finish read-only with reviewed real/test classification; real billing remains ETS/QuickBooks. All47 native candidates are listed privately, original32 gaps unchanged. Owner selections pending; no financial apply authorized. [Classification proposal](contracts/db135-native-record-classification.md).
+Historical B1 owner steering (2026-10-19; superseded by the completed classification/release above): finish read-only with reviewed real/test classification; real billing remains ETS/QuickBooks. All47 native candidates are listed privately, original32 gaps unchanged. Owner selections were subsequently received and applied to the read-only view; no financial apply was authorized. [Classification proposal](contracts/db135-native-record-classification.md).
 
-DB-139 queue follow-up (2026-10-19): Ready to Close ownership correction in progress after accepted B1. Shared read-only projection excludes ETS/historical-hold provenance before queue pagination/count/value. Native workflow and source records remain unchanged. Contract: `contracts/db139-ready-close-ownership.md`; importer stays held, A1 queued.
+DB-139 queue follow-up Done (2026-10-20): PR590 merged76966f24, exact Web/Worker deployed, all six protected checks passed. Actual NC Day/Night desktop1280 andmobile390 acceptance verified native-only Ready to Close, consistent count/value/pagination and reachable ETS history. Financial cohort hashes unchanged, zero acceptance API writes. [Final receipt](https://github.com/mecaniser/truck-pit-stop/pull/590). Importer stays held; that release returned the selected wave to A1 discovery. The current A1 handoff below supersedes that historical stage.
+
+## Current handoff: A1 / DB-136 (2026-10-20)
+
+The six-outcome order is unchanged. R1/P1/C1/M1/B1 are Done; A1 is the remaining selected outcome. A1 implementation and independent local gates are complete; protected final-head CI and production release/acceptance remain pending. It is not Done. The remaining 24 discoveries are retained, including partially delivered B4. No new feature scope, financial mutation, importer rollout or payroll integration is implied.
