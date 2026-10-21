@@ -192,8 +192,9 @@ def issue_payment_step_up(db_session):
 pytest.importorskip("aiosqlite")
 
 import httpx
+import aiosqlite
 import pytest_asyncio
-from sqlalchemy import event, String
+from sqlalchemy import event, String, create_engine
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -209,16 +210,14 @@ def _render_pg_uuid_as_string(ddl_compiler, column, **kw):
     return "CHAR(32)"
 
 
-@pytest_asyncio.fixture
-async def _db_engine():
-    """Create a fresh in-memory SQLite engine and tables."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-        future=True,
-    )
+@pytest.fixture(scope="session")
+def _sqlite_schema_template(tmp_path_factory):
+    """Compile the empty schema once; every test receives a private memory copy.
 
+    The template belongs only to this pytest process, is never used by app
+    sessions, and is opened read-only when copied. Commits and DDL in a test
+    cannot affect later tests. No database connections cross event loops.
+    """
     # Make postgresql-specific types renderable on SQLite
     from sqlalchemy.dialects.sqlite.base import SQLiteTypeCompiler
     if not hasattr(SQLiteTypeCompiler, "visit_UUID"):
@@ -259,10 +258,38 @@ async def _db_engine():
 
     PG_UUID.result_processor = _patched_result_processor
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield engine
-    await engine.dispose()
+    path = tmp_path_factory.mktemp("sqlite-schema") / "empty.sqlite"
+    schema_engine = create_engine(f"sqlite:///{path}")
+    try:
+        Base.metadata.create_all(schema_engine)
+    finally:
+        schema_engine.dispose()
+    try:
+        yield path
+    finally:
+        PG_UUID.bind_processor = _orig_bp
+        PG_UUID.result_processor = _orig_rp
+
+
+@pytest_asyncio.fixture
+async def _db_engine(_sqlite_schema_template):
+    """Create a fresh in-memory database from the process-local empty schema."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+        future=True,
+    )
+    try:
+        async with engine.connect() as conn:
+            raw = await conn.get_raw_connection()
+            async with aiosqlite.connect(
+                _sqlite_schema_template.as_uri() + "?mode=ro", uri=True
+            ) as source:
+                await source.backup(raw.driver_connection)
+        yield engine
+    finally:
+        await engine.dispose()
 
 
 @pytest_asyncio.fixture
