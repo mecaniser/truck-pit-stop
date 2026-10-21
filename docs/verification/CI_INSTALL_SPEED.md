@@ -31,3 +31,9 @@ Revert workflow/script changes through normal protection: restore independent np
 ## Independent source gate
 
 Independent QA/Security GO for one candidate; reviewer verified all17 focused checks. Local build41.89s serial versus38.22s parallel, both passing. Final Linux timing must include packaging/upload/download/restore overhead. Failed-jobs-only retries cannot reuse an artifact from an earlier attempt; a genuine retry requires a complete new attempt, never a relaxed identity check. No retry has been started.
+
+## First candidate findings
+
+Run39653397692: all1826 application tests passed; both consumers restored successfully; frontend restore14s versus previous install82s. Packaging13s plus upload41s is54s producer overhead. Build66s versus68s. Vitest incorrectly discovered the new Node-only `.test.mjs` files and failed those two files. Corrected filenames use explicit verify entrypoints, matching existing Node checks, with all17 still required before application tests. No same-head retry; final corrected commit needs a new protected candidate.
+
+Correction acceptance:17 Node checks pass; actual Vitest collection returns17 critical plus176 remaining equals193 application files, no overlap. Independent correction GO confirms byte-identical renamed tests and required explicit invocation.

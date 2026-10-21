@@ -173,7 +173,7 @@ jobs:
       - name: Verify frontend test partition coverage
         if: needs.migration-graph.outputs.frontend_required != 'false'
         working-directory: frontend
-        run: node --test scripts/verify-partition-guards.mjs scripts/ci-dependencies.test.mjs scripts/build-ci.test.mjs && node scripts/verify-test-partitions.mjs
+        run: node --test scripts/verify-partition-guards.mjs scripts/verify-ci-dependencies.mjs scripts/verify-build-ci.mjs && node scripts/verify-test-partitions.mjs
       - name: Run critical regression suite
         if: needs.migration-graph.outputs.frontend_required != 'false'
         working-directory: frontend
