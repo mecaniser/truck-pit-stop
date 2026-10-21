@@ -191,3 +191,24 @@ failed samples and baseline, alerts only for meaningful changes, and pauses afte
 verified completion. It may not count offline intervals or silently reset time.
 
 PR619 remains open (currently not draft), unmerged. Railway production untouched.
+
+### Monitoring ownership handoff — October 21, 2026
+
+Board ID: DB-INFRA-001. From Railway recovery chat to dedicated Mac staging
+chat `01a160dc-3a05-7742-902c-fb6b9ca45fef`; Release & Reliability remains
+accountable. Railway recovery and PR611 stay with the original chat.
+
+Read-only `soak-report.py` returned `observing`, `complete:false`, 38 samples,
+latest `2026-10-21T23:46:08.204424+00:00`, and no issues. Recent minute samples
+show readiness, approved web source, all four unchanged container start identities,
+no OOM, and approximately 143 GB free. Existing active 15-minute heartbeat
+`verify-mac-staging-recovery-and-24-hour-stability` targets this chat. PR619 is
+attached; branch at handoff is `codex/mac-staging-server`, head `0a3ac1b0`.
+
+No baseline reset, duplicate automation, worker trigger, service restart, live
+credential use, or production action occurred. No API or migration impact.
+The accepted October 21–22, 7:09:59 PM America/New_York window remains pending.
+Next action: inspect ongoing samples/report; preserve and report any failure.
+Return condition: 24 elapsed hours with required continuity/identity/health gates,
+redacted final evidence, then pause the existing heartbeat. Existing synthetic-only,
+assisted-unlock, recurring-schedule and undeployed PID1 safeguard limits remain.
