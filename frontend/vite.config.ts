@@ -63,7 +63,8 @@ export default defineConfig(({ command, mode }) => {
     css: true,
     // Local CI VMs share the Mac with other jobs. Parallel jsdom workers
     // starve interaction tests and turn their existing deadlines into flakes.
-    // Keep job-level parallelism; run each CI suite without worker contention.
+    // Keep critical CI checks serial. The remaining-suite runner explicitly uses
+    // two isolated workers, bounded by its disposable VM's two CPUs.
     maxWorkers: process.env.CI ? 1 : undefined,
   },
   }
