@@ -17,6 +17,9 @@ import CostContributionBreakdown, { type ProfitabilityResp } from './CostContrib
 import CashReceiptsByCustomer, { type CashReceipt } from './CashReceiptsByCustomer'
 import { readReportRange, type ReportRange } from './reportRange'
 import { revenueAverage } from './revenueAverage'
+import { useAuthStore } from '@/stores/authStore'
+import JobContribution from './job-contribution/JobContribution'
+import { isCostOwner } from './job-contribution/access'
 
 // ============ SHARED TYPES ============
 
@@ -1129,11 +1132,12 @@ function InternalFleetCostsTab({ range }: { range: ReportRange }) {
 
 // ============ MAIN PAGE ============
 
-type ReportTab = 'dashboard' | 'sales' | 'fees' | 'tax' | 'parts' | 'inventory' | 'service-types' | 'internal'
+type ReportTab = 'job-contribution' | 'dashboard' | 'sales' | 'fees' | 'tax' | 'parts' | 'inventory' | 'service-types' | 'internal'
 
 const TABS: { id: ReportTab; label: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'sales', label: 'Sales' },
+  { id: 'job-contribution', label: 'Job Contribution' },
   { id: 'fees', label: 'Fees' },
   { id: 'tax', label: 'Sales Tax' },
   { id: 'parts', label: 'Part Revenue' },
@@ -1146,10 +1150,12 @@ const DATE_FILTERED_TABS: ReportTab[] = ['dashboard', 'sales', 'fees', 'tax', 'p
 
 export default function GarageAnalyticsPage() {
   const queryClient = useQueryClient()
+  const auth = useAuthStore()
+  const costOwner = isCostOwner(auth)
   const { accentColors } = useTheme()
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab') as ReportTab | null
-  const activeTab: ReportTab = tabParam && TABS.some((t) => t.id === tabParam) ? tabParam : 'dashboard'
+  const activeTab: ReportTab = tabParam && (tabParam !== 'job-contribution' || costOwner) && TABS.some((t) => t.id === tabParam) ? tabParam : 'dashboard'
   const setActiveTab = (id: ReportTab) => {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev)
@@ -1193,7 +1199,7 @@ export default function GarageAnalyticsPage() {
       </div>
 
       <div className="db-analytics-tabs mb-4 flex-shrink-0 flex gap-1 overflow-x-auto scrollbar-hide border-b border-white/10">
-        {TABS.map((tab) => (
+        {TABS.filter(tab => tab.id !== 'job-contribution' || costOwner).map((tab) => (
           <button
             key={tab.id}
             type="button"
@@ -1211,6 +1217,7 @@ export default function GarageAnalyticsPage() {
       <div className="db-operating-surface__scroller scrollbar-dark">
         {activeTab === 'dashboard' && <DashboardTab range={range} />}
         {activeTab === 'sales' && <SalesTab range={range} />}
+        {activeTab === 'job-contribution' && costOwner && <JobContribution />}
         {activeTab === 'fees' && <FeesTab range={range} />}
         {activeTab === 'tax' && <TaxTab range={range} />}
         {activeTab === 'parts' && <PartsTab range={range} />}

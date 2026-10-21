@@ -1,0 +1,62 @@
+.db-job-cost { color: var(--text-primary); padding-bottom: 1.5rem; }
+.db-job-cost h2, .db-job-cost h3, .db-job-cost h4 { font-weight: 650; }
+.db-job-cost button, .db-job-cost input, .db-job-cost select, .db-job-cost textarea { border: 1px solid var(--border-subtle); border-radius: .5rem; padding: .55rem .7rem; background: var(--surface-overlay); color: inherit; min-height: 2.75rem; }
+.db-job-cost button { white-space: nowrap; }
+.db-job-cost button:disabled { opacity: .5; }
+.db-job-cost button:focus-visible, .db-job-cost input:focus-visible, .db-job-cost select:focus-visible, .db-job-cost textarea:focus-visible, .db-job-cost summary:focus-visible { outline: 2px solid #7c9dff; outline-offset: 2px; }
+.db-job-cost label { display: flex; flex-direction: column; gap: .35rem; font-size: .85rem; }
+.db-job-cost input, .db-job-cost textarea, .db-job-cost select { min-width: 0; width: 100%; }
+.db-job-cost textarea { min-height: 4.5rem; }
+.db-job-cost .jc-toolbar { display: flex; justify-content: space-between; align-items: center; gap: .75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.db-job-cost small, .db-job-cost .jc-muted { font-size: .8rem; opacity: .8; }
+.db-job-cost .jc-filters { display: flex; align-items: end; flex-wrap: wrap; gap: .75rem; margin-bottom: .75rem; }
+.db-job-cost .jc-filters label { flex: 1 1 140px; }
+.db-job-cost .jc-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; margin: 1rem 0; }
+.db-job-cost .jc-metric { display: flex; flex-direction: column; padding: 1rem; border: 1px solid var(--border-subtle); border-radius: .75rem; gap: .4rem; }
+.db-job-cost .jc-metric strong { font-size: 1.4rem; }
+.db-job-cost .jc-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); width: 100%; text-align: left; gap: .75rem; margin-top: .5rem; white-space: normal; }
+.db-job-cost .jc-row > span { display: flex; flex-direction: column; overflow-wrap: anywhere; }
+.db-job-cost .jc-pagination { display: flex; gap: .75rem; margin: 1rem 0; flex-wrap: wrap; }
+.db-job-cost .jc-detail { padding: 1rem; margin: 1rem 0; border: 1px solid var(--border-subtle); border-radius: .75rem; }
+.db-job-cost .jc-breakdown > div { display: flex; justify-content: space-between; gap: 1rem; padding: .45rem 0; flex-wrap: wrap; }
+.db-job-cost .jc-review, .db-job-cost fieldset { display: grid; gap: .75rem; margin: 1rem 0; }
+.db-job-cost fieldset { border: 1px solid var(--border-subtle); padding: .75rem; border-radius: .5rem; }
+.db-job-cost .jc-check { flex-direction: row; flex-wrap: wrap; align-items: center; }
+.db-job-cost .jc-check input { width: 1.25rem; }
+.db-job-cost .jc-fingerprint { overflow-wrap: anywhere; font-size: .75rem; }
+.db-job-cost ul { font-size: .85rem; list-style: disc; padding-left: 1.3rem; margin: .5rem 0; }
+.db-job-cost details { margin-top: .75rem; }
+.db-job-cost summary { cursor: pointer; padding: .5rem 0; list-style: none; display: flex; align-items: center; gap: .4rem; }
+.db-job-cost summary::-webkit-details-marker { display: none; }
+.db-job-cost summary > svg { flex-shrink: 0; }
+.db-job-cost details[open] > summary > svg { transform: rotate(180deg); }
+.db-job-cost details p { padding: .4rem 0; }
+@media (max-width: 600px) { .db-job-cost .jc-metrics { grid-template-columns: 1fr; } .db-job-cost .jc-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .db-job-cost .jc-row > span:first-child { grid-column: 1 / -1; } .db-job-cost .jc-detail { padding: .75rem; } }
+
+/* The staff-shell form rule pins road-white backgrounds with !important.
+   This protected report owns both control fill and ink through appearance tokens. */
+.db-presentation-new .db-staff-content .db-job-cost :is(input, select, textarea) {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-overlay) !important;
+  color: var(--text-primary) !important;
+  -webkit-text-fill-color: var(--text-primary);
+  caret-color: var(--text-primary);
+  color-scheme: inherit;
+}
+.db-presentation-new .db-staff-content .db-job-cost :is(input, textarea)::placeholder {
+  color: var(--text-secondary);
+  -webkit-text-fill-color: var(--text-secondary);
+  opacity: 1;
+}
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-job-cost {
+  color-scheme: dark;
+}
+@media (forced-colors: active) {
+  .db-presentation-new .db-staff-content .db-job-cost :is(input, select, textarea) {
+    background: Field !important;
+    color: FieldText !important;
+    -webkit-text-fill-color: FieldText;
+    border-color: ButtonText !important;
+    caret-color: FieldText;
+  }
+}

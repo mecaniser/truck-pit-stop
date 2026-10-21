@@ -21,6 +21,8 @@ api_router.include_router(invoice_access.router, prefix="/invoice-access", tags=
 api_router.include_router(inventory.router, prefix="/inventory", tags=["inventory"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
+from app.api.v1.endpoints import labor_cost
+api_router.include_router(labor_cost.router, prefix="/reports", tags=["owner-job-contribution"])
 api_router.include_router(conversion_exports.router, prefix="/conversion-exports", tags=["conversion-exports"])
 api_router.include_router(fleet_invoice_exports.router, prefix="/fleet-invoice-exports", tags=["fleet-invoice-exports"])
 api_router.include_router(historical_invoice_reviews.router, prefix="/fleet-invoice-exports", tags=["fleet-invoice-reviews"])
