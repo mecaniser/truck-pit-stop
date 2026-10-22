@@ -30,6 +30,20 @@ afterEach(cleanup);
 const mount = (m = message) => render(<MessageAttachments tenantId={DEMO_TENANT} message={m} />);
 
 describe("authenticated incoming MMS images", () => {
+  it("keeps one loading status through discovery and image retrieval, then removes it", async () => {
+    const discovery = deferred<{ items: { index: number; kind: "image" }[] }>();
+    const image = deferred<Blob>();
+    manifest.mockReturnValueOnce(discovery.promise); content.mockReturnValueOnce(image.promise);
+    mount(); expect(screen.getAllByRole("status")).toHaveLength(1);
+    expect(screen.getByRole("status")).toHaveTextContent("Loading images…");
+    await act(async () => discovery.resolve({ items: [{ index: 0, kind: "image" }] }));
+    await waitFor(() => expect(content).toHaveBeenCalledTimes(1));
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+    expect(screen.getByRole("status")).toHaveTextContent("Loading images…");
+    await act(async () => image.resolve(blob()));
+    await screen.findByRole("img");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
   it("loads media, keeps caption, hides only the trailing receipt and revokes on unmount", async () => {
     const view = mount(); expect(screen.getByRole("status")).toHaveTextContent("Loading images");
     const image = await screen.findByRole("img"); expect(image).toHaveAttribute("src", "blob:synthetic-1"); expect(image).toHaveAttribute("referrerpolicy", "no-referrer");
