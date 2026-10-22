@@ -19,6 +19,7 @@ export interface WireMessage {
   delivery_status: Message["deliveryStatus"];
   error_code?: string;
   send_operation_id?: string;
+  has_attachments?: boolean;
 }
 export interface WireConversation {
   id: string;
@@ -70,6 +71,7 @@ export const mapMessage = (m: WireMessage): Message => ({
   deliveryStatus: m.delivery_status,
   errorCode: m.error_code,
   sendOperationId: m.send_operation_id,
+  hasAttachments: m.has_attachments === true,
 });
 export const mapConversation = (r: WireConversation): Conversation => ({
   id: r.id,
@@ -192,6 +194,16 @@ export const inboxApi = {
       (await api.get<WireConversation>(`/communications/conversations/${id}`))
         .data,
     ),
+  attachmentManifest: async (conversationId: string, messageId: string, signal: AbortSignal) =>
+    (await api.get<{ items: { index: number; kind: "image" }[] }>(
+      `/communications/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/attachments`,
+      { signal },
+    )).data,
+  attachmentBlob: async (conversationId: string, messageId: string, index: number, signal: AbortSignal) =>
+    (await api.get<Blob>(
+      `/communications/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/attachments/${index}`,
+      { responseType: "blob", signal },
+    )).data,
   patch: async (
     row: Conversation,
     patch: { status?: "open" | "resolved"; assignee_id?: string | null },
