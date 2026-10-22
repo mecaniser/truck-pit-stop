@@ -170,6 +170,29 @@ async def _quarantine(db, binding, payload, reason):
     return {'status': 'quarantined', 'reason': reason}
 
 
+ATTACHMENT_NOTICE = '[Attachment received in CallRail. Open CallRail to view.]'
+
+
+def _event_content(payload, *, inbound):
+    """Persist a visible receipt, never an expiring provider media URL."""
+    kind = payload.get('message_type', 'sms')
+    content = payload.get('content')
+    media = payload.get('media_urls')
+    if (not isinstance(kind, str) or kind.lower() not in {'sms', 'mms'}
+        or (media is not None and (not isinstance(media, list) or len(media) > 10
+            or any(not isinstance(item, str) or not item or len(item) > 4096 for item in media)))):
+        return None
+    attachment = kind.lower() == 'mms' or bool(media)
+    if not attachment:
+        return (content, content) if isinstance(content, str) and len(content) <= 10000 else None
+    if not inbound or (content is not None and not isinstance(content, str)):
+        return None
+    caption = content or ''
+    if len(caption) > 10000:
+        return None
+    return ((caption + '\n\n' if caption else '') + ATTACHMENT_NOTICE, caption)
+
+
 async def apply_event(db, binding_id, payload, event_kind, *, historical=False, failed=False):
     """Caller validates signature before parsing. Serial binding lock makes replay safe."""
     binding = await db.scalar(select(CallRailNumberBinding).where(CallRailNumberBinding.id == binding_id)
@@ -197,11 +220,10 @@ async def apply_event(db, binding_id, payload, event_kind, *, historical=False, 
         return await _quarantine(db, binding, payload, 'invalid_timestamp')
     if not historical and abs(datetime.now(timezone.utc) - timestamp) > timedelta(days=7):
         return await _quarantine(db, binding, payload, 'stale_timestamp')
-    content = payload.get('content')
-    if (not isinstance(content, str) or len(content) > 10000 or not isinstance(payload.get('message_type', 'sms'), str)
-        or payload.get('message_type', 'sms').lower() != 'sms'
-        or payload.get('media_urls')):
+    normalized = _event_content(payload, inbound=inbound)
+    if normalized is None:
         return await _quarantine(db, binding, payload, 'unsupported_message')
+    content, opt_out_content = normalized
     aliases = []
     numeric = payload.get('id')
     if isinstance(numeric, int) and not isinstance(numeric, bool) and numeric > 0:
@@ -319,7 +341,7 @@ async def apply_event(db, binding_id, payload, event_kind, *, historical=False, 
             workflow.version += 1
         else:
             db.add(ConversationWorkflow(tenant_id=binding.tenant_id, thread_id=thread.id, status='open', version=2))
-        if content.strip().upper() in {'STOP', 'CANCEL', 'UNSUBSCRIBE', 'QUIT', 'END'}:
+        if opt_out_content.strip().upper() in {'STOP', 'CANCEL', 'UNSUBSCRIBE', 'QUIT', 'END'}:
             if thread.thread_kind == 'inquiry':
                 thread.inquiry_opted_out = True
             else:

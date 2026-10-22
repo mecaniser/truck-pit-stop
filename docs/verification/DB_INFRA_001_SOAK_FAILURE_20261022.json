@@ -1,0 +1,293 @@
+{
+  "capturedAt": "2026-10-22T17:52:50.475675+00:00",
+  "owner": "Release & Reliability",
+  "item": "DB-INFRA-001",
+  "reportBeforeRecovery": {
+    "status": "failed",
+    "complete": false,
+    "started_at": "2026-10-21T23:09:59.450841+00:00",
+    "ends_at": "2026-10-22T23:09:59.450841+00:00",
+    "samples": 1121,
+    "last_sample": "2026-10-22T17:52:37.458571+00:00",
+    "issues": [
+      "invalid_container_sample",
+      "unhealthy_or_source_changed"
+    ]
+  },
+  "lastHealthySampleUTC": "2026-10-22T17:38:35.644264+00:00",
+  "firstFailedSampleUTC": "2026-10-22T17:39:35.831217+00:00",
+  "firstFailedSampleEastern": "October 22, 2026 1:39:35 PM America/New_York",
+  "failedSampleErrorType": "URLError",
+  "diagnosis": {
+    "hostBootUnchanged": 1792623263,
+    "dockerDesktopAndBackendProcessesAbsent": true,
+    "onlyDockerVmnetdHelperPresent": true,
+    "dockerSocketAbsent": true,
+    "dockerDesktopStatusExit": 1,
+    "electronQuitEventsUTC": [
+      "2026-10-22T17:39:19.721",
+      "2026-10-22T17:39:19.782"
+    ],
+    "backendShutdownUTC": "2026-10-22T17:39:27.814746000",
+    "quitInitiator": "not established",
+    "containerOOMAndFinalStates": "unavailable while daemon is stopped; not asserted"
+  },
+  "baselineSha256": "1e7618809a071feb45cadb84667827c97c483c63f7e3fbf645b92628b4544d1e",
+  "baselineReset": false,
+  "failedSamplesRemoved": false,
+  "railwayMutationsPerformed": false,
+  "plannedRecovery": "One supported Docker Desktop start after preserving failure; no worker trigger, baseline reset or data change. Recovery cannot pass the original observation.",
+  "recovery": {
+    "observedAt": "2026-10-22T17:55:01.535686+00:00",
+    "singleDockerStartExit": 0,
+    "stagingReadinessHTTP": 200,
+    "originalContainers": [
+      {
+        "name": "macapps-tph-backup-rehearsal-v3-router-1",
+        "idUnchanged": true,
+        "imageUnchanged": true,
+        "status": "exited",
+        "startedAtChanged": false,
+        "startedAt": "2026-10-22T05:07:37.389127178Z",
+        "oomKilled": false,
+        "health": "unhealthy"
+      },
+      {
+        "name": "macapps-tph-backup-rehearsal-v3-railway-simulation-1",
+        "idUnchanged": true,
+        "imageUnchanged": true,
+        "status": "exited",
+        "startedAtChanged": false,
+        "startedAt": "2026-10-22T05:15:04.563978052Z",
+        "oomKilled": false,
+        "health": "unhealthy"
+      },
+      {
+        "name": "macapps-tph-backup-rehearsal-v3-mongo-1",
+        "idUnchanged": true,
+        "imageUnchanged": true,
+        "status": "exited",
+        "startedAtChanged": false,
+        "startedAt": "2026-10-22T04:51:54.909313922Z",
+        "oomKilled": false,
+        "health": "unhealthy"
+      },
+      {
+        "name": "db-local-test-gateway-1",
+        "idUnchanged": true,
+        "imageUnchanged": true,
+        "status": "running",
+        "startedAtChanged": true,
+        "startedAt": "2026-10-22T17:52:54.276437Z",
+        "oomKilled": false,
+        "health": null
+      },
+      {
+        "name": "db-local-test-web-1",
+        "idUnchanged": true,
+        "imageUnchanged": true,
+        "status": "running",
+        "startedAtChanged": true,
+        "startedAt": "2026-10-22T17:52:54.295664542Z",
+        "oomKilled": false,
+        "health": "healthy"
+      },
+      {
+        "name": "tph-local-test-gateway-1",
+        "idUnchanged": true,
+        "imageUnchanged": true,
+        "status": "running",
+        "startedAtChanged": true,
+        "startedAt": "2026-10-22T17:52:54.278428834Z",
+        "oomKilled": false,
+        "health": null
+      },
+      {
+        "name": "tph-local-test-web-1",
+        "idUnchanged": true,
+        "imageUnchanged": true,
+        "status": "running",
+        "startedAtChanged": true,
+        "startedAt": "2026-10-22T17:52:54.290000875Z",
+        "oomKilled": false,
+        "health": "healthy"
+      },
+      {
+        "name": "tph-local-test-identity-1",
+        "idUnchanged": true,
+        "imageUnchanged": true,
+        "status": "running",
+        "startedAtChanged": true,
+        "startedAt": "2026-10-22T17:52:54.290597125Z",
+        "oomKilled": false,
+        "health": "healthy"
+      },
+      {
+        "name": "tph-local-test-worker-1",
+        "idUnchanged": true,
+        "imageUnchanged": true,
+        "status": "running",
+        "startedAtChanged": true,
+        "startedAt": "2026-10-22T17:52:54.292522709Z",
+        "oomKilled": false,
+        "health": "healthy"
+      },
+      {
+        "name": "tph-local-test-mongo-1",
+        "idUnchanged": true,
+        "imageUnchanged": true,
+        "status": "running",
+        "startedAtChanged": true,
+        "startedAt": "2026-10-22T17:52:54.301506084Z",
+        "oomKilled": false,
+        "health": "healthy"
+      },
+      {
+        "name": "db-local-test-worker-1",
+        "idUnchanged": true,
+        "imageUnchanged": true,
+        "status": "running",
+        "startedAtChanged": true,
+        "startedAt": "2026-10-22T17:52:54.303087625Z",
+        "oomKilled": false,
+        "health": "healthy"
+      },
+      {
+        "name": "db-local-test-postgres-1",
+        "idUnchanged": true,
+        "imageUnchanged": true,
+        "status": "running",
+        "startedAtChanged": true,
+        "startedAt": "2026-10-22T17:52:54.291771625Z",
+        "oomKilled": false,
+        "health": "healthy"
+      },
+      {
+        "name": "db-local-test-redis-1",
+        "idUnchanged": true,
+        "imageUnchanged": true,
+        "status": "running",
+        "startedAtChanged": true,
+        "startedAt": "2026-10-22T17:52:54.267850959Z",
+        "oomKilled": false,
+        "health": "healthy"
+      },
+      {
+        "name": "macapps-second-demo-gateway-1",
+        "idUnchanged": true,
+        "imageUnchanged": true,
+        "status": "running",
+        "startedAtChanged": true,
+        "startedAt": "2026-10-22T17:52:54.274725667Z",
+        "oomKilled": false,
+        "health": null
+      },
+      {
+        "name": "macapps-second-demo-app-1",
+        "idUnchanged": true,
+        "imageUnchanged": true,
+        "status": "running",
+        "startedAtChanged": true,
+        "startedAt": "2026-10-22T17:52:54.287053875Z",
+        "oomKilled": false,
+        "health": null
+      },
+      {
+        "name": "macapps-hosting-demo-app-1",
+        "idUnchanged": true,
+        "imageUnchanged": true,
+        "status": "running",
+        "startedAtChanged": true,
+        "startedAt": "2026-10-22T17:52:54.300049917Z",
+        "oomKilled": false,
+        "health": null
+      },
+      {
+        "name": "macapps-hosting-demo-gateway-1",
+        "idUnchanged": true,
+        "imageUnchanged": true,
+        "status": "running",
+        "startedAtChanged": true,
+        "startedAt": "2026-10-22T17:52:54.289103084Z",
+        "oomKilled": false,
+        "health": null
+      },
+      {
+        "name": "dieselbridge-staging-web-1",
+        "idUnchanged": true,
+        "imageUnchanged": true,
+        "status": "running",
+        "startedAtChanged": true,
+        "startedAt": "2026-10-22T17:52:54.296846375Z",
+        "oomKilled": false,
+        "health": "healthy"
+      },
+      {
+        "name": "dieselbridge-staging-gateway-1",
+        "idUnchanged": true,
+        "imageUnchanged": true,
+        "status": "running",
+        "startedAtChanged": true,
+        "startedAt": "2026-10-22T17:52:54.283445042Z",
+        "oomKilled": false,
+        "health": null
+      },
+      {
+        "name": "dieselbridge-staging-postgres-1",
+        "idUnchanged": true,
+        "imageUnchanged": true,
+        "status": "running",
+        "startedAtChanged": true,
+        "startedAt": "2026-10-22T17:52:54.288421959Z",
+        "oomKilled": false,
+        "health": "healthy"
+      },
+      {
+        "name": "dieselbridge-staging-redis-1",
+        "idUnchanged": true,
+        "imageUnchanged": true,
+        "status": "running",
+        "startedAtChanged": true,
+        "startedAt": "2026-10-22T17:52:54.272702584Z",
+        "oomKilled": false,
+        "health": "healthy"
+      }
+    ],
+    "originalRunningCount": 18,
+    "otherRehearsalContainersNotRestarted": [
+      "macapps-tph-backup-rehearsal-v3-router-1",
+      "macapps-tph-backup-rehearsal-v3-railway-simulation-1",
+      "macapps-tph-backup-rehearsal-v3-mongo-1"
+    ],
+    "reportAfterRecovery": {
+      "status": "failed",
+      "complete": false,
+      "started_at": "2026-10-21T23:09:59.450841+00:00",
+      "ends_at": "2026-10-22T23:09:59.450841+00:00",
+      "samples": 1123,
+      "last_sample": "2026-10-22T17:54:37.763020+00:00",
+      "issues": [
+        "container_restarted_or_missing",
+        "invalid_container_sample",
+        "unhealthy_or_source_changed"
+      ]
+    },
+    "latestSample": {
+      "at": "2026-10-22T17:54:37.763020+00:00",
+      "ok": true,
+      "ready": "ready",
+      "source": "626194996e78bd42556ce476847473e5730aa388"
+    },
+    "failedSamplesRetained": 15,
+    "baselineSha256": "1e7618809a071feb45cadb84667827c97c483c63f7e3fbf645b92628b4544d1e",
+    "stagingDatabasePersistence": {
+      "exit": 0,
+      "counts": [
+        2,
+        2,
+        2
+      ]
+    }
+  },
+  "originalWindowOutcome": "failed; cannot be accepted or reset by this recovery"
+}
