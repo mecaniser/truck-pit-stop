@@ -2,7 +2,7 @@
 
 Owner: Release & Reliability. Status: public synthetic test hosting accepted.
 Both sites have trusted HTTPS and verified native browser logins. Dedicated edge
-login recovery is installed and running. PR620 remains draft/unmerged, based on
+login recovery is installed and running. Follow-up PR621 remains draft/unmerged, based on
 PR619. Railway production is untouched.
 
 ## Authorized scope and contract
@@ -143,8 +143,11 @@ The original October21 7:09:59PM through October22 7:09:59PM Eastern staging
 observation continues without reset. Final recovery checks observed157 samples and
 zero issues. This public-hosting task does not complete that window.
 
-PR620 remains draft/unmerged on `codex/mac-test-public`, with PR619 as its base.
-Public test operation is accepted; production release and original24-hour
+Follow-up PR621 remains draft/unmerged on `codex/mac-test-public`, with PR619 as its base.
+PR620 was independently merged at01:34:45UTC into the staging branch as
+`59006bfd61aa080932af2398c6bca373481aa606`; its tree matched the initial
+`08db1729` exactly. Final fixes are in PR621. No merge was performed by this
+implementation run. PR619 into main remains open. Public test operation is accepted; production release and original24-hour
 stability acceptance remain separate and pending. No production merge or deploy
 is requested. The existing background monitor remains active.
 
