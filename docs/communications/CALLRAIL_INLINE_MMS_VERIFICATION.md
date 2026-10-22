@@ -29,3 +29,7 @@ Latest main remains3816c28 at source freeze. Protected PR CI, merge, deployment 
 ## Protected CI external blocker
 
 PR627 head`e97bebb18700f1deed1bafb49cc2230115a61df7`, run39830751878: migration, backend critical/full, frontend critical/full and dependency preparation passed. Playwright smoke failed during service initialization before checkout/tests because pinned public ECR Postgres pulls returned `toomanyrequests: Data limit exceeded`. One targeted setup-job retry reproduced the same external limit; original failure retained. No test/assertion/timeout changes or further retries. Required gate remains failed; PR unmerged and feature undeployed. This local closeout note awaits eventual release-record commit; no app source edits after reviewed head.
+
+## Current-main integration prepared
+
+Local merge80556e05 incorporates main4ddf8d86 and preserves both board histories. MMS application/test/fixture content is byte-identical to independently reviewed e97bebb1; no CI policy/test/deadline change. Later PR623 smoke job120015667506 successfully downloaded the same pinned ECR Postgres image at18:41UTC and passed5 tests, providing evidence that the prior registry limit has recovered. Publication and one new-head automatic CI set wait for the coordinator to release the serial619/622 hold. No production changes.
