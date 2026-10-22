@@ -1,0 +1,62 @@
+{
+  "at": "2026-10-22T20:24:43.488329+00:00",
+  "captured_stderr": "Error response from daemon: ports are not available: exposing port TCP 127.0.0.1:18310 -> 127.0.0.1:0: listen tcp4 127.0.0.1:18310: bind: address already in use\nfailed to start containers: 12f8f3a648103db54493730a8cfd4f1624b09b92159b5471e3210c4fa1998906\n",
+  "command": [
+    "docker",
+    "--context",
+    "desktop-linux",
+    "start",
+    "12f8f3a648103db54493730a8cfd4f1624b09b92159b5471e3210c4fa1998906"
+  ],
+  "command_receipt": {
+    "immediate_router_state": {
+      "error_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "health": "unhealthy",
+      "id": "12f8f3a648103db54493730a8cfd4f1624b09b92159b5471e3210c4fa1998906",
+      "image": "sha256:ad263a2882720763c4b2ffd920a17571b1777c99110cce02c1ab9272ff3313f2",
+      "running": false,
+      "started": "2026-10-22T05:07:37.389127178Z"
+    },
+    "result": {
+      "capture": {
+        "stderr": {
+          "bytes": 254,
+          "path": "/Users/sergio/mac-hosting/tph-backup-rehearsal-v3/private/router-diagnostic-stderr.log",
+          "sha256": "63129cf162b8927bf5e097c0e8d4fb8e54540fbea1caa1331e50729725a95c36"
+        },
+        "stdout": {
+          "bytes": 0,
+          "path": "/Users/sergio/mac-hosting/tph-backup-rehearsal-v3/private/router-diagnostic-stdout.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "exit": 1,
+      "known_bind_error": true,
+      "output_limit": false,
+      "timeout": false,
+      "uncertain": false
+    }
+  },
+  "consumed_attempts_preserved": true,
+  "demonstrated_cause": "fixed loopback18310 already owned by accepted rehearsal relayPID67282",
+  "helper_sha256": "54a5916f325262841603bec009c1b3d7c53556c13f319153a47993358134a2c7",
+  "independent_qa": "GO exact diagnostic plan",
+  "independent_security": "GO exact diagnostic plan",
+  "kind": "single_reviewed_router_start_diagnostic",
+  "new_baseline_sha256": "0002ccdd4d0b797e4a79543c1be310cd7a292d8f23b8ecba786031dec16ed328",
+  "observation": {
+    "complete": false,
+    "ends_at": "2026-10-23T19:28:23.277321+00:00",
+    "issues": [],
+    "last_sample": "2026-10-22T20:24:06.165503+00:00",
+    "samples": 56,
+    "started_at": "2026-10-22T19:28:23.277321+00:00",
+    "status": "observing"
+  },
+  "old_checkpoint_failure_label_superseded": "Docker backend logs establish both earlier failures reached router start; this diagnostic directly captures bind error",
+  "original_baseline_sha256": "1e7618809a071feb45cadb84667827c97c483c63f7e3fbf645b92628b4544d1e",
+  "plan_sha256": "e93bd795ba07e287526a1bb24b916675b3ba78434b0c6b9690eed6d145d97ddc",
+  "production_provider_actions": 0,
+  "relay_untouched": true,
+  "router_unchanged": true
+}

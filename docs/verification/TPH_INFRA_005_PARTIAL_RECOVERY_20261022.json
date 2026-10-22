@@ -1,0 +1,110 @@
+{
+  "at": "2026-10-22T20:08:41.440361+00:00",
+  "business_provider_actions": 0,
+  "containers": [
+    {
+      "health": "healthy",
+      "id": "39417e7d464409d19010f52b45ec2ac5e4baab72d230a5fd5aaa16c785757859",
+      "image": "sha256:c53852c00c23ca9f23fc39690350ffa9a80e3642fe8f96879726d8da0abe80a7",
+      "name": "macapps-tph-backup-rehearsal-v3-mongo-1",
+      "oom": false,
+      "running": true,
+      "started": "2026-10-22T20:03:53.486818263Z"
+    },
+    {
+      "health": "healthy",
+      "id": "b0863397dbfca6b8c712881f2aed2b1532f8536d4c7dcc7fbc5736f40ac0a247",
+      "image": "sha256:ac317d36a53634d90c2a40c9a5dc383e1e9bfc65486c880947582a72513d6fcf",
+      "name": "macapps-tph-backup-rehearsal-v3-railway-simulation-1",
+      "oom": false,
+      "running": true,
+      "started": "2026-10-22T20:04:00.591453794Z"
+    },
+    {
+      "health": "unhealthy",
+      "id": "e0eb80160f5188007615f39896f15a6f4f8275147632613240676e0d8139e7db",
+      "image": "sha256:ac317d36a53634d90c2a40c9a5dc383e1e9bfc65486c880947582a72513d6fcf",
+      "name": "macapps-tph-backup-rehearsal-v3-mac-backup-1",
+      "oom": false,
+      "running": false,
+      "started": "2026-10-22T05:12:05.03396976Z"
+    },
+    {
+      "health": "unhealthy",
+      "id": "12f8f3a648103db54493730a8cfd4f1624b09b92159b5471e3210c4fa1998906",
+      "image": "sha256:ad263a2882720763c4b2ffd920a17571b1777c99110cce02c1ab9272ff3313f2",
+      "name": "macapps-tph-backup-rehearsal-v3-router-1",
+      "oom": false,
+      "running": false,
+      "started": "2026-10-22T05:07:37.389127178Z"
+    }
+  ],
+  "demonstrated_cause_reference": "TPH_INFRA_005_ROUTER_START_DIAGNOSTIC_20261022.json",
+  "failure_stage_correction": "Docker backend logs establish both attempts reached router start; reviewed diagnostic captures exact bind error",
+  "inactive_unchanged": true,
+  "initial_assessment_superseded": "unproven; original helper retained generic RuntimeError only; failure occurred in read-only native authority GET after two healthy starts",
+  "kind": "preserved_partial_recovery_failure",
+  "new_baseline_sha256": "0002ccdd4d0b797e4a79543c1be310cd7a292d8f23b8ecba786031dec16ed328",
+  "observation": {
+    "complete": false,
+    "ends_at": "2026-10-23T19:28:23.277321+00:00",
+    "issues": [],
+    "last_sample": "2026-10-22T20:08:03.433862+00:00",
+    "samples": 40,
+    "started_at": "2026-10-22T19:28:23.277321+00:00",
+    "status": "observing"
+  },
+  "original_attempt_retried": false,
+  "original_baseline_sha256": "1e7618809a071feb45cadb84667827c97c483c63f7e3fbf645b92628b4544d1e",
+  "receipts": {
+    "existing-recovery-approval-v2.json": {
+      "sha256": "76ff21fb3867931c9b195d2c757f7b088e797d04342be24ec4f91a027676b455",
+      "value": {
+        "at": "2026-10-22T20:03:52.040223+00:00",
+        "decision": "GO_single_existing_container_recovery",
+        "helper_sha256": "270960841fd8af20b24a420c978cf9b88bc42f2b7c1fef7a9c52d6c7b74c58ab",
+        "plan_sha256": "8868ac83858a1370d256cac26dc5766b637f33b9a9448580dc8b814a048975f7",
+        "qa": {
+          "decision": "GO",
+          "reference": "independent-qa-623-8868ac83",
+          "reviewer": "/root/continuity_independent_gate"
+        },
+        "scope": "single Mongo-active simulation-router start; inactive unchanged; no effects/promotion/live switching; mandatory native checkpoint probe before ingress",
+        "security": {
+          "decision": "GO",
+          "reference": "independent-security-623-8868ac83-20261022T2003Z",
+          "reviewer": "/root/merge_safety_review"
+        }
+      }
+    },
+    "existing-recovery-failed.json": {
+      "sha256": "f0afbb7032a5b8074c43bcf62db4ba3eed7b27641bab9c92826479477c30c340",
+      "value": {
+        "automatic_retry_forbidden": true,
+        "error_type": "RuntimeError"
+      }
+    },
+    "existing-recovery-started.json": {
+      "sha256": "2cb78edf5d945f68a2e3dd9097b72c114ec4d002e5be9c1a8d0ad5aee2b602eb",
+      "value": {
+        "approved_plan_sha256": "c939be6d152048c55e335af35e164df7a6dc52f676584e5ee5be4c29dfc2fb72",
+        "starts": [
+          "mongo",
+          "railway-simulation",
+          "router"
+        ]
+      }
+    }
+  },
+  "required_next_step": "separate source and exact partial-plan independent reviews before router-only continuation; preserve consumed attempt",
+  "router_started": false,
+  "subsequent_fixed_get": {
+    "authority_sha256": "9ba7b0f38dcf28dd4326a7ff057d93add977d46da403ebb4b1a0c2f4c49c7483",
+    "database": "tph_backup_restored",
+    "instance_prefix": "b0863397dbfc",
+    "pin_usage": 3,
+    "source": "b369e9f5e28584ba99f1cbe35d8f65080a51aeda",
+    "status": 200,
+    "watermark": 8
+  }
+}
