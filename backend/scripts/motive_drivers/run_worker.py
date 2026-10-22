@@ -9,13 +9,28 @@ import json
 import os
 import subprocess
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
+from scripts.motive_sync.recovery import install_signals, read_process
+
+
+def validate_fresh_source(document, company_label, company_id):
+    from app.services.fleet_telemetry import now
+    from scripts.motive_drivers.import_records import validate
+    from scripts.motive_sync.import_locations import time_value
+
+    validate(document, company_label, company_id)
+    if time_value(document["started_at"]) < now() - timedelta(minutes=30):
+        raise ValueError("Driver source outside fresh projection window")
+
 
 async def recover_database(journal, factory, *, commit):
+    from app.services.fleet_telemetry import now
+    from scripts.motive_drivers.import_records import validate
     from scripts.motive_drivers.runner import run
+    from scripts.motive_sync.import_locations import time_value
 
     pending = await journal.pending()
     if pending and not commit:
@@ -23,8 +38,26 @@ async def recover_database(journal, factory, *, commit):
             "Pending driver commit requires reconciliation; saving is disabled"
         )
     identity = journal.identity
+    recovered = 0
     for durable in pending:
         saved = await durable.load()
+        if saved["receipt"]["stage"] in {"source_saved", "validated"}:
+            # Validate the artifact before classifying it as old. Unknown/corrupt
+            # evidence remains fatal rather than being silently discarded.
+            validate(
+                saved["source"],
+                identity.company_label,
+                identity.company_id,
+                recovery=True,
+            )
+            if time_value(saved["source"]["started_at"]) < now() - timedelta(
+                minutes=30
+            ):
+                print(
+                    json.dumps({"stage": "driver_source_expired", "committed": False}),
+                    flush=True,
+                )
+                continue
         receipt = await run(
             factory,
             saved["source"],
@@ -40,6 +73,8 @@ async def recover_database(journal, factory, *, commit):
         )
         if receipt["stage"] != "verified":
             raise RuntimeError("Previous driver commit remains unverified")
+        recovered += 1
+    return recovered
 
 
 async def database_worker(state, *, engine=None, factory=None):
@@ -69,7 +104,7 @@ async def database_worker(state, *, engine=None, factory=None):
         source, receipt_file = directory / "source.json", directory / "receipt.json"
         # No shell, provider credentials or source values are emitted here.
         await asyncio.to_thread(
-            subprocess.run,
+            read_process,
             ["node", str(Path(__file__).with_name("collect.cjs")), str(source)],
             check=True,
             timeout=1500,
@@ -160,7 +195,7 @@ def main():
         run.mkdir(mode=0o700)
         source, receipt = run / "source.json", run / "receipt.json"
         try:
-            subprocess.run(
+            read_process(
                 ["node", str(Path(__file__).with_name("collect.cjs")), str(source)],
                 check=True,
                 timeout=1500,
@@ -196,6 +231,8 @@ def main():
 
 
 if __name__ == "__main__":
+    install_signals()
+    print(json.dumps({"stage": "worker_start"}), flush=True)
     try:
         main()
     except Exception:  # noqa: BLE001 - process boundary must not leak provider values

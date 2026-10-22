@@ -1,5 +1,6 @@
 /* Server collection through rendered Motive UI only; no private endpoints or session extraction. */
 const fs = require('node:fs');
+const {closeBrowser,phase,openTasks,retry,failed}=require('./tasks.cjs');
 const path = require('node:path');
 const {pathToFileURL} = require('node:url');
 const ORIGIN = 'https://app.gomotive.com';
@@ -67,7 +68,7 @@ async function advanceReportViewport(page) {
   return viewport.scrollTop+viewport.clientHeight>=viewport.scrollHeight-2;
  });
 }
-async function readVehicleVin(context,link) {
+async function readVehicleVinOnce(context,link) {
  // A hash-only navigation can leave the previous vehicle's rendered summary in place.
  // A fresh document per vehicle prevents a ready old Live/VIN node satisfying the waits.
  const page=await context.newPage();page.setDefaultTimeout(15000);
@@ -77,17 +78,30 @@ async function readVehicleVin(context,link) {
   await page.waitForFunction(()=>/\bVIN\s*[:\t ]*\s*[A-HJ-NPR-Z0-9]{17}\b/.test(document.body.innerText),null,{timeout:15000}).catch(()=>{});
   if(new URL(page.url()).origin!==ORIGIN||!page.url().endsWith(link.href))throw new Error('vehicle_source_changed');
   return summaryVin(await page.locator('body').innerText());
+ } catch(error) {
+  if(error?.name==='TimeoutError'&&page.url()!=='about:blank'&&new URL(page.url()).origin!==ORIGIN)throw new Error('session_lost');
+  throw error;
  } finally {await page.close();}
+}
+async function readVehicleVin(context,link) {return retry('vehicle_identity',()=>readVehicleVinOnce(context,link));}
+function dailyWindows(now=new Date()) {
+ const range=recentWindow(now), windows=[];
+ for(let date=new Date(range.start+'T12:00:00Z');date.toISOString().slice(0,10)<=range.end;date.setUTCDate(date.getUTCDate()+1)) {
+  const day=date.toISOString().slice(0,10);windows.push({start:day,end:day});
+ }
+ return windows;
 }
 async function collect(output) {
  if(!process.env.MOTIVE_EMAIL||!process.env.MOTIVE_PASSWORD)throw new Error('missing_credentials');
  const {chromium}=require('playwright'), adapter=await reportModule();
  const result={company_label:COMPANY,company_id:COMPANY_ID,company_verified_before:false,company_verified_after:false,complete:false,started_at:new Date().toISOString(),vehicles:[],windows:[]};
  const save=()=>savePrivate(output,result);save();
+ phase('browser_launch');
  const browser=await chromium.launch({headless:true});
  try {
   const context=await browser.newContext({timezoneId:'America/New_York',locale:'en-US'});
   const page=await context.newPage();page.setDefaultTimeout(15000);
+  phase('login');
   await page.goto(ORIGIN,{waitUntil:'domcontentloaded',timeout:45000});
   await page.waitForURL('https://auth.gomotive.com/login**',{timeout:30000});
   if(new URL(page.url()).origin!=='https://auth.gomotive.com')throw new Error('login_origin');
@@ -101,11 +115,14 @@ async function collect(output) {
    const text=await page.locator('body').innerText();
    if(!text.includes(COMPANY)||!text.includes(COMPANY_ID))throw new Error('company_mismatch');
   }
+  phase('company_before');
   await company();result.company_verified_before=true;save();
+  phase('timezone');
   await page.goto(ORIGIN+'/en-US/#/settings',{waitUntil:'domcontentloaded'});
   await page.getByText(/Eastern Time - New York/).waitFor({timeout:30000});
   result.timezone_evidence=await page.getByText('Time zone',{exact:true}).evaluate(el=>el.parentElement.innerText);
   if(!result.timezone_evidence.includes('Eastern Time - New York'))throw new Error('timezone_unverified');
+  phase('vehicle_directory');
   await page.goto(ORIGIN+'/en-US/#/admin/vehicles',{waitUntil:'domcontentloaded'});
   await page.getByText(/Showing \d+ of \d+/).waitFor({timeout:30000});
   const total=(await page.locator('body').innerText()).match(/Showing (\d+) of (\d+)/);
@@ -121,12 +138,22 @@ async function collect(output) {
    if(vin)seenVins.set(vin,link.href.split('/').pop());
    result.vehicles.push({provider_vehicle_id:link.href.split('/').pop(),unit:link.unit,vin,...(!vin?{reason:'vin_unavailable'}:{})});save();
   }
-  const reportPage=await context.newPage();reportPage.setDefaultTimeout(15000);
-  try {await collectWindow(reportPage,recentWindow(),async receipt=>{result.windows=[receipt];save();},adapter);}
-  finally {await reportPage.close();}
-  await company();result.company_verified_after=true;result.complete=true;result.finished_at=new Date().toISOString();save();
+  const windows=dailyWindows();
+  const tasks=openTasks(output,{kind:'trips',company:COMPANY_ID,timezone:'America/New_York',vehicles:result.vehicles,windows},{maxAgeMs:30*60*1000});
+  result.started_at=tasks.startedAt;
+  for(const window of windows) {
+   const receipt=await tasks.run('trip_window',window,async()=>{
+    const reportPage=await context.newPage();reportPage.setDefaultTimeout(15000);
+    try{return await collectWindow(reportPage,window,async()=>{},adapter);}
+    finally{await reportPage.close();}
+   });
+   result.windows.push(receipt);save();
+  }
+  tasks.assertFresh();
+  phase('company_after');
+  await company();tasks.assertFresh();result.company_verified_after=true;result.complete=true;result.finished_at=new Date().toISOString();save();
   return result;
- } finally {await browser.close();}
+ } finally {await closeBrowser(browser);}
 }
 function safeFailure(error) {
  const known=new Set(['missing_credentials','ambiguous_vin','directory_incomplete','vehicle_link_invalid','ambiguous_directory','session_lost','report_incomplete','report_step_limit','login_origin','company_mismatch','timezone_unverified','vehicle_source_changed','duplicate_vin','report_viewport_unavailable']);
@@ -148,6 +175,6 @@ function safeFailure(error) {
 }
 if(require.main===module) {
  if(!process.argv[2]){console.error('Output file required');process.exitCode=1;}
- else collect(process.argv[2]).then(r=>console.log(JSON.stringify({stage:'trip_collection_complete',complete:r.complete,vehicles:r.vehicles.length,rows:r.windows.reduce((n,w)=>n+w.rows.length,0)}))).catch(error=>{console.error(JSON.stringify({stage:'trip_collection_failed',reason:safeFailure(error),import_permitted:false}));process.exitCode=1;});
+ else collect(process.argv[2]).then(r=>console.log(JSON.stringify({stage:'trip_collection_complete',complete:r.complete,vehicles:r.vehicles.length,rows:r.windows.reduce((n,w)=>n+w.rows.length,0)}))).catch(error=>{failed(process.argv[2],error);console.error(JSON.stringify({stage:'trip_collection_failed',reason:safeFailure(error),import_permitted:false}));process.exitCode=1;});
 }
-module.exports={collect,collectWindow,recentWindow,summaryVin,validateDirectory,safeFailure,readVehicleVin,advanceReportViewport};
+module.exports={collect,collectWindow,recentWindow,dailyWindows,summaryVin,validateDirectory,safeFailure,readVehicleVin,readVehicleVinOnce,advanceReportViewport};

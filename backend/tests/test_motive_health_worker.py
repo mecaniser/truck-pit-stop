@@ -9,6 +9,15 @@ import pytest
 from scripts.motive_health import run_worker
 
 
+@pytest.fixture(autouse=True)
+def collector_process_seam(monkeypatch):
+    monkeypatch.setattr(
+        run_worker,
+        "read_process",
+        lambda *args, **kwargs: run_worker.subprocess.run(*args, **kwargs),
+    )
+
+
 def test_dry_run_and_explicit_commit_are_separate(tmp_path, monkeypatch):
     monkeypatch.setenv("MOTIVE_HEALTH_STATE_DIR", str(tmp_path))
     monkeypatch.delenv("MOTIVE_HEALTH_COMMIT", raising=False)
