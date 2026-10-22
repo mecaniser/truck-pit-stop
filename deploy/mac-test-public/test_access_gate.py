@@ -11,6 +11,7 @@ import threading
 import unittest
 from unittest.mock import patch
 from urllib.parse import urlencode
+from urllib.parse import urlsplit
 
 spec = importlib.util.spec_from_file_location("access_gate", Path(__file__).with_name("access_gate.py"))
 gate_module = importlib.util.module_from_spec(spec)
@@ -40,7 +41,7 @@ class GateTests(unittest.TestCase):
 
     def request(self, path="/verify", method="GET", host=H1, original_uri="/", original_method="GET", extra=None, body=None):
         headers = {"Host": host, "X-Test-Host": host, "X-Test-Method": original_method,
-                   "X-Test-Uri": original_uri if path == "/verify" else path,
+                   "X-Test-Uri": original_uri if urlsplit(path).path == "/verify" else path,
                    "X-Test-Client-IP": "192.0.2.1", "Accept": "text/html"}
         headers.update(extra or {})
         connection = http.client.HTTPConnection(*self.server.server_address, timeout=3)
@@ -107,8 +108,14 @@ class GateTests(unittest.TestCase):
     def test_wrong_password_origin_and_cross_host_csrf_denied(self):
         self.assertEqual(self.login(password=secrets.token_urlsafe(32))[0], 403)
         self.assertEqual(self.login(origin="https://attacker.invalid")[0], 403)
+        self.assertEqual(self.login(origin="null")[0], 403)
         self.assertEqual(self.login(csrf_host=H2)[0], 403)
         self.assertEqual(self.login(fields={"next": "https://attacker.invalid"})[0], 403)
+
+    def test_form_referrer_policy_preserves_same_origin_browser_post(self):
+        status, headers, _ = self.request("/_test-access")
+        self.assertEqual(status, 200)
+        self.assertEqual(dict(headers)["Referrer-Policy"], "same-origin")
 
     def test_missing_expired_and_mismatched_csrf_denied(self):
         token, saved_cookie = self.csrf_form()
@@ -146,13 +153,29 @@ class GateTests(unittest.TestCase):
         self.assertNotIn("authorization", {key.lower() for key, _ in headers})
         self.assertEqual(self.request(extra={"Authorization": bearer})[0], 303)
 
+    def test_forward_auth_inherited_query_preserves_access_and_denials(self):
+        endpoint = "/verify?id=LOCALTEST-001"
+        original = "/api/addresses?id=LOCALTEST-001"
+        token = self.gate.token(H1, "access")
+        auth = {"Cookie": f"{gate_module.ACCESS}={token}"}
+        self.assertEqual(self.request(endpoint, original_uri=original, extra=auth)[0], 204)
+        self.assertEqual(self.request(endpoint, original_uri=original)[0], 403)
+        self.assertEqual(self.request(endpoint, original_uri=original,
+                                      extra={"Cookie": f"{gate_module.ACCESS}=invalid"})[0], 403)
+        self.assertEqual(self.request(endpoint, host=H2, original_uri=original, extra=auth)[0], 403)
+        self.assertEqual(self.request(endpoint, original_uri="/customers?id=LOCALTEST-001",
+                                      original_method="POST")[0], 403)
+        status, headers, _ = self.request(endpoint, original_uri="/customers?id=LOCALTEST-001")
+        self.assertEqual(status, 303)
+        self.assertEqual(dict(headers)["Location"], "/_test-access")
+
     def test_invalid_proxy_context_and_duplicate_cookie_denied(self):
         for extra in ({"Host": H2}, {"X-Test-Host": "attacker.invalid"}, {"X-Test-Method": "BOGUS"},
                       {"X-Test-Uri": "//attacker.invalid"}, {"X-Test-Client-IP": "192.0.2.1, 192.0.2.2"}):
             self.assertEqual(self.request(extra=extra)[0], 403)
         token = self.gate.token(H1, "access")
         self.assertEqual(self.request(extra={"Cookie": f"{gate_module.ACCESS}={token}; {gate_module.ACCESS}={token}"})[0], 403)
-        self.assertEqual(self.request("/verify?x=1")[0], 404)
+        self.assertEqual(self.request("/verify/")[0], 404)
 
     def test_body_bound_and_duplicate_fields_denied(self):
         token, saved_cookie = self.csrf_form()
@@ -172,6 +195,17 @@ class GateTests(unittest.TestCase):
         self.assertFalse(self.gate.allow("203.0.113.1", login=True))
         self.clock[0] += 60
         self.assertTrue(self.gate.allow("192.0.2.1", login=True))
+
+    def test_authenticated_asset_burst_keeps_gate_and_login_limits(self):
+        token = self.gate.token(H1, "access")
+        auth = {"Cookie": f"{gate_module.ACCESS}={token}"}
+        for index in range(300):
+            self.assertEqual(self.request(original_uri=f"/assets/chunk-{index}.js",
+                                          extra=auth)[0], 204)
+        self.assertEqual(self.request(original_uri="/api/addresses", extra={"Accept": "application/json"})[0], 403)
+        for _ in range(5):
+            self.assertEqual(self.login(password="x" * 32)[0], 403)
+        self.assertEqual(self.login(password="x" * 32)[0], 429)
 
     def test_wrong_password_http_rate_limit_and_fail_closed_exception(self):
         for _ in range(5):

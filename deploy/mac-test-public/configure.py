@@ -71,6 +71,9 @@ def caddy(*, local):
         @access path /_test-access /_test-access/logout
         handle @access {
             reverse_proxy 127.0.0.1:18680 {
+                transport http {
+                    max_conns_per_host 4
+                }
 ''' + headers + '''
             }
         }
@@ -81,9 +84,15 @@ def caddy(*, local):
         handle {
             forward_auth 127.0.0.1:18680 {
                 uri /verify
+                transport http {
+                    max_conns_per_host 12
+                }
 ''' + headers + '''
             }
             reverse_proxy 127.0.0.1:''' + ('18210' if app == 'dieselbridge' else '18211') + ''' {
+                transport http {
+                    max_conns_per_host 12
+                }
                 header_up -X-Test-*
                 header_up Cookie "(^|; *)__Host-test-(access|csrf)=[^;]*" ""
             }

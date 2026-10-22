@@ -1,15 +1,1 @@
-{
-  "postgres": "2|2|2|1|1",
-  "mongo": {
-    "locations": 2,
-    "pins": 1,
-    "jobs": 1,
-    "attempts": 1,
-    "status": "completed",
-    "posts": 1,
-    "published": 0,
-    "scheduled": 0
-  },
-  "read_only": true,
-  "worker_triggered": false
-}
+{"postgres": "2|2|2|1|1", "mongo": {"locations": 2, "pins": 1, "jobs": 1, "attempts": 1, "status": "completed", "posts": 1, "published": 0, "scheduled": 0}, "read_only": true, "worker_triggered": false}

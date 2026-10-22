@@ -84,6 +84,16 @@ class PublicContract(unittest.TestCase):
         self.assertIn('admin off', source)
         self.assertIn('tls internal', source)
 
+    def test_parallel_asset_loads_queue_below_helper_thread_capacity(self):
+        for local in (True, False):
+            source = cfg.caddy(local=local)
+            # Two hosts each admit twelve checks and four login requests.
+            # Excess HTTP/2 asset streams wait in the proxy transport instead
+            # of overrunning the helper's shared thirty-two thread bound.
+            self.assertEqual(source.count('max_conns_per_host 4'), 2)
+            self.assertEqual(source.count('max_conns_per_host 12'), 4)
+            self.assertEqual(2 * (12 + 4), 32)
+
 
 if __name__ == '__main__':
     unittest.main()
