@@ -1,0 +1,21 @@
+{
+    admin off
+    auto_https disable_redirects
+    skip_install_trust
+    storage file_system /Users/sergio/mac-hosting/edge/private/caddy
+}
+https://alpha.macapps.test:18443 {
+    bind 127.0.0.1
+    tls internal
+    reverse_proxy 127.0.0.1:18100
+}
+https://beta.macapps.test:18443 {
+    bind 127.0.0.1
+    tls internal
+    reverse_proxy 127.0.0.1:18101
+}
+https://:18443 {
+    bind 127.0.0.1
+    tls internal
+    respond "Unknown application" 404
+}

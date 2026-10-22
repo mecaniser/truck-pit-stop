@@ -212,3 +212,11 @@ Next action: inspect ongoing samples/report; preserve and report any failure.
 Return condition: 24 elapsed hours with required continuity/identity/health gates,
 redacted final evidence, then pause the existing heartbeat. Existing synthetic-only,
 assisted-unlock, recurring-schedule and undeployed PID1 safeguard limits remain.
+
+### App hosting continued during observation
+
+Separate `~/mac-hosting` private stateless deployment and rollback acceptance
+completed without changing this baseline or its four container identities.
+Independent QA/Security GO; original observation continues. Public domain/HTTPS
+activation remains blocked on account/network access. See
+[app hosting receipt](DB_INFRA_001_APP_HOSTING.md) for exact evidence and limits.
