@@ -1,0 +1,10 @@
+{
+  "public_tls_verified": true,
+  "browser_verified": true,
+  "approved_config_sha256": "a2755b8873e0fab07ff5b6234bbba3a49be6e14fbfa9916031ca254d4b1d6e45",
+  "accepted_at": "2026-10-22T01:45:12.718617+00:00",
+  "independent_qa": "GO",
+  "independent_security": "GO",
+  "http_receipt_sha256": "3c67a6178422a3c93bdf64bf008f6791457a30958d8cd619f8ab6a36b296cdbf",
+  "browser_receipt_sha256": "b26569db4af9a0f1d5853f0dfa3052d025461a3e6d0b1db2943c90e39a57d1d7"
+}

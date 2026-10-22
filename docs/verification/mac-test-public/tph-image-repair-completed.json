@@ -1,0 +1,22 @@
+{
+  "after_configuration_sha256": {
+    "db-local-test/compose.json": "a1b0ce9b7add4413c3df199dd199be6523c206eeea1d129bbdd772cce2bb3191",
+    "db-local-test/nginx.conf": "6d462560c4920c8b30f4bb748b6539ea741ddfe3dc5170c28169766023a8f7b1",
+    "tph-local-test/compose.json": "ff8f573b0b225ee802a43f528897d1f7e7e2451b6bdca01d3e61d40ecd835c18",
+    "tph-local-test/nginx.conf": "6a00830d19d24dd0d6b8cfc943a8e5a45dc705ba4e61e8f7ef9891f5f57e7469"
+  },
+  "before_configuration_sha256": {
+    "db-local-test/compose.json": "a1b0ce9b7add4413c3df199dd199be6523c206eeea1d129bbdd772cce2bb3191",
+    "db-local-test/nginx.conf": "6d462560c4920c8b30f4bb748b6539ea741ddfe3dc5170c28169766023a8f7b1",
+    "tph-local-test/compose.json": "ca4ac5cf1e13d813cb1845b17ba0fe4e541685d9dfa7e6e44be98b19a63a17b4",
+    "tph-local-test/nginx.conf": "6a00830d19d24dd0d6b8cfc943a8e5a45dc705ba4e61e8f7ef9891f5f57e7469"
+  },
+  "new_image": "sha256:95df264063f3224f9a2519fd68a99e537f7a8da26d17ff78b5e6a87267a798b0",
+  "planned_sha256": {
+    "db-local-test/compose.json": "a1b0ce9b7add4413c3df199dd199be6523c206eeea1d129bbdd772cce2bb3191",
+    "db-local-test/nginx.conf": "6d462560c4920c8b30f4bb748b6539ea741ddfe3dc5170c28169766023a8f7b1",
+    "tph-local-test/compose.json": "ca4ac5cf1e13d813cb1845b17ba0fe4e541685d9dfa7e6e44be98b19a63a17b4",
+    "tph-local-test/nginx.conf": "6a00830d19d24dd0d6b8cfc943a8e5a45dc705ba4e61e8f7ef9891f5f57e7469"
+  },
+  "protected_preserved": true
+}

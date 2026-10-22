@@ -60,15 +60,22 @@ class Client:
         assert 'Domain=' not in access
 
 
-def main():
+def main(public=False):
+    global Connection
     ca = ROOT / 'private/local-caddy/pki/authorities/local/root.crt'
-    context = ssl.create_default_context(cafile=str(ca))
+    if public:
+        # Standard DNS, port443 and system trust. No custom resolver or CA bypass.
+        Connection = http.client.HTTPSConnection
+        context = ssl.create_default_context()
+    else:
+        context = ssl.create_default_context(cafile=str(ca))
     password = json.loads((ROOT / 'private/operator-access.json').read_text())['password']
     credentials = json.loads((Path.home() / 'mac-hosting/test-stacks/private/credentials.json').read_text())
     clients = {host: Client(host, context) for host in HOSTS}
     for host, client in clients.items():
         assert client.request('/', headers={'Accept': 'text/html'})[0] == 303
         assert client.request('/api/private', headers={'Accept': 'text/html'})[0] == 403
+        assert client.request('/api/private?id=LOCALTEST-001', headers={'Accept': 'text/html'})[0] == 403
         assert client.request('/api/private', 'POST', b'', {'Accept': 'text/html'})[0] == 403
         assert client.request('/verify')[0] == 404
         client.gate_login(password)
@@ -96,9 +103,15 @@ def main():
         ids[name] = rows[0]['id']
     for name, other in (('alpha', 'beta'), ('beta', 'alpha')):
         assert db.request('/api/v1/customers/' + ids[other], headers={'Authorization': 'Bearer ' + tokens[name]})[0] in (403, 404)
-    status, body, _ = tph.request('/api/pin/verify-client', 'POST', {'pin': credentials['manager_pin']})
+    status, body, _ = tph.request('/api/pin/verify-client', 'POST', {'pin': credentials['manager_pin']},
+        {'Origin': 'https://' + HOSTS[1]})
     assert status == 200 and json.loads(body)['success'] is True
     assert json.loads(body)['managerToken']
+    status, body, _ = tph.request('/api/addresses?id=LOCALTEST-001')
+    result = json.loads(body)
+    assert status == 200 and result['total'] == 1 and result['addresses'][0]['id'] == 'LOCALTEST-001'
+    for bad_origin in ('http://' + HOSTS[1], 'https://' + HOSTS[1] + '.invalid'):
+        assert tph.request('/api/addresses?id=LOCALTEST-001', headers={'Origin': bad_origin})[0] == 403
     assert tph.request('/api/pin/verify-client', 'POST', {'pin': '000000'})[0] == 403
     assert tph.request('/api/admin/hiring')[0] in (401, 403)
     assert tph.request('/api/addresses/LOCALTEST-HIDDEN')[0] == 404
@@ -114,14 +127,21 @@ def main():
         'native_bearer_preserved': True, 'db_secure_cookies': True, 'tenant_denials_both_directions': True,
         'cross_host_gate_denied': True, 'logout_denied_afterwards': True,
         'public_readiness_and_unknown_hosts_denied': True, 'synthetic_business_mutations': False,
-        'canonical_origin_fixture_only': True, 'public_browser_acceptance': False}
-    (ROOT / 'private/local-tls-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
+        'authenticated_query_api_preserved': True,
+        'native_tph_exact_https_origin_and_lookalike_denial': True,
+        'canonical_origin_fixture_only': not public, 'public_tls_verified': public,
+        'public_browser_acceptance': False}
+    name = 'public-tls-http-receipt.json' if public else 'local-tls-receipt.json'
+    (ROOT / 'private' / name).write_text(json.dumps(receipt, indent=2) + '\n')
     print(json.dumps(receipt))
 
 
 if __name__ == '__main__':
     try:
-        main()
+        import argparse
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument('--public', action='store_true')
+        main(parser.parse_args().public)
     except Exception as error:
         # HTTP responses and exception text can contain credentials; keep them private.
         raise SystemExit('Local TLS fixture acceptance failed: ' + type(error).__name__) from None

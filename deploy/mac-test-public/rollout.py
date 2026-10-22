@@ -115,14 +115,16 @@ def snapshot(operator):
     return result
 
 
-def protected(snapshot_value):
-    names = {project + '-' + service + '-1' for project in PROJECTS.values() for service in ('web', 'gateway')}
+def protected(snapshot_value, *, tph_only=False):
+    projects = ['tph-local-test'] if tph_only else PROJECTS.values()
+    names = {project + '-' + service + '-1' for project in projects for service in ('web', 'gateway')}
     return {key: {field: value for field, value in item.items() if field != 'health'}
             for key, item in snapshot_value['containers'].items() if key not in names}
 
 
-def require_preserved(before, after):
-    if before['baseline_sha256'] != after['baseline_sha256'] or protected(before) != protected(after):
+def require_preserved(before, after, *, tph_only=False):
+    if (before['baseline_sha256'] != after['baseline_sha256']
+            or protected(before, tph_only=tph_only) != protected(after, tph_only=tph_only)):
         raise RuntimeError('protected_container_or_baseline_changed_preserve_evidence')
 
 
@@ -149,6 +151,93 @@ def install(data):
         temporary.replace(destination)
 
 
+def repaired_current_hashes(applied, planned_files):
+    """Accept only the completed, proof-linked, single-image repair for rollback."""
+    started_path = ROOT / 'private/tph-image-repair-started.json'
+    completed_path = ROOT / 'private/tph-image-repair-completed.json'
+    if not started_path.exists() and not completed_path.exists():
+        return applied['planned_sha256']
+    if not started_path.exists() or not completed_path.exists():
+        raise RuntimeError('partial_tph_image_repair_inspect_before_rollback')
+    started = json.loads(started_path.read_text())
+    completed = json.loads(completed_path.read_text())
+    planned_hashes = hashes(planned_files)
+    image = started.get('new_image', '')
+    if (started.get('before_configuration_sha256') != planned_hashes
+            or started.get('planned_sha256') != applied['planned_sha256']
+            or completed.get('before_configuration_sha256') != planned_hashes
+            or completed.get('new_image') != image
+            or completed.get('protected_preserved') is not True
+            or not re.fullmatch(r'sha256:[a-f0-9]{64}', image)):
+        raise RuntimeError('tph_image_repair_receipt_mismatch')
+    key = 'tph-local-test/compose.json'
+    expected = json.loads(planned_files[key])
+    expected['services']['web']['image'] = image
+    expected_files = {**planned_files, key: (json.dumps(expected, indent=2) + '\n').encode()}
+    expected_hashes = hashes(expected_files)
+    if completed.get('after_configuration_sha256') != expected_hashes:
+        raise RuntimeError('tph_image_repair_exceeds_single_image_contract')
+    return expected_hashes
+
+
+def repair_tph(image, operator):
+    if not re.fullmatch(r'sha256:[a-f0-9]{64}', image):
+        raise RuntimeError('immutable_tph_image_required')
+    started_path = ROOT / 'private/tph-image-repair-started.json'
+    if started_path.exists() or (ROOT / 'private/tph-image-repair-completed.json').exists():
+        raise RuntimeError('tph_image_repair_already_started_inspect_journal_no_automatic_retry')
+    if (ROOT / 'private/rollback-started.json').exists():
+        raise RuntimeError('rollback_started_no_tph_image_repair')
+    before_files, planned_files = files(planned=False), files(planned=True)
+    source_hashes = json.loads((ROOT / 'private/source-hashes.json').read_text())
+    if hashes(before_files) != source_hashes:
+        raise RuntimeError('original_configuration_receipt_mismatch')
+    validate_plan(before_files, planned_files)
+    applied = json.loads((ROOT / 'private/apply-started.json').read_text())
+    completed_apply = json.loads((ROOT / 'private/apply-completed.json').read_text())
+    expected_current = hashes(planned_files)
+    if (applied.get('planned_sha256') != expected_current or applied.get('before_sha256') != source_hashes
+            or completed_apply.get('configuration_sha256') != expected_current
+            or completed_apply.get('protected_preserved') is not True
+            or current_hashes() != expected_current):
+        raise RuntimeError('unexpected_current_configuration_no_tph_image_repair')
+    key = 'tph-local-test/compose.json'
+    replacement = json.loads(planned_files[key])
+    if replacement['services']['web']['image'] == image:
+        raise RuntimeError('tph_image_repair_requires_different_image')
+    replacement['services']['web']['image'] = image
+    desired = {key: (json.dumps(replacement, indent=2) + '\n').encode()}
+    initial = snapshot(operator)
+    save('tph-image-repair-before.json', initial)
+    receipt = {'before_configuration_sha256': expected_current,
+               'planned_sha256': applied['planned_sha256'], 'new_image': image}
+    with started_path.open('x') as output:
+        json.dump(receipt, output)
+    journal('repair-tph', 'configuration', 'started')
+    try:
+        install(desired)
+        journal('repair-tph', 'configuration', 'passed')
+        for service in ('web', 'gateway'):
+            journal('repair-tph', service, 'started')
+            # nginx caches its upstream address; explicitly recreate the gateway
+            # even though its configuration is unchanged by this repair.
+            extra = ('--force-recreate',) if service == 'gateway' else ()
+            operator.compose('tph', 'up', '-d', '--no-deps', *extra, '--wait', '--wait-timeout', '120', service,
+                             timeout=150, log='public-repair-tph-' + service)
+            journal('repair-tph', service, 'passed')
+    finally:
+        final = snapshot(operator)
+        save('tph-image-repair-after.json', final)
+        require_preserved(initial, final, tph_only=True)
+    expected_after = hashes({**planned_files, **desired})
+    if current_hashes() != expected_after:
+        raise RuntimeError('configuration_drift_during_tph_image_repair')
+    save('tph-image-repair-completed.json', {**receipt, 'after_configuration_sha256': expected_after,
+                                          'protected_preserved': True})
+    print(json.dumps({'operation': 'repair-tph', 'new_image': image, 'protected_preserved': True,
+                      'receipt': 'tph-image-repair-after.json'}))
+
+
 def change(operation, operator):
     before_files, planned_files = files(planned=False), files(planned=True)
     expected_before = json.loads((ROOT / 'private/source-hashes.json').read_text())
@@ -164,7 +253,7 @@ def change(operation, operator):
         applied = json.loads((ROOT / 'private/apply-started.json').read_text())
         if applied['planned_sha256'] != hashes(planned_files):
             raise RuntimeError('planned_configuration_changed_since_apply')
-        expected_current, desired = applied['planned_sha256'], before_files
+        expected_current, desired = repaired_current_hashes(applied, planned_files), before_files
     if current_hashes() != expected_current:
         raise RuntimeError('live_configuration_drift_no_mutation')
     initial = snapshot(operator)
@@ -193,8 +282,14 @@ def change(operation, operator):
 def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('snapshot', 'apply', 'rollback'))
+    parser.add_argument('command', choices=('snapshot', 'apply', 'rollback', 'repair-tph'))
+    parser.add_argument('image', nargs='?')
     args = parser.parse_args()
+    if args.command == 'repair-tph':
+        if args.image is None or not re.fullmatch(r'sha256:[a-f0-9]{64}', args.image):
+            parser.error('repair-tph requires a full immutable sha256 image ID')
+    elif args.image is not None:
+        parser.error('only repair-tph accepts an image argument')
     safe_root()
     operator = load_operator()
     with operator.lock():
@@ -202,6 +297,8 @@ def main():
             report = snapshot(operator)
             save('snapshot.json', report)
             print(json.dumps(report))
+        elif args.command == 'repair-tph':
+            repair_tph(args.image, operator)
         else:
             change(args.command, operator)
 

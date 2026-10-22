@@ -40,8 +40,12 @@ seed, enqueue, scheduler, provider enablement or stack-wide recovery is performe
 `configure.py IMAGE_ID` runs only on the dedicated Mac. It creates
 `~/mac-hosting/test-public` once, snapshots original Compose/nginx bytes privately,
 and writes pending configurations. It does not start services or edit DNS.
-Build `Dockerfile.tph` from the same explicit pinned TPH source archive as the
-private stack; preserve synthetic identity, payment and analytics settings.
+Build `Dockerfile.tph-base` from the explicit pinned TPH source archive; preserve
+synthetic identity, payment and analytics settings. Then use `build_tph_cors.py`
+with `Dockerfile.tph` and `public-host.cjs` for the verified accepted-base overlay.
+The builder verifies immutable base identity before and after creating its owned
+local alias. The overlay permits only the exact HTTPS test origin with both
+LOCAL_TEST_ONLY=true and SQUARE_ENVIRONMENT=sandbox; production behavior is retained.
 
 Create the gate credentials only on the Mac under private0700 directories and
 mode0600 files. Never commit, print or put passwords in URLs, arguments or logs.
@@ -82,3 +86,22 @@ withdrawing public access. Never delete databases or change production.
 FileVault still needs assisted unlock/login after reboot. A changing residential
 WAN address can require an update to these two records; no persistent DNS API
 credential or automatic DNS updater is included. Local backups remain on the Mac.
+
+## Accepted operation
+
+Both approved origins are live with trusted public certificates and verified
+native browser sessions. Independent QA/Security passed29 focused tests and
+accepted protected state, denial cases and actual browser evidence. See
+`docs/verification/DB_INFRA_003_PUBLIC_TEST_HOSTING.md` for identities and receipts.
+
+`install_recovery.py` requires real TLS/browser acceptance and current Caddy
+configuration digest before installing `com.macapps.testpublic.edge`. It manages
+only this edge runner after login, without touching databases or workers. This
+job is installed and its bootstrap tested; FileVault assisted login remains.
+Despite its legacy filename, `Caddyfile.public.DISABLED` is the accepted loaded
+public configuration. Inspect activation and acceptance receipts before changes.
+
+Use `rollout.py repair-tph sha256:...` only for a reviewed immutable TPH web repair.
+It validates the exact scope, recreates only TPH web/gateway, preserves twelve
+other containers and journals completion. Inspect failures before rollback;
+completed repair state is part of the rollback guard. Never rerun seeds or jobs.

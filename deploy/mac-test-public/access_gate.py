@@ -112,7 +112,7 @@ class Gate:
         """Sliding-window bounds; a full IP table refuses new peers, never evicts."""
         now = self.now()
         kind = "login" if login else "request"
-        max_global, max_peer = (30, 5) if login else (600, 120)
+        max_global, max_peer = (30, 5) if login else (6000, 1200)
         with self.lock:
             for key in list(self.limits):
                 events = self.limits[key]
@@ -167,7 +167,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("Pragma", "no-cache")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Referrer-Policy", "same-origin")
         self.send_header("Content-Security-Policy", "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
         for key, value in headers:
             self.send_header(key, value)
@@ -191,7 +191,10 @@ class Handler(BaseHTTPRequestHandler):
                 or len(uri) > 8192 or not uri.startswith("/") or uri.startswith("//")
                 or any(ord(ch) < 32 or ord(ch) == 127 for ch in uri)):
             raise ValueError("invalid proxy context")
-        if self.path != "/verify" and (method != self.command or uri != self.path):
+        # Caddy forward_auth replaces the path but preserves the original query.
+        # Only the private verification endpoint accepts this inherited query;
+        # the original method/URI remain in the overwritten proxy headers.
+        if urlsplit(self.path).path != "/verify" and (method != self.command or uri != self.path):
             raise ValueError("incorrect original request")
         if not self.server.gate.allow(ip):
             self.reply(429, b"Too many requests", (("Retry-After", "60"),))
@@ -255,7 +258,7 @@ class Handler(BaseHTTPRequestHandler):
         host, method, uri, ip = context
         jar = self.read_cookies()
         authenticated = self.server.gate.valid(jar.get(ACCESS, ""), host, "access")
-        if self.path == "/verify" and self.command == "GET":
+        if urlsplit(self.path).path == "/verify" and self.command == "GET":
             if authenticated:
                 self.reply(204)
             else:
