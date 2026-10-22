@@ -1,9 +1,16 @@
 # Dedicated local GitHub Actions workers
 
-Bounded disposable ARM64 Ubuntu VMs run the six existing `Quality gates` checks.
+Bounded disposable ARM64 Ubuntu VMs run scheduled/manual `Quality gates` regression.
 A macOS launch agent supervises them; each ephemeral registration accepts one
 job, then the VM is destroyed and cloned again from a stopped pristine base.
-Fork PRs retain the same checks on standard hosted runners. GitHub's server-side
+All PRs run the same scoped checks on standard hosted Linux runners, so concurrent
+PRs do not compete for the four local slots or with interactive Mac workloads.
+Each run stays on one platform for exact-run dependency artifact compatibility.
+The public repository uses free standard hosted capacity; account concurrency
+limits and GitHub outages can still queue work. No larger runners or billing
+settings are required. Existing branches must integrate this workflow once; do
+not dispatch duplicate runs to migrate an already running candidate.
+GitHub's server-side
 external-contributor approval policy must be `all_external_contributors`.
 Routing labels and YAML conditions are not security boundaries.
 
