@@ -119,7 +119,7 @@ function AttachmentSession({ tenantId, message, session }: Props & { session: st
     setExpanded(null);
     trigger.current?.focus();
   };
-  const body = images.length && message.body.endsWith(notice)
+  const body = (status === "loading" || images.length > 0) && message.body.endsWith(notice)
     ? message.body.slice(0, -notice.length).trimEnd() : message.body;
   return <>
     {body && <span className="attachment-caption">{body}</span>}
