@@ -6,10 +6,9 @@ from uuid import uuid4
 import pytest
 import pytest_asyncio
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
 from app.db.models.fleet_driver_record import FleetDriverRecordCapture
 from scripts.motive_drivers import journal, run_worker, runner
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from tests.test_fleet_driver_records import fixture
 from tests.test_motive_driver_worker import document
 
@@ -175,11 +174,12 @@ async def test_pending_commit_blocks_collection_if_saving_is_disabled(durable_se
 
 
 @pytest.mark.asyncio
-async def test_recovery_uses_stored_old_source_without_refreshing_its_time(
+async def test_unattempted_old_source_expires_without_refreshing_or_importing(
     durable_setup, monkeypatch
 ):
     from datetime import timedelta
 
+    from app.services import fleet_telemetry
     from scripts.motive_drivers import import_records
 
     engine, factory, identity = durable_setup
@@ -191,10 +191,65 @@ async def test_recovery_uses_stored_old_source_without_refreshing_its_time(
         monkeypatch.setattr(
             import_records, "now", lambda: current_time + timedelta(days=3)
         )
+        monkeypatch.setattr(
+            fleet_telemetry, "now", lambda: current_time + timedelta(days=3)
+        )
         await run_worker.recover_database(store, factory, commit=True)
         saved = await durable.load()
         assert saved["source"]["finished_at"] == source["finished_at"]
-        assert saved["receipt"]["stage"] == "verified"
+        assert saved["receipt"]["stage"] == "source_saved"
+        assert saved["receipt"]["committed"] is False
+        assert len(await store.pending()) == 1
+        async with factory() as db:
+            assert (
+                await db.scalar(
+                    sa.select(sa.func.count()).select_from(FleetDriverRecordCapture)
+                )
+                == 0
+            )
+
+
+@pytest.mark.asyncio
+async def test_old_uncertain_commit_still_reconciles_without_new_source(
+    durable_setup, monkeypatch
+):
+    from datetime import timedelta
+
+    from app.services import fleet_telemetry
+    from scripts.motive_drivers import import_records
+
+    engine, factory, identity = durable_setup
+    source = document()
+    original = journal.DurableRun.checkpoint
+
+    async def interrupt(self, receipt, **kwargs):
+        if receipt["stage"] == "committed":
+            raise OSError("Synthetic uncertain commit")
+        await original(self, receipt, **kwargs)
+
+    async with engine.connect() as connection:
+        store = journal.Journal(connection, identity, "old-uncertain")
+        durable = await store.create(source, commit=True)
+        monkeypatch.setattr(journal.DurableRun, "checkpoint", interrupt)
+        with pytest.raises(OSError):
+            await import_run(factory, identity, source, durable)
+        monkeypatch.setattr(journal.DurableRun, "checkpoint", original)
+        current_time = import_records.now()
+        monkeypatch.setattr(
+            import_records, "now", lambda: current_time + timedelta(days=3)
+        )
+        monkeypatch.setattr(
+            fleet_telemetry, "now", lambda: current_time + timedelta(days=3)
+        )
+        await run_worker.recover_database(store, factory, commit=True)
+        assert (await durable.load())["receipt"]["stage"] == "verified"
+        async with factory() as db:
+            assert (
+                await db.scalar(
+                    sa.select(sa.func.count()).select_from(FleetDriverRecordCapture)
+                )
+                == 1
+            )
 
 
 @pytest.mark.asyncio

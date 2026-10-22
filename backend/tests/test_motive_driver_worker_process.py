@@ -9,6 +9,15 @@ import pytest
 from scripts.motive_drivers import run_worker
 
 
+@pytest.fixture(autouse=True)
+def collector_process_seam(monkeypatch):
+    monkeypatch.setattr(
+        run_worker,
+        "read_process",
+        lambda *args, **kwargs: run_worker.subprocess.run(*args, **kwargs),
+    )
+
+
 def test_dry_run_and_explicit_commit_are_separate(tmp_path, monkeypatch):
     monkeypatch.setenv("MOTIVE_DRIVER_STATE_DIR", str(tmp_path))
     monkeypatch.delenv("MOTIVE_DRIVER_COMMIT", raising=False)
@@ -166,4 +175,4 @@ def test_cli_errors_do_not_disclose_private_provider_input(tmp_path, module):
     assert result.returncode == 1
     assert secret not in result.stdout + result.stderr
     assert "Traceback" not in result.stdout + result.stderr
-    assert json.loads(result.stdout)["stage"] in {"runner_failed", "worker_failed"}
+    assert json.loads(result.stdout.splitlines()[-1])["stage"] in {"runner_failed", "worker_failed"}

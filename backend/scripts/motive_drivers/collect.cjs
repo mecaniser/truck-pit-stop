@@ -1,5 +1,6 @@
+const {closeBrowser,phase,openTasks,failed}=require('../motive_sync/tasks.cjs');
 const {allowlist,isReviewed,readReviewedIdentity,sameIdentity}=require('../motive_sync/vehicle_identity.cjs');
-const {readVehicleVin}=require('../motive_sync/collect_trips.cjs');
+const {readVehicleVinOnce:readVehicleVin}=require('../motive_sync/collect_trips.cjs');
 /* Rendered Motive UI observations only; never private APIs or extracted sessions. */
 const fs = require('node:fs');
 const ORIGIN = 'https://app.gomotive.com';
@@ -218,10 +219,12 @@ async function collect(output) {
  const reviewedProviders=allowlist();
  const {chromium}=require('../motive_sync/node_modules/playwright');
  const result={version:1,company_label:companyLabel,company_id:companyId,company_verified_before:false,company_verified_after:false,complete:false,started_at:new Date().toISOString(),finished_at:null,driver_directory_count:null,terminal_evidence:null,timezone_evidence:null,performance_ranges:[],drivers:[]};save(output,result);
+ phase('browser_launch');
  const browser=await chromium.launch({headless:true});
  try {
   const context=await browser.newContext({timezoneId:'America/New_York',locale:'en-US'});
   const page=await context.newPage();page.setDefaultTimeout(15000);
+  phase('login');
   await page.goto(ORIGIN,{waitUntil:'domcontentloaded',timeout:45000});await page.waitForURL('https://auth.gomotive.com/login**',{timeout:30000});
   if(new URL(page.url()).origin!=='https://auth.gomotive.com')throw new Error('login_origin');
   await page.locator('input[name="user_profile[email]"]').fill(process.env.MOTIVE_EMAIL);await page.locator('input[name="user_profile[password]"]').fill(process.env.MOTIVE_PASSWORD);
@@ -235,14 +238,18 @@ async function collect(output) {
    await page.goto(ORIGIN+RANGES,{waitUntil:'domcontentloaded'});await page.getByText('Each block represents a performance range and the scores that fall within it.',{exact:true}).waitFor({timeout:30000});
    return parseRanges(await page.locator('body').innerText());
   }
+  phase('company_before');
   await company();result.company_verified_before=true;
+  phase('timezone');
   await page.goto(ORIGIN+'/en-US/#/settings',{waitUntil:'domcontentloaded'});await page.getByText(/Eastern Time - New York/).waitFor({timeout:30000});
   result.timezone_evidence=await page.getByText('Time zone',{exact:true}).evaluate(el=>el.parentElement.innerText);
   if(!result.timezone_evidence.includes('Eastern Time - New York'))throw new Error('timezone_unverified');
   result.performance_ranges=await ranges();
   const before=await directory(context);result.driver_directory_count=before.rows.length;result.terminal_evidence=before.terminal_evidence;save(output,result);
+  const tasks=openTasks(output,{kind:'drivers',company:companyId,companyLabel,timezone:'America/New_York',directory:before.rows,ranges:result.performance_ranges,fleets:process.env.MOTIVE_DRIVER_COLLECTION_FLEETS},{maxAgeMs:30*60*1000});result.started_at=tasks.startedAt;
   const vins=new Set();
   for(const identity of before.rows) {
+   const row=await tasks.run('driver_detail',identity,async()=>{
    const row={...identity,vin:null,state:'unavailable',source_read_at:new Date().toISOString(),assignment_verified_before:true,assignment_verified_after:false};
    if(!identity.provider_vehicle_id)row.reason='driver_unassigned';
    else {
@@ -268,7 +275,7 @@ async function collect(output) {
     const beforeProof=identityProof;
     if(!identityDeferred&&(!row.vin&&!reviewed))row.reason='vin_unavailable';
     else if(!identityDeferred) {
-     if(row.vin&&vins.has(row.vin))throw new Error('duplicate_vin');if(row.vin)vins.add(row.vin);
+     // Duplicate VIN validation also runs on resumed rows below.
      let content;
      try {content=await summary(context,identity,result.performance_ranges);}catch(error){if(error.message==='driver_identity_changed')throw error;content=emptyContent('Driver summary could not be read.');}
      const afterVin=await identityVin('after_summary',row.vin);
@@ -278,16 +285,27 @@ async function collect(output) {
      Object.assign(row,content,{state:'captured',source_read_at:new Date().toISOString()});
     }
    }
+   return row;
+   },{attempts:1,cacheable:row=>row.state==='captured',validateCached:async cached=>{
+    const link={href:`#/fleetview/vehicles/summary/${identity.provider_vehicle_id}`,unit:identity.unit};
+    const reviewed=isReviewed(reviewedProviders,companyId,identity.provider_vehicle_id);
+    const proof=reviewed?await readReviewedIdentity(context,link):{vin:await readDriverVehicleVin(context,link)};
+    if(proof.vin!==cached.vin||(cached.vin===null&&proof.source_vin_state!==cached.source_vin_state))throw new Error('vehicle_identity_changed');
+   }});
+   if(row.vin&&vins.has(row.vin))throw new Error('duplicate_vin');if(row.vin)vins.add(row.vin);
    result.drivers.push(row);save(output,result);
    console.log(JSON.stringify({stage:'driver_progress',attempted:result.drivers.length,total:before.rows.length}));
   }
+  tasks.assertFresh();phase('driver_directory_after');
   const after=await directory(context);
   const identityKey=rows=>JSON.stringify(rows.map(r=>[r.provider_driver_id,r.driver_name,r.provider_vehicle_id,r.unit]).sort());
   if(identityKey(before.rows)!==identityKey(after.rows))throw new Error('driver_directory_changed');
   if(JSON.stringify(result.performance_ranges)!==JSON.stringify(await ranges()))throw new Error('performance_ranges_changed');
-  await company();result.company_verified_after=true;for(const row of result.drivers)row.assignment_verified_after=true;
+  tasks.assertFresh();
+  phase('company_after');
+  await company();tasks.assertFresh();result.company_verified_after=true;for(const row of result.drivers)row.assignment_verified_after=true;
   result.finished_at=new Date().toISOString();result.complete=true;save(output,result);return result;
- }finally{await browser.close();}
+ }finally{await closeBrowser(browser);}
 }
 function canDeferReviewedPreSummaryIdentity(error,reviewed){
  return reviewed&&(error?.message==='vehicle_identity_changed'||error?.message==='vehicle_identity_unavailable'||error?.name==='TimeoutError');
@@ -305,6 +323,6 @@ function safeReason(error) {
 }
 if(require.main===module) {
  if(!process.argv[2]){console.error('Output file required');process.exitCode=1;}
- else collect(process.argv[2]).then(r=>console.log(JSON.stringify({stage:'driver_collection_complete',drivers:r.drivers.length}))).catch(e=>{console.error(JSON.stringify({stage:'driver_collection_failed',reason:safeReason(e),import_permitted:false}));process.exitCode=1;});
+ else collect(process.argv[2]).then(r=>console.log(JSON.stringify({stage:'driver_collection_complete',drivers:r.drivers.length}))).catch(e=>{failed(process.argv[2],e);console.error(JSON.stringify({stage:'driver_collection_failed',reason:safeReason(e),import_permitted:false}));process.exitCode=1;});
 }
 module.exports={collect,parseRanges,classify,directoryColumns,validateDirectory,validateSummaryIdentity,summaryDomReady,emptyContent,parseSummary,readDriverVehicleVin,canDeferReviewedPreSummaryIdentity,readBeforeSummaryIdentity,safeReason};
