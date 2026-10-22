@@ -690,3 +690,102 @@ def test_large_photographic_png_output_fails_existing_ten_mib_cap():
     assert len(output.getvalue())<media.INPUT_LIMIT
     with pytest.raises(HTTPException) as error:media.decode_raster(output.getvalue(),'image/jpeg')
     assert error.value.status_code==413 and media.OUTPUT_LIMIT==10*1024*1024
+
+
+def mpo_pixels(*, pictures=2, size=(80,48), orientation=6):
+    primary=Image.new('RGB',size,'red')
+    primary.paste(Image.new('RGB',(size[0]//2,size[1]),'blue'),(0,0))
+    secondary_size=(min(size[0],80),min(size[1],48))
+    secondary=[Image.new('RGB',secondary_size,'green') for _ in range(pictures-1)]
+    exif=Image.Exif();exif[270]='Private synthetic primary description';exif[305]='Private synthetic software'
+    if orientation:exif[274]=orientation
+    output=io.BytesIO();primary.save(output,format='MPO',save_all=True,append_images=secondary,exif=exif)
+    return output.getvalue()
+
+
+@pytest.mark.parametrize('orientation',[6,8])
+def test_genuine_mpo_only_primary_pixels_orientation_and_no_metadata(monkeypatch,orientation):
+    from PIL import ImageOps,MpoImagePlugin
+    raw=mpo_pixels(pictures=2,orientation=orientation)
+    with Image.open(io.BytesIO(raw)) as source:
+        assert source.format=='MPO' and source.n_frames==2
+        primary=ImageOps.exif_transpose(source).convert('RGB')
+        source.seek(1)
+        source.load()
+        assert source.size==(80,48) and source.getpixel((16,12))!=primary.getpixel((24,40))
+    seeks=[];loads=[]
+    original_seek=MpoImagePlugin.MpoImageFile.seek
+    original_load=MpoImagePlugin.MpoImageFile.load
+    def seek(image,frame):seeks.append(frame);return original_seek(image,frame)
+    def load(image,*args,**kwargs):loads.append(image.tell());return original_load(image,*args,**kwargs)
+    monkeypatch.setattr(MpoImagePlugin.MpoImageFile,'seek',seek)
+    monkeypatch.setattr(MpoImagePlugin.MpoImageFile,'load',load)
+    data,kind=media.decode_raster(raw+b'private synthetic trailing auxiliary marker','image/jpeg')
+    with Image.open(io.BytesIO(data)) as result:
+        assert kind=='image/png' and result.format=='PNG' and getattr(result,'n_frames',1)==1
+        assert result.size==(48,80) and result.tobytes()==primary.tobytes()
+        assert not result.info and not result.getexif()
+    assert seeks and loads and set(seeks)=={0} and set(loads)=={0}
+    assert b'Private synthetic' not in data and b'MPF\0' not in data and b'auxiliary marker' not in data
+
+
+@pytest.mark.parametrize('declared',['image/png','image/webp','image/gif','image/mpo','application/octet-stream',''])
+def test_mpo_only_allowed_under_exact_jpeg_mime(declared):
+    with pytest.raises(HTTPException) as error:media.decode_raster(mpo_pixels(),declared)
+    assert error.value.status_code==422 and error.value.headers==media.HEADERS
+
+
+@pytest.mark.parametrize('size',[(8193,1),(5001,5000)])
+def test_mpo_primary_dimension_and_pixel_cap(size):
+    with pytest.raises(HTTPException) as error:media.decode_raster(mpo_pixels(size=size,orientation=None),'image/jpeg')
+    assert error.value.status_code==413
+
+
+def test_mpo_primary_truncation_and_malformed_mpf_rejected():
+    raw=mpo_pixels()
+    first_end=raw.index(b'\xff\xd9')
+    malformed=bytearray(raw);tiff=raw.index(b'MPF\0')+4;malformed[tiff:tiff+2]=b'ZZ'
+    for data in (raw[:first_end//2],bytes(malformed)):
+        with pytest.raises(HTTPException) as error:media.decode_raster(data,'image/jpeg')
+        assert error.value.status_code==422
+
+
+def test_mpo_existing_input_and_output_limits(monkeypatch):
+    raw=mpo_pixels()
+    with pytest.raises(HTTPException) as error:media.decode_raster(raw+b'x'*media.INPUT_LIMIT,'image/jpeg')
+    assert error.value.status_code==413
+    monkeypatch.setattr(media,'OUTPUT_LIMIT',16)
+    with pytest.raises(HTTPException) as error:media.decode_raster(raw,'image/jpeg')
+    assert error.value.status_code==413
+
+
+@pytest.mark.asyncio
+async def test_signed_object_mpo_primary_preview_preserves_privacy(receipt,monkeypatch):
+    *_,context=receipt
+    requests,_,clients=redirect_provider(monkeypatch,context,object_data=mpo_pixels())
+    data,kind=await media.retrieve(context,0)
+    with Image.open(io.BytesIO(data)) as image:
+        assert kind=='image/png' and image.size==(48,80) and getattr(image,'n_frames',1)==1
+    assert len(requests)==3 and all(client.is_closed for client in clients)
+
+
+def test_installed_three_picture_writer_malformed_mpf_is_rejected():
+    # Pillow 10.1 reserves an 82-byte MPF block sized for two pictures; a third
+    # append overwrites primary JPEG data. Do not downgrade that broken container.
+    raw=mpo_pixels(pictures=3)
+    import warnings
+    from PIL import UnidentifiedImageError
+    # The broken writer output has two independently reproduced parser outcomes:
+    # it may be unidentifiable, or downgrade to JPEG with a malformed-MPO warning.
+    # Neither outcome may become a successful application attachment.
+    with warnings.catch_warnings(record=True) as seen:
+        warnings.simplefilter('always')
+        try:
+            with Image.open(io.BytesIO(raw)) as source:
+                assert source.format=='JPEG'
+        except UnidentifiedImageError:
+            pass
+        else:
+            assert any('Image appears to be a malformed MPO file' in str(item.message) for item in seen)
+    with pytest.raises(HTTPException) as error:media.decode_raster(raw,'image/jpeg')
+    assert error.value.status_code==422

@@ -304,17 +304,25 @@ class _BoundedOutput(io.BytesIO):
 
 
 def decode_raster(data, declared):
-    expected = {'image/jpeg': 'JPEG', 'image/png': 'PNG', 'image/webp': 'WEBP', 'image/gif': 'GIF'}
+    expected = {'image/jpeg': {'JPEG', 'MPO'}, 'image/png': {'PNG'},
+                'image/webp': {'WEBP'}, 'image/gif': {'GIF'}}
+    if len(data) > INPUT_LIMIT:
+        fail('attachment_too_large')
     try:
         with warnings.catch_warnings():
             warnings.simplefilter('error', Image.DecompressionBombWarning)
+            # Pillow otherwise downgrades a broken MPF container to plain JPEG.
+            # Fail closed instead of silently accepting malformed MPO metadata.
+            warnings.filterwarnings('error', message=r'Image appears to be a malformed MPO file.*', category=UserWarning)
             with Image.open(io.BytesIO(data)) as source:
+                if source.format not in expected.get(declared, set()):
+                    fail('attachment_unsupported')
+                # MPO is a JPEG container, not an attachment gallery. Only the
+                # primary picture is sought, validated, loaded and copied.
+                source.seek(0)
                 width, height = source.size
                 if width > 8192 or height > 8192 or width * height > 25_000_000:
                     fail('attachment_too_large')
-                if source.format != expected.get(declared):
-                    fail('attachment_unsupported')
-                source.seek(0)
                 source.load()
                 # Fresh pixels remove metadata, extra frames and trailing bytes.
                 oriented = ImageOps.exif_transpose(source)
@@ -331,7 +339,7 @@ def decode_raster(data, declared):
                 return output.getvalue(), 'image/png'
     except (Image.DecompressionBombError, Image.DecompressionBombWarning):
         fail('attachment_too_large')
-    except (UnidentifiedImageError, OSError, ValueError, SyntaxError):
+    except (UnidentifiedImageError, OSError, ValueError, SyntaxError, UserWarning, AssertionError):
         fail('attachment_unsupported')
 
 
