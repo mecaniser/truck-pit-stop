@@ -1,0 +1,20 @@
+{
+  "at": "2026-10-22T05:15:13.482772+00:00",
+  "simulation": true,
+  "old_site": "mac-backup",
+  "old_id": "e0eb80160f5188007615f39896f15a6f4f8275147632613240676e0d8139e7db",
+  "old_stopped": true,
+  "target_site": "railway-simulation",
+  "new_state": {
+    "singleton": 1,
+    "site": "railway-simulation",
+    "epoch": 5,
+    "phase": "active",
+    "instance_id": "b0863397dbfca6b8c712881f2aed2b1532f8536d4c7dcc7fbc5736f40ac0a247",
+    "authority_id": "40ba45c234d6e8f0699670cdf591461d6ad8d2d3089bd2f5a532d52de8342957",
+    "watermark": 8,
+    "transition_id": null,
+    "reason": ""
+  },
+  "rpo_zero_shared_data": true
+}

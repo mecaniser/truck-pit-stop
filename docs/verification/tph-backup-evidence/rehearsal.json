@@ -1,0 +1,82 @@
+{
+  "at": "2026-10-22T04:59:06.468487+00:00",
+  "synthetic_only": true,
+  "live_activation": "forbidden",
+  "checks": [
+    "starts_on_railway_simulation",
+    "native_frontend_200",
+    "native_public_data_and_hidden_filter",
+    "native_mutation_blocked_/api/payments",
+    "native_mutation_blocked_/api/bookings",
+    "native_mutation_blocked_/api/send-email",
+    "native_mutation_blocked_/api/webhooks/square",
+    "native_mutation_blocked_/api/jobs",
+    "native_pin_accepted_before_switch",
+    "native_write_persisted",
+    "inflight_switch_refused",
+    "inflight_refusal_keeps_source_running",
+    "switch_to_mac",
+    "exact_old_source_stopped",
+    "all_native_writes_current_after_switch",
+    "native_frontend_mac_banner",
+    "native_pin_accepted_on_mac",
+    "stale_owner_cannot_dispatch",
+    "ten_replays_one_effect_per_business_kind",
+    "unknown_payment_blocks_failback",
+    "unknown_refusal_keeps_mac_running",
+    "unknown_freezes_public_admissions",
+    "switch_back_to_railway_simulation",
+    "mac_source_stopped_before_failback",
+    "mac_writes_preserved_on_return",
+    "native_frontend_return_banner",
+    "ledger_restart_and_unknown_reconcile_no_duplicate",
+    "live_activation_always_refused"
+  ],
+  "control": {
+    "singleton": 1,
+    "site": "railway-simulation",
+    "epoch": 3,
+    "phase": "active",
+    "instance_id": "b0863397dbfca6b8c712881f2aed2b1532f8536d4c7dcc7fbc5736f40ac0a247",
+    "authority_id": "40ba45c234d6e8f0699670cdf591461d6ad8d2d3089bd2f5a532d52de8342957",
+    "watermark": 7,
+    "transition_id": null,
+    "reason": "",
+    "pending": {
+      "admissions_pending": 0,
+      "admissions_unknown": 0,
+      "effects_dispatching": 0,
+      "effects_unknown": 0,
+      "blocked": false
+    },
+    "admissions": {
+      "accepted": 2,
+      "rejected": 1
+    },
+    "effects": {
+      "accepted": 5
+    }
+  },
+  "fake_effects": {
+    "email": 1,
+    "job": 1,
+    "payment": 2,
+    "sms": 1
+  },
+  "source": "b369e9f5e28584ba99f1cbe35d8f65080a51aeda",
+  "existing_fourteen_unchanged": true,
+  "backup_restore": {
+    "at": "2026-10-22T04:52:02.460504+00:00",
+    "synthetic_only": true,
+    "source": "tph_backup_source",
+    "restored": "tph_backup_restored",
+    "collections": {
+      "parkingspaces": 2,
+      "pins": 1,
+      "sitesettings": 1
+    },
+    "content_and_index_sha256": "ab6e9eaf3b8bdb851886e170716c4644f4ddbad392118500e85057de6587acce",
+    "archive_sha256": "9768a3fd4f4e98a4cb246ab00baefa54b5e51cd7094181cc6740977f5d0e8114",
+    "rows_and_indexes_equal": true
+  }
+}

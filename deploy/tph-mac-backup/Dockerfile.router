@@ -1,0 +1,6 @@
+FROM python:3.11-slim
+WORKDIR /control
+COPY control.py router.py provider_sink.py control_cli.py ./
+RUN chmod 644 /control/*.py
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+CMD ["python", "router.py"]

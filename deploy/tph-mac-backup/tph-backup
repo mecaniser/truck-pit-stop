@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+"""Operate the synthetic TPH backup rehearsal. Never switches live Railway."""
+import argparse
+from pathlib import Path
+import subprocess
+p=argparse.ArgumentParser(description=__doc__)
+p.add_argument('command',choices=('status','switch','rehearse','tunnel','activate-live'))
+p.add_argument('target',nargs='?',choices=('mac','railway'))
+a=p.parse_args()
+if a.command=='activate-live':raise SystemExit('LIVE SWITCH BLOCKED: current production data, primary fencing and native provider safeguards are not approved.')
+ssh=['ssh','-i',str(Path.home()/'.ssh/dieselbridge_staging_ed25519'),'-o','IdentitiesOnly=yes','-o','BatchMode=yes','-o','ConnectTimeout=5']
+if a.command=='tunnel':
+    raise SystemExit(subprocess.call([*ssh,'-o','ExitOnForwardFailure=yes','-N','-L','127.0.0.1:18310:127.0.0.1:18310','sergio@192.168.4.239']))
+if a.command=='switch' and not a.target:p.error('switch requires mac or railway (both are simulations on the Mac)')
+script='rehearse_v2.py' if a.command=='rehearse' else 'operator.py'
+args=[] if a.command=='rehearse' else [a.command]
+if a.command=='switch':args.append({'mac':'mac-backup','railway':'railway-simulation'}[a.target])
+raise SystemExit(subprocess.call([*ssh,'sergio@192.168.4.239','/opt/homebrew/bin/python3','mac-hosting/tph-backup-rehearsal-v3/tools/'+script,*args]))
