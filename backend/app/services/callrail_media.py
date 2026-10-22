@@ -1,4 +1,4 @@
-"""Lazy, tenant-scoped CallRail media. No persistence, retries, redirects or cache."""
+"""Lazy, tenant-scoped CallRail media. No persistence, retries or cache; one restricted signed-object hop."""
 from __future__ import annotations
 import asyncio
 import io
@@ -8,8 +8,8 @@ from contextvars import ContextVar
 import re
 import warnings
 from dataclasses import dataclass
-from datetime import timezone
-from urllib.parse import urlsplit
+from datetime import datetime, timezone, timedelta
+from urllib.parse import urlsplit, parse_qsl
 
 import httpx
 from fastapi import HTTPException
@@ -113,28 +113,107 @@ def media_url(url, context, index, *, require_resource=True):
         fail('attachment_unavailable')
 
 
+async def _read_response(response, limit, *, media=False):
+    if response.status_code != 200:
+        fail('attachment_unavailable')
+    # Negotiate unencoded bodies and reject encoding before httpx can expand
+    # a compressed bomb in its decoder. Both JSON and pixels stay bounded.
+    if response.headers.get('content-encoding', 'identity').strip().lower() not in {'', 'identity'}:
+        fail('attachment_unavailable')
+    declared = response.headers.get('content-type', '').split(';', 1)[0].strip().lower()
+    if media and declared not in {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}:
+        fail('attachment_unsupported')
+    if not media and declared != 'application/json':
+        fail('attachment_unavailable')
+    length = response.headers.get('content-length')
+    if length and (not length.isascii() or not length.isdigit() or len(length) > 10 or int(length) > limit):
+        fail('attachment_too_large' if media else 'attachment_unavailable')
+    data = bytearray()
+    async for chunk in response.aiter_bytes():
+        if len(data) + len(chunk) > limit:
+            fail('attachment_too_large' if media else 'attachment_unavailable')
+        data.extend(chunk)
+    return bytes(data), declared
+
+
 async def bounded_get(client, url, headers, limit, *, media=False):
     async with client.stream('GET', url, headers=headers) as response:
-        if response.status_code != 200:
+        return await _read_response(response, limit, media=media)
+
+
+_OBJECT_HOST = 'calltrk-mms-media-prod1.s3.amazonaws.com'
+_SIGNED_KEYS = frozenset({'X-Amz-Algorithm', 'X-Amz-Credential', 'X-Amz-Date', 'X-Amz-Expires',
+    'X-Amz-Security-Token', 'X-Amz-Signature', 'X-Amz-SignedHeaders',
+    'response-content-disposition', 'response-content-type'})
+_RASTER_TYPES = frozenset({'image/jpeg', 'image/png', 'image/webp', 'image/gif'})
+
+
+def signed_object_url(locator, *, now=None):
+    """Validate an authenticated provider Location; never rebuild its signature."""
+    if (not isinstance(locator, str) or not locator or len(locator) > 16384
+        or not locator.startswith('https://') or '\\' in locator
+        or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in locator)
+        or re.search(r'%(?![0-9A-Fa-f]{2})', locator)):
+        fail('attachment_unavailable')
+    try:
+        parsed = urlsplit(locator)
+        if (parsed.scheme != 'https' or parsed.netloc != _OBJECT_HOST or parsed.fragment
+            or len(parsed.path) > 1024 or len(parsed.query) > 12288
+            or not re.fullmatch(r'/[A-Za-z0-9_-][A-Za-z0-9_.-]*', parsed.path)
+            or '..' in parsed.path):
             fail('attachment_unavailable')
-        # Negotiate unencoded bodies and reject encoding before httpx can expand
-        # a compressed bomb in its decoder. Both JSON and pixels stay bounded.
-        if response.headers.get('content-encoding', 'identity').strip().lower() not in {'', 'identity'}:
+        # Keys themselves must be literal observed SigV4 names. Values are decoded
+        # exactly once for validation; the original locator is used unchanged.
+        parts = parsed.query.split('&')
+        if len(parts) != len(_SIGNED_KEYS) or any(part.split('=', 1)[0] not in _SIGNED_KEYS for part in parts):
             fail('attachment_unavailable')
-        declared = response.headers.get('content-type', '').split(';', 1)[0].strip().lower()
-        if media and declared not in {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}:
-            fail('attachment_unsupported')
-        if not media and declared != 'application/json':
+        pairs = parse_qsl(parsed.query, keep_blank_values=True, strict_parsing=True,
+                          encoding='utf-8', errors='strict', max_num_fields=9)
+        values = dict(pairs)
+        if (len(values) != len(pairs) or values.keys() != _SIGNED_KEYS
+            or any(not value or any(ord(c) < 32 or ord(c) == 127 for c in value) for value in values.values())):
             fail('attachment_unavailable')
-        length = response.headers.get('content-length')
-        if length and (not length.isascii() or not length.isdigit() or len(length) > 10 or int(length) > limit):
-            fail('attachment_too_large' if media else 'attachment_unavailable')
-        data = bytearray()
-        async for chunk in response.aiter_bytes():
-            if len(data) + len(chunk) > limit:
-                fail('attachment_too_large' if media else 'attachment_unavailable')
-            data.extend(chunk)
-        return bytes(data), declared
+        if (values['X-Amz-Algorithm'] != 'AWS4-HMAC-SHA256'
+            or not re.fullmatch(r'[0-9a-f]{64}', values['X-Amz-Signature'])
+            or values['X-Amz-SignedHeaders'] != 'host'
+            or len(values['X-Amz-Credential']) > 512 or len(values['X-Amz-Security-Token']) > 8192
+            or len(values['response-content-disposition']) > 1024
+            or values['response-content-type'] not in _RASTER_TYPES):
+            fail('attachment_unavailable')
+        scope = re.fullmatch(r'([A-Za-z0-9_-]+)/([0-9]{8})/([A-Za-z0-9_-]+)/s3/aws4_request', values['X-Amz-Credential'])
+        date = values['X-Amz-Date']
+        expiry = values['X-Amz-Expires']
+        if (not scope or not re.fullmatch(r'[0-9]{8}T[0-9]{6}Z', date)
+            or scope[2] != date[:8] or not re.fullmatch(r'[0-9]{1,3}', expiry)
+            or not 1 <= int(expiry) <= 300):
+            fail('attachment_unavailable')
+        signed_at = datetime.strptime(date, '%Y%m%dT%H%M%SZ').replace(tzinfo=timezone.utc)
+        current = now or datetime.now(timezone.utc)
+        if signed_at > current + timedelta(seconds=60) or signed_at + timedelta(seconds=int(expiry)) <= current:
+            fail('attachment_unavailable')
+    except (ValueError, UnicodeDecodeError):
+        fail('attachment_unavailable')
+    return locator
+
+
+async def media_get(client, url, headers):
+    # Only callers that already resolved tenant/message identity and validated
+    # this exact CallRail URL may enter the restricted redirect path.
+    locator = None
+    async with client.stream('GET', url, headers=headers) as response:
+        if response.status_code != 302:
+            return await _read_response(response, INPUT_LIMIT, media=True)
+        locations = response.headers.get_list('location')
+        if len(locations) != 1:
+            fail('attachment_unavailable')
+        locator = signed_object_url(locations[0])
+    # The authenticated 302 response is closed before this separate client exists.
+    # Its fresh cookie jar/auth and trust_env=False prevent cross-origin secrets.
+    async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=False, trust_env=False) as object_client:
+        object_client.headers.clear()
+        return await bounded_get(object_client, locator,
+            {'Accept': 'image/jpeg, image/png, image/webp, image/gif', 'Accept-Encoding': 'identity'},
+            INPUT_LIMIT, media=True)
 
 
 def _identity(item, context):
@@ -244,11 +323,12 @@ def decode_raster(data, declared):
                 clean = Image.new(mode, converted.size)
                 clean.paste(converted)
                 output = _BoundedOutput()
-                fmt = 'PNG' if mode == 'RGBA' else 'JPEG'
-                clean.save(output, format=fmt)
+                # Lossless output avoids a second lossy/native JPEG codec pass.
+                # Bounds apply during encoding; larger photographs fail closed.
+                clean.save(output, format='PNG')
                 if output.tell() > OUTPUT_LIMIT:
                     fail('attachment_too_large')
-                return output.getvalue(), 'image/png' if fmt == 'PNG' else 'image/jpeg'
+                return output.getvalue(), 'image/png'
     except (Image.DecompressionBombError, Image.DecompressionBombWarning):
         fail('attachment_too_large')
     except (UnidentifiedImageError, OSError, ValueError, SyntaxError):
@@ -272,7 +352,7 @@ async def retrieve(context, index=None):
                     return {'items': [{'index': i, 'kind': 'image'} for i in range(len(urls))]}
                 if index >= len(urls):
                     fail('attachment_not_found')
-                data, declared = await bounded_get(client, urls[index], headers, INPUT_LIMIT, media=True)
+                data, declared = await media_get(client, urls[index], headers)
                 return await asyncio.to_thread(decode_raster, data, declared)
     except (TimeoutError, httpx.TimeoutException):
         fail('attachment_timeout')
