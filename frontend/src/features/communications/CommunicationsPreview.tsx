@@ -1,3 +1,4 @@
+import MessageAttachments from "./MessageAttachments";
 import SMSConsentPanel from "./SMSConsentPanel";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -761,7 +762,11 @@ export default function CommunicationsPreview({
                         </div>
                       ) : (
                         <>
-                          <div className="message-bubble">{message.body}</div>
+                          <div className="message-bubble">
+                            {connection && message.hasAttachments && message.direction === "inbound" ? (
+                              <MessageAttachments tenantId={tenantId} message={message} />
+                            ) : message.body}
+                          </div>
                           <div className="message-meta">
                             {message.direction === "outbound" && (
                               <>
