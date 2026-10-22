@@ -197,6 +197,7 @@ async def unread_count(db, thread, user_id):
 
 
 async def message_json(db, message):
+    from app.services.callrail_media import candidate
     operation = await db.scalar(select(SMSSendOperation).where(SMSSendOperation.tenant_id == message.tenant_id, SMSSendOperation.message_id == message.id))
     if operation is None and message.source == SMSMessageSource.AUTOMATED:
         operation = await db.scalar(select(AutomatedSMSOperation).where(AutomatedSMSOperation.tenant_id == message.tenant_id, AutomatedSMSOperation.message_id == message.id))
@@ -205,7 +206,7 @@ async def message_json(db, message):
         delivery = 'received'
     elif operation and operation.state in ('unknown', 'dispatching'):
         delivery = 'unknown' if operation.state == 'unknown' else 'pending'
-    return dict(id=message.id, conversation_id=message.thread_id, channel='sms', direction=message.direction.value, source={'inbound': 'customer', 'manual': 'staff', 'automated': 'automation'}[message.source.value], body=message.body, created_at=message.created_at, delivery_status=delivery, error_code=message.error_code, send_operation_id=operation.id if operation else None)
+    return dict(has_attachments=candidate(message), id=message.id, conversation_id=message.thread_id, channel='sms', direction=message.direction.value, source={'inbound': 'customer', 'manual': 'staff', 'automated': 'automation'}[message.source.value], body=message.body, created_at=message.created_at, delivery_status=delivery, error_code=message.error_code, send_operation_id=operation.id if operation else None)
 
 
 async def conversation_json(db, tenant, user, thread, sender):

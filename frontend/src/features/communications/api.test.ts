@@ -1,8 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
 import api from '../../lib/api';
-import { inboxApi, mapConversation, type WireConversation } from './api';
+import { inboxApi, mapConversation, mapMessage, type WireMessage, type WireConversation } from './api';
 vi.mock('../../lib/api', () => ({ default: { get: vi.fn(), post: vi.fn(), patch: vi.fn() } }));
 describe('inbox wire adapter', () => {
+  it('defaults attachment candidates to false for older API responses', () => {
+    expect(mapMessage({} as WireMessage).hasAttachments).toBe(false);
+    expect(mapMessage({ has_attachments: true } as WireMessage).hasAttachments).toBe(true);
+  });
+  it('retrieves manifests and blobs through authenticated client with cancellation', async () => {
+    const signal = new AbortController().signal;
+    vi.mocked(api.get).mockResolvedValueOnce({ data: { items: [{ index: 2, kind: 'image' }] } }).mockResolvedValueOnce({ data: new Blob(['synthetic'], { type: 'image/png' }) });
+    await inboxApi.attachmentManifest('thread', 'receipt', signal);
+    await inboxApi.attachmentBlob('thread', 'receipt', 2, signal);
+    expect(api.get).toHaveBeenCalledWith('/communications/conversations/thread/messages/receipt/attachments', { signal });
+    expect(api.get).toHaveBeenCalledWith('/communications/conversations/thread/messages/receipt/attachments/2', { signal, responseType: 'blob' });
+    vi.mocked(api.get).mockClear();
+  });
   it('maps a null-customer inquiry without company guesses and retains its pinned sender contract', () => {
     const row = mapConversation({ id: 'inquiry', tenant_id: 'tenant', conversation_kind: 'inquiry', customer_id: null, customer_name: 'Unavailable customer', company: 'Unproven company', messages: [], send_policy: { can_send: true, reason: null, max_length: 140 }, context: { sms_provider: 'callrail', sender_number: '+15005550001', sender_selection_allowed: false }, version: 2 } as unknown as WireConversation);
     expect(row).toMatchObject({ conversationKind: 'inquiry', customerId: null, customerName: 'New inquiry', company: null, context: { smsProvider: 'callrail', senderNumber: '+15005550001' } });
