@@ -25,3 +25,7 @@ Owner and fresh independent focused suites, final runtime receipt, protected CI 
 Owner and fresh independent backend:98 passed (76 media cases plus22 existing receipt regressions). Frontend:56 passed, changed-source ESLint and TypeScript passed. Independent additional15 adversarial cases passed, including actual ASGI staff/tenant denial before credential access and private headers on401/422. Fresh independent QA/Security GO after all returned findings; synthetic-only, no provider/production calls. Decode work can finish bounded raster processing after an awaiting request is cancelled; it performs no provider I/O or persistent write.
 
 Latest main remains3816c28 at source freeze. Protected PR CI, merge, deployment and actual-provider runtime acceptance remain pending; this item is not Done.
+
+## Protected CI external blocker
+
+PR627 head`e97bebb18700f1deed1bafb49cc2230115a61df7`, run39830751878: migration, backend critical/full, frontend critical/full and dependency preparation passed. Playwright smoke failed during service initialization before checkout/tests because pinned public ECR Postgres pulls returned `toomanyrequests: Data limit exceeded`. One targeted setup-job retry reproduced the same external limit; original failure retained. No test/assertion/timeout changes or further retries. Required gate remains failed; PR unmerged and feature undeployed. This local closeout note awaits eventual release-record commit; no app source edits after reviewed head.
