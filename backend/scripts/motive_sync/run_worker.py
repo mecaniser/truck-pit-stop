@@ -8,9 +8,9 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
-from uuid import uuid4
+
+from scripts.motive_sync.recovery import collection_directory, entry, read_process
 
 
 def main():
@@ -21,13 +21,10 @@ def main():
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise SystemExit("Motive worker already running") from None
-        run = state / (
-            datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + str(uuid4())
-        )
-        run.mkdir(mode=0o700)
+        run = collection_directory(state, max_age_seconds=600)
         source, receipt = run / "source.json", run / "receipt.json"
         try:
-            subprocess.run(
+            read_process(
                 ["node", str(Path(__file__).with_name("collect.cjs")), str(source)],
                 check=True,
                 timeout=1500,
@@ -63,4 +60,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    entry(main)
