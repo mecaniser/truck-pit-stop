@@ -81,3 +81,17 @@ Owner177 cases pass. Independent review first returned one malformed three-pictu
 Final synthetic API53264/Vite51786, same worktree and branchc4c720e plus reviewed dirty source, direct/proxy DB+Redisready. Genuine MPO fixture primary inline/expanded/Escape-focus, retained then cleared draft, automatic reply number, caption/time and390x844 compact pass; viewport reset. Private proof outside repository.
 
 After independent GO and before publication, parent used read-only production context and memory-only provider credentials to retrieve ONLY the newly authorized ordinary photo. Original binding/tenant/company/contact/message match and manifest passed. The single validated signed redirect returned799915 bytes image/jpeg, MPO1536x2048 RGB/two frames. Final decoder produced3771601-byte image/png within10MiB output cap. No photo/locator/credential persisted, no old code-image retrieval, provider send or data mutation. This is actual-input conversion proof, not deployed browser acceptance. Protected CI and successful exact deployment/live browser acceptance remain pending.
+
+
+## MPO protected merge
+
+PR629 merged a8767d5bd4b3a6a0e6a74335b1bfad5807174e7e after all six strict protected checks plus dependency preparation passed exact e2b28c2dc917190baeed7d6457ef7d6ebcee574c/run39850815260. Checked and merged trees bf47610c9f362b3fb7cc19a1719385462a3580e2 match; prior ec611ce4 ancestry retained. Automatic Webc45694e7-7425-45ba-ad09-528b5388932e and Workerda12efc6-9e85-4d09-bb83-5dc43659ed7b started exact merge; no manual redeploy. Final successful source/runtime/flags and actual live acceptance pending.
+
+
+## Final deployment and authenticated live acceptance
+
+PR629 source a8767d5bd4b3a6a0e6a74335b1bfad5807174e7e is SUCCESS on Webc45694e7-7425-45ba-ad09-528b5388932e and Workerda12efc6-9e85-4d09-bb83-5dc43659ed7b. API and website report exact SHA/build2026-10-22T20:50:02.799Z. DB/Redis ready; effective SMS_TENANT_ROUTING_ENABLED, SMS_AUTOMATION_OUTBOX_ENABLED and SMS_RECOVERY_ENABLED are unset/defaultfalse on both services. No new migration; schema187 retained.
+
+Signed-in production Messages acceptance now passes for the newly supplied ordinary photo: actual primary image visible inline and in expanded dialog, original caption/time retained, Escape restores thumbnail focus, draft empty and Send disabled. Replying-from matches the message's recorded receiving number automatically; no manual sender chooser. Existing conversations remain visible. Private inline/expanded screenshots and release receipt are outside the repository; no customer identifiers, image bytes, signed locators or credentials added to repository documents. Original excluded code-image was never selected or fetched.
+
+Read-only post-release seven-table counts and full-row digests match the post-inquiry baseline:202 SMS/17threads/776customers/6mappings/16bindings/0replyroutes/4sendoperations. Separate comparison proves pre-existing SMS/thread/mapping rows unchanged excluding only the legitimate new inquiry. No provider sends, data writes/replay/backfill, route creation, consent/assignment/resolution action, credential/forwarding/provider configuration or automation enablement occurred. Historical failed CI and fixture evidence remains recorded above. Outcome complete; documentation-only protected closeout records this acceptance without application edits.
