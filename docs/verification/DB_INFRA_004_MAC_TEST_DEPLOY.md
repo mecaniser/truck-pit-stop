@@ -155,3 +155,12 @@ was unchanged. Source/runtime gates apply to the app/command artifacts above;
 this final follow-up adds only review/PR bookkeeping. No main merge or Railway
 deploy was performed. Operational Mac-only deployment is accepted; production
 release and original24-hour acceptance remain separate.
+
+
+## Reviewed Docker recovery acceptance — October 22, 2026
+
+The accidental Docker closure changed accepted starts and network endpoint fingerprints. Normal deployment correctly refused drift. A separately reviewed new acceptance archived the exact prior controller state and approved proposal9cd1bd57 (SHA9e4bb727), then changed only `snapshot`; release/database/rollback fields remained equal. This does not claim historical network continuity or repair the failed original observation.
+
+Independent QA and Security verified the final recovery helperbc05fdf9/remote802aef1c with36 tests, exact actual14-container/six-network topology and isolation, fixed empty queues, database revision, local rollback images and both preserved observation baselines. Runtime postchecks passed: identity/configuration/baseline true; no uncertain recovery/deployment. Zero containers restarted for this transition.
+
+PR623 later recovered only its separate rehearsal services. A final status check after those starts still reports `identity_matches:true`, configuration/baseline true and both uncertainty flags false; these four rehearsal containers are outside the protected14. No further controller acceptance or identity reset was necessary. Evidence: [runtime receipt](DB_INFRA_004_RECOVERY_RUNTIME_20261022.json). The original failed observation remains failed; the separate current24h observation and final current-main CI/review still block merge readiness. No Railway/provider/SMS/live activation or application deployment occurred.

@@ -1,0 +1,53 @@
+{
+  "app_browser_qa": "not_applicable_host_controller_only",
+  "at": "2026-10-22T19:54:54.189072+00:00",
+  "base_sha": "80d5bceb287faed2dd1c9c373d26703c70176c70",
+  "branch": "codex/mac-test-deploy",
+  "checks": {
+    "git_diff_check": true,
+    "python_compile": true,
+    "unit_tests": {
+      "command": "python3 -m unittest discover -s deploy/mac-test-deploy -p 'test_*.py' -q",
+      "passed": 36
+    }
+  },
+  "docker_mutations": 0,
+  "historical_normalized_topology_verified": false,
+  "independent_qa": "pending",
+  "independent_security": "pending",
+  "kind": "local_source_verification_only",
+  "remote_recovery_applied": false,
+  "runtime_recovery_acceptance": "blocked_until_exact_proposal_and_independent_approval",
+  "safe_refusal_followup": {
+    "fix": "exact original staging source-project nginx bind",
+    "independent_review": "required_again_for_changed_source",
+    "reason": "recovery_host_mount_refused",
+    "remote_proposal_applied": false
+  },
+  "safe_refusal_history": [
+    {
+      "fix": "exact original staging source-project nginx bind",
+      "independent_review": "required_again_for_changed_source",
+      "reason": "recovery_host_mount_refused",
+      "remote_proposal_applied": false
+    },
+    {
+      "diagnosis": "list order only; complete mount objects identical",
+      "evidence_path": "/runtime_profiles/tph-local-test-mongo-1/mounts",
+      "fix": "validate unique destination mounts, preserve all metadata, canonical sorting",
+      "independent_review": "fresh source and new exact proposal required",
+      "installed_helper_sha256": "fd84f74ef8d14cab0bc33c7e19df656d1abc40b464e35619ba67a8da1bb6a666",
+      "proposal_approved": false,
+      "proposal_prefix": "c06",
+      "reason": "recovery_late_topology_race",
+      "remote_proposal_applied": false
+    }
+  ],
+  "source_sha256": {
+    "README.md": "f8c59cfac874248b271c135f3162433be136d8008f5f8c39502779f81678aacf",
+    "recovery.py": "bc05fdf9ab3843545c57c4cf13b6a6be99efe1c3d706e9186448f7b8a0928c5f",
+    "remote.py": "802aef1cc4760868cbe905e88711f1ddbc55d5471ada99ff735e273e7765744e",
+    "test_recovery.py": "29d5c0cb9ee2350e9570449b3cd4ed7ef961bc684dece10f842868d9c446ed51"
+  },
+  "version": 1
+}

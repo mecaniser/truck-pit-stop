@@ -65,7 +65,7 @@ def prepare_root():
     for path in (ROOT / 'private', ROOT / 'releases'):
         safe_path(path)
         path.mkdir(mode=0o700, exist_ok=True)
-    for name in ('state.json', 'active.json', 'schema-compatibility-approval.json'):
+    for name in ('state.json', 'active.json', 'recovery-active.json', 'schema-compatibility-approval.json'):
         safe_path(ROOT / 'private' / name)
 
 
@@ -293,6 +293,13 @@ def snapshot(operator):
     return {'containers': result, 'baseline_sha256': digest(BASELINE.read_bytes())}
 
 
+def identity_matches(accepted, observed):
+    def identities(value):
+        return {name: {key: field for key, field in item.items() if key != 'health'}
+                for name, item in value['containers'].items()}
+    return identities(accepted) == identities(observed)
+
+
 def protected(value, app):
     excluded = {PROJECTS[app] + '-' + service + '-1' for service in ('web', 'gateway')}
     return {name: {key: field for key, field in item.items() if key != 'health'}
@@ -362,7 +369,8 @@ class Remote:
         self.active_path = ROOT / 'private/active.json'
 
     def initialize(self):
-        check(not self.state_path.exists() and not self.active_path.exists(), 'deployment_state_already_initialized')
+        check(not self.state_path.exists() and not self.active_path.exists()
+              and not (ROOT / 'private/recovery-active.json').exists(), 'deployment_state_already_initialized')
         files = current_files()
         initial_safety(files)
         observed = snapshot(self.operator)
@@ -395,6 +403,7 @@ class Remote:
 
     def preflight(self, state, app):
         check(not self.active_path.exists(), 'uncertain_operation_inspect_active_receipt')
+        check(not (ROOT / 'private/recovery-active.json').exists(), 'uncertain_recovery_inspect_private_receipt')
         files = current_files()
         check(file_hashes(files) == state['files_sha256'], 'configuration_drift_refused')
         for candidate_app, project in PROJECTS.items():
@@ -545,17 +554,22 @@ class Remote:
                          for app, entry in state['apps'].items()},
                 'configuration_matches': file_hashes(files) == state['files_sha256'],
                 'baseline_matches': observed['baseline_sha256'] == state['snapshot']['baseline_sha256'],
-                'live_runtime': live, 'uncertain_operation': self.active_path.exists(), 'snapshot': observed}
+                'identity_matches': identity_matches(state['snapshot'], observed),
+                'live_runtime': live, 'uncertain_operation': self.active_path.exists(),
+                'uncertain_recovery': (ROOT / 'private/recovery-active.json').exists(), 'snapshot': observed}
 
 
 def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('init', 'status', 'deploy', 'rollback'))
+    parser.add_argument('command', choices=('init', 'status', 'deploy', 'rollback', 'recovery-propose', 'recovery-commit'))
     parser.add_argument('app', nargs='?', choices=tuple(PROJECTS))
     parser.add_argument('image', nargs='?')
     parser.add_argument('source', nargs='?')
     parser.add_argument('--database-release', dest='database_token')
+    parser.add_argument('--observation')
+    parser.add_argument('--proposal')
+    parser.add_argument('--approval-sha256')
     args = parser.parse_args()
     if args.command == 'deploy':
         if args.app is None or IMAGE.fullmatch(args.image or '') is None or SOURCE.fullmatch(args.source or '') is None:
@@ -568,6 +582,14 @@ def main():
     if args.database_token is not None and (args.command != 'deploy' or args.app != 'dieselbridge'
                                            or re.fullmatch(r'[0-9a-f]{32}', args.database_token) is None):
         parser.error('--database-release requires dieselbridge deploy and a 32-character lowercase hex token')
+    if args.command == 'recovery-propose':
+        if not args.observation or args.proposal or args.approval_sha256:
+            parser.error('recovery-propose requires only --observation')
+    elif args.command == 'recovery-commit':
+        if not args.proposal or not args.approval_sha256 or args.observation:
+            parser.error('recovery-commit requires --proposal and --approval-sha256')
+    elif any((args.observation, args.proposal, args.approval_sha256)):
+        parser.error('recovery flags require a recovery command')
     prepare_root()
     operator = load_module('accepted_stack_operator', STACKS / 'tools/stackctl.py')
     # Same shared lock as the original stack operator and public rollout.
@@ -578,6 +600,10 @@ def main():
             result = remote.initialize()
         elif args.command == 'status':
             result = remote.status()
+        elif args.command.startswith('recovery-'):
+            module = load_module('accepted_recovery', Path(__file__).resolve().with_name('recovery.py'))
+            recovery = module.Recovery(sys.modules[__name__], remote)
+            result = recovery.propose(args.observation) if args.command == 'recovery-propose' else recovery.commit(args.proposal, args.approval_sha256)
         else:
             result = remote.deploy(args.app, args.image, args.source, rollback=args.command == 'rollback',
                                    database_token=args.database_token)
