@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
-import { Spinner } from "../../components/ui/Spinner";
+import { Image as ImageIcon, X } from "lucide-react";
 import { getAuthenticatedSessionIdentity, useAuthStore } from "../../stores/authStore";
 import { inboxApi } from "./api";
 import type { Message } from "./model";
@@ -134,8 +133,8 @@ function AttachmentSession({ tenantId, message, session }: Props & { session: st
             setImages((items) => items.filter((image) => image.url !== item.url)); setStatus("error");
           }} />
       </button>)}
-      {status === "loading" && <span role="status" className="attachment-state">
-        <span aria-hidden="true" className="inline-flex"><Spinner size="xs" className="motion-reduce:animate-pulse" /></span>
+      {status === "loading" && <span role="status" className="attachment-placeholder motion-reduce:animate-pulse">
+        <ImageIcon size={28} strokeWidth={1.5} aria-hidden="true" />
         <span>Loading images…</span>
       </span>}
       {(status === "empty" || status === "error") && <div className="attachment-state" role="status">

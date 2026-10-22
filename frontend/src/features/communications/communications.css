@@ -1665,6 +1665,38 @@
   max-height: 220px;
   object-fit: contain;
 }
+:where(.communications-surface) .attachment-placeholder {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: min(240px, 100%);
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border: 1px solid #dce3ea;
+  border-radius: 6px;
+  background: #e9eef2;
+  color: #617084;
+  font-size: 12px;
+}
+:where(.communications-surface) .attachment-placeholder::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(100deg, transparent, #ffffffa6, transparent);
+  transform: translateX(-100%);
+  animation: attachment-placeholder-shimmer 2s linear infinite;
+}
+@keyframes attachment-placeholder-shimmer {
+  to { transform: translateX(100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :where(.communications-surface) .attachment-placeholder::before { animation: none; }
+}
 :where(.communications-surface) .attachment-state {
   display: flex;
   align-items: center;
