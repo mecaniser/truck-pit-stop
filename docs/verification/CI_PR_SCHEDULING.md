@@ -31,3 +31,15 @@ Independent source QA/Security GO: six live strict contexts verified; all routin
 Initial53e8f13e/run39823392101 passed both backend suites, frontend213 critical and1826 remaining tests, build and artifact restoration. Browser installation failed explicitly because ubuntu-latest resolvedUbuntu26.04, unsupported by pinned Playwright chromium-headless-shell. Pin every hosted job to Ubuntu24.04, matching the supported local base and keeping artifact producer/consumer OS stable. No browser/dependency/test upgrade or dropped case; corrected head gets its own required run.
 
 Independent correction GO: failure reproduced from hosted image log; all seven hosted labels now consistently24.04, local labels untouched.54 corrected routing cases and actionlint pass. Browser version, test coverage, failure guards and artifact identity unchanged.
+
+## Release evidence
+
+PR [625](https://github.com/mecaniser/truck-pit-stop/pull/625), checked `dbe01c4887f8875094a72c95e5a522ae3c0979ca`, normal merge `1fe8845c65def4dbaa8106e9bde278b831f701c6`. Checked and merged trees identical. Independent final QA/Security GO and all six strict required contexts verified unchanged.
+
+Run [39824691366](https://github.com/mecaniser/truck-pit-stop/actions/runs/39824691366), attempt1, all seven jobs pass. Created17:40:00Z, completed17:45:56Z: **5m56s**. Compared with prior8m20 uncontended sample,2m24/28.8% shorter observed; prior15m39 contended sample is not a controlled comparison. This is one successful hosted run, not a multi-PR stress test or guaranteed SLA. No extra workload was dispatched for benchmarking.
+
+Actual runners GitHub Actions1000008180–1000008186, all Ubuntu24.04. Scope finished17:40:26; initial application jobs started17:40:29/30. Preparation finished17:41:25; both frontend jobs started17:41:28. Frontend critical finished17:43:40; smoke started17:43:43. Thus each downstream job started3–4s after its prerequisites. Earlier API snapshots temporarily showed queued backend status, but final timestamps show it started immediately. All four local workers remained online/idle at final verification.
+
+Remaining backend3539 passed/387 existing skips, remaining frontend176files1826tests, critical frontend17files213tests, browser5passed. Production build and exact-run artifact restoration succeeded. Initial and corrected source each had one automatic attempt; no same-head retries, duplicate local suite or post-merge main-push suite. Workflow changes take effect for branches that integrate current main; notify owners to integrate once before final candidate, preserve board history, and avoid obsolete checks/retries.
+
+No application deployment needed for CI routing; no production/provider/financial/SMS state changed. Scheduled/manual local path validated by54 routing cases; existing installed VM supervision and isolation unchanged. Hosted service/account limits remain external constraints.
