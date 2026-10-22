@@ -55,6 +55,10 @@ def lock():
         raise RuntimeError('unrecognized_test_stack_root')
     if any(p.is_symlink() for p in ROOT.rglob('*')):
         raise RuntimeError('symlink_in_test_stack_root')
+    private_env = dict(line.split('=', 1) for line in (ROOT/'private/local.env').read_text().splitlines())
+    required = {'DB_PASSWORD','DB_SECRET','MONGO_PASSWORD','TPH_MANAGER_SECRET','TPH_JWT_SECRET','TPH_API_SECRET'}
+    if not required <= private_env.keys() or any(len(private_env[key]) < 32 for key in required):
+        raise RuntimeError('missing_or_short_private_test_credentials')
     with (ROOT/'.lock').open('a') as handle:
         fcntl.flock(handle,fcntl.LOCK_EX)
         for app in PROJECTS: inspect(app)

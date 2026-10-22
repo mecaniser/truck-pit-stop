@@ -3,6 +3,7 @@ import datetime
 import json
 from pathlib import Path
 import uuid
+from urllib.parse import quote, urlsplit, urlunsplit
 from stackctl import ROOT, compose, lock
 
 
@@ -21,7 +22,9 @@ def main():
         assert counts=='2|2|2|1', 'Unexpected restored PostgreSQL counts'
         environment=dict(line.split('=',1) for line in (ROOT/'private/local.env').read_text().splitlines())
         config='/tmp/macapps-mongo-'+uuid.uuid4().hex+'.json'
-        uri='mongodb://localtest:'+environment['MONGO_PASSWORD']+'@127.0.0.1:27017/?authSource=admin'
+        address=urlsplit('mongodb://127.0.0.1:27017/?authSource=admin')
+        authority='localtest:'+quote(environment['MONGO_PASSWORD'],safe='')+'@'+address.netloc
+        uri=urlunsplit((address.scheme,authority,address.path,address.query,address.fragment))
         # Credential stays in a mode0600 temporary config, never in process args.
         compose('tph','exec','-T','mongo','sh','-c','umask 077; cat > '+config,
                 stdin=json.dumps({'uri':uri}).encode(),log='mongo-private-config')
@@ -33,7 +36,7 @@ def main():
                     '--nsFrom','tph_local_test.*','--nsTo',mongo_restore+'.*',stdin=archive,log='mongo-restore')
         finally:
             compose('tph','exec','-T','mongo','rm','-f',config,log='mongo-private-config-cleanup')
-        javascript='''const c=new Mongo('mongodb://localtest:'+process.env.MONGO_INITDB_ROOT_PASSWORD+'@127.0.0.1:27017/?authSource=admin'); const d=c.getDB('''+json.dumps(mongo_restore)+'''); print(JSON.stringify({locations:d.parkingspaces.countDocuments(),pins:d.pins.countDocuments(),jobs:d.blogresearchjobs.countDocuments(),drafts:d.blogposts.countDocuments({status:'draft'}),published:d.blogposts.countDocuments({status:'published'})}));'''
+        javascript='''const u=new URL('mongodb://127.0.0.1:27017/?authSource=admin');u.username='localtest';u.password=process.env.MONGO_INITDB_ROOT_PASSWORD;const c=new Mongo(u.toString()); const d=c.getDB('''+json.dumps(mongo_restore)+'''); print(JSON.stringify({locations:d.parkingspaces.countDocuments(),pins:d.pins.countDocuments(),jobs:d.blogresearchjobs.countDocuments(),drafts:d.blogposts.countDocuments({status:'draft'}),published:d.blogposts.countDocuments({status:'published'})}));'''
         mongo_counts=json.loads(compose('tph','exec','-T','mongo','mongosh','--quiet','--eval',javascript,log='mongo-restore-count').decode().strip().splitlines()[-1])
         assert mongo_counts=={'locations':2,'pins':1,'jobs':1,'drafts':1,'published':0}
         report={'backup_directory':str(backup),'postgres_restore_database':restore,'postgres_counts':counts,

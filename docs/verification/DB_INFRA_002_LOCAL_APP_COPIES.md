@@ -126,7 +126,7 @@ stacks were not reboot-tested during the original observation window.
 
 ## Gates and preserved staging
 
-Six focused configuration checks passed, plus independent image-shape/isolation
+Seven focused configuration checks passed, plus independent image-shape/isolation
 negatives and source syntax review. Independent QA and Security both GO for final
 private runtime, worker boundaries, non-delivery, backup/restore and persistence.
 They made no implementation edits.
@@ -140,10 +140,24 @@ remain unchanged. No reset, duplicate automation, worker replay, DNS change,
 Railway deploy, setting/secret change or production data action occurred.
 
 [Operator guide](../../deploy/mac-test-apps/README.md).
-[Redacted runtime receipt](mac-test-apps/2026-10-21-runtime.json).
+[Initial redacted runtime receipt](mac-test-apps/2026-10-21-runtime.json).
+[Final redacted runtime receipt](mac-test-apps/2026-10-21-final-runtime.json).
 [DieselBridge signed-in screenshot](mac-test-apps/dieselbridge-inventory.png).
 [TPH homepage screenshot](mac-test-apps/tph-home.png).
 
 Private copies are accepted and usable through SSH. PR/merge/protected checks,
 public ingress, live providers and completed24-hour observation are separate
 states; no production release or public readiness is claimed.
+
+## Source publication check
+
+The pre-push credential scanner rejected three Mongo URL templates/concatenations.
+Inspection confirmed generated-variable references, not embedded credential
+values. Backup URL assembly now uses structured URL APIs and escaping. Compose
+uses the standard Mongo password placeholder; controller validation requires all
+six private values to contain at least32characters before any Docker operation.
+Missing/short Mongo credentials fail before Docker in the new regression.
+Seven focused checks pass; unchanged scanner reports no HIGH findings, with no
+scanner bypass. The revised backup path passed another actual restore into new
+check databases, retaining both primary databases. Only configuration/tool source
+changed; no application image, queue or running service was replaced.

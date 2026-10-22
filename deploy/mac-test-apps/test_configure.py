@@ -1,15 +1,35 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import tempfile
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('cfg', Path(__file__).with_name('configure.py'))
 cfg = importlib.util.module_from_spec(spec); spec.loader.exec_module(cfg)
+control_spec = importlib.util.spec_from_file_location('control', Path(__file__).with_name('stackctl.py'))
+control = importlib.util.module_from_spec(control_spec); control_spec.loader.exec_module(control)
 
 
 class StackContract(unittest.TestCase):
     def setUp(self):
         self.images = {key: 'sha256:'+'a'*64 for key in ('dieselbridge','tph','postgres','redis','mongo','nginx')}
         self.stacks = cfg.specifications(self.images)
+
+    def test_missing_private_mongo_password_refused_before_docker(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            (root/'.owner').write_text('macapps-test-stacks-v1\n')
+            (root/'private').mkdir()
+            required = ('DB_PASSWORD','DB_SECRET','MONGO_PASSWORD','TPH_MANAGER_SECRET','TPH_JWT_SECRET','TPH_API_SECRET')
+            for bad_value in (None, 'short'):
+                values = {key: 'x'*64 for key in required}
+                if bad_value is None: values.pop('MONGO_PASSWORD')
+                else: values['MONGO_PASSWORD'] = bad_value
+                (root/'private/local.env').write_text(''.join(key+'='+value+'\n' for key,value in values.items()))
+                with patch.object(control, 'ROOT', root), patch.object(control, 'inspect') as inspect:
+                    with self.assertRaisesRegex(RuntimeError, 'missing_or_short'):
+                        with control.lock(): pass
+                    inspect.assert_not_called()
 
     def test_immutable_exact_images(self):
         with self.assertRaises(ValueError): cfg.specifications({**self.images, 'tph': 'latest'})

@@ -59,7 +59,7 @@ def specifications(images):
           'networks': {'isolated': {'internal': True}, 'ingress': {}}, 'volumes': {'postgres': {}, 'redis': {}, 'uploads': {}}}
     tph_env = {
         'NODE_ENV': 'production', 'LOCAL_TEST_ONLY': 'true', 'LOCAL_SOURCE_SHA': TPH_SHA, 'SQUARE_ENVIRONMENT': 'sandbox',
-        'MONGO_URI_DEV': 'mongodb://localtest:${MONGO_PASSWORD:?required}@mongo:27017/tph_local_test?authSource=admin',
+        'MONGO_URI_DEV': 'mongodb://localtest:${MONGO_PASSWORD}@mongo:27017/tph_local_test?authSource=admin',
         'DISABLE_SCHEDULER': 'true', 'BLOG_STUDIO_ENABLED': 'false', 'BLOG_STUDIO_RUN_IN_WEB': 'false',
         'WORKOS_TENANT_ENABLED': 'false', 'MONTHLY_SUBSCRIPTIONS_ENABLED': 'false',
         'MONTHLY_CUSTOM_AUTOPAY_ENABLED': 'false', 'HIRING_CANDIDATE_SMS_ENABLED': 'false',
