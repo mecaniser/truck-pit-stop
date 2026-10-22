@@ -1,0 +1,85 @@
+{
+  "observed_at": "2026-10-21T18:53:20.256227+00:00",
+  "services": [
+    {
+      "service": "DBN-motive-sync",
+      "expected_slot_utc": "2026-10-21T18:45:00+00:00",
+      "latest_run": {
+        "id": "4bc070c5-9700-4ca8-9ce3-0135b431cd1d",
+        "deploymentId": "f714812c-4fc8-480a-9494-92219e7a12c4",
+        "createdAt": "2026-10-21T10:50:54.492Z",
+        "status": "CRASHED",
+        "durationSeconds": 18
+      },
+      "alerts": [
+        "scheduled_execution_missing",
+        "latest_execution_crashed"
+      ],
+      "import_verified": null
+    },
+    {
+      "service": "DBN-motive-health",
+      "expected_slot_utc": "2026-10-21T18:30:00+00:00",
+      "latest_run": {
+        "id": "88ab88e4-1221-4814-9963-faccb02808a7",
+        "deploymentId": "74fe592a-a1c3-4675-8fa4-afad0669e193",
+        "createdAt": "2026-10-21T06:30:09.965Z",
+        "status": "CRASHED",
+        "durationSeconds": 217
+      },
+      "alerts": [
+        "scheduled_execution_missing",
+        "latest_execution_crashed"
+      ],
+      "import_verified": null
+    },
+    {
+      "service": "DBN-motive-trips",
+      "expected_slot_utc": "2026-10-21T09:15:00+00:00",
+      "latest_run": {
+        "id": "8a7f721c-acf0-489f-ad1b-b0ac6d68b4ca",
+        "deploymentId": "cb0a5cae-aadd-4f8c-804a-e41c4a141f5c",
+        "createdAt": "2026-10-20T21:52:22.382Z",
+        "status": "CRASHED",
+        "durationSeconds": 18
+      },
+      "alerts": [
+        "scheduled_execution_missing",
+        "latest_execution_crashed"
+      ],
+      "import_verified": null
+    },
+    {
+      "service": "DBN-motive-fuel",
+      "expected_slot_utc": "2026-10-21T13:30:00+00:00",
+      "latest_run": {
+        "id": "c74f8765-c9f0-4fc3-ae3f-9fdf8c377c2c",
+        "deploymentId": "c7afd6cb-8807-41f3-aeca-c4b62f05e18d",
+        "createdAt": "2026-10-21T13:31:39.290Z",
+        "status": "CRASHED",
+        "durationSeconds": 150
+      },
+      "alerts": [
+        "latest_execution_crashed",
+        "150_second_exit_needs_startup_evidence"
+      ],
+      "import_verified": null
+    },
+    {
+      "service": "DBN-motive-drivers-safety",
+      "expected_slot_utc": "2026-10-21T13:45:00+00:00",
+      "latest_run": {
+        "id": "a5a8417d-3dae-4423-abeb-e27821e19cac",
+        "deploymentId": "2a92c5d8-6d28-4e8b-93d3-ab09722f1dd5",
+        "createdAt": "2026-10-21T13:49:34.026Z",
+        "status": "CRASHED",
+        "durationSeconds": 150
+      },
+      "alerts": [
+        "latest_execution_crashed",
+        "150_second_exit_needs_startup_evidence"
+      ],
+      "import_verified": null
+    }
+  ]
+}
