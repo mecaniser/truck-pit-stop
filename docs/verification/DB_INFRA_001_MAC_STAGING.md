@@ -220,3 +220,11 @@ completed without changing this baseline or its four container identities.
 Independent QA/Security GO; original observation continues. Public domain/HTTPS
 activation remains blocked on account/network access. See
 [app hosting receipt](DB_INFRA_001_APP_HOSTING.md) for exact evidence and limits.
+
+### Full application test copies
+
+DB-INFRA-002 added separate DieselBridge and TPH database/worker stacks during
+observation. Independent QA/Security accepted their private synthetic runtime;
+original staging identities and baseline remain unchanged. See
+[local app copies](DB_INFRA_002_LOCAL_APP_COPIES.md) for source, worker, persistence
+and provider-exclusion evidence. The original observation is still pending.
