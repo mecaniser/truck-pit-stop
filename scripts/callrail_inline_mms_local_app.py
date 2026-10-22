@@ -30,7 +30,12 @@ def synthetic_image():
     draw.ellipse((105, 220, 205, 320), fill='#202b30')
     draw.ellipse((435, 220, 535, 320), fill='#202b30')
     draw.text((95, 115), 'SYNTHETIC TRUCK PHOTO', fill='#162d30')
-    output = io.BytesIO(); image.save(output, format='PNG'); return output.getvalue()
+    # Genuine JPEG multipicture input; the secondary picture must never render.
+    secondary = Image.new('RGB', image.size, '#ff00ff')
+    exif = Image.Exif(); exif[270] = 'Synthetic private MPO metadata'
+    output = io.BytesIO()
+    image.save(output, format='MPO', save_all=True, append_images=[secondary], exif=exif)
+    return output.getvalue()
 
 
 def synthetic_locator():
@@ -40,19 +45,19 @@ def synthetic_locator():
         'X-Amz-Date': now.strftime('%Y%m%dT%H%M%SZ'), 'X-Amz-Expires': '300',
         'X-Amz-Security-Token': 'synthetic-local-session-token', 'X-Amz-Signature': 'a' * 64,
         'X-Amz-SignedHeaders': 'host', 'response-content-disposition': 'inline',
-        'response-content-type': 'image/png'})
-    return 'https://calltrk-mms-media-prod1.s3.amazonaws.com/synthetic-local-truck.png?' + query
+        'response-content-type': 'image/jpeg'})
+    return 'https://calltrk-mms-media-prod1.s3.amazonaws.com/synthetic-local-truck.jpg?' + query
 
 
 async def respond(request):
     if request.method != 'GET':
         raise RuntimeError('Non-synthetic provider request prohibited')
     if request.url.host == 'calltrk-mms-media-prod1.s3.amazonaws.com':
-        if (request.url.path != '/synthetic-local-truck.png'
+        if (request.url.path != '/synthetic-local-truck.jpg'
             or any(name in request.headers for name in ('authorization', 'cookie', 'referer', 'request-from'))):
             raise RuntimeError('Non-synthetic or credential-bearing object request prohibited')
         callrail_media.signed_object_url(str(request.url))
-        return httpx.Response(200, content=synthetic_image(), headers={'content-type': 'image/png'})
+        return httpx.Response(200, content=synthetic_image(), headers={'content-type': 'image/jpeg'})
     if request.url.host != 'api.callrail.com':
         raise RuntimeError('Non-synthetic provider request prohibited')
     if request.url.path == '/v3/a/ACCsynthetic/text-messages/InlineMmsDemo.json':
