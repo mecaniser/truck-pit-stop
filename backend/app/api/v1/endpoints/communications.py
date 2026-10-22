@@ -5,6 +5,7 @@ from typing import Literal
 from uuid import UUID
 from fastapi import APIRouter, Depends, Header, Query, BackgroundTasks, Response, HTTPException
 from pydantic import BaseModel, Field, field_validator
+from fastapi.responses import JSONResponse
 from sqlalchemy import select, func, and_, or_
 from app.core.dependencies import get_current_active_user, get_db
 from app.db.session import AsyncSessionLocal
@@ -199,3 +200,60 @@ async def patch_sender(conversation_id: UUID, body: SenderPatch, db=Depends(get_
     tenant = await service.authorize(db, user)
     await service.thread_for(db, tenant.id, conversation_id)
     service.fail('sender_managed_automatically', 'Replies use the receiving business number automatically.')
+
+
+async def attachment_context(db, user, conversation_id, message_id):
+    from app.services import callrail_media as media
+    try:
+        tenant = await service.authorize(db, user)
+        thread = await service.thread_for(db, tenant.id, conversation_id)
+        return await media.context_for(db, tenant.id, thread, message_id)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            media.fail('attachment_not_found')
+        exc.headers = {**(exc.headers or {}), **media.HEADERS}
+        raise
+
+
+@router.get('/conversations/{conversation_id}/messages/{message_id}/attachments')
+async def attachment_manifest(conversation_id: UUID, message_id: UUID, response: Response,
+                              db=Depends(get_db), user=Depends(get_current_active_user)):
+    from app.services import callrail_media as media
+    try:
+        context = await attachment_context(db, user, conversation_id, message_id)
+        result = await media.retrieve(context)
+    except HTTPException as exc:
+        return attachment_error(exc)
+    response.headers.update(media.HEADERS)
+    return result
+
+
+@router.get('/conversations/{conversation_id}/messages/{message_id}/attachments/{index}')
+async def attachment_content(conversation_id: UUID, message_id: UUID, index: int,
+                             db=Depends(get_db), user=Depends(get_current_active_user)):
+    from app.services import callrail_media as media
+    try:
+        context = await attachment_context(db, user, conversation_id, message_id)
+        data, content_type = await media.retrieve(context, index)
+    except HTTPException as exc:
+        return attachment_error(exc)
+    extension = 'png' if content_type == 'image/png' else 'jpg'
+    return Response(data, media_type=content_type, headers={**media.HEADERS,
+        'Content-Disposition': f'inline; filename="attachment-{index}.{extension}"'})
+
+
+def attachment_error(exc):
+    """Known, public-safe media failures retain their structured wire contract.
+
+    The global handler intentionally masks unexpected 5xx errors. These exact
+    bounded messages are already sanitized; authentication/other errors still
+    follow the existing handler and its observability behavior.
+    """
+    from app.services import callrail_media as media
+    detail = exc.detail
+    if isinstance(detail, dict):
+        expected = media._ERRORS.get(detail.get('code'))
+        if expected and (exc.status_code, detail.get('message')) == expected:
+            return JSONResponse(status_code=exc.status_code, content={'detail': {
+                'code': detail['code'], 'message': expected[1]}}, headers=media.HEADERS)
+    raise exc

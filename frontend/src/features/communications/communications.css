@@ -1639,3 +1639,56 @@
     font-size: 11px;
   }
 }
+
+:where(.communications-surface) .attachment-caption { white-space: pre-wrap; }
+:where(.communications-surface) .message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+}
+:where(.communications-surface) .attachment-caption + .message-attachments { margin-top: 8px; }
+:where(.communications-surface) .attachment-thumbnail {
+  display: block;
+  padding: 0;
+  width: min(240px, 100%);
+  max-width: 100%;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #edf1f5;
+}
+:where(.communications-surface) .attachment-thumbnail img {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+}
+:where(.communications-surface) .attachment-state {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+:where(.communications-surface) .attachment-state button { text-decoration: underline; padding: 4px; }
+:where(.communications-surface) .attachment-viewer {
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 24px);
+  background: #17283b;
+  color: #fff;
+}
+:where(.communications-surface) .attachment-viewer::backdrop { background: #0b1728d9; }
+:where(.communications-surface) .attachment-viewer-content { position: relative; padding: 48px 12px 12px; }
+:where(.communications-surface) .attachment-viewer img {
+  display: block;
+  max-width: min(1100px, calc(100vw - 48px));
+  max-height: calc(100dvh - 96px);
+  object-fit: contain;
+}
+:where(.communications-surface) .attachment-close { position: absolute; top: 8px; right: 8px; padding: 6px; }
