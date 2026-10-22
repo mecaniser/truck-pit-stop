@@ -36,10 +36,13 @@ describe("authenticated incoming MMS images", () => {
     manifest.mockReturnValueOnce(discovery.promise); content.mockReturnValueOnce(image.promise);
     mount(); expect(screen.getAllByRole("status")).toHaveLength(1);
     expect(screen.getByRole("status")).toHaveTextContent("Loading images…");
+    expect(screen.getByText("Synthetic caption")).toBeInTheDocument();
+    expect(screen.queryByText(notice, { exact: false })).not.toBeInTheDocument();
     await act(async () => discovery.resolve({ items: [{ index: 0, kind: "image" }] }));
     await waitFor(() => expect(content).toHaveBeenCalledTimes(1));
     expect(screen.getAllByRole("status")).toHaveLength(1);
     expect(screen.getByRole("status")).toHaveTextContent("Loading images…");
+    expect(screen.queryByText(notice, { exact: false })).not.toBeInTheDocument();
     await act(async () => image.resolve(blob()));
     await screen.findByRole("img");
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
