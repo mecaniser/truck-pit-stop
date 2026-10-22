@@ -30,7 +30,7 @@
     "screenshot_sha256": "63a039fdc248ddc2ec315af9297a743da94a7939a8a7a48995240a8123a90400",
     "site_control_read": true
   },
-  "definition_of_done": "runtime user objective accepted; focused source PR publication and protected CI remain separate",
+  "definition_of_done": "Mac read-only login objective accepted; source PR638 remains draft pending base integration and protected CI, no merge authorized",
   "historical_preparation_receipt": "VERIFICATION_PREPARATION_HISTORY.json",
   "independent_qa": "GO for actual isolated read-only admin copy; source, exact plans, runtime and authenticated native reads",
   "independent_security": "GO for actual isolated read-only admin copy; source, exact plans, runtime and authenticated native reads",
@@ -74,5 +74,13 @@
     "zero_loss_backup_claimed": false
   },
   "scope": "isolated_real_data_reader_not_live_failover",
+  "source_review": {
+    "base": "codex/mac-staging-server",
+    "draft": true,
+    "initial_head": "088c0db58c16d20a74df75e98635f9cb903fef29",
+    "main_target_ci": "pending_final_integration",
+    "merge_ready": false,
+    "pull_request": "https://github.com/mecaniser/truck-pit-stop/pull/638"
+  },
   "version": 2
 }
