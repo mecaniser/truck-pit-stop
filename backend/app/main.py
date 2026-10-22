@@ -1,6 +1,7 @@
 import time
 import traceback
 import secrets
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -117,7 +118,10 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    if is_receipt_path(request.url.path):
+    private_attachment = re.fullmatch(
+        r'/api/v1/communications/conversations/[^/]+/messages/[^/]+/attachments(?:/[^/]+)?/?',
+        request.url.path) is not None
+    if is_receipt_path(request.url.path) or private_attachment:
         # Also covers early middleware errors, before the private route runs.
         response.headers["Cache-Control"] = "private, no-store, max-age=0"
         response.headers["Pragma"] = "no-cache"

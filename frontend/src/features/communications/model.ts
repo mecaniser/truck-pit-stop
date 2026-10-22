@@ -36,6 +36,7 @@ export interface Message {
   deliveryStatus: DeliveryStatus;
   errorCode?: string;
   sendOperationId?: string;
+  hasAttachments?: boolean;
 }
 export interface Conversation {
   version?: number;
