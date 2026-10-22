@@ -1,6 +1,6 @@
 # DB-INFRA-005 — TPH Mac backup rehearsal
 
-Owner: Release & Reliability. Branch: `codex/tph-mac-backup`. Status: synthetic rehearsal accepted; **live backup activation blocked**.
+Owner: Release & Reliability. Branch: `codex/tph-mac-backup`. [Draft PR623](https://github.com/mecaniser/truck-pit-stop/pull/623) targets the unmerged PR622 branch `codex/mac-test-deploy`; no main merge or production release. Status: synthetic rehearsal accepted; **live backup activation blocked**.
 
 ## User requirement and boundary
 
