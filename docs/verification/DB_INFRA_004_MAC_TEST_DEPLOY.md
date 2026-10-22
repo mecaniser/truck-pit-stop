@@ -135,4 +135,23 @@ clone4parts20events; Redis13/14 worker queues zero. TPH Mongo job1attempt1,
 unpublished draft1/published0/scheduled0 unchanged. QA observed301samples with
 zero soak issues. Reviewers performed no app mutations, jobs or production action.
 
-Security final runtime gate and draft PR identity follow below.
+Security independently accepted final runtime and committed evidence at169e05b9:
+all twelve protected containers/baseline unchanged, no active transaction, original
+relation access still denied, delivery/outbox/SMS/notification counts zero,
+receipt/execution1/1, Redis14 task queues absent and web external egress blocked.
+Installed executable modes/bytes and remote helper hashes match reviewed sources.
+All27 committed text files were compared with actual private gate/stack/clone
+credential values in memory: zero matches. Both screenshots contain synthetic
+fixtures only. Security observed303samples/zero issues at04:11:59UTC, still pending
+full24hours. No production deployment approval is implied.
+
+### Source and review state
+
+Draft PR622: https://github.com/mecaniser/truck-pit-stop/pull/622, targets
+`codex/mac-staging-server`; PR619 into main remains open. PR621 had independently
+merged into staging as549c609e. The implementation branch was rebased onto that
+identical base tree; before/after full trees match, so reviewed/deployed source
+was unchanged. Source/runtime gates apply to the app/command artifacts above;
+this final follow-up adds only review/PR bookkeeping. No main merge or Railway
+deploy was performed. Operational Mac-only deployment is accepted; production
+release and original24-hour acceptance remain separate.
