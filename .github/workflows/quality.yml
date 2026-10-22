@@ -24,7 +24,7 @@ jobs:
       frontend_required: ${{ steps.scope.outputs.frontend_required }}
       smoke_required: ${{ steps.scope.outputs.smoke_required }}
     # Scope and safety contracts must not queue behind long application suites.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -82,9 +82,9 @@ jobs:
   backend-tests:
     name: Backend tests
     needs: migration-graph
-    # Forks retain all checks on free hosted runners. VM isolation is the
-    # security boundary even if a fork edits this routing expression.
-    runs-on: ${{ fromJSON(needs.migration-graph.outputs.backend_required != 'false' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
+    # PRs use standard hosted capacity; local slots serve scheduled/manual
+    # regression only. VM isolation remains the local security boundary.
+    runs-on: ${{ fromJSON(needs.migration-graph.outputs.backend_required != 'false' && github.event_name != 'pull_request' && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-24.04"]') }}
     steps:
       - name: Scoped PR; backend suite not affected
         if: needs.migration-graph.outputs.backend_required == 'false'
@@ -116,9 +116,9 @@ jobs:
   backend-full-suite:
     name: Backend full suite (informational)
     needs: migration-graph
-    # Forks retain all checks on free hosted runners. VM isolation is the
-    # security boundary even if a fork edits this routing expression.
-    runs-on: ${{ fromJSON(needs.migration-graph.outputs.backend_required != 'false' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
+    # PRs use standard hosted capacity; local slots serve scheduled/manual
+    # regression only. VM isolation remains the local security boundary.
+    runs-on: ${{ fromJSON(needs.migration-graph.outputs.backend_required != 'false' && github.event_name != 'pull_request' && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-24.04"]') }}
     steps:
       - name: Scoped PR; backend suite not affected
         if: needs.migration-graph.outputs.backend_required == 'false'
@@ -142,9 +142,9 @@ jobs:
   frontend-dependencies:
     name: Prepare frontend dependencies
     needs: migration-graph
-    # Forks retain all checks on free hosted runners. VM isolation is the
-    # security boundary even if a fork edits this routing expression.
-    runs-on: ${{ fromJSON(needs.migration-graph.outputs.frontend_required != 'false' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
+    # PRs use standard hosted capacity; local slots serve scheduled/manual
+    # regression only. VM isolation remains the local security boundary.
+    runs-on: ${{ fromJSON(needs.migration-graph.outputs.frontend_required != 'false' && github.event_name != 'pull_request' && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-24.04"]') }}
     steps:
       - name: Markdown-only PR; application suite not affected
         if: needs.migration-graph.outputs.frontend_required == 'false'
@@ -181,9 +181,9 @@ jobs:
     needs: [migration-graph, frontend-dependencies]
     # A failed preparation must FAIL a required context, never merely skip it.
     if: always() && !cancelled()
-    # Forks retain all checks on free hosted runners. VM isolation is the
-    # security boundary even if a fork edits this routing expression.
-    runs-on: ${{ fromJSON(needs.migration-graph.outputs.frontend_required != 'false' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
+    # PRs use standard hosted capacity; local slots serve scheduled/manual
+    # regression only. VM isolation remains the local security boundary.
+    runs-on: ${{ fromJSON(needs.migration-graph.outputs.frontend_required != 'false' && github.event_name != 'pull_request' && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-24.04"]') }}
     steps:
       - name: Require successful prerequisites
         env:
@@ -233,9 +233,9 @@ jobs:
   frontend-full-suite:
     name: Frontend full suite (informational)
     needs: [migration-graph, frontend-dependencies]
-    # Forks retain all checks on free hosted runners. VM isolation is the
-    # security boundary even if a fork edits this routing expression.
-    runs-on: ${{ fromJSON(needs.migration-graph.outputs.frontend_required != 'false' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
+    # PRs use standard hosted capacity; local slots serve scheduled/manual
+    # regression only. VM isolation remains the local security boundary.
+    runs-on: ${{ fromJSON(needs.migration-graph.outputs.frontend_required != 'false' && github.event_name != 'pull_request' && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-24.04"]') }}
     steps:
       - name: Markdown-only PR; application suite not affected
         if: needs.migration-graph.outputs.frontend_required == 'false'
@@ -263,9 +263,9 @@ jobs:
   playwright-smoke:
     name: Playwright smoke
     needs: [migration-graph, frontend-checks, backend-tests]
-    # Forks retain all checks on free hosted runners. VM isolation is the
-    # security boundary even if a fork edits this routing expression.
-    runs-on: ${{ fromJSON(needs.migration-graph.outputs.smoke_required != 'false' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
+    # PRs use standard hosted capacity; local slots serve scheduled/manual
+    # regression only. VM isolation remains the local security boundary.
+    runs-on: ${{ fromJSON(needs.migration-graph.outputs.smoke_required != 'false' && github.event_name != 'pull_request' && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-24.04"]') }}
     timeout-minutes: 25
     services:
       postgres:
