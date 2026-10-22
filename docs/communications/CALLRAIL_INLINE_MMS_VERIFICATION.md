@@ -33,3 +33,9 @@ PR627 head`e97bebb18700f1deed1bafb49cc2230115a61df7`, run39830751878: migration,
 ## Current-main integration prepared
 
 Local merge80556e05 incorporates main4ddf8d86 and preserves both board histories. MMS application/test/fixture content is byte-identical to independently reviewed e97bebb1; no CI policy/test/deadline change. Later PR623 smoke job120015667506 successfully downloaded the same pinned ECR Postgres image at18:41UTC and passed5 tests, providing evidence that the prior registry limit has recovered. Publication and one new-head automatic CI set wait for the coordinator to release the serial619/622 hold. No production changes.
+
+## Repeated ECR setup failure and source correction
+
+Current-main headc734188d/run39837492814 reproduced ECR `Data limit exceeded` before checkout/tests, despite623 intervening success. No old-head retry. Canonical Docker Hub raw manifests independently retrieved with `docker buildx imagetools inspect --raw`; SHA256 hashes exactly equal existing Postgres c961aa287d8698297cb26cdfadfbe9fd2cbaf77e53cfffe9636e8d8a1e4d842c and Redis858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499 pins. Proposed correction changes only image registry host to docker.io/library; immutable images and all service/test/runner/deadline settings remain identical. Fresh independent gate and protected corrected-head CI required.
+
+Fresh independent QA/Security GO: exact workflow byte comparison proves only the two registry hosts change; independently fetched manifests match both immutable pins and contain Linux amd64 entries. actionlint and diff checks pass. Reviewed MMS app/test/fixture diff against prior GO remains empty. Run39837492814 completed with all application gates passed and smoke setup failure retained; publish one corrected candidate, no duplicate dispatch.
