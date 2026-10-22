@@ -1,0 +1,10 @@
+# Reuse the accepted public-origin frontend and native application dependencies.
+# The guarded CORS change affects only this new immutable test web image.
+# build_tph_cors.py verifies the local alias equals the full accepted image ID.
+ARG BASE_IMAGE=macapps-tph-public-base:7b25bcd8c6688cf695ffed53f067e16528184b9a60e954d4d72121477f9d8690
+FROM ${BASE_IMAGE}
+USER root
+WORKDIR /usr/src/app
+COPY public-host.cjs /tmp/public-host.cjs
+RUN SQUARE_ENVIRONMENT=sandbox node /tmp/public-host.cjs
+USER node

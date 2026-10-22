@@ -1,0 +1,14 @@
+{
+  "checked_at": "2026-10-22T00:56:31.464125+00:00",
+  "tls_chain_and_hostnames": true,
+  "gate_native_auth_and_negatives": true,
+  "native_bearer_preserved": true,
+  "db_secure_cookies": true,
+  "tenant_denials_both_directions": true,
+  "cross_host_gate_denied": true,
+  "logout_denied_afterwards": true,
+  "public_readiness_and_unknown_hosts_denied": true,
+  "synthetic_business_mutations": false,
+  "canonical_origin_fixture_only": true,
+  "public_browser_acceptance": false
+}
