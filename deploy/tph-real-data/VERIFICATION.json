@@ -1,0 +1,78 @@
+{
+  "archive": {
+    "bytes": 17398592,
+    "captured_at": "2026-10-22T21:48:17.130597Z",
+    "collections": 78,
+    "documents": 136410,
+    "full_raw_document_multiset_match": true,
+    "indexes": 556,
+    "sha256": "caf0a0fcdcbf70d9bcf7b237610327938687a0f8081907290f4eb025c5267fba"
+  },
+  "at": "2026-10-22T23:45:22.425930+00:00",
+  "auth": {
+    "allowed_pin_usage_fields": [
+      "lastUsedAt",
+      "updatedAt",
+      "usageCount"
+    ],
+    "mac_client": "vdyn414odhKwyDvsiNCSssA0In0Lc1i2",
+    "native_admin_pin_and_frontend_auth0_session": "verified_by_user_and_owner_browser",
+    "pin_hashes_preserved": true,
+    "pin_usage_delta": 3,
+    "protected_backend_bearer": "verified through native authenticated PIN metadata UI and independently inspected running-image route guards"
+  },
+  "browser_acceptance": {
+    "business_action_clicked": false,
+    "credential_or_token_extracted": false,
+    "masked_pin_metadata_read": true,
+    "native_admin_pin_and_auth0_password": true,
+    "property_lead_read": true,
+    "screenshot_sha256": "63a039fdc248ddc2ec315af9297a743da94a7939a8a7a48995240a8123a90400",
+    "site_control_read": true
+  },
+  "definition_of_done": "runtime user objective accepted; focused source PR publication and protected CI remain separate",
+  "historical_preparation_receipt": "VERIFICATION_PREPARATION_HISTORY.json",
+  "independent_qa": "GO for actual isolated read-only admin copy; source, exact plans, runtime and authenticated native reads",
+  "independent_security": "GO for actual isolated read-only admin copy; source, exact plans, runtime and authenticated native reads",
+  "local_checks": {
+    "maintenance_python_tests": 25,
+    "native_jwt_dependency_used": true,
+    "node_skipped": 0,
+    "node_tests": 16,
+    "original_python_tests": 105
+  },
+  "maintenance": {
+    "actual_run_at_load_refresh_verified": true,
+    "approval_sha256": "8f9c1cf91055aa2a8a714dc4b460071e29298958d805be2227afd9a294aa66f0",
+    "failed_fetch_extends_expiry": false,
+    "gateway_cid": "3825627b618aaa822dd0f698d9b54708e09c2d944dc987c546fcbc2fe1f1f769",
+    "interval_seconds": 900,
+    "mongo_cid": "c73ebffa80e5c221d54929ed71c71425bcc726646a172b18e48e23f95ea11a9c",
+    "original_evidence_preserved": true,
+    "plan_sha256": "7adf5ce062ab86e35409265da7b9d365062d0aec83b2b8ea4567a9bc0741e6db",
+    "public_key_refresh_label": "com.macapps.tph.auth0-public-keys",
+    "receipt_sha256": "426d53444bcfbaa34feba75ea3013e5fb96d5fb642f221b85e1fc3ae852f3a84",
+    "runner_sha256": "8c891b345137edeb7920af88eee4eacf6986a5f527fc2a3be27c38088b396591",
+    "served_javascript_exact_and_syntax_valid": 172,
+    "status": "runtime_and_authenticated_read_acceptance_passed",
+    "web_cid": "306ac163d8f32652baa602d591ecf3abedfdda18f1ad73abd9ea459ae62a93f5"
+  },
+  "native_source": "b369e9f5e28584ba99f1cbe35d8f65080a51aeda",
+  "public_cutover": {
+    "hydrated_signin": true,
+    "plan_sha256": "0e0f9b9c8a806e3dfcf8bad3037c4ad422a23edb45e914660f84ff6c82d4ec3c",
+    "receipt_sha256": "19e2583f90274430cedbb79e98bdc7d256a6ce40dbff3fb3e06513a86463b348"
+  },
+  "safety": {
+    "business_writes_enabled": false,
+    "live_switching_allowed": false,
+    "native_workers_enabled": false,
+    "production_domain_changed": false,
+    "railway_changed": false,
+    "real_messages_enabled": false,
+    "real_payments_enabled": false,
+    "zero_loss_backup_claimed": false
+  },
+  "scope": "isolated_real_data_reader_not_live_failover",
+  "version": 2
+}

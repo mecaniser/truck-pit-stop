@@ -1,0 +1,76 @@
+{
+  "admin_password_login": "blocked; Auth0 SPA/JWKS prerequisite separate",
+  "archive": {
+    "bytes": 17398592,
+    "sha256": "caf0a0fcdcbf70d9bcf7b237610327938687a0f8081907290f4eb025c5267fba",
+    "source_db": "ParkRightDB",
+    "target_db": "tph_local_test"
+  },
+  "at": "2026-10-22T22:10:43.647160+00:00",
+  "base_sha": "be9bac55e025825f1d243831a51b8a976a3b3030",
+  "checks": {
+    "diff_check": true,
+    "focused_tests": 23,
+    "inventory_tests": 14,
+    "node_syntax": true,
+    "prepare_tests": 9,
+    "python_compile": true
+  },
+  "independent_qa": "pending",
+  "independent_security": "pending",
+  "network_contract": {
+    "existing_network_delete": false,
+    "existing_network_reuse": false,
+    "ingress": "10.240.65.0/24",
+    "isolated": "10.240.64.0/24"
+  },
+  "parent_reported_readonly_network_preflight": {
+    "docker_bridge_subnets": [
+      "172.17..31/16",
+      "192.168/20 pools"
+    ],
+    "host_routes": [
+      "default via192.168.4.1",
+      "en0 LAN192.168.4.0/22",
+      "loopback127/8",
+      "link-local169.254/16",
+      "multicast224/4"
+    ],
+    "no_10_8_or_vpn_route": true,
+    "no_existing_10_240_overlap": true,
+    "provenance": "parent handoff; independently reviewed fresh preflight still required for runtime approval"
+  },
+  "phase1_plan_version": 3,
+  "public_upstream_changed": false,
+  "restore_executed": false,
+  "runtime_executed": false,
+  "runtime_root": "/Users/sergio/mac-hosting/tph-real-data-v3",
+  "scope": "local-source-only; Phase1 preparation/newMongo/restore/inventory approval distinct from Phase2 web/role/gateway",
+  "source_sha256": {
+    "COMMANDS.md": "a73d47993e9d06c25a7ae6efa4dd3aa3166eaeae433d97acd0d64ba7f700d1f4",
+    "README.md": "ee0d80041bc1d4d84070ff6ff15ccb8a75bec0fbe3421c87bf09ba4fdc65254c",
+    "archive_inventory.py": "9e6d39ab8cd35752ed1f1052536ef6ab74a6e64e5a09b8296c2d9d307480c56f",
+    "clone-web.cjs": "0a77fc854960197c50b6f400548efe54d1f2186f14f3ef1c371374e35694a615",
+    "prepare.py": "b8542576952cd4aa45e146b30d2b9d7080e4df27580e225f4821421e1163b389",
+    "target_inventory.cjs": "9e1418f5d955554f40722b0e2ff25e8251eb888fa7569c8bbe465c8d8611f312",
+    "test_archive_inventory.py": "0045bd880739ca2b6e2a7edbe48f0097b0f0eba12561891be30661d83a528acf",
+    "test_prepare.py": "241f10e0b66c074ea74056b74e77b16b6f7f9f8907d1a41d86c6ce3d4bc33fd0"
+  },
+  "superseded_prepared_root": {
+    "path": "/Users/sergio/mac-hosting/tph-real-data",
+    "plan_sha256_prefix": "a580",
+    "preserved": true,
+    "reason": "Docker default address pool exhausted; no service start attempted"
+  },
+  "superseded_v2": {
+    "integrity_accepted": false,
+    "parent_observed_remaining_documents": 136376,
+    "parent_observed_restored_documents": 136410,
+    "parent_verified_ttl_deleted_documents": 34,
+    "path": "/Users/sergio/mac-hosting/tph-real-data-v2",
+    "plan_sha256": "e0f718f331b0134fbff55041daf92a6fa2656104b44549da6b596794988f4207",
+    "preserved": true
+  },
+  "ttl_monitor_enabled": false,
+  "version": 1
+}
