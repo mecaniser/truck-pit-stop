@@ -1,3 +1,4 @@
+const {closeBrowser,phase,openTasks,failed}=require('../motive_sync/tasks.cjs');
 /* Rendered Motive Health UI only. No private endpoints or extracted sessions. */
 const fs=require('node:fs');
 const {readVehicleVin}=require('../motive_sync/collect_trips.cjs');
@@ -139,38 +140,46 @@ function save(output,value){const tmp=output+'.tmp';fs.writeFileSync(tmp,JSON.st
 async function collect(output) {
  if(!process.env.MOTIVE_EMAIL||!process.env.MOTIVE_PASSWORD)throw new Error('missing_credentials');
  const {chromium}=require('../motive_sync/node_modules/playwright');
+ phase('browser_launch');
  const browser=await chromium.launch({headless:true});
  const result={version:1,company_label:COMPANY,company_id:COMPANY_ID,company_verified_before:false,company_verified_after:false,timezone_evidence:null,started_at:new Date().toISOString(),finished_at:null,health_directory_count:null,terminal_evidence:null,complete:false,vehicles:[]};save(output,result);
  try {
   const context=await browser.newContext({timezoneId:'America/New_York',locale:'en-US'});
   const page=await context.newPage();page.setDefaultTimeout(15000);
+  phase('login');
   await page.goto(ORIGIN,{waitUntil:'domcontentloaded',timeout:45000});await page.waitForURL('https://auth.gomotive.com/login**',{timeout:30000});
   if(new URL(page.url()).origin!=='https://auth.gomotive.com')throw new Error('login_origin');
   await page.locator('input[name="user_profile[email]"]').fill(process.env.MOTIVE_EMAIL);await page.locator('input[name="user_profile[password]"]').fill(process.env.MOTIVE_PASSWORD);
   await page.getByRole('button',{name:'Log in',exact:true}).click();await page.waitForURL('https://app.gomotive.com/**',{timeout:45000});
   async function company(){const p=await context.newPage();try{await p.goto(ORIGIN+'/en-US/#/admin/company',{waitUntil:'domcontentloaded'});await p.getByText(/KT8934277/).waitFor({timeout:30000});const text=await p.locator('body').innerText();if(!text.includes(COMPANY)||!text.includes(COMPANY_ID))throw new Error('company_mismatch');}finally{await p.close();}}
+  phase('company_before');
   await company();result.company_verified_before=true;save(output,result);
+  phase('timezone');
   await page.goto(ORIGIN+'/en-US/#/settings',{waitUntil:'domcontentloaded'});await page.getByText(/Eastern Time - New York/).waitFor({timeout:30000});result.timezone_evidence=await page.getByText('Time zone',{exact:true}).evaluate(el=>el.parentElement.innerText);
   if(!result.timezone_evidence.includes('Eastern Time - New York'))throw new Error('timezone_unverified');
   const listPage=await healthPage(context);let directory;
   try{directory=await inventory(listPage);}finally{await listPage.close();}
   result.health_directory_count=directory.count;result.terminal_evidence=directory.terminal_evidence;save(output,result);
+  const tasks=openTasks(output,{kind:'health',company:COMPANY_ID,timezone:'America/New_York',directory:directory.rows},{maxAgeMs:30*60*1000});result.started_at=tasks.startedAt;
   const vins=new Set();
   for(const identity of directory.rows) {
    const vin=await readVehicleVin(context,identity);if(vin&&vins.has(vin))throw new Error('duplicate_vin');if(vin)vins.add(vin);
-   const observation=vin?await vehicleCodes(context,identity):{state:'unavailable',count_before:null,count_after:null,explicit_empty:false,codes:[],reason:'vin_unavailable'};
+   const observation=vin?await tasks.run('health_vehicle',[identity.href,vin],async()=>({...(await vehicleCodes(context,identity)),source_read_at:new Date().toISOString()}),{cacheable:row=>row.state==='captured'}):{state:'unavailable',count_before:null,count_after:null,explicit_empty:false,codes:[],reason:'vin_unavailable'};
    result.vehicles.push({provider_vehicle_id:identity.href.split('/').pop(),unit:identity.unit,vin,source_read_at:new Date().toISOString(),source_scope:SCOPE,...observation});save(output,result);
    console.log(JSON.stringify({stage:'health_progress',attempted:result.vehicles.length,total:directory.count}));
   }
+  tasks.assertFresh();phase('health_directory_after');
   const checkPage=await healthPage(context);let finalDirectory;
   try{finalDirectory=await inventory(checkPage);}finally{await checkPage.close();}
   if(JSON.stringify(finalDirectory.rows.map(r=>[r.href,r.unit]).sort())!==JSON.stringify(directory.rows.map(r=>[r.href,r.unit]).sort()))throw new Error('health_directory_changed');
-  await company();result.company_verified_after=true;result.complete=true;result.finished_at=new Date().toISOString();save(output,result);return result;
- }finally{await browser.close();}
+  tasks.assertFresh();
+  phase('company_after');
+  await company();tasks.assertFresh();result.company_verified_after=true;result.complete=true;result.finished_at=new Date().toISOString();save(output,result);return result;
+ }finally{await closeBrowser(browser);}
 }
 function safeReason(error) {
  const known=['count_unavailable','count_invalid','card_scope_invalid','empty_contradiction','details_unavailable','code_layout_changed','occurrence_invalid','duplicate_code','count_mismatch','health_layout_changed','health_count_unavailable','health_directory_changed','health_identity_invalid','duplicate_provider','health_source_changed','health_identity_changed','health_pagination_unavailable','health_directory_incomplete','health_row_missing','code_limit','session_lost','missing_credentials','login_origin','company_mismatch','timezone_unverified','duplicate_vin'];
  return known.includes(error?.message)?error.message:error?.name==='TimeoutError'?'ui_timeout':'health_data_unavailable';
 }
-if(require.main===module){if(!process.argv[2]){console.error('Output file required');process.exitCode=1;}else collect(process.argv[2]).then(r=>console.log(JSON.stringify({stage:'health_collection_complete',complete:r.complete,vehicles:r.vehicles.length}))).catch(error=>{console.error(JSON.stringify({stage:'health_collection_failed',reason:safeReason(error),import_permitted:false}));process.exitCode=1;});}
+if(require.main===module){if(!process.argv[2]){console.error('Output file required');process.exitCode=1;}else collect(process.argv[2]).then(r=>console.log(JSON.stringify({stage:'health_collection_complete',complete:r.complete,vehicles:r.vehicles.length}))).catch(error=>{failed(process.argv[2],error);console.error(JSON.stringify({stage:'health_collection_failed',reason:safeReason(error),import_permitted:false}));process.exitCode=1;});}
 module.exports={collect,parseCount,parseCard,validateCounts,validateInventory,vehicleCodes,safeReason};

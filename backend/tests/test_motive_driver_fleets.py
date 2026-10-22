@@ -8,7 +8,6 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-
 from scripts.motive_drivers import run_fleets
 
 
@@ -109,45 +108,166 @@ def test_single_fleet_keeps_existing_file_or_database_mode():
         )
 
 
-def test_runs_sequential_children_and_stops_on_failure(monkeypatch, capsys):
-    source = environment()
-    source[run_fleets.EXTRA_FLEETS] = json.dumps([str(uuid4()), str(uuid4())])
-    monkeypatch.setattr(run_fleets.os, "environ", source)
-    calls = []
+@pytest.fixture
+def batch_harness(monkeypatch, tmp_path):
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
 
-    def child(command, **kwargs):
-        calls.append(kwargs["env"])
-        assert command == [sys.executable, "-m", "scripts.motive_drivers.run_worker"]
-        assert kwargs["check"] is True
-        assert kwargs["timeout"] == 2400
-        if len(calls) == 2:
-            raise subprocess.CalledProcessError(1, command, stderr="PRIVATE_TEST_VALUE")
+    from scripts.motive_drivers import journal, run_worker, runner
 
-    monkeypatch.setattr(run_fleets.subprocess, "run", child)
-    with pytest.raises(SystemExit) as result:
-        run_fleets.main()
-    assert result.value.code == 1
-    assert len(calls) == 2
-    assert json.loads(capsys.readouterr().out) == {
-        "stage": "fleet_worker_failed",
-        "fleet_ordinal": 2,
-        "fleet_count": 3,
+    source = {
+        **environment(),
+        "MOTIVE_DRIVER_STATE_DIR": str(tmp_path),
+        "MOTIVE_DRIVER_COMMIT": "true",
+    }
+    events = []
+    stores = []
+    documents = []
+
+    @asynccontextmanager
+    async def locked(engine, identity, key):
+        async def pending():
+            return []
+
+        store = SimpleNamespace(identity=identity, worker_key=key, pending=pending)
+        stores.append(store)
+        events.append(("lock", key))
+        try:
+            yield store
+        finally:
+            events.append(("unlock", key))
+
+    async def authorize(factory, identity):
+        events.append(("authorize", identity.customer_id))
+
+    async def prepare(journals, document, **kwargs):
+        events.append(("prepare", len(journals)))
+        assert kwargs["commit"] is True
+        documents.append(document)
+        return [object() for _ in journals]
+
+    async def project(
+        factory, document, tenant, actor, company_label, company_id, receipt, **kwargs
+    ):
+        events.append(("project", kwargs["expected_customer_id"]))
+        assert document is documents[0]
+        assert kwargs["commit"] is True
+        return {"stage": "verified", "committed": True}
+
+    async def recover(store, factory, **kwargs):
+        events.append(("recover", store.identity.customer_id))
+        return len(await store.pending())
+
+    def collect(command, **kwargs):
+        events.append(("collect", command[0]))
+        assert (
+            command[0] == "node"
+            and kwargs["timeout"] == 1500
+            and kwargs["check"] is True
+        )
+        from tests.test_motive_driver_worker import document
+
+        Path(command[-1]).write_text(json.dumps(document()))
+
+    monkeypatch.setattr(journal, "database_journal", locked)
+    monkeypatch.setattr(journal, "authorize_configuration", authorize)
+    monkeypatch.setattr(journal, "prepare_batch", prepare)
+    monkeypatch.setattr(runner, "run", project)
+    monkeypatch.setattr(run_worker, "recover_database", recover)
+    monkeypatch.setattr(run_fleets, "read_process", collect)
+    return source, events, stores, runner, journal
+
+
+@pytest.mark.asyncio
+async def test_one_source_prepared_for_every_fleet_before_any_projection(
+    batch_harness, capsys
+):
+    source, events, _stores, _, _ = batch_harness
+    children = run_fleets.fleet_environments(source)
+    await run_fleets.database_fleets(children, engine=object(), factory=object())
+    names = [event[0] for event in events]
+    assert names.count("collect") == 1
+    assert names.count("authorize") == 2 and names.count("project") == 2
+    assert max(i for i, n in enumerate(names) if n == "authorize") < names.index(
+        "collect"
+    )
+    assert names.index("prepare") < names.index("project")
+    assert names.count("unlock") == 2
+    result = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert result == {
+        "stage": "fleets_complete",
+        "fleet_count": 2,
+        "source_collections": 1,
     }
 
 
-def test_success_preserves_explicit_commit_and_reports_complete(monkeypatch, capsys):
-    source = {**environment(), "MOTIVE_DRIVER_COMMIT": "true"}
-    monkeypatch.setattr(run_fleets.os, "environ", source)
-    calls = []
-    monkeypatch.setattr(
-        run_fleets.subprocess, "run", lambda *a, **kw: calls.append(kw["env"])
+@pytest.mark.asyncio
+async def test_failed_projection_stops_without_recollecting_and_releases_all_locks(
+    batch_harness,
+):
+    source, events, _, runner, _ = batch_harness
+
+    async def fail(*args, **kwargs):
+        events.append(("failed_projection", kwargs["expected_customer_id"]))
+        raise OSError("PRIVATE_TEST_VALUE")
+
+    monkey = pytest.MonkeyPatch()
+    monkey.setattr(runner, "run", fail)
+    try:
+        with pytest.raises(OSError):
+            await run_fleets.database_fleets(
+                run_fleets.fleet_environments(source), engine=object(), factory=object()
+            )
+    finally:
+        monkey.undo()
+    names = [event[0] for event in events]
+    assert names.count("collect") == 1 and names.count("prepare") == 1
+    assert names.count("failed_projection") == 1 and names.count("unlock") == 2
+
+
+@pytest.mark.asyncio
+async def test_authority_failure_prevents_browser_and_any_projection(
+    batch_harness, monkeypatch
+):
+    source, events, _, _, journal = batch_harness
+
+    async def denied(*args):
+        raise ValueError("tenant denied")
+
+    monkeypatch.setattr(journal, "authorize_configuration", denied)
+    with pytest.raises(ValueError):
+        await run_fleets.database_fleets(
+            run_fleets.fleet_environments(source), engine=object(), factory=object()
+        )
+    assert not any(e[0] in {"collect", "prepare", "project"} for e in events)
+    assert events[-1][0] == "unlock"
+
+
+@pytest.mark.asyncio
+async def test_pending_commit_recovery_runs_before_new_reads_and_returns_precise_status(
+    batch_harness, monkeypatch, capsys
+):
+    source, events, _, _, journal = batch_harness
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def locked(engine, identity, key):
+        from types import SimpleNamespace
+
+        async def pending():
+            return [object()]
+
+        yield SimpleNamespace(identity=identity, worker_key=key, pending=pending)
+
+    monkeypatch.setattr(journal, "database_journal", locked)
+    await run_fleets.database_fleets(
+        run_fleets.fleet_environments(source), engine=object(), factory=object()
     )
-    run_fleets.main()
-    assert len(calls) == 2
-    assert all(child["MOTIVE_DRIVER_COMMIT"] == "true" for child in calls)
+    assert len([e for e in events if e[0] == "recover"]) == 2
+    assert not any(e[0] in {"collect", "prepare", "project"} for e in events)
     assert json.loads(capsys.readouterr().out) == {
-        "stage": "fleets_complete",
-        "fleet_count": 2,
+        "stage": "fleet_recovery_complete",
+        "fresh_collection": False,
     }
 
 
@@ -168,4 +288,36 @@ def test_invalid_configuration_cli_never_logs_private_values():
     assert result.returncode == 1
     assert "PRIVATE_TEST_VALUE" not in result.stdout + result.stderr
     assert "Traceback" not in result.stdout + result.stderr
-    assert json.loads(result.stdout)["code"] == "invalid_fleet_configuration"
+    assert (
+        json.loads(result.stdout.splitlines()[-1])["code"]
+        == "invalid_fleet_configuration"
+    )
+
+
+@pytest.mark.asyncio
+async def test_source_age_is_checked_again_before_each_fleet_projection(
+    batch_harness, monkeypatch
+):
+    from datetime import timedelta
+
+    from app.services import fleet_telemetry
+
+    source, events, _, runner, _ = batch_harness
+    original = runner.run
+
+    async def slow_first(*args, **kwargs):
+        result = await original(*args, **kwargs)
+        stamp = fleet_telemetry.now()
+        monkeypatch.setattr(
+            fleet_telemetry, "now", lambda: stamp + timedelta(minutes=31)
+        )
+        return result
+
+    monkeypatch.setattr(runner, "run", slow_first)
+    with pytest.raises(ValueError, match="fresh projection window"):
+        await run_fleets.database_fleets(
+            run_fleets.fleet_environments(source), engine=object(), factory=object()
+        )
+    assert len([e for e in events if e[0] == "collect"]) == 1
+    assert len([e for e in events if e[0] == "project"]) == 1
+    assert len([e for e in events if e[0] == "unlock"]) == 2

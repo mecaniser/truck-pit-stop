@@ -1,3 +1,5 @@
+const {readVehicleVin}=require('./collect_trips.cjs');
+const {closeBrowser,phase,openTasks,failed,atomic}=require('./tasks.cjs');
 /* Visible Motive UI only. No application internals, cookies or private endpoints. */
 const fs=require('node:fs');
 const {allowlist,isReviewed,readReviewedPageIdentity,readReviewedIdentity,sameIdentity,assertNoLiveVin}=require('./vehicle_identity.cjs');
@@ -149,13 +151,15 @@ async function collect(output){
  if(!process.env.MOTIVE_EMAIL||!process.env.MOTIVE_PASSWORD)throw new Error('missing_credentials');
  const reviewedProviders=allowlist();
  const {chromium}=require('playwright');
+ phase('browser_launch');
  const browser=await chromium.launch({headless:true});
  const result={company_label:COMPANY,company_id:COMPANY_ID,company_verified_before:false,company_verified_after:false,complete:false,started_at:new Date().toISOString(),vehicles:[]};
- const save=()=>fs.writeFileSync(output,JSON.stringify(result,null,2),{mode:0o600});
+ const save=()=>atomic(output,result);
  try{
   const context=await browser.newContext({timezoneId:'America/New_York',locale:'en-US'});
   await context.grantPermissions(['clipboard-read','clipboard-write'],{origin:ORIGIN});
   const page=await context.newPage();page.setDefaultTimeout(15000);
+  phase('login');
   await page.goto(ORIGIN,{waitUntil:'domcontentloaded',timeout:45000});
   await page.waitForURL('https://auth.gomotive.com/login**',{timeout:30000});
   if(new URL(page.url()).origin!=='https://auth.gomotive.com')throw new Error('login_origin');
@@ -169,11 +173,14 @@ async function collect(output){
    const text=await page.locator('body').innerText();
    if(!text.includes(COMPANY)||!text.includes(COMPANY_ID))throw new Error('company_mismatch');
   }
+  phase('company_before');
   await company();result.company_verified_before=true;
+  phase('timezone');
   await page.goto(ORIGIN+'/en-US/#/settings',{waitUntil:'domcontentloaded'});
   await page.getByText(/Eastern Time - New York/).waitFor({timeout:30000});
   result.timezone_evidence=await page.getByText('Time zone',{exact:true}).evaluate(e=>e.parentElement.innerText);
   if(!/Eastern Time - New York/.test(result.timezone_evidence))throw new Error('timezone_unverified');
+  phase('vehicle_directory');
   await page.goto(ORIGIN+'/en-US/#/admin/vehicles',{waitUntil:'domcontentloaded'});
   await page.getByText(/Showing \d+ of \d+/).waitFor({timeout:30000});
   const directory=await page.locator('body').innerText();
@@ -183,19 +190,26 @@ async function collect(output){
   // Fail closed on pagination/filters rather than silently call one page fleet-wide.
   if(!total||+total[1]!==+total[2]||vehicles.length!==+total[2]||vehicles.length===0||vehicles.length>250)throw new Error('directory_incomplete');
   result.directory_count=vehicles.length;save();
+  const tasks=openTasks(output,{kind:'location',company:COMPANY_ID,timezone:'America/New_York',vehicles},{maxAgeMs:10*60*1000});result.started_at=tasks.startedAt;
   for(const link of vehicles){
    if(!/^#\/fleetview\/vehicles\/summary\/\d+$/.test(link.href))throw new Error('vehicle_link_invalid');
-   const row=await collectWithRetries(context,link,readVehiclePage,{reviewed:isReviewed(reviewedProviders,COMPANY_ID,link.href.split('/').pop())});
+   const reviewed=isReviewed(reviewedProviders,COMPANY_ID,link.href.split('/').pop());
+   const row=await tasks.run('location_vehicle',link,()=>collectWithRetries(context,link,readVehiclePage,{reviewed}),{attempts:1,cacheable:row=>row.status==='located',validateCached:async cached=>{
+    const proof=reviewed?await readReviewedIdentity(context,link):{vin:await readVehicleVin(context,link)};
+    if(proof.vin!==cached.vin||(cached.vin===null&&proof.source_vin_state!==cached.source_vin_state))throw new Error('vehicle_identity_changed');
+   }});
    result.vehicles.push(row);save();
    console.log(JSON.stringify({stage:'progress',attempted:result.vehicles.length,total:vehicles.length,located:result.vehicles.filter(x=>x.status==='located').length}));
   }
-  await company();result.company_verified_after=true;result.complete=true;result.finished_at=new Date().toISOString();save();
+  tasks.assertFresh();
+  phase('company_after');
+  await company();tasks.assertFresh();result.company_verified_after=true;result.complete=true;result.finished_at=new Date().toISOString();save();
   return result;
- }finally{await browser.close();}
+ }finally{await closeBrowser(browser);}
 }
 if(require.main===module){
  const output=process.argv[2];
  if(!output){console.error('Output file required');process.exitCode=1;}
- else collect(output).then(r=>console.log(JSON.stringify({stage:'collection_complete',complete:r.complete,count:r.vehicles.length,located:r.vehicles.filter(x=>x.status==='located').length}))).catch(()=>{console.error('Motive collection failed; no import permitted');process.exitCode=1;});
+ else collect(output).then(r=>console.log(JSON.stringify({stage:'collection_complete',complete:r.complete,count:r.vehicles.length,located:r.vehicles.filter(x=>x.status==='located').length}))).catch(error=>{failed(output,error);console.error(JSON.stringify({stage:'collection_failed',reason:error?.name==='TimeoutError'?'ui_timeout':'collection_failed',import_permitted:false}));process.exitCode=1;});
 }
 module.exports={collect,vinFrom,coordinates,addressFrom,bindVin,observationTime,stableObservation,collectWithRetries,assertLiveProvider,locationControl,newTooltip,leafTooltipTexts,speedFromParts,readSpeed};
