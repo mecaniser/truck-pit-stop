@@ -2,6 +2,8 @@
 import io
 import os
 from types import SimpleNamespace
+from datetime import datetime, timezone
+from urllib.parse import urlencode
 
 import httpx
 from PIL import Image, ImageDraw
@@ -31,8 +33,27 @@ def synthetic_image():
     output = io.BytesIO(); image.save(output, format='PNG'); return output.getvalue()
 
 
+def synthetic_locator():
+    now = datetime.now(timezone.utc)
+    query = urlencode({'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
+        'X-Amz-Credential': f'SYNTHETIC/{now:%Y%m%d}/us-east-1/s3/aws4_request',
+        'X-Amz-Date': now.strftime('%Y%m%dT%H%M%SZ'), 'X-Amz-Expires': '300',
+        'X-Amz-Security-Token': 'synthetic-local-session-token', 'X-Amz-Signature': 'a' * 64,
+        'X-Amz-SignedHeaders': 'host', 'response-content-disposition': 'inline',
+        'response-content-type': 'image/png'})
+    return 'https://calltrk-mms-media-prod1.s3.amazonaws.com/synthetic-local-truck.png?' + query
+
+
 async def respond(request):
-    if request.method != 'GET' or request.url.host != 'api.callrail.com':
+    if request.method != 'GET':
+        raise RuntimeError('Non-synthetic provider request prohibited')
+    if request.url.host == 'calltrk-mms-media-prod1.s3.amazonaws.com':
+        if (request.url.path != '/synthetic-local-truck.png'
+            or any(name in request.headers for name in ('authorization', 'cookie', 'referer', 'request-from'))):
+            raise RuntimeError('Non-synthetic or credential-bearing object request prohibited')
+        callrail_media.signed_object_url(str(request.url))
+        return httpx.Response(200, content=synthetic_image(), headers={'content-type': 'image/png'})
+    if request.url.host != 'api.callrail.com':
         raise RuntimeError('Non-synthetic provider request prohibited')
     if request.url.path == '/v3/a/ACCsynthetic/text-messages/InlineMmsDemo.json':
         async with AsyncSessionLocal() as db:
@@ -53,7 +74,8 @@ async def respond(request):
                         'https://api.callrail.com/v3/a/ACCsynthetic/text-messages/SCIinlineMmsDemo/media/0']}],
             })
     if request.url.path == '/v3/a/ACCsynthetic/text-messages/SCIinlineMmsDemo/media/0':
-        return httpx.Response(200, content=synthetic_image(), headers={'content-type': 'image/png'})
+        return httpx.Response(302, headers={'location': synthetic_locator(),
+            'set-cookie': 'synthetic-provider-cookie=private; Domain=api.callrail.com'})
     raise RuntimeError('Unknown synthetic media request prohibited')
 
 

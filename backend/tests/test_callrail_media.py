@@ -78,7 +78,7 @@ async def test_manifest_and_content_read_only(receipt, monkeypatch):
     assert await media.retrieve(context) == {'items':[{'index':0,'kind':'image'}]}
     assert len(calls) == 1
     data, kind = await media.retrieve(context, 0)
-    assert kind == 'image/jpeg'
+    assert kind == 'image/png'
     assert Image.open(io.BytesIO(data)).size == (8,9)
     assert before == (message.body, message.created_at, thread.unread_count_staff, thread.last_message_at)
 
@@ -302,7 +302,7 @@ async def test_endpoint_authorization_and_headers(receipt,monkeypatch):
     assert {value.strip() for value in response.headers['cache-control'].split(',')} >= {'private','no-store'}
     image=await api.attachment_content(thread.id,message.id,0,db,object())
     assert image.headers['x-content-type-options']=='nosniff'
-    assert image.headers['content-disposition']=='inline; filename="attachment-0.jpg"'
+    assert image.headers['content-disposition']=='inline; filename="attachment-0.png"'
     async def denied(*args):raise HTTPException(403,detail={'code':'forbidden','message':'Denied.'})
     monkeypatch.setattr(comm,'authorize',denied)
     monkeypatch.setattr(cr,'secret',lambda _:pytest.fail('credentials before authorization'))
@@ -407,7 +407,7 @@ def test_phone_jpeg_orientation_applied_before_metadata_stripping():
     output=io.BytesIO();source.save(output,format='JPEG',exif=exif,quality=100,subsampling=0)
     data,kind=media.decode_raster(output.getvalue(),'image/jpeg')
     result=Image.open(io.BytesIO(data))
-    assert result.size==(24,16) and kind=='image/jpeg'
+    assert result.size==(24,16) and kind=='image/png'
     left=result.getpixel((3,8));right=result.getpixel((20,8))
     assert left[2]>200 and left[0]<50
     assert right[0]>200 and right[2]<50
@@ -415,7 +415,8 @@ def test_phone_jpeg_orientation_applied_before_metadata_stripping():
 
 
 @pytest.mark.asyncio
-async def test_real_app_success_and_early_errors_keep_private_headers(client,receipt,monkeypatch):
+@pytest.mark.parametrize('redirected',[False,True])
+async def test_real_app_success_and_early_errors_keep_private_headers(client,receipt,monkeypatch,redirected):
     from app.main import app
     from app.core.dependencies import get_current_active_user
     db,tenant,binding,thread,message,context=receipt
@@ -424,14 +425,15 @@ async def test_real_app_success_and_early_errors_keep_private_headers(client,rec
     async def current_user():return SimpleNamespace(tenant_id=tenant.id)
     previous=app.dependency_overrides.get(get_current_active_user)
     app.dependency_overrides[get_current_active_user]=current_user
-    mock_provider(monkeypatch,context)
+    if redirected:redirect_provider(monkeypatch,context)
+    else:mock_provider(monkeypatch,context)
     base=f'/api/v1/communications/conversations/{thread.id}/messages/{message.id}/attachments'
     try:
         manifest=await client.get(base)
         content=await client.get(base+'/0')
         invalid=await client.get(base+'/invalid-index')
         assert manifest.status_code==200 and manifest.json()=={'items':[{'index':0,'kind':'image'}]}
-        assert content.status_code==200 and content.headers['content-type']=='image/jpeg'
+        assert content.status_code==200 and content.headers['content-type']=='image/png'
         assert invalid.status_code==422
         async def signed_out():raise HTTPException(401,detail='Authentication required')
         app.dependency_overrides[get_current_active_user]=signed_out
@@ -447,3 +449,244 @@ async def test_real_app_success_and_early_errors_keep_private_headers(client,rec
     finally:
         if previous is None:app.dependency_overrides.pop(get_current_active_user,None)
         else:app.dependency_overrides[get_current_active_user]=previous
+
+
+def signed_locator(*, now=None, changes=None, path='/synthetic-private-object.jpg', **query_changes):
+    from urllib.parse import urlencode
+    now=now or datetime.now(timezone.utc)
+    values={'X-Amz-Algorithm':'AWS4-HMAC-SHA256',
+        'X-Amz-Credential':f'SYNTHETIC/{now:%Y%m%d}/us-east-1/s3/aws4_request',
+        'X-Amz-Date':now.strftime('%Y%m%dT%H%M%SZ'),'X-Amz-Expires':'300',
+        'X-Amz-Security-Token':'synthetic-private-security-token','X-Amz-Signature':'a'*64,
+        'X-Amz-SignedHeaders':'host','response-content-disposition':'inline; filename="private.jpg"',
+        'response-content-type':'image/jpeg'}
+    values.update(query_changes)
+    if changes:changes(values)
+    return 'https://calltrk-mms-media-prod1.s3.amazonaws.com'+path+'?'+urlencode(values)
+
+
+def redirect_provider(monkeypatch, context, *, locator=None, first_status=302,
+                      object_status=200, object_headers=None, object_data=None, timeout=False):
+    locator=locator or signed_locator()
+    requests=[];options=[];clients=[];responses=[]
+    async def handler(request):
+        requests.append(request)
+        if request.url.host=='api.callrail.com':
+            assert request.headers['authorization']=='Token token="synthetic-only"'
+            if request.url.path.endswith('.json'):return httpx.Response(200,json=record(context))
+            response=httpx.Response(first_status,headers=[('Location',locator),
+                ('Set-Cookie','provider-secret=private; Path=/; Domain=api.callrail.com')])
+            responses.append(response)
+            return response
+        assert request.url.host=='calltrk-mms-media-prod1.s3.amazonaws.com'
+        assert responses[0].is_closed, 'Authenticated response must close before downstream GET'
+        assert not any(name in request.headers for name in ('authorization','cookie','referer','request-from'))
+        assert set(request.headers)=={'host','accept','accept-encoding'}
+        if timeout:raise httpx.ReadTimeout('private-upstream-exception',request=request)
+        headers={'Content-Type':'image/jpeg',**(object_headers or {})}
+        return httpx.Response(object_status,content=pixels('JPEG') if object_data is None else object_data,headers=headers)
+    def factory(**kwargs):
+        options.append(kwargs)
+        result=httpx.AsyncClient(transport=httpx.MockTransport(handler),**kwargs)
+        clients.append(result)
+        return result
+    monkeypatch.setattr(media,'httpx',SimpleNamespace(AsyncClient=factory,HTTPError=httpx.HTTPError,TimeoutException=httpx.TimeoutException))
+    return requests,options,clients
+
+
+@pytest.mark.asyncio
+async def test_signed_redirect_private_isolated_client_and_read_only(receipt,monkeypatch,caplog):
+    import logging
+    db,tenant,binding,thread,message,context=receipt
+    monkeypatch.setenv('HTTPS_PROXY','http://untrusted-synthetic-proxy.invalid:8080')
+    monkeypatch.setenv('NETRC','/nonexistent/synthetic-netrc')
+    before=(message.body,message.created_at,thread.last_message_at,thread.unread_count_staff)
+    requests,options,clients=redirect_provider(monkeypatch,context)
+    with caplog.at_level(logging.DEBUG):
+        data,kind=await media.retrieve(context,0)
+    assert kind=='image/png' and Image.open(io.BytesIO(data)).size==(8,9)
+    assert len(requests)==3 and len(options)==2
+    assert options[1]['trust_env'] is False and all(v['follow_redirects'] is False for v in options)
+    assert all(client.is_closed for client in clients)
+    assert clients[0].cookies.get('provider-secret')=='private' and not clients[1].cookies
+    assert before==(message.body,message.created_at,thread.last_message_at,thread.unread_count_staff)
+    assert not any(value in caplog.text for value in ('synthetic-private','X-Amz-','synthetic-only','provider-secret'))
+
+
+@pytest.mark.parametrize('mutation',[
+    lambda u:u.replace('https://','http://'), lambda u:u.replace('https://','HTTPS://'),
+    lambda u:u.replace('calltrk-mms-media-prod1.s3.amazonaws.com','calltrk-mms-media-prod1.s3.amazonaws.com.evil'),
+    lambda u:u.replace('calltrk-mms-media-prod1.s3.amazonaws.com','127.0.0.1'),
+    lambda u:u.replace('calltrk-mms-media-prod1.s3.amazonaws.com','localhost'),
+    lambda u:u.replace('https://','https://user@'),lambda u:u.replace('.com/','.com:443/'),
+    lambda u:u+'#fragment',lambda u:u+'\n',lambda u:u.replace('/synthetic','/\\synthetic'),
+    lambda u:u.replace('/synthetic-private-object.jpg','/%73ynthetic.jpg'),
+    lambda u:u.replace('/synthetic-private-object.jpg','/../private.jpg'),
+    lambda u:u.replace('/synthetic-private-object.jpg','/prefix/private.jpg'),
+    lambda u:u.replace('/synthetic-private-object.jpg','/'+'a'*1024),
+    lambda u:u.replace('X-Amz-Algorithm=','Unknown='),
+    lambda u:u+'&X-Amz-Expires=300',lambda u:u.replace('X-Amz-Expires=300&',''),
+    lambda u:u.replace('X-Amz-Expires=300','X-Amz-Expires='),
+    lambda u:u.replace('X-Amz-Security-Token=','X-Amz-Security-Token=%zz'),
+    lambda u:u.replace('X-Amz-Security-Token=','X-Amz-Security-Token=%00'),
+    lambda u:u+'&unused='+('a'*17000),
+])
+def test_signed_locator_rejects_host_path_and_query_attacks(mutation):
+    with pytest.raises(HTTPException) as error:media.signed_object_url(mutation(signed_locator()))
+    assert error.value.status_code==502 and error.value.headers==media.HEADERS
+
+
+@pytest.mark.parametrize('changes',[
+    {'X-Amz-Algorithm':'OTHER'}, {'X-Amz-Signature':'A'*64},{'X-Amz-Signature':'a'*63},
+    {'X-Amz-SignedHeaders':'host;authorization'}, {'X-Amz-Credential':'bad/scope'},
+    {'X-Amz-Credential':'ACCESS/20000101/us-east-1/s3/aws4_request'},
+    {'X-Amz-Credential':'a'*513}, {'X-Amz-Security-Token':'a'*8193},
+    {'X-Amz-Security-Token':'x\r\ny'}, {'X-Amz-Expires':'301'}, {'X-Amz-Expires':'0'},
+    {'X-Amz-Expires':'-1'}, {'X-Amz-Expires':'3000'}, {'X-Amz-Expires':'1.0'},
+    {'X-Amz-Date':'20260230T000000Z'}, {'response-content-type':'image/svg+xml'},
+    {'response-content-disposition':'a'*1025},
+])
+def test_signed_locator_rejects_signing_shapes(changes):
+    with pytest.raises(HTTPException):media.signed_object_url(signed_locator(**changes))
+
+
+def test_signed_locator_expiry_and_future_bounds():
+    from datetime import timedelta
+    now=datetime.now(timezone.utc).replace(microsecond=0)
+    assert media.signed_object_url(signed_locator(now=now),now=now)
+    for signed_at in (now-timedelta(seconds=300),now+timedelta(seconds=61)):
+        with pytest.raises(HTTPException):media.signed_object_url(signed_locator(now=signed_at),now=now)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('status',[301,303,307,308])
+async def test_callrail_other_redirects_fail_without_object_request(receipt,monkeypatch,status):
+    *_,context=receipt
+    requests,_,clients=redirect_provider(monkeypatch,context,first_status=status)
+    with pytest.raises(HTTPException) as error:await media.retrieve(context,0)
+    assert error.value.status_code==502 and len(requests)==2 and all(c.is_closed for c in clients)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('status',[301,302,303,307,308,403,500])
+async def test_second_redirect_or_object_error_is_not_followed(receipt,monkeypatch,status):
+    *_,context=receipt
+    requests,_,clients=redirect_provider(monkeypatch,context,object_status=status,
+        object_headers={'Location':'https://evil.invalid/private-second-hop'})
+    with pytest.raises(HTTPException) as error:await media.retrieve(context,0)
+    assert error.value.status_code==502 and len(requests)==3 and all(c.is_closed for c in clients)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('headers,data,status',[
+    ({'Content-Type':'text/html'},b'<html>private</html>',422),
+    ({'Content-Type':'image/jpeg'},b'not a raster',422),
+    ({'Content-Length':str(media.INPUT_LIMIT+1)},b'x',413),
+    ({'Content-Encoding':'gzip'},b'encoded',502),
+])
+async def test_signed_object_raster_boundaries(receipt,monkeypatch,headers,data,status):
+    *_,context=receipt
+    requests,_,clients=redirect_provider(monkeypatch,context,object_headers=headers,object_data=data)
+    with pytest.raises(HTTPException) as error:await media.retrieve(context,0)
+    assert error.value.status_code==status and len(requests)==3 and all(c.is_closed for c in clients)
+
+
+@pytest.mark.asyncio
+async def test_signed_object_timeout_sanitized_private_and_closed(receipt,monkeypatch,caplog):
+    import logging
+    *_,context=receipt
+    requests,_,clients=redirect_provider(monkeypatch,context,timeout=True)
+    with caplog.at_level(logging.DEBUG):
+        with pytest.raises(HTTPException) as error:await media.retrieve(context,0)
+    assert error.value.status_code==504 and len(requests)==3 and all(c.is_closed for c in clients)
+    assert not any(value in caplog.text for value in ('synthetic-private','X-Amz-','private-upstream-exception'))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('locations',[[],['https://evil.invalid/private-object'],[signed_locator(),signed_locator()]])
+async def test_missing_duplicate_or_untrusted_location_never_fetches_object(receipt,monkeypatch,locations):
+    *_,context=receipt
+    requests=[]
+    def handler(request):
+        requests.append(request)
+        assert request.url.host=='api.callrail.com'
+        if request.url.path.endswith('.json'):return httpx.Response(200,json=record(context))
+        return httpx.Response(302,headers=[('Location',value) for value in locations])
+    transport=httpx.MockTransport(handler)
+    monkeypatch.setattr(media,'httpx',SimpleNamespace(AsyncClient=lambda **kw:httpx.AsyncClient(transport=transport,**kw),HTTPError=httpx.HTTPError,TimeoutException=httpx.TimeoutException))
+    with pytest.raises(HTTPException) as error:await media.retrieve(context,0)
+    assert error.value.status_code==502 and len(requests)==2
+
+
+@pytest.mark.asyncio
+async def test_discovery_never_allows_signed_object_redirect(receipt,monkeypatch):
+    *_,context=receipt
+    requests=[]
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(302,headers={'Location':signed_locator()})
+    transport=httpx.MockTransport(handler)
+    monkeypatch.setattr(media,'httpx',SimpleNamespace(AsyncClient=lambda **kw:httpx.AsyncClient(transport=transport,**kw),HTTPError=httpx.HTTPError,TimeoutException=httpx.TimeoutException))
+    with pytest.raises(HTTPException) as error:await media.retrieve(context)
+    assert error.value.status_code==502 and len(requests)==1
+
+
+@pytest.mark.asyncio
+async def test_signed_query_preserved_and_cancellation_closes_private_chain(receipt,monkeypatch,caplog):
+    import asyncio
+    import logging
+    from urllib.parse import urlsplit
+    from httpcore._trace import Trace
+    from httpcore import Request
+    *_,context=receipt
+    locator=signed_locator();entered=asyncio.Event();clients=[]
+    async def handler(request):
+        if request.url.host=='api.callrail.com':
+            if request.url.path.endswith('.json'):return httpx.Response(200,json=record(context))
+            return httpx.Response(302,headers={'Location':locator})
+        assert request.url.query.decode()==urlsplit(locator).query
+        async with Trace('receive_response_headers',logging.getLogger('httpcore.http11'),Request('GET',str(request.url))) as trace:
+            trace.return_value=(b'HTTP/1.1',302,b'Found',[(b'Location',locator.encode())])
+        entered.set()
+        await asyncio.Event().wait()
+    def factory(**kwargs):
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler),**kwargs);clients.append(client);return client
+    monkeypatch.setattr(media,'httpx',SimpleNamespace(AsyncClient=factory,HTTPError=httpx.HTTPError,TimeoutException=httpx.TimeoutException))
+    with caplog.at_level(logging.DEBUG):
+        task=asyncio.create_task(media.retrieve(context,0))
+        await entered.wait()
+        logging.getLogger('httpcore.http11').debug('unrelated-concurrent-request-visible')
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):await task
+        logging.getLogger('httpx').info('unrelated-after-cancel-visible')
+    assert all(c.is_closed for c in clients) and not media._PRIVATE_REQUEST.get()
+    assert not any(value in caplog.text for value in ('synthetic-private','X-Amz-','synthetic-only'))
+    assert 'unrelated-concurrent-request-visible' in caplog.text
+    assert 'unrelated-after-cancel-visible' in caplog.text
+
+
+def test_rgb_jpeg_becomes_lossless_metadata_free_png():
+    original=Image.new('RGB',(31,19),(80,160,210))
+    exif=Image.Exif();exif[270]='private synthetic EXIF'
+    encoded=io.BytesIO();original.save(encoded,format='JPEG',exif=exif)
+    source=Image.open(io.BytesIO(encoded.getvalue()));source.load()
+    data,kind=media.decode_raster(encoded.getvalue(),'image/jpeg')
+    result=Image.open(io.BytesIO(data));result.load()
+    assert kind=='image/png' and result.format=='PNG'
+    assert result.tobytes()==source.tobytes()
+    assert not result.getexif() and b'private synthetic EXIF' not in data
+
+
+def test_png_output_cap_checked_during_encoding(monkeypatch):
+    monkeypatch.setattr(media,'OUTPUT_LIMIT',40)
+    with pytest.raises(HTTPException) as error:media.decode_raster(pixels(),'image/png')
+    assert error.value.status_code==413
+
+
+def test_large_photographic_png_output_fails_existing_ten_mib_cap():
+    import random
+    source=Image.frombytes('RGB',(2048,2048),random.Random(17017).randbytes(2048*2048*3))
+    output=io.BytesIO();source.save(output,format='JPEG',quality=85)
+    assert len(output.getvalue())<media.INPUT_LIMIT
+    with pytest.raises(HTTPException) as error:media.decode_raster(output.getvalue(),'image/jpeg')
+    assert error.value.status_code==413 and media.OUTPUT_LIMIT==10*1024*1024
