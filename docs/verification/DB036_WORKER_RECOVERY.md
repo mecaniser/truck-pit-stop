@@ -43,3 +43,15 @@ PR611 candidate663686d2aeb48113f638b61080f4159a0a9f830d remains MERGEABLE. Run39
 Official Railway update21:01UTC still reports major outage and no additional build-availability information; authenticated project dashboard retains outage banner. Read-only cron history confirms latest location run remains4bc070c5-9700-4ca8-9ce3-0135b431cd1d at10:50:54UTC, CRASHED. No recovery, new import, scheduled success, merge or deployment claimed.
 
 Release hold subsequently cleared after PR614/616. Integrated main15fed44b once; only conflict was additive board history. Relative to main the workflow retains only the additional Motive task-contract test. Independent QA found all three failures at initial default1s readiness queries before behavioral assertions; other tests in those files passed. No demonstrated worker regression or measured starvation. No product code, test assertions, deadlines or worker implementation changed. One protected run on the updated integration candidate is required; this does not erase the prior failure or prove its cause.
+
+## Protected integration gate passed: 2026-10-21 21:40 UTC
+
+Candidate576ce5a8a2c0bad7b8d33a236e6514bc448e8677 passed all seven jobs in run39679270099, completed21:40:46UTC. PR611 is CLEAN/MERGEABLE. Frontend tests and deadlines remained unchanged; the previous transient readiness failures did not recur on this integration candidate, which does not establish their cause. At21:48UTC follow-up, Railway official latest21:01UTC still reports major outage with no build recovery announcement; latest sync execution remains10:50UTC CRASHED. No merge/deploy/worker trigger issued.
+
+## Security release hold: 2026-10-21 22:04 UTC
+
+Official Railway incident21:59UTC links https://blog.railway.com/p/security-disclosure-wednesday-october-21st . Railway reports possible unauthorized access to environment variables, including some decrypted contents, and recommends immediate rotation of stored credentials plus review of service logs. Account-specific impact remains unconfirmed. All deployments remain paused. No credentials revoked/rotated and no production changes made. Release requires security triage in addition to build recovery; avoid treating restored builds alone as sufficient. PR611 remains mergeable but BEHIND after newer main changes; integrate current main once before next release candidate, preserving all local evidence.
+
+## Runner-fix integration: 2026-10-22
+
+User authorized resolving the board conflict and waiting for DB-CI-008 before checks. Local merge5519d798 preserved both histories against main169c88bf. After the runner owner cleared the hold, merge76241f92 integrated main3816c28c including PR625/626. Both parent board histories and pre-existing local notes are preserved. Workflow auto-merge retains main hosted Ubuntu24.04 routing plus the Motive task-contract test. One final automatic PR CI run is required; no duplicate dispatch, main merge, deployment, worker trigger or credential change. Production/security approval and complete worker receipts plus natural schedule evidence remain outstanding.
