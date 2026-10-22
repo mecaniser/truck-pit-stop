@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""Deploy committed branches to isolated Mac test apps, never to Railway."""
+import argparse
+import hashlib
+import io
+import json
+from pathlib import Path, PurePosixPath
+import re
+import shlex
+import subprocess
+import tarfile
+import tempfile
+import uuid
+
+HERE = Path(__file__).resolve().parent
+REPOS = {'dieselbridge': Path.home() / 'GitHub/truck-pit-stop', 'tph': Path.home() / 'GitHub/TPH'}
+HOST = 'sergio@192.168.4.239'
+ROOT = '/Users/sergio/mac-hosting/test-deploy'
+SSH = ['ssh', '-i', str(Path.home() / '.ssh/dieselbridge_staging_ed25519'), '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5']
+
+
+def run(args, **kwargs):
+    return subprocess.run(args, check=True, **kwargs)
+
+
+def remote(args, **kwargs):
+    return run([*SSH, HOST, shlex.join(args)], **kwargs)
+
+
+def source_archive(repo, revision, app):
+    """Read tracked Git objects only; refuse links and secret-shaped paths."""
+    run(['git', '-C', str(repo), 'check-ref-format', '--branch', revision], stdout=subprocess.DEVNULL)
+    # Resolve an explicit local branch, never an option, arbitrary revision or checkout.
+    sha = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', '--verify', 'refs/heads/' + revision + '^{commit}'], text=True).strip()
+    if not re.fullmatch('[a-f0-9]{40}', sha):
+        raise RuntimeError('Expected a full source commit')
+    paths = ['backend', 'frontend'] if app == 'dieselbridge' else ['backend', 'src', 'public', 'shared', 'package.json', 'package-lock.json', 'craco.config.js', 'webpack.config.js', 'babel.config.js', 'postcss.config.js', 'tailwind.config.js', 'config-overrides.js', 'tsconfig.json', 'jsconfig.json', 'scripts']
+    available = set(subprocess.check_output(['git', '-C', str(repo), 'ls-tree', '--name-only', sha], text=True).splitlines())
+    paths = [p for p in paths if p in available]
+    required = {'backend', 'frontend'} if app == 'dieselbridge' else {'backend', 'src', 'public', 'package.json', 'package-lock.json'}
+    if not required <= set(paths):
+        raise RuntimeError('Branch is missing required application source')
+    listing = subprocess.check_output(['git', '-C', str(repo), 'ls-tree', '-rlz', sha, '--', *paths])
+    total = 0
+    for row in listing.split(b'\0'):
+        if not row: continue
+        metadata, name = row.split(b'\t', 1)
+        mode, kind, object_id, size = metadata.split()
+        if kind != b'blob' or mode not in (b'100644', b'100755'):
+            raise RuntimeError('Source contains a link or unsupported Git object')
+        size = int(size); total += size
+        if size > 32 * 1024**2 or total > 256 * 1024**2:
+            raise RuntimeError('Source exceeds bounded size before archive')
+    archive_process = subprocess.Popen(['git', '-C', str(repo), 'archive', '--format=tar', sha, '--', *paths], stdout=subprocess.PIPE)
+    try:
+        raw = archive_process.stdout.read(280 * 1024**2 + 1)
+        if len(raw) > 280 * 1024**2:
+            archive_process.kill()
+            raise RuntimeError('Tar archive exceeds bounded size')
+        if archive_process.wait() != 0: raise RuntimeError('Git archive failed')
+    finally:
+        archive_process.stdout.close()
+        if archive_process.poll() is None: archive_process.kill(); archive_process.wait()
+
+    output = io.BytesIO()
+    with tarfile.open(fileobj=io.BytesIO(raw)) as source, tarfile.open(fileobj=output, mode='w') as target:
+        total = 0
+        for item in source:
+            path = PurePosixPath(item.name)
+            if path.is_absolute() or '..' in path.parts or not (item.isdir() or item.isfile()) or item.name.startswith('-'):
+                raise RuntimeError('Unsafe source archive member')
+            if path.name in ('.env.example', '.env.sample'):
+                continue
+            if any(part in ('node_modules', '.git', 'sessions', '__MACOSX') for part in path.parts) or path.name.startswith('._'):
+                raise RuntimeError('Unrecognized source content')
+            if path.name == '.env' or path.name.startswith('.env.') or path.suffix.lower() in ('.pem', '.key', '.p12', '.pfx'):
+                raise RuntimeError('Secret-shaped file in committed source')
+            total += item.size
+            if item.size > 32 * 1024**2 or total > 256 * 1024**2:
+                raise RuntimeError('Source archive exceeds bounded size')
+            target.addfile(item, source.extractfile(item) if item.isfile() else None)
+    return sha, output.getvalue()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest='command', required=True)
+    sub.add_parser('status')
+    deploy = sub.add_parser('deploy')
+    deploy.add_argument('app', choices=REPOS)
+    deploy.add_argument('branch')
+    deploy.add_argument('--repo', type=Path)
+    deploy.add_argument('--database-release', help='Use an independently accepted isolated database release')
+    deploy.add_argument('--build-only', action='store_true', help='Build and inspect without replacing a running app')
+    rollback = sub.add_parser('rollback'); rollback.add_argument('app', choices=REPOS)
+    args = parser.parse_args()
+    if args.command != 'deploy':
+        remote(['/opt/homebrew/bin/python3', ROOT + '/remote.py', args.command, *([args.app] if args.command == 'rollback' else [])])
+        return
+    if args.database_release and not re.fullmatch('[a-f0-9]{32}', args.database_release):
+        raise RuntimeError('Invalid database release token')
+    sha, archive = source_archive(args.repo or REPOS[args.app], args.branch, args.app)
+    release = uuid.uuid4().hex
+    print(f'Building {args.app} branch {args.branch} at {sha} for Mac test only (release {release})', flush=True)
+    # build.py receives bounded tar bytes on stdin; it creates its own exclusive release root.
+    built = remote(['/opt/homebrew/bin/python3', ROOT + '/build.py', args.app, sha, release], input=archive, capture_output=True)
+    receipt = json.loads(built.stdout)
+    if receipt['source'] != sha or receipt['app'] != args.app or not re.fullmatch(r'sha256:[a-f0-9]{64}', receipt['image']):
+        raise RuntimeError('Unexpected build receipt')
+    print(json.dumps(receipt), flush=True)
+    if not args.build_only:
+        remote(['/opt/homebrew/bin/python3', ROOT + '/remote.py', 'deploy', args.app, receipt['image'], sha, *(['--database-release', args.database_release] if args.database_release else [])])
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except subprocess.CalledProcessError:
+        raise SystemExit('Mac test operation failed; private logs retained on Mac. No automatic retry.') from None
+    except (RuntimeError, ValueError) as error:
+        raise SystemExit(str(error)) from None
