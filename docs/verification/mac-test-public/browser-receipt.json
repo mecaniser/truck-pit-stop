@@ -1,0 +1,27 @@
+{
+  "checked_at": "2026-10-22T01:40:37.202701+00:00",
+  "dieselbridge": {
+    "url": "https://dieselbridge-test.elisprotech.com/dashboard/customers",
+    "gate_form_post": true,
+    "native_staff_login": true,
+    "active_shop": "Staging Alpha",
+    "synthetic_customer": "Synthetic Alpha Fleet",
+    "customer_count": 1,
+    "asset_errors_after_fix": 0
+  },
+  "tph": {
+    "url": "https://tph-test.elisprotech.com/spot-changes",
+    "gate_form_post": true,
+    "native_pin_login": true,
+    "manager_confirmation": true,
+    "manager_tools_loaded": true,
+    "operational_yards": 0
+  },
+  "browser_https_warnings": false,
+  "browser_trust_bypass": false,
+  "business_mutations": false,
+  "screenshots": {
+    "dieselbridge-public-customers.png": "257cc30f786cd8a0944b382824320d6a5ba508c1f78c542ca181e86975203990",
+    "tph-public-manager.png": "3db2969e4bea722d494eb92699bda1c6ec89967ba7a8d12aaf3d1cba0c99e7a5"
+  }
+}

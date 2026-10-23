@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+"""Workstation operator entry point for the two isolated full test apps."""
+from pathlib import Path
+import shlex
+import subprocess
+import sys
+SSH=['ssh','-i',str(Path.home()/'.ssh/dieselbridge_staging_ed25519'),'-o','IdentitiesOnly=yes','-o','BatchMode=yes','-o','ConnectTimeout=5','-o','ExitOnForwardFailure=yes']
+HOST='sergio@192.168.4.239'
+args=sys.argv[1:]
+if len(args)==2 and args[0]=='tunnel' and args[1] in ('dieselbridge','tph'):
+    port=18200 if args[1]=='dieselbridge' else 18201
+    print(f'Open http://localhost:{port} while tunnel runs.',flush=True)
+    raise SystemExit(subprocess.call([*SSH,'-N','-L',f'127.0.0.1:{port}:127.0.0.1:{port}',HOST]))
+if len(args)!=1 or args[0] not in ('status','probe','recover'):
+    raise SystemExit('Usage: test-apps status | probe | recover | tunnel dieselbridge | tunnel tph')
+raise SystemExit(subprocess.call([*SSH,HOST,shlex.join(['/opt/homebrew/bin/python3','/Users/sergio/mac-hosting/test-stacks/tools/stackctl.py',*args])]))

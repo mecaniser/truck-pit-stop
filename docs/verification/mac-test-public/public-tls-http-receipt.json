@@ -1,0 +1,17 @@
+{
+  "checked_at": "2026-10-22T01:35:29.409253+00:00",
+  "tls_chain_and_hostnames": true,
+  "gate_native_auth_and_negatives": true,
+  "native_bearer_preserved": true,
+  "db_secure_cookies": true,
+  "tenant_denials_both_directions": true,
+  "cross_host_gate_denied": true,
+  "logout_denied_afterwards": true,
+  "public_readiness_and_unknown_hosts_denied": true,
+  "synthetic_business_mutations": false,
+  "authenticated_query_api_preserved": true,
+  "native_tph_exact_https_origin_and_lookalike_denial": true,
+  "canonical_origin_fixture_only": false,
+  "public_tls_verified": true,
+  "public_browser_acceptance": false
+}

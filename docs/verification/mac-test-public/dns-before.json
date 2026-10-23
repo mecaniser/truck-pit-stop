@@ -1,0 +1,37 @@
+{
+  "checked_at": "2026-10-22T00:53:09.677231+00:00",
+  "records": {
+    "elisprotech.com": {
+      "A": "",
+      "AAAA": "",
+      "CNAME": "",
+      "NS": "elisprotech.com.\t21600\tIN\tNS\tns-cloud-c2.googledomains.com.\nelisprotech.com.\t21600\tIN\tNS\tns-cloud-c1.googledomains.com.\nelisprotech.com.\t21600\tIN\tNS\tns-cloud-c3.googledomains.com.\nelisprotech.com.\t21600\tIN\tNS\tns-cloud-c4.googledomains.com.\n",
+      "MX": "elisprotech.com.\t14400\tIN\tMX\t10 alt3.aspmx.l.google.com.\nelisprotech.com.\t14400\tIN\tMX\t5 alt1.aspmx.l.google.com.\nelisprotech.com.\t14400\tIN\tMX\t5 alt2.aspmx.l.google.com.\nelisprotech.com.\t14400\tIN\tMX\t1 aspmx.l.google.com.\nelisprotech.com.\t14400\tIN\tMX\t10 alt4.aspmx.l.google.com.\n",
+      "TXT": "elisprotech.com.\t14400\tIN\tTXT\t\"google-site-verification=rId_zcsDG3rinMJDuSwGgKaSPG6IA4p_hN5j2mIodUo\"\nelisprotech.com.\t14400\tIN\tTXT\t\"apple-domain-verification=tQZwZR0h7BGhCF3w\"\n"
+    },
+    "www.elisprotech.com": {
+      "A": "www.elisprotech.com.\t14400\tIN\tCNAME\tl5clouc3.up.railway.app.\nl5clouc3.up.railway.app. 60\tIN\tA\t69.46.46.16\n",
+      "AAAA": "www.elisprotech.com.\t14400\tIN\tCNAME\tl5clouc3.up.railway.app.\n",
+      "CNAME": "www.elisprotech.com.\t14400\tIN\tCNAME\tl5clouc3.up.railway.app.\n",
+      "NS": "www.elisprotech.com.\t14400\tIN\tCNAME\tl5clouc3.up.railway.app.\n",
+      "MX": "www.elisprotech.com.\t14399\tIN\tCNAME\tl5clouc3.up.railway.app.\n",
+      "TXT": "www.elisprotech.com.\t14400\tIN\tCNAME\tl5clouc3.up.railway.app.\n"
+    },
+    "dieselbridge-test.elisprotech.com": {
+      "A": "",
+      "AAAA": "",
+      "CNAME": "",
+      "NS": "",
+      "MX": "",
+      "TXT": ""
+    },
+    "tph-test.elisprotech.com": {
+      "A": "",
+      "AAAA": "",
+      "CNAME": "",
+      "NS": "",
+      "MX": "",
+      "TXT": ""
+    }
+  }
+}

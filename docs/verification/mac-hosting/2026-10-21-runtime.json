@@ -1,0 +1,202 @@
+{
+  "captured_at": "2026-10-22T00:02:04.148062+00:00",
+  "apps": [
+    {
+      "app": "hosting-demo",
+      "revision": "v1",
+      "image": "sha256:08b57b69e05b655e8be855f0cc2721731c45fa85ea2d31ef0a2e4245b1b0b688",
+      "url": "http://localhost:18100",
+      "previous_revision": "v2",
+      "pending": false,
+      "healthy": true,
+      "containers": [
+        {
+          "id": "5c0c58891556074be5fda7b80fb2e9375dfd6e6b14dd72fd40481f093ccf2210",
+          "started": "2026-10-21T23:55:49.066597088Z",
+          "running": true,
+          "oom": false
+        },
+        {
+          "id": "f343e88711183af4c559519fbcdca469f67954b5e1b563cfa543ce71e61db845",
+          "started": "2026-10-21T23:56:28.127103634Z",
+          "running": true,
+          "oom": false
+        }
+      ]
+    },
+    {
+      "app": "second-demo",
+      "revision": "v2",
+      "image": "sha256:0890b58a1c9e3f3316c2d3cf644c9c913300dda12fd846d287add85ca2b819e9",
+      "url": "http://localhost:18101",
+      "previous_revision": null,
+      "pending": false,
+      "healthy": true,
+      "containers": [
+        {
+          "id": "e820d62056d5e320e13a03582dcb34d65d6838958ab7600caa8651f10e4f061f",
+          "started": "2026-10-21T23:56:28.749488093Z",
+          "running": true,
+          "oom": false
+        },
+        {
+          "id": "0b447059cd38b29deca3b50e18d5ebcf36bb4ea6bca017774c927278532549df",
+          "started": "2026-10-21T23:56:04.660446554Z",
+          "running": true,
+          "oom": false
+        }
+      ]
+    }
+  ],
+  "controller_sha256": "4d6c491b22c4a99cf60f8c42d1f24a8466f8b21b2d2eb456b06cd8adf613763d",
+  "tls_receipt": {
+    "apps": [
+      {
+        "name": "alpha.macapps.test",
+        "revision": "v1",
+        "tls": "TLSv1.3",
+        "verified": true
+      },
+      {
+        "name": "beta.macapps.test",
+        "revision": "v2",
+        "tls": "TLSv1.3",
+        "verified": true
+      }
+    ],
+    "unknown_host_rejected": true,
+    "wrong_tls_hostname_rejected": true,
+    "listeners": [
+      "127.0.0.1:18443"
+    ],
+    "admin_disabled": true,
+    "machine_trust_installation_disabled": true,
+    "test_process_stopped": true,
+    "public_template_adapted_only": true
+  },
+  "caddy_release": {
+    "release": "v2.11.7",
+    "archive_sha256": "cda3030e5d5b13eb9f0b6fb541037f633bddd958c070c5f561d7a5cccb581665",
+    "binary_sha256": "0d746e47f39d9706883b3633bf419feb25973e6caaa8eabbf5b44421d59e3973",
+    "source": "https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_mac_arm64.tar.gz"
+  },
+  "soak": {
+    "status": "observing",
+    "complete": false,
+    "started_at": "2026-10-21T23:09:59.450841+00:00",
+    "ends_at": "2026-10-22T23:09:59.450841+00:00",
+    "samples": 53,
+    "last_sample": "2026-10-22T00:01:10.559268+00:00",
+    "issues": []
+  },
+  "baseline_sha256": "1e7618809a071feb45cadb84667827c97c483c63f7e3fbf645b92628b4544d1e",
+  "staging_containers": {
+    "/dieselbridge-staging-web-1": {
+      "id": "71844ec2c296b5558da0162dc0869991419e9e079ad7e4ed70113095d6f3555f",
+      "started": "2026-10-21T23:02:09.757029667Z",
+      "image": "sha256:af4441619645e92619df201d3a808b40c570b0dede97331bd405af3745f1567d"
+    },
+    "/dieselbridge-staging-postgres-1": {
+      "id": "29cb7a9be53f398b91a484dc99352828746a7f7582c0d2d95de0df8af071c370",
+      "started": "2026-10-21T23:02:09.757421084Z",
+      "image": "sha256:697ff70295146d53b702b07532fe68aaed7a5f10d04ff68edbeffd5fbacd15a5"
+    },
+    "/dieselbridge-staging-redis-1": {
+      "id": "bdd6aed28a31a4dd5fd303e132a4d4d1676f8ef5b2bfa0944753916c8a5ff566",
+      "started": "2026-10-21T23:02:09.747963751Z",
+      "image": "sha256:44960b3100c48159a66d28c18b0588c193492e25f7551d60e51dd464fc3eca5b"
+    },
+    "/dieselbridge-staging-gateway-1": {
+      "id": "a10fc4f6d2cb2b8499d21a0560e5f626aad867b53d6fe2037d0922a626446dac",
+      "started": "2026-10-21T23:02:26.291543009Z",
+      "image": "sha256:970364228b1e4f932abc22d321932816782cca8a20b85a77552a7cfe9acfb3b5"
+    }
+  },
+  "events": {
+    "hosting-demo": [
+      {
+        "at": "2026-10-21T23:53:36.192322+00:00",
+        "event": "deploy_started",
+        "revision": "v1",
+        "image": "sha256:08b57b69e05b655e8be855f0cc2721731c45fa85ea2d31ef0a2e4245b1b0b688"
+      },
+      {
+        "at": "2026-10-21T23:54:02.408640+00:00",
+        "event": "deploy_failed",
+        "revision": "v1"
+      },
+      {
+        "at": "2026-10-21T23:54:03.631045+00:00",
+        "event": "first_release_stopped"
+      },
+      {
+        "at": "2026-10-21T23:54:37.254901+00:00",
+        "event": "failed_first_release_inspected",
+        "cause": "nginx_default_fastcgi_temp_path_readonly",
+        "containers_stopped": true
+      },
+      {
+        "at": "2026-10-21T23:54:52.101484+00:00",
+        "event": "deploy_started",
+        "revision": "v1",
+        "image": "sha256:08b57b69e05b655e8be855f0cc2721731c45fa85ea2d31ef0a2e4245b1b0b688"
+      },
+      {
+        "at": "2026-10-21T23:54:52.807846+00:00",
+        "event": "deploy_accepted",
+        "revision": "v1"
+      },
+      {
+        "at": "2026-10-21T23:55:05.350524+00:00",
+        "event": "deploy_started",
+        "revision": "v2",
+        "image": "sha256:0890b58a1c9e3f3316c2d3cf644c9c913300dda12fd846d287add85ca2b819e9"
+      },
+      {
+        "at": "2026-10-21T23:55:07.119325+00:00",
+        "event": "deploy_accepted",
+        "revision": "v2"
+      },
+      {
+        "at": "2026-10-21T23:55:07.512673+00:00",
+        "event": "deploy_started",
+        "revision": "v1",
+        "image": "sha256:08b57b69e05b655e8be855f0cc2721731c45fa85ea2d31ef0a2e4245b1b0b688"
+      },
+      {
+        "at": "2026-10-21T23:55:09.308321+00:00",
+        "event": "rollback_accepted",
+        "revision": "v1"
+      },
+      {
+        "at": "2026-10-21T23:55:20.520779+00:00",
+        "event": "deploy_started",
+        "revision": "unhealthy",
+        "image": "sha256:2facfef1706b68570f75cc3cc426b5453f4fb0bd3bd550d3bbf91f5ca0c2673f"
+      },
+      {
+        "at": "2026-10-21T23:55:47.750328+00:00",
+        "event": "deploy_failed",
+        "revision": "unhealthy"
+      },
+      {
+        "at": "2026-10-21T23:55:49.635912+00:00",
+        "event": "automatic_rollback_passed",
+        "revision": "v1"
+      }
+    ],
+    "second-demo": [
+      {
+        "at": "2026-10-21T23:56:04.557711+00:00",
+        "event": "deploy_started",
+        "revision": "v2",
+        "image": "sha256:0890b58a1c9e3f3316c2d3cf644c9c913300dda12fd846d287add85ca2b819e9"
+      },
+      {
+        "at": "2026-10-21T23:56:05.344700+00:00",
+        "event": "deploy_accepted",
+        "revision": "v2"
+      }
+    ]
+  }
+}

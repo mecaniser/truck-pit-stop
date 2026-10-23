@@ -1,0 +1,23 @@
+{
+  "checked_at": "2026-10-22T01:45:41.978742+00:00",
+  "job": "com.macapps.testpublic.edge",
+  "launchctl": [
+    "state = running",
+    "pid = 32004",
+    "last exit code = (never exited)",
+    "state = active",
+    "state = active"
+  ],
+  "https": {
+    "dieselbridge-test.elisprotech.com": {
+      "trusted_tls": true,
+      "unauthenticated_html_status": 303
+    },
+    "tph-test.elisprotech.com": {
+      "trusted_tls": true,
+      "unauthenticated_html_status": 303
+    }
+  },
+  "scope": "edge only; no reboot, database or worker restart",
+  "filevault": "assisted unlock/login required"
+}
