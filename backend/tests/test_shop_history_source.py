@@ -328,3 +328,40 @@ async def test_prior_native_completion_invalidates_outside_public_history(_db_en
         assert len(holds) == 1
         assert holds[0].payload['source_observation'] == 2
         assert holds[0].payload['snapshot']['source_job_id'] == str(order.id)
+
+
+@pytest.mark.asyncio
+async def test_delivery_pause_keeps_current_history_durable_without_dispatch(_db_engine, monkeypatch):
+    """A receiver outage must not stop current source evidence being captured."""
+    from app.services.paid_invoice_webhook_service import process_due_paid_invoice_webhooks
+
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    async with factory() as db:
+        tenant, customer, vehicle, order, invoice = await seed(db)
+        tenant.paid_invoice_webhook_delivery_paused = True
+        foreign = Tenant(name='Unselected shop', slug=uuid4().hex,
+                         paid_invoice_webhook_enabled=True,
+                         paid_invoice_webhook_delivery_paused=True,
+                         paid_invoice_webhook_url='https://example.test/hook',
+                         paid_invoice_webhook_secret_encrypted='synthetic-not-used')
+        db.add(foreign)
+        await db.commit()
+    monkeypatch.setattr('app.core.config.settings.SHOP_HISTORY_CAPTURE_ENABLED', True)
+    monkeypatch.setattr('app.core.config.settings.SHOP_HISTORY_CAPTURE_TENANT_IDS', str(tenant.id))
+
+    assert await capture_shop_history_batch(session_factory=factory) == {'scanned': 1, 'captured': 1, 'tenants': 1}
+    assert (await process_due_paid_invoice_webhooks(session_factory=factory))['claimed'] == 0
+    async with factory() as db:
+        events = (await db.execute(select(ProviderOutboxEvent))).scalars().all()
+        assert len(events) == 1
+        assert events[0].tenant_id == tenant.id
+        assert events[0].status == 'pending'
+        assert events[0].attempt_count == 0
+        assert (await db.get(Tenant, tenant.id)).paid_invoice_webhook_delivery_paused is True
+        assert (await db.get(Invoice, invoice.id)).total_amount == Decimal('1992.62')
+        current = await db.get(RepairOrder, order.id)
+        current.description = 'Current changed work context'
+        await db.commit()
+    assert (await capture_shop_history_batch(session_factory=factory))['captured'] == 1
+    assert (await capture_shop_history_batch(session_factory=factory))['captured'] == 0
+    assert (await process_due_paid_invoice_webhooks(session_factory=factory))['claimed'] == 0

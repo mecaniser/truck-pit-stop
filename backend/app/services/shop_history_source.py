@@ -256,7 +256,10 @@ async def capture_shop_history_batch(*, session_factory: async_sessionmaker[Asyn
         # rotate fairly. Tenant lock also serializes overlapping beat deliveries.
         tenant = await db.scalar(select(Tenant).outerjoin(ShopHistoryCursor, ShopHistoryCursor.tenant_id == Tenant.id).where(
             Tenant.id.in_(allowed), Tenant.deleted_at.is_(None),
-            Tenant.paid_invoice_webhook_enabled.is_(True), Tenant.paid_invoice_webhook_delivery_paused.is_(False),
+            # A delivery pause stops outbound requests, not durable source
+            # observations. Keep current evidence under the existing retention
+            # policy so resuming delivery does not resurrect stale contacts.
+            Tenant.paid_invoice_webhook_enabled.is_(True),
             Tenant.paid_invoice_webhook_url.is_not(None), Tenant.paid_invoice_webhook_secret_encrypted.is_not(None),
         ).order_by(ShopHistoryCursor.updated_at.asc().nullsfirst(), Tenant.id).limit(1).with_for_update(skip_locked=True, of=Tenant))
         if tenant:

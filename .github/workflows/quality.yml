@@ -340,6 +340,11 @@ jobs:
             # job users deliberately cannot sudo or modify that base image.
             npx playwright install --only-shell chromium
           else
+            # The Azure Ubuntu mirror can stall package downloads on hosted
+            # runners. Keep Ubuntu's signed packages and use its HTTPS archive.
+            if [ -f /etc/apt/apt-mirrors.txt ]; then
+              sudo sed -i -e 's|http://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' -e 's|https://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
+            fi
             npx playwright install --with-deps --only-shell chromium
           fi
       - name: Prepare isolated test database
