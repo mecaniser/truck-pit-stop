@@ -436,10 +436,12 @@ async def _pause_and_notify(db: AsyncSession, tenant: Tenant, event: ProviderOut
 
 async def process_due_paid_invoice_webhooks(*, session_factory: async_sessionmaker[AsyncSession] = AsyncSessionLocal, batch_size: Optional[int] = None, history_only: bool = False) -> dict[str, int]:
     async with session_factory() as db:
-        claims, expired_at_claim = await _claim(
-            db, 1 if history_only else (batch_size or settings.PROVIDER_OUTBOX_BATCH_SIZE),
-            history_only=history_only,
-        )
+        if history_only:
+            claims, expired_at_claim = await _claim(db, 1, history_only=True)
+        else:
+            claims, expired_at_claim = await _claim(
+                db, batch_size or settings.PROVIDER_OUTBOX_BATCH_SIZE
+            )
     result = {"claimed": len(claims), "succeeded": 0, "retried": 0, "dead": 0, "configuration_blocked": 0, "paused": 0, "expired": expired_at_claim}
     for event_id, token in claims:
         # Preflight under the row lock, then release the transaction before
