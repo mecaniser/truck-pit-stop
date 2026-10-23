@@ -11,12 +11,12 @@ for(const file of ['collect.cjs','collect_trips.cjs','collect_fuel.cjs','../moti
   const terminal="await page.waitForURL('https://app.gomotive.com/**',{timeout:45000});";
   const end=source.indexOf(terminal,start)+terminal.length;
   assert.ok(start>=0&&end>start);
-  const execute=new (Object.getPrototypeOf(async function(){}).constructor)('page','phase','ORIGIN',source.slice(start,end));
+  const execute=new (Object.getPrototypeOf(async function(){}).constructor)('page','phase','ORIGIN','prepareLegacyLogin',source.slice(start,end));
   for(let target=0;target<steps.length;target++) {
    let operation=0;
    const act=async()=>{if(operation++===target)throw Object.assign(new Error('password=PRIVATE cookie=PRIVATE https://secret/?token=PRIVATE'),{name:'TimeoutError'});};
    const page={goto:act,waitForURL:act,url:()=> 'https://auth.gomotive.com/login',locator:()=>({fill:act}),getByRole:()=>({click:act})};
-   await assert.rejects(execute(page,phase,'https://app.gomotive.com'),error=>{
+   await assert.rejects(execute(page,phase,'https://app.gomotive.com',async()=>{}),error=>{
     assert.deepEqual(failureDiagnostic(error),{phase:steps[target],error_kind:'browser_timeout'});return true;
    });
   }
@@ -35,4 +35,14 @@ test('diagnostic classification allows only known categories, never raw error fi
  assert.equal(failureDiagnostic(new Error('PRIVATE')).error_kind,'unclassified');
  phase('unrecognized');
  assert.deepEqual(failureDiagnostic({name:'PRIVATE',message:'PRIVATE'}),{phase:'other',error_kind:'unclassified'});
+});
+
+test('legacy preflight diagnostics expose static categories only',()=>{
+ for(const stage of ['login_form_check','login_legacy_link']){
+  phase(stage);
+  for(const reason of ['login_form_timeout','login_form_ambiguous','login_legacy_link_ambiguous','login_legacy_link_invalid']){
+   assert.deepEqual(failureDiagnostic(new Error(reason)),{phase:stage,error_kind:reason});
+  }
+  assert.deepEqual(failureDiagnostic(new Error('https://private.invalid/?secret=PRIVATE')),{phase:stage,error_kind:'unclassified'});
+ }
 });
