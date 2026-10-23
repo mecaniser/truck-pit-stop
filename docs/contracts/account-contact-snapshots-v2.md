@@ -69,3 +69,12 @@ source observations are not frozen during receiver outages. Disabled integration
 remain excluded. Resuming delivery preserves event IDs, idempotency keys and
 attempt history; terminal dead events require a separate review and are not
 replayed by a resume.
+
+## History delivery fairness
+
+A dedicated ten-second sender slot claims at most one eligible history event through
+the existing signed delivery service. Completion traffic retains its independent
+slot and configured batch. History uses the same tenant allowlist, pause, privacy
+expiry, lease, SKIP LOCKED, idempotency and failure rules; its total delivery budget
+remains 35 seconds within the 45-second task soft limit. No terminal or uncertain
+event replay is introduced.
