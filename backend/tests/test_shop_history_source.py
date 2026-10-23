@@ -481,3 +481,103 @@ async def test_reserved_history_delivery_retains_total_timeout(monkeypatch):
     with pytest.raises(ProviderDeliveryError, match='total time budget') as error:
         await _deliver(Tenant(id=uuid4()), event)
     assert error.value.retryable
+
+
+def verified_invoice_evidence(tenant, invoice, order):
+    from app.services.ets_source_evidence import append_source_evidence
+    from test_ets_completed_outcome_source import fixture
+    evidence = fixture()['evidence'][0]
+    evidence.update(service_id='1763', invoice_number='1639',
+        observed_at_source=datetime.now(timezone.utc).isoformat(),
+        completed_at_source=datetime(2026, 10, 13, tzinfo=timezone.utc).isoformat(),
+        invoice_manifest={'complete': True, 'evidence_kind': 'verified_source_service_invoice_manifest',
+                          'service_internal_id': evidence['service_internal_id'], 'invoice_ids': [evidence['invoice_id']]})
+    return append_source_evidence(None, evidence)
+
+
+@pytest.mark.asyncio
+async def test_verified_source_total_reconciles_history_without_financial_changes(_db_engine, monkeypatch):
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    async with factory() as db:
+        tenant, customer, vehicle, order, invoice = await seed(db)
+        envelope = verified_invoice_evidence(tenant, invoice, order)
+        from sqlalchemy import text
+        await db.execute(text("ALTER TABLE invoices ADD COLUMN ets_source_evidence JSON"))
+        await db.execute(text("UPDATE invoices SET ets_source_evidence=:e WHERE id=:id"),
+                         {'e': json.dumps(envelope), 'id': invoice.id.hex})
+        before = (invoice.total_amount, invoice.subtotal, invoice.status, invoice.paid_at)
+        monkeypatch.setattr('app.services.ets_completed_outcome_source.configured_shops', lambda: {tenant.id: 'sh_test'})
+        snapshot = history_snapshot(tenant=tenant, invoice=invoice, order=order,
+            customer=customer, vehicle=vehicle, operations=[order], ets_source_evidence=envelope)
+        assert snapshot['invoice_total'] == '10.30'
+        assert (invoice.total_amount, invoice.subtotal, invoice.status, invoice.paid_at) == before
+        await db.commit()
+    monkeypatch.setattr('app.core.config.settings.SHOP_HISTORY_CAPTURE_ENABLED', True)
+    monkeypatch.setattr('app.core.config.settings.SHOP_HISTORY_CAPTURE_TENANT_IDS', str(tenant.id))
+    monkeypatch.setattr('app.core.config.settings.ETS_COMPLETED_OUTCOMES_ENABLED', True)
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr('app.services.ets_completed_outcome_source.capture_imported_order', AsyncMock(return_value=None))
+    first = await capture_shop_history_batch(session_factory=factory)
+    assert first['captured'] == 1
+    assert (await capture_shop_history_batch(session_factory=factory))['captured'] == 0
+    async with factory() as db:
+        stored = await db.get(Invoice, invoice.id)
+        assert stored.total_amount == before[0] and stored.status == before[2]
+        event = await db.scalar(select(ProviderOutboxEvent).where(ProviderOutboxEvent.event_type == 'job.history_snapshot'))
+        assert event.payload['snapshot']['invoice_total'] == '10.30'
+        assert event.attempt_count == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('bad', ['missing', 'shop', 'service', 'alias', 'manifest', 'digest',
+    'confirmation', 'expired', 'future', 'failed', 'capacity', 'currency', 'status', 'zero', 'native', 'deleted'])
+async def test_unverified_source_total_cannot_replace_history_financial_context(_db_engine, monkeypatch, bad):
+    from copy import deepcopy
+    from datetime import timedelta
+    from app.services.ets_source_evidence import _digest
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    async with factory() as db:
+        tenant, customer, vehicle, order, invoice = await seed(db)
+        envelope = verified_invoice_evidence(tenant, invoice, order)
+        row = envelope['observations'][0]['evidence']
+        if bad == 'shop': row['ets_shop_id'] = 'foreign_shop'
+        if bad == 'service': row['service_id'] = '9999'
+        if bad == 'alias': row['invoice_number'] = '9999'
+        if bad == 'manifest': row['invoice_manifest']['invoice_ids'].append('other_invoice')
+        if bad == 'expired': row['observed_at_source'] = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+        if bad == 'future': row['observed_at_source'] = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+        if bad == 'failed': envelope['source_read_unavailable_at'] = datetime.now(timezone.utc).isoformat()
+        if bad == 'capacity': envelope['revision_capacity_exceeded'] = True
+        if bad == 'currency': row['currency'] = 'EUR'
+        if bad == 'status': row['invoice_status'] = '90'
+        if bad == 'zero': row['total']['amount'] = '0.00'
+        envelope['observations'][0]['sha256'] = _digest(row)
+        if bad == 'digest': envelope['observations'][0]['sha256'] = '0' * 64
+        if bad == 'confirmation': envelope['latest_confirmation'] = {'sha256': '0' * 64, 'observed_at_source': datetime.now(timezone.utc).isoformat()}
+        if bad == 'native': invoice.source = order.source = None
+        if bad == 'deleted': invoice.deleted_at = datetime.now(timezone.utc)
+        envelope = None if bad == 'missing' else deepcopy(envelope)
+        monkeypatch.setattr('app.services.ets_completed_outcome_source.configured_shops', lambda: {tenant.id: 'sh_test'})
+        snapshot = history_snapshot(tenant=tenant, invoice=invoice, order=order,
+            customer=customer, vehicle=vehicle, operations=[order], ets_source_evidence=envelope)
+        assert snapshot['invoice_total'] == '1992.62'
+        assert invoice.total_amount == Decimal('1992.62')
+
+
+@pytest.mark.asyncio
+async def test_digest_bound_same_facts_confirmation_can_refresh_source_context(_db_engine, monkeypatch):
+    from datetime import timedelta
+    from app.services.ets_source_evidence import _digest
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    async with factory() as db:
+        tenant, customer, vehicle, order, invoice = await seed(db)
+        envelope = verified_invoice_evidence(tenant, invoice, order)
+        row = envelope['observations'][0]
+        row['evidence']['observed_at_source'] = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+        row['sha256'] = _digest(row['evidence'])
+        envelope['latest_confirmation'] = {'sha256': row['sha256'], 'observed_at_source': datetime.now(timezone.utc).isoformat()}
+        monkeypatch.setattr('app.services.ets_completed_outcome_source.configured_shops', lambda: {tenant.id: 'sh_test'})
+        result = history_snapshot(tenant=tenant, invoice=invoice, order=order,
+            customer=customer, vehicle=vehicle, operations=[order], ets_source_evidence=envelope)
+        assert result['invoice_total'] == '10.30'
+        assert invoice.total_amount == Decimal('1992.62')
