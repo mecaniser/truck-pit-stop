@@ -63,8 +63,16 @@ function openTasks(output,scope,{maxAgeMs=15*60*1000,now=()=>Date.now(),log=valu
   },
  };
 }
+const diagnosticPhases=new Set(['login_navigate','login_auth_redirect','login_origin_check','login_email','login_password','login_submit','login_app_redirect']);
+function failureDiagnostic(error) {
+ // Only static categories escape the browser. Never serialize error messages or URLs.
+ const network=/^(?:page\.(?:goto|reload): )?net::ERR_(CONNECTION_RESET|CONNECTION_CLOSED|TIMED_OUT|NETWORK_CHANGED)(?:\s|$)/.exec(error?.message||'');
+ return {phase:diagnosticPhases.has(currentPhase)?currentPhase:'other',
+  error_kind:network?'network_'+network[1].toLowerCase():error?.name==='TimeoutError'?'browser_timeout':error?.message==='login_origin'?'unexpected_login_origin':'unclassified'};
+}
 function failed(output,error) {
  // The supervisor reads only this bounded classification, never raw browser errors.
+ console.log(JSON.stringify({stage:'collection_failure_diagnostic',...failureDiagnostic(error)}));
  atomic(output+'.failure.json',{retryable:transient(error),reason:safeReason(error),phase:currentPhase});
 }
 module.exports={phase,openTasks,retry,transient,safeReason,atomic,failed};
@@ -75,3 +83,5 @@ async function closeBrowser(browser,{timeoutMs=3000}={}) {
  finally {clearTimeout(timer);}
 }
 module.exports.closeBrowser=closeBrowser;
+
+module.exports.failureDiagnostic=failureDiagnostic;

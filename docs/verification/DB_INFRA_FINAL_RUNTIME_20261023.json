@@ -1,0 +1,164 @@
+{
+  "schema": 1,
+  "board_ids": [
+    "DB-INFRA-001",
+    "DB-INFRA-004",
+    "TPH-INFRA-005"
+  ],
+  "accountable_owner": "Release & Reliability",
+  "status": "Runtime acceptance GO; final source integration and serial exact-head CI pending",
+  "window_utc": [
+    "2026-10-22T19:28:23.277321Z",
+    "2026-10-23T19:28:23.277321Z"
+  ],
+  "window_eastern": "October 22, 2026 3:28:23 PM through October 23, 2026 3:28:23 PM America/New_York",
+  "report": {
+    "status": "passed",
+    "complete": true,
+    "samples": 1437,
+    "qualifying_end_sample": "2026-10-23T19:29:07.457718+00:00",
+    "issues": []
+  },
+  "minimum_free_bytes": 123305754624,
+  "maximum_sample_gap_seconds": 61.633407,
+  "running_staging_source": "626194996e78bd42556ce476847473e5730aa388",
+  "all_four_baseline_starts_unchanged": true,
+  "health_readiness_no_oom_disk_continuity": "PASS",
+  "active_baseline_sha256": "0002ccdd4d0b797e4a79543c1be310cd7a292d8f23b8ecba786031dec16ed328",
+  "original_failed_baseline_sha256": "1e7618809a071feb45cadb84667827c97c483c63f7e3fbf645b92628b4544d1e",
+  "original_failed_observation": "FAILED, preserved; not reset, replaced or reclassified",
+  "independent_final_qa": {
+    "reviewer": "continuity_independent_gate",
+    "decision": "GO",
+    "receipt_sha256": "823589fd1fc0dcffc6c398c32f3fc66cddc0b4a892436932b960c1a78c144b73",
+    "checks": {
+      "all_baseline_starts_unchanged": true,
+      "all_four_container_members_exact": true,
+      "all_ready_staging": true,
+      "all_running": true,
+      "all_samples_ok": true,
+      "all_sources_exact": true,
+      "configured_healthchecks_healthy": true,
+      "disk_above_20GiB": true,
+      "full_elapsed_day_and_end_sample": true,
+      "no_gap_over_90_seconds": true,
+      "no_oom": true
+    },
+    "controller": {
+      "all_running_configured_health_healthy_no_oom": true,
+      "baseline_matches": true,
+      "both_test_apps_ready_and_accepted_source": true,
+      "configuration_matches": true,
+      "identity_matches": true,
+      "protected_count": 14,
+      "staging_postgres_tenants_users_customers": [
+        2,
+        2,
+        2
+      ],
+      "uncertain_operation": false,
+      "uncertain_recovery": false
+    }
+  },
+  "independent_final_security": {
+    "reviewer": "independent-security-merge-safety-review",
+    "infrastructure_window": "GO",
+    "current_isolated_rehearsal": "GO with measured relay latency",
+    "receipt_sha256": "e3400e4489ea96c532db9d806d4f85ad2c1a8c0210d333824cac46e2dbd1e8c6",
+    "controller": {
+      "baseline_matches": true,
+      "configuration_matches": true,
+      "disabled_real_effect_flags_checked": 65,
+      "identity_matches": true,
+      "protected14_and_rehearsal4_identity_configuration_health_verified": true,
+      "retained_extras_verified": true,
+      "uncertain_operation": false,
+      "uncertain_recovery": false
+    }
+  },
+  "preserved_synthetic_rehearsal": {
+    "containers": {
+      "mac-backup": {
+        "cid_prefix": "e0eb80160f51",
+        "note": "Intentionally stopped original inactive actor; not a running unhealthy workload.",
+        "retained_health_label": "unhealthy",
+        "running": false,
+        "started": "2026-10-22T05:12:05.03396976Z"
+      },
+      "mongo": {
+        "cid_prefix": "39417e7d4644",
+        "health": "healthy",
+        "running": true,
+        "started": "2026-10-22T20:03:53.486818263Z"
+      },
+      "railway-simulation": {
+        "cid_prefix": "b0863397dbfc",
+        "health": "healthy",
+        "running": true,
+        "started": "2026-10-22T20:04:00.591453794Z"
+      },
+      "router": {
+        "cid_prefix": "12f8f3a64810",
+        "health": "healthy",
+        "running": true,
+        "started": "2026-10-22T20:30:40.663990507Z"
+      }
+    },
+    "epoch": 5,
+    "watermark": 8,
+    "accepted_admissions": 3,
+    "rejected_admissions": 1,
+    "accepted_fake_effects": 5,
+    "native_pin_usage": 3,
+    "sqlite_integrity": "ok",
+    "logical_state_matches_accepted_receipt": true,
+    "relay": {
+      "pid": 25245,
+      "loopback_only": true,
+      "independent_http_status": 200,
+      "independent_seconds": 6.283,
+      "owner_http_status": 200,
+      "owner_seconds": 6.383,
+      "five_second_probes": "timed out; insufficient latency bound, no permanent outage inferred"
+    },
+    "activate_live": "Previously tested refusal retained; unconditional refusal source re-inspected, not replayed"
+  },
+  "source_safeguard_hashes": {
+    "622_recovery_py": "bc05fdf9ab3843545c57c4cf13b6a6be99efe1c3d706e9186448f7b8a0928c5f",
+    "622_remote_py": "802aef1cc4760868cbe905e88711f1ddbc55d5471ada99ff735e273e7765744e",
+    "623_diagnostic_router_start_py": "54a5916f325262841603bec009c1b3d7c53556c13f319153a47993358134a2c7",
+    "623_recover_existing_py": "270960841fd8af20b24a420c978cf9b88bc42f2b7c1fef7a9c52d6c7b74c58ab",
+    "623_resume_existing_py": "3d6d84f499f7e097b367774a092f77222b322fc73ec7b71d0a6694deed41ba71",
+    "623_router_port_recovery_py": "f0f7bd07ce931275ff5aea00486cdcd06dfba1d98fb0f1c661b98ddab566a20e",
+    "hashes_match_previously_independently_reviewed_sources": true
+  },
+  "prior_ci_preserved": {
+    "619": {
+      "head": "816622348da691e19d74cb429be35a9f972d5e2f",
+      "run": 39865956482
+    },
+    "622": {
+      "head": "7c53f9b03fc2d59f22bb485a41f95c6c990a43ff",
+      "run": 39867672109
+    },
+    "623": {
+      "head": "13df035f51ee243664bac64c417cf59f86e1cbd8",
+      "run": 39868425948
+    }
+  },
+  "actual_current_main_invalidation": {
+    "actual_remote_main": "8346e1bdc0ced8880e527337c7746cf45ded9b78",
+    "all_three_mergeStateStatus": "DIRTY",
+    "all_three_mergeable": "CONFLICTING",
+    "owner": "Integration chat 01a154cd-159d-7403-bb02-18cfe3eb3294"
+  },
+  "limitations": [
+    "Infrastructure and synthetic rehearsal only; no live provider compatibility or recurring schedules proof",
+    "Assisted FileVault unlock/login remains required",
+    "Tracked PID1 safeguard not deployed or runtime-tested",
+    "Original failed observation remains failed and preserved",
+    "Live zero-loss activation remains blocked on durable current production data, fencing, native idempotency and unknown-outcome reconciliation, exact-release failover/failback, explicit production approval",
+    "No merge, deployment, Railway change, real effects, helper replay or clock reset performed"
+  ],
+  "mutations": "No runtime restart, helper/worker/provider replay, effect or production action; no baseline reset. Source owner separately coordinates necessary conflict fixes and exact-head CI."
+}
