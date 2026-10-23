@@ -1,0 +1,18 @@
+{
+  "app": "tph",
+  "source": "6a280dbd27d39771f0249b34bf5b5c294bba22dd",
+  "release": "3fac742f6f0d42178c30d99545b75b59",
+  "archive_sha256": "948264162a5b900a041364d98dbb83a0c8570bdd2d35f714ffb789278bea49e4",
+  "adapter_sha256": {
+    "Dockerfile.tph": "f4a73371dc2996a1a462598abdd0c5bc984735590b1c735fdbdbe1d5c3b85ccf",
+    "tph-web.cjs": "a69015ea024f3e8a15278983652eda9954485f135aede6849aa1bbe469fc1258",
+    "tph-worker.cjs": "975da340ead26e0657d5d360c805e847a62bfa5710163e1f35c0dbda5b5234c8",
+    "tph-seed.cjs": "deddd4e7a609dd4047070cf1c93e4b5c0973681a7fc3e5655c47f536c4022911",
+    "tph-probe.cjs": "6a88e33e3338f162eb787caf63b0eef2c1b7a89538d31ef92430f8e77b479c76",
+    "public-host.cjs": "26443d6540fad553430d53d79a0268eebabd1db73b990b74fb5479cab08b7e7f"
+  },
+  "bundle_sha256": "6a0222c02726ebd89c3fe30e02148022578e8a8180504131e8829efe21a70f9a",
+  "started_at": "2026-10-22T03:50:51.948861+00:00",
+  "image": "sha256:83194edb2d9a7187590162f006ac60af8c03e9360bbebba6acd7d57cb3c7a482",
+  "completed_at": "2026-10-22T03:52:19.991751+00:00"
+}

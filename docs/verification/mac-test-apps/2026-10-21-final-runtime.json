@@ -1,0 +1,285 @@
+{
+  "captured_at": "2026-10-22T00:42:31.822379+00:00",
+  "backup": {
+    "backup_directory": "/Users/sergio/mac-hosting/test-stacks/backups/20261022T004130",
+    "postgres_restore_database": "local_restore_fc1f6cf2bfbd",
+    "postgres_counts": "2|2|2|1",
+    "mongo_restore_database": "tph_restore_3daea8495a00",
+    "mongo_counts": {
+      "locations": 2,
+      "pins": 1,
+      "jobs": 1,
+      "drafts": 1,
+      "published": 0
+    },
+    "primary_databases_preserved": true
+  },
+  "phases": [
+    {
+      "at": "2026-10-22T00:25:23.300889+00:00",
+      "phase": "db_storage",
+      "state": "started"
+    },
+    {
+      "at": "2026-10-22T00:25:29.155025+00:00",
+      "phase": "db_storage",
+      "state": "passed"
+    },
+    {
+      "at": "2026-10-22T00:25:29.155660+00:00",
+      "phase": "db_migrations",
+      "state": "started"
+    },
+    {
+      "at": "2026-10-22T00:25:31.404145+00:00",
+      "phase": "db_migrations",
+      "state": "passed"
+    },
+    {
+      "at": "2026-10-22T00:25:31.404407+00:00",
+      "phase": "db_seed",
+      "state": "started"
+    },
+    {
+      "at": "2026-10-22T00:25:33.292844+00:00",
+      "phase": "db_seed",
+      "state": "passed"
+    },
+    {
+      "at": "2026-10-22T00:25:33.293148+00:00",
+      "phase": "db_receipt_table",
+      "state": "started"
+    },
+    {
+      "at": "2026-10-22T00:25:33.392284+00:00",
+      "phase": "db_receipt_table",
+      "state": "passed"
+    },
+    {
+      "at": "2026-10-22T00:25:33.392414+00:00",
+      "phase": "db_apps",
+      "state": "started"
+    },
+    {
+      "at": "2026-10-22T00:25:45.305319+00:00",
+      "phase": "db_apps",
+      "state": "passed"
+    },
+    {
+      "at": "2026-10-22T00:25:45.305903+00:00",
+      "phase": "tph_storage",
+      "state": "started"
+    },
+    {
+      "at": "2026-10-22T00:25:56.029976+00:00",
+      "phase": "tph_storage",
+      "state": "passed"
+    },
+    {
+      "at": "2026-10-22T00:25:56.030283+00:00",
+      "phase": "tph_seed",
+      "state": "started"
+    },
+    {
+      "at": "2026-10-22T00:25:56.744771+00:00",
+      "phase": "tph_seed",
+      "state": "passed"
+    },
+    {
+      "at": "2026-10-22T00:25:56.745119+00:00",
+      "phase": "tph_apps",
+      "state": "started"
+    },
+    {
+      "at": "2026-10-22T00:27:09.590725+00:00",
+      "phase": "tph_apps",
+      "state": "failed_readonly_log_directory"
+    },
+    {
+      "at": "2026-10-22T00:27:09.592266+00:00",
+      "phase": "tph_log_tmpfs",
+      "state": "uid1000_verified_narrow_remediation"
+    },
+    {
+      "at": "2026-10-22T00:27:51.550523+00:00",
+      "phase": "tph_apps",
+      "state": "failed_missing_square_constructor_placeholder"
+    },
+    {
+      "at": "2026-10-22T00:27:51.551317+00:00",
+      "phase": "tph_constructor",
+      "state": "nonfunctional_square_marker_no_credentials"
+    },
+    {
+      "at": "2026-10-22T00:28:08.531837+00:00",
+      "phase": "tph_apps",
+      "state": "passed_after_inspected_startup_fixes"
+    },
+    {
+      "at": "2026-10-22T00:31:03.120608+00:00",
+      "phase": "tph_html_gateway",
+      "state": "upstream_header_buffer_32k_corrected"
+    },
+    {
+      "at": "2026-10-22T00:33:57.460365+00:00",
+      "phase": "scoped_persistence_restart",
+      "state": "started"
+    },
+    {
+      "at": "2026-10-22T00:34:26.705310+00:00",
+      "phase": "scoped_persistence_restart",
+      "state": "passed"
+    },
+    {
+      "at": "2026-10-22T00:34:28.660289+00:00",
+      "phase": "post_restart_worker_receipts",
+      "state": "passed_unchanged_one_receipt_one_draft"
+    },
+    {
+      "at": "2026-10-22T00:41:29.939977+00:00",
+      "phase": "source_credential_scan",
+      "state": "templates_verified_no_literal_secrets_structured_urls_private_inputs_required"
+    }
+  ],
+  "tool_hashes": {
+    "Dockerfile.db": "fa83c1959733bdba7a8e91049ac2d0a2e316809620934905e6771b0278a1aec9",
+    "stackctl.py": "c7faf2b289de7a14b21261005d7964df3526e3db8afba82b46e6cb57eb21252c",
+    "configure.py": "a28f1e579d5de6ed0bfec4f8b1e8333627d384279e0891a514bd7bb4c44c4cb4",
+    "tph-seed.cjs": "deddd4e7a609dd4047070cf1c93e4b5c0973681a7fc3e5655c47f536c4022911",
+    "db-auth.py": "2db2a4c37f8931b390642d02b912bef0c8aa0ee0a36de4d7a6560eace511a9bf",
+    "db-probe.py": "a575f9d4c86ff34b2de01fa0d59432c3cbc4ee4f54fec267a7062b130805e73d",
+    "tph-probe.cjs": "6a88e33e3338f162eb787caf63b0eef2c1b7a89538d31ef92430f8e77b479c76",
+    "backup-restore.py": "4d11b35c9c1e0509abbc453c3604ca133ed4f3655be3d450c9ec1174a2c1089c",
+    "db-worker.py": "fcf121d265c9f6f4068c8670485729fd449be8f946c17c4c03d03bdde4b52c60",
+    "tph-web.cjs": "a69015ea024f3e8a15278983652eda9954485f135aede6849aa1bbe469fc1258",
+    "tph-worker.cjs": "975da340ead26e0657d5d360c805e847a62bfa5710163e1f35c0dbda5b5234c8",
+    "install-recovery.py": "93cdd3b5d263e09fff2087e91784ef6a903cde4fccad75a676f5683dc954e847",
+    "Dockerfile.tph": "9c37e71b52ab7272cc932b8f2f32893ab3ca63d1ca4b3b77df2a9cd9b17ebaf5",
+    "db-seed.py": "cda774b9e77efa7c6bcca3e9f72d11b0fc460f94669a92881c531b72c30126fd"
+  },
+  "worker": {
+    "dieselbridge": {
+      "first": {
+        "job_key": "synthetic-db-probe-v1",
+        "customers": 2,
+        "execution_count": 1,
+        "synthetic": true
+      },
+      "replay": {
+        "job_key": "synthetic-db-probe-v1",
+        "customers": 2,
+        "execution_count": 1,
+        "synthetic": true
+      },
+      "receipt_idempotent": true
+    },
+    "tph": {
+      "public_location": true,
+      "hidden_denied": true,
+      "manager_login": true,
+      "wrong_pin_denied": true,
+      "admin_unauthenticated_denied": true,
+      "job_status": "completed",
+      "job_attempts": 1,
+      "drafts": 1,
+      "published": 0,
+      "scheduled_jobs": 0
+    }
+  },
+  "containers": {
+    "dieselbridge": [
+      {
+        "service": "gateway",
+        "id": "5fe16f25ceb09d49d8046d642018556109fae6dbc223016bf2cf974fabd33880",
+        "started": "2026-10-22T00:35:05.427093762Z",
+        "running": true,
+        "health": null,
+        "oom": false
+      },
+      {
+        "service": "worker",
+        "id": "358e9108c7391032b5746689f21370ac96f3c2e1d0efe8dabc1105bccc28b965",
+        "started": "2026-10-22T00:33:57.928697634Z",
+        "running": true,
+        "health": "healthy",
+        "oom": false
+      },
+      {
+        "service": "web",
+        "id": "24fdd01568d1bc4ec91d78136bd92aa5a432ad48f3b24290ff6779968553fca5",
+        "started": "2026-10-22T00:33:58.679240884Z",
+        "running": true,
+        "health": "healthy",
+        "oom": false
+      },
+      {
+        "service": "postgres",
+        "id": "c5f77b88530d9b81739d88b66d1e390b6b6e546ed113c5e4ae844f973477acb2",
+        "started": "2026-10-22T00:33:57.84018455Z",
+        "running": true,
+        "health": "healthy",
+        "oom": false
+      },
+      {
+        "service": "redis",
+        "id": "21f4a0cacba631c8c0c84f691dcde3259ffe20c39c2c157078d6315317ef44cc",
+        "started": "2026-10-22T00:33:57.718071134Z",
+        "running": true,
+        "health": "healthy",
+        "oom": false
+      }
+    ],
+    "tph": [
+      {
+        "service": "web",
+        "id": "dc1f4a1d271f752a6748160cf01167a170b11f51c2899f0df1f2d9fe9cf0c2d9",
+        "started": "2026-10-22T00:34:10.030336417Z",
+        "running": true,
+        "health": "healthy",
+        "oom": false
+      },
+      {
+        "service": "identity",
+        "id": "bce7fed68991fda76d9ed8747e4db2902f71a5721565ac53ce87195bfc6c2dd6",
+        "started": "2026-10-22T00:34:11.051454209Z",
+        "running": true,
+        "health": "healthy",
+        "oom": false
+      },
+      {
+        "service": "worker",
+        "id": "729475c4a208d52d05ec7aa9fa67ac8314d19a54f5e71cdccdd66ca5790ceff3",
+        "started": "2026-10-22T00:34:11.092437584Z",
+        "running": true,
+        "health": "healthy",
+        "oom": false
+      },
+      {
+        "service": "gateway",
+        "id": "d694494d5c688f8cb66bf4d2b234c5190cdec70884e3b369970cd4a119876cb9",
+        "started": "2026-10-22T00:35:07.51248218Z",
+        "running": true,
+        "health": null,
+        "oom": false
+      },
+      {
+        "service": "mongo",
+        "id": "f9c57e483cb7caaa45913385be9fa2e9d83fa5ff4bf12eef3aefcd9f40787660",
+        "started": "2026-10-22T00:34:10.151934667Z",
+        "running": true,
+        "health": "healthy",
+        "oom": false
+      }
+    ]
+  },
+  "baseline_sha256": "1e7618809a071feb45cadb84667827c97c483c63f7e3fbf645b92628b4544d1e",
+  "soak": {
+    "status": "observing",
+    "complete": false,
+    "started_at": "2026-10-21T23:09:59.450841+00:00",
+    "ends_at": "2026-10-22T23:09:59.450841+00:00",
+    "samples": 94,
+    "last_sample": "2026-10-22T00:42:18.520551+00:00",
+    "issues": []
+  }
+}

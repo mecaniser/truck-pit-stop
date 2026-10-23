@@ -1,0 +1,9 @@
+{
+  "base_image": "sha256:7b25bcd8c6688cf695ffed53f067e16528184b9a60e954d4d72121477f9d8690",
+  "verified_local_alias": "macapps-tph-public-base:7b25bcd8c6688cf695ffed53f067e16528184b9a60e954d4d72121477f9d8690",
+  "result_image": "sha256:95df264063f3224f9a2519fd68a99e537f7a8da26d17ff78b5e6a87267a798b0",
+  "source_sha256": {
+    "Dockerfile.public-cors": "747a597f710620039109d2c10cf62025d7c4e2d4fe5256323ac57c52736fbe22",
+    "public-host.cjs": "26443d6540fad553430d53d79a0268eebabd1db73b990b74fb5479cab08b7e7f"
+  }
+}

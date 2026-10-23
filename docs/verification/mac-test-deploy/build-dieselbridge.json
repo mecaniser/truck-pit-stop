@@ -1,0 +1,17 @@
+{
+  "app": "dieselbridge",
+  "source": "04f0517593ef7cd937ec37d5fb6cfc5e84bf8e77",
+  "release": "b317752af50c48978f5e52e3a1bd8aef",
+  "archive_sha256": "f7a14349d7031b8da981e68aa9223d6d029a05588cb07c2744e529768db45e6e",
+  "adapter_sha256": {
+    "Dockerfile.dieselbridge": "98e6c93ec3ed70b473f13979535e03a603cde5d59534079372a255f1b4e8c040"
+  },
+  "bundle_sha256": "c751b0894f4c72dc270f057695a911f16224a630cf4fd95047736c912737dda1",
+  "started_at": "2026-10-22T04:03:39.517587+00:00",
+  "artifact_verified": {
+    "source": "04f0517593ef7cd937ec37d5fb6cfc5e84bf8e77",
+    "healthcheck_tool": true
+  },
+  "image": "sha256:9e92ec14d1641dc5996b47f2799bd5080526e695ea85e2e89f7e7f0cbd5755eb",
+  "completed_at": "2026-10-22T04:04:13.148008+00:00"
+}

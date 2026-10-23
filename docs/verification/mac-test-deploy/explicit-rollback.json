@@ -1,0 +1,150 @@
+{
+  "at": "2026-10-22T04:06:50.317231+00:00",
+  "image": "sha256:15b11ee6629e2e3938dc21803802ff42c1bd2f0d21c9c113627e873923fe3cc4",
+  "snapshot": {
+    "baseline_sha256": "1e7618809a071feb45cadb84667827c97c483c63f7e3fbf645b92628b4544d1e",
+    "containers": {
+      "db-local-test-gateway-1": {
+        "config_sha256": "1a1ef454d29b5a6cc4e8bd7efbb2ead32449ff81b8ff84ada4e2d3a28ca8b35f",
+        "health": null,
+        "id": "2668e4d08161dc32985e4a22a1dafe1e3b3e6dddfe3ded6da96197344aef6029",
+        "image": "sha256:970364228b1e4f932abc22d321932816782cca8a20b85a77552a7cfe9acfb3b5",
+        "networks_sha256": "40367a129fb4fa0eb68eb0215ba0e3f9bc9c7d3eb47c904aeaa3d3b547170083",
+        "oom": false,
+        "running": true,
+        "started": "2026-10-22T04:06:49.456824003Z"
+      },
+      "db-local-test-postgres-1": {
+        "config_sha256": "4ce826fe6a7ac50ceb851e7d3efbe2586dfd18976c8f665a9ef3ccc461d27efd",
+        "health": "healthy",
+        "id": "c5f77b88530d9b81739d88b66d1e390b6b6e546ed113c5e4ae844f973477acb2",
+        "image": "sha256:697ff70295146d53b702b07532fe68aaed7a5f10d04ff68edbeffd5fbacd15a5",
+        "networks_sha256": "0da6b92335a89a9d9d1f5fea7fc3456d1b0c02f2f581c4a50f06fc2079394a2a",
+        "oom": false,
+        "running": true,
+        "started": "2026-10-22T00:33:57.84018455Z"
+      },
+      "db-local-test-redis-1": {
+        "config_sha256": "c7be00d368981e0af9a8184c9bc7db41c45982007780cde9e992a9aa4415bf33",
+        "health": "healthy",
+        "id": "21f4a0cacba631c8c0c84f691dcde3259ffe20c39c2c157078d6315317ef44cc",
+        "image": "sha256:44960b3100c48159a66d28c18b0588c193492e25f7551d60e51dd464fc3eca5b",
+        "networks_sha256": "6257bba7f66e2e266398ca37c879e9a1b327c6db339ac9d63ea4a8bb42e39b71",
+        "oom": false,
+        "running": true,
+        "started": "2026-10-22T00:33:57.718071134Z"
+      },
+      "db-local-test-web-1": {
+        "config_sha256": "3b60c46c35c101821aa8bf2afd14640f730f0734246ce87fbe7128f16a4bd899",
+        "health": "healthy",
+        "id": "e7ef31ce91202e5afa25ddaeaf39b8ea75885874a25ac8b670a14a6aa2bf31bc",
+        "image": "sha256:15b11ee6629e2e3938dc21803802ff42c1bd2f0d21c9c113627e873923fe3cc4",
+        "networks_sha256": "870126b7f1c64deacd41d9b64816afbc40b7a4aece129660de74033c76ea9ec3",
+        "oom": false,
+        "running": true,
+        "started": "2026-10-22T04:06:38.314732262Z"
+      },
+      "db-local-test-worker-1": {
+        "config_sha256": "8e9931b0f4cac46ca2a12fb2a8f4a485d670b1a6c1537218d8c145b66612e6ee",
+        "health": "healthy",
+        "id": "358e9108c7391032b5746689f21370ac96f3c2e1d0efe8dabc1105bccc28b965",
+        "image": "sha256:15b11ee6629e2e3938dc21803802ff42c1bd2f0d21c9c113627e873923fe3cc4",
+        "networks_sha256": "8c52a9a5fade40db591025c7f5c96cb84c6e5913192b244479f9e823c98f2743",
+        "oom": false,
+        "running": true,
+        "started": "2026-10-22T00:33:57.928697634Z"
+      },
+      "dieselbridge-staging-gateway-1": {
+        "config_sha256": "d039960c8cbcf23f852d81963ab5826bcc36f1527fc777d246515b4eb7f659fc",
+        "health": null,
+        "id": "a10fc4f6d2cb2b8499d21a0560e5f626aad867b53d6fe2037d0922a626446dac",
+        "image": "sha256:970364228b1e4f932abc22d321932816782cca8a20b85a77552a7cfe9acfb3b5",
+        "networks_sha256": "f01145c19d966af91c12d34ba9cdbfa6c45fb1b7c24399fb7250a7ed474d3df0",
+        "oom": false,
+        "running": true,
+        "started": "2026-10-21T23:02:26.291543009Z"
+      },
+      "dieselbridge-staging-postgres-1": {
+        "config_sha256": "3f96f50dcbc7814bf3a6ddf63c113bac9c684f32b22923ab87aab1e6e8aebafe",
+        "health": "healthy",
+        "id": "29cb7a9be53f398b91a484dc99352828746a7f7582c0d2d95de0df8af071c370",
+        "image": "sha256:697ff70295146d53b702b07532fe68aaed7a5f10d04ff68edbeffd5fbacd15a5",
+        "networks_sha256": "30e983872500a14e92f2f3a8a32c3f0752b1886c0fab95289d34693bf63c4948",
+        "oom": false,
+        "running": true,
+        "started": "2026-10-21T23:02:09.757421084Z"
+      },
+      "dieselbridge-staging-redis-1": {
+        "config_sha256": "e819ba305d282f49d1732f5e7baa900a2f694cf12a743fea5f5a9aa0442d93df",
+        "health": "healthy",
+        "id": "bdd6aed28a31a4dd5fd303e132a4d4d1676f8ef5b2bfa0944753916c8a5ff566",
+        "image": "sha256:44960b3100c48159a66d28c18b0588c193492e25f7551d60e51dd464fc3eca5b",
+        "networks_sha256": "4ef604e0f3bcfa722efe92f29da32fa2223e78cbd5f6c2b441cc74949e4b1c39",
+        "oom": false,
+        "running": true,
+        "started": "2026-10-21T23:02:09.747963751Z"
+      },
+      "dieselbridge-staging-web-1": {
+        "config_sha256": "9d9a5feac1dd55f366ab7b2c921a9bfc88ecca480d9cf2bb950a9ec8e657ab19",
+        "health": "healthy",
+        "id": "71844ec2c296b5558da0162dc0869991419e9e079ad7e4ed70113095d6f3555f",
+        "image": "sha256:af4441619645e92619df201d3a808b40c570b0dede97331bd405af3745f1567d",
+        "networks_sha256": "5b47971f254d2f65167a42ca76b45e1e2a2bc61dcba480e6ebfdec5e96f9078e",
+        "oom": false,
+        "running": true,
+        "started": "2026-10-21T23:02:09.757029667Z"
+      },
+      "tph-local-test-gateway-1": {
+        "config_sha256": "42cbabefad3c2f4e1e5b9683d3a2c0c5d64841f459e6774b43fb8af96d8736f4",
+        "health": null,
+        "id": "35e71b58e8a314e1259c5c5e94f528a97ab2aea0aa2b8ec8e64247add2d35f6a",
+        "image": "sha256:970364228b1e4f932abc22d321932816782cca8a20b85a77552a7cfe9acfb3b5",
+        "networks_sha256": "0e96e0f8a92d3fa16187a760732105fad31ebf658d8c81a7dcbb500c73948f59",
+        "oom": false,
+        "running": true,
+        "started": "2026-10-22T01:34:54.298658798Z"
+      },
+      "tph-local-test-identity-1": {
+        "config_sha256": "ba1a234bd713915ac10af61e559089d3aba2c0f01fcb75d39c10c0366976876d",
+        "health": "healthy",
+        "id": "bce7fed68991fda76d9ed8747e4db2902f71a5721565ac53ce87195bfc6c2dd6",
+        "image": "sha256:b9ad065cf317c2516c35de57bb6e42229087b75b7f796951bcef5242818ce727",
+        "networks_sha256": "c0e0136e4075506737840c3f64ea8337861453e0fd9f4b7ec2715238acd1c96c",
+        "oom": false,
+        "running": true,
+        "started": "2026-10-22T00:34:11.051454209Z"
+      },
+      "tph-local-test-mongo-1": {
+        "config_sha256": "b5baa621adcaef914f9216cb61edeefe9edefc3367e78e1ba79a2657ef6bb12b",
+        "health": "healthy",
+        "id": "f9c57e483cb7caaa45913385be9fa2e9d83fa5ff4bf12eef3aefcd9f40787660",
+        "image": "sha256:c53852c00c23ca9f23fc39690350ffa9a80e3642fe8f96879726d8da0abe80a7",
+        "networks_sha256": "07d474e2e0613aa1b545d7f5989bd4872f2dff9e7b31548c8741c428fb11f6b2",
+        "oom": false,
+        "running": true,
+        "started": "2026-10-22T00:34:10.151934667Z"
+      },
+      "tph-local-test-web-1": {
+        "config_sha256": "72b1fb653eea7b6c72d0f57100368313e1b2f79d60dd63f6a10e50c4488ab841",
+        "health": "healthy",
+        "id": "a08bd13e89d2198049ce4e2a5feab4a2f9f35ed7a78591cd7c1ae9e3cd8425f4",
+        "image": "sha256:95df264063f3224f9a2519fd68a99e537f7a8da26d17ff78b5e6a87267a798b0",
+        "networks_sha256": "a2c950ead3f01de3c884510fdd711b47d92775efcd38c68428ff66114f82f75a",
+        "oom": false,
+        "running": true,
+        "started": "2026-10-22T01:34:43.186024251Z"
+      },
+      "tph-local-test-worker-1": {
+        "config_sha256": "e70d5f49c9d9e0b434a40260afe5ee912190fab42eb8b1fae8f8bc80859b0ba2",
+        "health": "healthy",
+        "id": "729475c4a208d52d05ec7aa9fa67ac8314d19a54f5e71cdccdd66ca5790ceff3",
+        "image": "sha256:b9ad065cf317c2516c35de57bb6e42229087b75b7f796951bcef5242818ce727",
+        "networks_sha256": "3035f9cfa00f8c8db8bdd33c726ab8689ea9643c5ebe2e175f28aa9a5e758256",
+        "oom": false,
+        "running": true,
+        "started": "2026-10-22T00:34:11.092437584Z"
+      }
+    }
+  },
+  "source": "65afe9b8fa52a946ca86f645abbf4ebe70aa3604"
+}
