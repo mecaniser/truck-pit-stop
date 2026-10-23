@@ -169,6 +169,19 @@ def batch_harness(monkeypatch, tmp_path):
 
         Path(command[-1]).write_text(json.dumps(document()))
 
+    @asynccontextmanager
+    async def batch(engine, identities):
+        from contextlib import AsyncExitStack
+
+        async with AsyncExitStack() as stack:
+            yield [
+                await stack.enter_async_context(
+                    journal.database_journal(engine, identity, key)
+                )
+                for identity, key in identities
+            ]
+
+    monkeypatch.setattr(journal, "database_journals", batch)
     monkeypatch.setattr(journal, "database_journal", locked)
     monkeypatch.setattr(journal, "authorize_configuration", authorize)
     monkeypatch.setattr(journal, "prepare_batch", prepare)

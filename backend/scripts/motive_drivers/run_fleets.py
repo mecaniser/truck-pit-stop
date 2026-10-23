@@ -11,7 +11,6 @@ import os
 import re
 import subprocess
 import sys
-from contextlib import AsyncExitStack
 from pathlib import Path
 from uuid import UUID
 
@@ -67,7 +66,7 @@ async def database_fleets(children, *, engine=None, factory=None):
     from scripts.motive_drivers.journal import (
         Identity,
         authorize_configuration,
-        database_journal,
+        database_journals,
         prepare_batch,
     )
     from scripts.motive_drivers.run_worker import (
@@ -82,21 +81,13 @@ async def database_fleets(children, *, engine=None, factory=None):
 
         engine, factory = application_engine, AsyncSessionLocal
     commit = children[0].get("MOTIVE_DRIVER_COMMIT", "false") == "true"
-    async with AsyncExitStack() as stack:
-        journals = {}
-        # Stable ordering avoids deadlocks against another overlapping fleet batch.
-        for child in sorted(children, key=lambda c: c["MOTIVE_DRIVER_JOURNAL_KEY"]):
-            identity = Identity.from_environment(child)
-            journal = await stack.enter_async_context(
-                database_journal(
-                    engine,
-                    identity,
-                    child["MOTIVE_DRIVER_JOURNAL_KEY"],
-                )
-            )
-            await authorize_configuration(factory, identity)
-            journals[child["MOTIVE_DRIVER_JOURNAL_KEY"]] = journal
-        ordered = [journals[child["MOTIVE_DRIVER_JOURNAL_KEY"]] for child in children]
+    identities = [
+        (Identity.from_environment(child), child["MOTIVE_DRIVER_JOURNAL_KEY"])
+        for child in children
+    ]
+    async with database_journals(engine, identities) as ordered:
+        for journal in ordered:
+            await authorize_configuration(factory, journal.identity)
         recovered = []
         # Reconcile uncertain commits first. Old source-only rows remain immutable
         # evidence and are skipped without blocking a legitimate fresh collection.
