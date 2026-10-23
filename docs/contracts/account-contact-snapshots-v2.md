@@ -60,3 +60,21 @@ existing manual qualification and financial records unchanged.
 Rollback code before dropping the nullable column; preserve captured evidence
 for investigation. Stop contact-based automatic matching on identity/hash/
 freshness anomalies. Do not restore historical phone unions.
+
+## Capture during delivery pauses
+
+A delivery pause stops outbound webhook requests. Enabled, allowlisted shops
+continue durable history capture under the existing retention ceiling, so current
+source observations are not frozen during receiver outages. Disabled integrations
+remain excluded. Resuming delivery preserves event IDs, idempotency keys and
+attempt history; terminal dead events require a separate review and are not
+replayed by a resume.
+
+## History delivery fairness
+
+A dedicated ten-second sender slot claims at most one eligible history event through
+the existing signed delivery service. Completion traffic retains its independent
+slot and configured batch. History uses the same tenant allowlist, pause, privacy
+expiry, lease, SKIP LOCKED, idempotency and failure rules; its total delivery budget
+remains 35 seconds within the 45-second task soft limit. No terminal or uncertain
+event replay is introduced.

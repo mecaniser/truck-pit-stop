@@ -328,3 +328,156 @@ async def test_prior_native_completion_invalidates_outside_public_history(_db_en
         assert len(holds) == 1
         assert holds[0].payload['source_observation'] == 2
         assert holds[0].payload['snapshot']['source_job_id'] == str(order.id)
+
+
+@pytest.mark.asyncio
+async def test_delivery_pause_keeps_current_history_durable_without_dispatch(_db_engine, monkeypatch):
+    """A receiver outage must not stop current source evidence being captured."""
+    from app.services.paid_invoice_webhook_service import process_due_paid_invoice_webhooks
+
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    async with factory() as db:
+        tenant, customer, vehicle, order, invoice = await seed(db)
+        tenant.paid_invoice_webhook_delivery_paused = True
+        foreign = Tenant(name='Unselected shop', slug=uuid4().hex,
+                         paid_invoice_webhook_enabled=True,
+                         paid_invoice_webhook_delivery_paused=True,
+                         paid_invoice_webhook_url='https://example.test/hook',
+                         paid_invoice_webhook_secret_encrypted='synthetic-not-used')
+        db.add(foreign)
+        await db.commit()
+    monkeypatch.setattr('app.core.config.settings.SHOP_HISTORY_CAPTURE_ENABLED', True)
+    monkeypatch.setattr('app.core.config.settings.SHOP_HISTORY_CAPTURE_TENANT_IDS', str(tenant.id))
+
+    assert await capture_shop_history_batch(session_factory=factory) == {'scanned': 1, 'captured': 1, 'tenants': 1}
+    assert (await process_due_paid_invoice_webhooks(session_factory=factory))['claimed'] == 0
+    async with factory() as db:
+        events = (await db.execute(select(ProviderOutboxEvent))).scalars().all()
+        assert len(events) == 1
+        assert events[0].tenant_id == tenant.id
+        assert events[0].status == 'pending'
+        assert events[0].attempt_count == 0
+        assert (await db.get(Tenant, tenant.id)).paid_invoice_webhook_delivery_paused is True
+        assert (await db.get(Invoice, invoice.id)).total_amount == Decimal('1992.62')
+        current = await db.get(RepairOrder, order.id)
+        current.description = 'Current changed work context'
+        await db.commit()
+    assert (await capture_shop_history_batch(session_factory=factory))['captured'] == 1
+    assert (await capture_shop_history_batch(session_factory=factory))['captured'] == 0
+    assert (await process_due_paid_invoice_webhooks(session_factory=factory))['claimed'] == 0
+
+
+@pytest.mark.asyncio
+async def test_reserved_history_slot_progresses_despite_continuous_completion_traffic(_db_engine, monkeypatch):
+    from app.services.paid_invoice_webhook_service import process_due_paid_invoice_webhooks
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    async with factory() as db:
+        tenant, *_ = await seed(db)
+        await db.commit()
+    monkeypatch.setattr('app.core.config.settings.SHOP_HISTORY_CAPTURE_ENABLED', True)
+    monkeypatch.setattr('app.core.config.settings.SHOP_HISTORY_CAPTURE_TENANT_IDS', str(tenant.id))
+    monkeypatch.setattr('app.core.config.settings.PROVIDER_OUTBOX_BATCH_SIZE', 1)
+    await capture_shop_history_batch(session_factory=factory)
+    delivered = []
+    async def accept(_tenant, event):
+        delivered.append(event.event_type)
+        return 'synthetic-receipt', 202
+    monkeypatch.setattr('app.services.paid_invoice_webhook_service._deliver', accept)
+    for _ in range(3):
+        async with factory() as db:
+            db.add(ProviderOutboxEvent(tenant_id=tenant.id, event_type='repair_order.paid', aggregate_type='invoice', aggregate_id=uuid4(), payload={}, idempotency_key=uuid4().hex, available_at=datetime.now(timezone.utc)))
+            await db.commit()
+        assert (await process_due_paid_invoice_webhooks(session_factory=factory))['succeeded'] == 1
+    assert delivered == ['repair_order.paid'] * 3
+    async with factory() as db:
+        db.add(ProviderOutboxEvent(tenant_id=tenant.id, event_type='repair_order.paid', aggregate_type='invoice', aggregate_id=uuid4(), payload={}, idempotency_key=uuid4().hex, available_at=datetime.now(timezone.utc)))
+        await db.commit()
+    # Even an oversized caller override cannot enlarge the reserved task budget.
+    assert (await process_due_paid_invoice_webhooks(session_factory=factory, history_only=True, batch_size=100))['succeeded'] == 1
+    assert delivered[-1] == 'job.history_snapshot'
+    async with factory() as db:
+        assert len((await db.scalars(select(ProviderOutboxEvent).where(ProviderOutboxEvent.status == 'pending'))).all()) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('restriction', ['paused', 'disabled', 'not_allowed', 'capture_disabled', 'dead', 'leased', 'future'])
+async def test_reserved_history_slot_preserves_claim_guards(_db_engine, monkeypatch, restriction):
+    from datetime import timedelta
+    from app.services.paid_invoice_webhook_service import process_due_paid_invoice_webhooks
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    async with factory() as db:
+        tenant, *_ = await seed(db)
+        await db.commit()
+    monkeypatch.setattr('app.core.config.settings.SHOP_HISTORY_CAPTURE_ENABLED', True)
+    monkeypatch.setattr('app.core.config.settings.SHOP_HISTORY_CAPTURE_TENANT_IDS', str(tenant.id))
+    await capture_shop_history_batch(session_factory=factory)
+    async with factory() as db:
+        event = await db.scalar(select(ProviderOutboxEvent))
+        tenant = await db.get(Tenant, tenant.id)
+        if restriction == 'paused': tenant.paid_invoice_webhook_delivery_paused = True
+        if restriction == 'disabled': tenant.paid_invoice_webhook_enabled = False
+        if restriction == 'not_allowed': monkeypatch.setattr('app.core.config.settings.SHOP_HISTORY_CAPTURE_TENANT_IDS', str(uuid4()))
+        if restriction == 'capture_disabled': monkeypatch.setattr('app.core.config.settings.SHOP_HISTORY_CAPTURE_ENABLED', False)
+        if restriction == 'dead': event.status = 'dead'
+        if restriction == 'leased':
+            event.status = 'processing'
+            event.locked_until = datetime.now(timezone.utc) + timedelta(minutes=5)
+        if restriction == 'future': event.available_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+        await db.commit()
+        before = event.attempt_count
+    result = await process_due_paid_invoice_webhooks(session_factory=factory, history_only=True)
+    assert result['claimed'] == 0
+    async with factory() as db:
+        assert (await db.scalar(select(ProviderOutboxEvent))).attempt_count == before
+
+
+@pytest.mark.asyncio
+async def test_reserved_history_failure_keeps_native_retry_rules(_db_engine, monkeypatch):
+    from app.services.paid_invoice_webhook_service import process_due_paid_invoice_webhooks
+    from app.services.provider_outbox_service import ProviderDeliveryError
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    async with factory() as db:
+        tenant, *_ = await seed(db)
+        await db.commit()
+    monkeypatch.setattr('app.core.config.settings.SHOP_HISTORY_CAPTURE_ENABLED', True)
+    monkeypatch.setattr('app.core.config.settings.SHOP_HISTORY_CAPTURE_TENANT_IDS', str(tenant.id))
+    monkeypatch.setattr('app.core.config.settings.PROVIDER_OUTBOX_MAX_ATTEMPTS', 3)
+    await capture_shop_history_batch(session_factory=factory)
+    async def fail(*args):
+        raise ProviderDeliveryError('synthetic timeout', retryable=True)
+    monkeypatch.setattr('app.services.paid_invoice_webhook_service._deliver', fail)
+    assert (await process_due_paid_invoice_webhooks(session_factory=factory, history_only=True))['retried'] == 1
+    async with factory() as db:
+        event = await db.scalar(select(ProviderOutboxEvent))
+        assert event.status == 'pending' and event.attempt_count == 1
+        assert event.available_at > event.last_attempt_at
+    assert (await process_due_paid_invoice_webhooks(session_factory=factory, history_only=True))['claimed'] == 0
+
+
+def test_reserved_history_task_has_independent_schedule_and_bounded_budget():
+    from app.tasks import celery_app
+    from app.tasks.provider_outbox import process_shop_history_webhooks
+    from app.core.config import settings
+    schedule = celery_app.conf.beat_schedule
+    assert schedule['process-shop-history-webhooks']['task'] == 'process_shop_history_webhooks'
+    assert schedule['process-shop-history-webhooks']['schedule'].total_seconds() == 10
+    assert schedule['process-shop-history-webhooks']['options']['expires'] == 10
+    assert schedule['process-paid-invoice-webhooks']['schedule'].total_seconds() == 10
+    assert process_shop_history_webhooks.soft_time_limit == 45
+    assert process_shop_history_webhooks.time_limit == 60
+    assert settings.PAID_INVOICE_WEBHOOK_TOTAL_TIMEOUT_SECONDS == 35
+
+
+@pytest.mark.asyncio
+async def test_reserved_history_delivery_retains_total_timeout(monkeypatch):
+    import anyio
+    from app.services.paid_invoice_webhook_service import _deliver
+    from app.services.provider_outbox_service import ProviderDeliveryError
+    monkeypatch.setattr('app.core.config.settings.PAID_INVOICE_WEBHOOK_TOTAL_TIMEOUT_SECONDS', .01)
+    async def stalled(*args):
+        await anyio.sleep(1)
+    monkeypatch.setattr('app.services.paid_invoice_webhook_service._deliver_within_budget', stalled)
+    event = ProviderOutboxEvent(event_type='job.history_snapshot', payload={}, created_at=datetime.now(timezone.utc))
+    with pytest.raises(ProviderDeliveryError, match='total time budget') as error:
+        await _deliver(Tenant(id=uuid4()), event)
+    assert error.value.retryable

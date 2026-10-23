@@ -67,6 +67,11 @@ celery_app.conf.update(
             "schedule": timedelta(minutes=1),
         },
         "capture-shop-history": {"task": "capture_shop_history", "schedule": timedelta(minutes=5)},
+        "process-shop-history-webhooks": {
+            "task": "process_shop_history_webhooks",
+            "schedule": timedelta(seconds=10),
+            "options": {"expires": 10},
+        },
         "process-paid-invoice-webhooks": {
             "task": "process_paid_invoice_webhooks",
             "schedule": timedelta(seconds=10),

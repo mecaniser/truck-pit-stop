@@ -67,7 +67,7 @@ jobs:
       - name: Verify ETS contact evidence contracts
         run: node --test backend/scripts/easytruck_sync/lib/contact_snapshot.test.js
       - name: Verify Motive location and speed collector contracts
-        run: node --test backend/scripts/motive_sync/collector.test.cjs backend/scripts/motive_sync/tasks.test.cjs
+        run: node --test backend/scripts/motive_sync/collector.test.cjs backend/scripts/motive_sync/tasks.test.cjs backend/scripts/motive_sync/login_diagnostics.test.cjs
       - name: Verify Railway deployment readiness
         run: |
           python .github/scripts/check_railway_config.py
@@ -340,6 +340,11 @@ jobs:
             # job users deliberately cannot sudo or modify that base image.
             npx playwright install --only-shell chromium
           else
+            # The Azure Ubuntu mirror can stall package downloads on hosted
+            # runners. Keep Ubuntu's signed packages and use its HTTPS archive.
+            if [ -f /etc/apt/apt-mirrors.txt ]; then
+              sudo sed -i -e 's|http://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' -e 's|https://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
+            fi
             npx playwright install --with-deps --only-shell chromium
           fi
       - name: Prepare isolated test database
