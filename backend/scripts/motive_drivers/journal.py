@@ -8,7 +8,7 @@ import hashlib
 import json
 import os
 import re
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
@@ -131,32 +131,74 @@ async def authorize_configuration(factory, identity):
 
 @asynccontextmanager
 async def database_journal(engine, identity, worker_key="motive-driver"):
+    """Single-fleet compatibility wrapper around the shared-session owner."""
+    async with database_journals(engine, [(identity, worker_key)]) as journals:
+        yield journals[0]
+
+
+@asynccontextmanager
+async def database_journals(engine, identities):
+    """Hold a batch's distinct advisory locks on one dedicated connection.
+
+    Import/authorization sessions still use separate short transactions. Reserving
+    one connection regardless of fleet count leaves room in bounded worker pools.
+    Returned journals retain input order and independent immutable identities.
+    """
     if engine.dialect.name != "postgresql":
         raise ValueError("Driver database journal requires PostgreSQL")
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,119}", worker_key):
+    identities = list(identities)
+    if not identities or len(identities) > 9:
+        raise ValueError("Invalid driver projection batch")
+    keys = [key for _, key in identities]
+    if len(set(keys)) != len(keys) or any(
+        not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,119}", key) for key in keys
+    ):
         raise ValueError("Invalid stable driver worker key")
-    async with engine.connect() as connection:
+    async with engine.connect() as connection, AsyncExitStack() as stack:
+        journals = {}
+        for identity, worker_key in sorted(identities, key=lambda item: item[1]):
+            journals[worker_key] = await stack.enter_async_context(
+                _locked_journal(connection, identity, worker_key)
+            )
+        yield [journals[key] for key in keys]
+
+
+@asynccontextmanager
+async def _locked_journal(connection, identity, worker_key):
+    try:
         held = await connection.scalar(
             sa.text("SELECT pg_try_advisory_lock(:key)"), {"key": lock_key(worker_key)}
         )
+    except BaseException:
+        # Acquisition may have reached PostgreSQL before cancellation or a lost
+        # response. Discard that session rather than pool an unaccounted lock.
+        await connection.invalidate()
+        raise
+    if not held:
+        await connection.rollback()
+        raise RuntimeError("Motive driver worker already running")
+    # Register cleanup immediately after acquisition, including failures fetching
+    # the session id, committing, or checking the immutable fleet binding.
+    try:
         pid = await connection.scalar(sa.text("SELECT pg_backend_pid()"))
         await connection.commit()
-        if not held:
-            raise RuntimeError("Motive driver worker already running")
-        try:
-            journal = Journal(connection, identity, worker_key, backend_pid=pid)
-            await journal.check_binding()
-            yield journal
-        finally:
-            # A connection failure releases its server session lock. Do not
-            # reconnect to unlock a different session or mask the original error.
-            if not connection.invalidated:
+        journal = Journal(connection, identity, worker_key, backend_pid=pid)
+        await journal.check_binding()
+        yield journal
+    finally:
+        # Never reconnect to unlock a different server session.
+        if not connection.invalidated:
+            try:
                 await connection.rollback()
                 await connection.execute(
                     sa.text("SELECT pg_advisory_unlock(:key)"),
                     {"key": lock_key(worker_key)},
                 )
                 await connection.commit()
+            except BaseException:
+                # Session locks must never return to the pool after failed cleanup.
+                await connection.invalidate()
+                raise
 
 
 async def prepare_batch(journals, document, *, commit=False):
