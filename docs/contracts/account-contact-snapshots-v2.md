@@ -60,3 +60,12 @@ existing manual qualification and financial records unchanged.
 Rollback code before dropping the nullable column; preserve captured evidence
 for investigation. Stop contact-based automatic matching on identity/hash/
 freshness anomalies. Do not restore historical phone unions.
+
+## Capture during delivery pauses
+
+A delivery pause stops outbound webhook requests. Enabled, allowlisted shops
+continue durable history capture under the existing retention ceiling, so current
+source observations are not frozen during receiver outages. Disabled integrations
+remain excluded. Resuming delivery preserves event IDs, idempotency keys and
+attempt history; terminal dead events require a separate review and are not
+replayed by a resume.
