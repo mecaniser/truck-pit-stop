@@ -1,0 +1,244 @@
+{
+  "activate_live_negative": {
+    "exit": 1,
+    "refusal": "LIVE ACTIVATION FORBIDDEN: Railway primary is unchanged; current-data/fencing/provider/domain release is not approved"
+  },
+  "at": "2026-10-22T20:34:15.059198+00:00",
+  "authority_probe": {
+    "bodyJson": true,
+    "dockerExit": 0,
+    "fields": {
+      "authority": true,
+      "database": true,
+      "pinUsage": true,
+      "prefix": true,
+      "source": true,
+      "watermark": true
+    },
+    "httpStatus": 200,
+    "ok": true,
+    "stage": "accepted",
+    "stderrBytes": 0,
+    "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "timeout": false
+  },
+  "completed_receipt_sha256": "4df056156893ea1c0a2086e14d1a9e8a238992c9a9c72f84ecdf933e36629a30",
+  "containers": {
+    "mac-backup": {
+      "config_sha256": "83db1ebc56417b7afd9c8aeed1c1aece3b20944792217800c0831daf2bb43120",
+      "health": "unhealthy",
+      "host_sha256": "514fb74db6dae787ce3f23f66eb989cec84bf6da93734920ea90b604ea031efd",
+      "id": "e0eb80160f5188007615f39896f15a6f4f8275147632613240676e0d8139e7db",
+      "image": "sha256:ac317d36a53634d90c2a40c9a5dc383e1e9bfc65486c880947582a72513d6fcf",
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "running": false,
+      "started": "2026-10-22T05:12:05.03396976Z"
+    },
+    "mongo": {
+      "config_sha256": "22b84bb89b855712e48cb11c951a325cf82dfa709fd88bcecb230c1ac5828fa0",
+      "health": "healthy",
+      "host_sha256": "e34745e2f5ccfd0f6d8a92a94eeecd13b0569144fbb96b87515e55457132fab8",
+      "id": "39417e7d464409d19010f52b45ec2ac5e4baab72d230a5fd5aaa16c785757859",
+      "image": "sha256:c53852c00c23ca9f23fc39690350ffa9a80e3642fe8f96879726d8da0abe80a7",
+      "mounts_sha256": "212f8d3137ffcfbf1ad69509cd02881daa51ae60af175a18f4a77cef3bda56bb",
+      "running": true,
+      "started": "2026-10-22T20:03:53.486818263Z"
+    },
+    "railway-simulation": {
+      "config_sha256": "94ad600cc6fb3b2057b19202471d041b6929992da4d5022133d7d54de38aa291",
+      "health": "healthy",
+      "host_sha256": "514fb74db6dae787ce3f23f66eb989cec84bf6da93734920ea90b604ea031efd",
+      "id": "b0863397dbfca6b8c712881f2aed2b1532f8536d4c7dcc7fbc5736f40ac0a247",
+      "image": "sha256:ac317d36a53634d90c2a40c9a5dc383e1e9bfc65486c880947582a72513d6fcf",
+      "mounts_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "running": true,
+      "started": "2026-10-22T20:04:00.591453794Z"
+    },
+    "router": {
+      "config_sha256": "b210858c52daa161b7a028c1a57348a03886612b062baf0e1227790e23e6407f",
+      "health": "healthy",
+      "host_sha256": "2100eedb988007595ed11ccb370dd4eb1657123acf567fc043641bb8dcf1e6c1",
+      "id": "12f8f3a648103db54493730a8cfd4f1624b09b92159b5471e3210c4fa1998906",
+      "image": "sha256:ad263a2882720763c4b2ffd920a17571b1777c99110cce02c1ab9272ff3313f2",
+      "mounts_sha256": "b37a909a631a1c202d2cf2e686b33c5b21af64c1bdd109f081420cd62b1ace87",
+      "running": true,
+      "started": "2026-10-22T20:30:40.663990507Z"
+    }
+  },
+  "controller": {
+    "baseline_matches": true,
+    "configuration_matches": true,
+    "identity_matches": true,
+    "uncertain_operation": false,
+    "uncertain_recovery": false
+  },
+  "fresh_switch_failback_performed": false,
+  "independent_qa": "runtime GO independent-qa-623-port-postcheck-20261022T2032Z",
+  "independent_security": "runtime GO merge_safety_review postcheck exact completed/current runtime",
+  "kind": "independently_approved_isolated_recovery_completed",
+  "limitations": [
+    "synthetic availability/recovery only",
+    "original there/back evidence preserved; no new promotion or effect replay",
+    "not live zero-loss/provider duplicate protection",
+    "new24h and finalcurrentmain independent integration/CI still pending"
+  ],
+  "new_baseline_sha256": "0002ccdd4d0b797e4a79543c1be310cd7a292d8f23b8ecba786031dec16ed328",
+  "observation": {
+    "complete": false,
+    "ends_at": "2026-10-23T19:28:23.277321+00:00",
+    "issues": [],
+    "last_sample": "2026-10-22T20:34:07.845456+00:00",
+    "samples": 66,
+    "started_at": "2026-10-22T19:28:23.277321+00:00",
+    "status": "observing"
+  },
+  "original_baseline_sha256": "1e7618809a071feb45cadb84667827c97c483c63f7e3fbf645b92628b4544d1e",
+  "plan_sha256": "b01bfa79f2a1921cc2b5d2c61e0f71b2e0ad1ab3723b2f73c29df14124e64216",
+  "prior_failures_preserved": true,
+  "protected_unchanged": true,
+  "provider_business_actions": 0,
+  "provider_flags": {
+    "db-local-test-web-1": {
+      "configured_flags": {
+        "PROVIDER_OUTBOX_ENABLED": "false",
+        "SMS_AUTOMATION_OUTBOX_ENABLED": "false",
+        "SMS_RECOVERY_ENABLED": "false",
+        "SMS_TENANT_ROUTING_ENABLED": "false"
+      },
+      "rehearsal_square_credential_invalid": null
+    },
+    "db-local-test-worker-1": {
+      "configured_flags": {
+        "PROVIDER_OUTBOX_ENABLED": "false",
+        "SMS_AUTOMATION_OUTBOX_ENABLED": "false",
+        "SMS_RECOVERY_ENABLED": "false",
+        "SMS_TENANT_ROUTING_ENABLED": "false"
+      },
+      "rehearsal_square_credential_invalid": null
+    },
+    "macapps-tph-backup-rehearsal-v3-mac-backup-1": {
+      "configured_flags": {
+        "ADMIN_PAYMENT_SMS_ENABLED": "false",
+        "ADMIN_SMS_ENABLED": "false",
+        "DISABLE_SCHEDULER": "true",
+        "ERROR_ALERTS_ENABLED": "false",
+        "ERROR_ALERTS_SMS_ENABLED": "false",
+        "FACEBOOK_ENABLED": "false",
+        "PERF_SLO_ALERTS_ENABLED": "false",
+        "WORKOS_ENABLED": "false",
+        "WORKOS_IDENTITY_EVENTS_WORKER_ENABLED": "false"
+      },
+      "rehearsal_square_credential_invalid": true
+    },
+    "macapps-tph-backup-rehearsal-v3-railway-simulation-1": {
+      "configured_flags": {
+        "ADMIN_PAYMENT_SMS_ENABLED": "false",
+        "ADMIN_SMS_ENABLED": "false",
+        "DISABLE_SCHEDULER": "true",
+        "ERROR_ALERTS_ENABLED": "false",
+        "ERROR_ALERTS_SMS_ENABLED": "false",
+        "FACEBOOK_ENABLED": "false",
+        "PERF_SLO_ALERTS_ENABLED": "false",
+        "WORKOS_ENABLED": "false",
+        "WORKOS_IDENTITY_EVENTS_WORKER_ENABLED": "false"
+      },
+      "rehearsal_square_credential_invalid": true
+    },
+    "tph-local-test-identity-1": {
+      "configured_flags": {
+        "ADMIN_PAYMENT_SMS_ENABLED": "false",
+        "ADMIN_SMS_ENABLED": "false",
+        "DISABLE_SCHEDULER": "true",
+        "ERROR_ALERTS_ENABLED": "false",
+        "ERROR_ALERTS_SMS_ENABLED": "false",
+        "HIRING_CANDIDATE_SMS_ENABLED": "false",
+        "MONTHLY_CUSTOM_AUTOPAY_ENABLED": "false",
+        "PERF_SLO_ALERTS_ENABLED": "false"
+      },
+      "rehearsal_square_credential_invalid": null
+    },
+    "tph-local-test-web-1": {
+      "configured_flags": {
+        "ADMIN_PAYMENT_SMS_ENABLED": "false",
+        "ADMIN_SMS_ENABLED": "false",
+        "DISABLE_SCHEDULER": "true",
+        "ERROR_ALERTS_ENABLED": "false",
+        "ERROR_ALERTS_SMS_ENABLED": "false",
+        "HIRING_CANDIDATE_SMS_ENABLED": "false",
+        "MONTHLY_CUSTOM_AUTOPAY_ENABLED": "false",
+        "PERF_SLO_ALERTS_ENABLED": "false"
+      },
+      "rehearsal_square_credential_invalid": null
+    },
+    "tph-local-test-worker-1": {
+      "configured_flags": {
+        "ADMIN_PAYMENT_SMS_ENABLED": "false",
+        "ADMIN_SMS_ENABLED": "false",
+        "DISABLE_SCHEDULER": "true",
+        "ERROR_ALERTS_ENABLED": "false",
+        "ERROR_ALERTS_SMS_ENABLED": "false",
+        "HIRING_CANDIDATE_SMS_ENABLED": "false",
+        "MONTHLY_CUSTOM_AUTOPAY_ENABLED": "false",
+        "PERF_SLO_ALERTS_ENABLED": "false"
+      },
+      "rehearsal_square_credential_invalid": null
+    }
+  },
+  "receipt_hashes": {
+    "existing-recovery-failed.json": "f0afbb7032a5b8074c43bcf62db4ba3eed7b27641bab9c92826479477c30c340",
+    "existing-recovery-started.json": "2cb78edf5d945f68a2e3dd9097b72c114ec4d002e5be9c1a8d0ad5aee2b602eb",
+    "existing-resume-failed.json": "c9157e1405ce5530c18e473cc063e01715d39cb3ba4f209176d9d18c3aeed0b5",
+    "existing-resume-started.json": "c45c34bb6fbc466449afb63c25f43558d2934637046a25fed5818405f0b870db",
+    "router-diagnostic-command.json": "ce0e938fb1a6dacb1d58e3177f606cf6039001b35aea70f45be4ee13d8ee3789",
+    "router-diagnostic-failed.json": "ddb007a74ad91cec5e89f91bba9e66e32fff69bbd0962645318aefc1216df0cb",
+    "router-diagnostic-started.json": "0003794952cb3b13edcc728fbfbc8ec48111b3f69f02e3786ba0623ed55fd41c",
+    "router-diagnostic-stderr.log": "63129cf162b8927bf5e097c0e8d4fb8e54540fbea1caa1331e50729725a95c36",
+    "router-port-approval.json": "f9f457dcfb034ee7e53c0c0c9be5532934b209ee15f5bc7f0844225c9a411b49",
+    "router-port-completed.json": "4df056156893ea1c0a2086e14d1a9e8a238992c9a9c72f84ecdf933e36629a30",
+    "router-port-started.json": "6844d170e8c7fdb73e47909428d54b15bd554b8a5921ed3250e58cfc88e6b9f8"
+  },
+  "relay": {
+    "command": "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python /Users/sergio/mac-hosting/tph-backup-rehearsal-v3/tools/relay.py",
+    "cwd": "/Users/sergio",
+    "listener": "127.0.0.1:18310",
+    "pid": 25245,
+    "source_sha256": "00baab8fd77d5d395067284f050e643e5d91c72a366a84c654c98fa2dd210193",
+    "started": "Thu Oct 22 16:30:54 2026"
+  },
+  "router_start": {
+    "capture": {
+      "stderr": {
+        "bytes": 0,
+        "path": "/Users/sergio/mac-hosting/tph-backup-rehearsal-v3/private/router-port-stderr.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 65,
+        "path": "/Users/sergio/mac-hosting/tph-backup-rehearsal-v3/private/router-port-stdout.log",
+        "sha256": "c0c34bd745e81d0769d27313cc14563a58dcae814544430e9f5ff54686b2be77"
+      }
+    },
+    "exit": 0,
+    "known_bind_error": false,
+    "output_limit": false,
+    "timeout": false,
+    "uncertain": false
+  },
+  "source_helpers": {
+    "diagnostic_router_start.py": "54a5916f325262841603bec009c1b3d7c53556c13f319153a47993358134a2c7",
+    "recover_existing.py": "270960841fd8af20b24a420c978cf9b88bc42f2b7c1fef7a9c52d6c7b74c58ab",
+    "resume_existing.py": "3d6d84f499f7e097b367774a092f77222b322fc73ec7b71d0a6694deed41ba71",
+    "router_port_recovery.py": "f0f7bd07ce931275ff5aea00486cdcd06dfba1d98fb0f1c661b98ddab566a20e"
+  },
+  "state": {
+    "accepted_admissions": 3,
+    "accepted_fake_effects": 5,
+    "authority_sha256": "9ba7b0f38dcf28dd4326a7ff057d93add977d46da403ebb4b1a0c2f4c49c7483",
+    "epoch": 5,
+    "instance_id": "b0863397dbfca6b8c712881f2aed2b1532f8536d4c7dcc7fbc5736f40ac0a247",
+    "logical_sha256": "0eb18d4df3578f29ed1d1bb75ccf206ea6f426c4d9246e26dae1816550f682fc",
+    "rejected_admissions": 1,
+    "site": "railway-simulation",
+    "watermark": 8
+  }
+}

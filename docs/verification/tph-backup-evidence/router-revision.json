@@ -1,0 +1,60 @@
+{
+  "at": "2026-10-22T05:07:57.062166+00:00",
+  "before": {
+    "compose.json": "467ed926606e19ebf158bcf4bb47a3f31128b04381b248277f7a45ad906374c8",
+    "private/images.json": "1413466f1f50e40c86832fadeadb54d51f297d4eabc35a0c83c3912085f60001",
+    "private/config-sha256.txt": "94e5c984bd2d015b2164ef8f09687aeb30c23495ebb9bbf27bc52d7af474f4f5",
+    "private/approved-manifest.json": "334b671e946d1a9b33d1f315606813918f8d9e92ecaccc3870bc534fb1f9480f",
+    "private/rehearsal-identity.json": "bd9b4f8b804c5a9935b943eac1f5d68654e2672bd7e6166a12bff4b013bc243f",
+    "tools/operator.py": "5193e4942e5185bd66abad3592b2ac32ea093c00a6400c06d61ac09c11b43b68",
+    "tools/relay.py": "ddda3fd93cde346fb7b90806d236bb8e239b62bd9b1bd40daa5554573c7bb682",
+    "build/router.py": "4e0648f5ccfe6d13b176bc48d04f502f09740936e770c8c7f018e574b6788b1f"
+  },
+  "after": {
+    "compose.json": "bc1eac7af23c47a652e46843aa5e99980c31f837b584b02fd1abef3a5d4d4385",
+    "private/images.json": "fa5c72645c80bc355fb710e48476358737cc998b15d9dcc667f081d7ac662c22",
+    "private/config-sha256.txt": "7c383b73625f3d8d869b3b7cf24812a15bd52094135ffecb02f59963252c0eb4",
+    "private/approved-manifest.json": "fd48f24aba7fcab4ee37b4265c65ad290625079581de069d60d4833cec69cbc6",
+    "private/rehearsal-identity.json": "9d57ffee19e1bbd476e62032f3dd181628ee762b31d1b43173596ee5f52725cf",
+    "tools/operator.py": "784dd3513307fbee32381380822a0bcd72959041f62bcca346f568dbdda34bf8",
+    "tools/relay.py": "00baab8fd77d5d395067284f050e643e5d91c72a366a84c654c98fa2dd210193",
+    "build/router.py": "5e0ed06432102efa7fd282895252de396c807e9846f0c53a73fefd4afcda246e"
+  },
+  "logical_state_unchanged": {
+    "control.sqlite3": "0014677ebf65739bf87c0c6e22770a71d76afe26feaa32e7c4f6b1703699f5cb",
+    "provider.sqlite3": "a5e30249246bdafe82b276382a1ebba504d71bf07b8798c07497e8fda42d7667"
+  },
+  "native_cids_unchanged": true,
+  "new_router": {
+    "id": "12f8f3a648103db54493730a8cfd4f1624b09b92159b5471e3210c4fa1998906",
+    "image": "sha256:ad263a2882720763c4b2ffd920a17571b1777c99110cce02c1ab9272ff3313f2",
+    "config_sha256": "b210858c52daa161b7a028c1a57348a03886612b062baf0e1227790e23e6407f"
+  },
+  "relay_pid": 67282,
+  "old_state": {
+    "singleton": 1,
+    "site": "railway-simulation",
+    "epoch": 3,
+    "phase": "active",
+    "instance_id": "b0863397dbfca6b8c712881f2aed2b1532f8536d4c7dcc7fbc5736f40ac0a247",
+    "authority_id": "40ba45c234d6e8f0699670cdf591461d6ad8d2d3089bd2f5a532d52de8342957",
+    "watermark": 7,
+    "transition_id": null,
+    "reason": "",
+    "pending": {
+      "admissions_pending": 0,
+      "admissions_unknown": 0,
+      "effects_dispatching": 0,
+      "effects_unknown": 0,
+      "blocked": false
+    },
+    "admissions": {
+      "accepted": 2,
+      "rejected": 1
+    },
+    "effects": {
+      "accepted": 5
+    }
+  },
+  "live_activation": "forbidden"
+}

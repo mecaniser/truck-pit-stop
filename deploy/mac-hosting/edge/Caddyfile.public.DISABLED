@@ -1,0 +1,14 @@
+# Prepared only. Never loaded by the login agent or private acceptance test.
+# Before activation: exact new apps DNS, verified WAN reachability, reserved LAN
+# address and router TCP80->8088/TCP443->8443 forwarding; preserve www/apex/NS/mail.
+# CADDY_LAN_ADDRESS must be the verified reserved Mac LAN address at activation.
+{
+    admin off
+    http_port 8088
+    https_port 8443
+    default_bind {$CADDY_LAN_ADDRESS}
+    storage file_system /Users/sergio/mac-hosting/edge/private/public-caddy
+}
+apps.elisprotech.com {
+    reverse_proxy 127.0.0.1:18100
+}

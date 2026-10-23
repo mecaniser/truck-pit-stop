@@ -1,0 +1,16 @@
+{
+  "at": "2026-10-22T05:21:18.275088+00:00",
+  "reason": "Explicit URL constructor removes false-positive credential-shaped source; normal push hook unchanged",
+  "before": {
+    "tools/operator.py": "784dd3513307fbee32381380822a0bcd72959041f62bcca346f568dbdda34bf8",
+    "tools/configure.py": "5b9b657ac52debf1d1f36daa1c854ab9d961a3651ac15c5d8e5141a37d344a22",
+    "private/approved-manifest.json": "fd48f24aba7fcab4ee37b4265c65ad290625079581de069d60d4833cec69cbc6"
+  },
+  "after": {
+    "tools/operator.py": "6d4fa4f8094d20c19c466c7f38168893f1b6a768d05ee8da423940e045febd57",
+    "tools/configure.py": "08c483b2229582ec2c5db7d023147ed31325a76a23871bcfd47d85f22a684f61",
+    "private/approved-manifest.json": "61f6baf12c2bb3b060dab023e9ba56881fee1dc8e92e50d662949df5d01ef9b0"
+  },
+  "full_fixed_spec_identical": true,
+  "containers_and_control_unchanged": true
+}

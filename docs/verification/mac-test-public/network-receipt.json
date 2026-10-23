@@ -1,0 +1,25 @@
+{
+  "checked_at": "2026-10-22T01:45:41.978742+00:00",
+  "router": "eero",
+  "reservation_user_confirmed": true,
+  "wan_ipv4_user_confirmed": true,
+  "http_through_router_status": 308,
+  "redirect": "https://dieselbridge-test.elisprotech.com/",
+  "tcp443_connected": true,
+  "user_saved_rules": true,
+  "forwarding": [
+    {
+      "external": 80,
+      "internal": 8088,
+      "protocol": "TCP"
+    },
+    {
+      "external": 443,
+      "internal": 8443,
+      "protocol": "TCP"
+    }
+  ],
+  "dns_two_records_saved": true,
+  "public_certificates_pending": false,
+  "public_tls_verified": true
+}

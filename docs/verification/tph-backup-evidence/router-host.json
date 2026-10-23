@@ -1,0 +1,1 @@
+{"at": "2026-10-22T05:08:45.265595+00:00", "old_relay_exited": true, "new_exact_pid_loopback": true, "results": {"/__backup/status": {"status": 200, "bytes": 235}, "/runtime-main.e6ad7d1f704215002408.js": {"status": 200, "bytes": 11800}, "/main-4f064d56.ce2d65d23d75f297ec68.css": {"status": 200, "bytes": 479104}, "/tph-logo-desktop.avif": {"status": 200, "bytes": 14586}}}

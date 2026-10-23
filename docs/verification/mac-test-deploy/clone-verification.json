@@ -1,0 +1,17 @@
+{
+  "schema_compatible": true,
+  "mapped_tables": 133,
+  "mapped_columns": 2226,
+  "enum_null_data_checks": true,
+  "native_login": true,
+  "tenant_denials_both_directions": true,
+  "read_write": true,
+  "activity_count": 5,
+  "original_db_access_denied": true,
+  "synthetic_part_id": "3c45c46a-2ee7-4a56-a0db-7a8ecca185d5",
+  "original_database_mutated": false,
+  "no_automatic_migrations": true,
+  "worker_queues_blocked": true,
+  "image": "sha256:9e92ec14d1641dc5996b47f2799bd5080526e695ea85e2e89f7e7f0cbd5755eb",
+  "source": "04f0517593ef7cd937ec37d5fb6cfc5e84bf8e77"
+}

@@ -1,0 +1,20 @@
+{
+  "checked_at": "2026-10-22T04:09:20.997102+00:00",
+  "source": "04f0517593ef7cd937ec37d5fb6cfc5e84bf8e77",
+  "image": "sha256:9e92ec14d1641dc5996b47f2799bd5080526e695ea85e2e89f7e7f0cbd5755eb",
+  "url": "https://dieselbridge-test.elisprotech.com/dashboard/garage/inventory",
+  "fresh_public_reload": true,
+  "native_session_active": "Staging Alpha",
+  "customers": 1,
+  "inventory_fixture_parts": 4,
+  "cost": "20.30",
+  "selling_price": "51.78",
+  "core_charge": "5.00",
+  "supplier_contact": "parts@example.test",
+  "browser_mutations": false,
+  "https_warning_bypass": false,
+  "screenshots": {
+    "catalog-details.png": "d20ba92471d90f7da45c2252a5ab1ce7791b6bb83fd4f9f66eba62330c29f561",
+    "dieselbridge-deployed-inventory.png": "48917e4c1741e73d42c94ed03e2c91b10556d4acbf3354e8db367b8b8f067c53"
+  }
+}
