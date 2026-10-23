@@ -360,3 +360,80 @@ def test_v2_completed_unpaid_invoice_uses_final_total_without_payment_proof():
 def test_v2_draft_incomplete_or_unverified_time_still_held(field,value):
     args = fixture(); args['evidence'][0][field] = value
     with pytest.raises(source.ETSCompletionHold): source.completed_snapshot(**args,schema_version=2)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('condition', ['fresh', 'failed_read', 'capacity', 'stale', 'canceled', 'different_hold', 'different_root', 'different_internal_identity', 'second_invoice_failed', 'two_fresh_invoices'])
+async def test_delayed_import_recovers_only_clean_fresh_read_hold(monkeypatch, condition):
+    from datetime import timedelta
+    from app.services.ets_source_evidence import append_source_evidence
+    args = fixture()
+    order = args['order']
+    now = datetime.now(timezone.utc)
+    read_at = now - timedelta(minutes=10)
+    first = deepcopy(args['evidence'][0])
+    first.update(observed_at_source=read_at.isoformat(), invoice_manifest=args['manifest'])
+    old = dict(first, observed_at_source=(now - timedelta(days=2)).isoformat())
+    envelope = append_source_evidence(None, old)
+    if condition in {'failed_read', 'second_invoice_failed'}:
+        # A real failed source read is later than the delayed success. Import
+        # preservation must retain this watermark, so capture cannot recover.
+        envelope['source_read_unavailable_at'] = (now - timedelta(minutes=5)).isoformat()
+    if condition == 'capacity':
+        envelope['revision_capacity_exceeded'] = True
+        envelope['revision_capacity_observed_at'] = (now - timedelta(minutes=5)).isoformat()
+    if condition == 'stale':
+        first['observed_at_source'] = (now - timedelta(hours=25)).isoformat()
+    if condition == 'canceled':
+        first['service_status'] = 90
+    envelope = append_source_evidence(envelope, first)
+    prior = SimpleNamespace(payload={'event_type': source.ETS_HOLD_EVENT,
+        'snapshot': {'source': source.SOURCE, 'ets_shop_id': 'sh_test', 'source_job_id': 'ets-service:123',
+            'service_id': '123', 'service_internal_id': '456', 'repair_order_uuid': str(order.id),
+            'hold_reason': 'source_read_unavailable'},
+        'source_observation': 8, 'source_revision': 'held', 'observed_at': (now - timedelta(minutes=2)).isoformat()})
+    if condition == 'different_hold':
+        prior.payload['snapshot']['hold_reason'] = 'source_status_unsupported'
+    if condition == 'different_internal_identity':
+        prior.payload['snapshot']['service_internal_id'] = 'other'
+    if condition == 'different_root':
+        prior.payload['snapshot']['repair_order_uuid'] = str(uuid4())
+    rows = [(args['evidence'][0]['imported_invoice_uuid'], envelope, None)]
+    if condition in {'second_invoice_failed', 'two_fresh_invoices'}:
+        first['invoice_manifest'] = dict(args['manifest'], invoice_ids=['789', '790'])
+        second = dict(first, invoice_id='790', invoice_number='101', imported_invoice_uuid=str(uuid4()))
+        second_envelope = append_source_evidence(None, second)
+        if condition == 'second_invoice_failed':
+            second_envelope['source_read_unavailable_at'] = (now - timedelta(minutes=5)).isoformat()
+        rows = [(first['imported_invoice_uuid'], append_source_evidence(None, first), None),
+                (second['imported_invoice_uuid'], second_envelope, None)]
+    result = Mock(); result.all.return_value = rows
+    db = SimpleNamespace(execute=AsyncMock(return_value=result),
+        scalar=AsyncMock(side_effect=[SimpleNamespace(id=order.tenant_id), order, prior]),
+        scalars=AsyncMock(side_effect=[[order], [order.id]]), add=Mock(), flush=AsyncMock())
+    monkeypatch.setattr(source, 'configured_shops', lambda: {order.tenant_id: 'sh_test'})
+    before = deepcopy((vars(order), rows))
+    event = await source.capture_imported_order(db, order.tenant_id, order.id)
+    assert (vars(order), rows) == before
+    if condition in {'fresh', 'two_fresh_invoices'}:
+        assert event.event_type == source.ETS_COMPLETED_EVENT
+        assert event.payload['observed_at'] == read_at.isoformat()
+        assert event.payload['source_observation'] == 9
+        assert event.payload['snapshot']['invoices'][0]['total'] == '10.30'
+        assert event.aggregate_id == order.id
+        db.scalar.side_effect = [SimpleNamespace(id=order.tenant_id), order, event]
+        db.scalars.side_effect = [[order], [order.id]]
+        assert await source.capture_imported_order(db, order.tenant_id, order.id) is event
+        assert db.add.call_count == 1
+    else:
+        assert event.payload['event_type'] == source.ETS_HOLD_EVENT
+        if condition in {'failed_read', 'second_invoice_failed', 'stale'}:
+            assert event.payload['snapshot']['hold_reason'] == 'source_read_unavailable'
+
+
+@pytest.mark.asyncio
+async def test_capture_unconfigured_tenant_never_reads_or_recovers(monkeypatch):
+    monkeypatch.setattr(source, 'configured_shops', lambda: {uuid4(): 'sh_test'})
+    db = SimpleNamespace(execute=AsyncMock())
+    assert await source.capture_imported_order(db, uuid4(), uuid4()) is None
+    db.execute.assert_not_called()

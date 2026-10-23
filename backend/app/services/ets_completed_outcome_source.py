@@ -219,7 +219,8 @@ def _verified_legacy_duplicate_roots(*, order, siblings, invoices, snapshot):
 
 
 async def persist_completed_observation(db: AsyncSession, *, tenant_id, order_id, evidence,
-                                        ets_shop_id, manifest, observed_at, force_hold=None):
+                                        ets_shop_id, manifest, observed_at, force_hold=None,
+                                        current_source_verified=False):
     """Persist immutable outbox evidence. Delivery remains independently disabled.
 
     Caller commits transaction. Tenant lock serializes service observations;
@@ -302,7 +303,20 @@ async def persist_completed_observation(db: AsyncSession, *, tenant_id, order_id
     digest = hashlib.sha256(json.dumps(snapshot, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     if previous:
         prior_observed_at = datetime.fromisoformat(previous.payload["observed_at"].replace("Z", "+00:00"))
-        if event_type == ETS_COMPLETED_EVENT and observed_at < prior_observed_at:
+        # Only the capture adapter can attest that every current source envelope
+        # is fresh and free of failure/capacity watermarks. Such an envelope
+        # cannot clear a real later failed read: append_source_evidence requires
+        # a strictly newer source read first. A delayed import can therefore
+        # supersede a cache-age diagnostic, retaining its genuine source time.
+        recovered_source_read = (
+            current_source_verified
+            and previous.payload.get("event_type") == ETS_HOLD_EVENT
+            and previous.payload["snapshot"].get("hold_reason") == "source_read_unavailable"
+            and all(previous.payload["snapshot"].get(key) == snapshot.get(key) for key in (
+                "source", "ets_shop_id", "source_job_id", "service_id", "service_internal_id", "repair_order_uuid"
+            ))
+        )
+        if event_type == ETS_COMPLETED_EVENT and observed_at < prior_observed_at and not recovered_source_read:
             # A cached/late older positive cannot undo a newer diagnostic hold.
             return previous
         if (previous.payload.get("source_revision") == digest
@@ -381,4 +395,5 @@ async def capture_imported_order(db: AsyncSession, tenant_id, order_id):
     if any(row.get("invoice_manifest") != manifest for row in evidence):
         manifest = None
     return await persist_completed_observation(db, tenant_id=tenant_id, order_id=order_id, evidence=evidence,
-        ets_shop_id=shop_id, manifest=manifest, observed_at=observed_at, force_hold=force_hold)
+        ets_shop_id=shop_id, manifest=manifest, observed_at=observed_at, force_hold=force_hold,
+        current_source_verified=force_hold is None)
