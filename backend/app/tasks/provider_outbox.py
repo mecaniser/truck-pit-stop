@@ -60,6 +60,18 @@ def process_paid_invoice_webhooks() -> dict[str, int]:
     return run_async(process_due_paid_invoice_webhooks())
 
 
+@celery_app.task(
+    name="process_shop_history_webhooks",
+    acks_late=True,
+    reject_on_worker_lost=True,
+    soft_time_limit=45,
+    time_limit=60,
+)
+def process_shop_history_webhooks() -> dict[str, int]:
+    """Reserve one bounded history claim so completion traffic cannot starve it."""
+    return run_async(process_due_paid_invoice_webhooks(history_only=True))
+
+
 @celery_app.task(name="process_conversion_pii_retention", soft_time_limit=120, time_limit=180)
 def process_conversion_pii_retention() -> int:
     return run_async(purge_expired_conversion_event_pii())

@@ -274,7 +274,7 @@ async def enqueue_paid_invoice_webhook(db: AsyncSession, *, tenant: Optional[Ten
     return await enqueue_conversion_event(db, tenant=tenant, invoice=invoice, order=order, customer=customer, event_type="repair_order.paid", idempotency_key=f"repair-order-paid:{invoice.id}")
 
 
-async def _claim(db: AsyncSession, limit: int) -> tuple[list[tuple[UUID, str]], int]:
+async def _claim(db: AsyncSession, limit: int, *, history_only: bool = False) -> tuple[list[tuple[UUID, str]], int]:
     now = _now()
     history_tenants = history_allowed_tenants()
     event_filter = ProviderOutboxEvent.event_type.in_(CONVERSION_EVENT_TYPES)
@@ -289,6 +289,9 @@ async def _claim(db: AsyncSession, limit: int) -> tuple[list[tuple[UUID, str]], 
             ProviderOutboxEvent.tenant_id.in_(history_tenants),
             ProviderOutboxEvent.payload["snapshot"]["source"].as_string() == "dieselbridge",
             ProviderOutboxEvent.payload["schema_version"].as_integer() == 2))
+    if history_only:
+        # A dedicated slot cannot take completion work or bypass the capture allowlist.
+        event_filter = and_(event_filter, ProviderOutboxEvent.event_type == SHOP_HISTORY_EVENT)
     due = or_(
         and_(ProviderOutboxEvent.status == ProviderOutboxStatus.PENDING.value, ProviderOutboxEvent.available_at <= now),
         and_(ProviderOutboxEvent.status == ProviderOutboxStatus.PROCESSING.value, ProviderOutboxEvent.locked_until <= now),
@@ -431,10 +434,11 @@ async def _pause_and_notify(db: AsyncSession, tenant: Tenant, event: ProviderOut
         await enqueue_email_notification(db, tenant_id=tenant.id, aggregate_type="conversion_webhook", aggregate_id=event.id, idempotency_key=f"conversion-webhook-paused:{event.id}:{hashlib.sha256(recipient.encode()).hexdigest()[:12]}", recipient=recipient, subject="DieselBridge conversion webhook paused", body="<p>Your conversion webhook delivery was paused after repeated failures. New events are still captured under the retention policy. Review delivery history, correct the endpoint, resume delivery, then replay the failed event.</p>", template_name="conversion_webhook_paused", sender_name="DieselBridge")
 
 
-async def process_due_paid_invoice_webhooks(*, session_factory: async_sessionmaker[AsyncSession] = AsyncSessionLocal, batch_size: Optional[int] = None) -> dict[str, int]:
+async def process_due_paid_invoice_webhooks(*, session_factory: async_sessionmaker[AsyncSession] = AsyncSessionLocal, batch_size: Optional[int] = None, history_only: bool = False) -> dict[str, int]:
     async with session_factory() as db:
         claims, expired_at_claim = await _claim(
-            db, batch_size or settings.PROVIDER_OUTBOX_BATCH_SIZE
+            db, 1 if history_only else (batch_size or settings.PROVIDER_OUTBOX_BATCH_SIZE),
+            history_only=history_only,
         )
     result = {"claimed": len(claims), "succeeded": 0, "retried": 0, "dead": 0, "configuration_blocked": 0, "paused": 0, "expired": expired_at_claim}
     for event_id, token in claims:
