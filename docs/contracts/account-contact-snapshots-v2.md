@@ -78,3 +78,14 @@ slot and configured batch. History uses the same tenant allowlist, pause, privac
 expiry, lease, SKIP LOCKED, idempotency and failure rules; its total delivery budget
 remains 35 seconds within the 45-second task soft limit. No terminal or uncertain
 event replay is introduced.
+
+## ETS history value provenance
+
+Imported financial mirrors are intentionally not rewritten by later source reads.
+History invoice totals may use the collector-verified current ETS total only when
+the immutable evidence digest and confirmation bind, the observation is within
+24 hours, and the existing completed-source verifier proves the exact tenant,
+shop, service, imported invoice alias, complete single-invoice manifest, completed
+status and positive USD total. Missing or conflicting proof retains the original
+history context and existing holds. This does not change invoice/payment rows or
+constitute completion, consent or Google-delivery authorization.

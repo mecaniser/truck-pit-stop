@@ -10,11 +10,11 @@ from copy import deepcopy
 import hashlib
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from uuid import UUID, uuid4
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import JSON, and_, column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, AsyncSession as Session, async_sessionmaker
 
 from app.core.config import settings
@@ -54,10 +54,59 @@ def snapshot_revision(snapshot: dict) -> str:
     return hashlib.sha256(json.dumps(snapshot, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()).hexdigest()
 
 
+def _verified_ets_invoice_total(*, tenant: Tenant, invoice: Invoice, order: RepairOrder, envelope: dict | None) -> Decimal | None:
+    """Current collector truth for context only; never rewrite the financial mirror."""
+    from app.services.ets_completed_outcome_source import completed_snapshot, configured_shops
+    from app.services.ets_source_evidence import _digest, _instant, latest_source_evidence
+
+    if (invoice.source != ETS or order.source != ETS or invoice.tenant_id != tenant.id
+            or order.tenant_id != tenant.id or invoice.repair_order_id != order.id
+            or invoice.deleted_at is not None or order.deleted_at is not None):
+        return None
+    if (not isinstance(envelope, dict) or envelope.get("schema_version") != 1
+            or envelope.get("source_read_unavailable_at") or envelope.get("revision_capacity_exceeded")):
+        return None
+    rows = envelope.get("observations")
+    if not isinstance(rows, list) or not rows or len(rows) > 39:
+        return None
+    last = rows[-1]
+    if not isinstance(last, dict) or not isinstance(last.get("evidence"), dict):
+        return None
+    if last.get("sha256") != _digest(last["evidence"]):
+        return None
+    confirmation = envelope.get("latest_confirmation")
+    if confirmation is not None and not isinstance(confirmation, dict):
+        return None
+    if confirmation:
+        confirmed, original = _instant(confirmation.get("observed_at_source")), _instant(last["evidence"].get("observed_at_source"))
+        if (confirmation.get("sha256") != last["sha256"] or confirmed is None
+                or original is None or confirmed < original):
+            return None
+    evidence = latest_source_evidence(envelope)
+    observed = _instant(evidence.get("observed_at_source"))
+    now = datetime.now(timezone.utc)
+    if (observed is None or not now - timedelta(hours=24) < observed <= now
+            or evidence.get("currency") != "USD"
+            or invoice.invoice_number != f"ETSINV-{evidence.get('invoice_number')}"):
+        return None
+    manifest = evidence.get("invoice_manifest")
+    if (not isinstance(manifest, dict)
+            or manifest.get("service_internal_id") != evidence.get("service_internal_id")):
+        return None
+    evidence["imported_invoice_uuid"] = str(invoice.id)
+    try:
+        snapshot = completed_snapshot(tenant_id=tenant.id, order=order, evidence=[evidence],
+            ets_shop_id=configured_shops().get(tenant.id), manifest=evidence.get("invoice_manifest"),
+            observed_at=observed, schema_version=2)
+    except (ValueError, TypeError, InvalidOperation):
+        return None
+    return Decimal(snapshot["invoices"][0]["total"])
+
+
 def history_snapshot(*, tenant: Tenant, invoice: Invoice, order: RepairOrder,
                      customer: Customer, vehicle: Vehicle | None,
                      operations: list[RepairOrder], grouping_uncertain: bool = False,
-                     settled_amount: Decimal | None = None) -> dict:
+                     settled_amount: Decimal | None = None, ets_source_evidence: dict | None = None) -> dict:
     resources = [invoice, order, customer, *operations] + ([vehicle] if vehicle else [])
     if any(resource.tenant_id != tenant.id for resource in resources):
         raise ValueError("History resources must belong to the same tenant")
@@ -69,6 +118,10 @@ def history_snapshot(*, tenant: Tenant, invoice: Invoice, order: RepairOrder,
     if not amount.is_finite() or amount < 0:
         raise ValueError("Invalid invoice history amount")
     imported = invoice.source == ETS or order.source == ETS
+    if imported:
+        verified_total = _verified_ets_invoice_total(tenant=tenant, invoice=invoice, order=order, envelope=ets_source_evidence)
+        if verified_total is not None:
+            amount = verified_total
     paid_at = invoice.paid_at
     if paid_at and paid_at.tzinfo is None:
         # Native timestamp columns are timezone-aware; SQLite fixture roundtrip
@@ -157,6 +210,15 @@ async def capture_tenant_history(db: Session, tenant: Tenant, *, batch_size: int
     if cursor.last_invoice_id:
         query = query.where(Invoice.id > cursor.last_invoice_id)
     rows = (await db.execute(query.order_by(Invoice.id).limit(batch_size))).all()
+    evidence_by_invoice = {}
+    from app.services.ets_completed_outcome_source import configured_shops
+    imported_ids = [invoice.id for invoice, *_ in rows if invoice.source == ETS]
+    if settings.ETS_COMPLETED_OUTCOMES_ENABLED and tenant.id in configured_shops() and imported_ids:
+        # The additive source-evidence column intentionally stays outside the
+        # financial ORM. Read only this bounded tenant-scoped capture cohort.
+        evidence_by_invoice = dict((await db.execute(select(
+            Invoice.id, column("ets_source_evidence", JSON),
+        ).where(Invoice.tenant_id == tenant.id, Invoice.id.in_(imported_ids)))).all())
     captured = 0
     for invoice, order, customer, vehicle, had_native in rows:
         # Known completion streams must observe invalidation even when current
@@ -175,7 +237,8 @@ async def capture_tenant_history(db: Session, tenant: Tenant, *, batch_size: int
                 from app.services.paid_invoice_webhook_service import native_settled_amount
                 settled_amount = await native_settled_amount(db, tenant=tenant, invoice=invoice, order=order)
             snapshot = history_snapshot(tenant=tenant, invoice=invoice, order=order, customer=customer,
-                                        vehicle=vehicle, operations=operations, grouping_uncertain=uncertain or vehicle is None, settled_amount=settled_amount)
+                                        vehicle=vehicle, operations=operations, grouping_uncertain=uncertain or vehicle is None, settled_amount=settled_amount,
+                                        ets_source_evidence=evidence_by_invoice.get(invoice.id))
         except (ValueError, TypeError, InvalidOperation):
             # Record a non-deliverable, non-PII failure instead of allowing one
             # malformed source record to strand the rest of the scan forever.
