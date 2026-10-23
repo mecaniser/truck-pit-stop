@@ -68,6 +68,11 @@ jobs:
         run: node --test backend/scripts/easytruck_sync/lib/contact_snapshot.test.js
       - name: Verify Motive location and speed collector contracts
         run: node --test backend/scripts/motive_sync/collector.test.cjs backend/scripts/motive_sync/tasks.test.cjs backend/scripts/motive_sync/login_diagnostics.test.cjs
+      - name: Verify Motive legacy login in isolated Chromium fixtures
+        run: |
+          npm ci --prefix backend/scripts/motive_sync --omit=dev
+          node backend/scripts/motive_sync/node_modules/playwright/cli.js install --with-deps --only-shell chromium
+          node --test backend/scripts/motive_sync/login.test.cjs
       - name: Verify Railway deployment readiness
         run: |
           python .github/scripts/check_railway_config.py

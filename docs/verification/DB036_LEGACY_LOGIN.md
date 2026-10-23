@@ -1,0 +1,13 @@
+# DB-036 sync/health legacy login remediation
+
+Accountable: Backend & Integrations. Date: 2026-10-23. Branch: codex/motive-legacy-login, base601c00af. Independent QA/Security and protected PR CI required before release.
+
+Public, credential-free observation found app.gomotive.com redirecting to auth.gomotive.com/login/lookup: input name=email, Continue button, no password and no original user_profile[email] input. The unique visible Use legacy login anchor had literal href=#; its provider handler moved to /login with original visible email/password fields. This explains the observed selector mismatch, not every historical failure.
+
+The shared sync/health preflight preserves direct legacy login. On lookup it validates and clicks the exact visible provider link once, then requires trusted /login and unique visible original credential fields and Log in button. HTTPS origin, route, link scheme/path/userinfo, ambiguity and a single15second deadline fail closed before credential filling. Lookup/SSO/MFA is never submitted or guessed. Other collectors, worker deadlines, schedules, credentials and import/tenant/VIN guards remain unchanged.
+
+Local runtime alignment: dedicated clean worktree base601c00af; no5173/8000 listeners. Controller dry-run blocked on missing approved backend/.env and Vite. No local app or database was started/replaced, no secrets copied. Browser proof uses actual Chromium with all network requests intercepted into synthetic HTML at the provider origins; dummy fixture credentials only, no live authentication or worker invocation.
+
+Focused verification: 62/62 owner tests pass, including20 actual Chromium fixtures, existing location/health/task contracts and7 diagnostic cases. Existing extracted-block diagnostic fixtures were updated to bind the new preflight; their original six failure-position/privacy assertions remain. New helper phases/errors use static allowlists, never raw URL/error contents. Independent QA/Security source GO and independent27/27 Chromium/diagnostic tests pass. Final timeout-budget hardening rerun27/27 also passes. Fixture coverage includes direct legacy, real fragment-handler shape, normal trusted anchor, missing/duplicate links, HTTP/external/javascript/data hrefs, wrong routes/origins before/after click, missing/duplicate fields, no-op timeout/clickonce and synthetic credential filling only after verified form. CI runs the same isolated browser fixture suite with pinned Playwright.
+
+Release status: not merged/deployed. A naturally scheduled run on released source must still prove live login and complete guarded collection/import. Rollback is the prior image/source without altering state or schedules. Do not infer live authentication success from synthetic fixtures.

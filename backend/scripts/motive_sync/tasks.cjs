@@ -63,12 +63,13 @@ function openTasks(output,scope,{maxAgeMs=15*60*1000,now=()=>Date.now(),log=valu
   },
  };
 }
-const diagnosticPhases=new Set(['login_navigate','login_auth_redirect','login_origin_check','login_email','login_password','login_submit','login_app_redirect']);
+const diagnosticPhases=new Set(['login_navigate','login_auth_redirect','login_origin_check','login_form_check','login_legacy_link','login_email','login_password','login_submit','login_app_redirect']);
+const loginErrors=new Set(['login_form_timeout','login_form_ambiguous','login_legacy_link_ambiguous','login_legacy_link_invalid']);
 function failureDiagnostic(error) {
  // Only static categories escape the browser. Never serialize error messages or URLs.
  const network=/^(?:page\.(?:goto|reload): )?net::ERR_(CONNECTION_RESET|CONNECTION_CLOSED|TIMED_OUT|NETWORK_CHANGED)(?:\s|$)/.exec(error?.message||'');
  return {phase:diagnosticPhases.has(currentPhase)?currentPhase:'other',
-  error_kind:network?'network_'+network[1].toLowerCase():error?.name==='TimeoutError'?'browser_timeout':error?.message==='login_origin'?'unexpected_login_origin':'unclassified'};
+  error_kind:network?'network_'+network[1].toLowerCase():error?.name==='TimeoutError'?'browser_timeout':error?.message==='login_origin'?'unexpected_login_origin':loginErrors.has(error?.message)?error.message:'unclassified'};
 }
 function failed(output,error) {
  // The supervisor reads only this bounded classification, never raw browser errors.
