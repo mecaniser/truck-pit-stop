@@ -5,7 +5,7 @@ const {prepareLegacyLogin}=require('./login.cjs');
 const legacy='<input name="user_profile[email]"><input name="user_profile[password]" type="password"><button>Log in</button>';
 const lookup='<input name="email"><button>Continue</button>';
 async function fixture(body,url='https://auth.gomotive.com/login/lookup?client_id=fixture'){
- const browser=await chromium.launch({headless:true});
+ const browser=await chromium.launch({headless:true,args:['--no-proxy-server','--host-resolver-rules=MAP * ~NOTFOUND']});
  const context=await browser.newContext({serviceWorkers:'block'});let requests=0;
  await context.route('**/*',async route=>{requests++;await route.fulfill({contentType:'text/html',body});});
  const page=await context.newPage();await page.goto(url);
@@ -71,5 +71,79 @@ test('caller fills dummy credentials only after verified legacy form',async()=>{
   await f.page.locator('input[name="user_profile[email]"]').fill('fixture@example.invalid');
   await f.page.locator('input[name="user_profile[password]"]').fill('synthetic-only');
   assert.equal(await f.page.evaluate(()=>window.fills),2);
+ }finally{await f.browser.close();}
+});
+
+async function redirectChain({persistent=false,delay=0,secondLink='#',foreign=false}={}){
+ // Playwright route interception does not cover every HTTP redirect hop. Use a
+ // real local TLS server with fail-closed DNS mapping for the entire chain.
+ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),https=require('node:https');
+ const {execFileSync}=require('node:child_process');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'motive-auth-fixture-'));
+ execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',path.join(dir,'key.pem'),'-out',path.join(dir,'cert.pem'),'-subj','/CN=fixture.invalid','-days','1'],{stdio:'ignore'});
+ let clicks=0;const requests=[];
+ const server=https.createServer({key:fs.readFileSync(path.join(dir,'key.pem')),cert:fs.readFileSync(path.join(dir,'cert.pem'))},async(req,res)=>{
+  const u=new URL(req.url,'https://'+req.headers.host);requests.push(u.origin+u.pathname);
+  const redirect=(status,location)=>{res.writeHead(status,{location});res.end();};
+  const html=body=>{res.writeHead(200,{'content-type':'text/html'});res.end(body);};
+  if(u.pathname==='/login/legacy_fallback'){
+   clicks++;if(delay)await new Promise(resolve=>setTimeout(resolve,delay));
+   return redirect(302,'https://account.gomotive.com/log-in');
+  }
+  if(u.origin==='https://account.gomotive.com')return redirect(303,foreign?'https://evil.invalid/login':'https://auth.gomotive.com/login');
+  if(u.origin==='https://evil.invalid')return html(legacy);
+  if(u.pathname==='/login'){
+   if(persistent||clicks===1)return redirect(303,'https://auth.gomotive.com/login/lookup');
+   return html(legacy);
+  }
+  if(u.pathname!=='/login/lookup'){res.writeHead(404);return res.end();}
+  const href=clicks?secondLink:'#';
+  return html(lookup+`<a href="${href}" onclick="event.preventDefault();location.assign('/login/legacy_fallback')">Use legacy login</a>`);
+ });
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const port=server.address().port;
+ const rules=['auth.gomotive.com','account.gomotive.com','evil.invalid'].map(host=>`MAP ${host} 127.0.0.1:${port}`).join(',')+',MAP * ~NOTFOUND';
+ const browser=await chromium.launch({headless:true,args:['--no-proxy-server','--host-resolver-rules='+rules]});
+ const context=await browser.newContext({serviceWorkers:'block',ignoreHTTPSErrors:true}),page=await context.newPage();
+ await page.goto('https://auth.gomotive.com/login/lookup');
+ const close=async()=>{await browser.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));fs.rmSync(dir,{recursive:true,force:true});};
+ return {browser:{close},page,clicks:()=>clicks,requests};
+}
+test('actual provider redirect chain retries once after new lookup document',async()=>{
+ const f=await redirectChain();const phases=[];
+ try{await prepareLegacyLogin(f.page,{timeout:2000,phase:x=>phases.push(x)});
+  assert.equal(f.clicks(),2);assert.equal(new URL(f.page.url()).pathname,'/login');
+  assert.equal(phases.filter(x=>x==='login_legacy_retry').length,1);
+  assert.ok(f.requests.includes('https://account.gomotive.com/log-in'));
+  assert.equal(await f.page.locator('input').evaluateAll(es=>es.some(e=>e.value)),false);
+  assert.equal(f.page.listenerCount('domcontentloaded'),0);
+ }finally{await f.browser.close();}
+});
+test('persistent provider loop stops at two clicks with precise classification',async()=>{
+ const f=await redirectChain({persistent:true});try{
+  await assert.rejects(prepareLegacyLogin(f.page,{timeout:2000}),/login_legacy_redirect_loop/);assert.equal(f.clicks(),2);
+  assert.equal(await f.page.locator('input').evaluateAll(es=>es.some(e=>e.value)),false);
+  assert.equal(f.page.listenerCount('domcontentloaded'),0);
+ }finally{await f.browser.close();}
+});
+test('pending slow provider navigation receives no second click',async()=>{
+ const f=await redirectChain({delay:500});try{
+  await assert.rejects(prepareLegacyLogin(f.page,{timeout:200}));assert.equal(f.clicks(),1);
+ }finally{await f.browser.close();}
+});
+test('returned lookup link is revalidated before retry',async()=>{
+ const f=await redirectChain({secondLink:'https://evil.invalid/login'});try{
+  await assert.rejects(prepareLegacyLogin(f.page,{timeout:2000}),/login_legacy_link_invalid/);assert.equal(f.clicks(),1);
+ }finally{await f.browser.close();}
+});
+test('foreign provider final document never gets credentials or retry',async()=>{
+ const f=await redirectChain({foreign:true});try{
+  await assert.rejects(prepareLegacyLogin(f.page,{timeout:2000}),/login_origin/);assert.equal(f.clicks(),1);
+  assert.equal(await f.page.locator('input').evaluateAll(es=>es.some(e=>e.value)),false);
+ }finally{await f.browser.close();}
+});
+test('same-document hash navigation is not a completed return to lookup',async()=>{
+ const f=await fixture(lookup+'<a href="#" onclick="window.clicks++">Use legacy login</a>');try{
+  await assert.rejects(prepareLegacyLogin(f.page,{timeout:250}),/login_form_timeout/);
+  assert.equal(await f.page.evaluate(()=>window.clicks),1);
  }finally{await f.browser.close();}
 });

@@ -63,8 +63,8 @@ function openTasks(output,scope,{maxAgeMs=15*60*1000,now=()=>Date.now(),log=valu
   },
  };
 }
-const diagnosticPhases=new Set(['login_navigate','login_auth_redirect','login_origin_check','login_form_check','login_legacy_link','login_email','login_password','login_submit','login_app_redirect']);
-const loginErrors=new Set(['login_form_timeout','login_form_ambiguous','login_legacy_link_ambiguous','login_legacy_link_invalid']);
+const diagnosticPhases=new Set(['login_navigate','login_auth_redirect','login_origin_check','login_form_check','login_legacy_link','login_legacy_retry','login_legacy_redirect','login_email','login_password','login_submit','login_app_redirect']);
+const loginErrors=new Set(['login_form_timeout','login_form_ambiguous','login_legacy_link_ambiguous','login_legacy_link_invalid','login_legacy_redirect_loop']);
 function failureDiagnostic(error) {
  // Only static categories escape the browser. Never serialize error messages or URLs.
  const network=/^(?:page\.(?:goto|reload): )?net::ERR_(CONNECTION_RESET|CONNECTION_CLOSED|TIMED_OUT|NETWORK_CHANGED)(?:\s|$)/.exec(error?.message||'');

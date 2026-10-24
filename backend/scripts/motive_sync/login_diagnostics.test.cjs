@@ -38,9 +38,9 @@ test('diagnostic classification allows only known categories, never raw error fi
 });
 
 test('legacy preflight diagnostics expose static categories only',()=>{
- for(const stage of ['login_form_check','login_legacy_link']){
+ for(const stage of ['login_form_check','login_legacy_link','login_legacy_retry','login_legacy_redirect']){
   phase(stage);
-  for(const reason of ['login_form_timeout','login_form_ambiguous','login_legacy_link_ambiguous','login_legacy_link_invalid']){
+  for(const reason of ['login_form_timeout','login_form_ambiguous','login_legacy_link_ambiguous','login_legacy_link_invalid','login_legacy_redirect_loop']){
    assert.deepEqual(failureDiagnostic(new Error(reason)),{phase:stage,error_kind:reason});
   }
   assert.deepEqual(failureDiagnostic(new Error('https://private.invalid/?secret=PRIVATE')),{phase:stage,error_kind:'unclassified'});
