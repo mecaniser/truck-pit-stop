@@ -21,7 +21,12 @@ paid override remains valid through its existing invoice boundary and never rene
 Provision a dedicated enabled `CredentialReference` with provider `dieselbridge`,
 purpose `callrail_budget_signing`, and a dedicated environment secret reference
 (at least 32 bytes). Its tenant is the canonical ELIS account owner. Public metadata
-contains the exact authorized DieselBridge `shop_id` UUID and CallRail `account_id`.
+contains the exact authorized DieselBridge `shop_id` UUID and canonical ELIS
+CallRail `account_id`. Optional `provider_account_id` stores a verified numeric
+DieselBridge alias for that same account. The request must match that configured
+alias; locking, the ledger hash, limits and completion always use the canonical
+account. Alias verification must use provider evidence (for example exact known
+company-resource membership), never caller assertions or names.
 Never reuse provider keys, webhook keys, session keys or media encryption keys.
 
 Headers: `X-CallRail-Budget-Client` is that credential UUID;
