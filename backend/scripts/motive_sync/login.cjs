@@ -10,7 +10,11 @@ function authUrl(raw){
 async function prepareLegacyLogin(page,{timeout=15000,phase=()=>{}}={}){
  const deadline=Date.now()+timeout;
  const remaining=()=>{const n=deadline-Date.now();if(n<=0)throw new Error('login_form_timeout');return n;};
- let followed=false;
+ let attempts=0, navigationVersion=0, loadedNavigationVersion=0, attemptedVersion=0;
+ const navigated=frame=>{if(frame===page.mainFrame())navigationVersion++;};
+ const loaded=()=>{loadedNavigationVersion=navigationVersion;};
+ page.on('framenavigated',navigated);page.on('domcontentloaded',loaded);
+ try{
  phase('login_form_check');
  while(true){
   remaining();const url=authUrl(page.url());
@@ -22,7 +26,11 @@ async function prepareLegacyLogin(page,{timeout=15000,phase=()=>{}}={}){
    if(await submit.count()!==1)throw new Error('login_form_ambiguous');
    remaining();if(authUrl(page.url()).pathname!=='/login')throw new Error('login_origin');return;
   }
-  if(url.pathname==='/login/lookup'&&!followed){
+  // A second click is permitted only after a NEW document completed the
+  // provider redirect back to lookup. A hash change or pending click is not proof.
+  const returnedLookup=attempts>0&&loadedNavigationVersion>attemptedVersion;
+  if(url.pathname==='/login/lookup'&&returnedLookup&&attempts===2)throw new Error('login_legacy_redirect_loop');
+  if(url.pathname==='/login/lookup'&&(attempts===0||returnedLookup)){
    const link=page.getByRole('link',{name:'Use legacy login',exact:true});
    const count=await link.count();
    if(count>1)throw new Error('login_legacy_link_ambiguous');
@@ -32,11 +40,14 @@ async function prepareLegacyLogin(page,{timeout=15000,phase=()=>{}}={}){
     let target;try{target=authUrl(new URL(href,url).href);}catch{throw new Error('login_legacy_link_invalid');}
     // The provider's current '#' anchor switches forms through its own handler.
     if(target.pathname!=='/login'&&href!=='#')throw new Error('login_legacy_link_invalid');
-    phase('login_legacy_link');followed=true;
+    phase(attempts===0?'login_legacy_link':'login_legacy_retry');
+    attempts++;attemptedVersion=navigationVersion;
     await link.click({timeout:remaining()});
+    phase('login_legacy_redirect');
    }
   }
   await page.waitForTimeout(Math.min(50,remaining()));
  }
+ }finally{page.off('framenavigated',navigated);page.off('domcontentloaded',loaded);}
 }
 module.exports={prepareLegacyLogin};
