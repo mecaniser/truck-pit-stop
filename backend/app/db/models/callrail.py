@@ -1,5 +1,5 @@
 """Explicit manual-only provider bindings; never infer a shop from a phone match."""
-from sqlalchemy import Column, String, ForeignKey, Boolean, Text, JSON, UniqueConstraint, Index, text
+from sqlalchemy import Column, String, ForeignKey, Boolean, Text, JSON, UniqueConstraint, Index, text, DateTime, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.base import BaseModel
 
@@ -52,3 +52,15 @@ class CallRailQuarantine(BaseModel):
     reason = Column(String(64), nullable=False)
     payload = Column(JSON, nullable=False)
     resolution = Column(Text)
+
+
+class CallRailMediaCache(BaseModel):
+    """Encrypted validated identities or sanitized PNGs; never provider locators."""
+    __tablename__ = 'callrail_media_cache'
+    __table_args__ = (UniqueConstraint('tenant_id', 'message_id', 'slot', name='uq_cr_media_message_slot'),)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey('tenants.id'), nullable=False, index=True)
+    message_id = Column(UUID(as_uuid=True), ForeignKey('sms_messages.id'), nullable=False)
+    slot = Column(Integer, nullable=False)  # -1 manifest; 0..9 clean image
+    fingerprint = Column(String(64), nullable=False)
+    encrypted_payload = Column(Text, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)

@@ -1,4 +1,4 @@
-"""Lazy, tenant-scoped CallRail media. No persistence, retries or cache; one restricted signed-object hop."""
+"""Private tenant-scoped CallRail media; restricted network and encrypted cache."""
 from __future__ import annotations
 import asyncio
 import io
@@ -7,6 +7,7 @@ import logging
 from contextvars import ContextVar
 import re
 import warnings
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlsplit, parse_qsl
@@ -18,6 +19,7 @@ from sqlalchemy import select
 from app.db.models.callrail import CallRailConversation, CallRailMessageAlias
 from app.db.models.sms_message import SMSMessage, SMSMessageDirection
 from app.services import callrail_service as cr
+from app.services import callrail_budget
 
 HEADERS = {'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer'}
 JSON_LIMIT = 2 * 1024 * 1024
@@ -39,7 +41,7 @@ class _PrivateRequestFilter(logging.Filter):
 for _logger_name in ('httpx', 'httpcore.connection', 'httpcore.http11', 'httpcore.http2',
                      'httpcore.proxy', 'httpcore.socks'):
     logging.getLogger(_logger_name).addFilter(_PrivateRequestFilter())
-_ERRORS = {'attachment_not_found': (404, 'Attachment not found.'), 'attachment_unsupported': (422, 'This image format is unavailable.'), 'attachment_too_large': (413, 'This image is too large.'), 'attachment_unavailable': (502, 'Attachment is unavailable. Try again later.'), 'attachment_timeout': (504, 'Attachment request timed out.')}
+_ERRORS = {'callrail_budget_exceeded': (429, 'CallRail requests are paused.'), 'callrail_budget_unavailable': (503, 'CallRail requests are paused.'), 'attachment_not_found': (404, 'Attachment not found.'), 'attachment_unsupported': (422, 'This image format is unavailable.'), 'attachment_too_large': (413, 'This image is too large.'), 'attachment_unavailable': (502, 'Attachment is unavailable. Try again later.'), 'attachment_timeout': (504, 'Attachment request timed out.')}
 
 
 def fail(code):
@@ -67,12 +69,12 @@ class Context:
 
 async def context_for(db, tenant_id, thread, message_id):
     message = await db.scalar(select(SMSMessage).where(SMSMessage.id == message_id,
-        SMSMessage.tenant_id == tenant_id, SMSMessage.thread_id == thread.id, SMSMessage.deleted_at.is_(None)))
+        SMSMessage.tenant_id == tenant_id, SMSMessage.thread_id == thread.id, SMSMessage.deleted_at.is_(None)).execution_options(populate_existing=True))
     if not message or not candidate(message):
         fail('attachment_not_found')
     mapping = await db.scalar(select(CallRailConversation).where(CallRailConversation.tenant_id == tenant_id,
         CallRailConversation.thread_id == thread.id, CallRailConversation.binding_id == message.callrail_binding_id,
-        CallRailConversation.deleted_at.is_(None)))
+        CallRailConversation.deleted_at.is_(None)).execution_options(populate_existing=True))
     if not mapping or mapping.provider_conversation_id != message.provider_conversation_id:
         fail('attachment_not_found')
     try:
@@ -136,7 +138,14 @@ async def _read_response(response, limit, *, media=False):
     return bytes(data), declared
 
 
-async def bounded_get(client, url, headers, limit, *, media=False):
+async def bounded_get(client, url, headers, limit, *, media=False, context=None):
+    if urlsplit(url).hostname == 'api.callrail.com' and context is None:
+        raise callrail_budget.CallRailBudgetBlocked()
+    if context is not None:
+        async with callrail_budget.attempt(context.message.tenant_id, context.account, "dbn_mms_manifest") as usage:
+            async with client.stream('GET', url, headers=headers) as response:
+                usage["http_status"] = response.status_code
+                return await _read_response(response, limit, media=media)
     async with client.stream('GET', url, headers=headers) as response:
         return await _read_response(response, limit, media=media)
 
@@ -196,11 +205,11 @@ def signed_object_url(locator, *, now=None):
     return locator
 
 
-async def media_get(client, url, headers):
+async def media_get(client, url, headers, *, context):
     # Only callers that already resolved tenant/message identity and validated
     # this exact CallRail URL may enter the restricted redirect path.
     locator = None
-    async with client.stream('GET', url, headers=headers) as response:
+    async with _media_response(client, url, headers, context) as response:
         if response.status_code != 302:
             return await _read_response(response, INPUT_LIMIT, media=True)
         locations = response.headers.get_list('location')
@@ -265,7 +274,7 @@ async def discover(client, context, headers):
     expected_total = None
     for page in range(1, 11):
         url = f'https://api.callrail.com/v3/a/{context.account}/text-messages/{context.conversation}.json?page={page}&per_page=100'
-        raw, _ = await bounded_get(client, url, headers, JSON_LIMIT)
+        raw, _ = await bounded_get(client, url, headers, JSON_LIMIT, context=context)
         try:
             record = json.loads(raw)
         except (ValueError, UnicodeDecodeError, RecursionError):
@@ -343,7 +352,7 @@ def decode_raster(data, declared):
         fail('attachment_unsupported')
 
 
-async def retrieve(context, index=None):
+async def retrieve(context, index=None, *, urls=None, return_urls=False):
     if index is not None and not 0 <= index <= 9:
         fail('attachment_not_found')
     token = _PRIVATE_REQUEST.set(True)
@@ -355,16 +364,39 @@ async def retrieve(context, index=None):
                 fail('attachment_unavailable')
             headers = {'Authorization': f'Token token="{key}"', 'Request-From': 'dieselbridge', 'Accept-Encoding': 'identity'}
             async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=False) as client:
-                urls = await discover(client, context, headers)
+                if urls is None:
+                    urls = await discover(client, context, headers)
+                if not isinstance(urls, list) or len(urls) > 10:
+                    fail('attachment_unavailable')
+                for slot, url in enumerate(urls):
+                    media_url(url, context, slot)
+                if return_urls:
+                    return urls
                 if index is None:
                     return {'items': [{'index': i, 'kind': 'image'} for i in range(len(urls))]}
                 if index >= len(urls):
                     fail('attachment_not_found')
-                data, declared = await media_get(client, urls[index], headers)
+                data, declared = await media_get(client, urls[index], headers, context=context)
                 return await asyncio.to_thread(decode_raster, data, declared)
+    except callrail_budget.CallRailBudgetBlocked as exc:
+        raise HTTPException(429 if exc.code == 'callrail_budget_exceeded' else 503,
+            detail={'code': exc.code, 'message': 'CallRail requests are paused.'}, headers=HEADERS) from None
     except (TimeoutError, httpx.TimeoutException):
         fail('attachment_timeout')
     except httpx.HTTPError:
         fail('attachment_unavailable')
     finally:
         _PRIVATE_REQUEST.reset(token)
+
+
+async def retrieve_cached(context, index=None):
+    from app.services.callrail_media_cache import retrieve_cached as cached
+    return await cached(context, index)
+
+
+@asynccontextmanager
+async def _media_response(client, url, headers, context):
+    async with callrail_budget.attempt(context.message.tenant_id, context.account, 'dbn_mms_image') as usage:
+        async with client.stream('GET', url, headers=headers) as response:
+            usage['http_status'] = response.status_code
+            yield response

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from uuid import UUID
 import httpx
+from app.services import callrail_budget
 from fastapi import HTTPException
 from sqlalchemy import select, or_
 from app.db.models.callrail import CallRailNumberBinding, CallRailConversation, CallRailMessageAlias, CallRailQuarantine
@@ -120,10 +121,12 @@ async def send(context, body, to, *, source="manual"):
     if not re.fullmatch(r'[A-Za-z0-9]+', context.account_id):
         deny('callrail_binding_changed')
     headers = {'Authorization': f'Token token="{secret(context.credential_ref)}"', 'Request-From': 'dieselbridge'}
-    async with httpx.AsyncClient(timeout=25, follow_redirects=False) as client:
-        response = await client.post(f'https://api.callrail.com/v3/a/{context.account_id}/text-messages.json',
-            headers=headers, json={'company_id': context.company_id, 'tracking_number': context.sender_phone,
-                                  'customer_phone_number': to, 'content': body})
+    async with callrail_budget.attempt(context.tenant_id, context.account_id, 'dbn_sms_send') as usage:
+        async with httpx.AsyncClient(timeout=25, follow_redirects=False) as client:
+            response = await client.post(f'https://api.callrail.com/v3/a/{context.account_id}/text-messages.json',
+                headers=headers, json={'company_id': context.company_id, 'tracking_number': context.sender_phone,
+                                      'customer_phone_number': to, 'content': body})
+            usage['http_status'] = response.status_code
     # Do not include provider response bodies in raised errors; they may contain PII.
     if response.status_code >= 400:
         # Explicit client rejection is definitive; 5xx/transport are unknown outcomes.

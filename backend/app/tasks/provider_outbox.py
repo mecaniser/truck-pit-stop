@@ -82,3 +82,14 @@ def capture_shop_history() -> dict[str, int]:
     """Capture changed history only; signed outbox owns delivery."""
     from app.services.shop_history_source import capture_shop_history_batch
     return run_async(capture_shop_history_batch())
+
+
+@celery_app.task(name="purge_callrail_media_cache", soft_time_limit=120, time_limit=180)
+def purge_callrail_media_cache():
+    async def purge():
+        from app.db.session import AsyncSessionLocal
+        from app.services.callrail_media_cache import purge_expired
+        async with AsyncSessionLocal() as db:
+            async with db.begin():
+                await purge_expired(db)
+    return run_async(purge())

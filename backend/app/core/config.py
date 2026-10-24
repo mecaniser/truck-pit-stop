@@ -291,6 +291,12 @@ class Settings(BaseSettings):
     GOOGLE_BUSINESS_HTTP_TIMEOUT_SECONDS: float = Field(default=15.0, gt=0, le=60)
     GOOGLE_REVIEWS_MAX_PUBLISH_ATTEMPTS: int = Field(default=5, ge=1, le=12)
 
+    CALLRAIL_BUDGET_BASE_URL: str = ""
+    CALLRAIL_BUDGET_CLIENT_ID: str = ""
+    CALLRAIL_BUDGET_SIGNING_SECRET: str = ""
+    CALLRAIL_MEDIA_ENCRYPTION_KEYS: str = "{}"
+    CALLRAIL_MEDIA_ACTIVE_KEY_VERSION: str = "v1"
+
     # Frontend
     FRONTEND_URL: str = "http://localhost:5173"
     PUBLIC_API_BASE_URL: str = "http://localhost:8000"

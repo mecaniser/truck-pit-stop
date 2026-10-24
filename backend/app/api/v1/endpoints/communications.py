@@ -221,7 +221,7 @@ async def attachment_manifest(conversation_id: UUID, message_id: UUID, response:
     from app.services import callrail_media as media
     try:
         context = await attachment_context(db, user, conversation_id, message_id)
-        result = await media.retrieve(context)
+        result = await media.retrieve_cached(context)
     except HTTPException as exc:
         return attachment_error(exc)
     response.headers.update(media.HEADERS)
@@ -234,7 +234,7 @@ async def attachment_content(conversation_id: UUID, message_id: UUID, index: int
     from app.services import callrail_media as media
     try:
         context = await attachment_context(db, user, conversation_id, message_id)
-        data, content_type = await media.retrieve(context, index)
+        data, content_type = await media.retrieve_cached(context, index)
     except HTTPException as exc:
         return attachment_error(exc)
     extension = 'png' if content_type == 'image/png' else 'jpg'

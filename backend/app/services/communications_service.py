@@ -335,6 +335,8 @@ async def dispatch_operation(db, operation_id, sender):
                 raise ValueError('Provider returned no receipt')
     except TwilioRestException as exc:
         error = ('rejected', str(exc.code or 'provider_rejected')) if 400 <= exc.status < 500 and exc.status not in (408, 429) else ('unknown', 'provider_outcome_unknown')
+    except callrail.callrail_budget.CallRailBudgetBlocked as exc:
+        error = ('rejected', exc.code)
     except callrail.CallRailRejected:
         error = ('rejected', 'callrail_rejected')
     except Exception:
@@ -347,6 +349,9 @@ async def dispatch_operation(db, operation_id, sender):
         op.state, op.reconciliation_state = 'accepted', 'none'
     elif error:
         op.state, op.error_code = error
+        if op.error_code in {'callrail_budget_exceeded', 'callrail_budget_unavailable'}:
+            op.attempt_count = 0
+            op.dispatch_started_at = None
         op.reconciliation_state = 'required' if op.state == 'unknown' else 'none'
         if op.state == 'rejected':
             sms.delivery_status = SMSDeliveryStatus.FAILED
