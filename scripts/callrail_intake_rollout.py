@@ -10,7 +10,8 @@ import json
 import os
 from pathlib import Path
 import re
-import urllib.request
+import httpx
+from app.services import callrail_budget
 from uuid import UUID, NAMESPACE_URL, uuid5
 
 from sqlalchemy import select, text
@@ -29,23 +30,28 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
-def provider_inventory(manifest):
+async def provider_inventory(manifest):
     account = manifest['account_id']
     require(re.fullmatch(r'[A-Za-z0-9]+', account), 'Invalid provider account')
     credential = os.environ.get(manifest['credential_ref'])
     require(bool(credential), 'Configured provider credential unavailable')
-    def get(path):
-        request = urllib.request.Request('https://api.callrail.com/v3/a/' + account + '/' + path,
-            headers={'Authorization': 'Token token=' + credential}, method='GET')
-        with urllib.request.urlopen(request, timeout=20) as response:
-            return json.load(response)
-    data = get('trackers.json?company_id=' + manifest['company_id'] + '&per_page=250')
+    async def get(path):
+        # Explicit operator diagnostics spend the same account allowance. No retries.
+        async with callrail_budget.attempt(manifest['tenant_id'], account, 'dbn_tracker_inspection') as usage:
+            async with httpx.AsyncClient(timeout=20, follow_redirects=False, trust_env=False) as client:
+                response = await client.get('https://api.callrail.com/v3/a/' + account + '/' + path,
+                    headers={'Authorization': 'Token token=' + credential})
+                usage['http_status'] = response.status_code
+                require(response.status_code == 200, 'Provider inventory unavailable')
+                require(len(response.content) <= 2 * 1024 * 1024, 'Provider inventory too large')
+                return response.json()
+    data = await get('trackers.json?company_id=' + manifest['company_id'] + '&per_page=250')
     require(data.get('total_pages') == 1, 'Inventory pagination changed; review required')
     actual, snapshots = {}, []
     for row in data.get('trackers', []):
         if row.get('status') != 'active' or not row.get('sms_enabled') or not row.get('sms_supported'):
             continue
-        record = get('trackers/' + row['id'] + '.json')
+        record = await get('trackers/' + row['id'] + '.json')
         require(record.get('company', {}).get('id') == manifest['company_id'], 'Foreign company tracker')
         require(record.get('status') == 'active' and record.get('sms_enabled') is True
                 and record.get('sms_supported') is True, 'Tracker availability changed')
@@ -80,7 +86,7 @@ async def run(args):
     if mutation:
         require(os.environ.get('RAILWAY_GIT_COMMIT_SHA') == args.expected_sha
                 and re.fullmatch(r'[0-9a-f]{40}', args.expected_sha or ''), 'Deployed source mismatch')
-    inventory_hash = None if args.hold else await asyncio.to_thread(provider_inventory, manifest)
+    inventory_hash = None if args.hold else await provider_inventory(manifest)
     if args.apply:
         require(args.expected_inventory_hash == inventory_hash, 'Provider baseline changed since review')
     plans = []

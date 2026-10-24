@@ -649,3 +649,14 @@ async def test_inbound_routes_survive_outbound_sender_changes_and_twilio(mapped)
         CallRailConversation.thread_id == thread_id, CallRailConversation.selected_for_sending.is_(True),
         CallRailConversation.deleted_at.is_(None)))
     assert selected_count == 1
+
+
+@pytest.fixture(autouse=True)
+def synthetic_shared_budget(monkeypatch):
+    from app.services import callrail_budget
+    async def reserve(*args):
+        return callrail_budget.Permit(str(uuid4()), datetime.now(timezone.utc) + timedelta(days=1))
+    async def complete(*args):
+        pass
+    monkeypatch.setattr(callrail_budget, 'reserve', reserve)
+    monkeypatch.setattr(callrail_budget, 'complete', complete)

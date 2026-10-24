@@ -76,6 +76,7 @@ celery_app.conf.update(
             "task": "process_paid_invoice_webhooks",
             "schedule": timedelta(seconds=10),
         },
+        "purge-callrail-media-cache": {"task": "purge_callrail_media_cache", "schedule": crontab(hour=3, minute=10)},
         "process-conversion-pii-retention-daily": {
             "task": "process_conversion_pii_retention",
             "schedule": crontab(hour=3, minute=15),

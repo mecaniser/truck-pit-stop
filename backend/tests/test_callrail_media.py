@@ -2,7 +2,7 @@
 import io
 import json
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 import httpx
@@ -395,7 +395,7 @@ async def test_unbounded_length_header_is_sanitized(media_body):
         'Content-Type':'image/png' if media_body else 'application/json','Content-Length':'1'*5000}))
     async with httpx.AsyncClient(transport=transport) as client:
         with pytest.raises(HTTPException) as error:
-            await media.bounded_get(client,'https://api.callrail.com/',{},media.INPUT_LIMIT,media=media_body)
+            await media.bounded_get(client,'https://api.callrail.com/',{},media.INPUT_LIMIT,media=media_body,context=SimpleNamespace(message=SimpleNamespace(tenant_id=uuid4()),account='ACCsynthetic'))
     assert error.value.status_code==(413 if media_body else 502)
     assert error.value.headers==media.HEADERS
 
@@ -789,3 +789,17 @@ def test_installed_three_picture_writer_malformed_mpf_is_rejected():
             assert any('Image appears to be a malformed MPO file' in str(item.message) for item in seen)
     with pytest.raises(HTTPException) as error:media.decode_raster(raw,'image/jpeg')
     assert error.value.status_code==422
+
+
+@pytest.fixture(autouse=True)
+def synthetic_shared_budget(monkeypatch):
+    async def uncached(*args, **kwargs):
+        return await media.retrieve(*args, **kwargs)
+    monkeypatch.setattr(media, 'retrieve_cached', uncached)
+    from app.services import callrail_budget
+    async def reserve(*args):
+        return callrail_budget.Permit(str(uuid4()), datetime.now(timezone.utc) + timedelta(days=1))
+    async def complete(*args):
+        pass
+    monkeypatch.setattr(callrail_budget, 'reserve', reserve)
+    monkeypatch.setattr(callrail_budget, 'complete', complete)
