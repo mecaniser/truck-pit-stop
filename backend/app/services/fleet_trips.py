@@ -5,6 +5,7 @@ from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy import select, func, or_, and_, cast, Integer
 from app.db.models.fleet_trip import FleetTrip as Trip
+from app.db.models.dashboard_vehicle_binding import DashboardVehicleBinding as Binding
 from app.db.models.vehicle import Vehicle
 from app.db.models.customer import Customer
 from app.db.models.vehicle_relationship import FleetMembership as Member
@@ -62,6 +63,30 @@ def visible_query(tenant_id, start, end, stamp, vehicle_id=None, fleet_customer_
         or_(and_(Trip.timestamp_precision == "second", Trip.ended_at <= Trip.source_read_at), and_(Trip.timestamp_precision == "minute", source_covers_minute)),
         or_(and_(Trip.timestamp_precision == "second", Trip.ended_at <= stamp), and_(Trip.timestamp_precision == "minute", Trip.ended_at <= stamp - timedelta(seconds=60))),
     )
+    if dialect == "sqlite":
+        binding_covers_minute = cast(func.strftime("%s", Binding.effective_to), Integer) - cast(func.strftime("%s", Trip.ended_at), Integer) >= 60
+    else:
+        binding_covers_minute = Trip.ended_at + timedelta(seconds=60) <= Binding.effective_to
+    valid_bound = select(Binding.id).where(
+        Binding.id == Trip.dashboard_binding_id, Binding.tenant_id == tenant_id,
+        Binding.vehicle_id == Trip.vehicle_id, Binding.fleet_membership_id == Trip.fleet_membership_id,
+        Binding.fleet_customer_id == Trip.fleet_customer_id,
+        Binding.deleted_at.is_(None), Binding.revoked_at.is_(None),
+        Binding.placeholder_vin == "PENDING-26", Vehicle.vin == Binding.placeholder_vin,
+        Binding.source_company_id == Trip.source_company_id,
+        Binding.source_company_label == Trip.source_company_label,
+        Binding.provider_vehicle_id == Trip.provider_vehicle_id,
+        Trip.source_company_id == "KT8934277", Trip.source_company_label == "77 CARGO LLC",
+        Trip.provider_vehicle_id == "5981300", Trip.verified_vin.is_(None),
+        Trip.source_vin_state.in_(("not_displayed", "explicitly_empty")),
+        Binding.reviewed_at <= Binding.effective_from, Binding.effective_from <= Trip.started_at,
+        Binding.effective_from <= Trip.source_read_at, Trip.source_read_at <= stamp,
+        or_(Binding.effective_to.is_(None), and_(Binding.effective_to > stamp,
+            Binding.effective_to > Trip.source_read_at,
+            or_(and_(Trip.timestamp_precision == "minute", binding_covers_minute),
+                and_(Trip.timestamp_precision == "second", Trip.ended_at < Binding.effective_to)))),
+    ).correlate(Trip, Vehicle).exists()
+    query = query.where(or_(and_(Trip.dashboard_binding_id.is_(None), Trip.verified_vin.is_not(None)), valid_bound))
     if start is not None:
         query = query.where(Trip.started_at >= start)
     if end is not None:
@@ -101,5 +126,5 @@ async def list_trips(db, tenant_id, start_date, end_date, zone, vehicle_id=None,
     for trip, unit, fleet in rows:
         items.append({**{key: getattr(trip, key) for key in (
             "id", "vehicle_id", "fleet_customer_id", "started_at", "ended_at", "origin_label", "destination_label", "distance_miles", "driving_seconds", "stops", "captured_at", "source", "timestamp_precision"
-        )}, "unit_number": unit, "fleet_name": fleet, "metrics": computed_metrics(trip.metrics, trip.distance_miles)})
+        )}, "vehicle_identity_basis": "reviewed_provider_binding" if trip.dashboard_binding_id else "verified_vin", "vehicle_identity_binding_id": trip.dashboard_binding_id, "unit_number": unit, "fleet_name": fleet, "metrics": computed_metrics(trip.metrics, trip.distance_miles)})
     return dict(items=items, imported_start=local_date(bounds[0]), imported_end=local_date(bounds[1]), summary=dict(trip_count=totals[0], truck_count=totals[1], coverage="partial", distance_miles=totals[2], driving_seconds=totals[3]), total=totals[0], limit=limit, offset=offset, timezone=zone, start_date=start_date, end_date=end_date)

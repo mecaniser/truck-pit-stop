@@ -54,7 +54,7 @@ def core(row):
     return value
 
 
-def normalize(document, mapping, prior=None, now=None):
+def normalize(document, mapping, prior=None, now=None, *, allow_binding=False):
     now = now or datetime.now(timezone.utc)
     if not isinstance(document, dict) or set(document) != {"tenant_id", "company_label", "windows"}:
         raise ValueError("Invalid capture document")
@@ -68,13 +68,22 @@ def normalize(document, mapping, prior=None, now=None):
     vehicles = {}
     vins = set()
     for row in mapping["vehicles"]:
-        if not isinstance(row, dict) or set(row) != {"provider_vehicle_id", "vin", "unit", "effective_from"}:
+        bound = allow_binding and isinstance(row, dict) and row.get("dashboard_binding_id")
+        keys = {"provider_vehicle_id", "vin", "unit", "effective_from"}
+        if bound:
+            keys |= {"dashboard_binding_id", "source_company_id", "source_company_label", "source_vin_state"}
+        if not isinstance(row, dict) or set(row) != keys:
             raise ValueError("Invalid mapping")
         pid = row["provider_vehicle_id"]
-        if not isinstance(pid, str) or not pid or pid in vehicles or row["vin"] in vins:
+        if not isinstance(pid, str) or not pid or pid in vehicles or (row["vin"] is not None and row["vin"] in vins):
             raise ValueError("Duplicate or invalid mapping")
-        if not re.fullmatch(r"[A-HJ-NPR-Z0-9]{17}", row["vin"]) or not isinstance(row["unit"], str) or not row["unit"].strip():
+        if (not bound and (not isinstance(row["vin"], str) or not re.fullmatch(r"[A-HJ-NPR-Z0-9]{17}", row["vin"]))) or not isinstance(row["unit"], str) or not row["unit"].strip():
             raise ValueError("Invalid VIN/unit")
+        if bound:
+            from uuid import UUID
+            UUID(row["dashboard_binding_id"])
+            if row["vin"] is not None or pid != "5981300" or row["source_company_id"] != "KT8934277" or row["source_company_label"] != "77 CARGO LLC" or row["source_vin_state"] not in ("not_displayed", "explicitly_empty"):
+                raise ValueError("Invalid reviewed trip mapping")
         timestamp(row["effective_from"])
         vehicles[pid] = row
         vins.add(row["vin"])
@@ -137,11 +146,13 @@ def normalize(document, mapping, prior=None, now=None):
                 if departure < timestamp(match["effective_from"]):
                     raise ValueError("outside_membership")
                 row = dict(vin=match["vin"], unit=match["unit"], provider_vehicle_id=pid, source_read_at=read.isoformat(), started_at=departure.isoformat(), ended_at=arrival.isoformat(), origin_label=origin, destination_label=destination, distance_miles=miles, driving_seconds=duration, stops=None, metrics=None, timestamp_precision="minute")
+                if match.get("dashboard_binding_id"):
+                    row.update({key: match[key] for key in ("dashboard_binding_id", "source_company_id", "source_company_label", "source_vin_state")})
                 key = identity(row)
                 if key in blocked:
                     raise ValueError("conflicting_source_identity")
                 existing = previous.get(key) or accepted.get(key)
-                if existing and core(existing) != core(row):
+                if existing and (core(existing) != core(row) or any(existing.get(k) != row.get(k) for k in ("dashboard_binding_id", "source_company_id", "source_company_label", "source_vin_state"))):
                     accepted.pop(key, None)
                     blocked.add(key)
                     raise ValueError("conflicting_source_identity")

@@ -14,7 +14,8 @@ from app.db.models.customer import Customer
 from app.db.models.fleet_trip import FleetTrip
 from app.db.models.vehicle import Vehicle
 from app.db.models.vehicle_relationship import FleetMembership
-from app.schemas.fleet_trip import TripImport
+from app.schemas.fleet_trip import TripImport, DashboardTripImport
+from app.services import dashboard_vehicle_bindings as bindings
 from app.services.fleet_telemetry import active_membership
 from scripts.motive_sync.runner import private_json
 from scripts.prepare_motive_trip_history import ZONE, endpoint, normalize, timestamp
@@ -117,13 +118,13 @@ def prior_payload(trip):
     """Preserve immutable fields, including original source read and fuel metrics."""
     values = {
         name: getattr(trip, name)
-        for name in TripImport.model_fields
+        for name in (DashboardTripImport if trip.dashboard_binding_id else TripImport).model_fields
         if name not in {"vin", "unit"}
     }
     values.update(vin=trip.verified_vin, unit=trip.provider_unit)
     for name in ("started_at", "ended_at", "source_read_at"):
         values[name] = importer.aware(values[name])
-    payload = TripImport.model_validate(values)
+    payload = (DashboardTripImport if trip.dashboard_binding_id else TripImport).model_validate(values)
     if importer.digest(payload) != trip.request_digest:
         raise ValueError("Stored trip does not match its immutable digest")
     return payload.model_dump(mode="json")
@@ -176,10 +177,33 @@ def verify_prior_coverage(windows, previous):
 
 async def prepare(db, document, tenant_id, actor_id, stamp):
     await importer.authorize(db, tenant_id, actor_id)
-    mappings, exclusions, membership_scope = [], [], []
+    mappings, exclusions, membership_scope, bound_vehicle_ids = [], [], [], set()
     for source in document["vehicles"]:
         reason = None
-        if not source["vin"]:
+        if not source["vin"] and source.get("source_vin_state"):
+            if source["provider_vehicle_id"] != "5981300" or document["company_id"] != "KT8934277":
+                raise ValueError("Unreviewed placeholder source")
+            before, after = source.get("identity_before"), source.get("identity_after")
+            if not isinstance(before, dict) or not isinstance(after, dict):
+                raise ValueError("Positive placeholder source checks required")
+            state = source["source_vin_state"]
+            if state not in {"not_displayed", "explicitly_empty"} or any(proof.get("vin") is not None or proof.get("source_vin_state") != state for proof in (before, after)):
+                raise ValueError("Placeholder source identity changed")
+            first_read, last_read = timestamp(before["read_at"]), timestamp(after["read_at"])
+            if not timestamp(document["started_at"]) <= first_read <= min(timestamp(w["source_read_at"]) for w in document["windows"]) <= max(timestamp(w["source_read_at"]) for w in document["windows"]) <= last_read <= timestamp(document["finished_at"]):
+                raise ValueError("Placeholder checks do not bracket source")
+            vehicle, member, binding = await bindings.resolve(db, tenant_id, document["company_id"], source["provider_vehicle_id"], last_read, company_label=document["company_label"])
+            if binding.placeholder_vin != "PENDING-26":
+                raise ValueError("Only the reviewed PENDING-26 trip binding is supported")
+            bound_vehicle_ids.add(str(vehicle.id))
+            mappings.append({"provider_vehicle_id": source["provider_vehicle_id"], "vin": None, "unit": source["unit"],
+                "effective_from": max(importer.aware(member.effective_from), importer.aware(binding.effective_from)).isoformat(),
+                "dashboard_binding_id": str(binding.id), "source_company_id": document["company_id"],
+                "source_company_label": document["company_label"], "source_vin_state": state})
+            membership_scope.append({"provider_vehicle_id": source["provider_vehicle_id"], "vehicle_id": str(vehicle.id), "membership_id": str(member.id),
+                "effective_from": importer.aware(member.effective_from).isoformat(), "effective_to": importer.aware(member.effective_to).isoformat() if member.effective_to else None,
+                "binding_id": str(binding.id), "binding_from": importer.aware(binding.effective_from).isoformat(), "binding_to": importer.aware(binding.effective_to).isoformat() if binding.effective_to else None})
+        elif not source["vin"]:
             reason = "unknown_vin"
         else:
             vehicles = (
@@ -257,7 +281,7 @@ async def prepare(db, document, tenant_id, actor_id, stamp):
         "effective_from": importer.aware(m.effective_from).isoformat(),
         "effective_to": importer.aware(m.effective_to).isoformat() if m.effective_to else None,
         "reason": "absent_from_source_directory"} for v, m in authorized
-        if not v.vin or v.vin.strip().upper() not in source_vins]
+        if str(v.id) not in bound_vehicle_ids and (not v.vin or v.vin.strip().upper() not in source_vins)]
     # Limit prior material to this report's provider IDs and UTC date envelope.
     first = min(date.fromisoformat(w["start"]) for w in document["windows"])
     last = max(date.fromisoformat(w["end"]) for w in document["windows"])
@@ -289,7 +313,7 @@ async def prepare(db, document, tenant_id, actor_id, stamp):
         {**base, "windows": windows},
         {**base, "vehicles": mappings},
         {"rows": [prior_payload(trip) for trip in previous]},
-        now=stamp,
+        now=stamp, allow_binding=True,
     )
     report.update(prior_coverage)
     report["vehicle_exclusions"] = exclusions
@@ -336,10 +360,10 @@ async def prepare(db, document, tenant_id, actor_id, stamp):
             "scope": document["plan"]["scope"], "day": day,
             "status": "provisional" if not closed_day else "examined_with_exclusions" if any(p["exclusions"] for p in providers) else "verified",
             "providers": providers,
-            "mapping_sha256": trip_coverage.mapping_digest(document["vehicles"], mappings, membership_scope, missing_vehicles),
+            "mapping_sha256": trip_coverage.mapping_digest([{k: v for k, v in source.items() if k not in {"identity_before", "identity_after"}} for source in document["vehicles"]], mappings, membership_scope, missing_vehicles),
         }
     return [
-        TripImport.model_validate(row).model_dump(mode="json") for row in rows
+        (DashboardTripImport if row.get("dashboard_binding_id") else TripImport).model_validate(row).model_dump(mode="json") for row in rows
     ], report
 
 
@@ -362,9 +386,9 @@ async def import_batches(db, rows, tenant_id, actor_id, apply):
     result = []
     for offset in range(0, len(rows), 1000):
         batch = importer.parse_rows(
-            {"rows": rows[offset : offset + 1000]}, datetime.now(timezone.utc)
+            {"rows": rows[offset : offset + 1000]}, datetime.now(timezone.utc), allow_binding=True
         )
-        receipt = await importer.run_import(db, batch, tenant_id, actor_id, apply=apply)
+        receipt = await importer.run_import(db, batch, tenant_id, actor_id, apply=apply, allow_binding=True)
         result.extend(receipt["rows"])
     return result
 

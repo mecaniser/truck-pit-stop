@@ -99,6 +99,8 @@ class TripImport(BaseModel):
     @field_validator("vin")
     @classmethod
     def valid_vin(cls, value):
+        if value is None:
+            return value
         value = value.upper()
         if not re.fullmatch(r"[A-HJ-NPR-Z0-9]{17}", value):
             raise ValueError("Verified 17-character VIN required")
@@ -150,7 +152,19 @@ class TripImport(BaseModel):
         return self
 
 
+class DashboardTripImport(TripImport):
+    """Private worker-only reviewed identity; public import stays genuine-VIN-only."""
+    vin: None = None
+    dashboard_binding_id: UUID
+    source_company_id: Literal["KT8934277"]
+    source_company_label: Literal["77 CARGO LLC"]
+    source_vin_state: Literal["not_displayed", "explicitly_empty"]
+    provider_vehicle_id: Literal["5981300"]
+
+
 class TripItem(BaseModel):
+    vehicle_identity_basis: Literal["verified_vin", "reviewed_provider_binding"] = "verified_vin"
+    vehicle_identity_binding_id: UUID | None = None
     id: UUID
     vehicle_id: UUID
     unit_number: str | None
