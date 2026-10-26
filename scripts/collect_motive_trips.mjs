@@ -1,3 +1,4 @@
+import tripDiagnostics from '../backend/scripts/motive_sync/trip_diagnostics.cjs';
 /** Motive's rendered Trips report collector. Inject an authenticated browser adapter.
  * No cookies, passwords, hidden application state or undocumented API requests.
  * Designed for Codex CUA (tab.playwright + nativeTab.scroll), or a Playwright page.
@@ -32,15 +33,19 @@ export async function readReport(page) {
     const pickers = Array.from(document.querySelectorAll('phx-filter-row[data-e2e="trips-filter-row"] phx-date-picker[data-testid="date-picker"]')).filter(visible);
     const overlays = Array.from(document.querySelectorAll('.cdk-overlay-pane.phx-date-picker-overlay-pane')).filter(visible);
     let selected_dates = null;
+    const proof_structure={picker_count:pickers.length,overlay_count:overlays.length,loading};
     if (pickers.length === 1 && overlays.length === 1) {
       const labels = Array.from(pickers[0].querySelectorAll('.phx-date-picker-range-labels .phx-date-picker-label')).filter(visible);
       const titles = Array.from(overlays[0].querySelectorAll('.phx-date-picker phx-date-picker-header .phx-date-picker-header-label')).filter(visible);
       const days = Array.from(overlays[0].querySelectorAll('phx-date-picker-body .phx-date-picker-body-date-wrapper span.phx-date-picker-body-date-cell-active-selected')).filter(visible);
+      Object.assign(proof_structure,{label_count:labels.length,title_count:titles.length,selected_count:days.length});
+      if (days.length===1)proof_structure.adjacent_month=days[0].classList.contains('phx-date-picker-body-date-cell-prev-next-month');
       if (labels.length === 1 && titles.length === 1 && days.length === 1
           && !days[0].classList.contains('phx-date-picker-body-date-cell-prev-next-month')) {
         const title = titles[0].innerText.replace(/\s+/g, ' ').trim().match(/^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4})$/);
         const day = Array.from(days[0].childNodes).filter(node => node.nodeType === 3).map(node => node.textContent).join('').trim();
         const collapsed = labels[0].innerText.replace(/\s+/g, ' ').trim();
+        Object.assign(proof_structure,{header_valid:Boolean(title),selected_day_valid:/^(?:[1-9]|[12]\d|3[01])$/.test(day),label_matches:Boolean(title && collapsed===`${title[1]} ${Number(day)}`)});
         if (title && /^(?:[1-9]|[12]\d|3[01])$/.test(day) && collapsed === `${title[1]} ${Number(day)}`) {
           const month = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].indexOf(title[1]) + 1;
           const value = `${title[2]}-${String(month).padStart(2,'0')}-${day.padStart(2,'0')}`;
@@ -49,12 +54,13 @@ export async function readReport(page) {
         }
       }
     }
+    if(selected_dates)Object.assign(proof_structure,{selected_start:selected_dates.start,selected_end:selected_dates.end});
     const rows = Array.from(table.querySelectorAll('tbody tr')).map(tr => {
       const cells = Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim());
       // Deliberately exclude driver identity and notes from capture.
       return { cells: cells.slice(0, 5), links: Array.from(tr.querySelectorAll('a[href*="/fleetview/vehicles/summary/"]')).map(a => a.getAttribute('href')) };
     }).filter(row => row.cells.length && row.cells.some(cell => cell.trim()));
-    return { url: location.href, loading, selected_dates, date_picker_available:pickers.length===1, date_overlay_count:overlays.length, state: body.includes('No trips found. Try updating your filter/search criteria.') ? 'empty' : rows.length ? 'rows' : 'loading', headers, rows, footer: body.match(/Showing [\d,]+ results/)?.[0] ?? null };
+    return { url: location.href, loading, selected_dates, proof_structure, date_picker_available:pickers.length===1, date_overlay_count:overlays.length, state: body.includes('No trips found. Try updating your filter/search criteria.') ? 'empty' : rows.length ? 'rows' : 'loading', headers, rows, footer: body.match(/Showing [\d,]+ results/)?.[0] ?? null };
   });
 }
 
@@ -67,8 +73,10 @@ export async function captureStep(page, receipt, { maxRows = 20000, verifiedTime
     if (new URL(report.url).origin !== 'https://app.gomotive.com' || !new URL(report.url).hash.startsWith('#/fleetview/list/trips/trips;')) throw new Error('Unexpected source page');
     // Opening the existing picker only exposes its selected date; do not select,
     // apply or change any filter. No retry loop or new authentication is introduced.
-    await page.locator('phx-filter-row[data-e2e="trips-filter-row"] phx-date-picker[data-testid="date-picker"] .phx-date-picker-selector').click({timeout:5000});
-    await page.locator('.cdk-overlay-pane.phx-date-picker-overlay-pane').waitFor({state:'visible',timeout:5000});
+    try {await page.locator('phx-filter-row[data-e2e="trips-filter-row"] phx-date-picker[data-testid="date-picker"] .phx-date-picker-selector').click({timeout:5000});}
+    catch(error){throw tripDiagnostics.proofError('report_empty_picker_click_failed',report.proof_structure,error);}
+    try {await page.locator('.cdk-overlay-pane.phx-date-picker-overlay-pane').waitFor({state:'visible',timeout:5000});}
+    catch(error){throw tripDiagnostics.proofError('report_empty_picker_wait_failed',report.proof_structure,error);}
     report = await readReport(page);
   }
   if (report.state === 'unavailable') throw new Error('Motive report unavailable: check login');
@@ -87,7 +95,8 @@ export async function captureStep(page, receipt, { maxRows = 20000, verifiedTime
   if (report.state === 'empty') {
     if (receipt.rows.length || report.rows.length) throw new Error('Source became empty during collection');
     const dates=report.selected_dates;
-    if(report.loading!==false||!dates||dates.kind!=='visible_date_controls'||dates.start!==receipt.start||dates.end!==receipt.end)throw new Error('Empty report selected dates unavailable or mismatched');
+    if(report.loading!==false||!dates||dates.kind!=='visible_date_controls')throw tripDiagnostics.proofError('report_empty_date_proof_unavailable',report.proof_structure);
+    if(dates.start!==receipt.start||dates.end!==receipt.end)throw tripDiagnostics.proofError('report_empty_date_proof_mismatch',report.proof_structure);
     return { ...receipt, source_read_at: now().toISOString(), status: 'empty', header_timezone: zone,
       empty_observation:{selected_start:dates.start,selected_end:dates.end,date_evidence_kind:dates.kind,loading_absent:true},
       terminal_evidence: 'No trips found. Try updating your filter/search criteria.' };

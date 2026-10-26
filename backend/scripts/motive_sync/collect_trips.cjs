@@ -228,6 +228,8 @@ async function collect(output) {
  } finally {await closeBrowser(browser);}
 }
 function safeFailure(error) {
+ const proofCategory=require('./trip_diagnostics.cjs').category(error);
+ if(proofCategory)return proofCategory;
  const known=new Set(['missing_credentials','ambiguous_vin','directory_incomplete','vehicle_link_invalid','ambiguous_directory','session_lost','report_incomplete','report_step_limit','login_origin','company_mismatch','timezone_unverified','vehicle_source_changed','duplicate_vin','report_viewport_unavailable']);
  const adapterFailures=new Map([
   ['Motive report unavailable: check login','report_unavailable'],

@@ -12,5 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN node /app/scripts/motive_sync/node_modules/playwright/cli.js install --with-deps chromium
 COPY backend/ ./
 COPY scripts/collect_motive_trips.mjs /app/collectors/collect_motive_trips.mjs
+# Preserve the adapter's repository-relative import for the pure diagnostic helper.
+COPY backend/scripts/motive_sync/trip_diagnostics.cjs /app/backend/scripts/motive_sync/trip_diagnostics.cjs
 ENV MOTIVE_TRIPS_COMMIT=false
 CMD ["python", "-m", "scripts.motive_sync.run_trip_worker"]
