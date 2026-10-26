@@ -2,7 +2,7 @@
 // Closed vocabulary only: never emit provider values or exception text.
 const PHASES=new Set(['navigation','header','capture','empty_proof','populated_proof','viewport','finalize']);
 const REASONS=new Set(['transport','status','content_type','declared_body_limit','decoded_body_limit','body_timeout','json','root_shape','total_changed','record_shape','id_invalid','vehicle_id_invalid','timestamp_invalid','outside_day','duplicate_id','duplicate_identity','dom_identity_invalid','bijection_mismatch','request_failed','response_limit','no_matching_response','pending_response','incomplete_tail','dom_count_mismatch','rendered_count_mismatch']);
-const COUNTS=['observed_requests','provider_requests','unbound_provider_requests','matched_requests','responses','pending','decoded_pages','authoritative_total','response_identities','dom_rows','rendered_count'];
+const COUNTS=['dom_numeric_format','dom_named_format','dom_unknown_format','dom_invalid_links','dom_invalid_identities','dom_duplicate_identities','observed_requests','provider_requests','unbound_provider_requests','matched_requests','responses','pending','decoded_pages','authoritative_total','response_identities','dom_rows','rendered_count'];
 const FIELDS=['total','per_page','driving_periods','record','id','vehicle','vehicle_id','start_time'];
 const TYPES=new Set(['missing','null','array','object','string','number','boolean','other']);
 function type(value){return value===undefined?'missing':value===null?'null':Array.isArray(value)?'array':['object','string','number','boolean'].includes(typeof value)?typeof value:'other';}

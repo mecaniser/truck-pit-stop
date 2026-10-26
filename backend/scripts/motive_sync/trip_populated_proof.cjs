@@ -12,13 +12,28 @@ function wall(timestamp){
  const p=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(timestamp)).map(p=>[p.type,p.value]));
  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
 }
+const NUMERIC=/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})\s+(AM|PM)$/i;
+const NAMED=/^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),\s+(\d{4}),\s+(\d{1,2}):(\d{2})\s+(AM|PM)$/i;
+function departureText(row){const value=row?.cells?.[1];return typeof value==='string'?value.split('\n')[0].trim():null;}
 function rowIdentity(row){
  const links=[...new Set(row?.links||[])];if(links.length!==1)fail();const m=links[0].match(/^#\/fleetview\/vehicles\/summary\/(\d+)$/);if(!m)fail();
- const text=row.cells?.[1]?.split('\n')[0]?.trim();let d=text?.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})\s+(AM|PM)$/i);
- if(!d)fail();const [,month,day,year,hour,minute,ampm]=d;const h=Number(hour),min=Number(minute),mo=Number(month),da=Number(day);if(h<1||h>12||min>59||mo<1||mo>12||da<1||da>31)fail();
+ const text=departureText(row);let d=text?.match(NUMERIC),named=false;if(!d){d=text?.match(NAMED);named=true;}
+ if(!d)fail();let [,month,day,year,hour,minute,ampm]=d;
+ if(named)month=String(['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].indexOf(month.toLowerCase())+1);
+ const h=Number(hour),min=Number(minute),mo=Number(month),da=Number(day);if(h<1||h>12||min>59||mo<1||mo>12||da<1||da>31)fail();
  const date=`${year}-${month.padStart(2,'0')}-${day.padStart(2,'0')}`;if(new Date(date+'T00:00:00Z').toISOString().slice(0,10)!==date)fail();
- return [id(m[1]),`${date}T${String(h%12+(ampm.toUpperCase()==='PM'?12:0)).padStart(2,'0')}:${minute}`];
+ const local=`${date}T${String(h%12+(ampm.toUpperCase()==='PM'?12:0)).padStart(2,'0')}:${minute}`;
+ // Derive neighboring NY offsets, then require exactly one round-tripping instant.
+ // A fold has two candidates and a spring gap has none, matching the importer.
+ const naive=Date.parse(local+':00Z'),candidates=new Set();
+ for(const delta of [-12,12]){const reference=naive+delta*3600000;const offset=reference-Date.parse(wall(new Date(reference).toISOString())+':00Z');const instant=naive+offset;if(wall(new Date(instant).toISOString())===local)candidates.add(instant);}
+ if(candidates.size!==1)fail();return [id(m[1]),local];
 }
+function rowShapes(rows){const result={dom_numeric_format:0,dom_named_format:0,dom_unknown_format:0,dom_invalid_links:0,dom_invalid_identities:0,dom_duplicate_identities:0},seen=new Set();
+ for(const row of rows.slice(0,20000)){const text=departureText(row);result[NUMERIC.test(text||'')?'dom_numeric_format':NAMED.test(text||'')?'dom_named_format':'dom_unknown_format']++;
+ const links=Array.isArray(row?.links)?[...new Set(row.links)]:[];if(links.length!==1||typeof links[0]!=='string'||!/^#\/fleetview\/vehicles\/summary\/[1-9]\d*$/.test(links[0]))result.dom_invalid_links++;
+ try{const key=JSON.stringify(rowIdentity(row));if(seen.has(key))result.dom_duplicate_identities++;seen.add(key);}catch{result.dom_invalid_identities++;}}
+ return result;}
 function identityDigest(rows){const identities=rows.map(rowIdentity).sort((a,b)=>JSON.stringify(a)<JSON.stringify(b)?-1:1);if(new Set(identities.map(x=>JSON.stringify(x))).size!==identities.length)fail();return sha(identities);}
 function requestMatches(request,day){
  let u;try{u=new URL(request.url());}catch{return false;}if(u.origin!==ORIGIN)return false;
@@ -29,9 +44,9 @@ function requestMatches(request,day){
 }
 function createProof(page,window,{epoch=randomUUID(),now=()=>Date.now(),bodyTimeoutMs=10000,maxResponses=400}={}){
  if(window.start!==window.end)fail();const requests=new WeakSet(),pending=new Set(),records=new Map(),identities=new Set();let total=null,perPage=null,count=0,bytes=0,error=null,closed=false,queue=Promise.resolve();const started=now();
- let observed=0,provider=0,unbound=0;let reason=null,matched=0,decoded=0,fields={},domRows=null,rendered=null;
+ let lastRows=[];let observed=0,provider=0,unbound=0;let reason=null,matched=0,decoded=0,fields={},domRows=null,rendered=null;
  const bad=code=>{error='report_populated_proof_invalid';reason=reason||code;};
- const snapshot=()=>diagnostic.sanitize({reason:reason||(total===null?'no_matching_response':pending.size?'pending_response':records.size!==total?'incomplete_tail':domRows!==total?'dom_count_mismatch':rendered!==total?'rendered_count_mismatch':undefined),observed_requests:observed,provider_requests:provider,unbound_provider_requests:unbound,matched_requests:matched,responses:count,pending:pending.size,decoded_pages:decoded,authoritative_total:total,response_identities:records.size,dom_rows:domRows,rendered_count:rendered,fields});
+ const snapshot=()=>diagnostic.sanitize({...rowShapes(lastRows),reason:reason||(total===null?'no_matching_response':pending.size?'pending_response':records.size!==total?'incomplete_tail':domRows!==total?'dom_count_mismatch':rendered!==total?'rendered_count_mismatch':undefined),observed_requests:observed,provider_requests:provider,unbound_provider_requests:unbound,matched_requests:matched,responses:count,pending:pending.size,decoded_pages:decoded,authoritative_total:total,response_identities:records.size,dom_rows:domRows,rendered_count:rendered,fields});
  const reject=code=>{bad(code);fail();};
  const onRequest=request=>{if(closed)return;observed++;let approved=false;try{approved=new URL(request.url()).origin===ORIGIN;}catch{}if(approved)provider++;if(requestMatches(request,window.start)){matched++;requests.add(request);pending.add(request);}else if(approved)unbound++;};
  const onResponse=response=>{
@@ -65,15 +80,15 @@ function createProof(page,window,{epoch=randomUUID(),now=()=>Date.now(),bodyTime
  return {
   snapshot,
   async empty(){if(!await drain())return false;if(total!==null&&total!==0)reject('dom_count_mismatch');seal();return true;},
-  async proof(rows,sourceReadAt,renderedTotal=rows.length){domRows=rows.length;rendered=renderedTotal;if(!await drain())return null;if(total===null||records.size!==total||rows.length!==total||renderedTotal!==total)return null;
+  async proof(rows,sourceReadAt,renderedTotal=rows.length){lastRows=rows;domRows=rows.length;rendered=renderedTotal;if(!await drain())return null;if(total===null||records.size!==total||rows.length!==total||renderedTotal!==total)return null;
    const expected=sha([...records.values()].sort((a,b)=>JSON.stringify(a)<JSON.stringify(b)?-1:1));let actual;try{actual=identityDigest(rows);}catch{reject('dom_identity_invalid');}if(actual!==expected)reject('bijection_mismatch');seal();
    return {version:1,kind:'passive_provider_pages',epoch,start:window.start,end:window.end,origin:ORIGIN,total,per_page:perPage,response_count:count,response_identity_count:records.size,dom_identity_count:rows.length,identity_sha256:expected,first_observed_at:new Date(started).toISOString(),last_observed_at:sourceReadAt};
   },
-  close(){seal();pending.clear();records.clear();identities.clear();},
+  close(){seal();lastRows=[];pending.clear();records.clear();identities.clear();},
  };
 }
 function validProof(receipt){
  const p=receipt.populated_proof;if(!p||p.version!==1||p.kind!=='passive_provider_pages'||p.origin!==ORIGIN||p.start!==receipt.start||p.end!==receipt.end||p.start!==p.end||!/^[-0-9a-f]{36}$/.test(p.epoch||''))return false;
  try{return p.total===receipt.rows.length&&p.total>0&&p.total<=20000&&p.response_identity_count===p.total&&p.dom_identity_count===p.total&&Number.isSafeInteger(p.per_page)&&p.per_page>0&&p.per_page<=20000&&Number.isSafeInteger(p.response_count)&&p.response_count>=Math.ceil(p.total/p.per_page)&&p.response_count<=400&&p.identity_sha256===identityDigest(receipt.rows)&&Number.isFinite(Date.parse(p.first_observed_at))&&p.last_observed_at===receipt.source_read_at&&Date.parse(p.last_observed_at)>=Date.parse(p.first_observed_at)&&Date.parse(p.last_observed_at)-Date.parse(p.first_observed_at)<=1800000;}catch{return false;}
 }
-module.exports={createProof,validProof,identityDigest,rowIdentity,requestMatches};
+module.exports={rowShapes,createProof,validProof,identityDigest,rowIdentity,requestMatches};

@@ -54,3 +54,31 @@ def test_ambiguous_dst_departure_rejected():
     window = source()['windows'][0]
     window['rows'][0]['cells'][1] = '11/01/2026 01:30 AM\nFixture'
     assert not valid_populated_proof(window)
+
+
+def test_existing_timestamp_formats_have_identical_digest_and_importer_identity():
+    from scripts.motive_sync.trip_populated_proof import row_identity, identities_digest
+    from scripts.prepare_motive_trip_history import endpoint
+    numeric = {'links': ['#/fleetview/vehicles/summary/1'], 'cells': ['', '09/01/2026 09:00 AM\nFixture']}
+    named = copy.deepcopy(numeric)
+    named['cells'][1] = 'Sep 1, 2026, 09:00 AM\nFixture'
+    assert row_identity(named) == row_identity(numeric) == ['1', '2026-09-01T09:00']
+    assert identities_digest([named]) == identities_digest([numeric])
+    assert endpoint(named['cells'][1]) == endpoint(numeric['cells'][1])
+    with pytest.raises(ValueError, match='Duplicate'):
+        identities_digest([numeric, named])
+    named['cells'][1] = 'Sep 1, 2026, 09:00 AM'
+    assert row_identity(named) == row_identity(numeric)
+    with pytest.raises(ValueError, match='missing_endpoint_location'):
+        endpoint(named['cells'][1])
+
+
+@pytest.mark.parametrize('clock', [
+    'Feb 30, 2026, 09:00 AM', 'Sep 1, 2026, 00:00 AM', 'Sep 1, 2026, 13:00 PM',
+    'September 1, 2026, 09:00 AM', 'Sep 1, 2026 09:00 AM',
+    'Nov 1, 2026, 01:30 AM', 'Mar 8, 2026, 02:30 AM',
+])
+def test_named_invalid_and_dst_departures_reject(clock):
+    from scripts.motive_sync.trip_populated_proof import row_identity
+    with pytest.raises(ValueError):
+        row_identity({'links': ['#/fleetview/vehicles/summary/1'], 'cells': ['', clock]})
