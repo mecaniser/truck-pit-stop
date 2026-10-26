@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
-import {readReport,reportUrl} from './collect_motive_trips.mjs';
+import {readReport,reportUrl,captureStep,newWindow} from './collect_motive_trips.mjs';
 const require=createRequire(new URL('../frontend/package.json',import.meta.url));
 const {JSDOM}=require('jsdom');
 
@@ -34,7 +34,15 @@ test('grounded calendar wrapper topology extracts date and rejects adjacent or d
   selected.classList.add('phx-date-picker-body-date-cell-prev-next-month');
   assert.equal((await readReport(p)).selected_dates,null);
   selected.classList.remove('phx-date-picker-body-date-cell-prev-next-month');
-  selected.after(selected.cloneNode(true));
-  assert.equal((await readReport(p)).selected_dates,null);
+  const duplicate=selected.cloneNode(true);selected.after(duplicate);
+  assert.equal((await readReport(p)).selected_dates,null);duplicate.remove();
+  window.document.querySelector('.phx-date-picker-header-label').textContent='SECRET account cookie';
+  const malformed=await readReport(p);
+  assert.equal(malformed.proof_structure.header_valid,false);
+  assert.equal(JSON.stringify(malformed.proof_structure).includes('SECRET'),false);
+  await assert.rejects(captureStep(p,newWindow('2026-04-01','2026-04-01')),error=>{
+   assert.equal(error.message,'report_empty_date_proof_unavailable');
+   assert.equal(JSON.stringify(error).includes('SECRET'),false);return true;
+  });
  } finally {Object.assign(globalThis,prior);window.close();}
 });

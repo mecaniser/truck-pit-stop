@@ -133,10 +133,26 @@ function validatePlan(plan) {
  return plan;
 }
 
+function collectionDeadline(startedAt,{now=()=>Date.now(),maxAgeMs=30*60*1000}={}) {
+ const started=Date.parse(startedAt);
+ return ()=>{const age=now()-started;if(!Number.isFinite(age)||age<0||age>maxAgeMs)throw new Error('checkpoint_expired');};
+}
+async function readTripReviewedIdentity(context,link,{stage,assertFresh,read=readReviewedIdentity,pause,log}={}) {
+ if(!['trip_reviewed_directory','trip_reviewed_before','trip_reviewed_after'].includes(stage)||typeof assertFresh!=='function')throw new Error('reviewed_read_contract_invalid');
+ return retry(stage,async()=>{
+  assertFresh();
+  let proof;
+  try {proof=await read(context,link);}catch(error){assertFresh();throw error;}
+  assertFresh();
+  return proof;
+ },{attempts:3,...(pause?{pause}:{}),...(log?{log}:{})});
+}
+
 async function collect(output) {
  if(!process.env.MOTIVE_EMAIL||!process.env.MOTIVE_PASSWORD)throw new Error('missing_credentials');
  const {chromium}=require('playwright'), adapter=await reportModule();
  const result={company_label:COMPANY,company_id:COMPANY_ID,company_verified_before:false,company_verified_after:false,complete:false,started_at:new Date().toISOString(),vehicles:[],windows:[]};
+ const assertInvocationFresh=collectionDeadline(result.started_at);
  const save=()=>savePrivate(output,result);save();
  phase('browser_launch');
  const browser=await chromium.launch({headless:true});
@@ -179,7 +195,7 @@ async function collect(output) {
   const directory=validateDirectory(links,Number(total?.[1]),Number(total?.[2]));
   result.directory_count=directory.length;save();const seenVins=new Map();
   for(const link of directory) {
-   const proof=link.href==='#/fleetview/vehicles/summary/5981300'?await readReviewedIdentity(context,link):null;
+   const proof=link.href==='#/fleetview/vehicles/summary/5981300'?await readTripReviewedIdentity(context,link,{stage:'trip_reviewed_directory',assertFresh:assertInvocationFresh}):null;
    if(proof?.vin)throw new Error('reviewed_vin_changed');
    const vin=proof?null:await readVehicleVin(context,link);
    if(vin&&seenVins.has(vin)) {
@@ -195,11 +211,13 @@ async function collect(output) {
   const windows=plan?plan.days.map(day=>({start:day,end:day})):dailyWindows();
   const tasks=openTasks(output,{kind:'trips',company:COMPANY_ID,timezone:'America/New_York',vehicles:result.vehicles,windows},{maxAgeMs:30*60*1000});
   result.started_at=tasks.startedAt;
+  const assertFresh=()=>{assertInvocationFresh();tasks.assertFresh();};
   for(const window of windows) {
+   assertFresh();
    const reviewed=result.vehicles.find(vehicle=>vehicle.provider_vehicle_id==='5981300');
    const link=directory.find(link=>link.href==='#/fleetview/vehicles/summary/5981300');
    if(reviewed){
-    const proof=await readReviewedIdentity(context,link);
+    const proof=await readTripReviewedIdentity(context,link,{stage:'trip_reviewed_before',assertFresh});
     if(proof.vin||proof.source_vin_state!==reviewed.source_vin_state)throw new Error('reviewed_vin_changed');
     reviewed.identity_before={...proof,read_at:new Date().toISOString()};
    }
@@ -209,7 +227,7 @@ async function collect(output) {
     finally{await reportPage.close();}
    });
    if(reviewed){
-    const proof=await readReviewedIdentity(context,link);
+    const proof=await readTripReviewedIdentity(context,link,{stage:'trip_reviewed_after',assertFresh});
     sameIdentity(reviewed.identity_before,proof);
     reviewed.identity_after={...proof,read_at:new Date().toISOString()};
    }
@@ -217,17 +235,19 @@ async function collect(output) {
    if(plan) {
     // Finalize and import each exact day before moving on. A later source failure
     // leaves earlier receipts recoverable, without another login or VIN traversal.
-    tasks.assertFresh();phase('company_after');await company();tasks.assertFresh();
+    assertFresh();phase('company_after');await company();assertFresh();
     importDay(output,result,plan,window,receipt);
    }
   }
-  tasks.assertFresh();
+  assertFresh();
   phase('company_after');
-  await company();tasks.assertFresh();result.company_verified_after=true;result.complete=true;result.finished_at=new Date().toISOString();save();
+  await company();assertFresh();result.company_verified_after=true;result.complete=true;result.finished_at=new Date().toISOString();save();
   return result;
  } finally {await closeBrowser(browser);}
 }
 function safeFailure(error) {
+ const proofCategory=require('./trip_diagnostics.cjs').category(error);
+ if(proofCategory)return proofCategory;
  const known=new Set(['missing_credentials','ambiguous_vin','directory_incomplete','vehicle_link_invalid','ambiguous_directory','session_lost','report_incomplete','report_step_limit','login_origin','company_mismatch','timezone_unverified','vehicle_source_changed','duplicate_vin','report_viewport_unavailable']);
  const adapterFailures=new Map([
   ['Motive report unavailable: check login','report_unavailable'],
@@ -249,4 +269,4 @@ if(require.main===module) {
  if(!process.argv[2]){console.error('Output file required');process.exitCode=1;}
  else collect(process.argv[2]).then(r=>console.log(JSON.stringify({stage:'trip_collection_complete',complete:r.complete,vehicles:r.vehicles.length,rows:r.windows.reduce((n,w)=>n+w.rows.length,0)}))).catch(error=>{failed(process.argv[2],error);console.error(JSON.stringify({stage:'trip_collection_failed',reason:safeFailure(error),import_permitted:false}));process.exitCode=1;});
 }
-module.exports={importDay,validatePlan,collect,collectWindow,recentWindow,dailyWindows,summaryVin,validateDirectory,safeFailure,readVehicleVin,readVehicleVinOnce,advanceReportViewport};
+module.exports={collectionDeadline,readTripReviewedIdentity,importDay,validatePlan,collect,collectWindow,recentWindow,dailyWindows,summaryVin,validateDirectory,safeFailure,readVehicleVin,readVehicleVinOnce,advanceReportViewport};

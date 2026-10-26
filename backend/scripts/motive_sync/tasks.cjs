@@ -2,13 +2,14 @@
 const fs=require('node:fs');
 const crypto=require('node:crypto');
 const path=require('node:path');
+const tripDiagnostics=require('./trip_diagnostics.cjs');
 let currentPhase='startup';
 function phase(name) {currentPhase=name;console.log(JSON.stringify({stage:'collection_phase',phase:name}));}
 const digest=value=>crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 function transient(error) {
  return error?.name==='TimeoutError'||/^(?:page\.(?:goto|reload): )?net::ERR_(CONNECTION_RESET|CONNECTION_CLOSED|TIMED_OUT|NETWORK_CHANGED)(?:\s|$)/.test(error?.message||'');
 }
-function safeReason(error) {return transient(error)?'ui_timeout':'collection_failed';}
+function safeReason(error) {return tripDiagnostics.category(error)||(transient(error)?'ui_timeout':'collection_failed');}
 function atomic(file,value) {
  const temporary=file+'.'+crypto.randomUUID()+'.tmp';
  if(Buffer.byteLength(JSON.stringify(value))>16*1024*1024)throw new Error('checkpoint_limit');
@@ -63,9 +64,11 @@ function openTasks(output,scope,{maxAgeMs=15*60*1000,now=()=>Date.now(),log=valu
   },
  };
 }
-const diagnosticPhases=new Set(['login_navigate','login_auth_redirect','login_origin_check','login_form_check','login_legacy_link','login_legacy_retry','login_legacy_redirect','login_email','login_password','login_submit','login_app_redirect']);
+const diagnosticPhases=new Set(['trip_reviewed_directory','trip_reviewed_before','trip_reviewed_after','login_navigate','login_auth_redirect','login_origin_check','login_form_check','login_legacy_link','login_legacy_retry','login_legacy_redirect','login_email','login_password','login_submit','login_app_redirect']);
 const loginErrors=new Set(['login_form_timeout','login_form_ambiguous','login_legacy_link_ambiguous','login_legacy_link_invalid','login_legacy_redirect_loop']);
 function failureDiagnostic(error) {
+ const proof=tripDiagnostics.diagnostic(error);
+ if(proof)return proof;
  // Only static categories escape the browser. Never serialize error messages or URLs.
  const network=/^(?:page\.(?:goto|reload): )?net::ERR_(CONNECTION_RESET|CONNECTION_CLOSED|TIMED_OUT|NETWORK_CHANGED)(?:\s|$)/.exec(error?.message||'');
  return {phase:diagnosticPhases.has(currentPhase)?currentPhase:'other',

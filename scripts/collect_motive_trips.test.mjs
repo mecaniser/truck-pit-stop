@@ -218,7 +218,7 @@ test('catchup plan rejects foreign scope, duplicate, future and path days',()=>{
 
 test('empty needs exact visible dates and absence of loading, not URL alone',async()=>{
  for(const extra of [{selected_dates:null},{selected_dates:{kind:'visible_date_controls',start:'2026-09-27',end:'2026-09-28'}},{loading:undefined}])
-  await assert.rejects(captureStep(page(report([],{state:'empty',...extra})),newWindow('2026-09-28','2026-09-28')),/selected dates/);
+  await assert.rejects(captureStep(page(report([],{state:'empty',...extra})),newWindow('2026-09-28','2026-09-28')),/report_empty_date_proof/);
  const r=await captureStep(page(report([],{state:'empty',loading:true})),newWindow('2026-09-28','2026-09-28'));
  assert.equal(r.status,'loading');
  await assert.rejects(captureStep(page(report([row(1)],{state:'empty'})),newWindow('2026-09-28','2026-09-28')),/became empty/);
@@ -275,7 +275,7 @@ test('live-grounded trip calendar proves a single full date without borrowing UR
  try {
   assert.deepEqual((await readReport(p)).selected_dates,{kind:'visible_date_controls',start:'2026-04-01',end:'2026-04-01'});
   title='Apr 2025';assert.equal((await readReport(p)).selected_dates.start,'2025-04-01');
-  await assert.rejects(captureStep(p,newWindow('2026-04-01','2026-04-01')),/mismatched/);
+  await assert.rejects(captureStep(p,newWindow('2026-04-01','2026-04-01')),/report_empty_date_proof_mismatch/);
   title='Apr 2026';adjacent=true;assert.equal((await readReport(p)).selected_dates,null);adjacent=false;
   for(const count of [0,2]) {selectedCount=count;assert.equal((await readReport(p)).selected_dates,null);}selectedCount=1;
   overlayCount=2;assert.equal((await readReport(p)).selected_dates,null);overlayCount=1;
@@ -294,4 +294,106 @@ test('empty candidate opens selected date control once without applying a filter
   locator:selector=>{if(selector.startsWith('.cdk-overlay'))return {waitFor:async options=>{assert.equal(options.state,'visible');assert.equal(options.timeout,5000);}};assert.match(selector,/trips-filter-row.*date-picker-selector/);return {click:async options=>{calls++;assert.equal(options.timeout,5000);}};}};
  const result=await captureStep(p,newWindow('2026-09-28','2026-09-28'));
  assert.equal(result.status,'empty');assert.equal(calls,1);assert.equal(reads,2);
+});
+
+import tripDiagnostics from '../backend/scripts/motive_sync/trip_diagnostics.cjs';
+import taskDiagnostics from '../backend/scripts/motive_sync/tasks.cjs';
+test('proof diagnostics allow only bounded scalars and validated dates',()=>{
+ const hostile={picker_count:999,overlay_count:-1,label_count:1.5,title_count:'SECRET',selected_count:true,
+  loading:false,header_valid:'SECRET',selected_day_valid:true,adjacent_month:false,label_matches:true,
+  selected_start:'2026-10-26',selected_end:'2026-02-30',html:'SECRET',url:'SECRET',rows:['SECRET'],className:'SECRET'};
+ const error=tripDiagnostics.proofError('report_empty_date_proof_unavailable',hostile,new Error('SECRET exception'));
+ const expected={picker_count:21,loading:false,selected_day_valid:true,adjacent_month:false,label_matches:true,selected_start:'2026-10-26'};
+ assert.deepEqual(taskDiagnostics.failureDiagnostic(error),{phase:'empty_date_validation',error_kind:'report_empty_date_proof_unavailable',structure:expected});
+ assert.equal(server.safeFailure(error),'report_empty_date_proof_unavailable');
+ assert.equal(taskDiagnostics.safeReason(error),'report_empty_date_proof_unavailable');
+ assert.equal(taskDiagnostics.transient(error),false);
+ error.tripProofStructure={...hostile,selected_start:'2026-10-26 SECRET'};
+ assert.equal(JSON.stringify(taskDiagnostics.failureDiagnostic(error)).includes('SECRET'),false);
+ assert.equal(tripDiagnostics.diagnostic(new Error('SECRET')),null);
+ assert.equal(server.safeFailure(new Error('SECRET')),'collection_failed');
+ assert.throws(()=>tripDiagnostics.proofError('SECRET',{}),/invalid_trip_proof_category/);
+});
+
+test('empty proof click and wait failures have distinct phases without raw exceptions',async()=>{
+ for(const phase of ['click','wait'])for(const timeout of [false,true]) {
+  const raw=new Error('SECRET selector URL password');if(timeout)raw.name='TimeoutError';
+  const initial=report([],{state:'empty',date_picker_available:true,date_overlay_count:0,selected_dates:null,proof_structure:{picker_count:1,overlay_count:0,loading:false,raw:'SECRET'}});
+  const p={evaluate:async()=>initial,locator:()=>({click:async()=>{if(phase==='click')throw raw;},waitFor:async()=>{if(phase==='wait')throw raw;}})};
+  await assert.rejects(captureStep(p,newWindow('2026-09-28','2026-09-28')),error=>{
+   const code=`report_empty_picker_${phase}_failed`;
+   assert.equal(error.message,code);assert.equal(server.safeFailure(error),code);
+   assert.equal(taskDiagnostics.transient(error),timeout);
+   assert.deepEqual(taskDiagnostics.failureDiagnostic(error),{phase:`empty_picker_${phase}`,error_kind:code,structure:{picker_count:1,overlay_count:0,loading:false}});
+   assert.equal(JSON.stringify(error).includes('SECRET'),false);return true;
+  });
+ }
+});
+
+test('missing and mismatched date proof expose distinct redacted validation reasons',async()=>{
+ for(const mismatch of [false,true]) {
+  const observation=report([],{state:'empty',selected_dates:mismatch?{kind:'visible_date_controls',start:'2026-09-27',end:'2026-09-27'}:null,
+   proof_structure:{selected_count:mismatch?1:0,selected_start:mismatch?'2026-09-27':'SECRET'}});
+  await assert.rejects(captureStep(page(observation),newWindow('2026-09-28','2026-09-28')),error=>{
+   assert.equal(error.message,mismatch?'report_empty_date_proof_mismatch':'report_empty_date_proof_unavailable');
+   assert.equal(taskDiagnostics.failureDiagnostic(error).phase,'empty_date_validation');
+   assert.equal(JSON.stringify(taskDiagnostics.failureDiagnostic(error)).includes('SECRET'),false);return true;
+  });
+ }
+});
+
+import {readFileSync,mkdirSync,copyFileSync} from 'node:fs';
+import {dirname} from 'node:path';
+import {spawnSync} from 'node:child_process';
+test('trip Docker adapter imports diagnostic helper in its deployed file layout',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'motive-adapter-layout-'));
+ try {
+  const docker=readFileSync(new URL('../backend/Dockerfile.motive-trips',import.meta.url),'utf8');
+  const entries=docker.split('\n').filter(line=>/^COPY (scripts\/collect_motive_trips\.mjs|backend\/scripts\/motive_sync\/trip_diagnostics\.cjs) /.test(line));
+  assert.equal(entries.length,2);
+  for(const line of entries){const [,source,destination]=line.split(' ');const target=join(directory,destination.replace(/^\/app\//,''));mkdirSync(dirname(target),{recursive:true});copyFileSync(new URL('../'+source,import.meta.url),target);}
+  const result=spawnSync(process.execPath,['--input-type=module','-e','await import(process.argv[1])',join(directory,'collectors/collect_motive_trips.mjs')],{encoding:'utf8'});
+  assert.equal(result.status,0,result.stderr);
+ } finally {await rm(directory,{recursive:true,force:true});}
+});
+
+test('proof wrapping preserves existing network retry semantics without raw cause',()=>{
+ const error=tripDiagnostics.proofError('report_empty_picker_click_failed',{},new Error('net::ERR_CONNECTION_RESET SECRET'));
+ assert.equal(taskDiagnostics.transient(error),true);
+ assert.equal(JSON.stringify(error).includes('SECRET'),false);
+});
+
+test('reviewed trip identity retries only transient fresh reads with safe phase',async()=>{
+ const proof={vin:null,source_vin_state:'explicitly_empty'};
+ for(const stage of ['trip_reviewed_directory','trip_reviewed_before','trip_reviewed_after']) {
+  let calls=0,checks=0;const logs=[];
+  const result=await server.readTripReviewedIdentity({}, {}, {stage,assertFresh:()=>{checks++;},read:async()=>{if(++calls===1){const e=new Error('PRIVATE');e.name='TimeoutError';throw e;}return {...proof};},pause:async()=>{},log:value=>logs.push(value)});
+  assert.deepEqual(result,proof);assert.equal(calls,2);assert.equal(checks,4);
+  assert.equal(JSON.stringify(logs).includes('PRIVATE'),false);
+  assert.equal(taskDiagnostics.failureDiagnostic(Object.assign(new Error('PRIVATE'),{name:'TimeoutError'})).phase,stage);
+ }
+ for(const reason of ['vehicle_identity_changed','vehicle_source_changed','ambiguous_vin','reviewed_vin_changed','UNKNOWN_PRIVATE']) {
+  let calls=0;
+  await assert.rejects(server.readTripReviewedIdentity({}, {}, {stage:'trip_reviewed_before',assertFresh:()=>{},read:async()=>{calls++;throw new Error(reason);},pause:async()=>{},log:()=>{}}));
+  assert.equal(calls,1);
+ }
+ let calls=0;
+ await assert.rejects(server.readTripReviewedIdentity({}, {}, {stage:'trip_reviewed_after',assertFresh:()=>{},read:async()=>{calls++;const e=new Error('PRIVATE');e.name='TimeoutError';throw e;},pause:async()=>{},log:()=>{}}));
+ assert.equal(calls,3);
+});
+
+test('reviewed identity expiry before, after or between attempts prevents downstream import',async()=>{
+ for(const moment of ['before','after','backoff','failed_read']) {
+  let now=moment==='before'?101:0,calls=0,imports=0;
+  const deadline=server.collectionDeadline(new Date(0).toISOString(),{now:()=>now,maxAgeMs:100});
+  const run=async()=>{
+   await server.readTripReviewedIdentity({}, {}, {stage:'trip_reviewed_before',assertFresh:deadline,
+    read:async()=>{calls++;if(moment==='after'){now=101;return {vin:null};}if(moment==='failed_read')now=101;const e=new Error('PRIVATE');e.name='TimeoutError';throw e;},
+    pause:async()=>{now=101;},log:()=>{}});
+   imports++;
+  };
+  await assert.rejects(run(),/checkpoint_expired/);assert.equal(imports,0);assert.equal(calls,moment==='before'?0:1);
+ }
+ assert.throws(server.collectionDeadline('not-date'),/checkpoint_expired/);
+ await assert.rejects(server.readTripReviewedIdentity({}, {}, {stage:'PRIVATE',assertFresh:()=>{}}),/contract_invalid/);
 });
