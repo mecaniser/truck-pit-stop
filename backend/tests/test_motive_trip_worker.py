@@ -16,6 +16,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from tests.test_db036_fleet_telemetry import VIN, prepared
 
 
+from tests.motive_populated_fixture import prove
+
 def source(stamp=None):
     stamp = stamp or datetime.now(timezone.utc)
     today = stamp.astimezone(ZONE).date()
@@ -30,7 +32,7 @@ def source(stamp=None):
         ],
         "links": ["#/fleetview/vehicles/summary/123"],
     }
-    return {
+    document = {
         "company_label": "77 CARGO LLC",
         "company_id": "KT8934277",
         "company_verified_before": True,
@@ -43,8 +45,8 @@ def source(stamp=None):
         "vehicles": [{"provider_vehicle_id": "123", "unit": "77", "vin": VIN}],
         "windows": [
             {
-                "start": (today - timedelta(days=2)).isoformat(),
-                "end": today.isoformat(),
+                "start": yesterday.isoformat(),
+                "end": yesterday.isoformat(),
                 "source_read_at": (stamp - timedelta(minutes=1)).isoformat(),
                 "status": "captured",
                 "rows": [row],
@@ -55,6 +57,14 @@ def source(stamp=None):
         ],
     }
 
+    prove(document["windows"][0])
+    read = stamp - timedelta(minutes=1)
+    for day in (today - timedelta(days=2), today):
+        document['windows'].append(dict(start=day.isoformat(), end=day.isoformat(), source_read_at=read.isoformat(),
+            status='empty', rows=[], expected_total=0, footerShown=0,
+            empty_proof=dict(version=1,date_evidence_kind='visible_date_controls',selected_start=day.isoformat(),selected_end=day.isoformat(),
+                loading_absent=True,observations=13,first_observed_at=(read-timedelta(seconds=9)).isoformat(),last_observed_at=read.isoformat())))
+    return document
 
 def test_source_valid_and_terminal_evidence_required():
     stamp = datetime.now(timezone.utc)
@@ -97,7 +107,7 @@ def test_duplicate_vin_or_provider_rejected():
 def test_partial_recent_window_rejected():
     stamp = datetime.now(timezone.utc)
     document = source(stamp)
-    document["windows"][0]["start"] = document["windows"][0]["end"]
+    document["windows"] = document["windows"][:1]
     with pytest.raises(ValueError, match="preceding two"):
         worker.validate_source(document, "77 CARGO LLC", "KT8934277", stamp)
 
@@ -325,6 +335,7 @@ async def test_truncated_overlap_rejected_before_new_trip_is_written(
     new_row["cells"][2] = new_row["cells"][2].replace("02:00 PM", "04:00 PM")
     truncated = copy.deepcopy(original)
     truncated["windows"][0]["rows"] = [new_row]
+    prove(truncated["windows"][0])
     # A matching footer alone cannot prove that a date filter actually applied.
     with pytest.raises(
         ValueError, match="incomplete_prior_coverage: prior=1 covered=0 missing=1"
@@ -338,13 +349,14 @@ async def test_truncated_overlap_rejected_before_new_trip_is_written(
     complete = copy.deepcopy(original)
     complete["windows"][0]["rows"].append(new_row)
     malformed = copy.deepcopy(new_row)
-    malformed["cells"][1] = malformed["cells"][1].split("\n")[0]
+    malformed["cells"][1] = malformed["cells"][1].split("\n")[0].replace("03:00 PM", "05:00 PM")
     complete["windows"][0]["rows"].append(malformed)
     complete["windows"][0].update(expected_total=3, footerShown=3)
+    prove(complete["windows"][0])
     malformed_prior = copy.deepcopy(complete)
     malformed_prior["windows"][0]["rows"][0]["cells"][1] = "unreadable"
     with pytest.raises(
-        ValueError, match="incomplete_prior_coverage: prior=1 covered=0 missing=1"
+        ValueError, match="Populated response identity proof"
     ):
         await worker.run(
             factory, malformed_prior, *args, tmp_path / "malformed-prior.json", True

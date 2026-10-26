@@ -219,7 +219,7 @@ jobs:
         if: needs.migration-graph.outputs.frontend_required != 'false'
         # Reuse the verified frontend jsdom install; shared/backend source changes
         # require this protected job through the conservative scope classifier.
-        run: node --test scripts/collect_motive_trips.test.mjs scripts/collect_motive_trips.dom.test.mjs
+        run: node --test scripts/collect_motive_trips.test.mjs scripts/collect_motive_trips.dom.test.mjs scripts/collect_motive_trips.populated.test.mjs
       - name: Lint changed frontend files
         if: needs.migration-graph.outputs.frontend_required != 'false'
         working-directory: frontend

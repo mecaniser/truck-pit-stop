@@ -59,7 +59,7 @@ def test_only_legacy_whole_report_empty_reopens(tmp_path):
     assert c.verified_days(tmp_path,scope()) == {}
     # A populated report still proves zero rows for an individual mapped truck.
     window.update(status='captured',rows=[{'fixture':'populated'}],expected_total=1,footerShown=1)
-    bind_source(directory,window);assert '2026-10-19' in c.verified_days(tmp_path,scope())
+    bind_source(directory,window);assert c.verified_days(tmp_path,scope()) == {}
 
 
 def test_unproven_latest_empty_still_invalidates_older_mapping(tmp_path):
