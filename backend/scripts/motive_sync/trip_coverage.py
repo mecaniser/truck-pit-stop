@@ -5,6 +5,8 @@ from datetime import date, datetime, timedelta, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from scripts.motive_sync.trip_populated_proof import valid_populated_proof
+
 ZONE = ZoneInfo('America/New_York')
 FLOOR = date(2026, 4, 1)
 
@@ -127,8 +129,8 @@ def verified_days(state, expected):
         # Prior empty observations lacked settled rendered-date proof. Retain
         # their hash-bound mapping and recency signals, but reopen coverage.
         # Otherwise skipping them could resurrect an older mapping or day.
-        proof_valid = not any((w.get('status') == 'empty' or w.get('rows') == []) and not valid_empty_proof(w)
-                              for w in source['windows'])
+        proof_valid = all(valid_empty_proof(w) if w.get('status') == 'empty' or w.get('rows') == []
+                          else valid_populated_proof(w) for w in source['windows'])
         # Later observations supersede earlier provisional observations.
         if day not in found or receipt['verified_at'] > found[day]['verified_at']:
             found[day] = {**coverage, 'verified_at': receipt['verified_at'],

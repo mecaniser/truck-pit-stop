@@ -1,3 +1,4 @@
+import populatedProof from '../backend/scripts/motive_sync/trip_populated_proof.cjs';
 import tripDiagnostics from '../backend/scripts/motive_sync/trip_diagnostics.cjs';
 /** Motive's rendered Trips report collector. Inject an authenticated browser adapter.
  * No cookies, passwords, hidden application state or undocumented API requests.
@@ -140,6 +141,7 @@ export function finalizeWindow(receipt, expectedTotal, countEvidence) {
   const identities = new Set(receipt.rows.map(row => JSON.stringify([row.links, row.cells[1]?.split('\n')[0]])));
   if (identities.size !== receipt.rows.length) throw new Error('Conflicting or ambiguous source identities');
   if (receipt.status !== 'partial' || receipt.rows.length !== expectedTotal || shown !== expectedTotal) throw new Error('Incomplete source window');
+  if (!populatedProof.validProof(receipt)) throw new Error('Populated response identity proof required');
   return {...receipt, status: 'captured', expected_total: expectedTotal, footerShown: shown, terminal_evidence: countEvidence};
 }
 

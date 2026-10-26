@@ -9,13 +9,14 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from scripts.motive_sync import trip_rejection as rejection, trip_coverage as coverage, trip_runner as runner
 from tests.test_motive_trip_worker import source
+from tests.motive_populated_fixture import prove
 from tests.test_db036_fleet_telemetry import prepared
 
 
 def evidence(tmp_path, monkeypatch):
     expected=coverage.scope(str(uuid4()),str(uuid4()),'KT8934277','77 CARGO LLC','2026-04-01')
     for key,value in {'MOTIVE_SYNC_TENANT_ID':expected['tenant_id'],'MOTIVE_SYNC_ACTOR_ID':expected['actor_id'],'MOTIVE_COMPANY_ID':expected['company_id'],'MOTIVE_COMPANY_LABEL':expected['company_label']}.items():monkeypatch.setenv(key,value)
-    document=source();day=document['windows'][0]['end'];document['windows'][0]['start']=day
+    document=source();document['windows']=document['windows'][:1];day=document['windows'][0]['end'];document['windows'][0]['start']=day
     document['plan']={'version':1,'scope':expected,'days':[day]}
     path=tmp_path/'run'/day/'source.json';path.parent.mkdir(parents=True);path.touch(mode=0o600);path.write_text(json.dumps(document))
     nonce=str(uuid4());since=(datetime.now(timezone.utc)-timedelta(seconds=1)).isoformat()
@@ -72,6 +73,7 @@ async def test_real_mismatch_rolls_back_before_import(_db_engine,db_session,monk
     original=source();args=(actor.tenant_id,actor.id,'77 CARGO LLC','KT8934277')
     await runner.run(factory,original,*args,tmp_path/'original.json',True)
     changed=copy.deepcopy(original);changed['windows'][0]['rows'][0]['cells'][1]=changed['windows'][0]['rows'][0]['cells'][1].replace('01:00 PM','03:00 PM')
+    prove(changed['windows'][0])
     imports=AsyncMock(side_effect=AssertionError('Import attempted'))
     monkeypatch.setattr(runner,'import_batches',imports)
     rollback=AsyncMock();real=factory()
@@ -107,7 +109,7 @@ def test_real_node_python_rejection_boundary(tmp_path,monkeypatch,bad):
     package=tmp_path/'fixture'/'scripts'/'motive_sync';package.mkdir(parents=True)
     (package.parent/'__init__.py').write_text('');(package/'__init__.py').write_text('')
     import shutil
-    for name in ('trip_coverage.py','trip_rejection.py'):shutil.copy(Path(rejection.__file__).with_name(name),package/name)
+    for name in ('trip_coverage.py','trip_rejection.py','trip_populated_proof.py'):shutil.copy(Path(rejection.__file__).with_name(name),package/name)
     (package/'trip_runner.py').write_text('''import argparse,json,os,time
 from pathlib import Path
 from scripts.motive_sync import trip_rejection as rejection,trip_coverage as coverage

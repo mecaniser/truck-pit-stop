@@ -75,6 +75,8 @@ def test_dst_day_end_requires_source_closure(day,end):
 def rewrite_terminal(directory, day, mapping):
     source=json.loads((directory/'source.json').read_text())
     source['windows'][0]['source_read_at']='2026-10-25T23:59:00Z'
+    from tests.test_motive_trip_catchup import settled_empty_fixture
+    settled_empty_fixture(source['windows'][0])
     normalized=json.loads((directory/'receipt.json.normalized.json').read_text())
     coverage={**excluded(day),'scope':scope(),'mapping_sha256':mapping}
     coverage.pop('verified_at');coverage.pop('source_read_at')

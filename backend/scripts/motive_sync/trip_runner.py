@@ -23,6 +23,7 @@ from sqlalchemy import func, select
 
 from scripts import import_motive_trips as importer
 from scripts.motive_sync import trip_coverage
+from scripts.motive_sync.trip_populated_proof import valid_populated_proof
 from scripts.motive_sync.trip_rejection import PriorCoverageMismatch
 
 
@@ -100,6 +101,11 @@ def validate_source(document, company_label, company_id, stamp):
             or (window["status"] == "empty") != (count == 0)
         ):
             raise ValueError("Incomplete report or missing terminal count evidence")
+        if window["status"] == "captured":
+            if not valid_populated_proof(window):
+                raise ValueError("Populated response identity proof required")
+            if timestamp(window["populated_proof"]["first_observed_at"]) < started:
+                raise ValueError("Populated proof predates collection")
         if window["status"] == "empty":
             if not trip_coverage.valid_empty_proof(window):
                 raise ValueError("Settled rendered-date empty proof required")

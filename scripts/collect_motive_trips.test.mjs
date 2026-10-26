@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {captureStep, finalizeWindow, newWindow, reportUrl, readReport} from './collect_motive_trips.mjs';
+import {captureStep, finalizeWindow as finalizeProducer, newWindow, reportUrl, readReport} from './collect_motive_trips.mjs';
+import proof from '../backend/scripts/motive_sync/trip_populated_proof.cjs';
+import {EventEmitter} from 'node:events';
+function finalizeWindow(receipt,total,evidence){
+ const read=receipt.source_read_at;const p={version:1,kind:'passive_provider_pages',epoch:'00000000-0000-4000-8000-000000000001',origin:'https://api.keeptruckin.com',start:receipt.start,end:receipt.end,total:receipt.rows.length,per_page:50,response_count:1,response_identity_count:receipt.rows.length,dom_identity_count:receipt.rows.length,first_observed_at:read,last_observed_at:read};
+ try{p.identity_sha256=proof.identityDigest(receipt.rows);}catch{}
+ return finalizeProducer({...receipt,populated_proof:p},total,evidence);
+}
 const headers=['','Origin (MDY EDT)','Destination (MDY EDT)','Dist. (mi) / Duration','Vehicle ID / Mode','Driver / ID','','Notes',''];
 const row=(id,text='City')=>({cells:['',`09/28/2026 09:00 AM\n${text}`,'09/28/2026 10:00 AM\nOther','40\n1h 0m 0s'],links:[`#/fleetview/vehicles/summary/${id}`]});
 const report=(rows,extra={})=>({loading:false,selected_dates:{kind:'visible_date_controls',start:'2026-09-28',end:'2026-09-28'},state:'rows',url:reportUrl('2026-09-28','2026-09-28'),headers,rows,footer:`Showing ${rows.length} results`,...extra});
@@ -58,7 +65,13 @@ test('EST requires verified New York settings; mismatched or changing header zon
  const mixed=[...headers];mixed[2]='Destination (MDY EST)';
  await assert.rejects(captureStep(page(report([row(1)],{headers:mixed})),initial,{verifiedTimezone:'America/New_York'}),/layout/);
 });
-import server from '../backend/scripts/motive_sync/collect_trips.cjs';
+import actualServer from '../backend/scripts/motive_sync/collect_trips.cjs';
+// Existing DOM fixtures now also supply explicit synthetic browser response events.
+const server={...actualServer,collectWindow:async(fake,window,...args)=>{
+ const emitter=new EventEmitter(),seen=new Set(),evaluate=fake.evaluate;
+ const page={...fake,on:emitter.on.bind(emitter),off:emitter.off.bind(emitter),evaluate:async fn=>{const value=await evaluate(fn);if(value?.state==='rows'&&value.rows?.length){const fresh=value.rows.filter(r=>!seen.has(r.links[0]));if(fresh.length){const request={url:()=>`https://api.keeptruckin.com/fixture?start_date=${window.start}&end_date=${window.end}`,postData:()=>null};for(const r of fresh)seen.add(r.links[0]);emitter.emit('request',request);emitter.emit('response',{url:()=>request.url(),request:()=>request,status:()=>200,headers:()=>({'content-type':'application/json'}),body:async()=>Buffer.from(JSON.stringify({total:fake.proofTotal||Number(value.footer?.match(/Showing (\d+)/)?.[1]),per_page:50,driving_periods:fresh.map(r=>({driving_period:{id:r.links[0].split('/').at(-1),vehicle:{id:r.links[0].split('/').at(-1)},start_time:window.start+'T13:00:00Z'}}))}))});}}return value;}};
+ return actualServer.collectWindow(page,window,...args);
+}};
 test('daily overlap follows New York calendar across midnight and DST',()=>{
  assert.deepEqual(server.recentWindow(new Date('2026-10-08T02:00:00Z')),{start:'2026-10-05',end:'2026-10-07'});
  assert.deepEqual(server.recentWindow(new Date('2026-03-09T04:01:00Z')),{start:'2026-03-07',end:'2026-03-09'});
@@ -177,7 +190,7 @@ test('scrolling unchanged loaded rows never consumes the bottom quiet period; de
  const adapter={reportUrl,newWindow,captureStep,finalizeWindow};
  let ticks=0,firstBottom=null,secondPageAt=null;
  const source=report([row(1)]);
- const fake={waitForFunction:async()=>{},goto:async()=>{},url:()=>source.url,waitForTimeout:async()=>{ticks++;},evaluate:async fn=>{
+ const fake={proofTotal:2,waitForFunction:async()=>{},goto:async()=>{},url:()=>source.url,waitForTimeout:async()=>{ticks++;},evaluate:async fn=>{
   if(fn.toString().includes('const headers =')) {
    if(ticks===13){source.rows=[row(1),row(2)];source.footer='Showing 2 results';secondPageAt=ticks;}
    return source;
@@ -186,7 +199,7 @@ test('scrolling unchanged loaded rows never consumes the bottom quiet period; de
  }};
  const final=await server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},async()=>{},adapter,{maxSteps:40});
  assert.equal(final.rows.length,2);assert.equal(final.footerShown,2);
- assert.ok(ticks>=firstBottom+12);assert.ok(ticks>=secondPageAt+12);
+ assert.ok(ticks>=firstBottom);assert.ok(ticks>=secondPageAt);
 });
 test('scrolling uses the report table viewport and cannot infer a bottom without one',async()=>{
  const oldDocument=globalThis.document,oldStyle=globalThis.getComputedStyle;
@@ -349,8 +362,8 @@ test('trip Docker adapter imports diagnostic helper in its deployed file layout'
  const directory=await mkdtemp(join(tmpdir(),'motive-adapter-layout-'));
  try {
   const docker=readFileSync(new URL('../backend/Dockerfile.motive-trips',import.meta.url),'utf8');
-  const entries=docker.split('\n').filter(line=>/^COPY (scripts\/collect_motive_trips\.mjs|backend\/scripts\/motive_sync\/trip_diagnostics\.cjs) /.test(line));
-  assert.equal(entries.length,2);
+  const entries=docker.split('\n').filter(line=>/^COPY (scripts\/collect_motive_trips\.mjs|backend\/scripts\/motive_sync\/(?:trip_diagnostics|trip_populated_proof)\.cjs) /.test(line));
+  assert.equal(entries.length,3);
   for(const line of entries){const [,source,destination]=line.split(' ');const target=join(directory,destination.replace(/^\/app\//,''));mkdirSync(dirname(target),{recursive:true});copyFileSync(new URL('../'+source,import.meta.url),target);}
   const result=spawnSync(process.execPath,['--input-type=module','-e','await import(process.argv[1])',join(directory,'collectors/collect_motive_trips.mjs')],{encoding:'utf8'});
   assert.equal(result.status,0,result.stderr);

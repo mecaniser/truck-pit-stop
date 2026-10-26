@@ -15,6 +15,7 @@ from scripts import import_motive_trips as importer
 from scripts.motive_sync import trip_runner as worker
 from tests.test_dashboard_vehicle_bindings import setup
 from tests.test_motive_trip_worker import source
+from tests.motive_populated_fixture import prove
 
 
 async def bound_fixture(db, monkeypatch):
@@ -31,6 +32,7 @@ async def bound_fixture(db, monkeypatch):
         identity_before={'vin': None, 'source_vin_state': 'not_displayed', 'read_at': document['started_at']},
         identity_after={'vin': None, 'source_vin_state': 'not_displayed', 'read_at': document['finished_at']})
     document['windows'][0]['rows'][0]['links'] = ['#/fleetview/vehicles/summary/5981300']
+    prove(document['windows'][0])
     return actor, vehicle, member, binding, document
 
 

@@ -20,3 +20,7 @@ Use durable tenant-scoped date jobs for historical gaps and a separate increment
 Bound each invocation by time and page count. Retry only recognized transient transport failures with bounded backoff; honor provider rate limits and retain the same logical job identity. Use webhooks, if separately enabled and verified, as wake-up signals rather than the sole completeness guarantee. Monitor oldest unresolved eligible date, time since last complete receipt, rejected-day count and source/readback mismatch; scheduler status alone is insufficient.
 
 Until API access and parity are established, retain one browser login and directory read per bounded batch, exact per-day receipts, fresh company/identity checks, and independent source/readback acceptance. Browser failures can still occur; durable progress and explicit gaps prevent those failures from silently losing days.
+
+## Production readiness checked 2026-10-26
+
+Independent read-only inspection of the already running Web service confirms the production Motive OAuth connector is disabled; client ID, client secret, redirect and active encryption key are absent, and the target fleet company has no OAuth connection. No provider request, refresh, login or mutation was performed. Evidence: `/tmp/db036-api-readiness-result.jsonl`. API adoption therefore requires approved connector configuration and a scoped company connection before parity testing; current vendor approval status remains unverified. This later readback supersedes only the earlier statement that production configuration was unverified.

@@ -7,7 +7,12 @@ from pathlib import Path
 import pytest
 from scripts.motive_sync import trip_coverage as c
 from scripts.motive_sync import trip_runner
-from tests.test_motive_trip_worker import source
+from tests.test_motive_trip_worker import source as recent_source
+
+def source(*args):
+    document = recent_source(*args)
+    document["windows"] = document["windows"][:1]
+    return document
 
 
 def settled_empty_fixture(window):
@@ -73,7 +78,8 @@ def test_historical_source_requires_bound_exact_plan(monkeypatch):
 def save_evidence(root, day='2026-10-19', mapping='mapping'):
     expected = scope()
     coverage = dict(scope=expected, day=day, status='verified', providers=[], mapping_sha256=mapping)
-    source = dict(plan={'version': 1, 'scope': expected, 'days': [day]}, windows=[{'start': day, 'end': day}], complete=True, company_verified_before=True, company_verified_after=True)
+    source = dict(plan={'version': 1, 'scope': expected, 'days': [day]}, windows=[{'start': day, 'end': day, 'rows':[], 'status':'empty', 'source_read_at':'2026-10-25T00:00:00+00:00', 'expected_total':0, 'footerShown':0}], complete=True, company_verified_before=True, company_verified_after=True)
+    settled_empty_fixture(source['windows'][0])
     normalized = dict(coverage=coverage, rows=[], source_sha256=c.digest(source), **{k: expected[k] for k in ('tenant_id', 'actor_id', 'company_id', 'company_label')})
     receipt = dict(coverage=coverage, mode='commit', committed=True, stage='verified', source_sha256=c.digest(source), normalized_sha256=c.digest(normalized), rows=[], readback_verified=0, replay_unchanged=0, verified_at='2026-10-26T00:00:00Z', tenant_id='tenant', actor_id='actor')
     directory = root/'run'/day
