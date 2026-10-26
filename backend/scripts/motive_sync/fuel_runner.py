@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 import re
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -18,6 +18,7 @@ from app.db.models.vehicle_relationship import FleetMembership
 from app.schemas.fleet_fuel import FuelDailyImport
 from app.services.fleet_fuel import visible_query
 from app.services.fleet_telemetry import active_membership
+from scripts.motive_sync import fuel_coverage as coverage
 from scripts.motive_sync.runner import private_json
 from scripts.motive_sync.trip_runner import immutable_json
 from sqlalchemy import select
@@ -45,16 +46,16 @@ def checksum(value):
 def timestamp(value):
     if not isinstance(value, str):
         raise TypeError("Explicit source timestamp required")
-    result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    result = datetime.fromisoformat(value)
     if result.tzinfo is None:
         raise ValueError("Explicit source timezone required")
-    return result.astimezone(timezone.utc)
+    return result.astimezone(UTC)
 
 
 def completed_dates(stamp, days=3):
     if type(days) is not int or not 1 <= days <= 7:
         raise ValueError("Fuel overlap must be 1 to 7 completed dates")
-    stamp = stamp.astimezone(timezone.utc)
+    stamp = stamp.astimezone(UTC)
     latest = stamp.date() - timedelta(days=1 if stamp.hour >= 12 else 2)
     return [(latest - timedelta(days=i)).isoformat() for i in reversed(range(days))]
 
@@ -152,7 +153,18 @@ def validate_source(document, company_label, company_id, stamp, *, recovery=Fals
     ):
         raise ValueError("Stale or future fuel collection")
     days = document.get("report_dates")
-    if not isinstance(days, list) or days != completed_dates(start, len(days)):
+    if document.get("plan") is not None:
+        plan = document["plan"]
+        expected = plan.get("scope", {})
+        if (
+            expected.get("company_id") != company_id
+            or expected.get("company_label") != company_label
+        ):
+            raise ValueError("Fuel plan company mismatch")
+        coverage.validate_plan(plan, expected, start)
+        if not isinstance(days, list) or len(days) != 1 or days[0] not in plan["days"]:
+            raise ValueError("Fuel source must bind exactly one planned day")
+    elif not isinstance(days, list) or days != completed_dates(start, len(days)):
         raise ValueError("Contiguous completed report dates required")
     reports = document.get("reports")
     if not isinstance(reports, list):
@@ -204,8 +216,7 @@ def validate_source(document, company_label, company_id, stamp, *, recovery=Fals
             day = date.fromisoformat(record["report_date"])
             if (
                 not start <= read <= finish
-                or datetime.combine(day + timedelta(days=1), time(12), timezone.utc)
-                > read
+                or datetime.combine(day + timedelta(days=1), time(12), UTC) > read
             ):
                 raise ValueError(
                     "Source date is not fully completed or read time is invalid"
@@ -371,7 +382,15 @@ async def prepare(db, document, tenant_id, actor_id):
             accepted.append(canonical_payload(row))
     current = (
         await db.execute(
-            select(Vehicle.id, Vehicle.unit_number, Vehicle.vin)
+            select(
+                Vehicle.id,
+                Vehicle.unit_number,
+                Vehicle.vin,
+                FleetMembership.id,
+                FleetMembership.effective_from,
+                FleetMembership.effective_to,
+                FleetMembership.fleet_customer_id,
+            )
             .join(FleetMembership, FleetMembership.vehicle_id == Vehicle.id)
             .join(Customer, Customer.id == FleetMembership.fleet_customer_id)
             .where(
@@ -385,7 +404,7 @@ async def prepare(db, document, tenant_id, actor_id):
         )
     ).all()
     source_vins = {v["vin"] for v in document["vehicles"] if v["vin"]}
-    for vehicle_id, unit, vin in current:
+    for vehicle_id, unit, vin, *_ in current:
         if (vin or "").strip().upper() not in source_vins:
             for day in document["report_dates"]:
                 exclusions.append(
@@ -396,7 +415,31 @@ async def prepare(db, document, tenant_id, actor_id):
                         "reason": "source_missing",
                     }
                 )
+    mapping = {
+        "directory": sorted(
+            [
+                {"provider_vehicle_id": v["provider_vehicle_id"], "vin": v["vin"]}
+                for v in document["vehicles"]
+            ],
+            key=lambda v: v["provider_vehicle_id"],
+        ),
+        "memberships": sorted(
+            [
+                {
+                    "vehicle_id": str(v),
+                    "vin": (vin or "").strip().upper(),
+                    "membership_id": str(m),
+                    "effective_from": importer.aware(start).isoformat(),
+                    "effective_to": importer.aware(end).isoformat() if end else None,
+                    "customer_id": str(customer),
+                }
+                for v, unit, vin, m, start, end, customer in current
+            ],
+            key=lambda v: (v["vehicle_id"], v["membership_id"]),
+        ),
+    }
     return accepted, {
+        "mapping_sha256": checksum(mapping),
         "coverage": "partial",
         "directory_count": document["directory_count"],
         "report_dates": document["report_dates"],
@@ -475,7 +518,18 @@ async def run(
     *,
     commit=False,
     recovery=False,
+    plan=None,
 ):
+    if document.get("plan") is not None and not recovery and document["plan"] != plan:
+        raise ValueError("Historical fuel source requires private worker plan")
+
+    def assert_plan_fresh():
+        if document.get("plan") is not None and not recovery:
+            created = timestamp(document["plan"]["created_at"])
+            if not timedelta(0) <= importer.now() - created <= timedelta(minutes=30):
+                raise ValueError("Fuel worker plan expired")
+
+    assert_plan_fresh()
     validate_source(
         document, company_label, company_id, importer.now(), recovery=recovery
     )
@@ -486,6 +540,14 @@ async def run(
         "company_id": company_id,
         "source_sha256": checksum(document),
     }
+    if document.get("plan") is not None:
+        expected = document["plan"]["scope"]
+        if any(
+            expected.get(key) != value
+            for key, value in identity.items()
+            if key != "source_sha256"
+        ):
+            raise ValueError("Fuel plan tenant/actor/company mismatch")
     path = str(receipt_path) + ".normalized.json"
     if recovery:
         if not commit:
@@ -516,7 +578,43 @@ async def run(
         rows, report = await prepare(db, document, tenant_id, actor_id)
         dry = await batches(db, rows, tenant_id, actor_id)
         await db.rollback()
+    assert_plan_fresh()
     normalized = {**identity, "rows": rows}
+    if document.get("plan") is not None:
+        day = document["report_dates"][0]
+        # Every exclusion stays unresolved. In particular source absence and
+        # membership ineligibility are separate reasons, never fabricated zero.
+        matrix = [
+            {
+                "provider_vehicle_id": row["provider_vehicle_id"],
+                "report_date": day,
+                "status": "verified_saved",
+            }
+            for row in rows
+        ]
+        for item in report["exclusions"]:
+            reason = item["reason"]
+            status = (
+                "immutable_source_conflict"
+                if reason == "conflicting_immutable_fuel"
+                else "observed_source_absence"
+                if item.get("state") in {"source_missing", "unavailable"}
+                else "ineligible_with_reason"
+                if "membership" in reason.lower()
+                else "unresolved_identity"
+            )
+            matrix.append({**item, "status": status})
+        normalized["coverage"] = {
+            "version": coverage.VERSION,
+            "scope": document["plan"]["scope"],
+            "day": day,
+            "mapping_sha256": report["mapping_sha256"],
+            "observed_at": document["finished_at"],
+            "status": "examined_with_exceptions"
+            if report["exclusions"]
+            else "verified",
+            "matrix": matrix,
+        }
     immutable_json(path, normalized)
     receipt = {
         **identity,
@@ -527,6 +625,8 @@ async def run(
         "report": report,
         "rows": dry,
     }
+    if "coverage" in normalized:
+        receipt["coverage"] = normalized["coverage"]
     private_json(receipt_path, receipt)
     if not commit:
         return receipt

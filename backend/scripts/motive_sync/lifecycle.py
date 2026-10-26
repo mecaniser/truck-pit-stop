@@ -16,6 +16,7 @@ class FuelLifecycle:
         self.stage = 'startup'
         self.recovery_started = False
         self.new_import_started = False
+        self.batch_import_possible = False
 
     def emit(self, event, **values):
         if event not in {'stage_started', 'recovery_attempt_started', 'recovery_verified', 'child_outcome', 'worker_outcome', 'shutdown_requested'}:
@@ -27,7 +28,8 @@ class FuelLifecycle:
             'recovery_outcome': self.recovery_outcome,
             'recovery_started': self.recovery_started,
             'new_import_started': self.new_import_started,
-            'import_outcome': ('unknown' if self.new_import_started and self.stage != 'complete'
+            'batch_import_possible': self.batch_import_possible,
+            'import_outcome': ('unknown' if (self.new_import_started or self.batch_import_possible) and self.stage != 'complete'
                                else 'runner_completed' if self.stage == 'complete' else 'not_started'),
         }
         for key in ('elapsed_ms', 'exit_code'):

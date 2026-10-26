@@ -1,6 +1,8 @@
 const {closeBrowser,phase,openTasks,failed}=require('./tasks.cjs');
 /* Rendered Motive daily fuel reports only. No private endpoints or session extraction. */
 const fs=require('node:fs');
+const path=require('node:path');
+const fuelDay=require('./fuel_day.cjs');
 const {validateDirectory,readVehicleVin}=require('./collect_trips.cjs');
 const ORIGIN='https://app.gomotive.com', COMPANY='77 CARGO LLC', COMPANY_ID='KT8934277';
 const HEADERS=['VEHICLE NUMBER','MAKE / MODEL / YEAR','GROUP','AVG. MPG','MOVING MPG','TOTAL DISTANCE (MI)','TOTAL FUEL (GAL)','EST. CARBON EMISSIONS (LBS)','UTILIZATION','DRIVING TIME','DRIVING FUEL (GAL)','IDLING TIME','IDLED FUEL (GAL)','FUEL COST (USD)','ODOMETER (MI)','FUEL TYPE','NUMBER OF OPEN FAULT CODES','OPEN FAULT CODES'];
@@ -80,9 +82,32 @@ async function collectReport(context,date,vehicle){
   throw Error('report_incomplete');
  }finally{await page.close();}
 }
-async function collect(output){
+async function collectPlannedDays({output,planPath,plan,result,tasks,context,company,capture=collectReport,finalize=fuelDay.finalizeDay}){
+   for(const date of plan.days){
+    const dayStarted=Date.now();
+    tasks.assertFresh();fuelDay.validatePlan(plan);
+    const daily={...result,plan,report_dates:[date],reports:[],vehicles:result.vehicles.map(v=>({...v,records:[]})),complete:false};
+    const folder=path.join(path.dirname(output),date);fs.mkdirSync(folder,{mode:0o700});
+    const source=path.join(folder,'source.json');save(source,daily);
+    for(const vehicle of daily.vehicles){
+     const {record,report}=await tasks.run('fuel_report',[vehicle.provider_vehicle_id,vehicle.vin,date],()=>capture(context,date,vehicle));
+     vehicle.records.push(record);daily.reports.push(report);save(source,daily);
+     console.log(JSON.stringify({stage:'fuel_collection_progress',reports:daily.reports.length,total:daily.vehicles.length}));
+    }
+    tasks.assertFresh();phase('company_after');await company();tasks.assertFresh();
+    daily.company_verified_after=true;daily.finished_at=new Date().toISOString();daily.complete=true;save(source,daily);
+    finalize(source,planPath,date,()=>{tasks.assertFresh();fuelDay.validatePlan(plan);});
+    result.reports.push(...daily.reports);
+    for(let i=0;i<result.vehicles.length;i++)result.vehicles[i].records.push(...daily.vehicles[i].records);
+    save(output,result);
+    console.log(JSON.stringify({stage:'fuel_day_complete',day:date,reports:daily.reports.length,elapsed_ms:Math.min(1800000,Math.max(0,Date.now()-dayStarted))}));
+   }
+}
+async function collect(output,planPath=null){
  if(!process.env.MOTIVE_EMAIL||!process.env.MOTIVE_PASSWORD)throw Error('missing_credentials');
- const requested=dates(new Date(),Number(process.env.MOTIVE_FUEL_DAYS||3));
+ const plan=planPath?fuelDay.readPrivate(planPath):null;
+ const requested=plan?fuelDay.validatePlan(plan):dates(new Date(),Number(process.env.MOTIVE_FUEL_DAYS||3));
+ if(plan&&path.basename(path.dirname(planPath))!==plan.run_id)throw Error('fuel_plan_invalid');
  const result={version:1,company_label:COMPANY,company_id:COMPANY_ID,company_verified_before:false,company_verified_after:false,complete:false,started_at:new Date().toISOString(),report_dates:requested,vehicles:[],reports:[]};save(output,result);
  const {chromium}=require('playwright'),browser=await chromium.launch({headless:true});
  try{
@@ -106,12 +131,16 @@ async function collect(output){
   const links=await page.locator('a[href*="/vehicles/summary/"]').evaluateAll(es=>es.map(e=>({unit:e.innerText.trim(),href:e.getAttribute('href')})));const directory=validateDirectory(links,+total?.[1],+total?.[2]);result.directory_count=directory.length;result.terminal_evidence=total[0];
   const vins=new Set();for(const link of directory){const vin=await readVehicleVin(context,link);if(vin&&vins.has(vin))throw Error('duplicate_vin');if(vin)vins.add(vin);result.vehicles.push({provider_vehicle_id:link.href.split('/').pop(),unit:link.unit,vin,records:[]});save(output,result);}
   const tasks=openTasks(output,{kind:'fuel',company:COMPANY_ID,timezone:'America/New_York',vehicles:result.vehicles,dates:requested},{maxAgeMs:30*60*1000});result.started_at=tasks.startedAt;
+  if(plan){
+   await collectPlannedDays({output,planPath,plan,result,tasks,context,company});
+  }else{
   for(const vehicle of result.vehicles){for(const date of requested){const {record,report}=await tasks.run('fuel_report',[vehicle.provider_vehicle_id,vehicle.vin,date],()=>collectReport(context,date,vehicle));vehicle.records.push(record);result.reports.push(report);save(output,result);console.log(JSON.stringify({stage:'fuel_collection_progress',reports:result.reports.length,total:directory.length*requested.length}));}}
+  }
   tasks.assertFresh();
   phase('company_after');
   await company();tasks.assertFresh();result.company_verified_after=true;result.finished_at=new Date().toISOString();result.complete=true;save(output,result);return result;
  }catch(error){result.failure_reason=safeFailure(error);save(output,result);throw error;}finally{await closeBrowser(browser);}
 }
-function safeFailure(error){return ['invalid_days','missing_credentials','login_origin','company_mismatch','duplicate_vin','directory_incomplete','ambiguous_directory','vehicle_link_invalid','vehicle_source_changed','ambiguous_vin','report_identity_changed','report_layout_changed','report_filter_changed','report_not_single_vehicle','report_ambiguous_empty','report_vehicle_changed','report_incomplete','invalid_numeric_cell','invalid_duration_cell'].includes(error.message)?error.message:'browser_collection_unavailable';}
-if(require.main===module){if(!process.argv[2])throw Error('Output file required');collect(process.argv[2]).then(r=>console.log(JSON.stringify({stage:'fuel_collection_complete',vehicles:r.vehicles.length,reports:r.reports.length}))).catch(e=>{failed(process.argv[2],e);console.error(JSON.stringify({stage:'fuel_collection_failed',reason:safeFailure(e),import_permitted:false}));process.exitCode=1;});}
-module.exports={HEADERS,dates,reportUrl,verifyUrl,number,duration,readings,validateSnapshot,finalizeReport,readReport,collectReport,collect,safeFailure};
+function safeFailure(error){return ['fuel_plan_invalid','fuel_day_unverified','invalid_days','missing_credentials','login_origin','company_mismatch','duplicate_vin','directory_incomplete','ambiguous_directory','vehicle_link_invalid','vehicle_source_changed','ambiguous_vin','report_identity_changed','report_layout_changed','report_filter_changed','report_not_single_vehicle','report_ambiguous_empty','report_vehicle_changed','report_incomplete','invalid_numeric_cell','invalid_duration_cell'].includes(error.message)?error.message:'browser_collection_unavailable';}
+if(require.main===module){if(!process.argv[2])throw Error('Output file required');collect(process.argv[2],process.argv[3]==='--plan'?process.argv[4]:null).then(r=>console.log(JSON.stringify({stage:'fuel_collection_complete',vehicles:r.vehicles.length,reports:r.reports.length}))).catch(e=>{failed(process.argv[2],e);console.error(JSON.stringify({stage:'fuel_collection_failed',reason:safeFailure(e),import_permitted:false}));process.exitCode=1;});}
+module.exports={HEADERS,dates,reportUrl,verifyUrl,number,duration,readings,validateSnapshot,finalizeReport,readReport,collectReport,collectPlannedDays,collect,safeFailure};
