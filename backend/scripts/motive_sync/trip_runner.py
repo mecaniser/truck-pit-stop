@@ -99,6 +99,11 @@ def validate_source(document, company_label, company_id, stamp):
             or (window["status"] == "empty") != (count == 0)
         ):
             raise ValueError("Incomplete report or missing terminal count evidence")
+        if window["status"] == "empty":
+            if not trip_coverage.valid_empty_proof(window):
+                raise ValueError("Settled rendered-date empty proof required")
+            if timestamp(window["empty_proof"]["first_observed_at"]) < started:
+                raise ValueError("Empty proof predates collection")
         covered.update(start + timedelta(days=i) for i in range((end - start).days + 1))
     if document.get("plan"):
         plan = document["plan"]

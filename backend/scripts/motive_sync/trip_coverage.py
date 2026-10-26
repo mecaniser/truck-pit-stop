@@ -22,6 +22,33 @@ def day_closed(day, source_read_at):
     return read >= end
 
 
+EMPTY_PROOF_VERSION = 1
+
+
+def valid_empty_proof(window):
+    """Exact rendered dates and a bounded stable observation are required for zero rows."""
+    proof = window.get('empty_proof')
+    if not isinstance(proof, dict):
+        return False
+    try:
+        first = datetime.fromisoformat(proof['first_observed_at'].replace('Z', '+00:00'))
+        last = datetime.fromisoformat(proof['last_observed_at'].replace('Z', '+00:00'))
+        read = datetime.fromisoformat(window['source_read_at'].replace('Z', '+00:00'))
+        return (type(proof.get('version')) is int and proof['version'] == EMPTY_PROOF_VERSION
+            and proof.get('date_evidence_kind') == 'visible_date_controls'
+            and proof.get('selected_start') == window['start']
+            and proof.get('selected_end') == window['end']
+            and proof.get('loading_absent') is True
+            and type(proof.get('observations')) is int and 13 <= proof['observations'] <= 120
+            and first.tzinfo is not None and last.tzinfo is not None and read.tzinfo is not None
+            and 9 <= (last-first).total_seconds() <= 120 and last == read
+            and window.get('status') == 'empty' and window.get('rows') == []
+            and type(window.get('expected_total')) is int and window['expected_total'] == 0
+            and type(window.get('footerShown')) is int and window['footerShown'] == 0)
+    except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
+        return False
+
+
 def mapping_digest(directory, mappings, memberships, missing):
     """Source presentation and SQL row order never change identity coverage."""
     groups = dict(directory=directory, mappings=mappings, memberships=memberships, missing=missing)
@@ -97,15 +124,23 @@ def verified_days(state, expected):
             raise ValueError('Trip coverage window mismatch')
         if day not in plan['days']:
             raise ValueError('Trip coverage outside plan')
+        # Prior empty observations lacked settled rendered-date proof. Retain
+        # their hash-bound mapping and recency signals, but reopen coverage.
+        # Otherwise skipping them could resurrect an older mapping or day.
+        proof_valid = not any((w.get('status') == 'empty' or w.get('rows') == []) and not valid_empty_proof(w)
+                              for w in source['windows'])
         # Later observations supersede earlier provisional observations.
         if day not in found or receipt['verified_at'] > found[day]['verified_at']:
             found[day] = {**coverage, 'verified_at': receipt['verified_at'],
-                          'source_read_at': source['windows'][0].get('source_read_at')}
+                          'source_read_at': source['windows'][0].get('source_read_at'),
+                          '_proof_valid': proof_valid}
     if found:
         latest = max(found.values(), key=lambda item: item['verified_at'])['mapping_sha256']
         # A changed directory/VIN/membership invalidates former scope certification.
         # Keep evidence on disk; recapture days for the new mapping scope.
-        found = {day: item for day, item in found.items() if item['mapping_sha256'] == latest}
+        found = {day: {key: value for key, value in item.items() if key != '_proof_valid'}
+                 for day, item in found.items()
+                 if item['mapping_sha256'] == latest and item['_proof_valid']}
     return found
 
 

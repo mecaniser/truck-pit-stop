@@ -12,6 +12,9 @@ export function reportUrl(start, end) {
 
 export async function readReport(page) {
   return page.evaluate(() => {
+    const visible = el => Boolean(el && el.getBoundingClientRect().width > 0
+      && el.getBoundingClientRect().height > 0 && getComputedStyle(el).visibility !== 'hidden'
+      && getComputedStyle(el).display !== 'none');
     const main = document.querySelector('main');
     if (!main) return { state: 'unavailable', rows: [] };
     // Other UI panels include placeholder tables. Only the report's Origin-header table owns rows.
@@ -20,22 +23,56 @@ export async function readReport(page) {
     const table = tables[0];
     const headers = Array.from(table.querySelectorAll('th')).map(el => el.innerText.trim());
     const body = main.innerText;
+    // Grounded on the live Trips page: this loader remains in the DOM with a
+    // hidden class after settling. Its existence alone is not a loading signal.
+    const spinner = document.querySelector('#module-loading-spinner');
+    const loading = visible(spinner);
+    // Grounded read-only calendar controls on the live Trips report (2026-10-26).
+    // Never borrow a year from the URL or a neighboring month cell.
+    const pickers = Array.from(document.querySelectorAll('phx-filter-row[data-e2e="trips-filter-row"] phx-date-picker[data-testid="date-picker"]')).filter(visible);
+    const overlays = Array.from(document.querySelectorAll('.cdk-overlay-pane.phx-date-picker-overlay-pane')).filter(visible);
+    let selected_dates = null;
+    if (pickers.length === 1 && overlays.length === 1) {
+      const labels = Array.from(pickers[0].querySelectorAll('.phx-date-picker-range-labels .phx-date-picker-label')).filter(visible);
+      const titles = Array.from(overlays[0].querySelectorAll('.phx-date-picker phx-date-picker-header .phx-date-picker-header-label')).filter(visible);
+      const days = Array.from(overlays[0].querySelectorAll('phx-date-picker-body .phx-date-picker-body-date-wrapper span.phx-date-picker-body-date-cell-active-selected')).filter(visible);
+      if (labels.length === 1 && titles.length === 1 && days.length === 1
+          && !days[0].classList.contains('phx-date-picker-body-date-cell-prev-next-month')) {
+        const title = titles[0].innerText.replace(/\s+/g, ' ').trim().match(/^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4})$/);
+        const day = Array.from(days[0].childNodes).filter(node => node.nodeType === 3).map(node => node.textContent).join('').trim();
+        const collapsed = labels[0].innerText.replace(/\s+/g, ' ').trim();
+        if (title && /^(?:[1-9]|[12]\d|3[01])$/.test(day) && collapsed === `${title[1]} ${Number(day)}`) {
+          const month = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].indexOf(title[1]) + 1;
+          const value = `${title[2]}-${String(month).padStart(2,'0')}-${day.padStart(2,'0')}`;
+          if (new Date(`${value}T00:00:00Z`).toISOString().slice(0,10) === value)
+            selected_dates = {kind:'visible_date_controls', start:value, end:value};
+        }
+      }
+    }
     const rows = Array.from(table.querySelectorAll('tbody tr')).map(tr => {
       const cells = Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim());
       // Deliberately exclude driver identity and notes from capture.
       return { cells: cells.slice(0, 5), links: Array.from(tr.querySelectorAll('a[href*="/fleetview/vehicles/summary/"]')).map(a => a.getAttribute('href')) };
     }).filter(row => row.cells.length && row.cells.some(cell => cell.trim()));
-    return { url: location.href, state: body.includes('No trips found. Try updating your filter/search criteria.') ? 'empty' : rows.length ? 'rows' : 'loading', headers, rows, footer: body.match(/Showing [\d,]+ results/)?.[0] ?? null };
+    return { url: location.href, loading, selected_dates, date_picker_available:pickers.length===1, date_overlay_count:overlays.length, state: body.includes('No trips found. Try updating your filter/search criteria.') ? 'empty' : rows.length ? 'rows' : 'loading', headers, rows, footer: body.match(/Showing [\d,]+ results/)?.[0] ?? null };
   });
 }
 
 /** One step is intentionally bounded; caller persists the returned receipt after every step.
  * Stagnation never means all history was imported: it yields partial for operator review.
  */
-export async function captureStep(page, receipt, { maxRows = 20000, verifiedTimezone = null } = {}) {
-  const report = await readReport(page);
+export async function captureStep(page, receipt, { maxRows = 20000, verifiedTimezone = null, now = () => new Date() } = {}) {
+  let report = await readReport(page);
+  if (report.state === 'empty' && report.loading === false && report.date_picker_available === true && report.date_overlay_count === 0) {
+    if (new URL(report.url).origin !== 'https://app.gomotive.com' || !new URL(report.url).hash.startsWith('#/fleetview/list/trips/trips;')) throw new Error('Unexpected source page');
+    // Opening the existing picker only exposes its selected date; do not select,
+    // apply or change any filter. No retry loop or new authentication is introduced.
+    await page.locator('phx-filter-row[data-e2e="trips-filter-row"] phx-date-picker[data-testid="date-picker"] .phx-date-picker-selector').click({timeout:5000});
+    await page.locator('.cdk-overlay-pane.phx-date-picker-overlay-pane').waitFor({state:'visible',timeout:5000});
+    report = await readReport(page);
+  }
   if (report.state === 'unavailable') throw new Error('Motive report unavailable: check login');
-  if (report.state === 'loading') return { ...receipt, status: 'loading' };
+  if (report.state === 'loading' || report.loading === true) return { ...receipt, status: 'loading' };
   const zone = report.headers?.[1]?.match(/^Origin \(MDY (EDT|EST)\)$/i)?.[1]?.toUpperCase();
   if (zone === 'EST' && verifiedTimezone !== 'America/New_York') throw new Error('New York timezone verification required');
   const expectedHeaders = ['', `Origin (MDY ${zone})`, `Destination (MDY ${zone})`, 'Dist. (mi) / Duration', 'Vehicle ID / Mode', 'Driver / ID', '', 'Notes', ''];
@@ -48,8 +85,12 @@ export async function captureStep(page, receipt, { maxRows = 20000, verifiedTime
   const filters = Object.fromEntries(actual.hash.split(';').slice(1).map(part => part.split('=')));
   if (filters.start_date !== receipt.start || filters.end_date !== receipt.end || Object.keys(filters).some(key => !['sort_field', 'sort_direction', 'start_date', 'end_date', 'driving_period_start_date'].includes(key))) throw new Error('Source filters do not match requested window');
   if (report.state === 'empty') {
-    if (receipt.rows.length) throw new Error('Source became empty during collection');
-    return { ...receipt, source_read_at: new Date().toISOString(), status: 'empty', header_timezone: zone, terminal_evidence: 'No trips found. Try updating your filter/search criteria.' };
+    if (receipt.rows.length || report.rows.length) throw new Error('Source became empty during collection');
+    const dates=report.selected_dates;
+    if(report.loading!==false||!dates||dates.kind!=='visible_date_controls'||dates.start!==receipt.start||dates.end!==receipt.end)throw new Error('Empty report selected dates unavailable or mismatched');
+    return { ...receipt, source_read_at: now().toISOString(), status: 'empty', header_timezone: zone,
+      empty_observation:{selected_start:dates.start,selected_end:dates.end,date_evidence_kind:dates.kind,loading_absent:true},
+      terminal_evidence: 'No trips found. Try updating your filter/search criteria.' };
   }
   const rowKey = row => {
     // The live elapsed-duration clock is not a new trip revision. Preserve the first
@@ -72,10 +113,20 @@ export function newWindow(start, end) {
   return { start, end, source_read_at: new Date().toISOString(), status: 'partial', rows: [], stagnant_steps: 0 };
 }
 
+export function validEmptyProof(receipt) {
+ const p=receipt.empty_proof;
+ if(!p)return false;
+ const elapsed=Date.parse(p.last_observed_at)-Date.parse(p.first_observed_at);
+ return p.version===1&&p.date_evidence_kind==='visible_date_controls'&&
+  p.selected_start===receipt.start&&p.selected_end===receipt.end&&p.loading_absent===true&&
+  Number.isInteger(p.observations)&&p.observations>=13&&p.observations<=120&&
+  elapsed>=9000&&elapsed<=120000&&p.last_observed_at===receipt.source_read_at;
+}
+
 /** Completion requires independently observed source total, not scroll stagnation. */
 export function finalizeWindow(receipt, expectedTotal, countEvidence) {
   if (!Number.isInteger(expectedTotal) || expectedTotal < 0 || !countEvidence?.trim()) throw new Error('Source count evidence required');
-  if (receipt.status === 'empty' && expectedTotal === 0 && receipt.rows.length === 0) return {...receipt, expected_total: 0, footerShown: 0, terminal_evidence: countEvidence};
+  if (receipt.status === 'empty' && expectedTotal === 0 && receipt.rows.length === 0 && validEmptyProof(receipt)) return {...receipt, expected_total: 0, footerShown: 0, terminal_evidence: countEvidence};
   const shown = Number(receipt.footer?.match(/^Showing ([\d,]+) results$/)?.[1]?.replaceAll(',', ''));
   const identities = new Set(receipt.rows.map(row => JSON.stringify([row.links, row.cells[1]?.split('\n')[0]])));
   if (identities.size !== receipt.rows.length) throw new Error('Conflicting or ambiguous source identities');
