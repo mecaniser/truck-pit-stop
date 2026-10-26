@@ -6,7 +6,7 @@ const req=(date=day)=>({url:()=>`https://api.keeptruckin.com/observed?start_date
 const response=(r,items,total=87)=>({url:()=>r.url(),request:()=>r,status:()=>200,headers:()=>({'content-type':'application/json'}),body:async()=>Buffer.from(JSON.stringify({total,per_page:50,driving_periods:items}))});
 function send(p,items,total=87,r=req()){p.emit('request',r);p.emit('response',response(r,items,total));}
 test('actual collector waits past quiet50 page and accepts delayed37 only with identity parity',async()=>{
- const p=new EventEmitter();let ticks=0;Object.assign(p,{goto:async()=>{send(p,Array.from({length:50},(_,i)=>record(i+1)));},waitForFunction:async()=>{},url:()=>adapter.reportUrl(day,day),waitForTimeout:async()=>{ticks++;if(ticks===20)send(p,Array.from({length:37},(_,i)=>record(i+51)));},evaluate:async fn=>fn.toString().includes('const headers =')?{url:adapter.reportUrl(day,day),loading:false,state:'rows',headers:['','Origin (MDY EDT)','Destination (MDY EDT)','Dist. (mi) / Duration','Vehicle ID / Mode','Driver / ID','','Notes',''],rows:Array.from({length:ticks<20?50:87},(_,i)=>row(i+1)),footer:`Showing ${ticks<20?50:87} results`}:true});
+ const p=new EventEmitter();let ticks=0;Object.assign(p,{goto:async()=>{send(p,Array.from({length:50},(_,i)=>record(i+1)));},waitForFunction:async()=>{},url:()=>adapter.reportUrl(day,day),waitForTimeout:async()=>{ticks++;if(ticks===20)send(p,Array.from({length:37},(_,i)=>record(i+51)));},evaluate:async fn=>fn.toString().includes('const headers =')?{url:adapter.reportUrl(day,day),loading:false,state:'rows',headers:['','Origin (MDY EDT)','Destination (MDY EDT)','Dist. (mi) / Duration','Vehicle ID / Mode','Driver / ID','','Notes',''],rows:Array.from({length:ticks<20?50:87},(_,i)=>{const r=row(i+1);if(i%2)r.cells[1]='Sep 1, 2026, 09:00 AM';return r;}),footer:`Showing ${ticks<20?50:87} results`}:true});
  const result=await server.collectWindow(p,{start:day,end:day},async()=>{},adapter,{maxSteps:40});assert(ticks>=20);assert.equal(result.rows.length,87);assert.equal(result.populated_proof.total,87);assert(proof.validProof(result));assert.equal(p.listenerCount('response'),0);
 });
 for(const kind of ['duplicatepage','duplicateid','duplicateidentity','totalchange','invalidid','missingvehicle','wrongdate'])test(kind+' fails closed',async()=>{
@@ -77,3 +77,18 @@ for(const kind of ['root_shape','json','total_changed','duplicate_id','duplicate
  p.emit('request',r);p.emit('response',res);if(kind==='total_changed')send(p,[record(3)],3);
  await assert.rejects(s.proof(kind==='bijection_mismatch'?[row(1),row(3)]:[row(1),row(2)],new Date().toISOString()));assert.equal(s.snapshot().reason,kind);assert(!JSON.stringify(s.snapshot()).includes('SECRET'));s.close();
 });
+test('both observed timestamp spellings have identical canonical identities and digest',()=>{
+ const numeric=row(1),named=row(1);named.cells[1]='Sep 1, 2026, 09:00 AM';
+ assert.deepEqual(proof.rowIdentity(named),['1','2026-09-01T09:00']);assert.equal(proof.identityDigest([numeric]),proof.identityDigest([named]));
+ assert.throws(()=>proof.identityDigest([numeric,named]));
+ assert.deepEqual(proof.rowShapes([numeric,named]),{dom_numeric_format:1,dom_named_format:1,dom_unknown_format:0,dom_invalid_links:0,dom_invalid_identities:0,dom_duplicate_identities:1});
+});
+for(const text of ['Feb 30, 2026, 09:00 AM','Sep 1, 2026, 00:00 AM','Sep 1, 2026, 13:00 PM','September 1, 2026, 09:00 AM','Sep 1, 2026 09:00 AM','Nov 1, 2026, 01:30 AM','Mar 8, 2026, 02:30 AM','11/01/2026 01:30 AM','03/08/2026 02:30 AM'])test('reject invalid or ambiguous departure '+text,()=>{const r=row(1);r.cells[1]=text;assert.throws(()=>proof.rowIdentity(r));});
+test('named-month ongoing/missing-location row satisfies exact response bijection',async()=>{
+ const p=new EventEmitter(),s=proof.createProof(p,{start:day,end:day});send(p,[record(1)],1);const r=row(1);r.cells[1]='Sep 1, 2026, 09:00 AM';const result=await s.proof([r],new Date().toISOString());assert.equal(result.total,1);s.close();
+});
+test('row shape diagnostics expose only bounded enum counts for malformed private content',()=>{
+ const r=row(1);r.links=['https://private.invalid/SECRET'];r.cells[1]='SECRET';const d=diagnostics.sanitize(proof.rowShapes([r]));assert.equal(d.dom_unknown_format,1);assert.equal(d.dom_invalid_links,1);assert.equal(d.dom_invalid_identities,1);assert(!JSON.stringify(d).includes('SECRET'));
+});
+
+test('malformed cell types do not break redacted shape diagnostics',()=>{const d=proof.rowShapes([{links:[],cells:[null,{}]},null]);assert.equal(d.dom_unknown_format,2);assert.equal(d.dom_invalid_identities,2);});

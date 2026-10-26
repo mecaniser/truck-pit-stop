@@ -17,7 +17,14 @@ def row_identity(row):
     if not match:
         raise ValueError('Invalid provider')
     text = row['cells'][1].split('\n')[0].strip()
-    local = datetime.strptime(text, '%m/%d/%Y %I:%M %p')
+    for pattern in ('%m/%d/%Y %I:%M %p', '%b %d, %Y, %I:%M %p'):
+        try:
+            local = datetime.strptime(text, pattern)
+            break
+        except ValueError:
+            continue
+    else:
+        raise ValueError('Invalid rendered departure')
     if local.replace(tzinfo=ZONE, fold=0).utcoffset() != local.replace(tzinfo=ZONE, fold=1).utcoffset():
         raise ValueError('Ambiguous or nonexistent local departure')
     return [match[1], local.strftime('%Y-%m-%dT%H:%M')]
