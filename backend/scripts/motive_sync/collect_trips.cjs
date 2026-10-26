@@ -39,18 +39,18 @@ async function reportModule() {
 }
 async function collectWindow(page, window, checkpoint, adapter, {maxSteps=120,clock=()=>Date.now()}={}) {
  const {reportUrl,newWindow,captureStep,finalizeWindow}=adapter;
- const population=createProof(page,window);
+ const population=createProof(page,window);let proofPhase='navigation';
  try {
  await page.goto(reportUrl(window.start,window.end),{waitUntil:'domcontentloaded',timeout:45000});
- await page.waitForFunction(()=>Array.from(document.querySelectorAll('main table th')).some(el=>/^Origin \(MDY (?:EDT|EST)\)$/i.test(el.innerText.trim())&&el.getBoundingClientRect().height>0),null,{timeout:45000});
+ proofPhase='header';await page.waitForFunction(()=>Array.from(document.querySelectorAll('main table th')).some(el=>/^Origin \(MDY (?:EDT|EST)\)$/i.test(el.innerText.trim())&&el.getBoundingClientRect().height>0),null,{timeout:45000});
  let receipt=newWindow(window.start,window.end), atBottom=false, emptyFirst=null, emptyCount=0;
  for(let step=0;step<maxSteps;step++) {
   if(new URL(page.url()).origin!==ORIGIN) throw new Error('session_lost');
-  receipt=await captureStep(page,receipt,{verifiedTimezone:'America/New_York',now:()=>new Date(clock())});await checkpoint(receipt);
+  proofPhase='capture';receipt=await captureStep(page,receipt,{verifiedTimezone:'America/New_York',now:()=>new Date(clock())});await checkpoint(receipt);
   if(receipt.status==='empty') {
    emptyFirst=emptyFirst||receipt.source_read_at;emptyCount++;
    const elapsed=Date.parse(receipt.source_read_at)-Date.parse(emptyFirst);
-   if(emptyCount>=13&&elapsed>=9000&&await population.empty()){
+   proofPhase='empty_proof';if(emptyCount>=13&&elapsed>=9000&&await population.empty()){
     receipt.empty_proof={version:1,...receipt.empty_observation,first_observed_at:emptyFirst,last_observed_at:receipt.source_read_at,observations:emptyCount};
     receipt=finalizeWindow(receipt,0,receipt.terminal_evidence);await checkpoint(receipt);return receipt;
    }
@@ -60,17 +60,17 @@ async function collectWindow(page, window, checkpoint, adapter, {maxSteps=120,cl
   delete receipt.empty_proof;delete receipt.empty_observation;
   const total=Number(receipt.footer?.match(/^Showing ([\d,]+) results$/)?.[1]?.replaceAll(',',''));
   // Loaded-row footer and scroll geometry never substitute for response identity parity.
-  const proof=atBottom&&receipt.status==='partial'?await population.proof(receipt.rows,receipt.source_read_at,total):null;
+  proofPhase='populated_proof';const proof=atBottom&&receipt.status==='partial'?await population.proof(receipt.rows,receipt.source_read_at,total):null;
   if(atBottom && proof && receipt.rows.length>0 && total===proof.total) {
-   receipt.populated_proof=proof;
+   proofPhase='finalize';receipt.populated_proof=proof;
    receipt=finalizeWindow(receipt,proof.total,receipt.footer);await checkpoint(receipt);return receipt;
   }
   // A quiet loaded page is not terminal. Wait for authoritative response parity.
-  atBottom=await advanceReportViewport(page);
+  proofPhase='viewport';atBottom=await advanceReportViewport(page);
   await page.waitForTimeout(750);
  }
  throw new Error('report_step_limit');
- } finally {population.close();}
+ } catch(error){require('./trip_populated_diagnostics.cjs').attach(error,{...population.snapshot(),phase:proofPhase});throw error;} finally {population.close();}
 }
 async function advanceReportViewport(page) {
  return page.evaluate(()=>{
