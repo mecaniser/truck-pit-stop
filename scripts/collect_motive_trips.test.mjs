@@ -203,3 +203,14 @@ test('scrolling uses the report table viewport and cannot infer a bottom without
   await assert.rejects(server.advanceReportViewport(p),/report_viewport_unavailable/);
  } finally {globalThis.document=oldDocument;globalThis.getComputedStyle=oldStyle;}
 });
+
+test('catchup plan rejects foreign scope, duplicate, future and path days',()=>{
+ const old={...process.env};
+ Object.assign(process.env,{MOTIVE_SYNC_TENANT_ID:'tenant',MOTIVE_SYNC_ACTOR_ID:'actor',MOTIVE_TRIPS_PYTHON:'/python',MOTIVE_TRIPS_BASELINE:'2026-04-01'});
+ const valid={version:1,scope:{tenant_id:'tenant',actor_id:'actor',company_id:'KT8934277',company_label:'77 CARGO LLC',timezone:'America/New_York',baseline:'2026-04-01'},days:['2026-04-01']};
+ try {
+  assert.equal(server.validatePlan(valid),valid);
+  for(const days of [['../../receipt'],['2099-01-01'],['2026-04-01','2026-04-01'],['2026-02-30'],[]])assert.throws(()=>server.validatePlan({...valid,days}),/trip_plan_invalid/);
+  assert.throws(()=>server.validatePlan({...valid,scope:{...valid.scope,tenant_id:'other'}}),/trip_plan_invalid/);
+ } finally {for(const key of Object.keys(process.env))if(!(key in old))delete process.env[key];Object.assign(process.env,old);}
+});

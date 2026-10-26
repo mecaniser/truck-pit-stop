@@ -1,3 +1,5 @@
+const {prepareLegacyLogin}=require('./login.cjs');
+const {spawnSync}=require('node:child_process');
 /* Server collection through rendered Motive UI only; no private endpoints or session extraction. */
 const fs = require('node:fs');
 const {closeBrowser,phase,openTasks,retry,failed}=require('./tasks.cjs');
@@ -91,6 +93,35 @@ function dailyWindows(now=new Date()) {
  }
  return windows;
 }
+
+function importDay(output,result,plan,window,receipt,{timeout=600000}={}) {
+ // Import only a separately finalized daily artifact; no aggregate checkpoint is eligible.
+ const directory=path.join(path.dirname(output),window.start);
+ fs.mkdirSync(directory,{mode:0o700});
+ const dailySource=path.join(directory,'source.json'), dailyReceipt=path.join(directory,'receipt.json');
+ const daily={...result,plan,windows:[receipt],company_verified_after:true,complete:true,finished_at:new Date().toISOString()};
+ savePrivate(dailySource,daily);
+ const command=['-m','scripts.motive_sync.trip_runner','--input',dailySource,'--receipt',dailyReceipt];
+ if(process.env.MOTIVE_TRIPS_COMMIT==='true')command.push('--commit');
+ const child=spawnSync(process.env.MOTIVE_TRIPS_PYTHON,command,{stdio:'inherit',timeout});
+ if(child.error||child.status!==0)throw new Error('trip_import_failed');
+ const saved=JSON.parse(fs.readFileSync(dailyReceipt,'utf8'));
+ if(saved.stage!==(process.env.MOTIVE_TRIPS_COMMIT==='true'?'verified':'validated'))throw new Error('trip_import_unverified');
+ return saved;
+}
+
+function validatePlan(plan) {
+ const scope=plan?.scope, today=recentWindow().end;
+ if(plan.version!==1||!scope||scope.company_id!==COMPANY_ID||scope.company_label!==COMPANY||scope.timezone!=='America/New_York'||
+    scope.tenant_id!==process.env.MOTIVE_SYNC_TENANT_ID||scope.actor_id!==process.env.MOTIVE_SYNC_ACTOR_ID||
+    scope.baseline!==(process.env.MOTIVE_TRIPS_BASELINE||'2026-04-01')||
+    !/^\d{4}-\d{2}-\d{2}$/.test(scope.baseline)||scope.baseline<'2026-04-01'||
+    !Array.isArray(plan.days)||plan.days.length<1||plan.days.length>31||new Set(plan.days).size!==plan.days.length||
+    plan.days.some(day=>typeof day!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(day)||day<scope.baseline||day>today||new Date(day+'T12:00:00Z').toISOString().slice(0,10)!==day)||
+    !process.env.MOTIVE_TRIPS_PYTHON)throw new Error('trip_plan_invalid');
+ return plan;
+}
+
 async function collect(output) {
  if(!process.env.MOTIVE_EMAIL||!process.env.MOTIVE_PASSWORD)throw new Error('missing_credentials');
  const {chromium}=require('playwright'), adapter=await reportModule();
@@ -107,6 +138,7 @@ async function collect(output) {
   await page.waitForURL('https://auth.gomotive.com/login**',{timeout:30000});
   phase('login_origin_check');
   if(new URL(page.url()).origin!=='https://auth.gomotive.com')throw new Error('login_origin');
+  await prepareLegacyLogin(page,{phase});
   phase('login_email');
   await page.locator('input[name="user_profile[email]"]').fill(process.env.MOTIVE_EMAIL);
   phase('login_password');
@@ -144,7 +176,10 @@ async function collect(output) {
    if(vin)seenVins.set(vin,link.href.split('/').pop());
    result.vehicles.push({provider_vehicle_id:link.href.split('/').pop(),unit:link.unit,vin,...(!vin?{reason:'vin_unavailable'}:{})});save();
   }
-  const windows=dailyWindows();
+  const planFile=process.env.MOTIVE_TRIPS_PLAN_FILE;
+  const plan=planFile?JSON.parse(fs.readFileSync(planFile,'utf8')):null;
+  if(plan)validatePlan(plan);
+  const windows=plan?plan.days.map(day=>({start:day,end:day})):dailyWindows();
   const tasks=openTasks(output,{kind:'trips',company:COMPANY_ID,timezone:'America/New_York',vehicles:result.vehicles,windows},{maxAgeMs:30*60*1000});
   result.started_at=tasks.startedAt;
   for(const window of windows) {
@@ -154,6 +189,12 @@ async function collect(output) {
     finally{await reportPage.close();}
    });
    result.windows.push(receipt);save();
+   if(plan) {
+    // Finalize and import each exact day before moving on. A later source failure
+    // leaves earlier receipts recoverable, without another login or VIN traversal.
+    tasks.assertFresh();phase('company_after');await company();tasks.assertFresh();
+    importDay(output,result,plan,window,receipt);
+   }
   }
   tasks.assertFresh();
   phase('company_after');
@@ -183,4 +224,4 @@ if(require.main===module) {
  if(!process.argv[2]){console.error('Output file required');process.exitCode=1;}
  else collect(process.argv[2]).then(r=>console.log(JSON.stringify({stage:'trip_collection_complete',complete:r.complete,vehicles:r.vehicles.length,rows:r.windows.reduce((n,w)=>n+w.rows.length,0)}))).catch(error=>{failed(process.argv[2],error);console.error(JSON.stringify({stage:'trip_collection_failed',reason:safeFailure(error),import_permitted:false}));process.exitCode=1;});
 }
-module.exports={collect,collectWindow,recentWindow,dailyWindows,summaryVin,validateDirectory,safeFailure,readVehicleVin,readVehicleVinOnce,advanceReportViewport};
+module.exports={importDay,validatePlan,collect,collectWindow,recentWindow,dailyWindows,summaryVin,validateDirectory,safeFailure,readVehicleVin,readVehicleVinOnce,advanceReportViewport};
