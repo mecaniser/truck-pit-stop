@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {captureStep, finalizeWindow, newWindow, reportUrl, readReport} from './collect_motive_trips.mjs';
 const headers=['','Origin (MDY EDT)','Destination (MDY EDT)','Dist. (mi) / Duration','Vehicle ID / Mode','Driver / ID','','Notes',''];
 const row=(id,text='City')=>({cells:['',`09/28/2026 09:00 AM\n${text}`,'09/28/2026 10:00 AM\nOther','40\n1h 0m 0s'],links:[`#/fleetview/vehicles/summary/${id}`]});
-const report=(rows,extra={})=>({state:'rows',url:reportUrl('2026-09-28','2026-09-28'),headers,rows,footer:`Showing ${rows.length} results`,...extra});
+const report=(rows,extra={})=>({loading:false,selected_dates:{kind:'visible_date_controls',start:'2026-09-28',end:'2026-09-28'},state:'rows',url:reportUrl('2026-09-28','2026-09-28'),headers,rows,footer:`Showing ${rows.length} results`,...extra});
 const page=r=>({evaluate:async()=>r});
 test('overlapping pages do not duplicate; missing tail cannot complete',async()=>{
  let r=await captureStep(page(report([row(1)])),newWindow('2026-09-28','2026-09-28'));
@@ -26,7 +26,7 @@ test('loading never becomes empty; empty cannot erase rows',async()=>{
  const loading=await captureStep(page(report([],{state:'loading'})),initial);
  assert.equal(loading.status,'loading');assert.throws(()=>finalizeWindow(loading,0,'none'));
  const empty=await captureStep(page(report([],{state:'empty'})),initial);
- assert.equal(finalizeWindow(empty,0,'No trips').status,'empty');
+ assert.throws(()=>finalizeWindow(empty,0,'No trips'),/Incomplete/);
  await assert.rejects(captureStep(page(report([],{state:'empty'})),{...initial,rows:[row(1)]}));
 });
 test('expired session stops; stagnation stays partial',async()=>{
@@ -100,7 +100,8 @@ test('finalized producer windows carry backend count contract including explicit
  for(const key of ['expected_total','footerShown'])assert.equal(filled[key],filled.rows.length);
  assert.equal(filled.status,'captured');assert.ok(filled.terminal_evidence);
  source.state='empty';source.rows=[];source.footer=null;
- const empty=await server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},async()=>{},adapter,{maxSteps:5});
+ let tick=Date.now();
+ const empty=await server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},async()=>{},adapter,{maxSteps:20,clock:()=>{tick+=750;return tick;}});
  assert.equal(empty.expected_total,0);assert.equal(empty.footerShown,0);assert.equal(empty.status,'empty');
  assert.ok(empty.terminal_evidence.includes('No trips found'));
 });
@@ -133,7 +134,7 @@ test('report DOM ignores unrelated tables and blank placeholders while loading',
  const placeholder={querySelectorAll:selector=>selector==='th'?[]:[{querySelectorAll:()=>[{innerText:''}]}]};
  let records=[];
  const table={querySelectorAll:selector=>selector==='th'?headers.map(innerText=>({innerText:innerText.toUpperCase()})):records};
- globalThis.document={querySelector:()=>({innerText:'Loading',querySelectorAll:()=>[placeholder,table]})};
+ globalThis.document={querySelectorAll:()=>[],querySelector:selector=>selector==='main'?({innerText:'Loading',querySelectorAll:()=>[placeholder,table]}):null};
  globalThis.location={href:reportUrl('2026-09-28','2026-09-28')};
  try {
   const p={evaluate:async fn=>fn()};
@@ -213,4 +214,84 @@ test('catchup plan rejects foreign scope, duplicate, future and path days',()=>{
   for(const days of [['../../receipt'],['2099-01-01'],['2026-04-01','2026-04-01'],['2026-02-30'],[]])assert.throws(()=>server.validatePlan({...valid,days}),/trip_plan_invalid/);
   assert.throws(()=>server.validatePlan({...valid,scope:{...valid.scope,tenant_id:'other'}}),/trip_plan_invalid/);
  } finally {for(const key of Object.keys(process.env))if(!(key in old))delete process.env[key];Object.assign(process.env,old);}
+});
+
+test('empty needs exact visible dates and absence of loading, not URL alone',async()=>{
+ for(const extra of [{selected_dates:null},{selected_dates:{kind:'visible_date_controls',start:'2026-09-27',end:'2026-09-28'}},{loading:undefined}])
+  await assert.rejects(captureStep(page(report([],{state:'empty',...extra})),newWindow('2026-09-28','2026-09-28')),/selected dates/);
+ const r=await captureStep(page(report([],{state:'empty',loading:true})),newWindow('2026-09-28','2026-09-28'));
+ assert.equal(r.status,'loading');
+ await assert.rejects(captureStep(page(report([row(1)],{state:'empty'})),newWindow('2026-09-28','2026-09-28')),/became empty/);
+});
+
+test('transient empty cannot finalize before delayed rows; loading resets stable empty',async()=>{
+ const adapter={reportUrl,newWindow,captureStep,finalizeWindow};
+ let tick=0,reads=0,mode='delayed';
+ const source=()=>report(mode==='delayed'&&reads>5?[row(1)]:[],{state:mode==='delayed'&&reads>5?'rows':mode==='loading'&&reads===8?'loading':'empty',footer:mode==='delayed'&&reads>5?'Showing 1 results':null});
+ const fake={waitForFunction:async()=>{},goto:async()=>{},url:()=>reportUrl('2026-09-28','2026-09-28'),evaluate:async fn=>fn.toString().includes('const headers =')?(reads++,source()):true,waitForTimeout:async ms=>{tick+=ms;}};
+ const filled=await server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},async()=>{},adapter,{maxSteps:30,clock:()=>tick});
+ assert.equal(filled.status,'captured');assert.equal(filled.empty_proof,undefined);
+ mode='loading';reads=0;tick=0;
+ await assert.rejects(server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},async()=>{},adapter,{maxSteps:18,clock:()=>tick}),/step_limit/);
+ mode='stable';reads=0;tick=0;
+ const empty=await server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},async()=>{},adapter,{maxSteps:20,clock:()=>tick});
+ assert.equal(empty.status,'empty');assert.equal(empty.empty_proof.observations,13);
+ assert.equal(Date.parse(empty.empty_proof.last_observed_at)-Date.parse(empty.empty_proof.first_observed_at),9000);
+});
+
+ test('grounded module spinner must be visible to signal loading',async()=>{
+  const prior={document:globalThis.document,location:globalThis.location,getComputedStyle:globalThis.getComputedStyle};
+  let visible=false;
+  const spinner={getBoundingClientRect:()=>({width:visible?20:0,height:visible?20:0})};
+  const table={querySelectorAll:selector=>selector==='th'?headers.map(innerText=>({innerText})):[]};
+  const main={innerText:'No trips found. Try updating your filter/search criteria.',querySelectorAll:()=>[table]};
+  globalThis.document={querySelectorAll:()=>[],querySelector:selector=>selector==='main'?main:selector==='#module-loading-spinner'?spinner:null};
+  globalThis.location={href:reportUrl('2026-09-28','2026-09-28')};
+  globalThis.getComputedStyle=()=>({visibility:'visible',display:'block'});
+  try {
+   const p={evaluate:async fn=>fn()};
+   assert.equal((await readReport(p)).loading,false);
+   visible=true;assert.equal((await readReport(p)).loading,true);
+   globalThis.getComputedStyle=()=>({visibility:'hidden',display:'block'});
+   assert.equal((await readReport(p)).loading,false);
+  } finally {Object.assign(globalThis,prior);}
+ });
+
+test('live-grounded trip calendar proves a single full date without borrowing URL year',async()=>{
+ const prior={document:globalThis.document,location:globalThis.location,getComputedStyle:globalThis.getComputedStyle};
+ const rect=()=>({width:30,height:20});
+ let collapsed='Apr 1',title='Apr\u00a02026',day=' 1 ',adjacent=false,overlayCount=1,selectedCount=1,labelCount=1,hidden=false;
+ const label={getBoundingClientRect:rect,get innerText(){return collapsed;}};
+ const header={getBoundingClientRect:rect,get innerText(){return title;}};
+ const selected={getBoundingClientRect:rect,classList:{contains:()=>adjacent},get childNodes(){return [{nodeType:3,textContent:day},{nodeType:1,textContent:'DO NOT READ EVENT CONTENT'}];}};
+ const picker={getBoundingClientRect:rect,querySelectorAll:()=>Array(labelCount).fill(label)};
+ const overlay={getBoundingClientRect:rect,querySelectorAll:selector=>selector.includes('header')?[header]:Array(selectedCount).fill(selected)};
+ const table={querySelectorAll:selector=>selector==='th'?headers.map(innerText=>({innerText})):[]};
+ const main={innerText:'No trips found. Try updating your filter/search criteria.',querySelectorAll:()=>[table]};
+ globalThis.document={querySelector:selector=>selector==='main'?main:null,querySelectorAll:selector=>selector.startsWith('phx-filter-row')?[picker]:Array(overlayCount).fill(overlay)};
+ globalThis.location={href:reportUrl('2026-04-01','2026-04-01')};
+ globalThis.getComputedStyle=el=>({display:'block',visibility:hidden&&el===overlay?'hidden':'visible'});
+ const p={evaluate:async fn=>fn()};
+ try {
+  assert.deepEqual((await readReport(p)).selected_dates,{kind:'visible_date_controls',start:'2026-04-01',end:'2026-04-01'});
+  title='Apr 2025';assert.equal((await readReport(p)).selected_dates.start,'2025-04-01');
+  await assert.rejects(captureStep(p,newWindow('2026-04-01','2026-04-01')),/mismatched/);
+  title='Apr 2026';adjacent=true;assert.equal((await readReport(p)).selected_dates,null);adjacent=false;
+  for(const count of [0,2]) {selectedCount=count;assert.equal((await readReport(p)).selected_dates,null);}selectedCount=1;
+  overlayCount=2;assert.equal((await readReport(p)).selected_dates,null);overlayCount=1;
+  labelCount=2;assert.equal((await readReport(p)).selected_dates,null);labelCount=1;
+  collapsed='Apr 1 – Apr 2';assert.equal((await readReport(p)).selected_dates,null);collapsed='Apr 1';
+  title='Apr';assert.equal((await readReport(p)).selected_dates,null);title='Apr 2026';
+  day='31';collapsed='Apr 31';assert.equal((await readReport(p)).selected_dates,null);
+  day='1';collapsed='Apr 1';hidden=true;assert.equal((await readReport(p)).selected_dates,null);
+ } finally {Object.assign(globalThis,prior);}
+});
+
+test('empty candidate opens selected date control once without applying a filter',async()=>{
+ let calls=0,reads=0;
+ const empty=report([],{state:'empty',date_picker_available:true,date_overlay_count:0,selected_dates:null});
+ const p={evaluate:async()=>reads++?report([],{state:'empty',date_picker_available:true,date_overlay_count:1}):empty,
+  locator:selector=>{if(selector.startsWith('.cdk-overlay'))return {waitFor:async options=>{assert.equal(options.state,'visible');assert.equal(options.timeout,5000);}};assert.match(selector,/trips-filter-row.*date-picker-selector/);return {click:async options=>{calls++;assert.equal(options.timeout,5000);}};}};
+ const result=await captureStep(p,newWindow('2026-09-28','2026-09-28'));
+ assert.equal(result.status,'empty');assert.equal(calls,1);assert.equal(reads,2);
 });

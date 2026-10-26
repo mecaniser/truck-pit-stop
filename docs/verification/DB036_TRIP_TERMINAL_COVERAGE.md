@@ -21,3 +21,7 @@ Acceptance: terminal history consumes no retry slots; mixed full-day verified/in
 No migration, importer, collector authentication, public API or source capture change. Derived coverage adds source_read_at only in memory from hash-validated source, never rewrites prior receipts. New strict helper validates all source-provider rows, closure, and wholly ineligible bounds before skipping retries. Partial-day provider alongside an ineligible provider remains unresolved. Mapping invalidation still occurs before planning. Rollback to prior planner simply resumes unnecessary retries; immutable data is unchanged.
 
 Independent diagnostic_gate GO: independently reran all 74 focused tests and diff checks. Reviewed hash-derived closure, exact whole-day ineligibility, mixed verified providers, negative partial/unknown/conflict/provisional cases, mapping invalidation, explicit backfill and separate cursors. Protected CI and exact production release remain pending.
+
+## Protected merge
+
+PR [652](https://github.com/mecaniser/truck-pit-stop/pull/652) passed all seven checks in Actions40267339179 on head9674167153b6022cae9092b97541d8b9fd962619. Fresh CLEAN merge state verified before squash mergeb00e75f0ee7f9335a14d17930b64a8ce0335b6dc at2026-10-26T04:15:01Z. Release owner verified merged/reviewed tree parity. Trips deployment waits for independent acceptance of the active PR651 bound-priority batch. Full historical reconciliation and restoration of the default14-day cap remain pending.

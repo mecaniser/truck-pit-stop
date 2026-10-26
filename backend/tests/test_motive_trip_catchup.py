@@ -10,6 +10,14 @@ from scripts.motive_sync import trip_runner
 from tests.test_motive_trip_worker import source
 
 
+def settled_empty_fixture(window):
+    read = datetime.fromisoformat(window['source_read_at'])
+    window['empty_proof'] = dict(version=1, date_evidence_kind='visible_date_controls',
+        selected_start=window['start'], selected_end=window['end'], loading_absent=True,
+        observations=13, first_observed_at=(read-timedelta(seconds=9)).isoformat(),
+        last_observed_at=read.isoformat())
+
+
 def scope():
     return c.scope('tenant', 'actor', 'KT8934277', '77 CARGO LLC', '2026-04-01')
 
@@ -52,6 +60,7 @@ def test_historical_source_requires_bound_exact_plan(monkeypatch):
     document = source(stamp)
     old = (stamp.astimezone(c.ZONE).date()-timedelta(days=8)).isoformat()
     document['windows'] = [{**document['windows'][0], 'start': old, 'end': old, 'rows': [], 'status': 'empty', 'expected_total': 0, 'footerShown': 0}]
+    settled_empty_fixture(document['windows'][0])
     document['plan'] = {'version': 1, 'scope': scope(), 'days': [old]}
     monkeypatch.setenv('MOTIVE_SYNC_TENANT_ID', 'tenant')
     monkeypatch.setenv('MOTIVE_SYNC_ACTOR_ID', 'actor')
@@ -130,6 +139,7 @@ async def test_per_day_commit_replay_scope_and_provisional(_db_engine, db_sessio
     # Empty current-day capture cannot certify zero activity for the full day.
     document = source()
     document['windows'][0].update(start=today.isoformat(), end=today.isoformat(), rows=[], status='empty', expected_total=0, footerShown=0)
+    settled_empty_fixture(document['windows'][0])
     document['plan'] = {'version': 1, 'scope': expected, 'days': [today.isoformat()]}
     receipt = await trip_runner.run(factory, document, actor.tenant_id, actor.id, '77 CARGO LLC', 'KT8934277', tmp_path/'today.json', True)
     assert receipt['coverage']['status'] == 'provisional'
@@ -148,6 +158,7 @@ async def test_absent_authorized_truck_remains_unresolved(_db_engine, db_session
     document = source()
     day = (datetime.now(c.ZONE).date()-timedelta(days=1)).isoformat()
     document['windows'][0].update(start=day, end=day, rows=[], status='empty', expected_total=0, footerShown=0)
+    settled_empty_fixture(document['windows'][0])
     document['vehicles'][0]['vin'] = None
     document['plan'] = {'version': 1, 'scope': c.scope(actor.tenant_id, actor.id, 'KT8934277', '77 CARGO LLC', '2026-04-01'), 'days': [day]}
     receipt = await trip_runner.run(async_sessionmaker(_db_engine, expire_on_commit=False), document, actor.tenant_id, actor.id, '77 CARGO LLC', 'KT8934277', tmp_path/'absent.json', True)
@@ -190,6 +201,7 @@ async def test_midnight_import_cannot_close_pre_midnight_capture(db_session, mon
     document = source()
     read = datetime.combine(today, datetime.min.time(), c.ZONE)-timedelta(seconds=1)
     document['windows'][0].update(start=day, end=day, source_read_at=read.isoformat(), rows=[], status='empty', expected_total=0, footerShown=0)
+    settled_empty_fixture(document['windows'][0])
     document['plan'] = {'version': 1, 'scope': c.scope(actor.tenant_id, actor.id, 'KT8934277', '77 CARGO LLC', '2026-04-01'), 'days': [day]}
     _, report = await trip_runner.prepare(db_session, document, actor.tenant_id, actor.id, datetime.combine(today, datetime.min.time(), c.ZONE)+timedelta(minutes=1))
     assert report['coverage']['status'] == 'provisional'
@@ -206,6 +218,7 @@ async def test_empty_source_reports_membership_eligibility(db_session, monkeypat
     await db_session.commit()
     document = source()
     document['windows'][0].update(start=day.isoformat(), end=day.isoformat(), rows=[], status='empty', expected_total=0, footerShown=0)
+    settled_empty_fixture(document['windows'][0])
     document['plan'] = {'version': 1, 'scope': c.scope(actor.tenant_id, actor.id, 'KT8934277', '77 CARGO LLC', '2026-04-01'), 'days': [day.isoformat()]}
     _, report = await trip_runner.prepare(db_session, document, actor.tenant_id, actor.id, datetime.now(timezone.utc))
     assert report['coverage']['providers'][0]['eligibility'] == eligibility

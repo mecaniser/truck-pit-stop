@@ -35,15 +35,25 @@ async function reportModule() {
  const local=path.resolve(__dirname,'../../../scripts/collect_motive_trips.mjs');
  return import(pathToFileURL(fs.existsSync(installed)?installed:local).href);
 }
-async function collectWindow(page, window, checkpoint, adapter, {maxSteps=120}={}) {
+async function collectWindow(page, window, checkpoint, adapter, {maxSteps=120,clock=()=>Date.now()}={}) {
  const {reportUrl,newWindow,captureStep,finalizeWindow}=adapter;
  await page.goto(reportUrl(window.start,window.end),{waitUntil:'domcontentloaded',timeout:45000});
  await page.waitForFunction(()=>Array.from(document.querySelectorAll('main table th')).some(el=>/^Origin \(MDY (?:EDT|EST)\)$/i.test(el.innerText.trim())&&el.getBoundingClientRect().height>0),null,{timeout:45000});
- let receipt=newWindow(window.start,window.end), settled=0, previousCount=-1, atBottom=false;
+ let receipt=newWindow(window.start,window.end), settled=0, previousCount=-1, atBottom=false, emptyFirst=null, emptyCount=0;
  for(let step=0;step<maxSteps;step++) {
   if(new URL(page.url()).origin!==ORIGIN) throw new Error('session_lost');
-  receipt=await captureStep(page,receipt,{verifiedTimezone:'America/New_York'});await checkpoint(receipt);
-  if(receipt.status==='empty') { receipt=finalizeWindow(receipt,0,receipt.terminal_evidence);await checkpoint(receipt);return receipt; }
+  receipt=await captureStep(page,receipt,{verifiedTimezone:'America/New_York',now:()=>new Date(clock())});await checkpoint(receipt);
+  if(receipt.status==='empty') {
+   emptyFirst=emptyFirst||receipt.source_read_at;emptyCount++;
+   const elapsed=Date.parse(receipt.source_read_at)-Date.parse(emptyFirst);
+   if(emptyCount>=13&&elapsed>=9000){
+    receipt.empty_proof={version:1,...receipt.empty_observation,first_observed_at:emptyFirst,last_observed_at:receipt.source_read_at,observations:emptyCount};
+    receipt=finalizeWindow(receipt,0,receipt.terminal_evidence);await checkpoint(receipt);return receipt;
+   }
+   await page.waitForTimeout(750);continue;
+  }
+  emptyFirst=null;emptyCount=0;
+  delete receipt.empty_proof;delete receipt.empty_observation;
   const total=Number(receipt.footer?.match(/^Showing ([\d,]+) results$/)?.[1]?.replaceAll(',',''));
   settled=atBottom&&receipt.status==='partial'&&receipt.rows.length===previousCount?settled+1:0;previousCount=receipt.rows.length;
   // Require nine seconds of consecutive stable observations at the bottom; scrolling
