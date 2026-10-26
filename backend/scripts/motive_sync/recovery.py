@@ -32,8 +32,10 @@ def _stop_group(pid):
             raise
 
 
-def install_signals():
+def install_signals(observer=None):
     def stop(signum, _frame):
+        if observer is not None:
+            observer.shutdown(signum)
         for pid in tuple(_read_groups):
             _stop_group(pid)
         raise SystemExit(128 + signum)
@@ -42,12 +44,25 @@ def install_signals():
     signal.signal(signal.SIGINT, stop)
 
 
-def read_process(command, *, timeout, check=True, env=None):
+def read_process(command, *, timeout, check=True, env=None, observer=None):
     """Bound the whole read-only Node/Chromium group, including orphaned children."""
-    process = subprocess.Popen(command, env=env, start_new_session=True)
+    started = time.monotonic()
+    try:
+        process = subprocess.Popen(command, env=env, start_new_session=True)
+    except OSError as error:
+        if observer is not None:
+            observer.child_result(error=error, elapsed_ms=(time.monotonic()-started)*1000)
+        raise
     _read_groups.add(process.pid)
     try:
-        result = process.wait(timeout=timeout)
+        try:
+            result = process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired as error:
+            if observer is not None:
+                observer.child_result(error=error, elapsed_ms=(time.monotonic()-started)*1000)
+            raise
+        if observer is not None:
+            observer.child_result(result=result, elapsed_ms=(time.monotonic()-started)*1000)
         if check and result:
             raise subprocess.CalledProcessError(result, command)
         return subprocess.CompletedProcess(command, result)
@@ -103,12 +118,14 @@ def collection_directory(state: Path, *, max_age_seconds=1800, now=None):
     return directory
 
 
-def entry(main):
-    install_signals()
+def entry(main, observer=None):
+    install_signals(observer)
     print(json.dumps({"stage": "worker_start"}), flush=True)
     try:
         main()
-    except Exception:  # noqa: BLE001 - service logs must not reveal provider/DB values
+    except Exception as error:  # noqa: BLE001 - service logs must not reveal provider/DB values
+        if observer is not None:
+            observer.failed(error)
         print(
             json.dumps({"stage": "worker_failed", "reason": "worker_execution_failed"}),
             flush=True,
