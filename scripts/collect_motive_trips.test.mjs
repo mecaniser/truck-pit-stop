@@ -362,3 +362,38 @@ test('proof wrapping preserves existing network retry semantics without raw caus
  assert.equal(taskDiagnostics.transient(error),true);
  assert.equal(JSON.stringify(error).includes('SECRET'),false);
 });
+
+test('reviewed trip identity retries only transient fresh reads with safe phase',async()=>{
+ const proof={vin:null,source_vin_state:'explicitly_empty'};
+ for(const stage of ['trip_reviewed_directory','trip_reviewed_before','trip_reviewed_after']) {
+  let calls=0,checks=0;const logs=[];
+  const result=await server.readTripReviewedIdentity({}, {}, {stage,assertFresh:()=>{checks++;},read:async()=>{if(++calls===1){const e=new Error('PRIVATE');e.name='TimeoutError';throw e;}return {...proof};},pause:async()=>{},log:value=>logs.push(value)});
+  assert.deepEqual(result,proof);assert.equal(calls,2);assert.equal(checks,4);
+  assert.equal(JSON.stringify(logs).includes('PRIVATE'),false);
+  assert.equal(taskDiagnostics.failureDiagnostic(Object.assign(new Error('PRIVATE'),{name:'TimeoutError'})).phase,stage);
+ }
+ for(const reason of ['vehicle_identity_changed','vehicle_source_changed','ambiguous_vin','reviewed_vin_changed','UNKNOWN_PRIVATE']) {
+  let calls=0;
+  await assert.rejects(server.readTripReviewedIdentity({}, {}, {stage:'trip_reviewed_before',assertFresh:()=>{},read:async()=>{calls++;throw new Error(reason);},pause:async()=>{},log:()=>{}}));
+  assert.equal(calls,1);
+ }
+ let calls=0;
+ await assert.rejects(server.readTripReviewedIdentity({}, {}, {stage:'trip_reviewed_after',assertFresh:()=>{},read:async()=>{calls++;const e=new Error('PRIVATE');e.name='TimeoutError';throw e;},pause:async()=>{},log:()=>{}}));
+ assert.equal(calls,3);
+});
+
+test('reviewed identity expiry before, after or between attempts prevents downstream import',async()=>{
+ for(const moment of ['before','after','backoff','failed_read']) {
+  let now=moment==='before'?101:0,calls=0,imports=0;
+  const deadline=server.collectionDeadline(new Date(0).toISOString(),{now:()=>now,maxAgeMs:100});
+  const run=async()=>{
+   await server.readTripReviewedIdentity({}, {}, {stage:'trip_reviewed_before',assertFresh:deadline,
+    read:async()=>{calls++;if(moment==='after'){now=101;return {vin:null};}if(moment==='failed_read')now=101;const e=new Error('PRIVATE');e.name='TimeoutError';throw e;},
+    pause:async()=>{now=101;},log:()=>{}});
+   imports++;
+  };
+  await assert.rejects(run(),/checkpoint_expired/);assert.equal(imports,0);assert.equal(calls,moment==='before'?0:1);
+ }
+ assert.throws(server.collectionDeadline('not-date'),/checkpoint_expired/);
+ await assert.rejects(server.readTripReviewedIdentity({}, {}, {stage:'PRIVATE',assertFresh:()=>{}}),/contract_invalid/);
+});
