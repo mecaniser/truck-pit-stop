@@ -1,5 +1,6 @@
 'use strict';
 const {createHash,randomUUID}=require('node:crypto');
+const diagnostic=require('./trip_populated_diagnostics.cjs');
 const ORIGIN='https://api.keeptruckin.com';
 const fail=()=>{throw Error('report_populated_proof_invalid');};
 const sha=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
@@ -28,39 +29,44 @@ function requestMatches(request,day){
 }
 function createProof(page,window,{epoch=randomUUID(),now=()=>Date.now(),bodyTimeoutMs=10000,maxResponses=400}={}){
  if(window.start!==window.end)fail();const requests=new WeakSet(),pending=new Set(),records=new Map(),identities=new Set();let total=null,perPage=null,count=0,bytes=0,error=null,closed=false,queue=Promise.resolve();const started=now();
- const bad=()=>{error='report_populated_proof_invalid';};
- const onRequest=request=>{if(!closed&&requestMatches(request,window.start)){requests.add(request);pending.add(request);}};
+ let observed=0,provider=0,unbound=0;let reason=null,matched=0,decoded=0,fields={},domRows=null,rendered=null;
+ const bad=code=>{error='report_populated_proof_invalid';reason=reason||code;};
+ const snapshot=()=>diagnostic.sanitize({reason:reason||(total===null?'no_matching_response':pending.size?'pending_response':records.size!==total?'incomplete_tail':domRows!==total?'dom_count_mismatch':rendered!==total?'rendered_count_mismatch':undefined),observed_requests:observed,provider_requests:provider,unbound_provider_requests:unbound,matched_requests:matched,responses:count,pending:pending.size,decoded_pages:decoded,authoritative_total:total,response_identities:records.size,dom_rows:domRows,rendered_count:rendered,fields});
+ const reject=code=>{bad(code);fail();};
+ const onRequest=request=>{if(closed)return;observed++;let approved=false;try{approved=new URL(request.url()).origin===ORIGIN;}catch{}if(approved)provider++;if(requestMatches(request,window.start)){matched++;requests.add(request);pending.add(request);}else if(approved)unbound++;};
  const onResponse=response=>{
   if(closed||!requests.has(response.request()))return;
-  if(++count>maxResponses){bad();return;}
+  if(++count>maxResponses){bad('response_limit');return;}
   queue=queue.then(async()=>{
    if(error||closed)return;let timer,raw;
    try{
-    if(new URL(response.url()).origin!==ORIGIN||response.status()!==200||!/^application\/(?:[a-z0-9.+-]*\+)?json(?:;|$)/i.test(response.headers()['content-type']||''))fail();
-    const length=response.headers()['content-length'];if(length!==undefined&&(!/^\d+$/.test(length)||Number(length)>2000000))fail();
-    raw=await Promise.race([response.body(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('timeout')),bodyTimeoutMs);})]);
-    if(closed||error)return;bytes+=raw.length;if(raw.length>2000000||bytes>16000000)fail();
-    const body=JSON.parse(raw.toString('utf8'));
-    if(!Number.isSafeInteger(body.total)||body.total<0||body.total>20000||!Number.isSafeInteger(body.per_page)||body.per_page<1||body.per_page>20000||!Array.isArray(body.driving_periods)||(body.total>0&&body.driving_periods.length<1)||body.driving_periods.length>body.per_page)fail();
-    if(total!==null&&(total!==body.total||perPage!==body.per_page))fail();total=body.total;perPage=body.per_page;
+    if(new URL(response.url()).origin!==ORIGIN)reject('transport');if(response.status()!==200)reject('status');if(!/^application\/(?:[a-z0-9.+-]*\+)?json(?:;|$)/i.test(response.headers()['content-type']||''))reject('content_type');
+    const length=response.headers()['content-length'];if(length!==undefined&&(!/^\d+$/.test(length)||Number(length)>2000000))reject('declared_body_limit');
+    raw=await Promise.race([response.body(),new Promise((_,reject)=>{timer=setTimeout(()=>{bad('body_timeout');reject(Error('timeout'));},bodyTimeoutMs);})]);
+    if(closed||error)return;bytes+=raw.length;if(raw.length>2000000||bytes>16000000)reject('decoded_body_limit');
+    let body;try{body=JSON.parse(raw.toString('utf8'));}catch{reject('json');}decoded++;
+    fields={total:diagnostic.type(body?.total),per_page:diagnostic.type(body?.per_page),driving_periods:diagnostic.type(body?.driving_periods)};
+    if(!body||!Number.isSafeInteger(body.total)||body.total<0||body.total>20000||!Number.isSafeInteger(body.per_page)||body.per_page<1||body.per_page>20000||!Array.isArray(body.driving_periods)||(body.total>0&&body.driving_periods.length<1)||body.driving_periods.length>body.per_page)reject('root_shape');
+    if(total!==null&&(total!==body.total||perPage!==body.per_page))reject('total_changed');total=body.total;perPage=body.per_page;
     for(const item of body.driving_periods){
-     const trip=item?.driving_period;if(!trip||typeof trip!=='object')fail();
-     const record=id(trip.id),identity=[id(trip.vehicle?.id),wall(trip.start_time)],key=JSON.stringify(identity);
-     if(!identity[1].startsWith(window.start+'T')||records.has(record)||identities.has(key))fail();
+     const trip=item?.driving_period;fields={...fields,record:diagnostic.type(trip),id:diagnostic.type(trip?.id),vehicle:diagnostic.type(trip?.vehicle),vehicle_id:diagnostic.type(trip?.vehicle?.id),start_time:diagnostic.type(trip?.start_time)};if(!trip||typeof trip!=='object')reject('record_shape');
+     let record,vehicle,departure;try{record=id(trip.id);}catch{reject('id_invalid');}try{vehicle=id(trip.vehicle?.id);}catch{reject('vehicle_id_invalid');}try{departure=wall(trip.start_time);}catch{reject('timestamp_invalid');}const identity=[vehicle,departure],key=JSON.stringify(identity);
+     if(!identity[1].startsWith(window.start+'T'))reject('outside_day');if(records.has(record))reject('duplicate_id');if(identities.has(key))reject('duplicate_identity');
      records.set(record,identity);identities.add(key);
     }
-    if(records.size>total)fail();
-   }catch{bad();}finally{raw=null;pending.delete(response.request());clearTimeout(timer);}
+    if(records.size>total)reject('root_shape');
+   }catch{bad('transport');}finally{raw=null;pending.delete(response.request());clearTimeout(timer);}
   });
  };
- const onFailed=request=>{if(requests.has(request)){pending.delete(request);bad();}};
+ const onFailed=request=>{if(requests.has(request)){pending.delete(request);bad('request_failed');}};
  const seal=()=>{closed=true;page.off('request',onRequest);page.off('response',onResponse);page.off('requestfailed',onFailed);};
  const drain=async()=>{let current;do{current=queue;await current;}while(current!==queue);if(error)fail();return pending.size===0;};
  page.on('request',onRequest);page.on('response',onResponse);page.on('requestfailed',onFailed);
  return {
-  async empty(){if(!await drain())return false;if(total!==null&&total!==0)fail();seal();return true;},
-  async proof(rows,sourceReadAt,renderedTotal=rows.length){if(!await drain())return null;if(total===null||records.size!==total||rows.length!==total||renderedTotal!==total)return null;
-   const expected=sha([...records.values()].sort((a,b)=>JSON.stringify(a)<JSON.stringify(b)?-1:1));if(identityDigest(rows)!==expected)fail();seal();
+  snapshot,
+  async empty(){if(!await drain())return false;if(total!==null&&total!==0)reject('dom_count_mismatch');seal();return true;},
+  async proof(rows,sourceReadAt,renderedTotal=rows.length){domRows=rows.length;rendered=renderedTotal;if(!await drain())return null;if(total===null||records.size!==total||rows.length!==total||renderedTotal!==total)return null;
+   const expected=sha([...records.values()].sort((a,b)=>JSON.stringify(a)<JSON.stringify(b)?-1:1));let actual;try{actual=identityDigest(rows);}catch{reject('dom_identity_invalid');}if(actual!==expected)reject('bijection_mismatch');seal();
    return {version:1,kind:'passive_provider_pages',epoch,start:window.start,end:window.end,origin:ORIGIN,total,per_page:perPage,response_count:count,response_identity_count:records.size,dom_identity_count:rows.length,identity_sha256:expected,first_observed_at:new Date(started).toISOString(),last_observed_at:sourceReadAt};
   },
   close(){seal();pending.clear();records.clear();identities.clear();},

@@ -18,3 +18,5 @@ ENV MOTIVE_TRIPS_COMMIT=false
 CMD ["python", "-m", "scripts.motive_sync.run_trip_worker"]
 
 COPY backend/scripts/motive_sync/trip_populated_proof.cjs /app/backend/scripts/motive_sync/trip_populated_proof.cjs
+
+COPY backend/scripts/motive_sync/trip_populated_diagnostics.cjs /app/backend/scripts/motive_sync/trip_populated_diagnostics.cjs

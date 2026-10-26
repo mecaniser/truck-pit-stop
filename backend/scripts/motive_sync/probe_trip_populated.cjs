@@ -1,7 +1,7 @@
 'use strict';
 // Explicit read-only release canary: never invoke collect(), importDay or a DB client.
 const {prepareLegacyLogin}=require('./login.cjs');
-const {collectWindow}=require('./collect_trips.cjs');
+const {collectWindow,safeFailure}=require('./collect_trips.cjs');
 const {spawnSync}=require('node:child_process');
 const {pathToFileURL}=require('node:url');
 const path=require('node:path'),fs=require('node:fs');
@@ -32,7 +32,7 @@ async function main(){
   if(validated.status!==0||validated.error)throw Error('python_proof');
   stage='gates_after';await gates();
   console.log(JSON.stringify({kind:'trip_populated_canary',day,read_only:true,import_permitted:false,company_verified_before:true,company_verified_after:true,python_validated:true,proof_version:window.populated_proof.version,total:window.populated_proof.total,captured:window.rows.length,response_count:window.populated_proof.response_count,identity_count:window.populated_proof.response_identity_count}));
- }catch{console.log(JSON.stringify({kind:'trip_populated_canary',failed:true,stage,import_permitted:false}));process.exitCode=1;}
+ }catch(error){console.log(JSON.stringify({kind:'trip_populated_canary',failed:true,stage,reason:safeFailure(error),diagnostic:require('./trip_populated_diagnostics.cjs').sanitize(error?.tripPopulatedDiagnostic),import_permitted:false}));process.exitCode=1;}
  finally{try{if(browser)await browser.close();}finally{clearTimeout(timer);}}
 }
 if(require.main===module)main();

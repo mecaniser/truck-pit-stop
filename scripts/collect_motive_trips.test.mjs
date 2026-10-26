@@ -362,8 +362,8 @@ test('trip Docker adapter imports diagnostic helper in its deployed file layout'
  const directory=await mkdtemp(join(tmpdir(),'motive-adapter-layout-'));
  try {
   const docker=readFileSync(new URL('../backend/Dockerfile.motive-trips',import.meta.url),'utf8');
-  const entries=docker.split('\n').filter(line=>/^COPY (scripts\/collect_motive_trips\.mjs|backend\/scripts\/motive_sync\/(?:trip_diagnostics|trip_populated_proof)\.cjs) /.test(line));
-  assert.equal(entries.length,3);
+  const entries=docker.split('\n').filter(line=>/^COPY (scripts\/collect_motive_trips\.mjs|backend\/scripts\/motive_sync\/(?:trip_diagnostics|trip_populated_proof|trip_populated_diagnostics)\.cjs) /.test(line));
+  assert.equal(entries.length,4);
   for(const line of entries){const [,source,destination]=line.split(' ');const target=join(directory,destination.replace(/^\/app\//,''));mkdirSync(dirname(target),{recursive:true});copyFileSync(new URL('../'+source,import.meta.url),target);}
   const result=spawnSync(process.execPath,['--input-type=module','-e','await import(process.argv[1])',join(directory,'collectors/collect_motive_trips.mjs')],{encoding:'utf8'});
   assert.equal(result.status,0,result.stderr);
