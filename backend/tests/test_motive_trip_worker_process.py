@@ -127,7 +127,7 @@ class CatchupProcessTests(unittest.TestCase):
             (package/'__init__.py').write_text('')
             (package/'trip_runner.py').write_text('''import argparse,json,time,os
 from pathlib import Path
-p=argparse.ArgumentParser();p.add_argument('--input');p.add_argument('--receipt');p.add_argument('--commit',action='store_true');p.add_argument('--recover',action='store_true');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--input');p.add_argument('--receipt');p.add_argument('--commit',action='store_true');p.add_argument('--recover',action='store_true');p.add_argument('--rejection-nonce');a=p.parse_args()
 source=json.loads(Path(a.input).read_text()); receipt=Path(a.receipt)
 assert a.commit and source['complete'] and source['company_verified_after']
 normalized=Path(str(receipt)+'.normalized.json'); normalized.write_text('{}');normalized.chmod(0o600)

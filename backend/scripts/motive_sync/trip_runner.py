@@ -23,6 +23,7 @@ from sqlalchemy import func, select
 
 from scripts import import_motive_trips as importer
 from scripts.motive_sync import trip_coverage
+from scripts.motive_sync.trip_rejection import PriorCoverageMismatch
 
 
 def validate_source(document, company_label, company_id, stamp):
@@ -171,9 +172,7 @@ def verify_prior_coverage(windows, previous):
     covered = len(stored_identities & source_identities)
     missing = len(stored_identities - source_identities)
     if missing:
-        raise ValueError(
-            f"incomplete_prior_coverage: prior={len(stored_identities)} covered={covered} missing={missing}"
-        )
+        raise PriorCoverageMismatch(len(stored_identities), covered, missing)
     return {
         "prior_identity_count": len(stored_identities),
         "prior_identity_covered": covered,
@@ -414,7 +413,12 @@ async def run(
         json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
     async with session_factory() as db:
-        rows, report = await prepare(db, document, tenant_id, actor_id, stamp)
+        try:
+            rows, report = await prepare(db, document, tenant_id, actor_id, stamp)
+        except PriorCoverageMismatch as mismatch:
+            await db.rollback()
+            mismatch.source_sha256 = checksum
+            raise
         dry = await import_batches(db, rows, tenant_id, actor_id, False)
         await db.rollback()
     normalized = {
@@ -542,6 +546,7 @@ def main():
     parser.add_argument("--input", required=True)
     parser.add_argument("--receipt", required=True)
     parser.add_argument("--commit", action="store_true")
+    parser.add_argument("--rejection-nonce")
     parser.add_argument(
         "--recover",
         action="store_true",
@@ -561,18 +566,26 @@ def main():
     from app.db.session import AsyncSessionLocal
 
     operation = recover if args.recover else run
-    receipt = asyncio.run(
-        operation(
-            AsyncSessionLocal,
-            json.loads(Path(args.input).read_text()),
-            UUID(os.environ[required[0]]),
-            UUID(os.environ[required[1]]),
-            os.environ[required[2]],
-            os.environ[required[3]],
-            args.receipt,
-            **({} if args.recover else {"commit": args.commit}),
+    try:
+        receipt = asyncio.run(
+            operation(
+                AsyncSessionLocal,
+                json.loads(Path(args.input).read_text()),
+                UUID(os.environ[required[0]]),
+                UUID(os.environ[required[1]]),
+                os.environ[required[2]],
+                os.environ[required[3]],
+                args.receipt,
+                **({} if args.recover else {"commit": args.commit}),
+            )
         )
-    )
+    except PriorCoverageMismatch as mismatch:
+        if args.recover or not args.rejection_nonce:
+            raise
+        from scripts.motive_sync import trip_rejection
+        trip_rejection.write_rejection(args.input, args.receipt,
+            trip_rejection.expected_scope(), args.rejection_nonce, mismatch)
+        raise SystemExit(trip_rejection.EXIT_CODE) from None
     print(
         json.dumps(
             {
