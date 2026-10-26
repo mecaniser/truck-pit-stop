@@ -21,6 +21,7 @@ from scripts.prepare_motive_trip_history import ZONE, endpoint, normalize, times
 from sqlalchemy import func, select
 
 from scripts import import_motive_trips as importer
+from scripts.motive_sync import trip_coverage
 
 
 def validate_source(document, company_label, company_id, stamp):
@@ -80,7 +81,7 @@ def validate_source(document, company_label, company_id, stamp):
         )
         read = timestamp(window["source_read_at"])
         if (
-            not today - timedelta(days=2) <= start <= end <= today
+            not (trip_coverage.FLOOR if document.get("plan") else today - timedelta(days=2)) <= start <= end <= today
             or not started <= read <= finished
         ):
             raise ValueError("Invalid daily report window or read time")
@@ -98,7 +99,15 @@ def validate_source(document, company_label, company_id, stamp):
         ):
             raise ValueError("Incomplete report or missing terminal count evidence")
         covered.update(start + timedelta(days=i) for i in range((end - start).days + 1))
-    if covered != {today - timedelta(days=i) for i in range(3)}:
+    if document.get("plan"):
+        plan = document["plan"]
+        expected = trip_coverage.scope(
+            os.environ["MOTIVE_SYNC_TENANT_ID"], os.environ["MOTIVE_SYNC_ACTOR_ID"],
+            company_id, company_label, os.environ.get("MOTIVE_TRIPS_BASELINE", "2026-04-01"))
+        trip_coverage.validate_plan(plan, expected, today)
+        if len(windows) != 1 or windows[0]["start"] != windows[0]["end"] or windows[0]["start"] not in plan["days"]:
+            raise ValueError("Source does not match planned daily window")
+    elif covered != {today - timedelta(days=i) for i in range(3)}:
         raise ValueError(
             "Daily reconciliation must cover today and the preceding two days"
         )
@@ -167,7 +176,7 @@ def verify_prior_coverage(windows, previous):
 
 async def prepare(db, document, tenant_id, actor_id, stamp):
     await importer.authorize(db, tenant_id, actor_id)
-    mappings, exclusions = [], []
+    mappings, exclusions, membership_scope = [], [], []
     for source in document["vehicles"]:
         reason = None
         if not source["vin"]:
@@ -215,6 +224,7 @@ async def prepare(db, document, tenant_id, actor_id, stamp):
                 if len(members) != 1:
                     reason = "no_unique_current_membership"
                 else:
+                    membership_scope.append({"provider_vehicle_id": source["provider_vehicle_id"], "membership_id": str(members[0].id), "vehicle_id": str(vehicles[0].id), "effective_from": importer.aware(members[0].effective_from).isoformat(), "effective_to": importer.aware(members[0].effective_to).isoformat() if members[0].effective_to else None})
                     mappings.append(
                         {
                             **{
@@ -234,6 +244,20 @@ async def prepare(db, document, tenant_id, actor_id, stamp):
                     "reason": reason,
                 }
             )
+    # Inventory current tenant-authorized trucks independently of the source directory.
+    authorized = (await db.execute(select(Vehicle, FleetMembership).join(
+        FleetMembership, (FleetMembership.vehicle_id == Vehicle.id) & (FleetMembership.tenant_id == Vehicle.tenant_id)
+    ).join(Customer, Customer.id == FleetMembership.fleet_customer_id).where(
+        Vehicle.tenant_id == tenant_id, Vehicle.deleted_at.is_(None),
+        Customer.tenant_id == tenant_id, Customer.deleted_at.is_(None), *active_membership(stamp)
+    ))).all()
+    source_vins = {v["vin"] for v in document["vehicles"] if v["vin"]}
+    missing_vehicles = [{"vehicle_id": str(v.id), "membership_id": str(m.id),
+        "vin": v.vin.strip().upper() if v.vin else None,
+        "effective_from": importer.aware(m.effective_from).isoformat(),
+        "effective_to": importer.aware(m.effective_to).isoformat() if m.effective_to else None,
+        "reason": "absent_from_source_directory"} for v, m in authorized
+        if not v.vin or v.vin.strip().upper() not in source_vins]
     # Limit prior material to this report's provider IDs and UTC date envelope.
     first = min(date.fromisoformat(w["start"]) for w in document["windows"])
     last = max(date.fromisoformat(w["end"]) for w in document["windows"])
@@ -271,6 +295,49 @@ async def prepare(db, document, tenant_id, actor_id, stamp):
     report["vehicle_exclusions"] = exclusions
     report["directory_count"] = len(document["vehicles"])
     report["matched_vehicles"] = len(mappings)
+    report["mapping_scope"] = mappings
+    if document.get("plan"):
+        day = document["windows"][0]["start"]
+        providers = []
+        global_reasons = []
+        reasons = {}
+        for exclusion in report["exclusions"]:
+            raw = document["windows"][exclusion["window"]]["rows"][exclusion["row"]]
+            links = raw.get("links", []) if isinstance(raw, dict) else []
+            match = re.fullmatch(r"(?:https://app\.gomotive\.com/en-US/)?#/fleetview/vehicles/summary/([0-9]+)", links[0]) if len(links) == 1 and isinstance(links[0], str) else None
+            if match:
+                reasons.setdefault(match.group(1), []).append(exclusion["reason"])
+            else:
+                global_reasons.append(exclusion["reason"])
+        for vehicle in document["vehicles"]:
+            pid = vehicle["provider_vehicle_id"]
+            issues = reasons.get(pid, []) + global_reasons + [e["reason"] for e in exclusions if e["provider_vehicle_id"] == pid]
+            count = sum(row["provider_vehicle_id"] == pid for row in rows)
+            mapping = next((m for m in mappings if m["provider_vehicle_id"] == pid), None)
+            day_start = datetime.combine(date.fromisoformat(day), datetime.min.time(), ZONE)
+            day_end = datetime.combine(date.fromisoformat(day) + timedelta(days=1), datetime.min.time(), ZONE)
+            eligible_from = timestamp(mapping["effective_from"]) if mapping else None
+            eligibility = "unknown" if eligible_from is None else "outside_membership" if eligible_from >= day_end else "partial_day" if eligible_from > day_start else "full_day"
+            if eligibility == "outside_membership":
+                issues.append("outside_membership")
+            providers.append({"provider_vehicle_id": pid, "vin": vehicle["vin"],
+                              "eligible_count": count, "exclusions": sorted(set(issues)),
+                              "eligibility": eligibility, "eligible_from": mapping["effective_from"] if mapping else None,
+                              "status": "ineligible" if eligibility == "outside_membership" and set(issues) <= {"outside_membership"} else "unresolved" if issues else "verified_saved" if count else "verified_empty"})
+        providers.extend({"vehicle_id": v["vehicle_id"], "vin": v["vin"],
+            "provider_vehicle_id": None, "eligible_count": 0,
+            "exclusions": [v["reason"]], "status": "unresolved"} for v in missing_vehicles)
+        closed_day = trip_coverage.day_closed(day, document["windows"][0]["source_read_at"])
+        if not closed_day:
+            for provider in providers:
+                if provider["status"] not in {"unresolved", "ineligible"}:
+                    provider["status"] = "provisional"
+        report["coverage"] = {
+            "scope": document["plan"]["scope"], "day": day,
+            "status": "provisional" if not closed_day else "examined_with_exclusions" if any(p["exclusions"] for p in providers) else "verified",
+            "providers": providers,
+            "mapping_sha256": trip_coverage.mapping_digest(document["vehicles"], mappings, membership_scope, missing_vehicles),
+        }
     return [
         TripImport.model_validate(row).model_dump(mode="json") for row in rows
     ], report
@@ -329,6 +396,8 @@ async def run(
         "company_id": company_id,
         "rows": rows,
     }
+    if document.get("plan"):
+        normalized["coverage"] = report["coverage"]
     immutable_json(str(receipt_path) + ".normalized.json", normalized)
     receipt = {
         "mode": "commit" if commit else "dry_run",
@@ -343,6 +412,8 @@ async def run(
         ).hexdigest(),
         "rows": dry,
     }
+    if document.get("plan"):
+        receipt["coverage"] = report["coverage"]
     private_json(receipt_path, receipt)
     if not commit:
         return receipt
@@ -421,6 +492,8 @@ async def recover(
         raise ValueError(
             "Recovery identity, immutable evidence or committed intent mismatch"
         )
+    if normalized.get("coverage") != receipt.get("coverage"):
+        raise ValueError("Recovery coverage mismatch")
     rows = normalized["rows"]
     if not isinstance(rows, list):
         raise TypeError("Invalid recovery rows")
