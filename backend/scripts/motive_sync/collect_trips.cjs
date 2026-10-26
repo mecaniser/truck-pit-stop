@@ -1,3 +1,4 @@
+const {readReviewedIdentity,sameIdentity}=require('./vehicle_identity.cjs');
 const {prepareLegacyLogin}=require('./login.cjs');
 const {spawnSync}=require('node:child_process');
 /* Server collection through rendered Motive UI only; no private endpoints or session extraction. */
@@ -168,13 +169,15 @@ async function collect(output) {
   const directory=validateDirectory(links,Number(total?.[1]),Number(total?.[2]));
   result.directory_count=directory.length;save();const seenVins=new Map();
   for(const link of directory) {
-   const vin=await readVehicleVin(context,link);
+   const proof=link.href==='#/fleetview/vehicles/summary/5981300'?await readReviewedIdentity(context,link):null;
+   if(proof?.vin)throw new Error('reviewed_vin_changed');
+   const vin=proof?null:await readVehicleVin(context,link);
    if(vin&&seenVins.has(vin)) {
     result.failure={reason:'duplicate_vin',current_provider_vehicle_id:link.href.split('/').pop(),prior_provider_vehicle_id:seenVins.get(vin),unit:link.unit};save();
     throw new Error('duplicate_vin');
    }
    if(vin)seenVins.set(vin,link.href.split('/').pop());
-   result.vehicles.push({provider_vehicle_id:link.href.split('/').pop(),unit:link.unit,vin,...(!vin?{reason:'vin_unavailable'}:{})});save();
+   result.vehicles.push({provider_vehicle_id:link.href.split('/').pop(),unit:link.unit,vin,...(proof?{source_vin_state:proof.source_vin_state}:!vin?{reason:'vin_unavailable'}:{})});save();
   }
   const planFile=process.env.MOTIVE_TRIPS_PLAN_FILE;
   const plan=planFile?JSON.parse(fs.readFileSync(planFile,'utf8')):null;
@@ -183,11 +186,23 @@ async function collect(output) {
   const tasks=openTasks(output,{kind:'trips',company:COMPANY_ID,timezone:'America/New_York',vehicles:result.vehicles,windows},{maxAgeMs:30*60*1000});
   result.started_at=tasks.startedAt;
   for(const window of windows) {
+   const reviewed=result.vehicles.find(vehicle=>vehicle.provider_vehicle_id==='5981300');
+   const link=directory.find(link=>link.href==='#/fleetview/vehicles/summary/5981300');
+   if(reviewed){
+    const proof=await readReviewedIdentity(context,link);
+    if(proof.vin||proof.source_vin_state!==reviewed.source_vin_state)throw new Error('reviewed_vin_changed');
+    reviewed.identity_before={...proof,read_at:new Date().toISOString()};
+   }
    const receipt=await tasks.run('trip_window',window,async()=>{
     const reportPage=await context.newPage();reportPage.setDefaultTimeout(15000);
     try{return await collectWindow(reportPage,window,async()=>{},adapter);}
     finally{await reportPage.close();}
    });
+   if(reviewed){
+    const proof=await readReviewedIdentity(context,link);
+    sameIdentity(reviewed.identity_before,proof);
+    reviewed.identity_after={...proof,read_at:new Date().toISOString()};
+   }
    result.windows.push(receipt);save();
    if(plan) {
     // Finalize and import each exact day before moving on. A later source failure
