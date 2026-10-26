@@ -99,13 +99,56 @@ def verified_days(state, expected):
             raise ValueError('Trip coverage outside plan')
         # Later observations supersede earlier provisional observations.
         if day not in found or receipt['verified_at'] > found[day]['verified_at']:
-            found[day] = {**coverage, 'verified_at': receipt['verified_at']}
+            found[day] = {**coverage, 'verified_at': receipt['verified_at'],
+                          'source_read_at': source['windows'][0].get('source_read_at')}
     if found:
         latest = max(found.values(), key=lambda item: item['verified_at'])['mapping_sha256']
         # A changed directory/VIN/membership invalidates former scope certification.
         # Keep evidence on disk; recapture days for the new mapping scope.
         found = {day: item for day, item in found.items() if item['mapping_sha256'] == latest}
     return found
+
+
+def terminal_ineligible(day, coverage):
+    """Proven out-of-scope history is settled, never asserted to have no trips.
+
+    Only receipt-derived source time may establish closure. Partial eligibility
+    and every unknown/conflicting exclusion retain ordinary retry behavior.
+    """
+    if coverage.get('status') != 'examined_with_exclusions' or coverage.get('day') != day:
+        return False
+    providers = coverage.get('providers')
+    if not isinstance(providers, list) or not providers:
+        return False
+    try:
+        if not day_closed(day, coverage.get('source_read_at')):
+            return False
+        end = datetime.combine(date.fromisoformat(day) + timedelta(days=1), time.min, ZONE)
+        excluded = False
+        seen = set()
+        for provider in providers:
+            pid = provider.get('provider_vehicle_id')
+            if not isinstance(pid, str) or not pid or pid in seen:
+                return False
+            seen.add(pid)
+            count = provider.get('eligible_count')
+            if type(count) is not int or count < 0:
+                return False
+            if provider.get('status') == 'ineligible':
+                if (count != 0 or provider.get('eligibility') != 'outside_membership'
+                    or provider.get('exclusions') != ['outside_membership']):
+                    return False
+                start = datetime.fromisoformat(provider['eligible_from'].replace('Z', '+00:00'))
+                if start.tzinfo is None or start < end:
+                    return False
+                excluded = True
+            elif (provider.get('eligibility') != 'full_day' or provider.get('exclusions') != []
+                  or (provider.get('status'), count > 0) not in
+                     {('verified_saved', True), ('verified_empty', False)}):
+                return False
+        return excluded
+    except (ValueError, TypeError, AttributeError, KeyError, OverflowError):
+        return False
 
 
 def plan_days(expected, today, examined, limit=14, start=None, end=None):
@@ -131,7 +174,8 @@ def plan_days(expected, today, examined, limit=14, start=None, end=None):
         days = old[:limit-len(recent)] + recent
         # Once unseen backlog drains, revisit oldest unresolved observations fairly.
         retry = sorted((v['verified_at'], d) for d, v in examined.items()
-                       if v['status'] != 'verified' and d not in days and d < today.isoformat())
+                       if v['status'] != 'verified' and not terminal_ineligible(d, v)
+                       and d not in days and d < today.isoformat())
         days = [d for _, d in retry[:limit-len(days)]] + days
     return {'version': 1, 'scope': expected, 'days': days}
 
@@ -140,7 +184,18 @@ def summarize(expected, examined, today):
     cursor = date.fromisoformat(expected['baseline'])
     while cursor < today and examined.get(cursor.isoformat(), {}).get('status') == 'verified':
         cursor += timedelta(days=1)
+    reconciled = date.fromisoformat(expected['baseline'])
+    while reconciled < today:
+        day = reconciled.isoformat()
+        value = examined.get(day, {})
+        if value.get('status') != 'verified' and not terminal_ineligible(day, value):
+            break
+        reconciled += timedelta(days=1)
+    ineligible = sorted(d for d, v in examined.items() if terminal_ineligible(d, v))
     return {'baseline': expected['baseline'], 'complete_through':
             (cursor-timedelta(days=1)).isoformat() if cursor > date.fromisoformat(expected['baseline']) else None,
+            'reconciled_through': (reconciled-timedelta(days=1)).isoformat()
+                if reconciled > date.fromisoformat(expected['baseline']) else None,
+            'ineligible_days': ineligible,
             'examined_days': len(examined), 'unresolved_days':
-            sorted(d for d,v in examined.items() if v['status'] != 'verified')}
+            sorted(d for d,v in examined.items() if v['status'] != 'verified' and d not in ineligible)}
