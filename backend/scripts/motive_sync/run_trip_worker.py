@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from scripts.motive_sync import trip_coverage
+from scripts.motive_sync import trip_coverage, trip_rejection
 from scripts.motive_sync.runner import private_json
 from scripts.motive_sync.recovery import entry, read_process
 
@@ -88,12 +88,27 @@ def main():
                 env={**os.environ, "MOTIVE_TRIPS_PLAN_FILE": str(plan_file),
                      "MOTIVE_TRIPS_PYTHON": sys.executable},
             )
+            collection = trip_coverage.private_read(source, state)
+            rejection_rows = collection.get('rejected_days', [])
+            if not isinstance(rejection_rows, list):
+                raise RuntimeError('Invalid partial collection evidence')
+            rejected = {row['day']: row for row in rejection_rows}
+            if len(rejected) != len(rejection_rows) or not set(rejected) <= set(plan['days']):
+                raise RuntimeError('Invalid rejected days')
             for day in plan["days"]:
+                if day in rejected:
+                    checked = trip_rejection.validate_rejection(run / day / 'source.json',
+                        expected, rejected[day]['nonce'], collection['started_at'])
+                    if checked != rejected[day]:
+                        raise RuntimeError('Rejected day evidence mismatch')
+                    continue
                 saved = trip_coverage.private_read(run / day / "receipt.json", state)
                 required_stage = "verified" if os.environ.get("MOTIVE_TRIPS_COMMIT", "false") == "true" else "validated"
                 if saved.get("stage") != required_stage:
                     raise RuntimeError("Planned daily receipt incomplete")
-            print(json.dumps({"stage": "trip_worker_complete", "planned_days": len(plan["days"]),
+            print(json.dumps({"stage": "trip_worker_partial" if rejected else "trip_worker_complete",
+                "acceptance": "PARTIAL" if rejected else "complete", "rejected_days": sorted(rejected),
+                "rejections": rejection_rows, "planned_days": len(plan["days"]),
                 "coverage": trip_coverage.summarize(expected, trip_coverage.verified_days(state, expected), today)}), flush=True)
         except (subprocess.SubprocessError, OSError):
             print(

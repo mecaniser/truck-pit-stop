@@ -31,3 +31,27 @@ A later historical batch accepted nine daily receipts, then failed with a browse
 Expose static reviewed-identity phase labels. Enforce a fixed 30-minute invocation deadline and the existing task deadline before/after every retry attempt, including pre-day reads; expiration must prevent day collection/import. Tests: timeout then valid, three exhausted attempts, contradictions not retried, deadline before/after attempt and during backoff, and no downstream import after expiration. No other worker adopts the new retry wrapper. Independent gate must re-review this extended scope before merge/release.
 
 The trip-only wrapper now calls the existing transient retry helper with three attempts and a fresh `readReviewedIdentity` invocation each time. Static phases identify directory, before-day and after-day observations. Fixed invocation freshness is checked alongside task freshness before/after attempts and before import; failed attempts also check expiry before permitting retry. Identity contradictions retain one-attempt failure behavior. 53 focused Node tests pass, including timeout recovery/exhaustion, all three phases, contradiction rejection, and expiration before/after reads and during backoff. Independent review of the extension is pending; diagnostic-only GO is historical evidence, not approval of this new scope.
+
+## Merge evidence
+
+PR654 merged `98e51f408ce9404e8c4a62ae7b5f3adecf431f76` at 2026-10-26T05:22:13Z after all seven checks in run40273220401 passed. Final reviewed head `7eedeee865efbc7bcd5e49fecd36720f9ba643fd`, fresh base `cde4ba4ca2bae8276402e499c654418fda740c4c`, and CLEAN merge state were verified immediately before squash merge. Release owner is preparing one May9 historical canary; production acceptance is pending.
+
+## Production acceptance
+
+Deployment `015a45bc-12b2-4224-a02b-361b18b6434d` uses approved image `sha256:d6cc44b1f56c470560833e5b3802cd90fa480e9c0873536fd19bbbcce3ee2aab`, exact merged source and verified full manifest/mount parity. May9 execution `a3f4aa7b-9e9b-4f5d-a4a7-64cc1fdad687` exited after94seconds at2026-10-26T05:27:47Z. Independent gate accepted exact committed receipt: renderedMay9/EDT/no-loader,13observations over9.042seconds, source/receipt/scope/hash/readback/replay parity, zero imports,22outside-membership. Startup reconciled nine preceding Apr30–May8 receipts and no ambiguous May9 write. SQL confirms4433unique, original4114 pre189projection unchanged,42bound trips valid/visible. Evidence `/tmp/db036-654-canary-receipts.jsonl` and `/tmp/db036-654-canary-db.jsonl`.
+
+Automatic Web `714b4393-e0dd-4e31-b66b-c10feefc0418` is SUCCESS on98e51f40; build-version matches and readiness200 confirmsDB/Redis. No duplicate Web deployment. May10–June9 historical batch cleared next; October26 remains unresolved, and full historical drain is not complete.
+
+## Historical drain checkpoint — 2026-10-26 06:38 UTC
+
+PR654 batches May10–June9, June10–July10, and July11–August10 each passed 31 exact persisted-receipt audits. August11–31 passed 21 receipts covering 645 existing trips, all unchanged. Empty reports establish observed source output only; they do not establish that trucks did not drive. Membership exclusions remain distinct from verified zero eligible imports.
+
+Execution `47496258-11ce-485a-a46f-ee1e804aba6e` halted before September1 import with `incomplete_prior_coverage: prior=80 covered=48 missing=32`. Saved source has 50 valid unique rows, matching its footer and expected count. No September1 normalized artifact or receipt exists. Aggregate inspection found no timestamp-only, one-hour shift, VIN, current membership, or deleted-row explanation. All 80 prior rows were created and source-read on October3. Cause remains unresolved; September1 is quarantined and existing rows are preserved.
+
+One distinct September2 run, `c49edd9c-7f19-49ab-a598-9f6be258df97`, passed independent exact-receipt acceptance: 65 unchanged, zero new, EXITED after118seconds at06:37:47UTC. Database integrity remains4433unique, original4114 pre189projection unchanged,42bound valid/visible. An aggregate arrival check found78of80 prior September1 trips arrive the same New York day; ordinary midnight crossing cannot explain all32 unmatched identities. One distinct September3 run is authorized for source reconciliation and its own receipt acceptance; no broad batch or September1 retry is authorized. Evidence remains redacted in `/tmp/db036-sep1-shapes-live.jsonl` and `/tmp/db036-654-batch4-coverage-failure.json`.
+
+## September3 stop — 2026-10-26 06:41 UTC
+
+Execution `eef5ba43-8d86-4a26-aadd-dd47d349ec97` stopped after7seconds at06:40:51.831UTC with `login_legacy_redirect_loop`, before credentials, collection or import. No retry was issued. All manual historical runs are stopped pending fresh assessment. Release owner is authorized to restore empty explicit date selectors and MAX14 without triggering or redeploying; readback remains pending at this checkpoint.
+
+The aggregate truck-day matrix is preserved in `DB036_CURRENT_TRUCK_DAY_RECONCILIATION.csv`:3608rows,164examined closed dates,22current trucks. This is the examined-date matrix, not proof that all configured dates are complete. September1 and September3–October15 comprise44 closed dates without accepted current reconciliation; October26 remains a separate unresolved current day. A source-only broad September1–15 comparison helper is prepared for independent review but has not run. Its caller needs a fresh isolated login and is parked while manual authentication/runs are stopped.

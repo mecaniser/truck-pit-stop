@@ -1,6 +1,7 @@
 const {readReviewedIdentity,sameIdentity}=require('./vehicle_identity.cjs');
 const {prepareLegacyLogin}=require('./login.cjs');
 const {spawnSync}=require('node:child_process');
+const {randomUUID}=require('node:crypto');
 /* Server collection through rendered Motive UI only; no private endpoints or session extraction. */
 const fs = require('node:fs');
 const {closeBrowser,phase,openTasks,retry,failed}=require('./tasks.cjs');
@@ -109,13 +110,25 @@ function importDay(output,result,plan,window,receipt,{timeout=600000}={}) {
  // Import only a separately finalized daily artifact; no aggregate checkpoint is eligible.
  const directory=path.join(path.dirname(output),window.start);
  fs.mkdirSync(directory,{mode:0o700});
+ if(fs.readdirSync(directory).length)throw new Error('trip_import_failed');
  const dailySource=path.join(directory,'source.json'), dailyReceipt=path.join(directory,'receipt.json');
  const daily={...result,plan,windows:[receipt],company_verified_after:true,complete:true,finished_at:new Date().toISOString()};
  savePrivate(dailySource,daily);
- const command=['-m','scripts.motive_sync.trip_runner','--input',dailySource,'--receipt',dailyReceipt];
+ const nonce=randomUUID(), since=new Date().toISOString();
+ const command=['-m','scripts.motive_sync.trip_runner','--input',dailySource,'--receipt',dailyReceipt,'--rejection-nonce',nonce];
  if(process.env.MOTIVE_TRIPS_COMMIT==='true')command.push('--commit');
  const child=spawnSync(process.env.MOTIVE_TRIPS_PYTHON,command,{stdio:'inherit',timeout});
- if(child.error||child.status!==0)throw new Error('trip_import_failed');
+ if(child.error)throw new Error('trip_import_failed');
+ if(child.status===42) {
+  // Exit status alone never authorizes continuation; shared validator rechecks
+  // private exact source/scope/run/day/nonce and absence of any attempted import.
+  const checked=spawnSync(process.env.MOTIVE_TRIPS_PYTHON,['-m','scripts.motive_sync.trip_rejection','--source',dailySource,'--nonce',nonce,'--since',since],{encoding:'utf8',timeout:30000,maxBuffer:16384});
+  if(checked.error||checked.status!==0)throw new Error('trip_import_failed');
+  let rejected;try{rejected=JSON.parse(checked.stdout);}catch{throw new Error('trip_import_failed');}
+  if(rejected.day!==window.start||rejected.nonce!==nonce||rejected.reason!=='incomplete_prior_coverage')throw new Error('trip_import_failed');
+  return {stage:'preimport_rejected',rejected};
+ }
+ if(child.status!==0)throw new Error('trip_import_failed');
  const saved=JSON.parse(fs.readFileSync(dailyReceipt,'utf8'));
  if(saved.stage!==(process.env.MOTIVE_TRIPS_COMMIT==='true'?'verified':'validated'))throw new Error('trip_import_unverified');
  return saved;
@@ -236,7 +249,12 @@ async function collect(output) {
     // Finalize and import each exact day before moving on. A later source failure
     // leaves earlier receipts recoverable, without another login or VIN traversal.
     assertFresh();phase('company_after');await company();assertFresh();
-    importDay(output,result,plan,window,receipt);
+    const outcome=importDay(output,result,plan,window,receipt);
+    if(outcome.stage==='preimport_rejected') {
+     result.rejected_days=result.rejected_days||[];result.rejected_days.push(outcome.rejected);
+     console.log(JSON.stringify({stage:'trip_day_rejected',day:window.start,reason:outcome.rejected.reason,counts:outcome.rejected.counts,import_permitted:false}));
+     save();
+    }
    }
   }
   assertFresh();
@@ -267,6 +285,6 @@ function safeFailure(error) {
 }
 if(require.main===module) {
  if(!process.argv[2]){console.error('Output file required');process.exitCode=1;}
- else collect(process.argv[2]).then(r=>console.log(JSON.stringify({stage:'trip_collection_complete',complete:r.complete,vehicles:r.vehicles.length,rows:r.windows.reduce((n,w)=>n+w.rows.length,0)}))).catch(error=>{failed(process.argv[2],error);console.error(JSON.stringify({stage:'trip_collection_failed',reason:safeFailure(error),import_permitted:false}));process.exitCode=1;});
+ else collect(process.argv[2]).then(r=>console.log(JSON.stringify({stage:r.rejected_days?.length?'trip_collection_partial':'trip_collection_complete',complete:r.complete&&!r.rejected_days?.length,source_complete:r.complete,import_acceptance:r.rejected_days?.length?'PARTIAL':'complete',rejected_days:(r.rejected_days||[]).map(item=>item.day),vehicles:r.vehicles.length,rows:r.windows.reduce((n,w)=>n+w.rows.length,0)}))).catch(error=>{failed(process.argv[2],error);console.error(JSON.stringify({stage:'trip_collection_failed',reason:safeFailure(error),import_permitted:false}));process.exitCode=1;});
 }
 module.exports={collectionDeadline,readTripReviewedIdentity,importDay,validatePlan,collect,collectWindow,recentWindow,dailyWindows,summaryVin,validateDirectory,safeFailure,readVehicleVin,readVehicleVinOnce,advanceReportViewport};
