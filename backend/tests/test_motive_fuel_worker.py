@@ -389,7 +389,13 @@ def test_orchestrator_saves_only_exact_true(tmp_path, monkeypatch, enabled):
     monkeypatch.setattr(
         orchestrator.subprocess, "run", lambda command, **kwargs: calls.append(command)
     )
+    catchup = []
+    monkeypatch.setattr(orchestrator, "run_catchup", lambda *args: catchup.append(True))
     orchestrator.main()
+    if enabled == "true":
+        assert catchup == [True] and calls == []
+        return
+    assert catchup == []
     assert len(calls) == 2 and calls[0][0] == "node"
     assert ("--commit" in calls[1]) is (enabled == "true")
 
@@ -409,6 +415,7 @@ def test_pending_recovery_precedes_new_collection_and_blocks_if_disabled(
     previous.mkdir()
     receipt = previous / "receipt.json"
     receipt.write_text(json.dumps({"mode": "commit", "stage": "commit_pending"}))
+    receipt.chmod(0o600)
     monkeypatch.setenv("MOTIVE_FUEL_STATE_DIR", str(tmp_path))
     monkeypatch.setenv("MOTIVE_FUEL_COMMIT", "false")
     calls = []
@@ -430,6 +437,7 @@ def test_pending_recovery_precedes_new_collection_and_blocks_if_disabled(
             receipt.write_text(json.dumps({"mode": "commit", "stage": "verified"}))
 
     monkeypatch.setattr(orchestrator.subprocess, "run", completed)
+    monkeypatch.setattr(orchestrator, "run_catchup", lambda *args: calls.append(["catchup"]))
     orchestrator.main()
-    assert len(calls) == 3 and "--recover" in calls[0] and calls[1][0] == "node"
+    assert len(calls) == 2 and "--recover" in calls[0] and calls[1][0] == "catchup"
     assert str(previous / "source.json") in calls[0]

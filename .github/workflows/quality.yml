@@ -67,7 +67,7 @@ jobs:
       - name: Verify ETS contact evidence contracts
         run: node --test backend/scripts/easytruck_sync/lib/contact_snapshot.test.js
       - name: Verify Motive location and speed collector contracts
-        run: node --test backend/scripts/motive_sync/collector.test.cjs backend/scripts/motive_sync/tasks.test.cjs backend/scripts/motive_sync/login_diagnostics.test.cjs
+        run: node --test backend/scripts/motive_sync/collector.test.cjs backend/scripts/motive_sync/fuel_day.test.cjs backend/scripts/motive_sync/collect_fuel.test.cjs backend/scripts/motive_sync/tasks.test.cjs backend/scripts/motive_sync/login_diagnostics.test.cjs
       - name: Verify Motive legacy login in isolated Chromium fixtures
         run: |
           npm ci --prefix backend/scripts/motive_sync --omit=dev

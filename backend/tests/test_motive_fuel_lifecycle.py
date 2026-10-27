@@ -104,10 +104,10 @@ def test_collection_failure_never_starts_import(tmp_path, monkeypatch, capsys):
     assert all(not e.get('new_import_started') for e in events(capsys))
 
 
-def test_import_failure_remains_unknown_without_retry(tmp_path, monkeypatch, capsys):
+def test_legacy_dry_import_failure_remains_unknown_without_retry(tmp_path, monkeypatch, capsys):
     from scripts.motive_sync import run_fuel_worker as worker
     monkeypatch.setenv('MOTIVE_FUEL_STATE_DIR', str(tmp_path))
-    monkeypatch.setenv('MOTIVE_FUEL_COMMIT', 'true')
+    monkeypatch.setenv('MOTIVE_FUEL_COMMIT', 'false')
     monkeypatch.setattr(worker, 'read_process', lambda *a, **k: None)
     calls = []
     def fail(*a, **k):
@@ -128,6 +128,7 @@ def test_recovery_failure_blocks_collection_and_stays_unknown(tmp_path, monkeypa
     monkeypatch.setenv('MOTIVE_FUEL_STATE_DIR', str(tmp_path))
     monkeypatch.setenv('MOTIVE_FUEL_COMMIT', 'true')
     prior = tmp_path/'prior';prior.mkdir();(prior/'receipt.json').write_text(json.dumps({'mode':'commit','stage':'commit_pending'}))
+    (prior/'receipt.json').chmod(0o600)
     calls = []
     monkeypatch.setattr(worker, 'read_process', lambda *a, **k: calls.append(a))
     def fail(*a, **k):
