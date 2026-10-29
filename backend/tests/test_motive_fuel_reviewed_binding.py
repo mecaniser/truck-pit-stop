@@ -631,3 +631,37 @@ async def test_apply_cli_refuses_to_overlap_worker_lock(
         with pytest.raises(BlockingIOError):
             fuel_day.main()
     assert not (folder / "receipt.json").exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"source_timezone": "UTC", "timezone_status": "verified"},
+        {"source_timezone": "America/New_York"},
+        {"timezone_status": "verified"},
+    ],
+)
+async def test_private_binding_cannot_shrink_conservative_unknown_timezone_interval(
+    db_session, monkeypatch, change
+):
+    actor, _, _, _, document = await bound_fixture(db_session, monkeypatch)
+    rows, _ = await worker.prepare(db_session, document, actor.tenant_id, actor.id)
+    invalid = {**rows[0], **change}
+    with pytest.raises(ValidationError):
+        importer.parse_rows({"rows": [invalid]}, importer.now(), allow_binding=True)
+    from app.schemas.fleet_fuel import DashboardFuelDailyImport
+
+    forged = DashboardFuelDailyImport.model_construct(
+        **{
+            **importer.parse_rows({"rows": rows}, importer.now(), allow_binding=True)[
+                0
+            ].model_dump(),
+            **change,
+        }
+    )
+    with pytest.raises(ValidationError):
+        await importer.run_import(
+            db_session, [forged], actor.tenant_id, actor.id, True, allow_binding=True
+        )
+    assert (await db_session.execute(select(FleetFuelDaily))).scalars().all() == []

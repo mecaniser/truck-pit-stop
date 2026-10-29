@@ -134,6 +134,8 @@ class FuelDailyPage(BaseModel):
 class DashboardFuelDailyImport(FuelDailyImport):
     """Private exact reviewed identity; public/manual imports remain VIN-only."""
     vin: None = None
+    source_timezone: None = None
+    timezone_status: Literal["unverified"] = "unverified"
     dashboard_binding_id: UUID
     source_company_label: Literal["77 CARGO LLC"]
     source_vin_state: Literal["not_displayed", "explicitly_empty"]
