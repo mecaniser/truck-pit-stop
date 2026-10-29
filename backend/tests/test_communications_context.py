@@ -273,3 +273,26 @@ async def test_concurrent_creates_same_key_and_cross_thread_email():
                 await db.execute(delete(model).where(model.tenant_id==tenant_id))
             await db.execute(delete(Tenant).where(Tenant.id==tenant_id));await db.commit()
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_linked_display_names_preserve_transport_and_fail_closed(data):
+    from app.services.communications_service import conversation_display
+    db,user,thread,customer,person,orders,foreign=data
+    # Inquiries retain null transport customer even after CRM association.
+    thread=await inquiry(db,user.tenant_id)
+    data=(db,user,thread,customer,person,orders,foreign)
+    before=(thread.customer_id,thread.thread_kind,thread.customer_phone,thread.inquiry_binding_id)
+    assert await conversation_display(db,user,thread,None)==('New inquiry',None)
+    await link(data)
+    assert await conversation_display(db,user,thread,None)==('Driver','Fleet A')
+    assert (thread.customer_id,thread.thread_kind,thread.customer_phone,thread.inquiry_binding_id)==before
+    user.role=UserRole.MECHANIC
+    assert await conversation_display(db,user,thread,None)==('New inquiry',None)
+    user.role=UserRole.GARAGE_OWNER
+    person.first_name=''; person.last_name=''
+    assert await conversation_display(db,user,thread,None)==('Fleet A','Fleet A')
+    person.deleted_at=datetime.now(timezone.utc);await db.flush()
+    assert await conversation_display(db,user,thread,None)==('New inquiry',None)
+    person.deleted_at=None;person.tenant_id=foreign.tenant_id;await db.flush()
+    assert await conversation_display(db,user,thread,None)==('New inquiry',None)

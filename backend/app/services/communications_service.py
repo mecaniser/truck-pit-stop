@@ -14,6 +14,8 @@ from twilio.base.exceptions import TwilioRestException
 from app.db.models.communication import ConversationWorkflow, ConversationReadWatermark, SMSSendOperation
 from app.db.models.automated_sms import AutomatedSMSOperation
 from app.db.models.customer import Customer
+from app.db.models.contact import Contact
+from app.db.models.conversation_contact import ConversationContactLink
 from app.db.models.message_thread import MessageThread
 from app.db.models.sms_message import SMSMessage, SMSMessageDirection, SMSMessageSource, SMSDeliveryStatus
 from app.db.models.tenant import Tenant
@@ -209,15 +211,36 @@ async def message_json(db, message):
     return dict(has_attachments=candidate(message), id=message.id, conversation_id=message.thread_id, channel='sms', direction=message.direction.value, source={'inbound': 'customer', 'manual': 'staff', 'automated': 'automation'}[message.source.value], body=message.body, created_at=message.created_at, delivery_status=delivery, error_code=message.error_code, send_operation_id=operation.id if operation else None)
 
 
+async def conversation_display(db, user, thread, customer):
+    """CRM labels only; never substitute CRM IDs for delivery identities."""
+    name = 'New inquiry' if thread.thread_kind == 'inquiry' else f'{customer.first_name} {customer.last_name}'.strip() if customer else 'Unavailable customer'
+    company = customer.company_name if customer else None
+    if user.role not in {UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST}:
+        return name, company
+    link = await db.scalar(select(ConversationContactLink).where(ConversationContactLink.tenant_id == thread.tenant_id, ConversationContactLink.thread_id == thread.id))
+    if not link:
+        return name, company
+    if link.deleted_at is not None or (thread.customer_id and thread.customer_id != link.customer_id):
+        return name, company
+    linked_customer = await db.scalar(select(Customer).where(Customer.id == link.customer_id, Customer.tenant_id == thread.tenant_id, Customer.deleted_at.is_(None)))
+    person = await db.scalar(select(Contact).where(Contact.id == link.contact_id, Contact.customer_id == link.customer_id, Contact.tenant_id == thread.tenant_id, Contact.deleted_at.is_(None))) if linked_customer else None
+    if not linked_customer or not person:
+        return name, company
+    company = linked_customer.company_name
+    name = ' '.join(part.strip() for part in (person.first_name, person.last_name) if part and part.strip()) or company or name
+    return name, company
+
+
 async def conversation_json(db, tenant, user, thread, sender):
     policy, account, identity, _, phone, customer = await send_policy(db, tenant, thread, sender)
+    display_name, display_company = await conversation_display(db, user, thread, customer)
     wf = await db.scalar(select(ConversationWorkflow).where(ConversationWorkflow.tenant_id == tenant.id, ConversationWorkflow.thread_id == thread.id))
     try:
         context = (await automatic.resolve(db, tenant, thread, phone)).context()
     except HTTPException as exc:
         context = dict(sms_provider=None, sender_number='', selected_sender_id=None,
             sender_selection_allowed=False, sender_mode='unavailable', sender_route_reason=exc.detail['code'])
-    return dict(id=thread.id, tenant_id=tenant.id, customer_id=thread.customer_id, conversation_kind=thread.thread_kind, customer_name='New inquiry' if thread.thread_kind == 'inquiry' else f'{customer.first_name} {customer.last_name}' if customer else 'Unavailable customer', company=customer.company_name if customer else None, channel='sms', channel_account_id=account, contact_identity_id=identity, identity_label=phone, status=wf.status if wf else 'open', assignee_id=wf.assignee_id if wf else None, unread_count=await unread_count(db, thread, user.id), last_message_at=thread.last_message_at or thread.created_at, preview=thread.last_message_preview or '', version=wf.version if wf else 1, messages=[], send_policy=policy, context=context)
+    return dict(id=thread.id, tenant_id=tenant.id, customer_id=thread.customer_id, conversation_kind=thread.thread_kind, customer_name=display_name, company=display_company, channel='sms', channel_account_id=account, contact_identity_id=identity, identity_label=phone, status=wf.status if wf else 'open', assignee_id=wf.assignee_id if wf else None, unread_count=await unread_count(db, thread, user.id), last_message_at=thread.last_message_at or thread.created_at, preview=thread.last_message_preview or '', version=wf.version if wf else 1, messages=[], send_policy=policy, context=context)
 
 
 async def operation_json(db, op, replayed=False):
