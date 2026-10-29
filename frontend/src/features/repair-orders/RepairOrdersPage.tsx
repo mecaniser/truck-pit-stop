@@ -63,6 +63,7 @@ import { buildPartHistoryEvents } from './repairOrderHistory'
 import { REPAIR_ORDERS_QUEUE_LABEL, retainRepairOrderPresentation, seedRepairOrderPresentation } from './repairOrdersPresentation'
 import type { ActionQueueOrder } from '../dashboard/ShopCockpitActionLedger'
 import { AuthorizationSummary } from '@/features/quotes/AuthorizationSummary'
+import { refreshPaymentViews } from '@/features/payments/refreshPaymentViews'
 import { StaffSettlementDialog, isSettlementUnavailable, useInvoiceSettlement } from '@/features/payments'
 import {
   AUTHORIZATION_CONFLICT_MESSAGE,
@@ -2000,8 +2001,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       return response.data as ManualPaymentResponse
     },
     onSuccess: async (data) => {
-      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      refreshPaymentViews(queryClient)
       queryClient.invalidateQueries({ queryKey: ['customer-typeahead'] })
       if (selectedOrder?.id) {
         queryClient.invalidateQueries({ queryKey: ['repair-order-detail', selectedOrder.id] })
@@ -2032,8 +2032,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       return response.data as { status: string; message: string }
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      refreshPaymentViews(queryClient)
       queryClient.invalidateQueries({ queryKey: ['invoice-for-order', selectedOrder?.id] })
       toast.success(data.message || 'Pending Zelle status cleared')
     },
@@ -6621,6 +6620,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
           onUpdated={() => {
             queryClient.invalidateQueries({ queryKey: ['invoice-for-order', selectedOrder?.id] })
             queryClient.invalidateQueries({ queryKey: ['repair-order-detail', selectedOrder?.id] })
+            queryClient.invalidateQueries({ queryKey: ['repair-order-workspace', selectedOrder?.id] })
             queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
           }}
         />
