@@ -257,3 +257,7 @@ def attachment_error(exc):
             return JSONResponse(status_code=exc.status_code, content={'detail': {
                 'code': detail['code'], 'message': expected[1]}}, headers=media.HEADERS)
     raise exc
+
+# CRM context endpoints intentionally do not alter transport identity or send policy.
+from app.api.v1.endpoints.communications_context import router as context_router
+router.include_router(context_router)

@@ -1,3 +1,5 @@
+import CustomerRepairContext from "./CustomerRepairContext";
+import { rememberConversation, restoredConversation } from "./inboxSelection";
 import MessageAttachments from "./MessageAttachments";
 import SMSConsentPanel from "./SMSConsentPanel";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
@@ -91,6 +93,7 @@ const day = (value: string) =>
 
 export interface InboxConnection {
   embedded?: boolean;
+  canManageCustomerContext?: boolean;
   onSMSSetup?: () => void;
   rows: Conversation[];
   searchIds?: string[] | null;
@@ -131,7 +134,7 @@ export default function CommunicationsPreview({
   const [view, setView] = useState<InboxView>("open");
   const [channel, setChannel] = useState<Channel | "all">("all");
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState(connection?.rows[0]?.id ?? "01");
+  const [selectedId, setSelectedId] = useState(() => connection ? restoredConversation(connection.rows, tenantId, userId)?.id ?? "01" : "01");
   const [composeChannel, setComposeChannel] = useState<Channel>("sms");
   const [drafts, setDrafts] = useState<Record<string, string>>(() => {
     if (!connection) return {};
@@ -275,6 +278,7 @@ export default function CommunicationsPreview({
     setDrafts((previous) => ({ ...previous, [key]: value }));
   }
   function selectConversation(row: Conversation) {
+    if (connection) rememberConversation(row.id, tenantId, userId);
     setSelectedId(row.id);
     setComposeChannel(row.channel);
     setMobileThread(true);
@@ -1016,7 +1020,15 @@ export default function CommunicationsPreview({
                 customerId={selected.customerId}
               />
             )}
-            <section>
+            {connection?.canManageCustomerContext ? <CustomerRepairContext
+              key={`${tenantId}:${userId}:${selected.id}`}
+              conversation={selected}
+              sessionKey={`${tenantId}:${userId}`}
+              beforeNavigate={() => {
+                rememberConversation(selected.id, tenantId, userId);
+                localStorage.setItem(`inbox-drafts:${tenantId}:${userId}`, JSON.stringify(drafts));
+              }}
+            /> : !connection && <section>
               <h4>Current repair</h4>
               {selected.context.repairOrderLabel ? (
                 <>
@@ -1036,7 +1048,7 @@ export default function CommunicationsPreview({
               ) : (
                 <p className="muted">No repair order linked</p>
               )}
-            </section>
+            </section>}
             <section>
               <h4>Conversation</h4>
               <dl>
