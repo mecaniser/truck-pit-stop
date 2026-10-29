@@ -1,3 +1,4 @@
+import InboxSelect from "./InboxSelect";
 import CustomerRepairContext from "./CustomerRepairContext";
 import { rememberConversation, restoredConversation } from "./inboxSelection";
 import MessageAttachments from "./MessageAttachments";
@@ -668,15 +669,10 @@ export default function CommunicationsPreview({
               </span>
               <label className="assigned-label">
                 <UserRound size={14} />
-                <select
-                  aria-label="Assign conversation"
-                  value={selected.assigneeId || "unassigned"}
-                  disabled={connection?.busy}
-                  onChange={(event) => {
-                    const assigneeId =
-                      event.target.value === "unassigned"
-                        ? null
-                        : event.target.value;
+                <InboxSelect label="Assign conversation" value={selected.assigneeId || "unassigned"} disabled={connection?.busy}
+                  options={Object.entries(people).map(([value, label]) => ({value, label}))}
+                  onChange={(value) => {
+                    const assigneeId = value === "unassigned" ? null : value;
                     if (connection)
                       connection.onPatch(selected, { assignee_id: assigneeId });
                     else
@@ -685,15 +681,7 @@ export default function CommunicationsPreview({
                           row.id === selected.id ? { ...row, assigneeId } : row,
                         ),
                       );
-                  }}
-                >
-                  {Object.entries(people).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown size={12} />
+                  }} />
               </label>
               {selected.conversationKind !== "inquiry" && <button
                 className={`automation-toggle ${showAutomation ? "active" : ""}`}
@@ -862,29 +850,11 @@ export default function CommunicationsPreview({
                   Reply via{" "}
                   <span className="channel-select">
                     {channelIcon(composeChannel)}
-                    <select
-                      aria-label="Reply channel"
-                      value={composeChannel}
-                      onChange={(event) =>
-                        setComposeChannel(event.target.value as Channel)
-                      }
-                    >
-                      {(["sms", "whatsapp", "telegram"] as const).map(
-                        (value) => (
-                          <option value={value} key={value}>
-                            {channelLabels[value]}
-                          </option>
-                        ),
-                      )}
-                    </select>
-                    <ChevronDown size={12} />
+                    <InboxSelect label="Reply channel" value={composeChannel} onChange={value => setComposeChannel(value as Channel)}
+                      options={(["sms", "whatsapp", "telegram"] as const).map(value => ({value, label: channelLabels[value]}))} />
                   </span>
                 </label>
-                <span>
-                  {composeChannel === selected.channel
-                    ? selected.identityLabel
-                    : "Not connected"}
-                </span>
+                {composeChannel !== selected.channel && <span>Not connected</span>}
               </div>
               {composeChannel === "sms" && (selected.context.senderNumber || selected.context.senderMode === "unavailable") && (
                 <p className="sms-sender" aria-label="SMS sender">
@@ -987,39 +957,22 @@ export default function CommunicationsPreview({
                 <X size={17} />
               </button>
             </header>
-            <div className="contact-profile">
-              <span className="avatar context-avatar">
-                {initials(selected.customerName)}
-              </span>
-              <strong>{selected.customerName}</strong>
-              {selected.company && <span>{selected.company}</span>}
-            </div>
-            <section>
-              <h4>Contact</h4>
-              <div className="identity-row">
-                <span className={`channel-chip ${selected.channel}`}>
-                  {channelIcon(selected.channel)}
-                  {channelLabels[selected.channel]}
-                </span>
-                <span>
-                  {selected.channel === "sms"
-                    ? connection
-                      ? "SMS contact"
-                      : "Sample identity"
-                    : "Not linked"}
-                </span>
-              </div>
-              <p className="identity-value">{selected.identityLabel}</p>
-              {selected.sendPolicy.reason === "opted_out" && (
-                <p className="context-warning">SMS opted out</p>
-              )}
-            </section>
+            <div className="customer-context-scroll">
+            {!connection?.canManageCustomerContext && <>
             {connection && selected.customerId && selected.conversationKind !== "inquiry" && (
               <SMSConsentPanel
                 key={`${connection.tenantId}:${connection.userId}:${selected.customerId}`}
                 customerId={selected.customerId}
               />
             )}
+            </>}
+            {!connection?.canManageCustomerContext && <div className="contact-profile">
+              <span className="avatar context-avatar">{initials(selected.customerName)}</span>
+              <strong>{selected.customerName}</strong>
+              {selected.company && <span>{selected.company}</span>}
+              <p className="identity-value">{selected.identityLabel}</p>
+              {selected.sendPolicy.reason === "opted_out" && <p className="context-warning">SMS opted out</p>}
+            </div>}
             {connection?.canManageCustomerContext ? <CustomerRepairContext
               key={`${tenantId}:${userId}:${selected.id}`}
               conversation={selected}
@@ -1028,7 +981,14 @@ export default function CommunicationsPreview({
                 rememberConversation(selected.id, tenantId, userId);
                 localStorage.setItem(`inbox-drafts:${tenantId}:${userId}`, JSON.stringify(drafts));
               }}
-            /> : !connection && <section>
+            >
+            {connection && selected.customerId && selected.conversationKind !== "inquiry" && (
+              <SMSConsentPanel
+                key={`${connection.tenantId}:${connection.userId}:${selected.customerId}`}
+                customerId={selected.customerId}
+              />
+            )}
+            </CustomerRepairContext> : !connection && <section>
               <h4>Current repair</h4>
               {selected.context.repairOrderLabel ? (
                 <>
@@ -1049,8 +1009,15 @@ export default function CommunicationsPreview({
                 <p className="muted">No repair order linked</p>
               )}
             </section>}
-            <section>
-              <h4>Conversation</h4>
+            <div className="context-note">
+              <CircleHelp size={15} />
+              <p>
+                Repair approvals stay on the repair order. A chat reply does not
+                approve work.
+              </p>
+            </div>
+            </div>
+            <footer className="customer-context-footer" aria-label="Conversation details">
               <dl>
                 <div>
                   <dt>Assigned to</dt>
@@ -1065,14 +1032,7 @@ export default function CommunicationsPreview({
                   <dd>{channelLabels[selected.channel]}</dd>
                 </div>
               </dl>
-            </section>
-            <div className="context-note">
-              <CircleHelp size={15} />
-              <p>
-                Repair approvals stay on the repair order. A chat reply does not
-                approve work.
-              </p>
-            </div>
+            </footer>
           </aside>
         </div>
         <div className="feedback" role="status" aria-live="polite">

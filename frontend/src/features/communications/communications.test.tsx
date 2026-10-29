@@ -5,11 +5,14 @@ import {
   screen,
   within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import CommunicationsPreview from "./CommunicationsPreview";
 import { createDemoConversations, DEMO_TENANT, DEMO_USER } from "./fixtures";
 import { canCompose, draftKey, filterConversations } from "./model";
 
+// jsdom has no layout observer; real layout/anchoring is covered in browser QA.
+beforeEach(() => vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} }));
+afterEach(() => vi.unstubAllGlobals());
 afterEach(cleanup);
 describe("shared inbox foundation", () => {
   it("filters inquiries without guessing customers and searches remote and receiving phone numbers", () => {
@@ -87,15 +90,13 @@ describe("shared inbox foundation", () => {
     render(<CommunicationsPreview />);
     const draft = screen.getByRole("textbox", { name: "Message draft" });
     fireEvent.change(draft, { target: { value: "SMS draft" } });
-    fireEvent.change(screen.getByLabelText("Reply channel"), {
-      target: { value: "whatsapp" },
-    });
+    fireEvent.click(screen.getByRole("button", {name: "Reply channel"}));
+    fireEvent.click(screen.getByRole("option", {name: "WhatsApp"}));
     expect(draft).toHaveValue("");
     fireEvent.change(draft, { target: { value: "WhatsApp draft" } });
     expect(screen.getByRole("button", { name: "Send preview" })).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Reply channel"), {
-      target: { value: "sms" },
-    });
+    fireEvent.click(screen.getByRole("button", {name: "Reply channel"}));
+    fireEvent.click(screen.getByRole("option", {name: "SMS"}));
     expect(draft).toHaveValue("SMS draft");
     fireEvent.click(
       screen.getByRole("button", { name: /Maria Torres.*Blue Ridge/ }),
@@ -105,9 +106,8 @@ describe("shared inbox foundation", () => {
       screen.getByRole("button", { name: /Daniel Brooks.*Northline/ }),
     );
     expect(draft).toHaveValue("SMS draft");
-    fireEvent.change(screen.getByLabelText("Reply channel"), {
-      target: { value: "whatsapp" },
-    });
+    fireEvent.click(screen.getByRole("button", {name: "Reply channel"}));
+    fireEvent.click(screen.getByRole("option", {name: "WhatsApp"}));
     expect(draft).toHaveValue("WhatsApp draft");
   });
   it("adds one preview message, clears only its draft, and does not pretend delivery", () => {
@@ -134,10 +134,9 @@ describe("shared inbox foundation", () => {
   });
   it("supports resolution, assignment and hiding automated notices", () => {
     render(<CommunicationsPreview />);
-    fireEvent.change(screen.getByLabelText("Assign conversation"), {
-      target: { value: "nina" },
-    });
-    expect(screen.getByLabelText("Assign conversation")).toHaveValue("nina");
+    fireEvent.click(screen.getByRole("button", {name: "Assign conversation"}));
+    fireEvent.click(screen.getByRole("option", {name: "Nina"}));
+    expect(screen.getByLabelText("Assign conversation")).toHaveTextContent("Nina");
     fireEvent.click(screen.getByRole("button", { name: "Service updates" }));
     expect(
       screen.queryByText(
