@@ -22,3 +22,11 @@ Private synthetic screenshots /tmp/comms026-desktop.png and /tmp/comms026-mobile
 
 Independent of compact-control PR673; no application overlap in behavior.
 Protected CI, merge and deployment pending. No production changes claimed.
+
+## Latest-main integration
+
+Integrated main81fac6dc (PR673). Only PROJECT_BOARD.md conflicted; retained both
+DB-COMMS-025 and DB-COMMS-026 entries. Application files merged cleanly and the
+PR delta against latest main remains only legacy-inbox retirement, preserving
+compact controls and sender placement. All 47 focused shell/inbox tests and
+TypeScript pass on the integration candidate; staged diff check passes.
