@@ -270,3 +270,4 @@ from app.db.models.dashboard_vehicle_binding import DashboardVehicleBinding  # n
 from app.db.models.callrail import CallRailNumberBinding, CallRailConversation, CallRailMessageAlias, CallRailQuarantine  # noqa: F401
 
 from app.db.models.twilio_reply_route import TwilioReplyRoute
+from app.db.models.conversation_contact import ConversationContactLink, ContactRepairLink, ConversationContextMutation

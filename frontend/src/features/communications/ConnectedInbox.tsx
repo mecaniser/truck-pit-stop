@@ -1,3 +1,4 @@
+import { restoredConversation } from "./inboxSelection";
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "../../lib/api";
 import { useAuthStore } from "../../stores/authStore";
@@ -137,7 +138,8 @@ function InboxContent({ embedded, onUnreadCountChange }: InboxProps) {
           );
         }
       }
-      if (list[0]) await select(list[0].id);
+      const restored = restoredConversation(list, meta.tenant_id, meta.user_id);
+      if (restored) await select(restored.id);
     } catch (e) {
       if (epoch !== useAuthStore.getState().authSessionEpoch) return;
       setLoginRequired(
@@ -376,6 +378,7 @@ function InboxContent({ embedded, onUnreadCountChange }: InboxProps) {
       key={`${bootstrap.tenant_id}:${bootstrap.user_id}`}
       connection={{
         embedded,
+        canManageCustomerContext: !!user && ["garage_owner", "garage_admin", "receptionist"].includes(user.role),
         rows,
         onSMSSetup: canSetup ? () => setShowSetup(true) : undefined,
         searchIds,
