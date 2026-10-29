@@ -856,13 +856,6 @@ export default function CommunicationsPreview({
                 </label>
                 {composeChannel !== selected.channel && <span>Not connected</span>}
               </div>
-              {composeChannel === "sms" && (selected.context.senderNumber || selected.context.senderMode === "unavailable") && (
-                <p className="sms-sender" aria-label="SMS sender">
-                  {selected.context.senderMode === "unavailable"
-                    ? "Reply number unavailable"
-                    : `${selected.context.senderMode === "initiation" ? "Sending" : "Replying"} from ${selected.context.senderNumber}`}
-                </p>
-              )}
               {composeConversation.sendPolicy.reason && (
                 <div className="compose-restriction" role="status">
                   <Info size={15} />
@@ -906,6 +899,14 @@ export default function CommunicationsPreview({
                       {draft.length}/{maxLength}
                     </span>
                   </div>
+                  <div className="composer-send-actions">
+              {composeChannel === "sms" && (selected.context.senderNumber || selected.context.senderMode === "unavailable") && (
+                <p className="sms-sender" aria-label="SMS sender">
+                  {selected.context.senderMode === "unavailable"
+                    ? "Reply number unavailable"
+                    : `${selected.context.senderMode === "initiation" ? "Sending" : "Replying"} from ${selected.context.senderNumber}`}
+                </p>
+              )}
                   <button
                     className="primary-button send-button"
                     disabled={
@@ -918,6 +919,7 @@ export default function CommunicationsPreview({
                     <Send size={15} />
                     {connection ? "Send SMS" : "Send preview"}
                   </button>
+                  </div>
                 </div>
                 {showReplies && (
                   <div className="saved-replies">
