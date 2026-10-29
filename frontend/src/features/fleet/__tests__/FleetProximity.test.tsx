@@ -59,6 +59,24 @@ describe('proximity eligibility', async () => {
 })
 
 describe('map workspace', async () => {
+  it('reserves pending results without showing the previous truck route or scrolling focus', async () => {
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+    render(<FleetMap trucks={[origin, near, truck('Two', .2), truck('Three', .3), truck('Four', .4)]} />)
+    fireEvent.click(screen.getByRole('button', { name: /Down Out of service/ }))
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true })
+    expect(screen.getByRole('status', { name: 'Calculating road distances' })).toBeVisible()
+    expect(screen.getByRole('status', { name: 'Loading nearby trucks' }).children).toHaveLength(3)
+    expect(screen.queryByRole('region', { name: 'Closest road route' })).not.toBeInTheDocument()
+    await settle()
+    expect(screen.getByRole('region', { name: 'Closest road route' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Select map truck' }))
+    expect(screen.getByRole('status', { name: 'Loading nearby trucks' })).toBeVisible()
+    expect(screen.queryByRole('region', { name: 'Closest road route' })).not.toBeInTheDocument()
+    await settle()
+    expect(screen.queryByRole('status', { name: 'Loading nearby trucks' })).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Closest road route' })).toBeVisible()
+    focus.mockRestore()
+  })
   it('selects in place, shows status, and opens details only on explicit action', async () => {
     const open = vi.fn()
     render(<FleetMap trucks={[origin, near, old, undated, missing]} onSelect={open} />)
