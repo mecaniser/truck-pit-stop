@@ -67,6 +67,9 @@ beforeEach(() => {
   vi.mocked(inboxApi.detail).mockResolvedValue(row);
   vi.mocked(inboxApi.read).mockResolvedValue(0);
 });
+// jsdom has no layout observer; real layout/anchoring is covered in browser QA.
+beforeEach(() => vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} }));
+afterEach(() => vi.unstubAllGlobals());
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 async function compose() {
   await screen.findByRole("textbox", { name: "Message draft" });
@@ -153,7 +156,8 @@ describe("connected inbox sending", () => {
     fireEvent.click(screen.getByRole("button", { name: "Resolve" }));
     await waitFor(() => expect(inboxApi.patch).toHaveBeenCalledWith(expect.objectContaining({ id: inquiry.id, customerId: null }), { status: "resolved" }));
     await waitFor(() => expect(screen.getByLabelText("Assign conversation")).toBeEnabled());
-    fireEvent.change(screen.getByLabelText("Assign conversation"), { target: { value: "staff-2" } });
+    fireEvent.click(screen.getByRole("button", {name: "Assign conversation"}));
+    fireEvent.click(screen.getByRole("option", {name: "Staff member"}));
     await waitFor(() => expect(inboxApi.patch).toHaveBeenCalledWith(expect.objectContaining({ id: inquiry.id, customerId: null }), { assignee_id: "staff-2" }));
   });
   it("shows the derived reply number without exposing even a legacy 17-number inventory", async () => {
@@ -273,11 +277,13 @@ describe("connected inbox sending", () => {
     fireEvent.click(send);
     fireEvent.keyDown(draft, { key: "Enter", ctrlKey: true });
     expect(inboxApi.send).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByLabelText("Reply channel"), { target: { value: "whatsapp" } });
+    fireEvent.click(screen.getByRole("button", {name: "Reply channel"}));
+    fireEvent.click(screen.getByRole("option", {name: "WhatsApp"}));
     expect(screen.queryByLabelText("SMS sender")).not.toBeInTheDocument();
     expect(screen.getByText("0/1600")).toBeInTheDocument();
     fireEvent.change(draft, { target: { value: "WhatsApp draft" } });
-    fireEvent.change(screen.getByLabelText("Reply channel"), { target: { value: "sms" } });
+    fireEvent.click(screen.getByRole("button", {name: "Reply channel"}));
+    fireEvent.click(screen.getByRole("option", {name: "SMS"}));
     expect(draft).toHaveValue("x".repeat(141));
     expect(inboxApi.send).not.toHaveBeenCalled();
   });

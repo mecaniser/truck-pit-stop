@@ -800,6 +800,10 @@
   padding: 0 20px;
 }
 :where(.communications-surface) .customer-context > header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #fafbfd;
   display: flex;
   align-items: center;
   justify-content: space-between;

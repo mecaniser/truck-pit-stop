@@ -47,3 +47,13 @@
 .crm-options button[aria-pressed="true"] { border-color: #3b82f6; background: #eff6ff; }
 .crm-options small { color: #64748b; }
 .crm-chosen { font-size: 13px; margin: 14px 0 6px; }
+/* One contact card above the two history scopes. */
+:where(.communications-surface) .customer-context > .crm-context { border-top: 0; padding-top: 4px; }
+.crm-contact-card { padding: 4px 0 0; }
+.crm-contact-card .crm-heading { align-items: flex-start; }
+.crm-contact-card .crm-person { font-size: 15px; line-height: 22px; }
+.crm-contact-card .crm-role { display: inline-block; margin: 6px 0 0; border-radius: 5px; background: #eef2f6; color: #64748b; font-size: 11px; padding: 2px 6px; }
+.crm-contact-number { font-size: 12px; color: #475569; margin: 10px 0 0; font-variant-numeric: tabular-nums; }
+:where(.communications-surface) .crm-contact-card section { border: 0; padding: 14px 0 0; }
+:where(.communications-surface) .crm-contact-card section h4 { margin-bottom: 6px; }
+.crm-person-field { display: flex; flex-direction: column; gap: 5px; margin: 12px 0; font-size: 12px; font-weight: 500; }

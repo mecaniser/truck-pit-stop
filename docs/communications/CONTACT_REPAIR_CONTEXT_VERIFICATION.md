@@ -128,3 +128,17 @@ Deployment and read-only live journeys pass. Production customer/link save and
 contact-linked repair population remain pending the user-identified real match.
 Local synthetic create/link acceptance already passed; do not substitute it for
 a production save claim. Item remains acceptance pending, not Done.
+
+### Authorized live linkage completion — October 29, 2026
+
+User saved the customer/person association, then explicitly authorized all repairs
+for two named DBN trucks. Through the authenticated UI,16 existing fleet repairs
+were confirmed individually and verified in Contact / History, including the
+historical cancelled repair. Both serviced trucks appear. Fleet history remains
+separate. Original reply route and empty draft unchanged; no SMS sent.
+
+Read-only comparison after linking: all nine baseline tables remain byte-digest
+unchanged. Additive tables contain1 customer/contact link,16 repair links and17
+mutation receipts. All three SMS flags remain unset/defaultfalse on Web/Worker.
+Private screenshot `/tmp/comms023-sergio-linked-history.png` stays outside Git.
+This supersedes the earlier acceptance-pending note; DB-COMMS-023 is Done.
