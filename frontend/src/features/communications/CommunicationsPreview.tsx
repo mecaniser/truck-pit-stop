@@ -957,6 +957,7 @@ export default function CommunicationsPreview({
                 <X size={17} />
               </button>
             </header>
+            <div className="customer-context-scroll">
             {!connection?.canManageCustomerContext && <>
             {connection && selected.customerId && selected.conversationKind !== "inquiry" && (
               <SMSConsentPanel
@@ -1008,8 +1009,15 @@ export default function CommunicationsPreview({
                 <p className="muted">No repair order linked</p>
               )}
             </section>}
-            <section>
-              <h4>Conversation</h4>
+            <div className="context-note">
+              <CircleHelp size={15} />
+              <p>
+                Repair approvals stay on the repair order. A chat reply does not
+                approve work.
+              </p>
+            </div>
+            </div>
+            <footer className="customer-context-footer" aria-label="Conversation details">
               <dl>
                 <div>
                   <dt>Assigned to</dt>
@@ -1024,14 +1032,7 @@ export default function CommunicationsPreview({
                   <dd>{channelLabels[selected.channel]}</dd>
                 </div>
               </dl>
-            </section>
-            <div className="context-note">
-              <CircleHelp size={15} />
-              <p>
-                Repair approvals stay on the repair order. A chat reply does not
-                approve work.
-              </p>
-            </div>
+            </footer>
           </aside>
         </div>
         <div className="feedback" role="status" aria-live="polite">

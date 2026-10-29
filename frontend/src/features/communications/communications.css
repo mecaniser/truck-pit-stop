@@ -1729,3 +1729,21 @@
   object-fit: contain;
 }
 :where(.communications-surface) .attachment-close { position: absolute; top: 8px; right: 8px; padding: 6px; }
+
+/* Keep metadata visible while contact and repair details scroll independently. */
+:where(.communications-surface) .customer-context,
+:where(.communications-surface) .context-open .customer-context {
+  grid-template-rows: 58px minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+@media (min-width: 1201px) { :where(.communications-surface) .customer-context { display: grid; } }
+:where(.communications-surface) .context-open .customer-context { display: grid; }
+:where(.communications-surface) .customer-context-scroll { min-height: 0; overflow-y: auto; margin: 0 -20px; padding: 0 20px; }
+:where(.communications-surface) .customer-context-footer { border-top: 1px solid var(--line); padding: 12px 0; background: #fafbfd; }
+:where(.communications-surface) .customer-context-footer dl { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, .8fr); gap: 8px; margin: 0; }
+:where(.communications-surface) .customer-context-footer dl > div { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+:where(.communications-surface) .customer-context-footer dd { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sms-permissions-toggle.sms-permissions-toggle { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; background: transparent; border: 0; color: #64748b; font-size: 12px; cursor: pointer; }
+.sms-permissions-toggle svg { flex-shrink: 0; }
+.sms-permissions-toggle .is-expanded { transform: rotate(180deg); }
+.sms-permissions-toggle:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; border-radius: 4px; }

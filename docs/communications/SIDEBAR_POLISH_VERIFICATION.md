@@ -44,3 +44,25 @@ PR668 opened; integrated main3fdafd12 (fleet map fix) cleanly after owner gates.
 Messages source remains identical to the tested UI commit ee7a078f. Runtime
 receipt above records the tested source; the displayed development stamp predates
 this integration and is not a claim of final-head alignment. Protected CI pending.
+
+## Permissions disclosure and pinned footer — October 29
+
+PR668 follow-up: SMS permissions start collapsed. Opt-out and withdrawal warnings
+remain outside the disclosure; consent evidence and write handlers are unchanged.
+Assigned to, Status and Channel now occupy a fixed sidebar footer, with contact
+and repair content scrolling independently.
+
+48 focused tests pass across SMSSetup, CustomerRepairContext, communications and
+ConnectedInbox; changed-source ESLint, TypeScript and diff checks pass. Regression
+coverage verifies collapsed withdrawal visibility and no consent writes.
+Desktop and 390x844 browser checks verified disclosure, visible opt-out state,
+footer visibility while scrolling, and retained inquiry draft and receiving-number
+reply route. No messages or consent changes were submitted. Private screenshots:
+`/tmp/comms024-permissions-footer-desktop.png` and
+`/tmp/comms024-permissions-footer-mobile.png`.
+
+Runtime re-aligned on branch codex/messages-sidebar-polish at 3f3eee6d plus these
+scoped changes: frontend5193 PID46306, backend8013 PID39978, both cwd verified in
+this worktree. Rendered branch stamp and changed UI confirmed. Direct and proxied
+readiness report DB/Redis OK; isolated database/provider-deny/false-flags setup
+above retained. This is local acceptance; merge and production release pending.
