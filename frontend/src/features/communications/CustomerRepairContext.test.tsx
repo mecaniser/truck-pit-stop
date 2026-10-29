@@ -22,6 +22,9 @@ beforeEach(() => {
  vi.mocked(client.save).mockResolvedValue(linked);
  vi.mocked(client.linkRepair).mockResolvedValue({linked: true});
 });
+// jsdom has no layout observer; real layout/anchoring is covered in browser QA.
+beforeEach(() => vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} }));
+afterEach(() => vi.unstubAllGlobals());
 afterEach(cleanup);
 describe("customer repair context", () => {
  it("defaults to contact-linked repairs and requests fleet only explicitly", async () => {
@@ -34,8 +37,27 @@ describe("customer repair context", () => {
   fireEvent.click(screen.getByRole("button", {name: "Fleet history"}));
   await waitFor(() => expect(client.repairs).toHaveBeenLastCalledWith(row.id, "fleet", "all", expect.any(AbortSignal)));
   expect(screen.getByText("Fleet trucks")).toBeInTheDocument();
-  fireEvent.change(screen.getByRole("combobox", {name: "Repair status"}), {target: {value: "history"}});
+  fireEvent.click(screen.getByRole("button", {name: "Repair status"}));
+  fireEvent.click(screen.getByRole("option", {name: "History"}));
   await waitFor(() => expect(client.repairs).toHaveBeenLastCalledWith(row.id, "fleet", "history", expect.any(AbortSignal)));
+ });
+ it("shows one contact card and clears confirmation when changing the chosen person", async () => {
+  render(<CustomerRepairContext sessionKey="tenant-a:user-a" conversation={row} beforeNavigate={vi.fn()}><p>Consent evidence</p></CustomerRepairContext>);
+  await screen.findByText("Taylor Driver");
+  expect(screen.getAllByText("Fleet A")).toHaveLength(1);
+  expect(screen.getAllByText(row.identityLabel)).toHaveLength(1);
+  expect(screen.getByText("Consent evidence")).toBeInTheDocument();
+  expect(screen.queryByText("SMS contact")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", {name: "Change link"}));
+  fireEvent.click(screen.getByRole("button", {name: "Person"}));
+  fireEvent.click(await screen.findByRole("option", {name: "Taylor Driver · Driver"}));
+  fireEvent.click(screen.getByRole("checkbox"));
+  await waitFor(() => expect(screen.getByRole("button", {name: "Confirm link"})).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", {name: "Person"}));
+  fireEvent.click(screen.getByRole("option", {name: "Add a person"}));
+  expect(screen.getByRole("checkbox")).not.toBeChecked();
+  expect(screen.getByRole("button", {name: "Confirm link"})).toBeDisabled();
+  expect(client.save).not.toHaveBeenCalled();
  });
  it("links the chosen person only after confirmation and preserves transport identity", async () => {
   vi.mocked(client.context).mockResolvedValue(unlinked);
@@ -43,8 +65,8 @@ describe("customer repair context", () => {
   render(<CustomerRepairContext sessionKey="tenant-a:user-a" conversation={row} beforeNavigate={vi.fn()}/>);
   fireEvent.click(await screen.findByRole("button", {name: "Link customer"}));
   fireEvent.click(await screen.findByRole("button", {name: "Fleet A Owner A"}));
-  await screen.findByRole("option", {name: "Taylor Driver · Driver"});
-  fireEvent.change(screen.getByRole("combobox", {name: "Person"}), {target: {value: contact.id}});
+  fireEvent.click(await screen.findByRole("button", {name: "Person"}));
+  fireEvent.click(await screen.findByRole("option", {name: "Taylor Driver · Driver"}));
   expect(screen.getByRole("button", {name: "Confirm link"})).toBeDisabled();
   fireEvent.click(screen.getByRole("checkbox"));
   fireEvent.click(screen.getByRole("button", {name: "Confirm link"}));
