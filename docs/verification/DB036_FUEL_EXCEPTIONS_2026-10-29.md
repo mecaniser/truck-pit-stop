@@ -23,7 +23,7 @@ The latest ten-date ledger contains 140 explicit source no-results observations,
 
 Both `vin_unavailable` and local `source_missing` observations on each date refer to truck 26: August 15–21 and October 25–27. They are two evidence perspectives per day, not two different trucks. Retained source has reported fuel on August 15, 17, 18 and October 26–27; August 16 and October 25 have no readings.
 
-The reviewed binding for the exact source provider is active and unrevoked, effective October 16 at 21:42:51.108657 UTC; its fleet membership matches and is open from October 7. PR #670 merged as `cecdb7e2712795cd7444de2cb25e42ad09b27cf0`. It adds explicit reviewed-binding provenance, fresh before/after identity proof, a null genuine VIN, and validation of the entire conservative report interval and unique current membership. October 26–27 are the only approved repair candidates; August remains rejected without backdating. No saved null-VIN source is retrospectively promoted into stronger identity proof.
+The reviewed binding for the exact source provider is active and unrevoked, effective October 16 at 21:42:51.108657 UTC; its fleet membership matches and is open from October 7. PR #670 merged as `cecdb7e2712795cd7444de2cb25e42ad09b27cf0`. It adds explicit reviewed-binding provenance, fresh before/after identity proof, a null genuine VIN, and validation of the entire conservative report interval and unique current membership. October 26–27 were the only approved repair candidates and both are now verified saved rows; August remains rejected without backdating. No saved null-VIN source is retrospectively promoted into stronger identity proof.
 
 ## Truck 01: October 26 source revision
 
@@ -43,7 +43,11 @@ Fresh source now reports a reading. The exact source VIN identifies one active v
 
 ## Current remediation
 
-The exact two Truck 26 previews are independently approved. The controlled apply must retain both source/preview hash pairs, verify actual persisted measurements, replay unchanged, preserve the original 675 and complete verified 716-row cohorts, then restore canonical worker defaults. Runtime acceptance is pending until those assertions complete.
+The exact two Truck 26 previews passed independent approval and were applied once on deployment `803cef55-ffec-44ef-a0e1-350aa9b9a9db`, image `801ba8bf73bbe33c554c97dc00391aab0f7db0b3b6cff7cfa8ed7516116d6cf0`. Both days verified at 06:19 UTC, with one new key each; 17 + 18 exact rows passed saved-ID, source/preview lineage, actual persisted measurement digest, current API visibility, readback and unchanged replay assertions. Final table: **718 rows / 718 unique keys**. No verified row was overwritten.
+
+The original 675-row projection digest remains `389710ddd74929cf57b8f99b48c3b862`; all 716 previously verified rows remain `6d659d317f43214101711381784a77ab`. Added schema columns are excluded only when comparing the original column projection; legitimate added rows are not mistaken for corruption. Source timezone remains unverified, and null genuine VIN with explicit reviewed-binding provenance is retained.
+
+Normal command and empty manual range / prepare-only false have been restored without changing any other environment configuration. Final canonical deployment `0c80aa7b-afc3-491f-bdf2-dc956516edf8` is SUCCESS with the same image. Full manifest and mount equal the original canonical settings; manual FROM/TO are empty, prepare-only false and commit true. Independent runtime review accepted the two exact repairs and their unchanged replay. Production cron remains 13:30 UTC / restart NEVER / one replica / `/data`; no further capture was triggered.
 
 Health PR #669 merged as `46e6af84a38c12fd13495746e69f4af1d79ee700`, deployed as `eab51ad9-b5df-4524-817d-76015ea6402b`. It handles one confirmed pre-credential legacy redirect loop within the original deadline, without retrying credential submission. Its new-image canary completed 18 rows; exact retained source/receipt acceptance is being independently reconciled during the next natural slot. The database readiness check and SELECT-only audits pass. The screenshot failure was the health login stage, not evidence of a PostgreSQL outage.
 
