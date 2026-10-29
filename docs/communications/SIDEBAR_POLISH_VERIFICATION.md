@@ -66,3 +66,28 @@ scoped changes: frontend5193 PID46306, backend8013 PID39978, both cwd verified i
 this worktree. Rendered branch stamp and changed UI confirmed. Direct and proxied
 readiness report DB/Redis OK; isolated database/provider-deny/false-flags setup
 above retained. This is local acceptance; merge and production release pending.
+
+
+## Released — October 29, 2026
+
+PR668 merged as `c52ddc6ec011fcae7bb70da5d301521287223d9b` after all six
+strict protected checks plus dependency preparation passed on
+`fd5c31186c37385bfa56f734d85826d6e1e2754d`, run40822081177.
+Checked and merged trees both `33763b00620ed5c438c9d3f50efa5e867c011a44`.
+Automatic Web deployment `40882250-009b-499f-80fd-f27f32059ff7` succeeded;
+website build-version serves the exact merge SHA and production DB/Redis
+readiness passes. No duplicate deployment requested.
+
+Signed-in live acceptance: SMS permissions initially collapsed, expands and
+collapses without consent changes. Assigned to/Status/Channel footer retains
+identical vertical bounds while the contact repair history scrolls. Existing
+receiving-number route, contact/truck links, conversation selection and empty
+draft preserved. No send, assignment, status, consent or service-update mutation.
+All three SMS flags remain unset/default false on Web and Worker after release.
+Private evidence: `/tmp/comms024-live-sidebar.png` and
+`/tmp/comms024-live-footer-scrolled.png`; customer content excluded from repository.
+Opt-out/withdrawal warning coverage remains the focused automated and synthetic
+browser evidence above; no real opt-out was manufactured for this UI release.
+
+DB-COMMS-024 Done. Frontend & UX accountable; existing-contract Fast UI lane.
+Earlier pending notes above are historical and superseded by this release record.
