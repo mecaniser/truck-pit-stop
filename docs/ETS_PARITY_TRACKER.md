@@ -2,7 +2,7 @@
 
 # ETS parity implementation tracker
 
-Last updated: 2026-10-21. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
+Last updated: 2026-10-29. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
 
 **Progress: 6/30 completed; 6/6 selected outcomes completed. A1 / DB-136 is Done: merged, deployed and production verified. The selected wave is complete. The other24 discoveries remain retained; B4 is partially delivered and ETS importer remains held.**
 
@@ -71,7 +71,7 @@ Dependencies: P1 precedes C1 parts-price defaults. M1 must retain existing PM/te
 - [ ] **M2 — Shop inspection findings and a versioned inspection report** — Backlog; after the priority wave. Relative value/size: Medium–High when sold by shop / L. See audit for evidence and dependencies.
 - [ ] **B2 — Repair-order deposits before the invoice is issued** — Backlog; after the priority wave. Relative value/size: High / L. See audit for evidence and dependencies.
 - [ ] **B3 — One fleet remittance allocated across multiple invoices** — Backlog; after the priority wave. Relative value/size: High for fleet billing / L. See audit for evidence and dependencies.
-- [ ] **A2 — Work-in-progress aging and delay bottlenecks** — Backlog; after the priority wave. Relative value/size: High / M. See audit for evidence and dependencies.
+- [ ] **A2 — Work-in-progress aging and delay bottlenecks** — **Discovery; selected next (2026-10-29).** DB-145, Frontend & UX accountable. Primary home is Shop Work: current waits, job age and promised-finish lateness with existing-order drill-down. Read-only source/contract audit in progress; missing clocks remain unknown, payment-only closeout and ETS history are distinct from physical WIP. No application changes or release claim yet. [Scope](contracts/db145-shop-work-aging.md).
 - [ ] **A3 — Deferred-work conversion and follow-up value** — Backlog; after the priority wave. Relative value/size: Medium / M. See audit for evidence and dependencies.
 - [ ] **A4 — Inventory velocity, dead stock and purchasing priorities** — Backlog; after the priority wave. Relative value/size: Medium / M–L. See audit for evidence and dependencies.
 
@@ -110,3 +110,7 @@ DB-139 queue follow-up Done (2026-10-20): PR590 merged76966f24, exact Web/Worker
 ## Current handoff: selected wave complete (2026-10-21)
 
 R1/P1/C1/M1/B1/A1 are Done, with exact release receipts. A1 is available under Shop Analytics → Job Contribution, with owner-only Technician Costs. No actual rates were guessed or entered. The other24 discoveries remain retained; their next delivery order requires a separate priority decision. B4 remains partially delivered and its importer held. No new feature, financial mutation, importer rollout or payroll integration is implied.
+
+## Next wave selection — 2026-10-29
+
+User selected A2 first, with Shop Work as its primary surface. C3, R3, A3 and S1 follow in the recommended sequence, with separate contracts and implementation items. This does not authorize financial/stock/source mutations or release the held B4 importer. A2 is in discovery, not Done; completed count stays 6/30.
