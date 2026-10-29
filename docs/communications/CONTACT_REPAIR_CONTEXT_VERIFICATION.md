@@ -2,7 +2,8 @@
 
 October 28, 2026 America/New_York (October 29 UTC).
 Accountable: Backend & Integrations. Branch: `codex/messages-contact-repairs`.
-Status: implementation and local acceptance passed; protected PR/release pending.
+Status: implementation and local acceptance passed; [PR665](https://github.com/mecaniser/truck-pit-stop/pull/665) open, protected CI/release pending.
+Latest main `3b7f3519` documentation integrated; reviewed application fingerprints unchanged.
 [Contract](CONTACT_REPAIR_CONTEXT_CONTRACT.md) defines the shipping boundary.
 
 ## Implementation
