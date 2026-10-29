@@ -72,7 +72,7 @@ jobs:
         run: |
           npm ci --prefix backend/scripts/motive_sync --omit=dev
           node backend/scripts/motive_sync/node_modules/playwright/cli.js install --with-deps --only-shell chromium
-          node --test backend/scripts/motive_sync/login.test.cjs
+          NODE_PATH="$PWD/backend/scripts/motive_sync/node_modules" node --test backend/scripts/motive_sync/login.test.cjs backend/scripts/motive_health/login.test.cjs backend/scripts/motive_health/collect.test.cjs
       - name: Verify Railway deployment readiness
         run: |
           python .github/scripts/check_railway_config.py
