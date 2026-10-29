@@ -139,6 +139,19 @@ describe("SMS onboarding", () => {
       ).not.toBeInTheDocument(),
     );
   });
+  it("collapses permissions without hiding withdrawal warnings or changing consent", async () => {
+    vi.mocked(smsOnboardingApi.consents).mockResolvedValue([{id: "withdrawal", customer_id: "customer-a", phone_last4: "0001", purpose: "service_notifications", status: "withdrawn", source: "STOP", disclosure_version: "v1", collected_at: "2026-10-16T12:00:00Z", created_at: "2026-10-16T12:00:00Z"}]);
+    render(<SMSConsentPanel customerId="customer-a" />);
+    const toggle = screen.getByRole("button", {name: "SMS permissions"});
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(await screen.findByText("SMS consent withdrawn")).toBeVisible();
+    expect(screen.queryByRole("button", {name: "Record consent evidence"})).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(screen.getByRole("button", {name: "Record consent evidence"})).toBeVisible();
+    fireEvent.click(toggle);
+    expect(screen.getByText("SMS consent withdrawn")).toBeVisible();
+    expect(smsOnboardingApi.recordConsent).not.toHaveBeenCalled();
+  });
   it("requires explicit evidence before recording current customer consent", async () => {
     vi.mocked(smsOnboardingApi.recordConsent).mockResolvedValue({
       id: "evidence",
@@ -152,6 +165,7 @@ describe("SMS onboarding", () => {
       created_at: "2026-10-16T12:00:00Z",
     });
     render(<SMSConsentPanel customerId="customer-a" />);
+    fireEvent.click(screen.getByRole("button", {name: "SMS permissions"}));
     await screen.findByText("No recorded consent");
     fireEvent.click(
       screen.getByRole("button", { name: "Record consent evidence" }),

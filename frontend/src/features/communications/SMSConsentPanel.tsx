@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
 import { errorMessage } from "./api";
 import { smsOnboardingApi, type SMSConsent } from "./smsOnboardingApi";
 export default function SMSConsentPanel({
@@ -6,6 +7,8 @@ export default function SMSConsentPanel({
 }: {
   customerId: string;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const panelId = useId();
   const [records, setRecords] = useState<SMSConsent[]>([]);
   const [source, setSource] = useState("");
   const [version, setVersion] = useState("");
@@ -71,7 +74,12 @@ export default function SMSConsentPanel({
     !busy;
   return (
     <section className="sms-consent">
-      <h4>Service SMS consent</h4>
+      <button type="button" className="sms-permissions-toggle" aria-expanded={expanded} aria-controls={panelId} onClick={() => setExpanded(value => !value)}>
+        <span>SMS permissions</span><ChevronDown size={14} aria-hidden="true" className={expanded ? "is-expanded" : ""} />
+      </button>
+      {records[0]?.status === "withdrawn" && <p className="context-warning">SMS consent withdrawn</p>}
+      {error && <p role="alert" className="sms-error">{error}</p>}
+      <div id={panelId} hidden={!expanded}>
       <p>
         {loaded
           ? records[0]
@@ -79,11 +87,6 @@ export default function SMSConsentPanel({
             : "No recorded consent"
           : "Loading consent…"}
       </p>
-      {error && (
-        <p role="alert" className="sms-error">
-          {error}
-        </p>
-      )}
       <button className="subtle-button" onClick={() => setEditing(!editing)}>
         {editing ? "Close evidence form" : "Record consent evidence"}
       </button>
@@ -138,6 +141,7 @@ export default function SMSConsentPanel({
           </div>
         </div>
       )}
+      </div>
     </section>
   );
 }
