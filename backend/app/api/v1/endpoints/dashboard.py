@@ -48,6 +48,9 @@ from app.services.mechanic_time_service import (
     stop_active_session,
 )
 
+from app.schemas.wip_aging import WipAgingResponse, WipCategoryFilter, WipFilters, WipTiming, WipSort
+from app.services.wip_aging import read_wip_aging
+
 router = APIRouter()
 
 # The operational dashboard is a triage surface, not a historical repair-order
@@ -527,6 +530,25 @@ async def _load_dashboard_action_queue(
         orders_on_floor_has_more=len(orders_on_floor) > ACTION_QUEUE_LANE_LIMIT,
         orders_ready_to_close=orders_ready_to_close[:ACTION_QUEUE_LANE_LIMIT],
         orders_ready_to_close_has_more=len(orders_ready_to_close) > ACTION_QUEUE_LANE_LIMIT,
+    )
+
+
+@router.get("/wip-aging", response_model=WipAgingResponse)
+async def get_dashboard_wip_aging(
+    search: str = Query(default="", max_length=200),
+    category: WipCategoryFilter = "all",
+    overdue_only: bool = False,
+    timing: WipTiming = "all",
+    sort: WipSort = "priority",
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    return await read_wip_aging(
+        db, current_user, native_predicate=_native_billing_work_predicate(),
+        filters=WipFilters(search=search.strip(), category=category, overdue_only=overdue_only,
+                           timing=timing, sort=sort), offset=offset, limit=limit,
     )
 
 
