@@ -35,7 +35,7 @@ reply route remain unchanged. Screenshots /tmp/comms027-desktop.png and
 /tmp/comms027-mobile.png. Preview http://127.0.0.1:5193/dashboard/messages is
 aligned and browser-verified for these edits. No production association changes.
 
-Protected CI, merge and deployment remain pending. Not Done.
+Protected CI, merge, deployment and live acceptance completed below.
 
 ## Release candidate integration
 
@@ -45,3 +45,18 @@ checks mapped stored values, excludes UUID/timestamp/digest metadata, verifies t
 exact SHA256 digest and forbids raw telemetry columns. All 31 affected Motive tests
 pass. The failed attempt is retained. Main PR680 integration only conflicted in
 the board; both histories preserved. Application display implementation unchanged.
+
+## Production release
+
+PR681 merged as 2c922d4175c7ea8f6b207f95066b9873abcf8dac after all six protected
+checks plus dependency preparation passed on c2e89f1c8d39441496e94e667ae6c82a4350cc06
+in run40960851423. Checked and merged trees both
+cc4facaafa943ada8e014ec4ce7e153a3d316cdc. Automatic Railway Web deployment
+aafa517f-edca-4c4a-982a-24bb6c4a8642 succeeded. Production build-version serves
+exact 2c922d41, built 2026-10-29T21:58:41.319Z; DB/Redis readiness passes.
+Signed-in live acceptance confirms the existing explicitly linked contact name
+and company appear in both list and header, preserving selected conversation,
+empty draft and derived reply route. No customer associations or messages changed.
+All three SMS flags freshly verified unset/default false on Web and Worker.
+Private screenshot /tmp/comms027-live-sergio.png; no customer screenshot in repo.
+DB-COMMS-027 Done.
