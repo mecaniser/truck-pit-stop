@@ -269,3 +269,57 @@ test('source, ambiguity and other errors after a timeout still abort immediately
   assert.equal(reads.calls,2);assert.equal(reads.retries.length,1);
  }
 });
+
+async function driverLoginFixture({lookup=false,origin='https://auth.gomotive.com',ambiguous=false,href='#'}={}) {
+ const fs=require('node:fs'),path=require('node:path');
+ const {createRequire}=require('node:module');
+ const actualRequire=createRequire(path.join(__dirname,'collect.cjs'));
+ const events=[];let current=origin+(lookup?'/login/lookup?client_id=fixture':'/login?client_id=fixture');
+ const page={
+  setDefaultTimeout(){},on(){},off(){},
+  async goto(){events.push('navigate');},url:()=>current,mainFrame:()=>page,
+  async waitForURL(url){if(url==='https://app.gomotive.com/**')throw new Error('fixture_stop_after_submit');},
+  async waitForTimeout(){},
+  locator(selector){return {
+   async count(){return new URL(current).pathname==='/login'?(ambiguous?2:1):0;},
+   async fill(value){events.push(['fill',selector,value]);},
+  };},
+  getByRole(role,{name}){return {
+   async count(){return 1;},async getAttribute(){return href;},
+   async click(){events.push(name);if(role==='link')current='https://auth.gomotive.com/login?client_id=fixture';},
+  };},
+ };
+ const browser={async newContext(){return {async newPage(){return page;}};}};
+ const module={exports:{}};
+ const mockedRequire=name=>{
+  if(name==='node:fs')return {writeFileSync(){},chmodSync(){},renameSync(){}};
+  if(name==='../motive_sync/tasks.cjs')return {phase:value=>events.push(value),closeBrowser:async()=>events.push('closed')};
+  if(name==='../motive_sync/vehicle_identity.cjs')return {...actualRequire(name),allowlist:()=>new Map()};
+  if(name==='../motive_sync/node_modules/playwright')return {chromium:{launch:async()=>browser}};
+  return actualRequire(name);
+ };
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'collect.cjs'),'utf8'),{require:mockedRequire,module,process:{env:{MOTIVE_COMPANY_LABEL:'fixture',MOTIVE_COMPANY_ID:'fixture',MOTIVE_EMAIL:'fixture@example.invalid',MOTIVE_PASSWORD:'synthetic-only'}},URL,console});
+ let error;
+ try{await module.exports.collect('synthetic-output');}catch(e){error=e;}
+ return {events,error};
+}
+for(const lookup of [false,true])test(`driver collector prepares ${lookup?'lookup':'legacy'} form before single credential submission`,async()=>{
+ const {events,error}=await driverLoginFixture({lookup});
+ assert.equal(error.message,'fixture_stop_after_submit');
+ assert.ok(events.indexOf('login_form_check')<events.indexOf('login_email'));
+ assert.equal(events.filter(x=>x==='Use legacy login').length,lookup?1:0);
+ assert.equal(events.filter(x=>x==='Log in').length,1);
+ assert.equal(events.filter(x=>Array.isArray(x)&&x[0]==='fill').length,2);
+ assert.equal(events.at(-1),'closed');
+});
+for(const [name,options,reason] of [
+ ['wrong initial origin',{origin:'https://evil.invalid'},'login_origin'],
+ ['ambiguous legacy form',{ambiguous:true},'login_form_ambiguous'],
+ ['foreign legacy link',{lookup:true,href:'https://evil.invalid/login'},'login_legacy_link_invalid'],
+])test(`driver collector rejects ${name} before filling credentials`,async()=>{
+ const {events,error}=await driverLoginFixture(options);
+ assert.equal(error.message,reason);
+ assert.equal(events.filter(x=>Array.isArray(x)&&x[0]==='fill').length,0);
+ assert.equal(events.filter(x=>x==='Log in').length,0);
+ assert.equal(events.at(-1),'closed');
+});
