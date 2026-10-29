@@ -1,5 +1,5 @@
-import { routeLeader } from './mapLeaderRouting'
-import { layoutTruckLabels } from './mapLabelLayout'
+import { hybridLayout } from './hybridLayout'
+import { geographicClusters } from './geographicClusters'
 import cargoMarkUrl from '../../assets/fleet/77-cargo-mark.svg'
 import { useEffect, useRef, useState } from 'react'
 import type { Map as MapboxMap, Marker as MapboxMarker } from 'mapbox-gl'
@@ -23,6 +23,8 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
   const [viewportRevision, setViewportRevision] = useState(0)
   const homeFraming = useRef(0)
   const framing = useRef('')
+  const expandedClusters = useRef(new Map<string, number>())
+  const clusterRecenter = useRef(recenter)
   const selectRef = useRef(onFocus)
   selectRef.current = onFocus
   const token = import.meta.env.VITE_MAPBOX_TOKEN || ''
@@ -60,9 +62,20 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
     const pins = JSON.parse(pinData) as Pin[]
     const nearby = JSON.parse(comparisonData) as string[]
     const focus = pins.find(pin => pin.id === focusId)
+    if(clusterRecenter.current!==recenter){expandedClusters.current.clear();clusterRecenter.current=recenter}
+    // Keep brands separate: an aggregate must never imply the wrong company.
+    const companies=new Map<string,Pin[]>()
+    pins.forEach(pin=>{const key=pin.company.trim().toLowerCase();companies.set(key,[...(companies.get(key)||[]),pin])})
+    const groups=[...companies.values()].flatMap(company=>geographicClusters(company)).flatMap(group=>{
+      const key=JSON.stringify(group.map(pin=>pin.id)),expandedAt=expandedClusters.current.get(key)
+      if(expandedAt!==undefined&&map.getZoom()<expandedAt+.25)expandedClusters.current.delete(key)
+      return group.length===1||map.getZoom()>=12||expandedClusters.current.has(key)||group.some(pin=>pin.id===focusId||(!!focus&&nearby.includes(pin.id)))?group.map(pin=>[pin]):[group]
+    })
+    const display=groups.map(group=>({group,pin:group.length===1?group[0]:{...group[0],id:`cluster:${JSON.stringify(group.map(pin=>pin.id))}`,label:String(group.length),point:[group.reduce((sum,p)=>sum+p.point[0],0)/group.length,group.reduce((sum,p)=>sum+p.point[1],0)/group.length] as [number,number]}}))
     // Labels move independently; every marker remains anchored to its own GPS point.
     const liveKeys = new Set<string>()
-    pins.forEach(representative => {
+    display.forEach(({pin:representative,group}) => {
+      const isCluster=group.length>1
       const key = representative.id
       liveKeys.add(key)
       const selected = representative.id === focusId
@@ -76,18 +89,26 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
         markers.current.set(key, entry)
       }
       const { button, marker } = entry
-      button.onclick = () => selectRef.current(representative.id)
+      button.onclick = () => {
+        if(!isCluster){selectRef.current(representative.id);return}
+        expandedClusters.current.set(JSON.stringify(group.map(pin=>pin.id)),map.getZoom())
+        const bounds=new mb.LngLatBounds();group.forEach(pin=>bounds.extend(pin.point))
+        map.fitBounds(bounds,{padding:80,maxZoom:16,duration:0})
+        setViewportRevision(value=>value+1)
+      }
 
       const pointKey = anchor.join(',')
       if (entry.pointKey !== pointKey) { marker.setLngLat(anchor); entry.pointKey = pointKey }
       // Mapbox owns positioning classes on this element; never replace className.
       button.classList.add('proximity-pin')
-      button.classList.add('is-individual')
+      button.classList.toggle('is-individual',!isCluster)
+      button.classList.toggle('is-cluster',isCluster)
+      button.classList.toggle('is-round',!isCluster&&representative.label.length===1)
       button.classList.toggle('is-selected', !!selected)
-      button.classList.toggle('is-last-known', !representative.recent)
+      button.classList.toggle('is-last-known', !representative.recent&&!isCluster)
       button.classList.toggle('is-dimmed', !!focus && !selected && !nearby.includes(representative.id))
       button.style.setProperty('--pin-status', STATUS_META[representative.status].dot)
-      const contentKey = JSON.stringify([representative.label, representative.company])
+      const contentKey = JSON.stringify([representative.label, representative.company,isCluster])
       if (entry.contentKey !== contentKey) {
         const badge = document.createElement('span'); badge.className = 'proximity-pin-badge'
         if ( /^77\s*cargo(?:[\s,]+l\.?l\.?c\.?)?$/i.test(representative.company.trim())) {
@@ -96,9 +117,10 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
         }
         const label = document.createElement('span'); label.className = 'proximity-pin-label'
         label.textContent = representative.label
-        const status = document.createElement('i'); status.className = 'proximity-pin-status'; status.setAttribute('aria-hidden', 'true')
-        badge.append(label, status); button.replaceChildren(badge)
-        {
+        badge.append(label)
+        if(isCluster){const count=document.createElement('small');count.textContent='trucks';badge.append(count)}
+        button.replaceChildren(badge)
+        if(!isCluster){
           const leader = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
           leader.classList.add('proximity-cluster-leader'); leader.setAttribute('aria-hidden', 'true')
           const line = document.createElementNS('http://www.w3.org/2000/svg', 'path')
@@ -109,7 +131,7 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
         button.title = `${representative.company ? `${representative.company} · ` : ''}${label.textContent}`
         entry.contentKey = contentKey
       }
-      button.setAttribute('aria-label', `${representative.label}, ${STATUS_META[representative.status].label}${representative.recent ? '' : ', last-known position'}`)
+      button.setAttribute('aria-label', isCluster?`Zoom to ${group.length} trucks within 3 miles: ${group.map(pin=>pin.label).join(', ')}`:`${representative.label}, ${STATUS_META[representative.status].label}${representative.recent ? '' : ', last-known position'}`)
       button.setAttribute('role', 'button')
       button.setAttribute('aria-pressed', String(!!selected))
 
@@ -120,28 +142,22 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
     const bounds = map.getContainer().getBoundingClientRect()
     const homePixel = homePoint ? map.project(homePoint) : undefined
     const obstacles = [{ x: bounds.width / 2, y: bounds.height - 16, width: bounds.width, height: 32 }, { x: bounds.width - 25, y: 75, width: 40, height: 140 }, ...(homePixel ? [{ x: homePixel.x, y: homePixel.y, width: 76, height: 36 }] : [])]
-    const labelInputs = pins.map(pin => {
+    const labelInputs = display.map(({pin,group}) => {
       const pixel = map.project(pin.point)
       const entry = markers.current.get(pin.id)!
       const badge = entry.button.querySelector<HTMLElement>('.proximity-pin-badge')!
       return { id: pin.id, x: pixel.x, y: pixel.y, width: badge.offsetWidth || 90, height: badge.offsetHeight || 28,
-        priority: pin.id === focusId ? 2 : nearby.includes(pin.id) ? 1 : 0 }
+        fixed:group.length>1 }
     })
-    const placements = layoutTruckLabels(labelInputs, bounds.width, bounds.height, obstacles)
-    const cards = placements.map(placement => {
-      const label = labelInputs.find(item => item.id === placement.id)!
-      return { ...label, x: label.x + placement.dx, y: label.y + placement.dy }
-    })
-    placements.forEach(({ id, dx, dy }) => {
-      const button = markers.current.get(id)!.button
-      const badge = button.querySelector<HTMLElement>('.proximity-pin-badge')!
-      badge.style.left = `${dx}px`; badge.style.top = `${dy}px`
-      const leader = button.querySelector<SVGPathElement>('path')!
-      const anchor = labelInputs.find(label => label.id === id)!
-      const target = cards.find(card => card.id === id)!
-      const points = routeLeader(anchor, target, [...obstacles, ...cards.filter(card => card.id !== id)])
-      leader.setAttribute('d', points.map((point, index) => `${index ? 'L' : 'M'}${point.x - anchor.x} ${point.y - anchor.y}`).join(' '))
-      button.style.zIndex = id === focusId ? '3' : nearby.includes(id) ? '2' : '1'
+    const cards=hybridLayout(labelInputs,bounds.width,bounds.height,obstacles)
+    cards.forEach(card=>{
+      const button=markers.current.get(card.id)!.button
+      const badge=button.querySelector<HTMLElement>('.proximity-pin-badge')!
+      const anchor=labelInputs.find(label=>label.id===card.id)!
+      badge.style.left=`${card.x-anchor.x}px`;badge.style.top=`${card.y-anchor.y}px`
+      const leader=button.querySelector<SVGPathElement>('path')
+      leader?.setAttribute('d',card.path.map((point,index)=>`${index?'L':'M'}${point.x-anchor.x} ${point.y-anchor.y}`).join(' '))
+      button.style.zIndex=card.id===focusId?'5':nearby.includes(card.id)?'4':card.fixed?'3':'1'
     })
     const sourceId = 'fleet-proximity-lines'
     const geometry = JSON.parse(routeData) as GeoJSON.LineString | null
