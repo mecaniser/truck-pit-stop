@@ -62,7 +62,8 @@ describe("customer repair context", () => {
  it("links the chosen person only after confirmation and preserves transport identity", async () => {
   vi.mocked(client.context).mockResolvedValue(unlinked);
   const before = JSON.stringify(row);
-  render(<CustomerRepairContext sessionKey="tenant-a:user-a" conversation={row} beforeNavigate={vi.fn()}/>);
+  const onLinked = vi.fn();
+  render(<CustomerRepairContext sessionKey="tenant-a:user-a" conversation={row} beforeNavigate={vi.fn()} onLinked={onLinked}/>);
   fireEvent.click(await screen.findByRole("button", {name: "Link customer"}));
   fireEvent.click(await screen.findByRole("button", {name: "Fleet A Owner A"}));
   fireEvent.click(await screen.findByRole("button", {name: "Person"}));
@@ -72,6 +73,7 @@ describe("customer repair context", () => {
   fireEvent.click(screen.getByRole("button", {name: "Confirm link"}));
   await waitFor(() => expect(client.save).toHaveBeenCalledTimes(1));
   expect(client.save).toHaveBeenCalledWith(row.id, {action: "link", expected_version: 0, customer_id: customer.id, contact_id: contact.id}, expect.any(String));
+  await waitFor(() => expect(onLinked).toHaveBeenCalledTimes(1));
   expect(JSON.stringify(row)).toBe(before);
  });
  it("creates atomically and retains the exact intent on uncertain retry", async () => {

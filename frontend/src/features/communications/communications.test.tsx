@@ -15,6 +15,21 @@ beforeEach(() => vi.stubGlobal("ResizeObserver", class { observe() {} unobserve(
 afterEach(() => vi.unstubAllGlobals());
 afterEach(cleanup);
 describe("shared inbox foundation", () => {
+  it("updates linked inquiry labels in list and header without resetting its draft or sender", () => {
+    const row = {...createDemoConversations()[0], conversationKind: "inquiry" as const, customerId: null, customerName: "New inquiry", company: null};
+    const connection = {rows: [row], tenantId: DEMO_TENANT, userId: DEMO_USER, people: {}, deliveryMode: "simulated", busy: false, error: "", pending: false, onSelect: vi.fn(), onSend: vi.fn(), onPatch: vi.fn(), onOlder: vi.fn(), onRecover: vi.fn()};
+    const {rerender} = render(<CommunicationsPreview connection={connection} />);
+    fireEvent.change(screen.getByRole("textbox", {name: "Message draft"}), {target: {value: "Keep this draft"}});
+    const key = draftKey(DEMO_TENANT, DEMO_USER, row);
+    const linked = {...row, customerName: "Taylor Driver", company: "Example Fleet"};
+    rerender(<CommunicationsPreview connection={{...connection, rows: [linked]}} />);
+    expect(screen.getByRole("heading", {name: "Taylor Driver", level: 2})).toBeVisible();
+    expect(screen.getAllByText("Example Fleet").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText("New inquiry")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", {name: "Message draft"})).toHaveValue("Keep this draft");
+    expect(draftKey(DEMO_TENANT, DEMO_USER, linked)).toBe(key);
+    expect(linked.context.senderNumber).toBe(row.context.senderNumber);
+  });
   it("filters inquiries without guessing customers and searches remote and receiving phone numbers", () => {
     const customer = createDemoConversations()[0];
     const inquiry = { ...customer, id: "inquiry", conversationKind: "inquiry" as const, customerId: null, customerName: "New inquiry", company: null, identityLabel: "+15005550002", context: { smsProvider: "callrail", senderNumber: "+15005550001" } };

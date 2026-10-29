@@ -394,6 +394,7 @@ function InboxContent({ embedded, onUnreadCountChange }: InboxProps) {
         canRecover: !!pending && !blocked,
         confirmedDraft,
         onSelect: (id) => void select(id),
+        onLinked: (id) => void select(id),
         onSend: (row, body, draftKey) =>
           pending || blocked
             ? Promise.resolve(false)

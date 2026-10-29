@@ -3,6 +3,11 @@ import api from '../../lib/api';
 import { inboxApi, mapConversation, mapMessage, type WireMessage, type WireConversation } from './api';
 vi.mock('../../lib/api', () => ({ default: { get: vi.fn(), post: vi.fn(), patch: vi.fn() } }));
 describe('inbox wire adapter', () => {
+  it('keeps authoritative linked labels without changing inquiry transport or draft identity', () => {
+    const wire = { id: 'inquiry', tenant_id: 'tenant', conversation_kind: 'inquiry', customer_id: null, customer_name: 'Sergio', company: 'Example Fleet', channel_account_id: 'account', contact_identity_id: 'identity', messages: [], send_policy: { can_send: true, reason: null }, context: { sender_number: '+15005550001' }, version: 2 } as unknown as WireConversation;
+    expect(mapConversation(wire)).toMatchObject({ customerName: 'Sergio', company: 'Example Fleet', customerId: null, conversationKind: 'inquiry', channelAccountId: 'account', contactIdentityId: 'identity', context: { senderNumber: '+15005550001' } });
+  });
+
   it('defaults attachment candidates to false for older API responses', () => {
     expect(mapMessage({} as WireMessage).hasAttachments).toBe(false);
     expect(mapMessage({ has_attachments: true } as WireMessage).hasAttachments).toBe(true);
@@ -17,7 +22,7 @@ describe('inbox wire adapter', () => {
     vi.mocked(api.get).mockClear();
   });
   it('maps a null-customer inquiry without company guesses and retains its pinned sender contract', () => {
-    const row = mapConversation({ id: 'inquiry', tenant_id: 'tenant', conversation_kind: 'inquiry', customer_id: null, customer_name: 'Unavailable customer', company: 'Unproven company', messages: [], send_policy: { can_send: true, reason: null, max_length: 140 }, context: { sms_provider: 'callrail', sender_number: '+15005550001', sender_selection_allowed: false }, version: 2 } as unknown as WireConversation);
+    const row = mapConversation({ id: 'inquiry', tenant_id: 'tenant', conversation_kind: 'inquiry', customer_id: null, customer_name: 'New inquiry', company: null, messages: [], send_policy: { can_send: true, reason: null, max_length: 140 }, context: { sms_provider: 'callrail', sender_number: '+15005550001', sender_selection_allowed: false }, version: 2 } as unknown as WireConversation);
     expect(row).toMatchObject({ conversationKind: 'inquiry', customerId: null, customerName: 'New inquiry', company: null, context: { smsProvider: 'callrail', senderNumber: '+15005550001' } });
   });
   it('maps derived sender modes while discarding legacy sender inventory', () => {

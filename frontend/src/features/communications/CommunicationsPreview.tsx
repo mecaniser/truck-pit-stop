@@ -110,6 +110,7 @@ export interface InboxConnection {
   canRecover?: boolean;
   confirmedDraft?: { key: string; text: string } | null;
   onSelect: (id: string) => void;
+  onLinked?: (id: string) => void;
   onSend: (
     row: Conversation,
     body: string,
@@ -552,7 +553,7 @@ export default function CommunicationsPreview({
                       <span>{time(row.lastMessageAt)}</span>
                     </span>
                     {(row.company || row.conversationKind === "inquiry") && (
-                      <span className="thread-company">{row.conversationKind === "inquiry" ? row.identityLabel : row.company}</span>
+                      <span className="thread-company">{row.company || row.identityLabel}</span>
                     )}
                     <span className="thread-preview">
                       {row.messages.some(
@@ -620,7 +621,7 @@ export default function CommunicationsPreview({
               <div className="conversation-title">
                 <h2>{selected.customerName}</h2>
                 <span>
-                  {(selected.conversationKind === "inquiry" || selected.company) && <>{selected.conversationKind === "inquiry" ? selected.identityLabel : selected.company} <span className="separator">·</span>{" "}</>}
+                  {(selected.conversationKind === "inquiry" || selected.company) && <>{selected.company || selected.identityLabel} <span className="separator">·</span>{" "}</>}
                   {channelLabels[selected.channel]}
                 </span>
                 {selected.conversationKind === "inquiry" && <span>CallRail · To {selected.context.senderNumber}</span>}
@@ -969,6 +970,7 @@ export default function CommunicationsPreview({
             {connection?.canManageCustomerContext ? <CustomerRepairContext
               key={`${tenantId}:${userId}:${selected.id}`}
               conversation={selected}
+              onLinked={() => connection.onLinked?.(selected.id)}
               sessionKey={`${tenantId}:${userId}`}
               beforeNavigate={() => {
                 rememberConversation(selected.id, tenantId, userId);

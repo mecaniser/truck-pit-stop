@@ -19,7 +19,7 @@ const personLabel = (p: ContactSummary) => [p.first_name, p.last_name].filter(Bo
 const statusLabel = (value: string) => value.replace(/_/g, " ");
 
 /** CRM association is deliberately separate from the conversation's delivery identity. */
-export default function CustomerRepairContext({ conversation, beforeNavigate, sessionKey, children }: {conversation: Conversation; beforeNavigate: () => void; sessionKey: string; children?: ReactNode}) {
+export default function CustomerRepairContext({ conversation, beforeNavigate, sessionKey, children, onLinked }: {conversation: Conversation; beforeNavigate: () => void; sessionKey: string; children?: ReactNode; onLinked?: () => void}) {
   const [context, setContext] = useState<CustomerContext | null>(null);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
@@ -44,7 +44,7 @@ export default function CustomerRepairContext({ conversation, beforeNavigate, se
       {children}</div>
       <RepairLists key={`${context.version}:${context.contact?.id ?? "none"}`} id={conversation.id} context={context} beforeNavigate={beforeNavigate} refreshContext={() => setRetry(n => n + 1)} />
     </>}
-    {editing && context && <LinkCustomerDialog storageKey={storageKey} conversation={conversation} context={context} initialMode={editing} close={() => setEditing(null)} saved={value => {setContext(value); setEditing(null);}} refresh={() => setRetry(n => n + 1)} />}
+    {editing && context && <LinkCustomerDialog storageKey={storageKey} conversation={conversation} context={context} initialMode={editing} close={() => setEditing(null)} saved={value => {setContext(value); setEditing(null); onLinked?.();}} refresh={() => setRetry(n => n + 1)} />}
   </section>;
 }
 
