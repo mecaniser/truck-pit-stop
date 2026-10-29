@@ -81,13 +81,50 @@ implementation. Local evidence is not deployment evidence.
 
 ## Release boundary and rollback
 
-No production deployment or customer linkage has occurred for this item.
-Protected checks must pass on the final PR head; merge/deployment need release
-authority. Verify additive migration, exact served source, unchanged routing and
-false SMS flags at release. Live acceptance must use authorized customer actions,
-not unsolicited test writes to real contacts.
+Production deployment is verified below. No production customer linkage has
+been performed for acceptance. Live save acceptance requires an identified
+customer/person/repair match, not unsolicited test writes to real contacts.
 
 On a release regression, stop new CRM linking and roll back only this application
 change while preserving newer authorized ancestry. Leave additive tables and
 recorded links intact for investigation; do not downgrade away customer links or
 rewrite SMS history. Never enable automation as part of rollout or rollback.
+
+## Authorized release — October 29, 2026
+
+User authorized merge, deployment and live verification with automation off.
+Integrated latest main `157a036a` (new fleet fix) without changing Messages source.
+All six strict protected checks plus dependency preparation passed on
+`4b31b09317fa47fbf25fb84f47a854be14a4b7df`, run40817602707.
+PR665 merged as `004a49b4bdb23659301df54ff1e5228042f2db1f`; checked and
+merged trees both `a4556d8364b86c4c7f584c1ab60a9203a8b975ea`.
+Automatic Railway Web `4653d6be-6766-42de-987b-ca6a6ccc4e9c` and Worker
+`d940b860-e650-45ff-bae8-017ef95004a0` started for that exact source.
+No duplicate deployment requested. Both deployments SUCCESS; API and website
+serve the full merge SHA, build2026-10-29T04:35:41.743Z. DB/Redis readiness pass.
+Migration190 is applied. All nine baseline table counts and full-row digests
+remain unchanged; all three new context tables are empty. All three SMS flags
+remain unset/defaultfalse on both services.
+
+Read-only pre-release baseline:214 SMS,22 threads,799 customers,596 contacts,
+1516 vehicles,3843 repairs,11 CallRail mappings,16 bindings,5 send operations;
+schema189. Private row-digest baseline outside repository. All three rollout
+flags confirmed unset/defaultfalse on Web and Worker. Real customer/contact/repair
+associations require an identified match; user was asked which records to use.
+
+### Live authenticated acceptance
+
+- Customer linking dialog loads existing customer/person choices and explicit
+  confirmation; canceled without saving an association.
+- Contact scope correctly requires an explicit person link; fleet repairs and
+  trucks load separately from the existing customer association.
+- A fleet repair deep link opens the exact selected repair order. Browser Back
+  restores conversation selection, unsent draft and the original reply number.
+- Temporary verification draft removed; original empty draft restored and Send
+  disabled. No sends, consent changes, assignments or customer mutations.
+- Private screenshot: `/tmp/comms023-live-sidebar.png` (outside repository).
+
+Deployment and read-only live journeys pass. Production customer/link save and
+contact-linked repair population remain pending the user-identified real match.
+Local synthetic create/link acceptance already passed; do not substitute it for
+a production save claim. Item remains acceptance pending, not Done.
