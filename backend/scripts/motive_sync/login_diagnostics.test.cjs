@@ -7,19 +7,22 @@ const steps=['login_navigate','login_auth_redirect','login_email','login_passwor
 for(const file of ['collect.cjs','collect_trips.cjs','collect_fuel.cjs','../motive_health/collect.cjs','../motive_drivers/collect.cjs']) {
  test(`${file}: every login operation identifies its failure without leaking browser content`,async()=>{
   const source=fs.readFileSync(path.join(__dirname,file),'utf8');
-  const start=source.indexOf("phase('login_navigate');");
+  const health=file==='../motive_health/collect.cjs';
+  const checkedSteps=health?steps.slice(2):steps;
+  const start=source.indexOf(health?"phase('login_email');":"phase('login_navigate');");
   const terminal="await page.waitForURL('https://app.gomotive.com/**',{timeout:45000});";
   const end=source.indexOf(terminal,start)+terminal.length;
   assert.ok(start>=0&&end>start);
   const execute=new (Object.getPrototypeOf(async function(){}).constructor)('page','phase','ORIGIN','prepareLegacyLogin',source.slice(start,end));
-  for(let target=0;target<steps.length;target++) {
+  for(let target=0;target<checkedSteps.length;target++) {
    let operation=0;
    const act=async()=>{if(operation++===target)throw Object.assign(new Error('password=PRIVATE cookie=PRIVATE https://secret/?token=PRIVATE'),{name:'TimeoutError'});};
    const page={goto:act,waitForURL:act,url:()=> 'https://auth.gomotive.com/login',locator:()=>({fill:act}),getByRole:()=>({click:act})};
    await assert.rejects(execute(page,phase,'https://app.gomotive.com',async()=>{}),error=>{
-    assert.deepEqual(failureDiagnostic(error),{phase:steps[target],error_kind:'browser_timeout'});return true;
+    assert.deepEqual(failureDiagnostic(error),{phase:checkedSteps[target],error_kind:'browser_timeout'});return true;
    });
   }
+  if(health)return; // Anonymous health navigation is exercised through its helper below.
   let filled=false;
   await assert.rejects(execute({goto:async()=>{},waitForURL:async()=>{},url:()=> 'https://unexpected.invalid/',locator:()=>{filled=true;}},phase,'https://app.gomotive.com'),error=>{
    assert.deepEqual(failureDiagnostic(error),{phase:'login_origin_check',error_kind:'unexpected_login_origin'});return true;
@@ -45,4 +48,16 @@ test('legacy preflight diagnostics expose static categories only',()=>{
   }
   assert.deepEqual(failureDiagnostic(new Error('https://private.invalid/?secret=PRIVATE')),{phase:stage,error_kind:'unclassified'});
  }
+});
+
+// Health moved only anonymous bootstrap into its bounded context orchestrator.
+// Preserve fault injection of both navigation boundaries and the origin guard.
+const {prepareHealthLogin}=require('../motive_health/login.cjs');
+for(const target of ['login_navigate','login_auth_redirect','login_origin_check'])test(`health bootstrap diagnostic ${target} stays static`,async()=>{
+ const error=Object.assign(new Error('password=PRIVATE cookie=PRIVATE https://secret/?token=PRIVATE'),{name:'TimeoutError'});
+ const page={setDefaultTimeout(){},async goto(){if(target==='login_navigate')throw error;},async waitForURL(){if(target==='login_auth_redirect')throw error;},url:()=>target==='login_origin_check'?'https://unexpected.invalid/':'https://auth.gomotive.com/login'};
+ const browser={async newContext(){return {async newPage(){return page;},async close(){}};}};
+ await assert.rejects(prepareHealthLogin(browser,{phase,diagnostic(){}}),actual=>{
+  assert.deepEqual(failureDiagnostic(actual),{phase:target,error_kind:target==='login_origin_check'?'unexpected_login_origin':'browser_timeout'});return true;
+ });
 });
