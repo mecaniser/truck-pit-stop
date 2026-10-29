@@ -10,7 +10,10 @@ class FleetFuelDaily(BaseModel):
     vehicle_id = Column(UUID(as_uuid=True), nullable=False)
     fleet_customer_id = Column(UUID(as_uuid=True), nullable=False)
     fleet_membership_id = Column(UUID(as_uuid=True), nullable=False)
-    verified_vin = Column(String(17), nullable=False)
+    verified_vin = Column(String(17), nullable=True)
+    dashboard_binding_id = Column(UUID(as_uuid=True), nullable=True)
+    source_company_label = Column(String(255), nullable=True)
+    source_vin_state = Column(String(30), nullable=True)
     provider_company_id = Column(String(120), nullable=False)
     provider_vehicle_id = Column(String(120), nullable=False)
     provider_unit = Column(String(120), nullable=False)
@@ -33,6 +36,8 @@ class FleetFuelDaily(BaseModel):
     captured_at = Column(DateTime(timezone=True), nullable=False)
     captured_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     __table_args__ = (
+        ForeignKeyConstraint(["tenant_id", "vehicle_id", "fleet_membership_id", "dashboard_binding_id"], ["dashboard_vehicle_bindings.tenant_id", "dashboard_vehicle_bindings.vehicle_id", "dashboard_vehicle_bindings.fleet_membership_id", "dashboard_vehicle_bindings.id"], name="fk_fuel_dashboard_binding"),
+        CheckConstraint("(verified_vin IS NOT NULL AND dashboard_binding_id IS NULL AND source_company_label IS NULL AND source_vin_state IS NULL) OR (verified_vin IS NULL AND dashboard_binding_id IS NOT NULL AND provider_company_id = 'KT8934277' AND source_company_label = '77 CARGO LLC' AND source_company_label IS NOT NULL AND provider_vehicle_id = '5981300' AND source_vin_state IN ('not_displayed', 'explicitly_empty') AND source_vin_state IS NOT NULL)", name="ck_fuel_identity_xor"),
         UniqueConstraint("tenant_id", "provider_company_id", "provider_vehicle_id", "report_date", "source", name="uq_fleet_fuel_source_date"),
         ForeignKeyConstraint(["tenant_id", "vehicle_id"], ["vehicles.tenant_id", "vehicles.id"]),
         ForeignKeyConstraint(["tenant_id", "fleet_customer_id"], ["customers.tenant_id", "customers.id"]),

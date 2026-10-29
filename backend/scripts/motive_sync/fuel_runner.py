@@ -15,7 +15,9 @@ from app.db.models.customer import Customer
 from app.db.models.fleet_fuel import FleetFuelDaily
 from app.db.models.vehicle import Vehicle
 from app.db.models.vehicle_relationship import FleetMembership
-from app.schemas.fleet_fuel import FuelDailyImport
+from app.schemas.fleet_fuel import FuelDailyImport, DashboardFuelDailyImport
+from app.db.models.dashboard_vehicle_binding import DashboardVehicleBinding
+from fastapi import HTTPException
 from app.services.fleet_fuel import visible_query
 from app.services.fleet_telemetry import active_membership
 from scripts.motive_sync import fuel_coverage as coverage
@@ -221,6 +223,8 @@ def validate_source(document, company_label, company_id, stamp, *, recovery=Fals
                 raise ValueError(
                     "Source date is not fully completed or read time is invalid"
                 )
+            if "source_vin_state" in vehicle:
+                reviewed_source_identity(document, vehicle, record)
             state = record.get("state")
             if state not in {"reported", "source_missing", "unavailable"}:
                 raise ValueError("Explicit source row state required")
@@ -247,9 +251,33 @@ def validate_source(document, company_label, company_id, stamp, *, recovery=Fals
         raise ValueError("Report contains unaccounted provider vehicles")
 
 
-def payload(document, vehicle, record):
-    return FuelDailyImport.model_validate(
+def reviewed_source_identity(document, vehicle, record):
+    if (not isinstance(document.get("plan"), dict) or vehicle.get("provider_vehicle_id") != "5981300"
+        or vehicle.get("vin") is not None or vehicle.get("source_vin_state") not in {"not_displayed", "explicitly_empty"}):
+        raise ValueError("Reviewed source identity required")
+    before, after = record.get("identity_before"), record.get("identity_after")
+    for proof in (before, after):
+        if (not isinstance(proof, dict) or not proof.get("read_at") or proof.get("vin") is not None
+            or proof.get("source_vin_state") != vehicle["source_vin_state"]
+            or proof.get("provider_vehicle_id") != vehicle["provider_vehicle_id"]
+            or proof.get("unit") != vehicle["unit"]
+            or proof.get("source_url") != "https://app.gomotive.com/en-US/#/fleetview/vehicles/summary/5981300"):
+            raise ValueError("Reviewed source identity proof mismatch")
+    if not (timestamp(document["started_at"]) <= timestamp(before["read_at"])
+        <= timestamp(record["source_read_at"]) <= timestamp(after["read_at"]) <= timestamp(document["finished_at"])):
+        raise ValueError("Reviewed source identity read interval mismatch")
+
+
+def payload(document, vehicle, record, binding=None):
+    model, extra = FuelDailyImport, {}
+    if binding is not None:
+        reviewed_source_identity(document, vehicle, record)
+        model = DashboardFuelDailyImport
+        extra = {"dashboard_binding_id": binding.id, "source_company_label": document["company_label"],
+            "source_vin_state": vehicle["source_vin_state"]}
+    return model.model_validate(
         {
+            **extra,
             "vin": vehicle["vin"],
             "unit": vehicle["unit"],
             "provider_vehicle_id": vehicle["provider_vehicle_id"],
@@ -272,9 +300,10 @@ def payload(document, vehicle, record):
 
 
 def stored_payload(row):
+    model = DashboardFuelDailyImport if row.dashboard_binding_id else FuelDailyImport
     values = {
         name: getattr(row, name)
-        for name in FuelDailyImport.model_fields
+        for name in model.model_fields
         if name not in {"vin", "unit"}
     }
     values.update(
@@ -282,7 +311,7 @@ def stored_payload(row):
         unit=row.provider_unit,
         source_read_at=importer.aware(row.source_read_at),
     )
-    result = FuelDailyImport.model_validate(values)
+    result = model.model_validate(values)
     if importer.digest(result) != row.request_digest:
         raise ValueError("Stored fuel evidence digest mismatch")
     return result
@@ -318,6 +347,13 @@ async def prepare(db, document, tenant_id, actor_id):
     prior = {
         (row.provider_vehicle_id, row.report_date.isoformat()): row for row in previous
     }
+    reviewed = (await db.execute(select(DashboardVehicleBinding).where(
+        DashboardVehicleBinding.tenant_id == tenant_id,
+        DashboardVehicleBinding.source_company_id == document["company_id"],
+        DashboardVehicleBinding.provider_vehicle_id == "5981300"))).scalars().all()
+    current_reviewed = [b for b in reviewed if not b.deleted_at and not b.revoked_at
+        and b.source_company_label == document["company_label"]]
+    accounted_bound = set()
     accepted, exclusions = [], []
     for vehicle in document["vehicles"]:
         for record in vehicle["records"]:
@@ -327,10 +363,24 @@ async def prepare(db, document, tenant_id, actor_id):
                 "report_date": record["report_date"],
             }
             old = prior.get((vehicle["provider_vehicle_id"], record["report_date"]))
-            if not vehicle["vin"]:
+            if not vehicle["vin"] and "source_vin_state" not in vehicle:
                 exclusions.append({**entry, "reason": "vin_unavailable"})
                 continue
             if record["state"] != "reported":
+                # Account proven source identity independently of measurement
+                # availability; an empty report never becomes an invented zero.
+                if not vehicle["vin"] and "source_vin_state" in vehicle and len(current_reviewed) == 1:
+                    reviewed_source_identity(document, vehicle, record)
+                    midnight = datetime.combine(date.fromisoformat(record["report_date"]), time.min, UTC)
+                    try:
+                        mapped, _member, _binding = await importer.resolve_reviewed_fuel_context(
+                            db, tenant_id, document["company_id"], vehicle["provider_vehicle_id"],
+                            document["company_label"], current_reviewed[0].id, timestamp(record["source_read_at"]),
+                            midnight - timedelta(hours=14), midnight + timedelta(days=1, hours=12), stamp)
+                    except (ValueError, HTTPException):
+                        pass  # Unproven/pre-binding identity stays unresolved.
+                    else:
+                        accounted_bound.add(mapped.id)
                 exclusions.append(
                     {
                         **entry,
@@ -341,14 +391,19 @@ async def prepare(db, document, tenant_id, actor_id):
                 )
                 continue
             try:
-                row = payload(document, vehicle, record)
+                binding = None
+                if not vehicle["vin"]:
+                    if len(current_reviewed) != 1:
+                        raise ValueError("Reviewed vehicle binding required")
+                    binding = current_reviewed[0]
+                row = payload(document, vehicle, record, binding)
                 # Existing importer validates full date/read membership and historical provider identity.
-                importer.parse_rows({"rows": [row.model_dump(mode="json")]}, stamp)
+                importer.parse_rows({"rows": [row.model_dump(mode="json")]}, stamp, allow_binding=True)
                 mapped, member = await importer.resolve_identity(
                     db, row, tenant_id, stamp
                 )
-            except ValueError as error:
-                reason = str(error)
+            except (ValueError, HTTPException) as error:
+                reason = str(error) if isinstance(error, ValueError) else str(error.detail)
                 safe_reason = (
                     reason
                     if reason
@@ -356,6 +411,10 @@ async def prepare(db, document, tenant_id, actor_id):
                         "VIN must match exactly one active truck",
                         "Unique current membership covering source date required",
                         "Membership does not cover source date",
+                        "Reviewed vehicle binding required",
+                        "reviewed_vehicle_binding_required",
+                        "reviewed_vehicle_binding_invalid",
+                        "Reviewed binding and membership must cover the full fuel date",
                         "Provider identity conflicts with existing trip history",
                         "Provider identity conflicts with fuel history",
                     }
@@ -363,12 +422,15 @@ async def prepare(db, document, tenant_id, actor_id):
                 )
                 exclusions.append({**entry, "reason": safe_reason})
                 continue
+            if isinstance(row, DashboardFuelDailyImport):
+                accounted_bound.add(mapped.id)
             if old is not None:
                 if (
                     old.deleted_at
                     or old.request_digest != importer.digest(row)
                     or old.vehicle_id != mapped.id
                     or old.fleet_membership_id != member.id
+                    or old.dashboard_binding_id != getattr(row, "dashboard_binding_id", None)
                 ):
                     exclusions.append(
                         {
@@ -405,7 +467,7 @@ async def prepare(db, document, tenant_id, actor_id):
     ).all()
     source_vins = {v["vin"] for v in document["vehicles"] if v["vin"]}
     for vehicle_id, unit, vin, *_ in current:
-        if (vin or "").strip().upper() not in source_vins:
+        if vehicle_id not in accounted_bound and (vin or "").strip().upper() not in source_vins:
             for day in document["report_dates"]:
                 exclusions.append(
                     {
@@ -418,7 +480,8 @@ async def prepare(db, document, tenant_id, actor_id):
     mapping = {
         "directory": sorted(
             [
-                {"provider_vehicle_id": v["provider_vehicle_id"], "vin": v["vin"]}
+                {"provider_vehicle_id": v["provider_vehicle_id"], "vin": v["vin"],
+                    **({"source_vin_state": v["source_vin_state"]} if "source_vin_state" in v else {})}
                 for v in document["vehicles"]
             ],
             key=lambda v: v["provider_vehicle_id"],
@@ -438,6 +501,18 @@ async def prepare(db, document, tenant_id, actor_id):
             key=lambda v: (v["vehicle_id"], v["membership_id"]),
         ),
     }
+    if reviewed:
+        mapping["reviewed_bindings"] = sorted([
+            {"id": str(b.id), "vehicle_id": str(b.vehicle_id), "membership_id": str(b.fleet_membership_id),
+                "fleet_customer_id": str(b.fleet_customer_id), "provider_vehicle_id": b.provider_vehicle_id,
+                "source_company_label": b.source_company_label, "placeholder_vin": b.placeholder_vin,
+                "reviewed_at": importer.aware(b.reviewed_at).isoformat(),
+                "effective_from": importer.aware(b.effective_from).isoformat(),
+                "effective_to": importer.aware(b.effective_to).isoformat() if b.effective_to else None,
+                "revoked_at": importer.aware(b.revoked_at).isoformat() if b.revoked_at else None,
+                "deleted_at": importer.aware(b.deleted_at).isoformat() if b.deleted_at else None,
+                "review_manifest_sha256": b.review_manifest_sha256}
+            for b in reviewed], key=lambda b: b["id"])
     return accepted, {
         "mapping_sha256": checksum(mapping),
         "coverage": "partial",
@@ -453,10 +528,10 @@ async def batches(db, rows, tenant_id, actor_id, apply=False):
     result = []
     for offset in range(0, len(rows), 1000):
         parsed = importer.parse_rows(
-            {"rows": rows[offset : offset + 1000]}, importer.now()
+            {"rows": rows[offset : offset + 1000]}, importer.now(), allow_binding=True
         )
         result.extend(
-            (await importer.run_import(db, parsed, tenant_id, actor_id, apply=apply))[
+            (await importer.run_import(db, parsed, tenant_id, actor_id, apply=apply, allow_binding=True))[
                 "rows"
             ]
         )

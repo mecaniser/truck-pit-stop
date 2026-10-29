@@ -97,6 +97,8 @@ class FuelDailyImport(BaseModel):
 
 
 class FuelDailyItem(BaseModel):
+    vehicle_identity_basis: Literal["verified_vin", "reviewed_provider_binding"] = "verified_vin"
+    vehicle_identity_binding_id: UUID | None = None
     id: UUID
     vehicle_id: UUID
     unit_number: str | None
@@ -127,3 +129,20 @@ class FuelDailyPage(BaseModel):
     imported_end: date | None
     coverage: Literal["partial"] = "partial"
     date_basis: Literal["source_report_date"] = "source_report_date"
+
+
+class DashboardFuelDailyImport(FuelDailyImport):
+    """Private exact reviewed identity; public/manual imports remain VIN-only."""
+    vin: None = None
+    dashboard_binding_id: UUID
+    source_company_label: Literal["77 CARGO LLC"]
+    source_vin_state: Literal["not_displayed", "explicitly_empty"]
+    provider_company_id: Literal["KT8934277"]
+    provider_vehicle_id: Literal["5981300"]
+
+    @field_validator("vin")
+    @classmethod
+    def valid_vin(cls, value):
+        if value is not None:
+            raise ValueError("Reviewed identity requires an explicitly absent VIN")
+        return None

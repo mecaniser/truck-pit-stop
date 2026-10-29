@@ -11,15 +11,16 @@ from app.db.models.fleet_trip import FleetTrip
 from app.db.models.vehicle import Vehicle
 from app.db.models.customer import Customer
 from app.db.models.vehicle_relationship import FleetMembership
-from app.schemas.fleet_fuel import FuelDailyImport
+from app.schemas.fleet_fuel import FuelDailyImport, DashboardFuelDailyImport
+from app.services import dashboard_vehicle_bindings as reviewed
 from app.services.fleet_telemetry import active_membership, now, within
 from scripts.import_motive_trips import authorize, aware
 
 
-def parse_rows(document, stamp):
+def parse_rows(document, stamp, *, allow_binding=False):
     if not isinstance(document, dict) or set(document) != {"rows"} or not isinstance(document["rows"], list) or not 1 <= len(document["rows"]) <= 1000:
         raise ValueError("Expected 1 to 1000 fuel rows")
-    rows = [FuelDailyImport.model_validate(row) for row in document["rows"]]
+    rows = [(DashboardFuelDailyImport if allow_binding and row.get("dashboard_binding_id") else FuelDailyImport).model_validate(row) for row in document["rows"]]
     keys, mapping, reverse = set(), {}, {}
     for row in rows:
         key = (row.provider_company_id, row.provider_vehicle_id, row.report_date)
@@ -41,7 +42,33 @@ def digest(row):
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
+async def resolve_reviewed_fuel_context(db, tenant_id, company_id, provider_id, company_label,
+    binding_id, source_time, start, end, stamp):
+    if (company_id, provider_id, company_label) != ("KT8934277", "5981300", "77 CARGO LLC"):
+        raise ValueError("Reviewed fuel identity scope mismatch")
+    vehicle, member, binding = await reviewed.resolve(db, tenant_id, company_id,
+        provider_id, source_time, company_label=company_label, binding_id=binding_id)
+    if (binding.placeholder_vin != "PENDING-26" or start < aware(binding.effective_from)
+        or start < aware(member.effective_from) or end > source_time or end > stamp
+        or any(limit is not None and end > aware(limit) for limit in (binding.effective_to, member.effective_to))):
+        raise ValueError("Reviewed binding and membership must cover the full fuel date")
+    return vehicle, member, binding
+
+
 async def resolve_identity(db, row, tenant_id, stamp):
+    if isinstance(row, DashboardFuelDailyImport):
+        start, end = row.membership_window()
+        vehicle, member, binding = await resolve_reviewed_fuel_context(db, tenant_id,
+            row.provider_company_id, row.provider_vehicle_id, row.source_company_label,
+            row.dashboard_binding_id, row.source_read_at, start, end, stamp)
+        trips = (await db.execute(select(FleetTrip).where(FleetTrip.tenant_id == tenant_id, FleetTrip.provider_vehicle_id == row.provider_vehicle_id))).scalars().all()
+        if any(trip.vehicle_id != vehicle.id or trip.verified_vin is not None or trip.dashboard_binding_id != binding.id for trip in trips):
+            raise ValueError("Provider identity conflicts with existing trip history")
+        prior = (await db.execute(select(FleetFuelDaily).where(FleetFuelDaily.tenant_id == tenant_id,
+            FleetFuelDaily.provider_company_id == row.provider_company_id, FleetFuelDaily.provider_vehicle_id == row.provider_vehicle_id))).scalars().all()
+        if any(fuel.vehicle_id != vehicle.id or fuel.verified_vin is not None or fuel.dashboard_binding_id != binding.id for fuel in prior):
+            raise ValueError("Provider identity conflicts with fuel history")
+        return vehicle, member
     vehicles = (await db.execute(select(Vehicle).where(Vehicle.tenant_id == tenant_id, Vehicle.deleted_at.is_(None), func.upper(func.trim(Vehicle.vin)) == row.vin).with_for_update())).scalars().all()
     if len(vehicles) != 1:
         raise ValueError("VIN must match exactly one active truck")
@@ -66,10 +93,10 @@ async def resolve_identity(db, row, tenant_id, stamp):
     return vehicle, member
 
 
-async def run_import(db, rows, tenant_id, actor_id, apply=False):
+async def run_import(db, rows, tenant_id, actor_id, apply=False, *, allow_binding=False):
     stamp = now()
     await authorize(db, tenant_id, actor_id)
-    rows = parse_rows({"rows": [row.model_dump(mode="json") for row in rows]}, stamp)
+    rows = parse_rows({"rows": [row.model_dump(mode="json") for row in rows]}, stamp, allow_binding=allow_binding)
     plans = []
     for row in rows:
         vehicle, member = await resolve_identity(db, row, tenant_id, stamp)
@@ -77,7 +104,7 @@ async def run_import(db, rows, tenant_id, actor_id, apply=False):
             FleetFuelDaily.provider_company_id == row.provider_company_id, FleetFuelDaily.provider_vehicle_id == row.provider_vehicle_id,
             FleetFuelDaily.report_date == row.report_date))).scalar_one_or_none()
         checksum = digest(row)
-        if existing and (existing.deleted_at or existing.request_digest != checksum or existing.vehicle_id != vehicle.id or existing.fleet_membership_id != member.id):
+        if existing and (existing.deleted_at or existing.request_digest != checksum or existing.vehicle_id != vehicle.id or existing.fleet_membership_id != member.id or existing.dashboard_binding_id != getattr(row, "dashboard_binding_id", None)):
             raise ValueError("Conflicting immutable fuel record")
         plans.append((row, vehicle, member, existing, checksum))
     receipts = []

@@ -1,9 +1,10 @@
 """Read source report dates without rebucketing unverified source timezones."""
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, and_
 from app.db.models.fleet_fuel import FleetFuelDaily as Fuel
 from app.db.models.vehicle import Vehicle
 from app.db.models.customer import Customer
 from app.db.models.vehicle_relationship import FleetMembership as Member
+from app.db.models.dashboard_vehicle_binding import DashboardVehicleBinding as Binding
 from app.services.fleet_telemetry import active_membership, fail, now
 
 
@@ -13,11 +14,26 @@ def visible_query(tenant_id, stamp, vehicle_id=None, fleet_customer_id=None):
         Fuel.tenant_id == tenant_id, Fuel.deleted_at.is_(None), Vehicle.tenant_id == tenant_id, Vehicle.deleted_at.is_(None),
         Member.tenant_id == tenant_id, Member.vehicle_id == Fuel.vehicle_id, Member.fleet_customer_id == Fuel.fleet_customer_id,
         Customer.tenant_id == tenant_id, Customer.deleted_at.is_(None), *active_membership(stamp),
-        func.upper(func.trim(Vehicle.vin)) == Fuel.verified_vin,
         Fuel.coverage_start >= Member.effective_from,
         or_(Member.effective_to.is_(None), Fuel.coverage_end <= Member.effective_to),
         Fuel.coverage_end <= Fuel.source_read_at, Fuel.source_read_at <= stamp,
     )
+    valid_bound = select(Binding.id).where(
+        Binding.id == Fuel.dashboard_binding_id, Binding.tenant_id == tenant_id,
+        Binding.vehicle_id == Fuel.vehicle_id, Binding.fleet_membership_id == Fuel.fleet_membership_id,
+        Binding.fleet_customer_id == Fuel.fleet_customer_id, Binding.deleted_at.is_(None), Binding.revoked_at.is_(None),
+        Binding.placeholder_vin == "PENDING-26", Vehicle.vin == Binding.placeholder_vin,
+        Binding.source_company_id == Fuel.provider_company_id, Binding.source_company_label == Fuel.source_company_label,
+        Binding.provider_vehicle_id == Fuel.provider_vehicle_id, Fuel.provider_company_id == "KT8934277",
+        Fuel.source_company_label == "77 CARGO LLC", Fuel.provider_vehicle_id == "5981300", Fuel.verified_vin.is_(None),
+        Fuel.source_vin_state.in_(("not_displayed", "explicitly_empty")),
+        Binding.reviewed_at <= Binding.effective_from, Binding.effective_from <= Fuel.coverage_start,
+        Binding.effective_from <= Fuel.source_read_at, Binding.effective_from <= stamp,
+        or_(Binding.effective_to.is_(None), and_(Binding.effective_to > stamp,
+            Binding.effective_to > Fuel.source_read_at, Binding.effective_to >= Fuel.coverage_end)),
+    ).correlate(Fuel, Vehicle).exists()
+    query = query.where(or_(and_(Fuel.dashboard_binding_id.is_(None), Fuel.verified_vin.is_not(None),
+        func.upper(func.trim(Vehicle.vin)) == Fuel.verified_vin), valid_bound))
     if vehicle_id:
         query = query.where(Fuel.vehicle_id == vehicle_id)
     if fleet_customer_id:
@@ -48,6 +64,6 @@ async def list_fuel_daily(db, tenant_id, start_date, end_date, vehicle_id=None, 
     fields = ("id", "vehicle_id", "fleet_customer_id", "report_date", "source", "source_timezone", "timezone_status",
               "driving_fuel_gallons", "idling_fuel_gallons", "reported_total_fuel_gallons", "source_distance_miles",
               "source_driving_seconds", "source_idling_seconds", "source_read_at", "captured_at")
-    items = [{**{key: getattr(row, key) for key in fields}, "unit_number": unit, "fleet_name": fleet} for row, unit, fleet in rows]
+    items = [{**{key: getattr(row, key) for key in fields}, "vehicle_identity_basis": "reviewed_provider_binding" if row.dashboard_binding_id else "verified_vin", "vehicle_identity_binding_id": row.dashboard_binding_id, "unit_number": unit, "fleet_name": fleet} for row, unit, fleet in rows]
     return dict(items=items, total=total, limit=limit, offset=offset, start_date=start_date, end_date=end_date,
                 imported_start=bounds[0], imported_end=bounds[1], coverage="partial", date_basis="source_report_date")
