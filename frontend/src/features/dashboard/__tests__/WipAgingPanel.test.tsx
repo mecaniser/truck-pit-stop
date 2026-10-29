@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import userEvent from '@testing-library/user-event'
 import WipAgingPanel from '../WipAgingPanel'
 import { clockLabel, DEFAULT_WIP_FILTERS, type WipAgingResponse, type WipAgingRow, type WipFilters } from '../wipAging'
 
@@ -72,10 +73,33 @@ describe('A2 Shop Work aging', () => {
     render(<Harness initial={{ ...DEFAULT_WIP_FILTERS, offset: 50 }} />)
     fireEvent.click(screen.getByRole('button', { name: 'Parts 49' }))
     expect(testState.options.queryKey[3]).toMatchObject({ category: 'parts', offset: 0 })
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
     fireEvent.click(screen.getByRole('button', { name: 'Promise overdue 1' }))
     fireEvent.change(screen.getByLabelText('Wait timing'), { target: { value: 'unknown' } })
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search active work' }), { target: { value: '100%_truck' } })
     expect(testState.options.queryKey[3]).toMatchObject({ category: 'parts', overdue_only: true, timing: 'unknown', search: '100%_truck', offset: 0 })
+  })
+  it('keeps filter and timing explanations collapsed and supports keyboard dismissal', async () => {
+    const user = userEvent.setup()
+    render(<Harness />)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    const trigger = screen.getByRole('button', { name: 'Filters' })
+    trigger.focus()
+    await user.keyboard('{Enter}')
+    expect(screen.getByRole('dialog', { name: 'Active work filters' })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(trigger).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: 'About work timing' }))
+    expect(screen.getByRole('dialog', { name: 'Work timing explained' })).toHaveTextContent('Order age is not time in the shop.')
+    await user.click(screen.getByRole('searchbox', { name: 'Search active work' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+  it('offers mobile category selection and an actionable search-wide Unknown count', () => {
+    render(<Harness />)
+    fireEvent.change(screen.getByLabelText('Active work category'), { target: { value: 'parts' } })
+    fireEvent.click(screen.getByRole('button', { name: '1 unknown across all active jobs; filter unknown wait timing' }))
+    expect(testState.options.queryKey[3]).toMatchObject({ category: 'parts', timing: 'unknown', offset: 0 })
   })
   it('uses the server has_more flag and page offset', () => {
     render(<Harness />)
@@ -99,7 +123,7 @@ describe('A2 Shop Work aging', () => {
   it('uses assigned scope and separates the cache by principal and shop', () => {
     testState.data = { ...fixture, scope: 'assigned' }
     render(<Harness />)
-    expect(screen.getByText('assigned active jobs')).toBeInTheDocument()
+    expect(screen.getByText('51 matching jobs · assigned to you')).toBeInTheDocument()
     expect(testState.options.queryKey.slice(0, 3)).toEqual(['dashboard-wip-aging', 'shop-a', 'owner-a'])
   })
   it('does not show stale records as current after an error', () => {

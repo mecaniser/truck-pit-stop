@@ -38,3 +38,13 @@ Permitted CUA on signed-in fictional owner, exact localhost5173/frontend to8000/
 Private read-only repeatable-read pre/post hashes across13 source tables (10 existing fixture rows) match exactly. Invoices, payments, settlements, ledger, refunds, overpayments, time sessions/audit, parts and inventory remain empty/unchanged; existing repair orders unchanged. No production data touched, no invoices created, no importer/provider/collector invocation or configuration changes.
 
 Protected PR CI, normal merge, deployment and actual production acceptance remain open. This receipt does not claim A2 Done; ETS parity remains6/30 complete. Held B4 importer and later C3/R3/A3/S1 remain unchanged.
+
+## Compact layout refinement, 2026-10-29
+
+The user requested screen-space priority before merge. Impeccable context/distill/polish and Emil Kowalski interaction guidance informed an existing-contract UI refinement: compact header, search and Filters on one row, single desktop category strip/mobile selector, actionable Unknown count, and timing explanations in a popover. Payment closeout and all projection semantics remain unchanged.
+
+- 34 focused frontend tests, changed-source ESLint, TypeScript and production build passed. Final category-strip CSS correction passed all 13 panel tests. Impeccable manual detector returned no findings.
+- Actual signed-in fictional owner CUA: Day/Night desktop1280x900 and mobile390x844. First job begins at280.58px desktop (previous378px) and338px mobile (previousapproximately760px). Desktop exposes six complete rows; mobile exposes two complete rows and the next job. No horizontal document overflow. Final category strip does not clip or vertically scroll.
+- Filters opens with click/Enter; Escape dismisses and restores trigger focus. Timing help dismisses outside. Unknown filters exactly two missing-clock jobs. Mobile category selection retains correct Parts count and row; controls remain accessible with 44px mobile targets. Screenshots: private /tmp/db145-browser-proof/compact-*.jpg, fictional data only.
+- Read-only local fixed source cohort remains unchanged across13 tables/10 rows. Production baseline captured read-only across13 tables/20,549 rows at schema191_fuel_reviewed_binding; private baseline SHA256 7d9ab5234e2937c860c2da4f3ce784b57280b81dcb038cc96af77bd56b4c1654.
+- Prior candidate ccd5e291 passed CI40943971060. Refined candidate requires fresh protected CI before merge. No deployment or production A2 acceptance claimed here.

@@ -201,11 +201,11 @@ export default function ShopCockpitActionLedger({
   }
 
   return (
-    <section className="db-shop-work-new db-operating-surface" aria-labelledby="shop-work-title">
+    <section className={`db-shop-work-new db-operating-surface${activeWork ? ' db-shop-work-new--compact' : ''}`} aria-labelledby="shop-work-title">
       <header className="db-shop-work-new__header db-operating-page-header">
         <div>
           <h1 id="shop-work-title">Shop Work</h1>
-          <p>{activeWork ? 'See what is waiting, what is late, and what needs attention.' : 'Open a repair order to review work, approvals, history, and payment.'}</p>
+          {!activeWork && <p>Open a repair order to review work, approvals, history, and payment.</p>}
         </div>
         <div className="db-shop-work-new__header-actions">
           <button
@@ -225,13 +225,14 @@ export default function ShopCockpitActionLedger({
                 className="db-shop-work-new__quick-action"
                 onClick={onToggleQuickOrder}
                 aria-expanded={quickOrderExpanded}
+                aria-label="Lightning Order"
               >
                 <Zap aria-hidden="true" />
-                <span>Lightning Order</span>
+                <span className="db-shop-work-new__action-full">Lightning Order</span>{activeWork && <span className="db-shop-work-new__action-short" aria-hidden="true">Quick</span>}
               </button>
-              <button type="button" className="db-shop-work-new__primary-action" onClick={onFullOrder}>
+              <button type="button" className="db-shop-work-new__primary-action" aria-label="Full Order" onClick={onFullOrder}>
                 <Plus aria-hidden="true" />
-                <span>Full Order</span>
+                <span className="db-shop-work-new__action-full">Full Order</span>{activeWork && <span className="db-shop-work-new__action-short" aria-hidden="true">Order</span>}
               </button>
             </>
           )}

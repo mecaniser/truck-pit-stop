@@ -199,3 +199,7 @@ Wait label examples: `Waiting for parts · 5h`, `Awaiting review · Unknown`, `A
 Financial records, invoice/payment/settlement/credit rows, selling prices, inventory, labor/time/attendance/break rows and order statuses remain unchanged. No production fixtures, collection calls, provider actions or statement sends. B4 importer `codex/db139-importer-money-held` remains held; existing collectors/configuration/watch exclusions are untouched.
 
 Architecture finalized this contract through read-only source review and a documentation edit. Application implementation is now authorized under the defined boundaries. This contract is not evidence of tests, runtime acceptance or release. Mandatory local-runtime alignment is required before application implementation/local QA; fresh independent journey QA and targeted tenant/access review remain required.
+
+## Density refinement — 2026-10-29
+
+User prioritizes screen real estate before release. The existing operational surface must show jobs sooner: compact title/actions, fewer always-visible control rows, secondary filters and timing explanations behind accessible disclosure. Preserve complete counts, all filters, keyboard access, mobile target sizes, Unknown timing, closeout separation and existing drill-down. No API, authorization, clock or financial semantics change. Compare first visible row position at1280desktop and390mobile against the initial layout; record actual measurements and interaction evidence.
