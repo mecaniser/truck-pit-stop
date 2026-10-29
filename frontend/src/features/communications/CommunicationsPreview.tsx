@@ -402,15 +402,6 @@ export default function CommunicationsPreview({
             </h1>
           </div>
           <div className="page-actions">
-            {connection?.embedded && (
-              <a
-                className="subtle-button previous-inbox"
-                href="/dashboard/messages/previous"
-                title="Previous inbox: start new SMS, view archived conversations"
-              >
-                Previous inbox
-              </a>
-            )}
             {connection?.onSMSSetup && (
               <button
                 className="subtle-button"

@@ -8,6 +8,7 @@ const testState = vi.hoisted(() => ({
   presentationVariant: 'new' as 'new' | 'legacy',
   navigate: vi.fn(),
   locationSearch: '',
+  locationState: null as { shopWorkQueue: string; shopWorkView?: string } | null,
   invalidateQueries: vi.fn(),
   query: {
     data: undefined as Record<string, unknown> | undefined,
@@ -20,10 +21,10 @@ const testState = vi.hoisted(() => ({
 
 vi.mock('react-router-dom', () => ({
   useNavigate: () => testState.navigate,
-  useLocation: () => ({ state: null, search: testState.locationSearch }),
+  useLocation: () => ({ state: testState.locationState, search: testState.locationSearch }),
 }))
 vi.mock('@tanstack/react-query', () => ({
-  useQuery: () => testState.query,
+  useQuery: ({ queryKey }: { queryKey: string[] }) => queryKey[0] === 'dashboard-wip-aging' ? { ...testState.query, data: wipFixture, isError: false } : testState.query,
   useQueryClient: () => ({ invalidateQueries: testState.invalidateQueries }),
 }))
 vi.mock('../../../stores/authStore', () => ({
@@ -107,6 +108,13 @@ const dashboardFixture = {
   closed_today: { items: [], has_more: false },
 }
 
+const wipFixture = {
+  scope: 'shop', timezone: 'America/New_York', filters: { search: '' },
+  summary: { total_jobs: 1, overdue_jobs: 0, unknown_wait_jobs: 0, category_counts: { approval: 0, parts: 0, technician: 0, review: 0, other_hold: 0, active: 1, preparation: 0 } },
+  filtered_total: 1, offset: 0, limit: 50, has_more: false,
+  items: [{ ...order({ id: 'ro-floor-22', order_number: 'RO-1022', status: 'in_progress' }), category: 'active', reason: 'work_in_progress', assignment: 'assigned', technician_names: ['Morgan Lee'], order_age: { state: 'known', seconds: 3600 }, current_wait: { state: 'not_applicable' }, promised_finish_at: null, action_lane: 'on_floor' }],
+}
+
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
@@ -128,6 +136,7 @@ describe('DashboardHome DB-035 presentation boundary', () => {
     testState.presentationVariant = 'new'
     testState.navigate.mockReset()
     testState.locationSearch = ''
+    testState.locationState = null
     testState.invalidateQueries.mockReset()
     testState.query = {
       data: dashboardFixture,
@@ -138,19 +147,59 @@ describe('DashboardHome DB-035 presentation boundary', () => {
     }
   })
 
-  it('renders the projection-only Action Ledger and opens the canonical workspace in place', () => {
+  it('defaults to active work and opens the canonical workspace in place', () => {
     render(<DashboardHome />)
 
     expect(screen.getByRole('heading', { name: 'Shop Work' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Action Ledger' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Active work' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByText('Payment Due')).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Shop Cockpit' })).not.toBeInTheDocument()
 
     expect(screen.queryByText('Selected repair record · read only')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Open RO-1022 in Repair Orders' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open RO-1022 in Shop Work' }))
 
     expect(testState.navigate).toHaveBeenCalledWith(
-      '/dashboard?selected=ro-floor-22&queue=on_floor',
+      '/dashboard?selected=ro-floor-22&queue=on_floor&work_view=active',
     )
+  })
+
+  it('keeps unpaid closeout separate and preserves existing payment status', () => {
+    render(<DashboardHome />)
+    fireEvent.click(screen.getByRole('button', { name: 'Closeout' }))
+    expect(screen.getByText('Payment Due')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open RO-1009 in Repair Orders' })).toBeInTheDocument()
+    expect(screen.queryByText('Work in progress')).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: /On the Floor/ })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Active work' }))
+    expect(screen.getByText('Work in progress')).toBeInTheDocument()
+    expect(screen.queryByText('Payment Due')).not.toBeInTheDocument()
+  })
+
+  it('restores external Closeout navigation without losing the active-work filter', () => {
+    const { rerender } = render(<DashboardHome />)
+    fireEvent.click(screen.getByRole('button', { name: 'Parts 0' }))
+    testState.locationState = { shopWorkQueue: 'ready_to_close' }
+    rerender(<DashboardHome />)
+    expect(screen.getByRole('button', { name: 'Closeout' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'Active work' }))
+    expect(screen.getByRole('button', { name: 'Parts 0' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('restores Payment review after opening and closing its existing workspace', () => {
+    testState.query.data = { ...dashboardFixture, needs_attention: { items: [order({ pending_zelle_confirmation: true })], has_more: false } }
+    const { rerender } = render(<DashboardHome />)
+    fireEvent.click(screen.getByRole('button', { name: 'Closeout' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Payment review 1' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open RO-1017 in Repair Orders' }))
+    expect(testState.navigate).toHaveBeenCalledWith('/dashboard?selected=ro-needs-17&queue=needs_action&work_view=closeout')
+    testState.locationSearch = '?selected=ro-needs-17&queue=needs_action&work_view=closeout'
+    rerender(<DashboardHome />)
+    expect(screen.getByTestId('repair-order-workspace')).toBeInTheDocument()
+    testState.locationSearch = '?queue=needs_action&work_view=closeout'
+    rerender(<DashboardHome />)
+    expect(screen.getByRole('button', { name: 'Closeout' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('tab', { name: 'Payment review 1' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('Zelle Review')).toBeInTheDocument()
   })
 
   it.each(['completed', 'invoiced'])('keeps legacy imported %s history free of billing instructions', (status) => {

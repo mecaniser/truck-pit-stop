@@ -107,6 +107,9 @@ export default function ShopCockpitActionLedger({
   valueSummaryError = false,
   onValueScopeChange,
   initialLaneFilter = 'all',
+  activeWork,
+  workView = 'active',
+  onWorkViewChange,
 }: {
   projection: ActionQueueProjection
   isManager: boolean
@@ -129,8 +132,11 @@ export default function ShopCockpitActionLedger({
   valueSummaryError?: boolean
   onValueScopeChange?: (scope: { lane: ActionQueueFilter; search: string }) => void
   initialLaneFilter?: ActionQueueFilter
+  activeWork?: ReactNode
+  workView?: 'active' | 'closeout'
+  onWorkViewChange?: (view: 'active' | 'closeout') => void
 }) {
-  const lanes = useMemo<LaneDefinition[]>(() => [
+  const baseLanes = useMemo<LaneDefinition[]>(() => [
     {
       key: 'needs_action',
       label: LANE_LABEL.needs_action,
@@ -156,11 +162,18 @@ export default function ShopCockpitActionLedger({
       hasMore: projection.orders_closed_today_has_more ?? false,
     },
   ], [projection])
+  const hasActiveWork = Boolean(activeWork)
+  const lanes = useMemo(() => hasActiveWork ? [
+    { ...baseLanes[2] },
+    { ...baseLanes[0], label: 'Payment review', orders: baseLanes[0].orders.filter(order => order.pending_zelle_confirmation), hasMore: false },
+    { ...baseLanes[3] },
+  ] : baseLanes, [hasActiveWork, baseLanes])
+  const showingActive = hasActiveWork && workView === 'active' && queueView === 'queue'
   const allRows = useMemo(
     () => lanes.flatMap((lane) => lane.orders.map((order) => ({ order, lane: lane.key }))),
     [lanes],
   )
-  const [laneFilter, setLaneFilter] = useState<ActionQueueFilter>(initialLaneFilter)
+  const [laneFilter, setLaneFilter] = useState<ActionQueueFilter>(activeWork && !['needs_action', 'ready_to_close', 'closed_today'].includes(initialLaneFilter) ? 'ready_to_close' : initialLaneFilter)
   const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
@@ -172,8 +185,8 @@ export default function ShopCockpitActionLedger({
   // state whenever the user returns instead of treating it as construction-time
   // default data.
   useEffect(() => {
-    setLaneFilter(initialLaneFilter)
-  }, [initialLaneFilter])
+    setLaneFilter(hasActiveWork && !['needs_action', 'ready_to_close', 'closed_today'].includes(initialLaneFilter) ? 'ready_to_close' : initialLaneFilter)
+  }, [initialLaneFilter, hasActiveWork])
   const normalizedSearch = searchQuery.trim().toLocaleLowerCase()
   const visibleRows = allRows.filter(({ order, lane }) => {
     if (laneFilter !== 'all' && lane !== laneFilter) return false
@@ -188,11 +201,11 @@ export default function ShopCockpitActionLedger({
   }
 
   return (
-    <section className="db-shop-work-new db-operating-surface" aria-labelledby="shop-work-title">
+    <section className={`db-shop-work-new db-operating-surface${activeWork ? ' db-shop-work-new--compact' : ''}`} aria-labelledby="shop-work-title">
       <header className="db-shop-work-new__header db-operating-page-header">
         <div>
           <h1 id="shop-work-title">Shop Work</h1>
-          <p>Open a repair order to review work, approvals, history, and payment.</p>
+          {!activeWork && <p>Open a repair order to review work, approvals, history, and payment.</p>}
         </div>
         <div className="db-shop-work-new__header-actions">
           <button
@@ -212,13 +225,14 @@ export default function ShopCockpitActionLedger({
                 className="db-shop-work-new__quick-action"
                 onClick={onToggleQuickOrder}
                 aria-expanded={quickOrderExpanded}
+                aria-label="Lightning Order"
               >
                 <Zap aria-hidden="true" />
-                <span>Lightning Order</span>
+                <span className="db-shop-work-new__action-full">Lightning Order</span>{activeWork && <span className="db-shop-work-new__action-short" aria-hidden="true">Quick</span>}
               </button>
-              <button type="button" className="db-shop-work-new__primary-action" onClick={onFullOrder}>
+              <button type="button" className="db-shop-work-new__primary-action" aria-label="Full Order" onClick={onFullOrder}>
                 <Plus aria-hidden="true" />
-                <span>Full Order</span>
+                <span className="db-shop-work-new__action-full">Full Order</span>{activeWork && <span className="db-shop-work-new__action-short" aria-hidden="true">Order</span>}
               </button>
             </>
           )}
@@ -235,13 +249,14 @@ export default function ShopCockpitActionLedger({
         <header className="db-action-ledger__caption">
           <div className="db-action-ledger__caption-text">
             <div className="db-shop-work-new__view-switch" aria-label="Shop Work view">
+              {activeWork && <button type="button" aria-pressed={showingActive} onClick={() => { onWorkViewChange?.('active'); onQueueViewChange('queue') }}><LayoutList aria-hidden="true" />Active work</button>}
               <button
                 type="button"
-                aria-pressed={queueView === 'queue'}
-                onClick={() => onQueueViewChange('queue')}
+                aria-pressed={queueView === 'queue' && !showingActive}
+                onClick={() => { onWorkViewChange?.('closeout'); onQueueViewChange('queue') }}
               >
-                <LayoutList aria-hidden="true" />
-                Queue
+                {!activeWork && <LayoutList aria-hidden="true" />}
+                {activeWork ? 'Closeout' : 'Queue'}
               </button>
               {canViewActivity && (
                 <button
@@ -255,11 +270,11 @@ export default function ShopCockpitActionLedger({
                 </button>
               )}
             </div>
-            <h2>{queueView === 'activity' ? 'Activity' : 'Action Ledger'}</h2>
+            {!activeWork && <h2>{queueView === 'activity' ? 'Activity' : 'Action Ledger'}</h2>}
           </div>
           <div className="db-action-ledger__caption-summary" aria-live="polite">
-            <span className="db-action-ledger__caption-value">
-              <span>{searchQuery.trim() ? 'Matching work value' : 'Work value'}</span>
+            {!showingActive && (!activeWork || laneFilter !== 'needs_action') && <span className="db-action-ledger__caption-value">
+              <span>{activeWork ? 'Closeout work value' : searchQuery.trim() ? 'Matching work value' : 'Work value'}</span>
               <strong>
                 {valueSummaryLoading
                   ? 'Calculating…'
@@ -267,24 +282,24 @@ export default function ShopCockpitActionLedger({
                     ? 'Unavailable'
                     : currency(valueSummary?.order_value ?? '0.00')}
               </strong>
-            </span>
+            </span>}
             <span className="db-action-ledger__caption-meta">{lastUpdatedLabel || 'Updated recently'}</span>
           </div>
         </header>
 
         {/* Queue-only controls: the chips and search filter the queue, so
             they leave with it. */}
-        {queueView === 'queue' && (
+        {queueView === 'queue' && !showingActive && (
           <div className="db-shop-work-new__toolbar">
             <div className="db-shop-work-new__lane-tabs" role="tablist" aria-label="Work queues">
-            <button
+            {!activeWork && <button
               type="button"
               role="tab"
               aria-selected={laneFilter === 'all'}
               onClick={() => selectLane('all')}
             >
               All work <span>{totalCount}</span>
-            </button>
+            </button>}
             {lanes.map((lane) => (
               <button
                 type="button"
@@ -294,7 +309,7 @@ export default function ShopCockpitActionLedger({
                 onClick={() => selectLane(lane.key)}
                 data-lane={lane.key}
               >
-                {lane.label} <span>{lane.orders.length}{lane.hasMore ? '+' : ''}</span>
+                {lane.label} <span>{lane.orders.length}{activeWork && lane.key === 'needs_action' && lane.orders.length >= 50 ? ' shown' : lane.hasMore ? '+' : ''}</span>
               </button>
             ))}
           </div>
@@ -314,7 +329,7 @@ export default function ShopCockpitActionLedger({
 
       {queueView === 'activity' ? (
         <div className="db-shop-work-new__activity db-operating-surface__scroller">{activityFeed}</div>
-      ) : (
+      ) : showingActive ? activeWork : (
         <>
           {/* The scroller wraps the card so the scrollbar sits outside the
               border; the caption above stays pinned. */}
@@ -323,7 +338,7 @@ export default function ShopCockpitActionLedger({
             <div className="db-action-ledger__rows">
               {visibleRows.length === 0 ? (
                 <div className="db-action-ledger__empty" role="status">
-                  <strong>{totalCount === 0 ? 'No work is waiting' : 'No work matches this view'}</strong>
+                  <strong>{activeWork ? 'No closeout matches this view' : totalCount === 0 ? 'No work is waiting' : 'No work matches this view'}</strong>
                   <span>{totalCount === 0 ? 'New repair orders will appear in their canonical queue.' : 'Choose another queue or clear the search.'}</span>
                 </div>
               ) : visibleRows.map(({ order, lane }) => {
@@ -337,7 +352,7 @@ export default function ShopCockpitActionLedger({
                     data-order-id={order.id}
                     data-lane={lane}
                   >
-                    <span className={`db-action-ledger__lane db-action-ledger__lane--${lane}`}>{LANE_LABEL[lane]}</span>
+                    <span className={`db-action-ledger__lane db-action-ledger__lane--${lane}`}>{activeWork && lane === 'needs_action' ? 'Payment review' : LANE_LABEL[lane]}</span>
                     <span className="db-action-ledger__identity">
                       <strong>{order.customer_name}</strong>
                       <span>{[order.vehicle_info, order.vehicle_unit_number ? `Unit ${order.vehicle_unit_number}` : null].filter(Boolean).join(' · ')}</span>

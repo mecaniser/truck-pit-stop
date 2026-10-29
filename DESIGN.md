@@ -126,3 +126,7 @@ Density controls spacing and information rhythm rather than browser zoom. Compac
 Authenticated surfaces use deep navy operating fields, restrained raised layers, road-white light surfaces, explicit edges, and low-noise depth. High contrast and forced colors replace decorative material with opaque system-safe boundaries. Reduced transparency removes blur. There is no ambient animation; preview changes are immediate and reversible, preserve focus, and never animate every descendant.
 
 Notifications use the shared toaster and respect safe areas, mobile navigation, modals, and fixed repair-order actions. At 320px and 390px they wrap within the viewport and retain an accessible 44px dismiss target.
+
+### Staff workspace density priority
+
+For added staff functionality, screen real estate is a first-order requirement. Reorganize existing controls before stacking another toolbar or summary. Keep records visible early; consolidate duplicate counts and move secondary controls/explanations into accessible disclosure. Compact does not mean tiny type, wrapped button labels, clipped content or reduced mobile target safety. Verify actual desktop and mobile views with realistic records.

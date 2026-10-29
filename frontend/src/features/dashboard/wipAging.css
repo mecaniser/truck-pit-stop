@@ -1,0 +1,93 @@
+.db-wip { min-width: 0; min-height: 0; display: flex; flex-direction: column; flex: 1; color: var(--workspace-text, #14243a); }
+.db-wip__facets { display: flex; flex: 0 0 auto; min-height: 44px; flex-wrap: nowrap; gap: 4px; margin: 8px 0 0; overflow-x: auto; overflow-y: hidden; }
+.db-wip__facets button { flex: 0 0 auto; }
+.db-wip__facets button:focus-visible { outline-offset: -3px; }
+.db-wip button, .db-wip select { color: var(--workspace-text, #14243a); font: inherit; }
+.db-wip__facets button, .db-wip__filters > button, .db-wip select, .db-wip__pagination button, .db-wip [role='alert'] button { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap; border: 1px solid var(--workspace-border, #cbd5df); border-radius: 9px; padding: 7px 10px; background: var(--surface-overlay, #fff); font-size: 13px; }
+.db-wip__facets button > span, .db-wip__filters > button > span { font-variant-numeric: tabular-nums; font-weight: 750; }
+.db-wip button[aria-pressed='true'] { border-color: var(--accent-600, #0369a1); box-shadow: inset 0 0 0 1px var(--accent-600, #0369a1); background: var(--surface-raised, #f6f8fb); }
+.db-wip__filters { display: grid; gap: 12px; }
+.db-wip__filters label { display: flex; flex-direction: column; gap: 4px; color: var(--workspace-muted, #5b6d82); font-size: 11px; min-width: 0; }
+.db-wip__select { position: relative; display: block; }
+.db-wip select { width: 100%; appearance: none; padding-right: 32px; }
+.db-wip__select > svg { pointer-events: none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--workspace-text, #14243a); }
+/* Staff-shell input rules carry !important; preserve its actual theme tokens. */
+.db-presentation-new .db-staff-content .db-wip select { background-color: var(--surface-overlay) !important; color: var(--workspace-text) !important; border-color: var(--workspace-border) !important; }
+.db-wip select option { background-color: var(--surface-overlay, #fff); color: var(--workspace-text, #14243a); }
+.db-wip__result-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; color: var(--workspace-muted); font-size: 12px; }
+.db-wip__rows { border: 1px solid var(--workspace-border, #cbd5df); border-radius: 12px; overflow: hidden; }
+.db-wip__row { width: 100%; display: grid; grid-template-columns: minmax(170px, 1.25fr) minmax(145px, 1fr) minmax(170px, 1fr) 18px; align-items: center; gap: 18px; padding: 12px 14px; border: 0; border-bottom: 1px solid var(--workspace-border, #cbd5df); background: var(--surface-overlay, #fff); text-align: left; }
+.db-wip__row:last-child { border-bottom: 0; }
+.db-wip__row:hover { background: var(--surface-raised, #f6f8fb); }
+.db-wip__row > span { display: flex; flex-direction: column; min-width: 0; gap: 4px; overflow-wrap: anywhere; }
+.db-wip__identity > strong { font-size: 14px; }
+.db-wip__identity > span, .db-wip__identity > small, .db-wip__evidence, .db-wip__wait > small { color: var(--workspace-muted, #5b6d82); font-size: 12px; }
+.db-wip__wait > strong { font-size: 13px; }
+.db-wip__wait > span { font-size: 13px; }
+.db-wip__wait b, .db-wip__evidence b { font-variant-numeric: tabular-nums; }
+.db-wip__row[data-overdue='true'] .db-wip__promise { color: var(--parts-status-danger, #a52720); font-weight: 700; }
+.db-wip__open, .db-wip__pagination svg { width: 17px; height: 17px; }
+.db-wip__pagination { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; padding: 12px 0; font-size: 12px; }
+.db-wip__pagination > span { margin-right: auto; color: var(--workspace-muted, #5b6d82); }
+.db-wip button:disabled { opacity: .5; cursor: default; }
+.db-wip button:focus-visible, .db-wip select:focus-visible { outline: 2px solid var(--accent-600, #0369a1); outline-offset: 3px; }
+.db-wip__footnote { margin: 10px 0 0; }
+@media (max-width: 680px) {
+  .db-wip__facets { display: none; }
+  .db-wip__mobile-category { display: block; margin-top: 8px; }
+  .db-wip__row { grid-template-columns: minmax(0, 1fr) 18px; gap: 10px; padding: 13px; }
+  .db-wip__identity, .db-wip__wait, .db-wip__evidence { grid-column: 1; }
+  .db-wip__open { grid-column: 2; grid-row: 1 / 4; }
+  .db-wip__row > .db-wip__evidence { flex-direction: row; flex-wrap: wrap; gap: 5px 14px; }
+  .db-wip__evidence .db-wip__promise { flex-basis: 100%; }
+  .db-wip__row > .db-wip__wait { flex-direction: row; flex-wrap: wrap; gap: 5px 12px; }
+  .db-wip__pagination { justify-content: space-between; }
+  .db-wip__pagination > span { flex-basis: 100%; }
+}
+
+/* Three view segments remain single-line on narrow Shop Work screens. */
+.db-shop-work-new__view-switch button { white-space: nowrap; }
+.db-shop-work-new__view-switch button > svg { flex-shrink: 0; }
+@media (max-width: 390px) {
+  .db-shop-work-new__view-switch button { padding-inline: 7px; font-size: 12px; }
+}
+
+.db-wip__toolbar { display: flex; align-items: center; gap: 8px; }
+.db-wip__toolbar .db-shop-work-new__search { min-width: 0; width: auto; flex: 1 1 auto; }
+.db-wip__popover { position: relative; flex: 0 0 auto; }
+.db-wip__filter-trigger { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 12px; border: 1px solid var(--workspace-border); border-radius: 9px; background: var(--surface-overlay); white-space: nowrap; font-size: 13px !important; }
+.db-wip__filter-trigger svg, .db-wip__info svg { width: 16px; height: 16px; flex-shrink: 0; }
+.db-wip__filter-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-600); }
+.db-wip__popover-panel { position: absolute; z-index: 40; right: 0; top: calc(100% + 6px); width: 270px; max-width: calc(100vw - 32px); padding: 14px; border: 1px solid var(--workspace-border); border-radius: 12px; background: var(--surface-overlay); color: var(--workspace-text); }
+.db-wip__timing-help { font-size: 13px; line-height: 1.5; }
+.db-wip__timing-help p { margin: 8px 0 0; }
+.db-wip__timing-summary { display: flex; align-items: center; gap: 4px; }
+.db-wip .db-wip__unknown { white-space: nowrap; background: transparent; border: 0; padding: 6px; border-radius: 6px; font-size: 12px; color: var(--workspace-muted); }
+.db-wip__info { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; min-height: 32px; border: 0; border-radius: 6px; background: transparent; }
+.db-wip__mobile-category { display: none; }
+.db-shop-work-new__action-short { display: none; }
+.db-shop-work-new--compact .db-shop-work-new__header { align-items: center; gap: 12px; margin-bottom: 10px; }
+.db-shop-work-new--compact .db-shop-work-new__header-actions { flex-wrap: nowrap; }
+.db-shop-work-new--compact .db-shop-work-new__header-actions button { white-space: nowrap; padding: 7px 11px; }
+.db-shop-work-new--compact .db-action-ledger__caption { padding-bottom: 8px; }
+.db-shop-work-new--compact .db-shop-work-new__view-switch button { white-space: nowrap; }
+@media (max-width: 680px) {
+  .db-wip__mobile-category { display: block; }
+  .db-wip__facets { display: none; }
+  .db-wip__mobile-category select { min-height: 44px; }
+  .db-wip .db-wip__unknown, .db-wip__info { min-height: 44px; }
+  .db-wip__info { min-width: 44px; }
+  .db-wip__result-meta { min-height: 44px; }
+  .db-shop-work-new--compact .db-shop-work-new__header { display: flex; gap: 8px; }
+  .db-presentation-new .db-shop-work-new--compact .db-operating-page-header h1 { font-size: 20px !important; white-space: nowrap; }
+  .db-shop-work-new--compact .db-shop-work-new__header-actions { margin-top: 0; gap: 4px; }
+  .db-shop-work-new--compact .db-shop-work-new__header-actions button { flex: 0 0 auto; min-height: 44px; padding: 6px 8px; gap: 4px; font-size: 12px; }
+  .db-shop-work-new--compact .db-shop-work-new__quiet-action { width: 44px; }
+  .db-shop-work-new--compact .db-shop-work-new__quiet-action span, .db-shop-work-new--compact .db-shop-work-new__action-full { display: none; }
+  .db-shop-work-new--compact .db-shop-work-new__action-short { display: inline; }
+  .db-shop-work-new--compact .db-shop-work-new__header-actions svg { width: 15px; height: 15px; flex-shrink: 0; }
+  .db-shop-work-new--compact .db-action-ledger__caption-text { width: 100%; }
+  .db-shop-work-new--compact .db-shop-work-new__view-switch { width: 100%; }
+  .db-shop-work-new--compact .db-shop-work-new__view-switch button { flex: 1; min-height: 44px; justify-content: center; }
+  .db-shop-work-new--compact .db-action-ledger__caption-meta { display: none; }
+}

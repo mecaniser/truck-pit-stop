@@ -480,6 +480,7 @@ describe("dashboard inbox integration", () => {
     expect(
       screen.queryByLabelText("DieselBridge workspace"),
     ).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Previous inbox" })).not.toBeInTheDocument();
     expect(screen.queryByText("Connected inbox")).not.toBeInTheDocument();
     expect(screen.queryByText("Interactive prototype")).not.toBeInTheDocument();
     expect(
@@ -501,6 +502,7 @@ describe("dashboard inbox integration", () => {
     vi.mocked(inboxApi.list).mockResolvedValue([]);
     render(<DashboardInboxPage />);
     expect(await screen.findByText(/No conversations yet/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Previous inbox" })).not.toBeInTheDocument();
     expect(
       screen.queryByRole("textbox", { name: "Message draft" }),
     ).not.toBeInTheDocument();
