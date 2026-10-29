@@ -73,6 +73,7 @@ def recover_pending(state, observer=None):
 
 
 def run_catchup(state, observer):
+    preparing = os.environ.get("MOTIVE_FUEL_PREPARE_ONLY") == "true"
     stamp = datetime.now(UTC)
     expected = expected_scope()
     pin = state / "scope.json"
@@ -92,6 +93,8 @@ def run_catchup(state, observer):
         maximum=int(os.environ.get("MOTIVE_FUEL_MAX_DAYS", "7")),
         explicit=(start, end) if start else None,
     )
+    if preparing and (not start or len(days) > 2):
+        raise ValueError("Fuel preview requires an explicit maximum-two-date range")
     if not days:
         observer.enter("complete")
         return
@@ -108,7 +111,7 @@ def run_catchup(state, observer):
         "days": days,
     }
     immutable_json(run / "plan.json", plan)
-    observer.batch_import_possible = True
+    observer.batch_import_possible = not preparing
     observer.enter("collection")
     read_process(
         [
@@ -122,6 +125,12 @@ def run_catchup(state, observer):
         timeout=1800,
         observer=observer,
     )
+    if preparing:
+        from scripts.motive_sync.fuel_day import verify_preview
+        for day in days:
+            verify_preview(run / day / "source.json", run / "plan.json", day)
+        print(json.dumps({"stage": "fuel_worker_preview_complete", "dates": len(days)}), flush=True)
+        return
     # Child success alone is insufficient. Validate every exact receipt again
     # against this immutable run plan before reporting completion.
     for day in days:

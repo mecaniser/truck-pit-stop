@@ -1,3 +1,5 @@
+const {prepareLegacyLogin}=require('./login.cjs');
+const {readReviewedIdentity,sameIdentity}=require('./vehicle_identity.cjs');
 const {closeBrowser,phase,openTasks,failed}=require('./tasks.cjs');
 /* Rendered Motive daily fuel reports only. No private endpoints or session extraction. */
 const fs=require('node:fs');
@@ -82,7 +84,14 @@ async function collectReport(context,date,vehicle){
   throw Error('report_incomplete');
  }finally{await page.close();}
 }
-async function collectPlannedDays({output,planPath,plan,result,tasks,context,company,capture=collectReport,finalize=fuelDay.finalizeDay}){
+async function reviewedFuelIdentity(context,vehicle,read=readReviewedIdentity){
+ const link={href:'#/fleetview/vehicles/summary/5981300',unit:vehicle.unit};
+ if(vehicle.provider_vehicle_id!=='5981300'||vehicle.vin!==null)throw Error('reviewed_fuel_identity_invalid');
+ const proof=await read(context,link);
+ if(proof.vin!==null||!['not_displayed','explicitly_empty'].includes(proof.source_vin_state)||proof.source_vin_state!==vehicle.source_vin_state)throw Error('reviewed_fuel_identity_changed');
+ return {...proof,provider_vehicle_id:vehicle.provider_vehicle_id,unit:vehicle.unit,source_url:ORIGIN+'/en-US/'+link.href,read_at:new Date().toISOString()};
+}
+async function collectPlannedDays({output,planPath,plan,result,tasks,context,company,capture=collectReport,finalize=fuelDay.finalizeDay,readIdentity=reviewedFuelIdentity}){
    for(const date of plan.days){
     const dayStarted=Date.now();
     tasks.assertFresh();fuelDay.validatePlan(plan);
@@ -90,7 +99,11 @@ async function collectPlannedDays({output,planPath,plan,result,tasks,context,com
     const folder=path.join(path.dirname(output),date);fs.mkdirSync(folder,{mode:0o700});
     const source=path.join(folder,'source.json');save(source,daily);
     for(const vehicle of daily.vehicles){
-     const {record,report}=await tasks.run('fuel_report',[vehicle.provider_vehicle_id,vehicle.vin,date],()=>capture(context,date,vehicle));
+     const tracked=vehicle.provider_vehicle_id==='5981300'&&vehicle.vin===null;
+     const before=tracked?await readIdentity(context,vehicle):null;tasks.assertFresh();
+     const key=[vehicle.provider_vehicle_id,vehicle.vin,date,...(tracked?[before.read_at]:[])];
+     const {record,report}=await tasks.run('fuel_report',key,()=>capture(context,date,vehicle));
+     if(tracked){tasks.assertFresh();const after=await readIdentity(context,vehicle);tasks.assertFresh();sameIdentity(before,after);record.identity_before=before;record.identity_after=after;}
      vehicle.records.push(record);daily.reports.push(report);save(source,daily);
      console.log(JSON.stringify({stage:'fuel_collection_progress',reports:daily.reports.length,total:daily.vehicles.length}));
     }
@@ -116,6 +129,7 @@ async function collect(output,planPath=null){
   await page.goto(ORIGIN,{waitUntil:'domcontentloaded',timeout:45000});phase('login_auth_redirect');
   await page.waitForURL('https://auth.gomotive.com/login**',{timeout:30000});phase('login_origin_check');
   if(new URL(page.url()).origin!=='https://auth.gomotive.com')throw Error('login_origin');
+  await prepareLegacyLogin(page,{phase});
   phase('login_email');
   await page.locator('input[name="user_profile[email]"]').fill(process.env.MOTIVE_EMAIL);phase('login_password');
   await page.locator('input[name="user_profile[password]"]').fill(process.env.MOTIVE_PASSWORD);phase('login_submit');
@@ -129,7 +143,7 @@ async function collect(output,planPath=null){
   phase('vehicle_directory');
   await page.goto(ORIGIN+'/en-US/#/admin/vehicles');await page.getByText(/Showing \d+ of \d+/).waitFor({timeout:30000});const total=(await page.locator('body').innerText()).match(/Showing (\d+) of (\d+)/);
   const links=await page.locator('a[href*="/vehicles/summary/"]').evaluateAll(es=>es.map(e=>({unit:e.innerText.trim(),href:e.getAttribute('href')})));const directory=validateDirectory(links,+total?.[1],+total?.[2]);result.directory_count=directory.length;result.terminal_evidence=total[0];
-  const vins=new Set();for(const link of directory){const vin=await readVehicleVin(context,link);if(vin&&vins.has(vin))throw Error('duplicate_vin');if(vin)vins.add(vin);result.vehicles.push({provider_vehicle_id:link.href.split('/').pop(),unit:link.unit,vin,records:[]});save(output,result);}
+  const vins=new Set();for(const link of directory){const pid=link.href.split('/').pop();const proof=plan&&pid==='5981300'?await readReviewedIdentity(context,link):null;const vin=proof?proof.vin:await readVehicleVin(context,link);if(vin&&vins.has(vin))throw Error('duplicate_vin');if(vin)vins.add(vin);result.vehicles.push({provider_vehicle_id:pid,unit:link.unit,vin,...(proof&&!vin?{source_vin_state:proof.source_vin_state}:{}),records:[]});save(output,result);}
   const tasks=openTasks(output,{kind:'fuel',company:COMPANY_ID,timezone:'America/New_York',vehicles:result.vehicles,dates:requested},{maxAgeMs:30*60*1000});result.started_at=tasks.startedAt;
   if(plan){
    await collectPlannedDays({output,planPath,plan,result,tasks,context,company});
@@ -141,6 +155,6 @@ async function collect(output,planPath=null){
   await company();tasks.assertFresh();result.company_verified_after=true;result.finished_at=new Date().toISOString();result.complete=true;save(output,result);return result;
  }catch(error){result.failure_reason=safeFailure(error);save(output,result);throw error;}finally{await closeBrowser(browser);}
 }
-function safeFailure(error){return ['fuel_plan_invalid','fuel_day_unverified','invalid_days','missing_credentials','login_origin','company_mismatch','duplicate_vin','directory_incomplete','ambiguous_directory','vehicle_link_invalid','vehicle_source_changed','ambiguous_vin','report_identity_changed','report_layout_changed','report_filter_changed','report_not_single_vehicle','report_ambiguous_empty','report_vehicle_changed','report_incomplete','invalid_numeric_cell','invalid_duration_cell'].includes(error.message)?error.message:'browser_collection_unavailable';}
+function safeFailure(error){return ['reviewed_fuel_identity_invalid','reviewed_fuel_identity_changed','fuel_plan_invalid','fuel_day_unverified','invalid_days','missing_credentials','login_origin','company_mismatch','duplicate_vin','directory_incomplete','ambiguous_directory','vehicle_link_invalid','vehicle_source_changed','ambiguous_vin','report_identity_changed','report_layout_changed','report_filter_changed','report_not_single_vehicle','report_ambiguous_empty','report_vehicle_changed','report_incomplete','invalid_numeric_cell','invalid_duration_cell'].includes(error.message)?error.message:'browser_collection_unavailable';}
 if(require.main===module){if(!process.argv[2])throw Error('Output file required');collect(process.argv[2],process.argv[3]==='--plan'?process.argv[4]:null).then(r=>console.log(JSON.stringify({stage:'fuel_collection_complete',vehicles:r.vehicles.length,reports:r.reports.length}))).catch(e=>{failed(process.argv[2],e);console.error(JSON.stringify({stage:'fuel_collection_failed',reason:safeFailure(e),import_permitted:false}));process.exitCode=1;});}
-module.exports={HEADERS,dates,reportUrl,verifyUrl,number,duration,readings,validateSnapshot,finalizeReport,readReport,collectReport,collectPlannedDays,collect,safeFailure};
+module.exports={HEADERS,dates,reportUrl,verifyUrl,number,duration,readings,validateSnapshot,finalizeReport,readReport,collectReport,collectPlannedDays,reviewedFuelIdentity,collect,safeFailure};

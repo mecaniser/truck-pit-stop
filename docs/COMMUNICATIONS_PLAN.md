@@ -31,7 +31,7 @@ not current task status. Source checked against main 4595998c and current open P
 3. Complete the channel-neutral identity/account architecture and pilot one new channel: WhatsApp or Telegram. Current labels/contracts are not live adapters.
 4. Prioritize outbound attachments/documents and richer media after operational evidence. Email/Messenger remain discovery candidates.
 
-DB-COMMS-023 is implementing: [contact/customer linking and repair sidebar](communications/CONTACT_REPAIR_CONTEXT_PLAN.md). Contact-linked repairs are the approved default; fleet history is separate. The [frozen contract](communications/CONTACT_REPAIR_CONTEXT_CONTRACT.md) separates CRM links from transport identity; independent gates and release remain pending.
+DB-COMMS-023 is released: [contact/customer linking and repair sidebar](communications/CONTACT_REPAIR_CONTEXT_PLAN.md). Contact-linked repairs are the approved default; fleet history is separate. The [frozen contract](communications/CONTACT_REPAIR_CONTEXT_CONTRACT.md) separates CRM links from transport identity; independent gates and PR665 protected checks passed; exact004a49b4 deployed and live customer/person plus16 explicitly authorized repair associations verified. DB-COMMS-024 refines contact detail grouping and dropdown styling; its UI release is pending.
 
 No messaging implementation PR was open at reconciliation. Hosting PR619/622/623 and638 are separate work, not communications blockers. No new channel implementation is started by this reconciliation.
 

@@ -28,3 +28,28 @@ test('actual date-first collector retains complete first day on later failure',a
   assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'2026-10-25/source.json'))).complete,false);
  }finally{for(const k of Object.keys(env)){if(savedEnv[k]===undefined)delete process.env[k];else process.env[k]=savedEnv[k];}fs.rmSync(dir,{recursive:true,force:true});}
 });
+test('reviewed fuel day brackets the exact provider report with fresh identity',async()=>{
+ const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+ const {collectPlannedDays,reviewedFuelIdentity}=require('./collect_fuel.cjs');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'fuel-bound-test-')),savedEnv={...process.env};Object.assign(process.env,env);
+ const freshPlan={...plan,days:['2026-10-25'],created_at:new Date().toISOString()};
+ const vehicle={provider_vehicle_id:'5981300',vin:null,unit:'26',source_vin_state:'not_displayed',records:[]};
+ const result={version:1,company_verified_before:true,complete:false,started_at:new Date().toISOString(),vehicles:[vehicle],reports:[]};
+ const calls=[];let finalized=0;
+ const identity=async()=>{calls.push('identity');return {vin:null,source_vin_state:'not_displayed',read_at:new Date().toISOString()};};
+ try{
+  const proof=await reviewedFuelIdentity({},vehicle,async(_context,link)=>{assert.equal(link.href,'#/fleetview/vehicles/summary/5981300');return {vin:null,source_vin_state:'not_displayed'};});
+  assert.equal(proof.provider_vehicle_id,'5981300');assert.equal(proof.unit,'26');
+  await assert.rejects(reviewedFuelIdentity({},vehicle,async()=>({vin:'1M8GDM9AXKP042788',source_vin_state:null})),/reviewed_fuel_identity_changed/);
+  await collectPlannedDays({output:path.join(dir,'source.json'),planPath:path.join(dir,'plan.json'),plan:freshPlan,result,
+   tasks:{assertFresh(){},run:async(_stage,key,read)=>{assert.equal(key.length,4);return read();}},context:{},company:async()=>{},readIdentity:identity,
+   capture:async()=>{calls.push('report');return {record:{report_date:'2026-10-25',source_read_at:new Date().toISOString()},report:{report_date:'2026-10-25'}};},
+   finalize:source=>{const doc=JSON.parse(fs.readFileSync(source));const record=doc.vehicles[0].records[0];assert.ok(record.identity_before);assert.ok(record.identity_after);finalized++;}});
+  assert.deepEqual(calls,['identity','report','identity']);assert.equal(finalized,1);
+ }finally{for(const k of Object.keys(env)){if(savedEnv[k]===undefined)delete process.env[k];else process.env[k]=savedEnv[k];}fs.rmSync(dir,{recursive:true,force:true});}
+});
+test('prepare-only boundary uses isolated preview validation and never commit child',()=>{
+ const old=process.env.MOTIVE_FUEL_PREPARE_ONLY;process.env.MOTIVE_FUEL_PREPARE_ONLY='true';const calls=[];
+ try{finalizeDay('source','plan','day',()=>{},(_exe,args)=>{calls.push(args);return {status:0};});assert.equal(calls.length,2);assert.ok(calls.every(args=>args.includes('--prepare-only')));assert.ok(calls[1].includes('--verify-only'));assert.ok(calls.every(args=>!args.includes('--apply-preview')));}
+ finally{if(old===undefined)delete process.env.MOTIVE_FUEL_PREPARE_ONLY;else process.env.MOTIVE_FUEL_PREPARE_ONLY=old;}
+});
