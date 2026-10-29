@@ -6,6 +6,16 @@ import type { BoardTruck } from '../src/features/fleet/types'
 import '../src/index.css'
 import '../src/features/fleet/fleet.css'
 if (!import.meta.env.DEV) throw new Error('Development fixture only')
+// Delay only routing in the opt-in fixture to inspect pending layout transitions.
+if (new URLSearchParams(window.location.search).get('scenario') === 'slow-routing') {
+  const fetchOriginal = window.fetch.bind(window)
+  window.fetch = async (...args: Parameters<typeof fetch>) => {
+    if (/api\.mapbox\.com\/(directions-matrix|directions)\//.test(String(args[0]))) {
+      await new Promise(resolve => setTimeout(resolve, 1800))
+    }
+    return fetchOriginal(...args)
+  }
+}
 const now = Date.now()
 const shopCloser = new URLSearchParams(window.location.search).get('scenario') === 'shop-closer'
 const trucks = [

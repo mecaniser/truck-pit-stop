@@ -152,3 +152,22 @@
 .proximity-pin.is-cluster .proximity-pin-badge small { font-size: 9px; }
 .proximity-pin.is-cluster .proximity-pin-brand { background: #fff; padding: 2px; border-radius: 4px; width: 23px; height: 26px; }
 .proximity-pin-badge::after { content: ''; position: absolute; inset: -8px -4px; }
+
+/* Sidebar requests must not resize the canvas and trigger camera refitting. */
+.proximity-geography { height: clamp(560px, calc(100dvh - 180px), 720px); }
+.proximity--compact .proximity-geography { height: 400px; }
+.proximity-panel { contain: size; }
+.proximity-panel footer { min-height: 43px; box-sizing: border-box; }
+.proximity-route-summary { min-height: 88px; box-sizing: border-box; }
+.proximity-route-endpoints { min-height: 44px; }
+.proximity-skeleton { display: block; width: 32px; height: 12px; border-radius: 4px; background: var(--line, #344453); opacity: .65; }
+.proximity-skeleton-metric { width: 90px; height: 22px; }
+.proximity-route-loading .proximity-skeleton:last-child { justify-self: end; }
+.proximity-row-loading { height: 44px; }
+.proximity-skeleton-location { flex: 1; max-width: 110px; }
+.proximity-more-loading { height: 44px; margin-top: 8px; display: grid; place-items: center; border: 1px solid var(--line, #344453); border-radius: 7px; }
+.proximity-more-loading .proximity-skeleton { width: 70px; }
+@media (max-width: 680px) {
+  .proximity-geography, .proximity--compact .proximity-geography { height: 330px; }
+  .proximity-panel { contain: none; height: 480px; }
+}
