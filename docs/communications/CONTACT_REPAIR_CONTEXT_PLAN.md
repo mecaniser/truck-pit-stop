@@ -1,7 +1,7 @@
 # Messages contact, customer and repair context
 
 DB-COMMS-023. October 28, 2026. Product & Delivery Lead accountable.
-Status: scoped discovery; implementation not started. Architecture owns the API/data contract.
+Status: implementing against the [frozen API/data contract](CONTACT_REPAIR_CONTEXT_CONTRACT.md). Backend & Integrations accountable; Frontend & UX owns the sidebar.
 
 ## Approved product behavior
 
@@ -47,7 +47,7 @@ assignment needs temporal semantics, not retroactive historical ownership.
 ## Delivery sequence
 
 1. Freeze Architecture contract for link/create/context APIs, optimistic versioning,
-   permissions, pagination, duplicate handling and reversible association changes.
+   permissions, pagination, duplicate handling and audited customer/contact relinking.
 2. Implement customer/contact linking and the read-only sidebar using explicit repair links.
 3. Verify independent tenant/identity/security and full workflow acceptance.
 4. Protected CI, authorized release and signed-in live acceptance before Done.
@@ -58,16 +58,17 @@ assignment needs temporal semantics, not retroactive historical ownership.
 - Same phone across contacts/customers does not silently select, merge or expose fleet history.
 - Duplicate clicks/retries do not create duplicate customers or associations.
 - Multiple active repairs, no repairs, historical trucks and reassigned drivers render accurately.
-- Link/unlink retains message IDs/history, receiving-number reply route, draft, opt-outs and send restrictions.
+- Linking/relinking retains message IDs/history, receiving-number reply route, draft, opt-outs and send restrictions. Repair-link removal is deferred to a separately reviewed correction workflow.
 - No customer linkage grants consent, enables sending or changes invoice ownership.
 - Desktop/mobile navigation and return-to-conversation preserve drafts.
 - All three SMS rollout flags remain false. No provider send is needed for this feature's tests.
 
 ## Runtime preparation
 
-No frontend5193/backend8013 listeners were present on inspection. The former temporary
-inline-MMS launcher is gone and backend/.env is absent. The checked-in isolated harness
-exists but defaults its synthetic outbox flag to true; do not launch it unmodified for
-this task. Re-establish the approved sandbox with all three flags explicitly false,
-provider sends denied, and verified database/source alignment before implementation QA.
-No services, provider settings or production records were changed during discovery.
+The approved isolated harness is restored for this task at frontend5193/backend8013
+in the implementation worktree. Dedicated synthetic PostgreSQL database
+`communications_local_023_20261028` on loopback55460 and Redis6386/db14 isolate
+acceptance data. All three flags are explicitly false; external HTTP and Twilio
+provider requests are denied. Source/process, proxied readiness and signed-in
+Messages baseline are verified. Changed-feature acceptance remains pending.
+No production records or provider settings changed.
