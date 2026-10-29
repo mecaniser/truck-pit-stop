@@ -657,6 +657,12 @@ async def confirm_full_cash(db, *, invoice, tenant, customer_id, actor,
     reason, events = await cash_eligibility(db, invoice, settlement, lock=True)
     if reason:
         raise SettlementDomainError("cash_unavailable", reason)
+    # An ancestry proof refreshes the order in this session and can expire its
+    # customer relationship. Resolve it explicitly while async I/O is allowed;
+    # a fresh request cannot rely on a fixture's strong identity-map reference.
+    cash_order = invoice.repair_order
+    await db.refresh(cash_order, attribute_names=["customer"])
+    cash_customer = cash_order.customer
     await reconcile_export_absence(db, invoice, events)
     now = datetime.now(timezone.utc)
     for event in events:
@@ -693,7 +699,7 @@ async def confirm_full_cash(db, *, invoice, tenant, customer_id, actor,
     settlement.accounting_sync_status = LOCAL_CASH_SYNC
     invoice.status = InvoiceStatus.PAID
     invoice.paid_at = now
-    invoice.repair_order.status = RepairOrderStatus.PAID
+    cash_order.status = RepairOrderStatus.PAID
     await append_ledger_event(db, settlement=settlement, attempt=attempt, actor=actor,
         event_type="cash_payment_confirmed", idempotency_key=f"cash-confirm:{idempotency_key}",
         prior_state=prior, new_state="paid", principal_delta=amount,
@@ -703,8 +709,8 @@ async def confirm_full_cash(db, *, invoice, tenant, customer_id, actor,
     # it does not export the invoice to accounting or submit another payment.
     from app.services.paid_invoice_webhook_service import enqueue_paid_invoice_webhook
     await enqueue_paid_invoice_webhook(
-        db, tenant=tenant, invoice=invoice, order=invoice.repair_order,
-        customer=invoice.repair_order.customer,
+        db, tenant=tenant, invoice=invoice, order=cash_order,
+        customer=cash_customer,
     )
     await db.flush()
     return payment.id, settlement
