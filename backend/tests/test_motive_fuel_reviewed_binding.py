@@ -169,3 +169,25 @@ async def test_missing_reading_never_imports_zero_and_old_date_cannot_be_backdat
     binding.effective_from=importer.now()-timedelta(days=1);await db_session.flush()
     rows,report=await worker.prepare(db_session,document,actor.tenant_id,actor.id)
     assert rows==[] and any('full fuel date' in x['reason'] for x in report['exclusions'])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("other_customer", [False, True])
+async def test_bound_fuel_hidden_when_current_membership_ambiguous(_db_engine,db_session,monkeypatch,tmp_path,other_customer):
+ actor,vehicle,member,binding,document=await bound_fixture(db_session,monkeypatch)
+ factory=async_sessionmaker(_db_engine,expire_on_commit=False)
+ receipt=await worker.run(factory,document,actor.tenant_id,actor.id,'77 CARGO LLC','KT8934277',tmp_path/'receipt.json',commit=True,plan=document['plan'])
+ assert receipt['committed']
+ day=document['report_dates'][0]
+ from datetime import date
+ from app.db.models.vehicle_relationship import FleetMembership
+ day=date.fromisoformat(day)
+ assert (await fleet_fuel.list_fuel_daily(db_session,actor.tenant_id,day,day))['total']==1
+ fleet_id=member.fleet_customer_id
+ if other_customer:
+  from app.db.models.customer import Customer
+  customer=Customer(tenant_id=actor.tenant_id,first_name="Other",last_name="Fleet",email="fixture@invalid.example",fleet_enabled=True)
+  db_session.add(customer);await db_session.flush();fleet_id=customer.id
+ db_session.add(FleetMembership(tenant_id=actor.tenant_id,vehicle_id=vehicle.id,fleet_customer_id=fleet_id,effective_from=member.effective_from))
+ await db_session.flush()
+ assert (await fleet_fuel.list_fuel_daily(db_session,actor.tenant_id,day,day))['total']==0

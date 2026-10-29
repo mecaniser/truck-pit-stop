@@ -1,5 +1,6 @@
 """Read source report dates without rebucketing unverified source timezones."""
 from sqlalchemy import select, func, or_, and_
+from sqlalchemy.orm import aliased
 from app.db.models.fleet_fuel import FleetFuelDaily as Fuel
 from app.db.models.vehicle import Vehicle
 from app.db.models.customer import Customer
@@ -18,7 +19,17 @@ def visible_query(tenant_id, stamp, vehicle_id=None, fleet_customer_id=None):
         or_(Member.effective_to.is_(None), Fuel.coverage_end <= Member.effective_to),
         Fuel.coverage_end <= Fuel.source_read_at, Fuel.source_read_at <= stamp,
     )
+    CurrentMember, CurrentCustomer = aliased(Member), aliased(Customer)
+    current_memberships = select(func.count(CurrentMember.id)).join(
+        CurrentCustomer, CurrentCustomer.id == CurrentMember.fleet_customer_id
+    ).where(
+        CurrentMember.tenant_id == tenant_id, CurrentMember.vehicle_id == Fuel.vehicle_id,
+        CurrentMember.deleted_at.is_(None), CurrentMember.effective_from <= stamp,
+        or_(CurrentMember.effective_to.is_(None), CurrentMember.effective_to > stamp),
+        CurrentCustomer.tenant_id == tenant_id, CurrentCustomer.deleted_at.is_(None),
+    ).correlate(Fuel).scalar_subquery()
     valid_bound = select(Binding.id).where(
+        current_memberships == 1,
         Binding.id == Fuel.dashboard_binding_id, Binding.tenant_id == tenant_id,
         Binding.vehicle_id == Fuel.vehicle_id, Binding.fleet_membership_id == Fuel.fleet_membership_id,
         Binding.fleet_customer_id == Fuel.fleet_customer_id, Binding.deleted_at.is_(None), Binding.revoked_at.is_(None),
