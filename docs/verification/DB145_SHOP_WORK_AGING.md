@@ -48,3 +48,7 @@ The user requested screen-space priority before merge. Impeccable context/distil
 - Filters opens with click/Enter; Escape dismisses and restores trigger focus. Timing help dismisses outside. Unknown filters exactly two missing-clock jobs. Mobile category selection retains correct Parts count and row; controls remain accessible with 44px mobile targets. Screenshots: private /tmp/db145-browser-proof/compact-*.jpg, fictional data only.
 - Read-only local fixed source cohort remains unchanged across13 tables/10 rows. Production baseline captured read-only across13 tables/20,549 rows at schema191_fuel_reviewed_binding; private baseline SHA256 7d9ab5234e2937c860c2da4f3ce784b57280b81dcb038cc96af77bd56b4c1654.
 - Prior candidate ccd5e291 passed CI40943971060. Refined candidate requires fresh protected CI before merge. No deployment or production A2 acceptance claimed here.
+
+## Released main integration before final CI
+
+Main advanced to44575250 (PR675 payment refresh) during the compact pass. The only conflict was the board prepend; both histories were retained. All main payment-refresh source and tests are retained verbatim, and all A2 application/test paths are unchanged from the reviewed compact candidate. No new migration or financial write is introduced by this integration. Independent compact UI QA GO includes13 rerun panel tests and reviewed screenshots. Final exact-head protected CI remains the merge gate.

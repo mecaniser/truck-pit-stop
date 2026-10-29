@@ -13,6 +13,7 @@ import { getAuthenticatedSessionIdentity, useAuthStore } from '../stores/authSto
 import { requestTokenRefresh, requestWorkOSSessionRefresh } from '../lib/authRefresh'
 import type { NotificationEvent } from './useNotificationManager'
 import type { RepairOrder, RepairOrderDetail } from '../types'
+import { refreshPaymentViews } from '../features/payments/refreshPaymentViews'
 
 const BASE_RECONNECT_DELAY_MS = 1000
 const MAX_RECONNECT_DELAY_MS = 30000
@@ -312,12 +313,15 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['invoice-detail'] })
           queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
           queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
-          queryClient.invalidateQueries({ queryKey: ['invoices'] })
+          refreshPaymentViews(queryClient)
           queryClient.invalidateQueries({ queryKey: ['invoice'] })
           queryClient.invalidateQueries({ queryKey: ['payments'] })
-          queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-          queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
           queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
+          if (data.order_id) {
+            for (const key of ['invoice-for-order', 'repair-order-workspace', 'repair-order-detail']) {
+              queryClient.invalidateQueries({ queryKey: [key, data.order_id] })
+            }
+          }
           if (onNotificationRef.current) {
             onNotificationRef.current({
               type: 'payment_received',
