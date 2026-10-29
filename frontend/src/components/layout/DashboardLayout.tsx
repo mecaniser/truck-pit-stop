@@ -28,7 +28,6 @@ const PlatformAnalyticsPage = lazy(lazyRouteLoader(() => import('@/features/plat
 const PendingEnrollmentsPage = lazy(lazyRouteLoader(() => import('@/features/platform-admin/PendingEnrollmentsPage')))
 const PaymentControlCenter = lazy(lazyRouteLoader(() => import('@/features/platform-admin/PaymentControlCenter')))
 const MessagesInboxPage = lazy(lazyRouteLoader(() => import('@/features/communications/DashboardInboxPage')))
-const PreviousMessagesInboxPage = lazy(lazyRouteLoader(() => import('@/features/messages/MessagesInboxPage')))
 const MechanicsBoardPage = lazy(lazyRouteLoader(() => import('@/features/dashboard/MechanicsBoardPage')))
 const MechanicBoardDetailPage = lazy(lazyRouteLoader(() => import('@/features/dashboard/MechanicBoardDetailPage')))
 
@@ -534,7 +533,7 @@ export default function DashboardLayout() {
                 <Route path="repair-orders" element={<RepairOrdersPage />} />
                 <Route
                   path="messages/previous"
-                  element={canAccessMessaging ? <PreviousMessagesInboxPage /> : <Navigate to="/dashboard" replace />}
+                  element={canAccessMessaging ? <Navigate to="/dashboard/messages" replace /> : <Navigate to="/dashboard" replace />}
                 />
                 <Route
                   path="messages"

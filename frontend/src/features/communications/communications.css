@@ -1625,12 +1625,6 @@
   overflow-y: auto;
 }
 
-:where(.communications-surface) .previous-inbox {
-  display: inline-flex;
-  align-items: center;
-  text-decoration: none;
-  white-space: nowrap;
-}
 @media (max-width: 700px) {
   .communications-embedded .page-header {
     flex-wrap: wrap;
@@ -1638,9 +1632,6 @@
   }
   .communications-embedded .page-actions {
     flex-wrap: wrap;
-  }
-  .communications-embedded .previous-inbox {
-    font-size: 11px;
   }
 }
 
