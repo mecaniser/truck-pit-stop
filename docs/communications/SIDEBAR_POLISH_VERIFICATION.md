@@ -39,3 +39,8 @@ on source/process/config change; local rendering is not production deployment.
 PR/protected CI, merge and production deployment pending. No production UI
 changes are claimed; the separately authorized repair associations are recorded
 in CONTACT_REPAIR_CONTEXT_VERIFICATION.md.
+
+PR668 opened; integrated main3fdafd12 (fleet map fix) cleanly after owner gates.
+Messages source remains identical to the tested UI commit ee7a078f. Runtime
+receipt above records the tested source; the displayed development stamp predates
+this integration and is not a claim of final-head alignment. Protected CI pending.
