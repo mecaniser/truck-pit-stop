@@ -72,6 +72,12 @@ const renderLedger = (overrides: Partial<ComponentProps<typeof ShopCockpitAction
 }
 
 describe('DB-035 Stage 3 Action Ledger', () => {
+  it('does not apply nonpayment overflow to the payment-review subset', () => {
+    renderLedger({ activeWork: <div>Active panel</div>, workView: 'closeout', projection: { ...projection, orders_needing_action_has_more: true } })
+    expect(screen.getByRole('tab', { name: 'Payment review 0' })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Payment review 0+' })).not.toBeInTheDocument()
+  })
+
   it.each(['completed', 'invoiced'])('labels imported %s history without a native billing instruction', (status) => {
     renderLedger({ projection: { ...projection, orders_ready_to_close: [
       order('ets-history', 'ETS-EXAMPLE', status, 'Synthetic carrier', 'Synthetic truck', { source: 'easy_truck_shop_import', pending_zelle_confirmation: true }),

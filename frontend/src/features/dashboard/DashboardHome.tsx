@@ -37,6 +37,8 @@ import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import SuggestingInput from '@/components/SuggestingInput'
 import RecentActivityFeed from './RecentActivityFeed'
 import ShopCockpitActionLedger, { type ActionQueueLane } from './ShopCockpitActionLedger'
+import WipAgingPanel from './WipAgingPanel'
+import { DEFAULT_WIP_FILTERS, type WipFilters } from './wipAging'
 import RepairOrdersPage from '../repair-orders/RepairOrdersPage'
 import { elapsedSince, shortDuration } from '@/lib/elapsed'
 
@@ -419,6 +421,21 @@ export default function DashboardHome() {
   const teamCapacityTouchStartY = useRef<number | null>(null)
   const teamCapacityDidSwipe = useRef(false)
   const [queueView, setQueueView] = useState<'queue' | 'activity'>('queue')
+  const [workView, setWorkView] = useState<'active' | 'closeout'>(() => new URLSearchParams(location.search).get('work_view') === 'closeout' || ['ready_to_close', 'closed_today'].includes(new URLSearchParams(location.search).get('queue') || '') ? 'closeout' : 'active')
+  const [wipFilters, setWipFilters] = useState<WipFilters>(DEFAULT_WIP_FILTERS)
+  const returnedShopWorkQueue = (location.state as { shopWorkQueue?: ActionQueueLane } | null)?.shopWorkQueue
+  const requestedShopWorkQueue = new URLSearchParams(location.search).get('queue')
+  const requestedShopWorkView = (location.state as { shopWorkView?: string } | null)?.shopWorkView || new URLSearchParams(location.search).get('work_view')
+  useEffect(() => {
+    if (selectedShopWorkRecord) return
+    if (requestedShopWorkView === 'active' || requestedShopWorkView === 'closeout') {
+      setWorkView(requestedShopWorkView)
+    } else if (['ready_to_close', 'closed_today'].includes(returnedShopWorkQueue || requestedShopWorkQueue || '')) {
+      setWorkView('closeout')
+    } else if (returnedShopWorkQueue === 'needs_action' || returnedShopWorkQueue === 'on_floor') {
+      setWorkView('active')
+    }
+  }, [location.key, returnedShopWorkQueue, requestedShopWorkQueue, requestedShopWorkView, selectedShopWorkRecord])
   const [activityCount, setActivityCount] = useState(0)
   const [isDesktop, setIsDesktop] = useState(() =>
     typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)').matches : true
@@ -512,7 +529,7 @@ export default function DashboardHome() {
         ...(debouncedShopValueSearch ? { search: debouncedShopValueSearch } : {}),
       },
     })).data,
-    enabled: presentationVariant === 'new' && !selectedShopWorkRecord && queueView === 'queue',
+    enabled: presentationVariant === 'new' && !selectedShopWorkRecord && queueView === 'queue' && workView === 'closeout',
     staleTime: 15_000,
     retry: false,
   })
@@ -523,6 +540,7 @@ export default function DashboardHome() {
   
   const handleManualRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
+    queryClient.invalidateQueries({ queryKey: ['dashboard-wip-aging'] })
     queryClient.invalidateQueries({ queryKey: ['dashboard-daily-workset'] })
   }
 
@@ -885,7 +903,7 @@ export default function DashboardHome() {
   }
 
   if (presentationVariant === 'new') {
-    const returnedQueue = (location.state as { shopWorkQueue?: ActionQueueLane } | null)?.shopWorkQueue
+    const returnedQueue = returnedShopWorkQueue || (workView === 'closeout' && ['needs_action', 'ready_to_close', 'closed_today'].includes(requestedShopWorkQueue || '') ? requestedShopWorkQueue as ActionQueueLane : undefined)
     const projection = {
       orders_needing_action: dailyWorkbench?.needs_attention.items ?? [],
       orders_needing_action_has_more: dailyWorkbench?.needs_attention.has_more ?? false,
@@ -897,12 +915,15 @@ export default function DashboardHome() {
       orders_closed_today_has_more: dailyWorkbench?.closed_today.has_more ?? false,
     }
     const openRecord = (id: string, lane: ActionQueueLane) => {
-      navigate(`/dashboard?selected=${encodeURIComponent(id)}&queue=${lane}`)
+      navigate(`/dashboard?selected=${encodeURIComponent(id)}&queue=${lane}&work_view=${workView}`)
     }
 
     return (
       <ShopCockpitActionLedger
         projection={projection}
+        workView={workView}
+        onWorkViewChange={setWorkView}
+        activeWork={<WipAgingPanel filters={wipFilters} onFiltersChange={setWipFilters} onOpenRecord={openRecord} />}
         isManager={isManager}
         canViewActivity={canViewActivity}
         queueView={queueView}
