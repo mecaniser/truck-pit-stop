@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 
 import { Spinner } from '@/components/ui'
 
 import { paymentApiError } from './api'
+import { refreshPaymentViews } from './refreshPaymentViews'
 import AccountingReconciliationPanel from './AccountingReconciliationPanel'
 import EarlyVehicleReleasePanel from './EarlyVehicleReleasePanel'
 import FullCashPaymentPanel from './FullCashPaymentPanel'
@@ -32,6 +34,9 @@ function OpenStaffSettlementDialog({
   onClose: () => void
   onUpdated?: () => void
 }) {
+  const queryClient = useQueryClient()
+  const onUpdatedRef = useRef(onUpdated)
+  onUpdatedRef.current = onUpdated
   const access = open ? { kind: 'authenticated' as const, invoiceId } : null
   const settlementQuery = useInvoiceSettlement(access)
   const allocationsQuery = useInvoiceAllocations(access, open && Boolean(settlementQuery.data))
@@ -47,6 +52,14 @@ function OpenStaffSettlementDialog({
     if (!next || next.invoice_id !== invoiceId) return
     setCurrent(previous => previous && previous.version > next.version ? previous : next)
   }, [invoiceId, settlementQuery.data])
+  // Both mutation responses and later server reconciliation/refreshes update
+  // current. Notify the surrounding workspace for either path, including a
+  // payment confirmed while the dialog was closed.
+  useEffect(() => {
+    if (!current || current.invoice_id !== invoiceId) return
+    refreshPaymentViews(queryClient)
+    onUpdatedRef.current?.()
+  }, [current, invoiceId, queryClient])
   useEffect(() => setEditingExemption(false), [invoiceId, open])
   useEffect(() => {
     if (!open) return
@@ -88,7 +101,6 @@ function OpenStaffSettlementDialog({
   const handleUpdated = (next: InvoiceSettlementSummary) => {
     if (!mounted.current || next.invoice_id !== invoiceId) return
     setCurrent(previous => previous && previous.version > next.version ? previous : next)
-    onUpdated?.()
   }
 
   return (

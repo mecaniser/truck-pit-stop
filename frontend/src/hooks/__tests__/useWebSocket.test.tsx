@@ -558,14 +558,20 @@ describe('useWebSocket cookie-session transport', () => {
       quoteNumber: 'Q-100',
     })
   })
-  it('invalidates the open portal invoice and settlement when payment is received', () => {
+  it('refreshes payment queues, totals and the affected workspace with the payment dialog closed', () => {
     authenticateWithWorkOS()
     const client = new QueryClient()
-    const keys = [['invoice-detail', 'invoice-1'], ['invoice-settlement', 'authenticated', 'invoice-1'], ['invoice-settlement-allocations', 'authenticated', 'invoice-1']]
+    const keys = [['invoice-detail', 'invoice-1'], ['invoice-settlement', 'authenticated', 'invoice-1'], ['invoice-settlement-allocations', 'authenticated', 'invoice-1'],
+      ['dashboard-action-queue'], ['dashboard-daily-workset'],
+      ['dashboard-daily-workset', 'value-summary', 'ready_to_close', ''],
+      ['repair-orders', 'infinite'], ['repair-orders', 'status-counts'], ['repair-orders', 'value-summary'],
+      ['invoice-for-order', 'order-1'], ['repair-order-workspace', 'order-1'], ['repair-order-detail', 'order-1']]
     for (const key of keys) client.setQueryData(key, { state: 'unpaid' })
+    client.setQueryData(['repair-order-workspace', 'other-order'], { status: 'invoiced' })
     renderHook(() => useWebSocket(), { wrapper: ({ children }: PropsWithChildren) => <QueryClientProvider client={client}>{children}</QueryClientProvider> })
     act(() => latestSocket().emitMessage(JSON.stringify({ type: 'payment_received', order_id: 'order-1' })))
     for (const key of keys) expect(client.getQueryState(key)?.isInvalidated).toBe(true)
+    expect(client.getQueryState(['repair-order-workspace', 'other-order'])?.isInvalidated).toBe(false)
   })
 
   it('treats deletion as metadata without poisoning lifecycle status or timestamp precedence', () => {
