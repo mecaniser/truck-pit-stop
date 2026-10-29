@@ -47,3 +47,11 @@ cash, ordinary cash, timing/panel availability, and paid-invoice webhook suites.
 New test lint and changed source lint pass excluding five pre-existing UP017
 datetime-alias findings in the cash service; no new lint finding. Diff check clean.
 Independent reviews and CI remain pending.
+
+## Independent gates and PR
+
+[QA GO](DB048_CASH_FRESH_REQUEST_QA.md):198 permanent cases and pinned prior
+deployed-code red reproduction1/1. [Security GO](DB048_CASH_FRESH_REQUEST_SECURITY.md):
+138 cases, no expanded financial/permission/tenant/provider boundary. Reviewed
+source hashes unchanged. PR679 integrates docs-only maincf11290e without source
+conflict. Full protected CI and deployment remain required before release.
