@@ -48,3 +48,8 @@ test('reviewed fuel day brackets the exact provider report with fresh identity',
   assert.deepEqual(calls,['identity','report','identity']);assert.equal(finalized,1);
  }finally{for(const k of Object.keys(env)){if(savedEnv[k]===undefined)delete process.env[k];else process.env[k]=savedEnv[k];}fs.rmSync(dir,{recursive:true,force:true});}
 });
+test('prepare-only boundary uses isolated preview validation and never commit child',()=>{
+ const old=process.env.MOTIVE_FUEL_PREPARE_ONLY;process.env.MOTIVE_FUEL_PREPARE_ONLY='true';const calls=[];
+ try{finalizeDay('source','plan','day',()=>{},(_exe,args)=>{calls.push(args);return {status:0};});assert.equal(calls.length,2);assert.ok(calls.every(args=>args.includes('--prepare-only')));assert.ok(calls[1].includes('--verify-only'));assert.ok(calls.every(args=>!args.includes('--apply-preview')));}
+ finally{if(old===undefined)delete process.env.MOTIVE_FUEL_PREPARE_ONLY;else process.env.MOTIVE_FUEL_PREPARE_ONLY=old;}
+});

@@ -538,8 +538,18 @@ async def batches(db, rows, tenant_id, actor_id, apply=False):
     return result
 
 
-async def apply_verify(factory, rows, tenant_id, actor_id, receipt_path, receipt):
+async def apply_verify(factory, rows, tenant_id, actor_id, receipt_path, receipt, *, approval=None, stage_intent=None):
     async with factory() as db:
+        if approval is not None:
+            current_rows, current_report = await prepare(db, approval["source"], tenant_id, actor_id)
+            current_dry = await batches(db, current_rows, tenant_id, actor_id)
+            created = timestamp(approval["source"]["plan"]["created_at"])
+            if not timedelta(0) <= importer.now() - created <= timedelta(minutes=30):
+                raise ValueError("Fuel approved preview expired before import")
+            if (current_rows != rows or current_report != approval["report"] or current_dry != approval["rows"]):
+                raise ValueError("Fuel approved dry plan changed; reconcile before import")
+        if stage_intent is not None:
+            stage_intent()
         applied = await batches(db, rows, tenant_id, actor_id, True)
         replay = await batches(db, rows, tenant_id, actor_id, True)
         if any(row["action"] != "unchanged" for row in replay):

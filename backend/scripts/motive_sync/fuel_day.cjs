@@ -12,7 +12,8 @@ function validatePlan(plan,now=new Date(),env=process.env){
 }
 function finalizeDay(source,planPath,day,assertFresh,spawn=spawnSync){
  assertFresh();
- const command=['-m','scripts.motive_sync.fuel_day','--input',source,'--plan',planPath,'--day',day];
+ const preparing=process.env.MOTIVE_FUEL_PREPARE_ONLY==='true';
+ const command=['-m','scripts.motive_sync.fuel_day','--input',source,'--plan',planPath,'--day',day,...(preparing?['--prepare-only']:[])];
  // The import child validates the actual exact receipt before returning zero.
  // Then an independent read-only child validates it again at the boundary.
  for(const verify of [false,true]){
@@ -20,6 +21,6 @@ function finalizeDay(source,planPath,day,assertFresh,spawn=spawnSync){
   if(result.error||result.signal||result.status!==0)throw Error('fuel_day_unverified');
  }
  assertFresh();
- console.log(JSON.stringify({stage:'fuel_day_committed',day}));
+ console.log(JSON.stringify({stage:preparing?'fuel_day_prepared':'fuel_day_committed',day}));
 }
 module.exports={readPrivate,closed,validatePlan,finalizeDay};
