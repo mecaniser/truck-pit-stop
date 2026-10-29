@@ -19,6 +19,11 @@ const trucks = [
 ].map(([id, status, lat, lng, age, label]) => ({ id, unit_number: id, display_unit_number: `77 CARGO LLC ${id}`, fleet_company_name: '77 CARGO LLC', status, make: 'Test', model: 'Truck', driver_name: id === '101' ? 'Example driver' : null,
   telemetry: { location: { lat, lng, label: `123 Example Rd, ${label}`, observed_at: new Date(now - Number(age) * 60000).toISOString(), captured_at: new Date(now).toISOString(), source: 'motive_api', freshness: 'fresh', snapshot_id: null, source_age_text: null }, speed: null, fuel: null, odometer: null, engine_hours: null, fault_count: null, motion: 'unknown' },
 })) as BoardTruck[]
+// Tablet regression fixture: a non-member GPS dot overlaps a cluster at overview zoom.
+if (new URLSearchParams(window.location.search).get('scenario') === 'cluster-hit') {
+  const points = [[35.09,-80.69],[35.0901,-80.6901],[35.05,-80.95],[41.2,-83.0],[30,-94]]
+  trucks.splice(0,trucks.length,...points.map(([lat,lng],index)=>({...trucks[index],id:`hit-${index}`,unit_number:String(index+1),telemetry:{...trucks[index].telemetry!,location:{...trucks[index].telemetry!.location!,lat,lng}}})))
+}
 if (new URLSearchParams(window.location.search).get('scenario') === 'long-list') {
   trucks.push(...Array.from({ length: 24 }, (_, index) => ({ ...trucks[6], id: `preview-${index}`, unit_number: `TEST-${index + 1}`, display_unit_number: `TEST-${index + 1}` })))
 }
