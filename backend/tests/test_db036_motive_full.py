@@ -3,8 +3,8 @@
 import hashlib
 import hmac
 import json
-from datetime import timedelta
-from uuid import uuid4
+from datetime import datetime, timedelta
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -319,9 +319,17 @@ async def test_supported_events_are_durable_metadata_only(
     )["status"] == "duplicate"
     receipt = (await db_session.execute(select(MotiveWebhookReceipt))).scalar_one()
     assert receipt.status == "pending" and receipt.provider_vehicle_id == "123"
-    assert "Not stored" not in repr(receipt.__dict__) and "9999" not in repr(
-        receipt.__dict__
-    )
+    # UUIDs, timestamps and the payload digest are metadata, not raw telemetry.
+    # A UUID containing 9999 caused a false positive in CI run40960020638.
+    stored_fields = {
+        column.name: getattr(receipt, column.name)
+        for column in receipt.__table__.columns
+        if column.name != "payload_sha256"
+        and not isinstance(getattr(receipt, column.name), (UUID, datetime))
+    }
+    assert receipt.payload_sha256 == hashlib.sha256(body).hexdigest()
+    assert not {"lat", "lon", "speed", "driver_name", "payload"} & set(receipt.__table__.columns.keys())
+    assert "Not stored" not in repr(stored_fields) and "9999" not in repr(stored_fields)
     assert "shared_secret" not in ingest.webhook_status(row)
 
 

@@ -36,3 +36,12 @@ reply route remain unchanged. Screenshots /tmp/comms027-desktop.png and
 aligned and browser-verified for these edits. No production association changes.
 
 Protected CI, merge and deployment remain pending. Not Done.
+
+## Release candidate integration
+
+Initial CI run40960020638 failed a Motive metadata test: random UUID contained
+9999 and tripped a repr substring check for raw speed. The narrow test correction
+checks mapped stored values, excludes UUID/timestamp/digest metadata, verifies the
+exact SHA256 digest and forbids raw telemetry columns. All 31 affected Motive tests
+pass. The failed attempt is retained. Main PR680 integration only conflicted in
+the board; both histories preserved. Application display implementation unchanged.

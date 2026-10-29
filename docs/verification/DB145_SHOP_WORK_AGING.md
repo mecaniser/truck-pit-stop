@@ -1,6 +1,6 @@
 # DB-145 / A2 — Shop Work aging verification
 
-Status: implementation and local acceptance GO, 2026-10-29. Protected CI and release pending; not Done.
+Status: PR676 merged and deployed, 2026-10-29. Signed-in production acceptance found a Night empty-state contrast defect; focused follow-up in progress. Not Done.
 Owner: Frontend & UX. Contract: `docs/contracts/db145-shop-work-aging.md`.
 
 ## Local runtime alignment
@@ -52,3 +52,26 @@ The user requested screen-space priority before merge. Impeccable context/distil
 ## Released main integration before final CI
 
 Main advanced to44575250 (PR675 payment refresh) during the compact pass. The only conflict was the board prepend; both histories were retained. All main payment-refresh source and tests are retained verbatim, and all A2 application/test paths are unchanged from the reviewed compact candidate. No new migration or financial write is introduced by this integration. Independent compact UI QA GO includes13 rerun panel tests and reviewed screenshots. Final exact-head protected CI remains the merge gate.
+
+## Merge and deployment handoff
+
+A second clean integration retained released inbox main e74efc5f without changing A2 paths. Final candidate9e31f861664b570bd167c9723b42145b37070857 passed all six protected checks plus dependency preparation in run40950275579. PR676 normally squash-merged at2026-10-29T20:42:40Z as3c231850ba34acc8a0939446fc9928a2f996e4cd. Checked and merged trees equal5d6341ec16dda6543a2be1e6d8b13977aedbbd57. Automatic Web9c8c0a7b-2b67-4025-922f-25deef230077 and Worker397be24d-c771-4f74-a621-6891feff5ac4 building exact merge; production acceptance pending.
+
+## Exact production deployment and read-only retention
+
+- Web9c8c0a7b-2b67-4025-922f-25deef230077 and Worker397be24d-c771-4f74-a621-6891feff5ac4 both SUCCESS on3c231850ba34acc8a0939446fc9928a2f996e4cd. Public /build-version matches; /health alive and /health/ready reports database/Redis OK. No separate main-push workflow is configured; protected PR run40950275579 is the integration gate.
+- Schema remains191_fuel_reviewed_binding. Private fixed-identity postrelease hash receipt covers13 tables and20,550 current rows against20,549 baseline rows. Post receipt SHA25647ad16320f3ecc48b095609867dc6ff1155980cdef206cc5161657c3cce6b72a.
+- Retention is not reported as wholly unchanged: one settlement changed and one linked ledger event was added. Read-only investigation identifies payment_failed at2026-10-29T20:30:23.739663Z, changing pending to unpaid with zero confirmed-principal delta. It predates A2 merge20:42:40Z and its deployment; the settlement update timestamp matches the event. Other baseline source rows match, with no new invoice/payment/time/inventory rows. Private evidence retained under the release audit directory; no corrective write attempted.
+- Actual production IAB session expired and redirected to login. Standard organization sign-in requires user authentication; a concise sign-in request is pending. No postrelease production browser acceptance claimed. Local compact Day/Night desktop/mobile proof remains valid but is not a substitute. ETS importer held, no invoice creation or financial/status/provider/collector actions from A2 work.
+
+## Signed-in production acceptance and Night correction
+
+Actual NC owner Chrome acceptance on the released A2 surface, using a separate QA tab and existing records only:
+
+- Day desktop1280x900 and mobile390x844: zero active jobs, two payment-only closeout jobs, four Closed Today. These are observed current counts, not fixture or financial reconciliation claims. Existing payment-only work stays out of active aging.
+- Unknown0 remains actionable; timing help explicitly explains missing reliable wait starts. Filters opens, Escape dismisses and returns focus, timing help dismisses outside. Mobile filters fit within the viewport; compact labels and layout do not overflow visually.
+- Production currently has no active rows. Populated clock/Unknown/category/drill-down coverage remains the separately recorded local synthetic evidence; no production records were fabricated.
+- Night mobile revealed the inherited legacy empty-state CSS used hard-coded Day foregrounds. This failed final acceptance. Original Day appearance was restored through the normal UI; user payment workspace and draft were not touched.
+- Fast UI correction on `codex/a2-night-empty-state`, based on releasedmaincf11290e, adds only two scoped CSS rules using existing workspace foreground tokens. Empty/loading/error copy inherits the correct theme; no API, financial/source, spacing or importer change.
+- Mandatory local runtime re-aligned on the new branch: frontend5173 PID87012 and backend8000 PID87015 both this worktree, explicit localhost truckpitstop_db145_a2, approved env symlinks preserved. Direct/proxy readiness passes; rendered source verified. No migration/reseed. Local13-table/10-row source cohort still matches.
+- All13 existing panel tests, TypeScript and production build pass. No JavaScript changed; CSS syntax is validated by the build. Actual signed-in fictional-owner Day token readback and Night desktop1280/mobile390 screenshots verify readable empty text: Night title rgb(246,248,251), secondary rgb(184,197,213); no horizontal overflow. Local preview is aligned and browser-verified. Protected follow-up CI/deployment and final live Night verification remain required.
