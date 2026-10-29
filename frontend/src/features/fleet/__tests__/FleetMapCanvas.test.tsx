@@ -35,7 +35,8 @@ it('selects pins in place and draws supplied road geometry with status and stale
   expect(select).toHaveBeenCalledWith('Old')
   expect(mock.lines.mock.calls[0][0].features[0].geometry.coordinates).toEqual([[0, 0], [.3, .4], [1, 0]])
 })
-it('keeps coincident trucks individually selectable with separate tags and true anchors', async () => {
+it('keeps coincident trucks individually selectable when zoomed in', async () => {
+  mock.zoom=14
   const select = vi.fn()
   render(<FleetMapCanvas trucks={[truck('A', 0), truck('B', 0)]} nearbyIds={[]} now={now} recenter={0} onFocus={select} />)
   await waitFor(() => expect(mock.pins).toHaveLength(2))
@@ -95,7 +96,8 @@ it('keeps marker DOM and camera stable through selection, loading and route resu
   result.rerender(<FleetMapCanvas {...props} focusId="B" recenter={1} />)
   expect(mock.fit).toHaveBeenCalledTimes(2)
 })
-it('moves existing markers, removes only missing groups and reconciles coincident trucks', async () => {
+it('moves existing markers and reconciles coincident trucks at close zoom', async () => {
+  mock.zoom=14
   const props = { trucks: [truck('A', 0), truck('B', 1)], nearbyIds: [], now, recenter: 0, onFocus: vi.fn() }
   const result = render(<FleetMapCanvas {...props} />)
   await waitFor(() => expect(mock.pins).toHaveLength(2))
@@ -118,8 +120,7 @@ it('retains every tag and route endpoint across zoom changes', async () => {
   act(() => mock.handlers.moveend())
   expect(mock.pins).toHaveLength(2)
   expect(mock.markerRemove).not.toHaveBeenCalled()
-  expect(mock.pins[0].element).toHaveAccessibleName('609, Out of service')
-  expect(mock.pins[1].element).toHaveAccessibleName('531, Out of service')
+  expect(mock.pins.map(pin=>pin.element.getAttribute('aria-label'))).toEqual(expect.arrayContaining(['609, Out of service','531, Out of service']))
 })
 
 it('fits the full fleet after selection and supports a separate home camera action', async () => {
@@ -149,4 +150,33 @@ it('refits all fleet anchors after tablet rotation but not ordinary map movement
   act(() => mock.handlers.resize())
   expect(mock.fit).toHaveBeenCalledTimes(3)
   expect(mock.pins).toHaveLength(2)
+})
+
+it('anchors a branded three-mile cluster and expands on click without selecting a truck',async()=>{
+ const select=vi.fn()
+ render(<FleetMapCanvas trucks={[{...truck('A',1),fleet_company_name:'77 Cargo'}, {...truck('B',1.01),fleet_company_name:'77 Cargo'}]} nearbyIds={[]} now={now} recenter={0} onFocus={select}/>)
+ await waitFor(()=>expect(mock.pins).toHaveLength(1))
+ const cluster=mock.pins[0]
+ expect(cluster.point![0]).toBeCloseTo(1.005)
+ expect(cluster.element).toHaveAccessibleName('Zoom to 2 trucks within 3 miles: A, B')
+ expect(cluster.element.querySelector('img')).toHaveAttribute('src',cargoMarkUrl)
+ expect(cluster.element.querySelector('path')).toBeNull()
+ mock.zoom=14
+ fireEvent.click(cluster.element)
+ expect(mock.fit.mock.lastCall![0].points).toEqual([[1,0],[1.01,0]])
+ expect(select).not.toHaveBeenCalled()
+ await waitFor(()=>expect(mock.pins).toHaveLength(3))
+ fireEvent.click(mock.pins[2].element)
+ expect(select).toHaveBeenCalledWith('B')
+})
+it('does not combine different companies or hide a selected route endpoint',async()=>{
+ render(<FleetMapCanvas trucks={[{...truck('A',1),fleet_company_name:'77 Cargo'}, {...truck('B',1),fleet_company_name:'Other'}]} nearbyIds={[]} now={now} recenter={0} onFocus={vi.fn()}/>)
+ await waitFor(()=>expect(mock.pins).toHaveLength(2))
+ expect(mock.pins.every(pin=>!pin.element.classList.contains('is-cluster'))).toBe(true)
+})
+
+it('keeps home-distance results clustered until a truck is selected',async()=>{
+ render(<FleetMapCanvas trucks={[truck('A',1),truck('B',1.01)]} nearbyIds={['A','B']} now={now} recenter={0} onFocus={vi.fn()}/>)
+ await waitFor(()=>expect(mock.pins).toHaveLength(1))
+ expect(mock.pins[0].element).toHaveClass('is-cluster')
 })

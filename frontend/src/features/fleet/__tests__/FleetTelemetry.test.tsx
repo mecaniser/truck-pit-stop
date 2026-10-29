@@ -12,7 +12,7 @@ import FleetMap from '../FleetMap'
 const mocks = vi.hoisted(() => ({ post: vi.fn(), positions: [] as number[][], maps: [] as Record<string, unknown>[], errors: [] as (() => void)[], removed: vi.fn(), markerRemoved: vi.fn() }))
 vi.mock('@/lib/api', () => ({ default: { post: mocks.post } }))
 vi.mock('mapbox-gl', () => ({ default: {
-  Map: class { getContainer() { return { getBoundingClientRect: () => ({ width: 900, height: 700 }) } } project(point: number[]) { return { x: point[0] * 200, y: point[1] * 200 } } constructor(options: Record<string, unknown>) { mocks.maps.push(options) } on(event: string, cb: () => void) { if (event === 'error') mocks.errors.push(cb); if (event === 'load') queueMicrotask(cb) } getSource() { return undefined } addSource() {} addLayer() {} addControl() {} jumpTo() {} fitBounds() {} remove() { mocks.removed() } resize() {} },
+  Map: class { getZoom() { return 14 } getContainer() { return { getBoundingClientRect: () => ({ width: 900, height: 700 }) } } project(point: number[]) { return { x: point[0] * 200, y: point[1] * 200 } } constructor(options: Record<string, unknown>) { mocks.maps.push(options) } on(event: string, cb: () => void) { if (event === 'error') mocks.errors.push(cb); if (event === 'load') queueMicrotask(cb) } getSource() { return undefined } addSource() {} addLayer() {} addControl() {} jumpTo() {} fitBounds() {} remove() { mocks.removed() } resize() {} },
   Marker: class { setLngLat(point: number[]) { mocks.positions.push(point); return this } setPopup() { return this } addTo() { return this } remove() { mocks.markerRemoved() } },
   Popup: class { setDOMContent() { return this } }, NavigationControl: class {}, LngLatBounds: class { extend() { return this } },
 } }))
