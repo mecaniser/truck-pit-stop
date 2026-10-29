@@ -1,15 +1,22 @@
 """Exact full-cash receipts. Never sends a financial write to a provider."""
+import json
 from datetime import datetime, timezone
 from hashlib import sha256
-import json
 from uuid import UUID
+
 from sqlalchemy import select
+
 from app.core.config import settings
 from app.core.dependencies import user_has_permission
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.invoice_settlement import (
-    CustomerCreditEntry, InvoicePaymentAttempt, InvoicePaymentLedgerEvent,
-    InvoiceSettlement, PaymentAccountingLink, PaymentOverpayment, PaymentRefund,
+    CustomerCreditEntry,
+    InvoicePaymentAttempt,
+    InvoicePaymentLedgerEvent,
+    InvoiceSettlement,
+    PaymentAccountingLink,
+    PaymentOverpayment,
+    PaymentRefund,
     ProviderSettlementEntry,
 )
 from app.db.models.payment import Payment, PaymentMethod, PaymentStatus
@@ -17,12 +24,22 @@ from app.db.models.provider_outbox import ProviderOutboxEvent
 from app.db.models.quickbooks_connection import QuickBooksConnection
 from app.db.models.repair_order import RepairOrderStatus
 from app.db.models.user import UserRole
-from app.services.invoice_accounting_policy import HISTORICAL_HOLD, locked_policy, LOCAL_CASH, LOCAL_CASH_SYNC
-from app.services.invoice_settlement_service import (
-    SettlementDomainError, _canonical_hash, _actor_snapshot, money,
-    get_or_create_settlement, append_ledger_event, allocate_next_payment_number,
+from app.services.invoice_accounting_policy import (
+    HISTORICAL_HOLD,
+    LOCAL_CASH,
+    LOCAL_CASH_SYNC,
+    locked_policy,
 )
-
+from app.services.invoice_settlement_service import (
+    SettlementDomainError,
+    _actor_snapshot,
+    _canonical_hash,
+    allocate_next_payment_number,
+    append_ledger_event,
+    get_or_create_settlement,
+    money,
+)
+from app.services.invoice_test_attempt_review import reviewed_test_ancestor
 
 CASH_REVIEW_KEY = "cash_nonproduction_review"
 OWNER_CASH_REVIEW_KEY = "cash_owner_attestation_review"
@@ -479,14 +496,15 @@ async def reviewed_cash_ancestry_reason(db, invoice, *, lock=False, reviews=None
                 or parent.quickbooks_sync_status not in {None, "pending", "not_synced", "not_required", "awaiting_payment"}
                 or await ancestor_financial_events(db, parent, lock=lock)):
             return "A replaced invoice has unresolved accounting activity. Review it before local cash."
-        if not owner_reviews:
+        reviewed_test = not owner_reviews and await reviewed_test_ancestor(db, invoice, parent, lock=lock)
+        if not owner_reviews and not reviewed_test:
             for model in (InvoicePaymentAttempt, Payment, PaymentAccountingLink, InvoicePaymentLedgerEvent):
                 if await db.scalar(select(model.id).where(model.tenant_id == invoice.tenant_id,
                         model.invoice_id == parent.id).limit(1)):
                     return "A replaced invoice has payment activity. Resolve it before local cash."
         settlement = await db.scalar(select(InvoiceSettlement).where(InvoiceSettlement.tenant_id == invoice.tenant_id,
             InvoiceSettlement.invoice_id == parent.id).execution_options(populate_existing=True))
-        if not owner_reviews and settlement and (settlement.last_event_sequence or any(money(getattr(settlement, name)) != 0
+        if not owner_reviews and not reviewed_test and settlement and (settlement.last_event_sequence or any(money(getattr(settlement, name)) != 0
                 for name in ("confirmed_principal", "active_pending_principal", "unapplied_credit", "refund_pending"))):
             return "A replaced invoice has payment activity. Resolve it before local cash."
         parent_id = parent.supersedes_invoice_id
@@ -560,7 +578,7 @@ async def reconcile_export_absence(db, invoice, events):
             or event.attempt_count and not (event.payload or {}).get("cash_no_dispatch"))]
     if not attempted:
         return
-    from app.services.quickbooks_accounting_service import _request, _escape_query
+    from app.services.quickbooks_accounting_service import _escape_query, _request
     from app.services.quickbooks_sync_service import _refresh_if_needed
     connection = await db.scalar(select(QuickBooksConnection).where(
         QuickBooksConnection.tenant_id == invoice.tenant_id,
