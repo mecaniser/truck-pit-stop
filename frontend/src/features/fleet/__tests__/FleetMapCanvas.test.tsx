@@ -180,3 +180,19 @@ it('keeps home-distance results clustered until a truck is selected',async()=>{
  await waitFor(()=>expect(mock.pins).toHaveLength(1))
  expect(mock.pins[0].element).toHaveClass('is-cluster')
 })
+
+// Regression: tablet cluster centers were intercepted by nearby truck GPS dots.
+it('keeps cluster tap surfaces above nearby markers in overview and focus modes', async () => {
+ const select=vi.fn()
+ const props={trucks:[truck('A',1),truck('B',1.01),truck('C',2),truck('D',3)],nearbyIds:['C'],now,recenter:0,onFocus:select}
+ const view=render(<FleetMapCanvas {...props}/> )
+ await waitFor(()=>expect(mock.pins).toHaveLength(3))
+ const cluster=mock.pins.find(p=>p.element.classList.contains('is-cluster'))!
+ const nearby=mock.pins.find(p=>p.element.getAttribute('aria-label')?.startsWith('C,'))!
+ expect(Number(cluster.element.style.zIndex)).toBeGreaterThan(Number(nearby.element.style.zIndex))
+ view.rerender(<FleetMapCanvas {...props} focusId="D"/> )
+ expect(Number(cluster.element.style.zIndex)).toBeGreaterThan(Number(nearby.element.style.zIndex))
+ fireEvent.click(cluster.element.querySelector('.proximity-pin-badge')!)
+ expect(mock.fit).toHaveBeenLastCalledWith(expect.anything(),expect.objectContaining({maxZoom:16}))
+ expect(select).not.toHaveBeenCalled()
+})

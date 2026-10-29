@@ -157,7 +157,8 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
       badge.style.left=`${card.x-anchor.x}px`;badge.style.top=`${card.y-anchor.y}px`
       const leader=button.querySelector<SVGPathElement>('path')
       leader?.setAttribute('d',card.path.map((point,index)=>`${index?'L':'M'}${point.x-anchor.x} ${point.y-anchor.y}`).join(' '))
-      button.style.zIndex=card.id===focusId?'5':nearby.includes(card.id)?'4':card.fixed?'3':'1'
+      // A cluster is an interactive surface at the GPS location: nearby dots must not intercept its taps.
+      button.style.zIndex=card.fixed?'6':card.id===focusId?'5':focus&&nearby.includes(card.id)?'4':'1'
     })
     const sourceId = 'fleet-proximity-lines'
     const geometry = JSON.parse(routeData) as GeoJSON.LineString | null
