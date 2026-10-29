@@ -1,4 +1,4 @@
-const {prepareLegacyLogin}=require('../motive_sync/login.cjs');
+const {prepareHealthLogin}=require('./login.cjs');
 const {closeBrowser,phase,openTasks,failed}=require('../motive_sync/tasks.cjs');
 /* Rendered Motive Health UI only. No private endpoints or extracted sessions. */
 const fs=require('node:fs');
@@ -145,14 +145,7 @@ async function collect(output) {
  const browser=await chromium.launch({headless:true});
  const result={version:1,company_label:COMPANY,company_id:COMPANY_ID,company_verified_before:false,company_verified_after:false,timezone_evidence:null,started_at:new Date().toISOString(),finished_at:null,health_directory_count:null,terminal_evidence:null,complete:false,vehicles:[]};save(output,result);
  try {
-  const context=await browser.newContext({timezoneId:'America/New_York',locale:'en-US'});
-  const page=await context.newPage();page.setDefaultTimeout(15000);
-  phase('login_navigate');
-  await page.goto(ORIGIN,{waitUntil:'domcontentloaded',timeout:45000});phase('login_auth_redirect');
-  await page.waitForURL('https://auth.gomotive.com/login**',{timeout:30000});
-  phase('login_origin_check');
-  if(new URL(page.url()).origin!=='https://auth.gomotive.com')throw new Error('login_origin');
-  await prepareLegacyLogin(page,{phase});
+  const {context,page}=await prepareHealthLogin(browser,{phase});
   phase('login_email');
   await page.locator('input[name="user_profile[email]"]').fill(process.env.MOTIVE_EMAIL);phase('login_password');
   await page.locator('input[name="user_profile[password]"]').fill(process.env.MOTIVE_PASSWORD);
