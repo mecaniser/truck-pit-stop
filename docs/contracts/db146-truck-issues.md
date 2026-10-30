@@ -1,6 +1,6 @@
 # DB-146 / C3 — Standalone truck issues and staff follow-up
 
-Status: Frozen for implementation by Product & Delivery Lead after Architecture merge-compatibility GO, 2026-10-30. A2 and its UI corrections are production-accepted through PR694. Backend & Integrations is accountable, with Frontend & UX consuming this contract. Independent QA and tenant/security review remain required for the additive data model and authorization boundary. This is contract approval, not implementation or release acceptance.
+Status: Implemented and released in PR698 / `18255c03` on 2026-10-30 after Architecture, independent QA/Security, protected CI and production acceptance. Backend & Integrations is accountable. Contract semantics remain frozen; [final verification receipt](../verification/DB146_TRUCK_ISSUES.md) records exact release evidence and production read-only coverage limits.
 
 ## Outcome and fixed limits
 
