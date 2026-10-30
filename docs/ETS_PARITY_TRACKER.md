@@ -24,6 +24,8 @@ Last updated: 2026-10-30. Program owner: Product & Delivery Lead. Discovery inve
 6. If new discoveries appear, append a stable ID with source evidence. If an outcome is split, retain the parent unchecked until all required child outcomes pass. If superseded, retain its disposition and link the replacement.
 7. Before every resumed work session, read this tracker and the latest linked receipt. No scheduled/background work is implied; advancement happens during active implementation sessions.
 
+A2 UI follow-up: user-selected solid Closeout/Activity badges released and production-verified in PR690 (2472e45a); Day/Night desktop/mobile. [Receipt](verification/DB145_SOLID_BADGES.md). Parity completion count and C3 sequence unchanged.
+
 ## Selected outcomes
 
 - [x] **R1 — Scheduled start, promised finish and an overdue queue**
