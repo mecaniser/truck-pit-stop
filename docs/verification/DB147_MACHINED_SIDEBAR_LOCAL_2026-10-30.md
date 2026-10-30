@@ -51,3 +51,11 @@ Ready for local product review. No PR, push, merge or deployment was requested o
 The initial link opened an in-app browser without the separately tested Chromium fixture session, so the user encountered an unregistered-credentials/login dead end. Corrected by creating one dedicated `sidebar-preview@example.com` demo owner in the existing fictional `C3 Fictional Shop 1` tenant of `truckpitstop_db146_c3`. The setup asserted the exact local database and fictional tenant before inserting. No existing account/password or production data was changed; no application authentication code was altered. The password is not recorded here.
 
 Signed in through the ordinary Email/Password form in the user's actual in-app tab 3, unchecked Remember me, opened Customers, expanded the rail, and reloaded. Selected-tab inspection confirms the visible tab remains at `http://127.0.0.1:5173/dashboard/customers` with the Sidebar Preview account and Machined rail. The tab is retained as the deliverable. Local preview verification now includes the actual browser handoff and normal login, not just a separate automation browser.
+
+## Shipping gate (2026-10-30)
+
+Product accepted the local UI and authorized delivery. Candidate incorporates `origin/main` `cdc61be8bb92cdf22c5652bba18a433120e02026`; the board-only merge conflict was resolved by preserving the complete current main board and prepending the DB-147 item. No unrelated work was overwritten.
+
+Pre-landing code and design review: no unresolved issues. One mechanical refinement removes the new reduced-motion `!important` by matching hover/active specificity. No VERSION or CHANGELOG convention exists in this repository; release information stays in the delivery board, verification receipt and focused PR.
+
+Post-integration focused DashboardLayout tests pass **13/13**; changed TSX ESLint, TypeScript/production build and diff integrity pass. The prior signed-in expanded/compact/mobile acceptance and actual in-app login handoff remain the runtime evidence for this unchanged presentation. Protected PR CI and deployment verification are the remaining release gates.
