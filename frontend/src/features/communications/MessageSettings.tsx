@@ -22,7 +22,7 @@ export default function MessageSettings({ canSetupSMS, channels, deliveryMode, o
     return () => { if (previous instanceof HTMLElement) previous.focus(); };
   }, [opener]);
   return (
-    <div className="sheet-backdrop">
+    <div className="sheet-backdrop settings-backdrop">
       <section ref={dialog} className="connections-sheet message-settings" role="dialog" aria-modal="true" aria-label="Messages settings"
         onKeyDown={event => {
           if (event.key === "Escape") { event.stopPropagation(); close.current(); }

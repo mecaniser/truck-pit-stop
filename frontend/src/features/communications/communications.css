@@ -1752,3 +1752,5 @@
 :where(.communications-surface) .settings-sections { display: flex; gap: 8px; margin-bottom: 24px; }
 :where(.communications-surface) .settings-sections [aria-pressed="true"] { background: #e8f2ee; color: #176b59; border-color: transparent; }
 :where(.communications-surface) .message-settings .sms-setup { padding: 0; min-height: auto; }
+
+:where(.communications-surface) .settings-backdrop { z-index: 100; }
