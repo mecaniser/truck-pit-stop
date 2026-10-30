@@ -504,11 +504,15 @@ async def prepare(db, rows, tenant_id, actor_id, company_label, company_id):
         if len(members) > 1:
             raise ValueError("Expected unique current fleet membership")
         member = members[0]
+        item.update(vehicle_id=str(vehicle.id), membership_id=str(member.id))
         if row["status"] == "located" and not telemetry.within(
             member, time_value(row["sourceReadTime"])
         ):
-            raise ValueError("Membership does not cover source capture")
-        item.update(vehicle_id=str(vehicle.id), membership_id=str(member.id))
+            item.update(
+                status="outside_membership_interval",
+                reason="source_capture_outside_membership",
+            )
+            continue
         if row["status"] == "unavailable":
             continue
         body = make_body(
@@ -575,7 +579,11 @@ async def prepare(db, rows, tenant_id, actor_id, company_label, company_id):
                 if row["precision"] == "minute"
                 else end,
             ):
-                raise ValueError("Membership does not cover observation")
+                item.update(
+                    status="outside_membership_interval",
+                    reason="observation_outside_membership",
+                )
+                continue
         location_scope = [
             Snapshot.tenant_id == tenant_id,
             Snapshot.vehicle_id == vehicle.id,
