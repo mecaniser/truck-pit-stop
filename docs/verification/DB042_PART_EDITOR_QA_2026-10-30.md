@@ -54,4 +54,4 @@ Browser extension actions timed out; switched to the in-app browser for successf
 
 ## Release status
 
-Local implementation and synthetic acceptance complete. Reviewable PR required; protected CI, merge, deployment and signed-in acceptance remain pending. Do not mark the board item Done or infer production availability from this receipt.
+Local implementation and synthetic acceptance complete at implementation commit `31eb3dc144cba9c37b98a5084dbf2a04d75d5d55`. [Draft PR705](https://github.com/mecaniser/truck-pit-stop/pull/705) is open; no checks were reported on the draft at creation. Protected CI, merge, deployment and signed-in acceptance remain pending. Do not mark the board item Done or infer production availability from this receipt.
