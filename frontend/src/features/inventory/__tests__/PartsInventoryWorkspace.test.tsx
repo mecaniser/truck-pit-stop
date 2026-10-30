@@ -1326,4 +1326,128 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(freshness).toHaveAttribute('data-stale', 'true')
   })
 
+  async function openEditorForValidation() {
+    installApi()
+    const baseGet = apiMocks.get.getMockImplementation()!
+    let record = { ...editableInventory(activePart), cost: '10.00', selling_price: '15.00', core_charge: '2.00', on_order_quantity: 5, pricing_version: 1 }
+    apiMocks.get.mockImplementation((url: string, config: unknown) => url === '/inventory/part-active'
+      ? Promise.resolve({ data: { ...record } }) : baseGet(url, config))
+    const user = userEvent.setup()
+    renderWorkspace()
+    await screen.findByRole('heading', { name: 'Alternator' })
+    await user.click(screen.getByRole('button', { name: 'Edit details' }))
+    const editor = await screen.findByRole('form', { name: 'Edit part details' })
+    return { user, editor, changeSavedRecord: (changes: Partial<typeof record>) => { record = { ...record, ...changes } } }
+  }
+
+  it.each([
+    ['Cost per unit', '', 'Cost per unit'],
+    ['Cost per unit', '-5', 'Cost per unit'],
+    ['Core charge', 'abc', 'Core charge'],
+    ['Selling price', '', 'Selling price'],
+    ['On order', '1.5', 'On order'],
+    ['On order', '', 'On order'],
+  ])('validates invalid editor %s value "%s" instead of saving other edits', async (label, value, errorLabel) => {
+    const { user, editor } = await openEditorForValidation()
+    fireEvent.change(within(editor).getByRole('textbox', { name: label, exact: true }), { target: { value } })
+    await user.type(within(editor).getByRole('textbox', { name: 'Part name' }), ' revised')
+    await user.click(within(editor).getByRole('button', { name: 'Save details' }))
+    expect(apiMocks.put).not.toHaveBeenCalled()
+    expect(within(editor).getByRole('alert')).toHaveTextContent(errorLabel)
+  })
+
+  it.each(['', 'abc', '-101'])('validates invalid editor markup "%s" without changing the saved price', async (value) => {
+    const { user, editor } = await openEditorForValidation()
+    await user.click(within(editor).getByRole('button', { name: 'Markup', exact: true }))
+    fireEvent.change(within(editor).getByRole('textbox', { name: 'Markup percent' }), { target: { value } })
+    await user.type(within(editor).getByRole('textbox', { name: 'Part name' }), ' revised')
+    await user.click(within(editor).getByRole('button', { name: 'Save details' }))
+    expect(apiMocks.put).not.toHaveBeenCalled()
+    expect(within(editor).getByRole('alert')).toHaveTextContent(/markup/i)
+    await user.click(within(editor).getByRole('button', { name: 'Price', exact: true }))
+    expect(within(editor).getByRole('textbox', { name: 'Selling price', exact: true })).toHaveValue('15.00')
+  })
+
+  it('allows explicit zero editor amounts and quantity', async () => {
+    const { user, editor } = await openEditorForValidation()
+    for (const label of ['Cost per unit', 'Core charge', 'Selling price', 'On order']) {
+      fireEvent.change(within(editor).getByRole('textbox', { name: label, exact: true }), { target: { value: '0' } })
+    }
+    await user.click(within(editor).getByRole('button', { name: 'Save details' }))
+    await waitFor(() => expect(apiMocks.put).toHaveBeenCalledWith('/inventory/part-active', {
+      cost: '0.00', core_charge: '0.00', selling_price: '0.00', on_order_quantity: 0, expected_pricing_version: 1,
+    }))
+  })
+
+  it('initializes reopened editor from the fresh record rather than cached values', async () => {
+    const { user, changeSavedRecord } = await openEditorForValidation()
+    await user.click(screen.getByRole('button', { name: 'Cancel editing' }))
+    changeSavedRecord({ name: 'Fresh alternator', cost: '20.00', pricing_version: 2 })
+    await user.click(screen.getByRole('button', { name: 'Edit details' }))
+    const reopened = await screen.findByRole('form', { name: 'Edit part details' })
+    await waitFor(() => expect(within(reopened).getByRole('textbox', { name: 'Part name' })).toHaveValue('Fresh alternator'))
+    expect(within(reopened).getByRole('textbox', { name: 'Cost per unit' })).toHaveValue('20.00')
+  })
+
+  it('blocks editor cancel while a save is pending and retains the draft on failure', async () => {
+    const { user, editor } = await openEditorForValidation()
+    let rejectSave!: (error: Error) => void
+    apiMocks.put.mockImplementation(() => new Promise((_resolve, reject) => { rejectSave = reject }))
+    await user.type(within(editor).getByRole('textbox', { name: 'Part name' }), ' revised')
+    await user.click(within(editor).getByRole('button', { name: 'Save details' }))
+    expect(screen.getByRole('button', { name: 'Cancel editing' })).toBeDisabled()
+    await user.keyboard('{Escape}')
+    expect(editor).toBeInTheDocument()
+    rejectSave(new Error('Could not save'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel editing' })).toBeEnabled())
+    expect(within(editor).getByRole('textbox', { name: 'Part name' })).toHaveValue('Alternator revised')
+  })
+
+  it('ignores an older editor save completion after selecting another part', async () => {
+    const { user, editor } = await openEditorForValidation()
+    let finishSave!: (result: unknown) => void
+    apiMocks.put.mockImplementation(() => new Promise((resolve) => { finishSave = resolve }))
+    await user.type(within(editor).getByRole('textbox', { name: 'Part name' }), ' revised')
+    await user.click(within(editor).getByRole('button', { name: 'Save details' }))
+    await user.type(screen.getByRole('searchbox', { name: 'Search parts' }), 'brake')
+    await screen.findByRole('heading', { name: 'Brake shoe kit' })
+    await user.click(screen.getByRole('button', { name: 'Edit details' }))
+    const nextEditor = await screen.findByRole('form', { name: 'Edit part details' })
+    finishSave({ data: editableInventory(activePart) })
+    await waitFor(() => expect(screen.getByText('Alternator revised details saved.')).toBeInTheDocument())
+    expect(nextEditor).toBeInTheDocument()
+    expect(within(nextEditor).getByRole('textbox', { name: 'Part name' })).toHaveValue('Brake shoe kit')
+  })
+
+  it('keeps cached editor values hidden when reopening cannot fetch fresh data and supports retry', async () => {
+    const { user, changeSavedRecord } = await openEditorForValidation()
+    await user.click(screen.getByRole('button', { name: 'Cancel editing' }))
+    changeSavedRecord({ name: 'Fresh after retry' })
+    const baseGet = apiMocks.get.getMockImplementation()!
+    let fail = true
+    apiMocks.get.mockImplementation((url: string, config: unknown) => {
+      if (url === '/inventory/part-active' && fail) { fail = false; return Promise.reject(new Error('Offline')) }
+      return baseGet(url, config)
+    })
+    await user.click(screen.getByRole('button', { name: 'Edit details' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Editable part details could not be loaded.')
+    expect(screen.queryByRole('form', { name: 'Edit part details' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Retry', exact: true }))
+    const editor = await screen.findByRole('form', { name: 'Edit part details' })
+    expect(within(editor).getByRole('textbox', { name: 'Part name' })).toHaveValue('Fresh after retry')
+  })
+
+  it('blocks editor cancel while a photo upload is pending and recovers on upload failure', async () => {
+    const { user, editor } = await openEditorForValidation()
+    let rejectUpload!: (error: Error) => void
+    apiMocks.post.mockImplementation(() => new Promise((_resolve, reject) => { rejectUpload = reject }))
+    const input = editor.parentElement!.querySelector<HTMLInputElement>('input[type="file"]')!
+    await user.upload(input, new File(['image'], 'qa.webp', { type: 'image/webp' }))
+    expect(screen.getByRole('button', { name: 'Cancel editing' })).toBeDisabled()
+    rejectUpload(new Error('Photo upload failed'))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Photo upload failed')
+    expect(screen.getByRole('button', { name: 'Cancel editing' })).toBeEnabled()
+    expect(editor).toBeInTheDocument()
+  })
+
 })
