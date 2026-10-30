@@ -24,14 +24,23 @@ vi.mock('react-router-dom', () => ({
   useLocation: () => ({ state: testState.locationState, search: testState.locationSearch }),
 }))
 vi.mock('@tanstack/react-query', () => ({
-  useQuery: ({ queryKey }: { queryKey: string[] }) => queryKey[0] === 'dashboard-wip-aging' ? { ...testState.query, data: wipFixture, isError: false } : testState.query,
+  useQuery: ({ queryKey }: { queryKey: string[] }) => queryKey[0] === 'dashboard-wip-aging'
+    ? { ...testState.query, data: wipFixture, isError: false }
+    : queryKey[0] === 'activity-feed'
+      ? { ...testState.query, data: { items: Array.from({ length: 20 }, (_, id) => ({ id: String(id) })), has_more: true }, isError: false }
+      : testState.query,
   useQueryClient: () => ({ invalidateQueries: testState.invalidateQueries }),
 }))
 vi.mock('../../../stores/authStore', () => ({
-  useAuthStore: () => ({ user: garageOwnerSession }),
+  useAuthStore: (selector?: (state: { user: typeof garageOwnerSession; authSessionEpoch: number }) => unknown) => {
+    const state = { user: garageOwnerSession, authSessionEpoch: 1 }
+    return selector ? selector(state) : state
+  },
 }))
 vi.mock('../../../contexts/ThemeContext', () => ({
+  appearanceTokenRecord: () => ({}),
   useTheme: () => ({
+    appearance: { mode: 'light' },
     presentationVariant: testState.presentationVariant,
     accentColors: { 400: '#d39a54', 500: '#b87333', 600: '#8a5424' },
     fontSize: 'default',
@@ -145,6 +154,14 @@ describe('DashboardHome DB-035 presentation boundary', () => {
       isFetching: false,
       dataUpdatedAt: Date.now(),
     }
+  })
+
+  it('shows capped Activity count before opening the feed and refreshes it with Shop Work', () => {
+    render(<DashboardHome />)
+    expect(screen.getByRole('button', { name: 'Activity 20+', exact: true })).toBeInTheDocument()
+    expect(screen.queryByText('Activity surface')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Refresh Shop Work/ }))
+    expect(testState.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['activity-feed'] })
   })
 
   it('defaults to active work and opens the canonical workspace in place', () => {

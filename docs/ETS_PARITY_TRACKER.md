@@ -1,5 +1,7 @@
 > **Current parity handoff — 2026-10-30:** A2 is Done after PR687 production Day/Night desktop/mobile acceptance. C3 / DB-146 enters contract/discovery; no C3 implementation yet. Shop Work redesign stays separate/deferred. ETS importer held; no financial changes.
 
+> **2026-10-30 UI follow-up:** A2 Closeout acceptance and C3 draft are recorded in docs PR688. Current DB-145 Fast UI correction styles open dropdowns, restores approved accent digits and fixes Activity count on arrival. See [controls receipt](verification/DB145_SHOP_WORK_CONTROLS.md). C3 remains next; no importer or financial changes.
+
 > **A2 production follow-up, 2026-10-30:** Night contrast verification passed at1280/390 on current production. User identified missing Closeout count; Fast UI correction in `codex/a2-closeout-count` must pass local/CI/release smoke before A2 Done. Shop Work redesign is deferred and not a dependency. C3 remains next; importer held, no financial changes.
 
 > **2026-10-16 source contact evidence gate:** DB-SOURCE-CONTACT-DOM is an acceptance correction to the existing source pipeline, not a new parity outcome. First verification cycle remains safely incomplete; scoped fix and production complete-evidence receipt pending. See [receipt](verification/DB_SOURCE_CONTACT_DOM.md).

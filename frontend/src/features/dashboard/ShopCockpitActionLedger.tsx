@@ -115,7 +115,7 @@ export default function ShopCockpitActionLedger({
   isManager: boolean
   canViewActivity: boolean
   queueView: 'queue' | 'activity'
-  activityCount: number
+  activityCount: number | string | null
   isRefreshing: boolean
   lastUpdatedLabel: string
   quickOrderExpanded: boolean
@@ -279,7 +279,7 @@ export default function ShopCockpitActionLedger({
                 >
                   <History aria-hidden="true" />
                   Activity
-                  {activityCount > 0 && <span>{activityCount}</span>}
+                  {activityCount != null && <span title="Recent activity; + means more events are available">{activityCount}</span>}
                 </button>
               )}
             </div>

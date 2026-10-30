@@ -138,3 +138,19 @@ test('final retry may retain stable location while omitting unstable speed',asyn
  let point=0;await assert.rejects(stableObservation({...base,point:async()=>[35+point++,-80]}),/source_changed/);
  await assert.rejects(stableObservation({...base,verifyVin:async()=>{throw new Error('vin_changed');}}),/vin_changed/);
 });
+const {canonicalInlineDate}=require('./collect.cjs');
+test('inline dates normalize only case and whitespace, never borrow a year or accept substrings',()=>{
+ assert.equal(canonicalInlineDate(' OCT  13,\n2026, 5:34 pm '),'Oct 13, 2026, 5:34 PM');
+ for(const value of ['Last updated Oct 13, 2026, 5:34 PM','Disconnected Oct 13, 2026, 5:34 PM','Oct 13, 5:34 PM','Yesterday at 5:34 PM','10/13/2026, 5:34:00 PM',null])assert.equal(canonicalInlineDate(value),null);
+});
+test('inline location-only clock never promotes speed and preserves minute bounds',async()=>{
+ const row=await stableObservation({timestamp:async()=>({rawTimestamp:'Oct 13, 2026, 5:34 PM',sourceAge:null,timestampReason:null,timestampBasis:'inline_location'}),point:async()=>[35,-80],verifyVin:async()=>{},address:null,speed:async()=>speedFromParts('0','MPH')});
+ assert.equal(row.precision,'minute');assert.equal(row.observed_at,null);
+ assert.equal(row.observed_minute_start,'2026-10-13T21:34:00.000Z');assert.equal(row.observed_minute_end,'2026-10-13T21:35:00.000Z');
+ assert.equal(row.timestampBasis,'inline_location');assert.equal(row.speed_mph,null);
+ assert.equal(row.speedText,'0 MPH');assert.equal(row.speedReason,'speed_timestamp_location_only');
+});
+test('timestamp ownership basis cannot change around the same coordinate capture',async()=>{
+ let n=0;
+ await assert.rejects(stableObservation({timestamp:async()=>({rawTimestamp:'Oct 13, 2026, 5:34 PM',sourceAge:null,timestampReason:null,...(n++?{timestampBasis:'inline_location'}:{})}),point:async()=>[35,-80],verifyVin:async()=>{},address:null}),/source_changed/);
+});
