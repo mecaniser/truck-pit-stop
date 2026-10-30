@@ -7217,3 +7217,70 @@ html.customer-portal-active {
 .db-mechanic-stage-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
 .db-mechanic-stage-buttons > button { flex: 1 1 120px; width: auto; min-width: max-content; min-height: 44px; padding: 12px; font-size: 14px; gap: 8px; }
 .db-mechanic-stage-buttons > button svg { flex-shrink: 0; width: 20px; height: 20px; }
+
+/* Keep a real inset between the photo and its shared selection highlight.
+   The overlaid sibling button previews media without nesting controls. */
+.db-parts-workbench__row-select { padding-inline:12px; padding-block:10px; }
+.db-parts-workbench__photo-spacer { flex:0 0 46px; inline-size:46px; block-size:46px; }
+.db-parts-workbench__ledger.is-compact :is(.db-parts-workbench__photo-spacer,.db-parts-workbench__photo-trigger) { display:none; }
+.db-parts-workbench__photo-trigger { display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; padding:0; border:0; border-radius:.65rem; background:transparent; color:inherit; cursor:zoom-in; }
+.db-parts-workbench__part-cell > .db-parts-workbench__photo-trigger { position:absolute; z-index:2; inset-inline-start:12px; inset-block-start:50%; transform:translateY(-50%); }
+.db-parts-workbench__photo-trigger .db-parts-workbench__photo > :is(img,svg) { transition:transform 140ms cubic-bezier(.23,1,.32,1); transform-origin:center; }
+.db-parts-workbench__photo-trigger:focus-visible { outline:2px solid var(--parts-oxide); outline-offset:2px; }
+@media (hover:hover) and (pointer:fine) {
+  .db-parts-workbench__part-cell:has(> .db-parts-workbench__photo-trigger:hover) .db-parts-workbench__row-select::before { opacity:1; }
+  .db-parts-workbench__photo-trigger:hover .db-parts-workbench__photo > :is(img,svg) { transform:scale(1.08); }
+}
+@media (prefers-reduced-motion:reduce) {
+  .db-parts-workbench__photo-trigger .db-parts-workbench__photo > :is(img,svg) { transition:none; }
+  .db-parts-workbench__photo-trigger:hover .db-parts-workbench__photo > :is(img,svg) { transform:none; }
+}
+.db-parts-workbench__part-cell:has(> .db-parts-workbench__photo-trigger:focus-visible) .db-parts-workbench__row-select::before { opacity:1; transition:none; }
+/* The editing surface prioritizes fields over a large identity card. */
+.db-parts-workbench__selected-action.is-editing { position:relative; padding:.65rem .75rem; }
+.db-parts-workbench__selected-action.is-editing .db-parts-workbench__selected-label-row { position:absolute; inset-block-start:.65rem; inset-inline-end:.75rem; margin:0; }
+.db-parts-workbench__selected-action.is-editing .db-parts-workbench__selected-label { display:none; }
+.db-parts-workbench__selected-action.is-editing .db-parts-workbench__selected-part { grid-template-columns:44px minmax(0,1fr); gap:.6rem; padding-inline-end:52px; }
+.db-parts-workbench__selected-action.is-editing .db-parts-workbench__photo.is-detail { flex-basis:44px; inline-size:44px; block-size:44px; }
+.db-parts-workbench__selected-action.is-editing .db-parts-workbench__selected-copy p { margin-block-start:.15rem; }
+.db-parts-workbench__selected-action.is-editing .db-parts-workbench__stock-state { margin-block-start:.15rem; }
+.db-parts-workbench__identity-editor { margin-block-start:.5rem; padding-block-start:.5rem; }
+.db-parts-workbench__identity-editor > form { gap:.5rem; margin-block-start:.5rem; }
+.db-parts-workbench__photo-editor { grid-template-columns:minmax(0,1fr) auto; gap:.35rem .5rem; padding-block-end:.5rem; }
+.db-parts-workbench__photo-editor-actions { justify-content:flex-end; }
+.db-parts-workbench__identity-fields { grid-template-columns:repeat(2,minmax(0,1fr)); gap:.4rem .55rem; }
+.db-parts-workbench__identity-fields label { gap:.2rem; align-self:start; }
+.db-parts-workbench__identity-fields :is(input,textarea) { padding:.4rem .5rem; border-radius:.4rem; }
+.db-parts-workbench__identity-fields textarea { min-block-size:44px; }
+.db-parts-workbench__identity-group { margin:0; padding:.4rem 0 0; }
+.db-parts-workbench__identity-group legend { display:flex; align-items:center; justify-content:space-between; gap:.5rem; inline-size:100%; }
+.db-parts-workbench__identity-group legend button { min-block-size:32px; padding:.1rem .3rem; font-size:.72rem; font-weight:550; letter-spacing:normal; text-transform:none; text-decoration:underline; text-underline-offset:3px; }
+.db-parts-workbench__identity-group .db-parts-workbench__identity-fields { margin-block-start:.25rem; }
+.db-parts-workbench__identity-actions { display:flex; }
+@media (pointer:fine) {
+  .db-parts-workbench__identity-fields input { min-block-size:36px; }
+  .db-parts-workbench__identity-fields textarea { block-size:48px; }
+  .db-parts-workbench__identity-editor .db-parts-workbench__photo-editor button { min-block-size:36px; }
+}
+@media (pointer:coarse) {
+  .db-parts-workbench__identity-group legend button { min-block-size:44px; }
+  .db-parts-workbench__identity-fields :is(input,textarea) { font-size:16px; }
+}
+@media (max-width:420px) {
+  .db-parts-workbench__photo-spacer { flex-basis:40px; inline-size:40px; block-size:40px; }
+  .db-parts-workbench__part-cell > .db-parts-workbench__photo-trigger { min-inline-size:44px; min-block-size:44px; inset-inline-start:10px; }
+  .db-parts-workbench__identity-fields label.is-wide { grid-column:1 / -1; }
+}
+.db-part-photo-preview { position:relative; z-index:200; }
+.db-part-photo-preview__backdrop { position:fixed; inset:0; background:rgb(5 12 22 / .82); }
+.db-part-photo-preview__positioner { position:fixed; inset:0; display:grid; place-items:center; padding:1rem; overflow:auto; }
+.db-part-photo-preview__panel { inline-size:min(100%,48rem); max-block-size:calc(100dvh - 2rem); overflow:auto; border:1px solid var(--workspace-border,#607080); border-radius:.75rem; background:var(--surface-canvas,#101e2d); color:var(--text-primary,#f4f6fa); }
+.db-part-photo-preview__header { display:flex; align-items:center; justify-content:space-between; gap:.75rem; padding:.5rem .75rem; }
+.db-part-photo-preview__header h2 { min-inline-size:0; margin:0; font-size:1rem; overflow-wrap:anywhere; }
+.db-part-photo-preview__header button { display:grid; place-items:center; flex:0 0 44px; inline-size:44px; block-size:44px; border:0; border-radius:.4rem; background:transparent; color:inherit; }
+.db-part-photo-preview__header button:focus-visible { outline:2px solid currentColor; outline-offset:-2px; }
+.db-part-photo-preview__image { display:grid; place-items:center; padding:1rem; }
+.db-part-photo-preview__image .db-parts-workbench__photo { inline-size:100%; block-size:min(65dvh,36rem); border:0; border-radius:0; background:transparent; color:inherit; }
+.db-part-photo-preview__image .db-parts-workbench__photo img { inline-size:100%; block-size:100%; object-fit:contain; padding:0; }
+.db-part-photo-preview__image .db-parts-workbench__photo > svg { inline-size:8rem; block-size:8rem; }
+.db-part-photo-preview__panel > p { margin:0; padding:0 1rem 1rem; text-align:center; }

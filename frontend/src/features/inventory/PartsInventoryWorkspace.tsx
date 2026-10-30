@@ -2,6 +2,7 @@ import { pricingError, pricingMoney } from '@/features/parts-pricing/contract'
 import PartPolicySummary from '@/features/parts-pricing/PartPolicySummary'
 /* eslint-disable react-refresh/only-export-components -- Session-scoped purchase preparation is shared with Purchasing. */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Archive, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Boxes, Camera, ChevronRight, ChevronsUpDown, EllipsisVertical, History, MapPin, Package, Pencil, Plus, Search, Settings2, ShoppingCart, Trash2, X } from 'lucide-react'
@@ -424,13 +425,30 @@ function toPreparationLine(part: PartRecord): PurchasePreparationLine {
 
 function PartPhoto({ part, logoUrl, companyName, detail = false }: { part: Pick<PartRecord, 'name' | 'image_url'>; logoUrl: string | null; companyName: string | null; detail?: boolean }) {
   const [source, setSource] = useState<'part' | 'company' | 'icon'>(() => part.image_url ? 'part' : logoUrl ? 'company' : 'icon')
+  const [expanded, setExpanded] = useState(false)
   useEffect(() => {
     setSource(part.image_url ? 'part' : logoUrl ? 'company' : 'icon')
-  }, [part.image_url, logoUrl])
+    setExpanded(false)
+  }, [part.name, part.image_url, logoUrl])
   const src = source === 'part' ? part.image_url : source === 'company' ? logoUrl : null
   const fail = () => setSource((current) => current === 'part' && logoUrl && logoUrl !== part.image_url ? 'company' : 'icon')
-  if (!src || source === 'icon') return <span className={`db-parts-workbench__photo ${detail ? 'is-detail' : ''}`} role={detail ? 'img' : undefined} aria-label={detail ? `No image available for ${part.name}` : undefined} aria-hidden={detail ? undefined : 'true'}><Package aria-hidden="true" /></span>
-  return <span className={`db-parts-workbench__photo ${detail ? 'is-detail' : ''} ${source === 'company' ? 'is-company' : ''}`} aria-hidden={detail ? undefined : 'true'}><img src={src} alt={detail ? source === 'part' ? `${part.name} part photo` : `${companyName || 'Shop'} logo placeholder for ${part.name}` : ''} onError={fail} loading={detail ? 'eager' : 'lazy'} /></span>
+  const imageLabel = source === 'part' ? `${part.name} part photo` : `${companyName || 'Shop'} logo placeholder for ${part.name}`
+  const photo = (accessible: boolean) => <span className={`db-parts-workbench__photo ${detail ? 'is-detail' : ''} ${source === 'company' ? 'is-company' : ''}`} role={!src && accessible ? 'img' : undefined} aria-label={!src && accessible ? `No image available for ${part.name}` : undefined} aria-hidden={accessible ? undefined : 'true'}>
+    {src ? <img src={src} alt={accessible ? imageLabel : ''} onError={fail} loading={accessible ? 'eager' : 'lazy'} /> : <Package aria-hidden="true" />}
+  </span>
+  return <>
+    <button type="button" className={`db-parts-workbench__photo-trigger${detail ? ' is-detail' : ''}`} aria-label={`Expand image for ${part.name}`} aria-haspopup="dialog" onClick={() => setExpanded(true)}>{photo(detail)}</button>
+    <Dialog open={expanded} onClose={() => setExpanded(false)} className="db-part-photo-preview">
+      <DialogBackdrop className="db-part-photo-preview__backdrop" />
+      <div className="db-part-photo-preview__positioner">
+        <DialogPanel className="db-part-photo-preview__panel">
+          <div className="db-part-photo-preview__header"><DialogTitle>{part.name} image</DialogTitle><button type="button" aria-label="Close image preview" onClick={() => setExpanded(false)}><X aria-hidden="true" /></button></div>
+          <div className="db-part-photo-preview__image">{photo(true)}</div>
+          {source !== 'part' && <p>{source === 'company' ? 'Shop logo placeholder' : 'No part photo available'}</p>}
+        </DialogPanel>
+      </div>
+    </Dialog>
+  </>
 }
 
 export function PartsInventoryGate({ legacy }: { legacy: ReactNode }) {
@@ -999,9 +1017,10 @@ function PartLedger({ page, loading, loadingMore, failed, manage, salesEnabled, 
           {manage && <span role="cell" className="db-parts-workbench__check" onClick={(event) => event.stopPropagation()}>{eligible && <label><input type="checkbox" aria-label={`Select ${part.name} for purchase preparation`} checked={checkedIds.has(part.id)} onClick={(event) => event.stopPropagation()} onChange={(event) => onCheck(part, event.target.checked)} /></label>}</span>}
           <span role="cell" className="db-parts-workbench__part-cell">
             <button type="button" className="db-parts-workbench__row-select" aria-current={selected ? 'true' : undefined} aria-controls="selected-part-inspector" onClick={() => onSelect(part.id)}>
-              <span className="db-parts-workbench__identity"><PartPhoto part={part} logoUrl={logoUrl} companyName={companyName} /><span><strong>{part.name}</strong><small>{part.sku}</small></span></span>
+              <span className="db-parts-workbench__identity"><span className="db-parts-workbench__photo-spacer" aria-hidden="true" /><span><strong>{part.name}</strong><small>{part.sku}</small></span></span>
               <ChevronRight className="db-parts-workbench__row-cue" aria-hidden="true" />
             </button>
+            <PartPhoto part={part} logoUrl={logoUrl} companyName={companyName} />
             {salesEnabled && eligible && <span className="db-parts-workbench__row-actions" data-row-actions={part.id} onClick={(event) => event.stopPropagation()}><button type="button" aria-label={`More actions for ${part.name}`} aria-haspopup="menu" aria-expanded={openActions === part.id} onClick={() => setOpenActions((current) => current === part.id ? null : part.id)}><EllipsisVertical aria-hidden="true" /></button>{openActions === part.id && <span role="menu" aria-label={`Actions for ${part.name}`}><button type="button" role="menuitem" onClick={() => { setOpenActions(null); onSell(part.id) }}>Sell part</button></span>}</span>}
           </span>
           <strong role="cell" data-label="Available" className="is-available">{part.available_to_sell_packages ?? part.available_packages}</strong>
@@ -1510,7 +1529,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     : [availableStockFact, heldStockFact, sellableStockFact, neededStockFact, reorderStockFact, incomingStockFact]
   return <aside id="selected-part-inspector" className="db-parts-workbench__inspector" aria-labelledby="selected-part-name">
     {pricingPolicyOpen && <PartPricingPolicy inventoryId={part.id} name={part.name} onClose={() => setPricingPolicyOpen(false)} onSaved={onRetry} />}
-    <div className="db-parts-workbench__selected-action" data-selected-surface="true">
+    <div className={`db-parts-workbench__selected-action${identityOpen ? ' is-editing' : ''}`} data-selected-surface="true">
       <div className="db-parts-workbench__selected-label-row">
         <p className="db-parts-workbench__selected-label">Selected part</p>
         <div className="db-parts-workbench__selected-controls">
@@ -1547,11 +1566,10 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
               <label>Category<input maxLength={100} disabled={identitySaving || photoSaving} value={identityForm.category} onChange={(event) => updateIdentity('category', event.target.value)} placeholder="Brakes, electrical, fluids…" /></label>
               <label>Bin location<input maxLength={100} disabled={identitySaving || photoSaving} value={identityForm.location} onChange={(event) => updateIdentity('location', event.target.value)} placeholder="A-12" /></label>
               <label>Unit label<input maxLength={20} disabled={identitySaving || photoSaving} value={identityForm.unitType} onChange={(event) => updateIdentity('unitType', event.target.value)} placeholder="each" /></label>
-              <label className="is-wide">Description<textarea maxLength={5000} disabled={identitySaving || photoSaving} rows={3} value={identityForm.description} onChange={(event) => updateIdentity('description', event.target.value)} placeholder="Catalog details or identifying notes" /></label>
+              <label>Description<textarea maxLength={5000} disabled={identitySaving || photoSaving} rows={2} value={identityForm.description} onChange={(event) => updateIdentity('description', event.target.value)} placeholder="Catalog details or identifying notes" /></label>
             </div>
             <fieldset className="db-parts-workbench__identity-group">
-              <legend>Pricing</legend>
-              <button type="button" disabled={identitySaving || photoSaving} onClick={() => setPricingPolicyOpen(true)}>Part pricing policy</button>
+              <legend><span>Pricing</span><button type="button" disabled={identitySaving || photoSaving} onClick={() => setPricingPolicyOpen(true)}>Part pricing policy</button></legend>
               <div className="db-parts-workbench__identity-fields">
                 <label>Cost per unit<span className="db-parts-workbench__price-input"><span aria-hidden="true">$</span><input inputMode="decimal" disabled={identitySaving || photoSaving} value={identityForm.cost} onChange={(event) => updateIdentity('cost', event.target.value)} /></span></label>
                 <label>Core charge<span className="db-parts-workbench__price-input"><span aria-hidden="true">$</span><input inputMode="decimal" disabled={identitySaving || photoSaving} value={identityForm.coreCharge} onChange={(event) => updateIdentity('coreCharge', event.target.value)} /></span></label>
