@@ -832,8 +832,10 @@ async def test_speed_only_plan_rejects_foreign_tenant_and_observation_membership
     start, _ = worker.interval(doc["vehicles"][0])
     member.effective_from = start + timedelta(seconds=30)
     await db_session.commit()
-    with pytest.raises(ValueError, match="Membership does not cover observation"):
-        await worker.run_import(*args, commit=True)
+    held = (await worker.run_import(*args, commit=True))["rows"][0]
+    assert held["status"] == "outside_membership_interval"
+    assert held["reason"] == "observation_outside_membership"
+    assert "snapshot_id" not in held
     assert len((await db_session.execute(select(Snapshot))).scalars().all()) == 1
 
 
