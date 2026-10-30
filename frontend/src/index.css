@@ -2983,7 +2983,23 @@ html::-webkit-scrollbar-thumb:hover {
 }
 .db-shop-work-new__view-switch button[aria-pressed='true'] { background: #fff; color: #17283f; box-shadow: 0 2px 7px rgba(16,36,59,.08); }
 .db-shop-work-new__view-switch svg { width: 16px; height: 16px; }
-.db-shop-work-new__view-switch button > span { min-width: 21px; padding: 2px 6px; border-radius: 999px; background: #dbe3ec; font-size: 11px; text-align: center; }
+.db-shop-work-new__view-switch button > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 23px;
+  height: 23px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: #006782;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: center;
+}
 
 .db-shop-work-new__toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 12px; }
 .db-shop-work-new__lane-tabs { display: flex; min-width: 0; flex-wrap: wrap; gap: 4px; }
@@ -3176,9 +3192,23 @@ html::-webkit-scrollbar-thumb:hover {
   color: var(--shop-work-ink);
 }
 
-.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-shop-work-new__view-switch button > span, .db-shop-work-new__lane-tabs button > span) {
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__lane-tabs button > span {
   background: var(--shop-work-raised);
   color: var(--shop-work-ink);
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__view-switch button > span {
+  background: #7edbf0;
+  color: #102534;
+}
+
+@media (forced-colors: active) {
+  .db-shop-work-new__view-switch button > span,
+  .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__view-switch button > span {
+    background: Highlight;
+    color: HighlightText;
+    border: 1px solid CanvasText;
+  }
 }
 
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__search input,
