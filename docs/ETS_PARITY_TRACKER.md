@@ -1,3 +1,7 @@
+> **Current handoff — 2026-10-30:** A2 and its controls corrections are production-verified through PR694/ce473b88 in Day/Night desktop/mobile. C3 / DB-146 resumes with Architecture-approved merge compatibility and a frozen implementation contract. No C3 implementation or completion claimed. Progress stays7/30; importer held, financial records unchanged.
+
+> **Current parity handoff — 2026-10-30:** A2 is Done after PR687 production Day/Night desktop/mobile acceptance. C3 / DB-146 enters contract/discovery; no C3 implementation yet. Shop Work redesign stays separate/deferred. ETS importer held; no financial changes.
+
 > **2026-10-30 UI follow-up:** A2 Closeout acceptance and C3 draft are recorded in docs PR688. Current DB-145 Fast UI correction styles open dropdowns, restores approved accent digits and fixes Activity count on arrival. See [controls receipt](verification/DB145_SHOP_WORK_CONTROLS.md). C3 remains next; no importer or financial changes.
 
 > **A2 production follow-up, 2026-10-30:** Night contrast verification passed at1280/390 on current production. User identified missing Closeout count; Fast UI correction in `codex/a2-closeout-count` must pass local/CI/release smoke before A2 Done. Shop Work redesign is deferred and not a dependency. C3 remains next; importer held, no financial changes.
@@ -6,9 +10,9 @@
 
 # ETS parity implementation tracker
 
-Last updated: 2026-10-29. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
+Last updated: 2026-10-30. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
 
-**Progress: 6/30 completed; 6/6 selected outcomes completed. A1 / DB-136 is Done: merged, deployed and production verified. The selected wave is complete. The other24 discoveries remain retained; B4 is partially delivered and ETS importer remains held.**
+**Progress: 7/30 completed; 6/6 original selected outcomes completed. A2 is Done. C3 / DB-146 is current; 23 discoveries remain incomplete, including held B4.**
 
 ## Approved delivery order
 
@@ -23,6 +27,8 @@ Last updated: 2026-10-29. Program owner: Product & Delivery Lead. Discovery inve
 5. At intake, gate failure, merge and release, update the item's row below and its board record. After Done, update the counts/current/next and immediately begin the next queued item. Do not silently skip a blocker or a dependency.
 6. If new discoveries appear, append a stable ID with source evidence. If an outcome is split, retain the parent unchecked until all required child outcomes pass. If superseded, retain its disposition and link the replacement.
 7. Before every resumed work session, read this tracker and the latest linked receipt. No scheduled/background work is implied; advancement happens during active implementation sessions.
+
+A2 UI follow-up: user-selected solid Closeout/Activity badges released and production-verified in PR690 (2472e45a); Day/Night desktop/mobile. [Receipt](verification/DB145_SOLID_BADGES.md). Parity completion count and C3 sequence unchanged.
 
 ## Selected outcomes
 
@@ -61,7 +67,7 @@ Dependencies: P1 precedes C1 parts-price defaults. M1 must retain existing PM/te
 - [ ] **R5 — Operation/issue findings with linked photos and a customer-ready report** — Backlog; after the priority wave. Relative value/size: Medium / L. See audit for evidence and dependencies.
 - [ ] **R6 — Structured arrival and handover details: parking, key location, arrival condition** — Backlog; after the priority wave. Relative value/size: Medium / S–M. See audit for evidence and dependencies.
 - [ ] **C2 — Customer groups with directory/report filters** — Backlog; after the priority wave. Relative value/size: Medium / M. See audit for evidence and dependencies.
-- [ ] **C3 — Truck issues and follow-up work recorded without opening an RO** — Backlog; after the priority wave. Relative value/size: High / M–L. See audit for evidence and dependencies.
+- [ ] **C3 — Truck issues and follow-up work recorded without opening an RO** — **Contract ready; implementation next**, DB-146. Backend & Integrations accountable; Architecture contract frozen from current source. Standalone technical issue, staff owner/date and metadata-only visit reference; existing priced recommendation conversion excluded. Issue-history merge veto and vehicle-first locking are approved; actual PostgreSQL races and tenant integrity remain implementation gates. [Contract](contracts/db146-truck-issues.md).
 - [ ] **C4 — Customer payment terms, credit limits and review warnings** — Backlog; after the priority wave. Relative value/size: High / L. See audit for evidence and dependencies.
 - [ ] **S1 — Capacity-aware appointment and dispatch calendar** — Backlog; after the priority wave. Relative value/size: High / L. See audit for evidence and dependencies.
 - [ ] **S2 — Reusable fees: flat, percent, capped and quantity-based** — Backlog; after the priority wave. Relative value/size: High / M–L. See audit for evidence and dependencies.
@@ -75,7 +81,7 @@ Dependencies: P1 precedes C1 parts-price defaults. M1 must retain existing PM/te
 - [ ] **M2 — Shop inspection findings and a versioned inspection report** — Backlog; after the priority wave. Relative value/size: Medium–High when sold by shop / L. See audit for evidence and dependencies.
 - [ ] **B2 — Repair-order deposits before the invoice is issued** — Backlog; after the priority wave. Relative value/size: High / L. See audit for evidence and dependencies.
 - [ ] **B3 — One fleet remittance allocated across multiple invoices** — Backlog; after the priority wave. Relative value/size: High for fleet billing / L. See audit for evidence and dependencies.
-- [ ] **A2 — Work-in-progress aging and delay bottlenecks** — **Implemented; local acceptance GO, release pending (2026-10-29).** DB-145, Frontend & UX accountable. Primary home is Shop Work: current waits, job age and promised-finish lateness with existing-order drill-down. Architecture v1 read contract finalized and implemented. Missing clocks remain Unknown; payment-only closeout and ETS history stay separate from active work. Independent QA/Security GO;34 backend/34 frontend tests, build and actual local Day/Night desktop/390mobile acceptance pass. User-requested compact layout shows the first job at281px desktop/338px mobile with filters and timing help on demand. Fixed13-table local source cohort unchanged. PR676 merged3c231850 after exact-head CI40950275579 passed; checked/merged trees match. Exact Web/Worker deployment and readiness passed; signed-in production Day desktop/mobile acceptance passed, but Night empty-state contrast failed. A two-rule CSS follow-up is locally verified and awaiting protected release. Read-only retention found one linked payment-failure event before the A2 merge; other source rows match. Not Done. [Scope](contracts/db145-shop-work-aging.md).
+- [x] **A2 — Work-in-progress aging and delay bottlenecks** — **Done — merged, deployed and production accepted (2026-10-30).** DB-145, Frontend & UX. PR676 functionality, PR680 Night contrast, PR687 pending Closeout count/mobile icons. Current waits retain Unknown timing; payment-only closeout remains separate. Prior independent QA/Security and populated synthetic/API gates retained; actual signed-in production Day/Night desktop1280/mobile390 passed on merge `c0eef04a`, exact successful Web deployment/build/readiness. Production zero-active-job coverage is qualified in the [final receipt](verification/DB145_SHOP_WORK_AGING.md#final-production-acceptance--2026-10-30). Redesign is not part of this outcome.
 - [ ] **A3 — Deferred-work conversion and follow-up value** — Backlog; after the priority wave. Relative value/size: Medium / M. See audit for evidence and dependencies.
 - [ ] **A4 — Inventory velocity, dead stock and purchasing priorities** — Backlog; after the priority wave. Relative value/size: Medium / M–L. See audit for evidence and dependencies.
 
@@ -117,4 +123,4 @@ R1/P1/C1/M1/B1/A1 are Done, with exact release receipts. A1 is available under S
 
 ## Next wave selection — 2026-10-29
 
-User selected A2 first, with Shop Work as its primary surface. C3, R3, A3 and S1 follow in the recommended sequence, with separate contracts and implementation items. This does not authorize financial/stock/source mutations or release the held B4 importer. A2 is in progress, not Done; completed count stays 6/30.
+User selected A2 first, with Shop Work as its primary surface. C3, R3, A3 and S1 follow in the recommended sequence, with separate contracts and implementation items. This does not authorize financial/stock/source mutations or release the held B4 importer. A2 is Done; completed count is7/30. Continue C3 → R3 → A3 → S1 with separate contracts and gates.

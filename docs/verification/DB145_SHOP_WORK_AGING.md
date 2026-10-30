@@ -1,6 +1,6 @@
 # DB-145 / A2 — Shop Work aging verification
 
-Status: PR676 merged and deployed, 2026-10-29. Signed-in production acceptance found a Night empty-state contrast defect; focused follow-up in progress. Not Done.
+Status: Done — PR676, Night contrast PR680 and Closeout/actions PR687 merged, deployed and production accepted, 2026-10-30. Shop Work redesign is separate and deferred.
 Owner: Frontend & UX. Contract: `docs/contracts/db145-shop-work-aging.md`.
 
 ## Local runtime alignment
@@ -87,3 +87,14 @@ Existing production build `afa0146e2763413cce75fc58b01777630e1456c8` includes PR
 - 26 focused component/integration tests, changed-source ESLint and TypeScript pass. Count visible before opening Closeout and during Activity; unique pending Ready to Close/payment-review IDs; Closed Today/active jobs excluded; capped counts preserve plus notation and do not infer extra payment work from unrelated overflow. Projection rerender updates count. Existing handlers retained.
 - CUA actual-component1280 desktop and390 mobile: badge visible; keyboard Enter and pointer open Closeout; all three mobile header buttons44x44 with no visible labels; desktop retains order labels with44px icon-only Refresh; no horizontal overflow. Day/Night mobile badge contrast passes. Temporary fixture removed. Private screenshots in `/tmp/db145-prod-final-20261030/`.
 - No financial, invoice, payment, status, provider, collector or importer mutation. Production appearance restored to Day after prior A2 checks.
+
+## Final production acceptance — 2026-10-30
+
+- PR687 final candidate `cb30c5056435537e4214048d7b41d4e3fc046a77`; all seven checks pass in41095938112. Earlier candidate passed41094771450; a board-only conflict with released PR686 was resolved by preserving both entries, with all four reviewed UI/test files unchanged. No bypass or canceled/retried unrelated jobs.
+- Normal protected squash merge `c0eef04a0219ba7e0cbafc1ac95a4f147388f539`; checked/merged trees both `26435e4a313b9c254653af6130981208fbfa6e0b`. Automatic Web deployment `c2c85680-78c6-444c-b823-c45b9440f152` SUCCESS; public build matches exact merge, database/Redis readiness OK. Fast UI correction requires no worker canary or financial mutation.
+- Actual signed-in NC owner production Day/Night1280x900 and390x844 acceptance passed. Closeout badge1 is visible from Active work and matches Ready to Close1, Payment review0, Closed Today0. Keyboard Enter and mobile pointer open existing closeout; payment-only row stays out of active WIP. Refresh updates existing data without new actions.
+- All three mobile header controls have no visible text and measure44x44. Desktop order buttons retain labels; Refresh has no text and retains its accessible name/tooltip. Document scrollWidth equals viewport1280/390. No extra toolbar row.
+- Night empty-state strong text computed rgb(246,248,251), visually readable on desktop/mobile. Unknown timing help states missing reliable wait start; Escape dismissal verified. Prior same-session filter/Unknown/outside-dismissal checks passed. Current production has zero active jobs, so populated waits/clocks are covered by the retained synthetic/API suites rather than invented production observations.
+- Original Day appearance and normal viewport restored; all other preferences untouched. No financial, payment, invoice, order-status, inventory/time, provider or ETS collector/importer action. No production QA records created. Own local frontend/backend stopped after verifying exact PID/source ownership; local preview is not left running.
+- Private evidence: `/tmp/db145-prod-final-20261030/released-{day,night}-{desktop,mobile}.png`. No customer identities or private screenshots included in public documentation.
+- A2 original approved functionality is Done. Rejected redesign directions remain separate/deferred and were not implemented. C3 proceeds as DB-146 contract/discovery.
