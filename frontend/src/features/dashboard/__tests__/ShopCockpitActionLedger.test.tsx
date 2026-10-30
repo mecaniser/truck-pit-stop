@@ -72,6 +72,43 @@ const renderLedger = (overrides: Partial<ComponentProps<typeof ShopCockpitAction
 }
 
 describe('DB-035 Stage 3 Action Ledger', () => {
+  it('keeps icon actions named and refresh text-free', async () => {
+    const user = userEvent.setup()
+    const { props } = renderLedger({ activeWork: <div>Active panel</div> })
+    const refresh = screen.getByRole('button', { name: 'Refresh Shop Work, Updated just now' })
+    expect(refresh).toHaveTextContent('')
+    expect(refresh.querySelector('span')).toBeNull()
+    await user.click(refresh)
+    await user.click(screen.getByRole('button', { name: 'Lightning Order' }))
+    await user.click(screen.getByRole('button', { name: 'Full Order' }))
+    expect(props.onRefresh).toHaveBeenCalledOnce()
+    expect(props.onToggleQuickOrder).toHaveBeenCalledOnce()
+    expect(props.onFullOrder).toHaveBeenCalledOnce()
+  })
+
+  it('shows unique pending closeout before opening it and updates after refresh', () => {
+    const pending = order('payment', 'RO-PAY', 'invoiced', 'Fictional shop', 'Truck', { pending_zelle_confirmation: true })
+    const { props, rerender } = renderLedger({ activeWork: <div>Active panel</div>, projection: {
+      ...projection,
+      orders_needing_action: [...projection.orders_needing_action, pending, projection.orders_ready_to_close[0]],
+      orders_ready_to_close: [...projection.orders_ready_to_close, pending],
+      orders_closed_today: [order('closed', 'RO-CLOSED', 'paid', 'Fictional shop', 'Truck')],
+    } })
+    expect(screen.getByRole('button', { name: 'Closeout 2' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByRole('button', { name: 'Open RO-PAY in Repair Orders' })).not.toBeInTheDocument()
+    rerender(<ShopCockpitActionLedger {...props} queueView="activity" projection={{ ...projection, orders_ready_to_close: [] }} />)
+    expect(screen.getByRole('button', { name: 'Closeout 0' })).toBeInTheDocument()
+  })
+
+  it.each([
+    ['ready overflow', { orders_ready_to_close_has_more: true }, '1+'],
+    ['unrelated action overflow', { orders_needing_action_has_more: true }, '1'],
+    ['payment overflow', { orders_needing_action_has_more: true, orders_needing_action: [order('payment', 'RO-PAY', 'invoiced', 'Fictional shop', 'Truck', { pending_zelle_confirmation: true })] }, '2+'],
+  ])('keeps Closeout count honest for %s', (_, override, label) => {
+    renderLedger({ activeWork: <div>Active panel</div>, projection: { ...projection, ...override } })
+    expect(screen.getByRole('button', { name: `Closeout ${label}` })).toBeInTheDocument()
+  })
+
   it('does not apply nonpayment overflow to the payment-review subset', () => {
     renderLedger({ activeWork: <div>Active panel</div>, workView: 'closeout', projection: { ...projection, orders_needing_action_has_more: true } })
     expect(screen.getByRole('tab', { name: 'Payment review 0' })).toBeInTheDocument()
