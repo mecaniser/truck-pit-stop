@@ -14,7 +14,7 @@ Tenant Messages exposes channel status only, no registration requests. Existing 
 
 ## Release
 
-Implementation and independent Security/automated QA passed; protected CI, merge and live deployment remain pending. No production configuration changes. Rollback must not restore tenant registration access: if UI fails, retain backend denial and disable new admin entry until corrected. No automated rollout or provider actions authorized by this change.
+Implementation and independent Security/automated QA passed; protected CI, merge and deployment completed below; authenticated live super-admin acceptance remains pending. No production configuration changes. Rollback must not restore tenant registration access: if UI fails, retain backend denial and disable new admin entry until corrected. No automated rollout or provider actions authorized by this change.
 
 ## Verification — 2026-10-30
 
@@ -23,3 +23,13 @@ Architecture: registration_contract; backend implementation: platform_registrati
 Signed-in tenant owner: Settings shows channel status without registration; opening/closing retained synthetic draft, selected conversation and exact reply number. Draft cleared after check. Signed-in tenantless super-admin: Shops opens registration for explicit selected shop; actual API returns draft. Unsaved edit requires Keep editing or Discard changes; keeping retains edit and discarding closes/restores focus. Opening second shop shows second shop identity and clean fields. Desktop and390px layout accepted, dialog width390/no horizontal overflow; viewport restored. Screenshots are synthetic/private `/tmp/comms029-tenant.png`, `/tmp/comms029-platform-desktop.png`, `/tmp/comms029-platform-mobile.png`. No browser form saved or provider action performed.
 
 Runtime rechecked after backend change: API PID14173/Vite PID11715, same worktree/branch, direct and proxied readiness healthy. Existing isolated database retained; new synthetic tenantless super-admin fixture added without changing existing users. No real keys or provider calls; three SMS flags remain false in guarded launcher. Production was not modified.
+
+## Release — 2026-10-30
+
+PR700 integrated latest-main documentation while preserving both board histories; application tree remained unchanged from independent GO. All seven checks passed in41125877709 on exact head `fbe49be5aeee49f1d0e1a1ef1497fcc64bbff7d3`. Normal merge `5b6f989d326dd1ec3326d8bd6f14cf3af048dd43` at20:54:32UTC; checked and merged trees both `45e336624baeddda03a4b6018d168e95b27f534f`.
+
+Automatic Railway Web `2bd014f9-9e0c-4f7f-b232-cf110720ff4b` and Worker `1821056d-1c35-4dd4-b9c9-4bddacc52a7f` both SUCCESS exact merge. Public build-version matches; database and Redis ready. All three effective SMS flags false/unset on both services. No duplicate deployment requested or provider action performed.
+
+Authenticated live tenant inbox: Settings shows channel status only, no registration controls. Legacy onboarding GET returns platform_registration_required; explicit admin onboarding GET rejects tenant session with Super admin access required. Selected conversation, existing empty draft and exact sender retained across refresh/settings roundtrip. Private screenshot `/tmp/comms029-live-tenant.png`. Customer content and identifiers excluded from this receipt.
+
+Remaining acceptance: sign in as existing live super-admin and verify Shops registration for a selected shop read-only. Current tenant session cannot verify that screen; user login requested. Independent authorization tests and local signed-in admin checks passed, but do not substitute for this live gate. No Done claim yet. Rollback retains backend tenant denial.
