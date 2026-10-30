@@ -2048,6 +2048,9 @@ async def update_repair_order(
         except (json.JSONDecodeError, TypeError, ValueError):
             pass
     
+    if {'description', 'status', 'work_completed_at'}.intersection(update_data):
+        from app.services.fleet_financial_wakeup import enqueue_order_financial_change
+        await enqueue_order_financial_change(db, order)
     await db.commit()
     await db.refresh(order)
 
