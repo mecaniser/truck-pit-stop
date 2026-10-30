@@ -259,6 +259,14 @@ function skuStem(name: string, category: string) {
   return abbrev ? `${prefix}-${abbrev}` : ''
 }
 
+function isNonNegativeAmount(value: string) {
+  return /^(?:\d+(?:\.\d*)?|\.\d+)$/.test(value.trim()) && Number.isFinite(Number(value))
+}
+
+function validMarkup(value: string) {
+  return /^-?(?:\d+(?:\.\d*)?|\.\d+)$/.test(value.trim()) && Number.isFinite(Number(value)) && Number(value) >= -100
+}
+
 function SellingPriceField({ cost, value, disabled, onChange }: {
   cost: string
   value: string
@@ -268,12 +276,14 @@ function SellingPriceField({ cost, value, disabled, onChange }: {
   const [mode, setMode] = useState<'price' | 'markup'>('price')
   const [pct, setPct] = useState('')
   const costNum = Number(cost)
-  const costValid = Number.isFinite(costNum) && costNum > 0
+  const costValid = isNonNegativeAmount(cost) && costNum > 0
+  const markupError = mode === 'markup' && costValid && !validMarkup(pct) ? 'Enter a markup of -100% or more.' : null
 
   const applyPct = (nextPct: string, c: number) => {
     const p = Number(nextPct)
-    if (!Number.isFinite(p) || !Number.isFinite(c) || c <= 0) return
-    onChange((c * (1 + p / 100)).toFixed(2))
+    const price = c * (1 + p / 100)
+    if (!validMarkup(nextPct) || !Number.isFinite(c) || c <= 0 || !Number.isFinite(price)) return
+    onChange(price.toFixed(2))
   }
 
   // Editing cost while in Markup mode holds the margin and moves the price.
@@ -310,12 +320,12 @@ function SellingPriceField({ cost, value, disabled, onChange }: {
         </span>
       ) : (
         <span className="db-parts-workbench__price-input">
-          <input inputMode="decimal" disabled={disabled || !costValid} aria-label="Markup percent" value={pct}
+          <input inputMode="decimal" required disabled={disabled || !costValid} aria-label="Markup percent" aria-invalid={Boolean(markupError)} ref={(input) => input?.setCustomValidity(markupError || '')} value={pct}
             onChange={(event) => { setPct(event.target.value); applyPct(event.target.value, costNum) }} />
           <span aria-hidden="true">%</span>
         </span>
       )}
-      <small>{!costValid ? 'Set a cost first to work in markup' : markup == null ? 'Enter a price' : `$${money(value)} per unit · ${markup.toFixed(1)}% markup`}</small>
+      <small role={markupError ? 'alert' : undefined}>{markupError || (!costValid ? 'Set a cost first to work in markup' : markup == null ? 'Enter a price' : `$${money(value)} per unit · ${markup.toFixed(1)}% markup`)}</small>
     </div>
   )
 }
@@ -807,6 +817,15 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
     const response = await api.put(`/inventory/${part.id}`, patch)
     const updated = response.data as Partial<InventoryEditorRecord>
     syncPartCaches(part.id, { ...patch, ...updated })
+    // The inventory response omits derived facts such as unit cost, incoming
+    // quantity and stock value. Refresh their projections after the save.
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['parts-operations', 'part', part.id] }),
+      queryClient.invalidateQueries({ queryKey: ['parts-operations', 'summary'] }),
+    ])
+    // The projection also omits catalog-only fields (notably selling_price).
+    // Keep those authoritative saved values alongside the refreshed facts.
+    syncPartCaches(part.id, { ...patch, ...updated })
     setPartsSequence((current) => current + 1)
     setNotice(`${typeof patch.name === 'string' ? patch.name : part.name} details saved.`)
   }
@@ -1157,6 +1176,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
   const [identityFresh, setIdentityFresh] = useState<InventoryEditorRecord | null>(null)
   const [identityOriginal, setIdentityOriginal] = useState<InventoryEditorRecord | null>(null)
   const [identitySaving, setIdentitySaving] = useState(false)
+  const identitySession = useRef(0)
   const [photoAction, setPhotoAction] = useState<'upload' | 'remove' | null>(null)
   // Removing a photo is destructive and was firing on a single click, so it
   // takes the same two-step confirm the supplier-source removal uses.
@@ -1184,9 +1204,30 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     enabled: Boolean(supplierId),
     retry: false,
   })
-  useEffect(() => { setInspectorView('overview'); setEdit(null); setEditFocusMode('pointer'); setLocalError(null); setReason(''); setIdentityOpen(false); setIdentityForm(null); setIdentityOriginal(null); setIdentityFresh(null); setIdentityError(null); setPhotoError(null); editOrigin.current = null; restore.current = null }, [part?.id])
   useEffect(() => {
-    if (!identityOpen || !identityQuery.data || identityOriginal?.id === identityQuery.data.id) return
+    // Ignore work still settling for the previous selected part.
+    identitySession.current += 1
+    setIdentitySaving(false)
+    setPhotoAction(null)
+    setConfirmPhotoRemove(false)
+    setInspectorView('overview')
+    setEdit(null)
+    setEditFocusMode('pointer')
+    setLocalError(null)
+    setReason('')
+    setIdentityOpen(false)
+    setIdentityForm(null)
+    setIdentityOriginal(null)
+    setIdentityFresh(null)
+    setIdentityError(null)
+    setPhotoError(null)
+    editOrigin.current = null
+    restore.current = null
+  }, [part?.id])
+  useEffect(() => {
+    // An enabled query can expose cached data while its fresh request is pending.
+    // Initialize once that request succeeds; later refetches must preserve the draft.
+    if (!identityOpen || !identityQuery.isSuccess || identityQuery.isFetching || !identityQuery.data || identityQuery.data.id !== part?.id || identityOriginal?.id === identityQuery.data.id) return
     const record = identityQuery.data
     setIdentityOriginal(record)
     setIdentityForm({
@@ -1203,7 +1244,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
       supplierContact: record.supplier_contact || '',
       onOrderQuantity: String(record.on_order_quantity ?? 0),
     })
-  }, [identityOpen, identityOriginal?.id, identityQuery.data])
+  }, [identityOpen, identityOriginal?.id, identityQuery.data, identityQuery.isFetching, identityQuery.isSuccess, part?.id])
   useEffect(() => {
     if (edit || !restore.current) return
     const target = restore.current === 'available-shortcut' ? availableTrigger : reorderTrigger
@@ -1214,6 +1255,8 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
   const open = (next: 'available' | 'reorder', origin: 'available-shortcut' | 'reorder', event: ReactMouseEvent<HTMLButtonElement>) => { if (!part) return; editOrigin.current = origin; setEditFocusMode(event.detail === 0 ? 'keyboard' : 'pointer'); setInspectorView('stock'); setValue(String(next === 'available' ? part.available_packages : part.reorder_level)); setReason(''); setLocalError(null); setEdit(next) }
   const close = () => { restore.current = editOrigin.current; editOrigin.current = null; setEdit(null); setLocalError(null) }
   const openIdentity = () => {
+    if (identitySaving || photoSaving) return
+    identitySession.current += 1
     setEdit(null)
     setIdentityError(null)
     setPhotoError(null)
@@ -1223,6 +1266,8 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     setIdentityOpen(true)
   }
   const closeIdentity = () => {
+    identitySession.current += 1
+    setIdentitySaving(false)
     setConfirmPhotoRemove(false)
     setIdentityOpen(false)
     setIdentityFresh(null)
@@ -1236,6 +1281,14 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     setIdentityForm((current) => current ? { ...current, [field]: next, ...(field === 'category' || field === 'unitType' ? fluidLink(field, next, current) : {}) } : current)
     setIdentityError(null)
   }
+  const identityValidation = useMemo(() => {
+    if (!identityForm) return null
+    for (const [field, label] of [['cost', 'Cost per unit'], ['sellingPrice', 'Selling price'], ['coreCharge', 'Core charge']] as const) {
+      if (!isNonNegativeAmount(identityForm[field])) return `${label}: enter an amount of zero or more.`
+    }
+    if (!/^\d+$/.test(identityForm.onOrderQuantity.trim()) || !Number.isSafeInteger(Number(identityForm.onOrderQuantity))) return 'On order: enter a whole number of zero or more.'
+    return null
+  }, [identityForm])
   const identityPatch = useMemo<Record<string, unknown>>(() => {
     if (!identityForm || !identityOriginal) return {}
     const patch: Record<string, unknown> = {}
@@ -1257,14 +1310,14 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     if (supplierContact !== (identityOriginal.supplier_contact || '')) patch.supplier_contact = supplierContact
     const moneyChanged = (next: string, before: string | number) => {
       const a = Number(next)
-      if (!Number.isFinite(a) || a < 0) return false
+      if (!isNonNegativeAmount(next)) return false
       return a.toFixed(2) !== Number(before || 0).toFixed(2)
     }
     if (moneyChanged(identityForm.cost, identityOriginal.cost)) patch.cost = Number(identityForm.cost).toFixed(2)
     if (moneyChanged(identityForm.sellingPrice, identityOriginal.selling_price)) patch.selling_price = Number(identityForm.sellingPrice).toFixed(2)
     if (moneyChanged(identityForm.coreCharge, identityOriginal.core_charge)) patch.core_charge = Number(identityForm.coreCharge).toFixed(2)
     const onOrder = Number(identityForm.onOrderQuantity)
-    if (Number.isInteger(onOrder) && onOrder >= 0 && onOrder !== (identityOriginal.on_order_quantity ?? 0)) patch.on_order_quantity = onOrder
+    if (/^\d+$/.test(identityForm.onOrderQuantity.trim()) && Number.isSafeInteger(onOrder) && onOrder !== (identityOriginal.on_order_quantity ?? 0)) patch.on_order_quantity = onOrder
     return patch
   }, [identityForm, identityOriginal])
   const identityDirty = Object.keys(identityPatch).length > 0
@@ -1274,20 +1327,23 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     const sku = identityForm.sku.trim()
     if (!name) { setIdentityError('Part name is required.'); return }
     if (!sku) { setIdentityError('SKU is required.'); return }
+    if (identityValidation) { setIdentityError(identityValidation); return }
     if (!identityDirty) { closeIdentity(); return }
+    const session = identitySession.current
     setIdentitySaving(true)
     setIdentityError(null)
     try {
       await onUpdateIdentity(part, { ...identityPatch, ...('cost' in identityPatch || 'selling_price' in identityPatch ? { expected_pricing_version: identityOriginal.pricing_version } : {}) })
-      closeIdentity()
+      if (identitySession.current === session) closeIdentity()
     } catch (cause) {
+      if (identitySession.current !== session) return
       setIdentityError(pricingError(cause, errorMessage(cause)))
       if ((cause as { response?: { status?: number } }).response?.status === 409) {
         const current = await identityQuery.refetch()
-        if (current.data?.id === part.id) setIdentityFresh(current.data)
+        if (identitySession.current === session && current.data?.id === part.id) setIdentityFresh(current.data)
       }
     } finally {
-      setIdentitySaving(false)
+      if (identitySession.current === session) setIdentitySaving(false)
     }
   }
   const choosePhoto = async (file: File) => {
@@ -1296,19 +1352,21 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     if (!PART_PHOTO_TYPES.has(type)) { setPhotoError('Choose a JPEG, PNG, WebP, HEIC, or HEIF image.'); return }
     if (!file.size) { setPhotoError('Choose an image that is not empty.'); return }
     if (file.size > PART_PHOTO_MAX_BYTES) { setPhotoError('Choose an image smaller than 10 MB.'); return }
+    const session = identitySession.current
     setPhotoAction('upload')
     setPhotoError(null)
     try { await onUploadPhoto(part, file) }
-    catch (cause) { setPhotoError(errorMessage(cause)) }
-    finally { setPhotoAction(null) }
+    catch (cause) { if (identitySession.current === session) setPhotoError(errorMessage(cause)) }
+    finally { if (identitySession.current === session) setPhotoAction(null) }
   }
   const removePhoto = async () => {
     if (!part || photoSaving) return
+    const session = identitySession.current
     setPhotoAction('remove')
     setPhotoError(null)
     try { await onRemovePhoto(part) }
-    catch (cause) { setPhotoError(errorMessage(cause)) }
-    finally { setPhotoAction(null) }
+    catch (cause) { if (identitySession.current === session) setPhotoError(errorMessage(cause)) }
+    finally { if (identitySession.current === session) setPhotoAction(null) }
   }
   const selectInspectorView = (next: InspectorView, focus = false) => {
     setInspectorView(next)
@@ -1456,7 +1514,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
         <p className="db-parts-workbench__selected-label">Selected part</p>
         <div className="db-parts-workbench__selected-controls">
           {manage && !part.is_archived && !edit && !identityOpen && <button ref={identityTrigger} className="db-parts-workbench__identity-trigger db-parts-workbench__icon-action" type="button" aria-expanded="false" aria-controls="selected-part-identity-editor" onClick={openIdentity}><Pencil aria-hidden="true" /><span className="db-parts-workbench__collapsible-label">Edit details</span></button>}
-          <button className={`db-parts-workbench__mobile-back db-parts-workbench__icon-action db-parts-workbench__icon-action--icon-only${identityOpen ? ' is-editing' : ''}`} type="button" onClick={identityOpen ? closeIdentity : onBack} aria-label={identityOpen ? 'Cancel editing' : 'Back to parts'}>
+          <button className={`db-parts-workbench__mobile-back db-parts-workbench__icon-action db-parts-workbench__icon-action--icon-only${identityOpen ? ' is-editing' : ''}`} type="button" disabled={identityOpen && (identitySaving || photoSaving)} onClick={identityOpen ? closeIdentity : onBack} aria-label={identityOpen ? 'Cancel editing' : 'Back to parts'}>
             <ArrowLeft className="db-parts-workbench__mobile-back-arrow" aria-hidden="true" />
             <span className="db-parts-workbench__mobile-back-label">Back to parts</span>
             <X className="db-parts-workbench__mobile-back-close" aria-hidden="true" />
@@ -1468,7 +1526,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
         <div className="db-parts-workbench__selected-copy"><h2 id="selected-part-name">{part.name}</h2><p className="db-parts-workbench__technical-line">{part.sku} · {part.location ? <><MapPin aria-hidden="true" />Bin {part.location}</> : 'Bin not set'} · {part.unit_type || 'No unit specified'}</p><span className={`db-parts-workbench__stock-state ${stockStateClass}`}>{stockState}</span></div>
       </div>
       {identityOpen && <div id="selected-part-identity-editor" className="db-parts-workbench__identity-editor" aria-busy={identitySaving || photoSaving}>
-        {identityQuery.isPending && <p role="status">Loading editable part details…</p>}
+        {(identityQuery.isPending || (identityQuery.isFetching && !identityForm)) && <p role="status">Loading editable part details…</p>}
         {identityQuery.isError && <div className="db-parts-workbench__identity-recovery" role="alert"><span>Editable part details could not be loaded.</span><button type="button" onClick={() => void identityQuery.refetch()}>Retry</button></div>}
         {identityForm && <>
           <div className="db-parts-workbench__photo-editor" role="group" aria-label="Part photo">
@@ -1508,8 +1566,8 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
               </div>
             </fieldset>
             {identityFresh && <div className="db-parts-workbench__identity-recovery"><span>Saved prices changed · Cost {pricingMoney(String(identityFresh.cost))} · Catalog {pricingMoney(String(identityFresh.selling_price))}. Your draft is kept.</span><button type="button" onClick={() => { setIdentityOriginal(identityFresh); setIdentityFresh(null); setIdentityError(null) }}>Keep my draft</button></div>}
-            {identityError && <p className="db-parts-workbench__identity-error" role="alert">{identityError}</p>}
-            <div className="db-parts-workbench__identity-actions"><button type="submit" disabled={identitySaving || photoSaving || Boolean(identityFresh) || !identityDirty}>{identitySaving ? 'Saving…' : 'Save details'}</button></div>
+            {(identityValidation || identityError) && <p className="db-parts-workbench__identity-error" role="alert">{identityValidation || identityError}</p>}
+            <div className="db-parts-workbench__identity-actions"><button type="submit" disabled={identitySaving || photoSaving || Boolean(identityFresh) || Boolean(identityValidation) || !identityDirty}>{identitySaving ? 'Saving…' : 'Save details'}</button></div>
           </form>
         </>}
       </div>}

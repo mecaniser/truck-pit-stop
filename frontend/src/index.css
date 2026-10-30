@@ -6721,7 +6721,7 @@ html.customer-portal-active {
    docked layout never reads. Below this width the panel is a dismissible sheet
    (laptop band) or a full screen (phone), and the control returns to the table. */
 @container parts-workbench (width > 80rem) {
-  .db-parts-workbench__inspector .db-parts-workbench__selected-controls > .db-parts-workbench__mobile-back { display:none; }
+  .db-parts-workbench__inspector .db-parts-workbench__selected-controls > .db-parts-workbench__mobile-back:not(.is-editing) { display:none; }
 }
 
 /* Selected-part header controls: dismiss then edit, on one row. */
