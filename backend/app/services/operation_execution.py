@@ -251,6 +251,9 @@ async def finish_order(db, order, actor):
         work_end = utc(order.work_completed_at) or now
         clipped = [(max(s,start), min(e,work_end)) for s,e in intervals if min(e,work_end)>max(s,start)]
         order.total_hold_minutes = max(0, int((work_end-start).total_seconds()) - _sum_interval_seconds(_merge_intervals(clipped))) // 60
+    from app.services.fleet_financial_wakeup import enqueue_order_financial_change
+    await enqueue_order_financial_change(db, order)
+
 
 async def guard_material_edit(db, order, line, changes):
     if 'mechanic_id' in changes and changes['mechanic_id'] != line.mechanic_id:

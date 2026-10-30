@@ -759,6 +759,8 @@ async def auto_create_invoice_for_order(
         customer_id=order.customer_id,
     )
     await enqueue_quickbooks_invoice_sync(db, invoice=invoice)
+    from app.services.fleet_financial_wakeup import enqueue_financial_wakeup
+    await enqueue_financial_wakeup(db, invoice=invoice, order=order, kind="invoice_finalized")
 
     if not commit:
         if notify:
@@ -974,6 +976,8 @@ async def create_invoice(
         customer_id=order.customer_id,
     )
     await enqueue_quickbooks_invoice_sync(db, invoice=invoice)
+    from app.services.fleet_financial_wakeup import enqueue_financial_wakeup
+    await enqueue_financial_wakeup(db, invoice=invoice, order=order, kind="invoice_finalized")
 
     await db.refresh(order, attribute_names=["customer", "vehicle"])
     email_queued = await enqueue_invoice_created_email(
@@ -1229,6 +1233,8 @@ async def update_invoice(
     if body.notes is not None:
         invoice.notes = body.notes
     
+    from app.services.fleet_financial_wakeup import enqueue_financial_wakeup
+    await enqueue_financial_wakeup(db, invoice=invoice, order=invoice.repair_order, kind="invoice_changed")
     await db.commit()
     await db.refresh(invoice)
     
@@ -1320,6 +1326,8 @@ async def void_invoice(
         )
     )
     await enqueue_quickbooks_invoice_sync(db, invoice=invoice, operation="void")
+    from app.services.fleet_financial_wakeup import enqueue_financial_wakeup
+    await enqueue_financial_wakeup(db, invoice=invoice, order=order, kind="invoice_cancelled")
 
     await db.commit()
     await db.refresh(invoice)

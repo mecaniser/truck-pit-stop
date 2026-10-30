@@ -207,4 +207,6 @@ async def apply_exemption(db, *, invoice, tenant, actor, body, idempotency_key):
         "idempotency_key": idempotency_key, "request_hash": request_hash, "before": before, "after": snapshot(invoice),
         "before_settlement_version": version, "after_settlement_version": settlement.version}
     await db.flush()
+    from app.services.fleet_financial_wakeup import enqueue_invoice_financial_change
+    await enqueue_invoice_financial_change(db, invoice)
     return settlement

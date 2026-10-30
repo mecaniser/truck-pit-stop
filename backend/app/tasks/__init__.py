@@ -54,6 +54,10 @@ celery_app.conf.update(
             "task": "process_description_library_refresh",
             "schedule": crontab(hour=6, minute=0, day_of_week=1),  # Mondays 6 AM UTC
         },
+        "process-fleet-financial-wakeups": {
+            "task": "process_fleet_financial_wakeups",
+            "schedule": timedelta(seconds=10),
+        },
         "process-provider-outbox": {
             "task": "process_provider_outbox",
             "schedule": timedelta(seconds=10),

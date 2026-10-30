@@ -146,4 +146,6 @@ async def adjust(db, *, invoice, tenant, actor, body, idempotency_key):
     from app.services.invoice_cash_service import retarget_owner_cash_reviews_after_charge_adjustment
     retarget_owner_cash_reviews_after_charge_adjustment(invoice, row, review_events,
         validated_events=valid_owner_review_events)
+    from app.services.fleet_financial_wakeup import enqueue_invoice_financial_change
+    await enqueue_invoice_financial_change(db, invoice)
     return settlement
