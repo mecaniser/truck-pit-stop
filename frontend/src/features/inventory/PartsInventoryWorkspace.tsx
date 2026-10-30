@@ -1497,7 +1497,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
                   onChange={(next) => { setValue(String(next)); setLocalError(null) }}
                 />
               </div>
-              {kind === 'available' && <label className="db-parts-workbench__edit-reason">Adjustment reason<textarea disabled={saving} rows={3} value={reason} onChange={(event) => { setReason(event.target.value); setLocalError(null) }} placeholder="Cycle count, damage, return to shelf…" /></label>}
+              {kind === 'available' && <label className="db-parts-workbench__edit-reason">Adjustment reason<textarea disabled={saving} rows={2} value={reason} onChange={(event) => { setReason(event.target.value); setLocalError(null) }} placeholder="Cycle count, damage, return to shelf…" /></label>}
               {localError && <p role="alert">{localError}</p>}
               <button className="db-parts-workbench__edit-save" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
             </form>
