@@ -2,37 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import DatePicker from '@/components/DatePicker'
 import { Spinner } from '@/components/ui'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
 import { formatDistanceToNow, isToday, isYesterday, format } from 'date-fns'
 import {
   FileText, FilePlus, CheckCircle2, CreditCard, OctagonX, Trash2, ClipboardList, AlertTriangle,
 } from 'lucide-react'
 import api from '@/lib/api'
-
-type ActivityEvent = {
-  id: string
-  event_type: string
-  label: string
-  occurred_at: string
-  actor_name?: string | null
-  actor_id?: string | null
-  order_number?: string | null
-  order_id?: string | null
-  detail?: string | null
-}
-
-type ActivityActor = {
-  id: string
-  name: string
-}
-
-type ActivityFeedResponse = {
-  items: ActivityEvent[]
-  next_cursor: string | null
-  has_more: boolean
-  available_actors: ActivityActor[]
-  warnings: string[]
-}
+import { useActivityFeed, type ActivityEvent, type ActivityFeedResponse } from './activityFeedQuery'
+import ShopWorkSelect from './ShopWorkSelect'
 
 type ApiErrorLike = {
   response?: {
@@ -120,10 +96,8 @@ function groupByDayAndActor(items: ActivityEvent[]): DayGroup[] {
 
 export default function RecentActivityFeed({
   className,
-  onCountChange,
 }: {
   className?: string
-  onCountChange?: (count: number) => void
 }) {
   const navigate = useNavigate()
   const [olderItems, setOlderItems] = useState<ActivityEvent[]>([])
@@ -143,15 +117,7 @@ export default function RecentActivityFeed({
     date_to: dateTo || undefined,
   }
 
-  const { data, isLoading, isError, error } = useQuery<ActivityFeedResponse>({
-    queryKey: ['activity-feed', actorFilter, eventTypeFilter, dateFrom, dateTo],
-    queryFn: async () => {
-      const { data } = await api.get<ActivityFeedResponse>('/activity', {
-        params: { limit: 20, ...filterParams },
-      })
-      return data
-    },
-  })
+  const { data, isLoading, isError, error } = useActivityFeed(filterParams)
 
   useEffect(() => {
     setOlderItems([])
@@ -186,10 +152,6 @@ export default function RecentActivityFeed({
   const dayGroups = useMemo(() => groupByDayAndActor(items), [items])
   const hasActiveFilters = !!(actorFilter || eventTypeFilter || dateFrom || dateTo)
 
-  useEffect(() => {
-    onCountChange?.(items.length)
-  }, [items.length, onCountChange])
-
   if (isForbidden) return null
 
   return (
@@ -209,26 +171,12 @@ export default function RecentActivityFeed({
       )}
 
       <div className="flex flex-wrap gap-2 mb-4 flex-shrink-0">
-        <select
-          value={actorFilter}
-          onChange={(e) => setActorFilter(e.target.value)}
-          className="bg-gray-700/50 border border-gray-600/50 rounded-lg px-3 py-1.5 text-sm text-gray-200"
-        >
-          <option value="">All staff</option>
-          {(data?.available_actors || []).map((actor) => (
-            <option key={actor.id} value={actor.id}>{actor.name}</option>
-          ))}
-        </select>
-        <select
-          value={eventTypeFilter}
-          onChange={(e) => setEventTypeFilter(e.target.value)}
-          className="bg-gray-700/50 border border-gray-600/50 rounded-lg px-3 py-1.5 text-sm text-gray-200"
-        >
-          <option value="">All activity</option>
-          {EVENT_TYPE_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
+        <ShopWorkSelect label="Activity staff" value={actorFilter} onChange={setActorFilter} options={[
+          { value: '', label: 'All staff' }, ...(data?.available_actors || []).map(actor => ({ value: actor.id, label: actor.name })),
+        ]} />
+        <ShopWorkSelect label="Activity type" value={eventTypeFilter} onChange={setEventTypeFilter} options={[
+          { value: '', label: 'All activity' }, ...EVENT_TYPE_OPTIONS,
+        ]} />
         <DatePicker compact label="Activity from date" value={dateFrom} onChange={setDateFrom} />
         <DatePicker compact label="Activity to date" value={dateTo} onChange={setDateTo} min={dateFrom || undefined} />
         {hasActiveFilters && (

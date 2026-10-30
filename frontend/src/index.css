@@ -145,7 +145,7 @@ html::-webkit-scrollbar-thumb:hover {
 /* DB-035 authenticated staff presentation. The selectors stay below the
    staff-shell boundary so public, customer, driver, fleet and mechanic apps
    keep their own visual systems. */
-.db-presentation-new {
+.db-presentation-new, .db-work-select-menu {
   --shell-field: #0b1b2e;
   --shell-field-raised: #142a44;
   --shell-text: #f7f9fc;
@@ -184,6 +184,9 @@ html::-webkit-scrollbar-thumb:hover {
   --db-type-xl: 1.25rem;
   --db-type-2xl: 1.5rem;
   --db-type-3xl: 1.875rem;
+}
+
+.db-presentation-new {
   background: var(--shell-field) !important;
   color: var(--text-primary);
   font-family: var(--font-body);
@@ -252,7 +255,7 @@ html::-webkit-scrollbar-thumb:hover {
   color-scheme: light;
 }
 
-.db-staff-shell[data-appearance-mode='dark'] {
+.db-staff-shell[data-appearance-mode='dark'], .db-work-select-menu[data-appearance-mode='dark'] {
   --workspace-canvas: #07101d;
   --workspace-text: #f6f8fb;
   --workspace-muted: #b8c5d5;
@@ -282,7 +285,7 @@ html::-webkit-scrollbar-thumb:hover {
   color-scheme: dark;
 }
 
-.db-staff-shell[data-appearance-mode='high_contrast'] {
+.db-staff-shell[data-appearance-mode='high_contrast'], .db-work-select-menu[data-appearance-mode='high_contrast'] {
   --workspace-canvas: #000;
   --workspace-text: #fff;
   --workspace-muted: #e5e7eb;
@@ -2992,8 +2995,8 @@ html::-webkit-scrollbar-thumb:hover {
   height: 23px;
   padding: 0 3px;
   border-radius: 999px;
-  background: #006782;
-  color: #fff;
+  background: transparent;
+  color: #006782;
   font-size: 12px;
   font-weight: 750;
   font-variant-numeric: tabular-nums;
@@ -3198,16 +3201,15 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__view-switch button > span {
-  background: #7edbf0;
-  color: #102534;
+  background: transparent;
+  color: #7edbf0;
 }
 
 @media (forced-colors: active) {
   .db-shop-work-new__view-switch button > span,
   .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__view-switch button > span {
-    background: Highlight;
-    color: HighlightText;
-    border: 1px solid CanvasText;
+    background: transparent;
+    color: LinkText;
   }
 }
 

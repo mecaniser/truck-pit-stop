@@ -36,6 +36,7 @@ import AlertsBanner from '../../components/AlertsBanner'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import SuggestingInput from '@/components/SuggestingInput'
 import RecentActivityFeed from './RecentActivityFeed'
+import { useActivityFeed, activityCountLabel } from './activityFeedQuery'
 import ShopCockpitActionLedger, { type ActionQueueLane } from './ShopCockpitActionLedger'
 import WipAgingPanel from './WipAgingPanel'
 import { DEFAULT_WIP_FILTERS, type WipFilters } from './wipAging'
@@ -436,7 +437,8 @@ export default function DashboardHome() {
       setWorkView('active')
     }
   }, [location.key, returnedShopWorkQueue, requestedShopWorkQueue, requestedShopWorkView, selectedShopWorkRecord])
-  const [activityCount, setActivityCount] = useState(0)
+  const activityQuery = useActivityFeed()
+  const activityCount = activityCountLabel(activityQuery.data, activityQuery.isError)
   const [isDesktop, setIsDesktop] = useState(() =>
     typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)').matches : true
   )
@@ -539,6 +541,7 @@ export default function DashboardHome() {
   const lastUpdated = dataUpdatedAt ? new Date(dataUpdatedAt) : null
   
   const handleManualRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
     queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
     queryClient.invalidateQueries({ queryKey: ['dashboard-wip-aging'] })
     queryClient.invalidateQueries({ queryKey: ['dashboard-daily-workset'] })
@@ -943,7 +946,6 @@ export default function DashboardHome() {
         activityFeed={(
           <RecentActivityFeed
             className="db-shop-work-new__activity-feed"
-            onCountChange={setActivityCount}
           />
         )}
         onQueueViewChange={setQueueView}
@@ -1166,7 +1168,7 @@ export default function DashboardHome() {
                 <>
                   <SectionInfoTooltip text="Recent repair-order activity across quotes, invoices, and payments — grouped by day and staff member." />
                   <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white/10 text-gray-300 whitespace-nowrap">
-                    {activityCount} {activityCount === 1 ? 'event' : 'events'}
+                    {activityCount ?? '—'} {activityCount === '1' ? 'event' : 'events'}
                   </span>
                 </>
               ) : (
@@ -1226,7 +1228,6 @@ export default function DashboardHome() {
           {queueView === 'activity' ? (
             <RecentActivityFeed
               className="flex flex-1 min-h-0 flex-col p-3 2xl:p-2.5"
-              onCountChange={setActivityCount}
             />
           ) : (
           <div className="flex flex-1 min-h-0 flex-col gap-3 p-3 2xl:gap-2.5 2xl:p-2.5 lg:grid lg:grid-cols-3">
