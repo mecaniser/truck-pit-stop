@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { fireEvent, render, screen, within, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import WipAgingPanel from '../WipAgingPanel'
+vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ appearance: {} }), appearanceTokenRecord: () => ({}) }))
 import { clockLabel, DEFAULT_WIP_FILTERS, type WipAgingResponse, type WipAgingRow, type WipFilters } from '../wipAging'
 
 const testState = vi.hoisted(() => ({
@@ -39,10 +40,13 @@ function Harness({ initial = DEFAULT_WIP_FILTERS }: { initial?: WipFilters }) {
   return <WipAgingPanel filters={filters} onFiltersChange={setFilters} onOpenRecord={open} />
 }
 beforeEach(() => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
   testState.data = structuredClone(fixture)
   testState.isError = false; testState.isFetching = false; testState.isLoading = false
   testState.get.mockReset(); testState.refetch.mockReset(); open.mockReset()
 })
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('A2 Shop Work aging', () => {
   it('shows distinct server clocks and complete counts rather than the loaded page size', () => {
@@ -69,13 +73,14 @@ describe('A2 Shop Work aging', () => {
     expect(clockLabel({ ...known(Number.NaN) })).toBe('Unknown')
     expect(clockLabel({ ...known(0), seconds: null })).toBe('Unknown')
   })
-  it('requests server filtering and resets pagination when category, deadline, timing or search changes', () => {
+  it('requests server filtering and resets pagination when category, deadline, timing or search changes', async () => {
     render(<Harness initial={{ ...DEFAULT_WIP_FILTERS, offset: 50 }} />)
     fireEvent.click(screen.getByRole('button', { name: 'Parts 49' }))
     expect(testState.options.queryKey[3]).toMatchObject({ category: 'parts', offset: 0 })
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
     fireEvent.click(screen.getByRole('button', { name: 'Promise overdue 1' }))
-    fireEvent.change(screen.getByLabelText('Wait timing'), { target: { value: 'unknown' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Wait timing' }))
+    await userEvent.click(screen.getByRole('option', { name: 'Unknown', exact: true }))
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search active work' }), { target: { value: '100%_truck' } })
     expect(testState.options.queryKey[3]).toMatchObject({ category: 'parts', overdue_only: true, timing: 'unknown', search: '100%_truck', offset: 0 })
   })
@@ -95,11 +100,29 @@ describe('A2 Shop Work aging', () => {
     await user.click(screen.getByRole('searchbox', { name: 'Search active work' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
-  it('offers mobile category selection and an actionable search-wide Unknown count', () => {
+  it('offers mobile category selection and an actionable search-wide Unknown count', async () => {
     render(<Harness />)
-    fireEvent.change(screen.getByLabelText('Active work category'), { target: { value: 'parts' } })
+    await userEvent.click(screen.getByLabelText('Active work category'))
+    await userEvent.click(screen.getByRole('option', { name: 'Parts · 49' }))
     fireEvent.click(screen.getByRole('button', { name: '1 unknown across all active jobs; filter unknown wait timing' }))
     expect(testState.options.queryKey[3]).toMatchObject({ category: 'parts', timing: 'unknown', offset: 0 })
+  })
+  it('keeps a nested menu inside Filters open on selection and restores keyboard focus', async () => {
+    const user = userEvent.setup()
+    render(<Harness />)
+    await user.click(screen.getByRole('button', { name: 'Filters' }))
+    const timing = screen.getByRole('button', { name: 'Wait timing' })
+    await user.click(timing)
+    await user.click(screen.getByRole('option', { name: 'Known', exact: true }))
+    expect(screen.getByRole('dialog', { name: 'Active work filters' })).toBeInTheDocument()
+    expect(timing).toHaveTextContent('Known')
+    await user.click(timing)
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+    expect(timing).toHaveFocus()
+    expect(screen.getByRole('dialog', { name: 'Active work filters' })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
   it('uses the server has_more flag and page offset', () => {
     render(<Harness />)

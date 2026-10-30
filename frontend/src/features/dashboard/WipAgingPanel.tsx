@@ -1,13 +1,14 @@
 import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
 import { useQuery } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
-import { ChevronDown, ChevronLeft, ChevronRight, Info, Search, SlidersHorizontal } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Info, Search, SlidersHorizontal } from 'lucide-react'
 import api from '@/lib/api'
 import { shortDuration } from '@/lib/elapsed'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useAuthStore } from '@/stores/authStore'
 import { clockLabel, WIP_CATEGORIES, WIP_LABELS, WIP_REASONS, type WipAgingResponse, type WipFilters } from './wipAging'
 import './wipAging.css'
+import ShopWorkSelect from './ShopWorkSelect'
 
 function promiseLabel(value: string, timezone: string | null): string {
   const date = new Date(value)
@@ -56,15 +57,15 @@ export default function WipAgingPanel({ filters, onFiltersChange, onOpenRecord }
         </label>
         <Popover className="db-wip__popover">
           <PopoverButton className="db-wip__filter-trigger"><SlidersHorizontal aria-hidden="true" />Filters{(filters.overdue_only || filters.timing !== 'all' || filters.sort !== 'priority') && <span className="db-wip__filter-dot" aria-label="Filters applied" />}</PopoverButton>
-          <PopoverPanel focus className="db-wip__popover-panel" role="dialog" aria-label="Active work filters">
+          <PopoverPanel className="db-wip__popover-panel" role="dialog" aria-label="Active work filters">
             <div className="db-wip__filters">
               <button type="button" aria-pressed={filters.overdue_only} onClick={() => update({ overdue_only: !filters.overdue_only })}>Promise overdue <span>{count(data?.summary.overdue_jobs)}</span></button>
-              <label>Wait timing<span className="db-wip__select"><select value={filters.timing} onChange={event => update({ timing: event.target.value as WipFilters['timing'] })}>
-                <option value="all">All timing</option><option value="known">Known</option><option value="unknown">Unknown</option>
-              </select><ChevronDown aria-hidden="true" /></span></label>
-              <label>Sort<span className="db-wip__select"><select value={filters.sort} onChange={event => update({ sort: event.target.value as WipFilters['sort'] })}>
-                <option value="priority">Needs attention first</option><option value="oldest_wait">Longest wait</option><option value="oldest_order">Oldest order</option>
-              </select><ChevronDown aria-hidden="true" /></span></label>
+              <div className="db-wip__filter-field"><span>Wait timing</span><ShopWorkSelect label="Wait timing" value={filters.timing} onChange={timing => update({ timing })} options={[
+                { value: 'all', label: 'All timing' }, { value: 'known', label: 'Known' }, { value: 'unknown', label: 'Unknown' },
+              ]} /></div>
+              <div className="db-wip__filter-field"><span>Sort</span><ShopWorkSelect label="Sort" value={filters.sort} onChange={sort => update({ sort })} options={[
+                { value: 'priority', label: 'Needs attention first' }, { value: 'oldest_wait', label: 'Longest wait' }, { value: 'oldest_order', label: 'Oldest order' },
+              ]} /></div>
             </div>
           </PopoverPanel>
         </Popover>
@@ -77,10 +78,10 @@ export default function WipAgingPanel({ filters, onFiltersChange, onOpenRecord }
           </button>
         ))}
       </div>
-      <label className="db-wip__mobile-category"><span className="sr-only">Active work category</span><span className="db-wip__select"><select value={filters.category} onChange={event => update({ category: event.target.value as WipFilters['category'] })}>
-        <option value="all">All active · {count(data?.summary.total_jobs)}</option>
-        {WIP_CATEGORIES.map(category => <option key={category} value={category}>{WIP_LABELS[category]} · {count(data?.summary.category_counts[category])}</option>)}
-      </select><ChevronDown aria-hidden="true" /></span></label>
+      <div className="db-wip__mobile-category"><ShopWorkSelect label="Active work category" value={filters.category} onChange={category => update({ category })} options={[
+        { value: 'all', label: `All active · ${count(data?.summary.total_jobs)}` },
+        ...WIP_CATEGORIES.map(category => ({ value: category, label: `${WIP_LABELS[category]} · ${count(data?.summary.category_counts[category])}` })),
+      ]} /></div>
       <div className="db-wip__result-meta">
         <span role="status">{query.isLoading || searchPending ? 'Loading active work…' : query.isError ? 'Active work unavailable' : `${data?.filtered_total ?? 0} matching jobs${data?.scope === 'assigned' ? ' · assigned to you' : ''}`}</span>
         <div className="db-wip__timing-summary">
