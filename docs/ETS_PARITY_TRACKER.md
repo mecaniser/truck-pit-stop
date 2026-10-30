@@ -1,3 +1,9 @@
+> **C3 CI correction — 2026-10-30:** Initial full frontend CI exposed two incomplete theme mocks. Test-only correction passes45 focused checks and fresh independent QA; new exact-head CI remains required. Progress7/30.
+
+> **C3 review — 2026-10-30:** Implementation/local Day/Night desktop/mobile and independent QA/Security gates pass; protected CI/release/production acceptance remain. Progress7/30. No financial/source/importer changes.
+
+> **Implementation intake — 2026-10-30:** C3 / DB-146 implementation is active on `codex/c3-truck-issues-implementation` after finalized contract PR688. Backend owns metadata APIs/migration; Frontend owns compact truck/RO panels. Fresh independent QA/Security and release acceptance remain pending. Isolated fictional local fixtures only; importer held, Shop Work redesign separate, no production financial mutations. Progress remains7/30.
+
 > **Current handoff — 2026-10-30:** A2 and its controls corrections are production-verified through PR694/ce473b88 in Day/Night desktop/mobile. C3 / DB-146 resumes with Architecture-approved merge compatibility and a frozen implementation contract. No C3 implementation or completion claimed. Progress stays7/30; importer held, financial records unchanged.
 
 > **Current parity handoff — 2026-10-30:** A2 is Done after PR687 production Day/Night desktop/mobile acceptance. C3 / DB-146 enters contract/discovery; no C3 implementation yet. Shop Work redesign stays separate/deferred. ETS importer held; no financial changes.
@@ -67,7 +73,7 @@ Dependencies: P1 precedes C1 parts-price defaults. M1 must retain existing PM/te
 - [ ] **R5 — Operation/issue findings with linked photos and a customer-ready report** — Backlog; after the priority wave. Relative value/size: Medium / L. See audit for evidence and dependencies.
 - [ ] **R6 — Structured arrival and handover details: parking, key location, arrival condition** — Backlog; after the priority wave. Relative value/size: Medium / S–M. See audit for evidence and dependencies.
 - [ ] **C2 — Customer groups with directory/report filters** — Backlog; after the priority wave. Relative value/size: Medium / M. See audit for evidence and dependencies.
-- [ ] **C3 — Truck issues and follow-up work recorded without opening an RO** — **Contract ready; implementation next**, DB-146. Backend & Integrations accountable; Architecture contract frozen from current source. Standalone technical issue, staff owner/date and metadata-only visit reference; existing priced recommendation conversion excluded. Issue-history merge veto and vehicle-first locking are approved; actual PostgreSQL races and tenant integrity remain implementation gates. [Contract](contracts/db146-truck-issues.md).
+- [ ] **C3 — Truck issues and follow-up work recorded without opening an RO** — **In progress**, DB-146. Backend & Integrations accountable; Architecture contract frozen from current source. Standalone technical issue, staff owner/date and metadata-only visit reference; existing priced recommendation conversion excluded. Issue-history merge veto and vehicle-first locking are approved; actual PostgreSQL races and tenant integrity remain implementation gates. [Contract](contracts/db146-truck-issues.md).
 - [ ] **C4 — Customer payment terms, credit limits and review warnings** — Backlog; after the priority wave. Relative value/size: High / L. See audit for evidence and dependencies.
 - [ ] **S1 — Capacity-aware appointment and dispatch calendar** — Backlog; after the priority wave. Relative value/size: High / L. See audit for evidence and dependencies.
 - [ ] **S2 — Reusable fees: flat, percent, capped and quantity-based** — Backlog; after the priority wave. Relative value/size: High / M–L. See audit for evidence and dependencies.

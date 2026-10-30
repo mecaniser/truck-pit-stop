@@ -226,6 +226,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
             })
           }
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+          queryClient.invalidateQueries({ queryKey: ['vehicle-issues'] })
           queryClient.invalidateQueries({ queryKey: ['repair-order-detail'], ...(data.status === 'deleted' ? { refetchType: 'none' as const } : {}) })
           queryClient.invalidateQueries({ queryKey: ['repair-order-workspace'] })
           queryClient.invalidateQueries({ queryKey: ['order-operations'], ...(data.status === 'deleted' ? { refetchType: 'none' as const } : {}) })

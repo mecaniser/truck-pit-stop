@@ -46,6 +46,9 @@ Status: **Done**, Frontend & UX accountable. PR694 closes the mobile-width findi
 - Original Day appearance, default viewport and unfiltered Active work restored. Private screenshots under `/tmp/db145-controls-release/`; no customer identifiers or screenshots published to GitHub. No financial records, invoices, order statuses, provider actions or importer/collector settings changed.
 - C3 contract work resumes separately. No Shop Work redesign is included.
 
+## Activity display cap9 — production acceptance, 2026-10-30
+
+PR697 candidate91c79970 passed all7 checks in41115827229 and normally squash-merged f8d1f963b7a91a38437665715dfe106ffd13eb27. Checked/merged tree3201297bead9a1bf725fad2657ad203115219595. Automatic Web79f296b6-ce73-4ca9-b7d6-401a680b8c13 SUCCESS on exact merge; public build matches, DB/Redis readiness OK. Actual signed-in NC production Day/Night1280desktop/390mobile: Activity9+ appears before opening Activity, Closeout1 remains separate, accent digits readable, no horizontal overflow. Original Day restored. API page remains20; only displayed cap changed.20 focused tests passed. No financial/status/provider/importer mutation. Private screenshots retained under /tmp/db146-browser.
 
 ## Display cap refinement — 2026-10-30
 

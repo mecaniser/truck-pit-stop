@@ -73,3 +73,6 @@ api_router.include_router(maintenance.work_router, tags=["maintenance"])
 
 from app.api.v1.endpoints import callrail
 api_router.include_router(callrail.router, prefix='/webhooks/callrail', tags=['webhooks'])
+
+from app.api.v1.endpoints import vehicle_issues
+api_router.include_router(vehicle_issues.router, prefix="/vehicles", tags=["truck issues"])

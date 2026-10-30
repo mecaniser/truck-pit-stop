@@ -46,6 +46,7 @@ interface Props extends Partial<ConversionContext> {
   vehicleId: string
   customerId?: string
   contextOrderId?: string
+  noCurrentOrder?: boolean
 }
 
 const priorities = {
@@ -65,7 +66,7 @@ export default function RecommendedWorkPanel(props: Props) {
   />
 }
 
-function RecommendedWorkContext({ tenantId, vehicleId, customerId, contextOrderId, canConvert = false, hourlyRate, rateReadOnly, onOpenOperation }: Props & { tenantId: string }) {
+function RecommendedWorkContext({ tenantId, vehicleId, customerId, contextOrderId, noCurrentOrder = false, canConvert = false, hourlyRate, rateReadOnly, onOpenOperation }: Props & { tenantId: string }) {
   const location = useLocation()
   const [skip, setSkip] = useState(0)
   const query = useQuery({
@@ -85,9 +86,9 @@ function RecommendedWorkContext({ tenantId, vehicleId, customerId, contextOrderI
   })
   const page = query.data
   return (
-    <section className="db-prior-recommendations w-full min-w-0 bg-white" aria-label="Open recommendations for this truck">
+    <section className="db-prior-recommendations w-full min-w-0 bg-white" aria-label={noCurrentOrder ? 'Recommendations from repair orders' : 'Open recommendations for this truck'}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold !text-gray-900">Open recommendations for this truck</h3>
+        <h3 className="text-sm font-semibold !text-gray-900">{noCurrentOrder ? 'Recommendations from repair orders' : 'Open recommendations for this truck'}</h3>
         <button type="button" onClick={() => { void query.refetch() }} disabled={query.isFetching}
           className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-50"
           aria-label="Refresh recommendations">
@@ -102,7 +103,7 @@ function RecommendedWorkContext({ tenantId, vehicleId, customerId, contextOrderI
         {page ? 'Could not refresh recommendations. Showing the last loaded page.' : 'Could not load recommendations.'}
         <button type="button" className="ml-2 whitespace-nowrap underline" onClick={() => { void query.refetch() }}>Retry</button>
       </div>}
-      {page && !query.isError && page.total === 0 && <p className="pt-1 text-xs !text-gray-600">No open recommendations on other orders.</p>}
+      {page && !query.isError && page.total === 0 && <p className="pt-1 text-xs !text-gray-600">{noCurrentOrder ? 'No open recommendations from repair orders.' : 'No open recommendations on other orders.'}</p>}
       {!!page?.items.length && <ul className="mt-1 divide-y divide-gray-100">
         {page.items.map((item) => <li key={item.id} className="db-prior-recommendation flex flex-wrap items-start justify-between gap-2 py-2">
           <div className="min-w-0 flex-1 basis-48">

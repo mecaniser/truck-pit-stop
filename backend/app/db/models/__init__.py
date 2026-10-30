@@ -271,3 +271,5 @@ from app.db.models.callrail import CallRailNumberBinding, CallRailConversation, 
 
 from app.db.models.twilio_reply_route import TwilioReplyRoute
 from app.db.models.conversation_contact import ConversationContactLink, ContactRepairLink, ConversationContextMutation
+
+from app.db.models.vehicle_issue import VehicleIssue, VehicleIssueLink, VehicleIssueRequest, VehicleIssueEvent

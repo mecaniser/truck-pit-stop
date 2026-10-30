@@ -18,7 +18,11 @@ vi.mock('@/lib/api', () => ({
 vi.mock('react-hot-toast', () => ({ default: toastMocks }))
 
 vi.mock('@/hooks/useWebSocket', () => ({ useWebSocket: vi.fn() }))
-vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ accentColors: { 500: '#f59e0b' } }) }))
+vi.mock('@/contexts/ThemeContext', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/contexts/ThemeContext')>()
+  const { DEFAULT_APPEARANCE } = await import('@/types/presentation')
+  return { ...actual, useTheme: () => ({ accentColors: { 500: '#f59e0b' }, appearance: DEFAULT_APPEARANCE }) }
+})
 import { useAuthStore } from '@/stores/authStore'
 import RepairOrdersPage from '../RepairOrdersPage'
 
