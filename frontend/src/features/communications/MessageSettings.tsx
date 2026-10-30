@@ -1,18 +1,14 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { MessageSquare, X } from "lucide-react";
-import SMSSetup from "./SMSSetup";
 
 type Props = {
-  canSetupSMS: boolean;
   channels?: { channel: string; connected: boolean }[];
   deliveryMode?: string;
   onClose: () => void;
   opener?: RefObject<HTMLButtonElement | null>;
 };
 
-export default function MessageSettings({ canSetupSMS, channels, deliveryMode, onClose, opener }: Props) {
-  const [section, setSection] = useState<"channels" | "sms">("channels");
-  const [visitedSMS, setVisitedSMS] = useState(false);
+export default function MessageSettings({ channels, deliveryMode, onClose, opener }: Props) {
   const dialog = useRef<HTMLElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
@@ -32,14 +28,10 @@ export default function MessageSettings({ canSetupSMS, channels, deliveryMode, o
           if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
           if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
         }}>
-        <header><div><h2>Messages settings</h2><p>Manage inbox connections and prepare repair texting.</p></div>
+        <header><div><h2>Messages settings</h2><p>View your shop’s messaging channels.</p></div>
           <button className="icon-button" aria-label="Close settings" onClick={onClose}><X size={20} /></button>
         </header>
-        <nav className="settings-sections" aria-label="Settings sections">
-          <button className="subtle-button" aria-pressed={section === "channels"} onClick={() => setSection("channels")}>Channels</button>
-          {canSetupSMS && <button className="subtle-button" aria-pressed={section === "sms"} onClick={() => { setVisitedSMS(true); setSection("sms"); }}>Repair texting</button>}
-        </nav>
-        <div hidden={section !== "channels"}>
+        <div>
           {(["sms", "whatsapp", "telegram"] as const).map(channel => (
             <div className="connection-row" key={channel}>
               <span className={`channel-chip ${channel}`}><MessageSquare size={18} /></span>
@@ -51,9 +43,8 @@ export default function MessageSettings({ canSetupSMS, channels, deliveryMode, o
               </span>
             </div>
           ))}
-          <p className="connection-summary">New channels require setup and approval before messages can be sent.</p>
+          <p className="connection-summary">Your platform administrator manages channel setup and sending numbers.</p>
         </div>
-        {canSetupSMS && visitedSMS && <div hidden={section !== "sms"}><SMSSetup embedded onClose={onClose} /></div>}
       </section>
     </div>
   );

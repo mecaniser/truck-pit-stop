@@ -39,11 +39,12 @@ export interface SMSConsent {
   created_at: string;
 }
 const base = "/communications/sms";
-export const smsOnboardingApi = {
-  get: async () => (await api.get<SMSOnboarding>(`${base}/onboarding`)).data,
-  save: async (draft: SMSDraft, version: number) =>
+const registrationBase = (tenantId: string) => `/admin/tenants/${encodeURIComponent(tenantId)}/sms`;
+export const platformSMSRegistrationApi = {
+  get: async (tenantId: string) => (await api.get<SMSOnboarding>(`${registrationBase(tenantId)}/onboarding`)).data,
+  save: async (tenantId: string, draft: SMSDraft, version: number) =>
     (
-      await api.put<SMSOnboarding>(`${base}/onboarding`, {
+      await api.put<SMSOnboarding>(`${registrationBase(tenantId)}/onboarding`, {
         ...Object.fromEntries(
           Object.entries(draft).map(([key, value]) => [
             key,
@@ -57,18 +58,20 @@ export const smsOnboardingApi = {
         expected_version: version,
       })
     ).data,
-  review: async (version: number) =>
+  review: async (tenantId: string, version: number) =>
     (
-      await api.post<SMSOnboarding>(`${base}/onboarding/review`, {
+      await api.post<SMSOnboarding>(`${registrationBase(tenantId)}/onboarding/review`, {
         expected_version: version,
       })
     ).data,
-  package: async () =>
+  package: async (tenantId: string) =>
     (
       await api.get<SMSOnboarding & { review_only: true }>(
-        `${base}/onboarding/review-package`,
+        `${registrationBase(tenantId)}/onboarding/review-package`,
       )
     ).data,
+};
+export const smsOnboardingApi = {
   consents: async (customerId: string) =>
     (
       await api.get<{ items: SMSConsent[] }>(`${base}/consents`, {

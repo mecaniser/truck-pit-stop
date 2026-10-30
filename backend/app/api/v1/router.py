@@ -76,3 +76,6 @@ api_router.include_router(callrail.router, prefix='/webhooks/callrail', tags=['w
 
 from app.api.v1.endpoints import vehicle_issues
 api_router.include_router(vehicle_issues.router, prefix="/vehicles", tags=["truck issues"])
+
+from app.api.v1.endpoints import platform_sms_onboarding
+api_router.include_router(platform_sms_onboarding.router, prefix="/admin/tenants/{tenant_id}/sms", tags=["platform-sms-registration"])
