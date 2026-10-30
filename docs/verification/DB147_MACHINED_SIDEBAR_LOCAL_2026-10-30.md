@@ -1,4 +1,4 @@
-# DB-147: Machined staff sidebar, local review
+# DB-147: Machined staff sidebar release evidence
 
 Owner: Frontend & UX. Fast UI lane. User selected Machined and requested Atelier's slim trailing copper current-page indicator.
 
@@ -44,7 +44,7 @@ Files: `sidebar-runtime-checks.json`, `sidebar-tests.log`, `sidebar-build.log`, 
 
 ## Delivery state
 
-Ready for local product review. No PR, push, merge or deployment was requested or performed. This is not marked Done or released.
+Initial local-review state is superseded by the authorized merge and production acceptance below. DB-147 is now Done.
 
 ## In-app browser access correction
 
@@ -63,3 +63,23 @@ Post-integration focused DashboardLayout tests pass **13/13**; changed TSX ESLin
 Protected CI run `41126201495` on candidate `f70ab13ccae2a888f8f63f0c5316e9230858f391` initially failed in the unchanged Motive fixture `pending slow provider navigation receives no second click` (`login.test.cjs:130`, 0 observed navigation requests versus 1 expected). This prevented frontend prerequisites from running. The file is identical to main, whose preceding PR701 passed the fixture. Requested one exact-head failed-jobs rerun; no application/provider code or workflow change. Merge remains held until required checks pass.
 
 Attempt 2 passed all seven checks on `f70ab13c`. During CI, main advanced to `5b6f989d` (PR700). Integrated that approved release; only the delivery board conflicted. Preserved all current main records and moved DB-147's update to its own appended section to avoid competing with concurrent intake entries. Sidebar source remains unchanged. Fresh protected checks are required on the integrated candidate.
+
+## Merge and deployment
+
+Integrated candidate `4bcb6045adcf4b47f84bd826a9a12e4793cb5ff1` passed all seven protected/informational checks in run `41127457438`. Fresh focused tests remain **13/13**, ESLint and production build pass. PR702 normally squash-merged at 2026-10-30 21:05:24 UTC as `2b53a706e6665555d737a7554c1f3c47238b863d`. No admin bypass, protection change or direct main push.
+
+Railway automatically started Web deployment `fdda4aa5-7446-4fa3-beb7-5d0459c6b380` from that exact merge SHA. Deployment and actual changed-route acceptance are pending. No manual worker or provider action is required for this frontend change.
+
+## Production acceptance — DONE
+
+Verified at 2026-10-30 21:11 UTC. Railway Web deployment `fdda4aa5-7446-4fa3-beb7-5d0459c6b380` is **SUCCESS**, with exact source `2b53a706e6665555d737a7554c1f3c47238b863d`. Public `https://www.dieselbridge.com/build-version` reports the same SHA and `built_at` `2026-10-30T21:07:58.160Z`.
+
+The existing signed-in NC owner session opened `https://www.dieselbridge.com/dashboard` in the actual in-app browser and was reloaded after that public build match. The live shell reports `data-nav-style="machined"`.
+
+- At 1280px, compact state measured four distinct category glyph colors: copper `rgb(255,172,119)`, sky `rgb(136,201,255)`, lavender `rgb(195,178,255)`, sand `rgb(223,200,160)`; each glyph is22px and each route target54px.
+- Shop Work alone has `aria-current="page"` and copper marker opacity1; the other three markers have opacity0.
+- Expanded state shows all four route labels with positive visible widths, exactly one current-page marker, and no document overflow. Compact state also has no document overflow.
+- Browser error log is empty. A full production screenshot was captured in the review session; the cropped screenshot API temporarily renders at its requested width and was not used as acceptance evidence. Actual DOM and the full1280px capture confirm the desktop rail.
+- Expanded and collapsed controls worked; the original collapsed preference was restored. Day appearance and all product records remain unchanged. No production account or credential was created; no customer, payment or provider mutation was tested.
+
+The authenticated changed-route smoke, exact deployment and public build evidence complete the Fast UI release gate. Worker release verification and extended canaries are not required for this frontend-only change. Release records are being closed in a separate documentation-only PR; the delivered UI source is PR702's merge.
