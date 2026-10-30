@@ -165,7 +165,7 @@ describe('DashboardHome DB-035 presentation boundary', () => {
 
   it('keeps unpaid closeout separate and preserves existing payment status', () => {
     render(<DashboardHome />)
-    fireEvent.click(screen.getByRole('button', { name: 'Closeout' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Closeout \d/ }))
     expect(screen.getByText('Payment Due')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Open RO-1009 in Repair Orders' })).toBeInTheDocument()
     expect(screen.queryByText('Work in progress')).not.toBeInTheDocument()
@@ -180,7 +180,7 @@ describe('DashboardHome DB-035 presentation boundary', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Parts 0' }))
     testState.locationState = { shopWorkQueue: 'ready_to_close' }
     rerender(<DashboardHome />)
-    expect(screen.getByRole('button', { name: 'Closeout' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /^Closeout \d/ })).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(screen.getByRole('button', { name: 'Active work' }))
     expect(screen.getByRole('button', { name: 'Parts 0' })).toHaveAttribute('aria-pressed', 'true')
   })
@@ -188,7 +188,7 @@ describe('DashboardHome DB-035 presentation boundary', () => {
   it('restores Payment review after opening and closing its existing workspace', () => {
     testState.query.data = { ...dashboardFixture, needs_attention: { items: [order({ pending_zelle_confirmation: true })], has_more: false } }
     const { rerender } = render(<DashboardHome />)
-    fireEvent.click(screen.getByRole('button', { name: 'Closeout' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Closeout \d/ }))
     fireEvent.click(screen.getByRole('tab', { name: 'Payment review 1' }))
     fireEvent.click(screen.getByRole('button', { name: 'Open RO-1017 in Repair Orders' }))
     expect(testState.navigate).toHaveBeenCalledWith('/dashboard?selected=ro-needs-17&queue=needs_action&work_view=closeout')
@@ -197,7 +197,7 @@ describe('DashboardHome DB-035 presentation boundary', () => {
     expect(screen.getByTestId('repair-order-workspace')).toBeInTheDocument()
     testState.locationSearch = '?queue=needs_action&work_view=closeout'
     rerender(<DashboardHome />)
-    expect(screen.getByRole('button', { name: 'Closeout' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /^Closeout \d/ })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('tab', { name: 'Payment review 1' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByText('Zelle Review')).toBeInTheDocument()
   })

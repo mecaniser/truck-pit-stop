@@ -168,6 +168,17 @@ export default function ShopCockpitActionLedger({
     { ...baseLanes[0], label: 'Payment review', orders: baseLanes[0].orders.filter(order => order.pending_zelle_confirmation), hasMore: false },
     { ...baseLanes[3] },
   ] : baseLanes, [hasActiveWork, baseLanes])
+  // Keep pending closeout visible even while Active work or Activity is open.
+  // Closed Today is history, not outstanding work. Deduplicate projected IDs.
+  const pendingPaymentOrders = projection.orders_needing_action.filter(order => order.pending_zelle_confirmation)
+  const closeoutCount = new Set([...projection.orders_ready_to_close, ...pendingPaymentOrders].map(order => order.id)).size
+  // Payment reviews lead needs_action. If its capped page contains only payment
+  // reviews, unseen entries may include more; never claim an exact count then.
+  const closeoutHasMore = projection.orders_ready_to_close_has_more || (
+    projection.orders_needing_action_has_more
+    && pendingPaymentOrders.length === projection.orders_needing_action.length
+  )
+  const closeoutCountLabel = `${closeoutCount}${closeoutHasMore ? '+' : ''}`
   const showingActive = hasActiveWork && workView === 'active' && queueView === 'queue'
   const allRows = useMemo(
     () => lanes.flatMap((lane) => lane.orders.map((order) => ({ order, lane: lane.key }))),
@@ -214,9 +225,9 @@ export default function ShopCockpitActionLedger({
             onClick={onRefresh}
             disabled={isRefreshing}
             aria-label={isRefreshing ? 'Refreshing Shop Work' : `Refresh Shop Work, ${lastUpdatedLabel || 'updated recently'}`}
+            title={isRefreshing ? 'Refreshing Shop Work' : 'Refresh Shop Work'}
           >
             <RefreshCw aria-hidden="true" className={isRefreshing ? 'animate-spin' : ''} />
-            <span>{isRefreshing ? 'Refreshing…' : 'Refresh'}</span>
           </button>
           {isManager && (
             <>
@@ -226,13 +237,14 @@ export default function ShopCockpitActionLedger({
                 onClick={onToggleQuickOrder}
                 aria-expanded={quickOrderExpanded}
                 aria-label="Lightning Order"
+                title="Lightning Order"
               >
                 <Zap aria-hidden="true" />
-                <span className="db-shop-work-new__action-full">Lightning Order</span>{activeWork && <span className="db-shop-work-new__action-short" aria-hidden="true">Quick</span>}
+                <span className="db-shop-work-new__action-full">Lightning Order</span>
               </button>
-              <button type="button" className="db-shop-work-new__primary-action" aria-label="Full Order" onClick={onFullOrder}>
+              <button type="button" className="db-shop-work-new__primary-action" aria-label="Full Order" title="Full Order" onClick={onFullOrder}>
                 <Plus aria-hidden="true" />
-                <span className="db-shop-work-new__action-full">Full Order</span>{activeWork && <span className="db-shop-work-new__action-short" aria-hidden="true">Order</span>}
+                <span className="db-shop-work-new__action-full">Full Order</span>
               </button>
             </>
           )}
@@ -257,6 +269,7 @@ export default function ShopCockpitActionLedger({
               >
                 {!activeWork && <LayoutList aria-hidden="true" />}
                 {activeWork ? 'Closeout' : 'Queue'}
+                {activeWork && <span>{closeoutCountLabel}</span>}
               </button>
               {canViewActivity && (
                 <button

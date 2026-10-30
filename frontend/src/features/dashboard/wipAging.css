@@ -67,7 +67,7 @@
 .db-wip .db-wip__unknown { white-space: nowrap; background: transparent; border: 0; padding: 6px; border-radius: 6px; font-size: 12px; color: var(--workspace-muted); }
 .db-wip__info { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; min-height: 32px; border: 0; border-radius: 6px; background: transparent; }
 .db-wip__mobile-category { display: none; }
-.db-shop-work-new__action-short { display: none; }
+.db-shop-work-new__quiet-action { width: 44px; min-width: 44px; padding-inline: 0; justify-content: center; }
 .db-shop-work-new--compact .db-shop-work-new__header { align-items: center; gap: 12px; margin-bottom: 10px; }
 .db-shop-work-new--compact .db-shop-work-new__header-actions { flex-wrap: nowrap; }
 .db-shop-work-new--compact .db-shop-work-new__header-actions button { white-space: nowrap; padding: 7px 11px; }
@@ -84,9 +84,8 @@
   .db-presentation-new .db-shop-work-new--compact .db-operating-page-header h1 { font-size: 20px !important; white-space: nowrap; }
   .db-shop-work-new--compact .db-shop-work-new__header-actions { margin-top: 0; gap: 4px; }
   .db-shop-work-new--compact .db-shop-work-new__header-actions button { flex: 0 0 auto; min-height: 44px; padding: 6px 8px; gap: 4px; font-size: 12px; }
-  .db-shop-work-new--compact .db-shop-work-new__quiet-action { width: 44px; }
-  .db-shop-work-new--compact .db-shop-work-new__quiet-action span, .db-shop-work-new--compact .db-shop-work-new__action-full { display: none; }
-  .db-shop-work-new--compact .db-shop-work-new__action-short { display: inline; }
+  .db-shop-work-new__header-actions button { width: 44px; min-width: 44px; justify-content: center; }
+  .db-shop-work-new__action-full { display: none; }
   .db-shop-work-new--compact .db-shop-work-new__header-actions svg { width: 15px; height: 15px; flex-shrink: 0; }
   .db-shop-work-new--compact .db-action-ledger__caption-text { width: 100%; }
   .db-shop-work-new--compact .db-shop-work-new__view-switch { width: 100%; }
