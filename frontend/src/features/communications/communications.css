@@ -1754,3 +1754,16 @@
 :where(.communications-surface) .message-settings .sms-setup { padding: 0; min-height: auto; }
 
 :where(.communications-surface) .settings-backdrop { z-index: 100; }
+
+:where(.communications-surface) .sms-next-step { margin: 24px 0; }
+:where(.communications-surface) .sms-next-step h2 { margin-bottom: 8px; }
+:where(.communications-surface) .sms-next-step p,
+:where(.communications-surface) .sms-section-help { color: #526274; font-size: 13px; line-height: 1.6; margin: 8px 0 18px; }
+:where(.communications-surface) .sms-progress { font-size: 12px; font-weight: 600; color: #6c4c20; }
+:where(.communications-surface) .sms-hold { background: #f6f1e7; color: #644b25; align-items: flex-start; }
+:where(.communications-surface) .sms-hold svg { flex-shrink: 0; margin-top: 1px; }
+:where(.communications-surface) .sms-connection-toggle { width: 100%; justify-content: space-between; background: transparent; border: 0; padding: 0; color: inherit; font-weight: 600; text-align: left; }
+:where(.communications-surface) .sms-connection-toggle .is-expanded { transform: rotate(180deg); }
+:where(.communications-surface) .sms-field-help { color: #526274; font-size: 12px; line-height: 1.5; margin: 6px 0; }
+:where(.communications-surface) .sms-field-needed { color: #6c4c20; font-size: 11px; }
+:where(.communications-surface) .sms-field input { margin-top: 7px; width: 100%; }

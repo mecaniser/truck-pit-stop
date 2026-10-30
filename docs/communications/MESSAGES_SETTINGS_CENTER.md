@@ -13,3 +13,7 @@ Original stopped communications Postgres/Redis containers restarted with preserv
 Authenticated synthetic owner sees channel status and full registration form. Unsaved synthetic field persisted across section switches and was cleared without saving. Inbox draft and reply sender retained after closing settings; synthetic test draft cleared afterward. Desktop and390px browser accepted. Compact integration found app chrome covering the dialog header; settings-specific z-index corrected and reverified. Private screenshots `/tmp/comms028-local-desktop.png` and `/tmp/comms028-local-mobile.png`.
 
 42 focused component tests, changed-source ESLint and TypeScript pass. No backend/application contract changes. PR695 protected CI, merge, deployment and live acceptance are separate pending release gates.
+
+## Clarity refinement
+
+User clarified that consolidation must explain why registration exists and what staff should do. The Repair texting section names its purpose, preparation-only boundary, next action and remaining required items. Business details, customer permission evidence and sample messages have separate concise guidance. Field requirements replace the raw blocker wall; provider details remain available in an accessible disclosure. Configured number is explicitly distinct from repair-texting approval. All server actions, permissions and submission holds remain unchanged. 43 focused tests pass, including the legacy-number/no-approval case; TypeScript/lint pass. Signed-in desktop/compact visual checks cover the revised guidance.

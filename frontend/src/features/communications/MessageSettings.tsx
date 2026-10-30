@@ -32,19 +32,19 @@ export default function MessageSettings({ canSetupSMS, channels, deliveryMode, o
           if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
           if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
         }}>
-        <header><div><h2>Messages settings</h2><p>Channels and SMS registration</p></div>
+        <header><div><h2>Messages settings</h2><p>Manage inbox connections and prepare repair texting.</p></div>
           <button className="icon-button" aria-label="Close settings" onClick={onClose}><X size={20} /></button>
         </header>
         <nav className="settings-sections" aria-label="Settings sections">
           <button className="subtle-button" aria-pressed={section === "channels"} onClick={() => setSection("channels")}>Channels</button>
-          {canSetupSMS && <button className="subtle-button" aria-pressed={section === "sms"} onClick={() => { setVisitedSMS(true); setSection("sms"); }}>SMS setup</button>}
+          {canSetupSMS && <button className="subtle-button" aria-pressed={section === "sms"} onClick={() => { setVisitedSMS(true); setSection("sms"); }}>Repair texting</button>}
         </nav>
         <div hidden={section !== "channels"}>
           {(["sms", "whatsapp", "telegram"] as const).map(channel => (
             <div className="connection-row" key={channel}>
               <span className={`channel-chip ${channel}`}><MessageSquare size={18} /></span>
               <div><h3>{{ sms: "SMS", whatsapp: "WhatsApp", telegram: "Telegram" }[channel]}</h3>
-                <p>{channel === "sms" ? (deliveryMode ? `SMS delivery: ${deliveryMode}` : "Sample connection") : channel === "whatsapp" ? "Business sender and approved templates required" : "Shop bot and customer-started conversation required"}</p>
+                <p>{channel === "sms" ? (deliveryMode ? deliveryMode === "simulated" ? "Local test connection · no live messages" : "Uses each conversation’s existing reply number" : "Sample connection") : channel === "whatsapp" ? "Business sender and approved templates required" : "Shop bot and customer-started conversation required"}</p>
               </div>
               <span className={`connection-state ${channels?.some(c => c.channel === channel && c.connected) ? "ready" : ""}`}>
                 {channel === "sms" ? (channels ? channels.some(c => c.channel === channel && c.connected) ? "Connected" : "Unavailable" : "Preview") : "Planned"}
