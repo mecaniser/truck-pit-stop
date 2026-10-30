@@ -14,7 +14,7 @@ Tenant Messages exposes channel status only, no registration requests. Existing 
 
 ## Release
 
-Implementation and independent Security/automated QA passed; protected CI, merge and deployment completed below; authenticated live super-admin acceptance remains pending. No production configuration changes. Rollback must not restore tenant registration access: if UI fails, retain backend denial and disable new admin entry until corrected. No automated rollout or provider actions authorized by this change.
+Implementation and independent Security/automated QA passed; protected CI, merge and deployment completed below; authenticated live super-admin acceptance completed. No production configuration changes. Rollback must not restore tenant registration access: if UI fails, retain backend denial and disable new admin entry until corrected. No automated rollout or provider actions authorized by this change.
 
 ## Verification — 2026-10-30
 
@@ -32,4 +32,4 @@ Automatic Railway Web `2bd014f9-9e0c-4f7f-b232-cf110720ff4b` and Worker `1821056
 
 Authenticated live tenant inbox: Settings shows channel status only, no registration controls. Legacy onboarding GET returns platform_registration_required; explicit admin onboarding GET rejects tenant session with Super admin access required. Selected conversation, existing empty draft and exact sender retained across refresh/settings roundtrip. Private screenshot `/tmp/comms029-live-tenant.png`. Customer content and identifiers excluded from this receipt.
 
-Remaining acceptance: sign in as existing live super-admin and verify Shops registration for a selected shop read-only. Current tenant session cannot verify that screen; user login requested. Independent authorization tests and local signed-in admin checks passed, but do not substitute for this live gate. No Done claim yet. Rollback retains backend tenant denial.
+Final live acceptance: authenticated Platform Admin opened Shops, then Repair texting registration for the selected shop. The draft loaded with the correct shop identity, business/customer-permission/sample-message sections, and preparation-only notice explicitly stating no Twilio submission or automatic messages. Closed without edits, save, review, export, number changes or provider actions. Private screenshot `/tmp/comms029-live-platform.png`. Tenant Messages exclusion and draft/reply-route preservation were verified above. DB-COMMS-029 is Done; rollback retains backend tenant denial.
