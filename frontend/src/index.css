@@ -7213,6 +7213,7 @@ html.customer-portal-active {
    The overlaid sibling button previews media without nesting controls. */
 .db-parts-workbench__row-select { padding-inline:12px; padding-block:10px; }
 .db-parts-workbench__photo-spacer { flex:0 0 46px; inline-size:46px; block-size:46px; }
+.db-parts-workbench__ledger.is-compact :is(.db-parts-workbench__photo-spacer,.db-parts-workbench__photo-trigger) { display:none; }
 .db-parts-workbench__photo-trigger { display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; padding:0; border:0; border-radius:.65rem; background:transparent; color:inherit; cursor:zoom-in; }
 .db-parts-workbench__part-cell > .db-parts-workbench__photo-trigger { position:absolute; z-index:2; inset-inline-start:12px; inset-block-start:50%; transform:translateY(-50%); }
 .db-parts-workbench__photo-trigger:focus-visible { outline:2px solid var(--parts-oxide); outline-offset:2px; }
