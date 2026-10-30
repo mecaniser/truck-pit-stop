@@ -1,3 +1,4 @@
+from app.api.v1.endpoints import fleet_repair_history_exports
 from app.api.v1.endpoints import motive, motive_webhooks
 from app.api.v1.endpoints import external_services, vehicle_history_exports
 from fastapi import APIRouter
@@ -25,6 +26,7 @@ from app.api.v1.endpoints import labor_cost
 api_router.include_router(labor_cost.router, prefix="/reports", tags=["owner-job-contribution"])
 api_router.include_router(conversion_exports.router, prefix="/conversion-exports", tags=["conversion-exports"])
 api_router.include_router(fleet_invoice_exports.router, prefix="/fleet-invoice-exports", tags=["fleet-invoice-exports"])
+api_router.include_router(fleet_repair_history_exports.router, prefix="/fleet-invoice-exports", tags=["fleet-repair-history"])
 api_router.include_router(historical_invoice_reviews.router, prefix="/fleet-invoice-exports", tags=["fleet-invoice-reviews"])
 api_router.include_router(parts_operations.router, prefix="/parts-operations", tags=["parts-operations"])
 api_router.include_router(inventory_lifecycle.router, prefix="/parts-operations", tags=["inventory-lifecycle"])
