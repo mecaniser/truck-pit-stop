@@ -4,7 +4,7 @@ import PartPolicySummary from '@/features/parts-pricing/PartPolicySummary'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { Archive, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Boxes, Camera, ChevronsUpDown, EllipsisVertical, History, MapPin, Package, Pencil, Plus, Search, Settings2, ShoppingCart, Trash2, X } from 'lucide-react'
+import { Archive, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Boxes, Camera, ChevronRight, ChevronsUpDown, EllipsisVertical, History, MapPin, Package, Pencil, Plus, Search, Settings2, ShoppingCart, Trash2, X } from 'lucide-react'
 
 import PartsPricingSettings from '@/features/parts-pricing/PartsPricingSettings'
 import PartPricingPolicy from '@/features/parts-pricing/PartPricingPolicy'
@@ -1000,6 +1000,7 @@ function PartLedger({ page, loading, loadingMore, failed, manage, salesEnabled, 
           <span role="cell" className="db-parts-workbench__part-cell">
             <button type="button" className="db-parts-workbench__row-select" aria-current={selected ? 'true' : undefined} aria-controls="selected-part-inspector" onClick={() => onSelect(part.id)}>
               <span className="db-parts-workbench__identity"><PartPhoto part={part} logoUrl={logoUrl} companyName={companyName} /><span><strong>{part.name}</strong><small>{part.sku}</small></span></span>
+              <ChevronRight className="db-parts-workbench__row-cue" aria-hidden="true" />
             </button>
             {salesEnabled && eligible && <span className="db-parts-workbench__row-actions" data-row-actions={part.id} onClick={(event) => event.stopPropagation()}><button type="button" aria-label={`More actions for ${part.name}`} aria-haspopup="menu" aria-expanded={openActions === part.id} onClick={() => setOpenActions((current) => current === part.id ? null : part.id)}><EllipsisVertical aria-hidden="true" /></button>{openActions === part.id && <span role="menu" aria-label={`Actions for ${part.name}`}><button type="button" role="menuitem" onClick={() => { setOpenActions(null); onSell(part.id) }}>Sell part</button></span>}</span>}
           </span>
