@@ -52,13 +52,13 @@ async function readSpeed(page){
 }
 async function stableObservation({timestamp,point,verifyVin,address,allowUnstableSpeed=false,speed=async()=>({speed_mph:null,speedText:null,speedReason:'speed_unavailable'})}){
  const firstSpeed=await speed(),before=await timestamp(),a=await point(),after=await timestamp(),b=await point(),lastSpeed=await speed();
- if(before.rawTimestamp!==after.rawTimestamp||before.timestampReason!==after.timestampReason||(!before.rawTimestamp&&before.sourceAge!==after.sourceAge)||JSON.stringify(a)!==JSON.stringify(b))throw new Error('source_changed_during_capture');
+ if(before.rawTimestamp!==after.rawTimestamp||before.timestampReason!==after.timestampReason||before.timestampBasis!==after.timestampBasis||(!before.rawTimestamp&&before.sourceAge!==after.sourceAge)||JSON.stringify(a)!==JSON.stringify(b))throw new Error('source_changed_during_capture');
  const speedChanged=JSON.stringify(firstSpeed)!==JSON.stringify(lastSpeed);
  if(speedChanged&&!allowUnstableSpeed)throw new Error('source_changed_during_capture');
  await verifyVin();
  const observed=observationTime(after.rawTimestamp);
- const retainedSpeed=speedChanged?{speed_mph:null,speedText:null,speedReason:'speed_ambiguous'}:observed.precision==='unknown'&&lastSpeed.speed_mph!==null?{...lastSpeed,speed_mph:null,speedReason:'speed_timestamp_unavailable'}:lastSpeed;
- return {status:'located',lat:a[0],lng:a[1],address:address||null,rawTimestamp:after.rawTimestamp,sourceAge:after.sourceAge,sourceReadTime:new Date().toISOString(),...observed,...retainedSpeed,timestampReason:after.timestampReason||observed.timestampReason};
+ const retainedSpeed=after.timestampBasis==='inline_location'?{...lastSpeed,speed_mph:null,speedReason:'speed_timestamp_location_only'}:speedChanged?{speed_mph:null,speedText:null,speedReason:'speed_ambiguous'}:observed.precision==='unknown'&&lastSpeed.speed_mph!==null?{...lastSpeed,speed_mph:null,speedReason:'speed_timestamp_unavailable'}:lastSpeed;
+ return {status:'located',lat:a[0],lng:a[1],address:address||null,rawTimestamp:after.rawTimestamp,sourceAge:after.sourceAge,sourceReadTime:new Date().toISOString(),...observed,...retainedSpeed,...(after.timestampBasis?{timestampBasis:after.timestampBasis}:{}),timestampReason:after.timestampReason||observed.timestampReason};
 }
 async function collectWithRetries(context,link,readPage=readVehiclePage,{reviewed=false}={}){
  let expected,reason='ui_data_unavailable',fallback=null;
@@ -105,6 +105,49 @@ function newTooltip(before,after){
  if(added.length>1)throw new Error('unowned_timestamp_tooltip');
  return added[0]||null;
 }
+function canonicalInlineDate(raw){
+ if(typeof raw!=='string')return null;
+ const value=raw.replace(/\s+/g,' ').trim();
+ const match=value.match(/^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2}), (\d{4}), (\d{1,2}):(\d{2}) (AM|PM)$/i);
+ if(!match)return null;
+ const month=match[1][0].toUpperCase()+match[1].slice(1).toLowerCase();
+ return `${month} ${match[2]}, ${match[3]}, ${match[4]}:${match[5]} ${match[6].toUpperCase()}`;
+}
+function inlineLocationState(elements){
+ // Read only rendered DOM. The grounded inline clock is a direct child of the
+ // current-location block that owns the unique coordinate-copy control.
+ const visible=element=>{
+  if(!element.getClientRects().length)return false;
+  for(let node=element;node&&node.nodeType===1;node=node.parentElement){
+   const style=getComputedStyle(node);
+   if(style.display==='none'||style.visibility==='hidden'||style.visibility==='collapse'||Number(style.opacity)===0)return false;
+  }
+  return true;
+ };
+ const panels=elements.filter(visible);if(panels.length!==1)return {reason:'inline_location_ambiguous'};
+ const panel=panels[0],locations=[...panel.querySelectorAll('.current-location')].filter(visible);
+ if(locations.length!==1)return {reason:'inline_location_ambiguous'};
+ const location=locations[0];
+ if([...location.querySelectorAll('.current-location-status')].filter(visible).length)return {reason:'inline_status_present'};
+ if(/\b(?:disconnect(?:ed)?|last\s+updated|last\s+seen)\b/i.test(location.innerText))return {reason:'inline_location_event_ambiguous'};
+ const controls=[...location.querySelectorAll('.container.mt-4.pos-relative')].filter(visible);
+ const allControls=[...document.querySelectorAll('.container.mt-4.pos-relative')].filter(visible);
+ if(controls.length!==1||allControls.length!==1||controls[0]!==allControls[0])return {reason:'inline_location_control_ambiguous'};
+ const rows=[...location.querySelectorAll(':scope > div.d-flex.align-items-center.phx-web-type-body-medium.grey-70')].filter(visible);
+ const candidates=rows.flatMap(row=>[...row.querySelectorAll(':scope > span.upper-case')].filter(visible));
+ if(candidates.length!==1||candidates[0].children.length)return {reason:'inline_location_timestamp_ambiguous'};
+ const candidate=candidates[0];
+ const dateLike=/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},\s+\d{4},\s+\d{1,2}:\d{2}\s+(?:AM|PM)\b/i;
+ const datedLeaves=[...location.querySelectorAll('*')].filter(el=>!el.children.length&&visible(el)&&dateLike.test(el.textContent));
+ if(datedLeaves.length!==1||datedLeaves[0]!==candidate)return {reason:'inline_location_timestamp_ambiguous'};
+ return {raw:candidate.textContent,rendered:candidate.innerText,rowText:candidate.parentElement.innerText,reason:null};
+}
+async function readInlineLocationTimestamp(page){
+ const snapshot=await page.locator('section.driver-location-info').evaluateAll(inlineLocationState);
+ const rawTimestamp=canonicalInlineDate(snapshot.raw),rendered=canonicalInlineDate(snapshot.rendered),rowText=canonicalInlineDate(snapshot.rowText);
+ if(snapshot.reason||!rawTimestamp||rawTimestamp!==rendered||rawTimestamp!==rowText)return {rawTimestamp:null,sourceAge:null,timestampReason:snapshot.reason||'inline_location_timestamp_unsupported'};
+ return {rawTimestamp,sourceAge:null,timestampReason:null,timestampBasis:'inline_location'};
+}
 async function readVehiclePage(page,link,bind,attempt=0,{reviewed=false,context}={}){
  await page.goto(ORIGIN+'/en-US/'+link.href,{waitUntil:'domcontentloaded',timeout:45000});
  await page.getByRole('link',{name:'Live',exact:true}).filter({visible:true}).first().waitFor().catch(()=>{throw new Error('vehicle_summary_unavailable');});
@@ -122,7 +165,7 @@ async function readVehiclePage(page,link,bind,attempt=0,{reviewed=false,context}
  const {control,address}=await locationControl(page);
  async function timestamp(){
   const status=page.locator('.current-location-status').filter({visible:true});
-  if(await status.count()===0)return {rawTimestamp:null,sourceAge:null,timestampReason:'status_unavailable'};
+  if(await status.count()===0)return readInlineLocationTimestamp(page);
   if(await status.count()!==1)throw new Error('unowned_timestamp_tooltip');
   const sourceAge=(await status.innerText()).trim()||null;
   // Ignore unchanged unrelated tooltips; only a unique newly rendered tooltip
@@ -212,4 +255,4 @@ if(require.main===module){
  if(!output){console.error('Output file required');process.exitCode=1;}
  else collect(output).then(r=>console.log(JSON.stringify({stage:'collection_complete',complete:r.complete,count:r.vehicles.length,located:r.vehicles.filter(x=>x.status==='located').length}))).catch(error=>{failed(output,error);console.error(JSON.stringify({stage:'collection_failed',reason:error?.name==='TimeoutError'?'ui_timeout':'collection_failed',import_permitted:false}));process.exitCode=1;});
 }
-module.exports={collect,vinFrom,coordinates,addressFrom,bindVin,observationTime,stableObservation,collectWithRetries,assertLiveProvider,locationControl,newTooltip,leafTooltipTexts,speedFromParts,readSpeed};
+module.exports={collect,vinFrom,coordinates,addressFrom,bindVin,observationTime,stableObservation,collectWithRetries,assertLiveProvider,locationControl,newTooltip,leafTooltipTexts,speedFromParts,readSpeed,canonicalInlineDate,readInlineLocationTimestamp};
