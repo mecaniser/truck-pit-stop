@@ -52,13 +52,13 @@ async function readSpeed(page){
 }
 async function stableObservation({timestamp,point,verifyVin,address,allowUnstableSpeed=false,speed=async()=>({speed_mph:null,speedText:null,speedReason:'speed_unavailable'})}){
  const firstSpeed=await speed(),before=await timestamp(),a=await point(),after=await timestamp(),b=await point(),lastSpeed=await speed();
- if(before.rawTimestamp!==after.rawTimestamp||before.timestampReason!==after.timestampReason||before.timestampBasis!==after.timestampBasis||(!before.rawTimestamp&&before.sourceAge!==after.sourceAge)||JSON.stringify(a)!==JSON.stringify(b))throw new Error('source_changed_during_capture');
+ if(before.rawTimestamp!==after.rawTimestamp||before.timestampReason!==after.timestampReason||before.timestampBasis!==after.timestampBasis||before.timestampSourceText!==after.timestampSourceText||(!before.rawTimestamp&&before.sourceAge!==after.sourceAge)||JSON.stringify(a)!==JSON.stringify(b))throw new Error('source_changed_during_capture');
  const speedChanged=JSON.stringify(firstSpeed)!==JSON.stringify(lastSpeed);
  if(speedChanged&&!allowUnstableSpeed)throw new Error('source_changed_during_capture');
  await verifyVin();
  const observed=observationTime(after.rawTimestamp);
  const retainedSpeed=after.timestampBasis==='inline_location'?{...lastSpeed,speed_mph:null,speedReason:'speed_timestamp_location_only'}:speedChanged?{speed_mph:null,speedText:null,speedReason:'speed_ambiguous'}:observed.precision==='unknown'&&lastSpeed.speed_mph!==null?{...lastSpeed,speed_mph:null,speedReason:'speed_timestamp_unavailable'}:lastSpeed;
- return {status:'located',lat:a[0],lng:a[1],address:address||null,rawTimestamp:after.rawTimestamp,sourceAge:after.sourceAge,sourceReadTime:new Date().toISOString(),...observed,...retainedSpeed,...(after.timestampBasis?{timestampBasis:after.timestampBasis}:{}),timestampReason:after.timestampReason||observed.timestampReason};
+ return {status:'located',lat:a[0],lng:a[1],address:address||null,rawTimestamp:after.rawTimestamp,sourceAge:after.sourceAge,sourceReadTime:new Date().toISOString(),...observed,...retainedSpeed,...(after.timestampBasis?{timestampBasis:after.timestampBasis,timestampSourceText:after.timestampSourceText}:{}),timestampReason:after.timestampReason||observed.timestampReason};
 }
 async function collectWithRetries(context,link,readPage=readVehiclePage,{reviewed=false}={}){
  let expected,reason='ui_data_unavailable',fallback=null;
@@ -142,11 +142,27 @@ function inlineLocationState(elements){
  if(datedLeaves.length!==1||datedLeaves[0]!==candidate)return {reason:'inline_location_timestamp_ambiguous'};
  return {raw:candidate.textContent,rendered:candidate.innerText,rowText:candidate.parentElement.innerText,reason:null};
 }
+function canonicalInlineClock(raw){
+ if(typeof raw!=='string')return null;
+ const value=raw.replace(/\s+/g,' ').trim();
+ const suffix=value.match(/ (EDT|EST)$/i);
+ const date=canonicalInlineDate(suffix?value.slice(0,-4):value);
+ if(!date)return null;
+ if(suffix){
+  // The provider zone label must agree with the uniquely resolved NY minute.
+  // Keep normalize's existing rejection of folds, gaps and invalid dates.
+  const observed=normalize(date,true);
+  if(observed.precision!=='minute')return null;
+  const actual=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',timeZoneName:'short'}).formatToParts(new Date(observed.observed_minute_start)).find(part=>part.type==='timeZoneName')?.value;
+  if(actual!==suffix[1].toUpperCase())return null;
+ }
+ return {date,label:date+(suffix?' '+suffix[1].toUpperCase():'')};
+}
 async function readInlineLocationTimestamp(page){
  const snapshot=await page.locator('section.driver-location-info').evaluateAll(inlineLocationState);
- const rawTimestamp=canonicalInlineDate(snapshot.raw),rendered=canonicalInlineDate(snapshot.rendered),rowText=canonicalInlineDate(snapshot.rowText);
- if(snapshot.reason||!rawTimestamp||rawTimestamp!==rendered||rawTimestamp!==rowText)return {rawTimestamp:null,sourceAge:null,timestampReason:snapshot.reason||'inline_location_timestamp_unsupported'};
- return {rawTimestamp,sourceAge:null,timestampReason:null,timestampBasis:'inline_location'};
+ const raw=canonicalInlineClock(snapshot.raw),rendered=canonicalInlineClock(snapshot.rendered),row=canonicalInlineClock(snapshot.rowText);
+ if(snapshot.reason||!raw||raw.label!==rendered?.label||raw.label!==row?.label)return {rawTimestamp:null,sourceAge:null,timestampReason:snapshot.reason||'inline_location_timestamp_unsupported'};
+ return {rawTimestamp:raw.date,sourceAge:null,timestampReason:null,timestampBasis:'inline_location',timestampSourceText:snapshot.raw};
 }
 async function readVehiclePage(page,link,bind,attempt=0,{reviewed=false,context}={}){
  await page.goto(ORIGIN+'/en-US/'+link.href,{waitUntil:'domcontentloaded',timeout:45000});
