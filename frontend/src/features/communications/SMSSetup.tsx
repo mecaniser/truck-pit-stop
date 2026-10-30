@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ChevronDown, Download, PauseCircle } from "lucide-react";
 import { errorMessage } from "./api";
 import {
-  smsOnboardingApi,
+  platformSMSRegistrationApi,
   type SMSDraft,
   type SMSOnboarding,
 } from "./smsOnboardingApi";
@@ -24,7 +24,10 @@ const fields: {
   { key: "terms_url", label: "Terms URL", type: "url" },
 ];
 const readable = (value: string) => value.replace(/_/g, " ");
-export default function SMSSetup({ onClose, embedded = false }: { onClose: () => void; embedded?: boolean }) {
+export default function SMSSetup(props: { tenantId: string; shopName: string; onClose: () => void; onDirtyChange?: (dirty: boolean) => void }) {
+  return <ShopRegistration key={props.tenantId} {...props} />;
+}
+function ShopRegistration({ tenantId, shopName, onClose, onDirtyChange }: { tenantId: string; shopName: string; onClose: () => void; onDirtyChange?: (dirty: boolean) => void }) {
   const [record, setRecord] = useState<SMSOnboarding | null>(null);
   const [draft, setDraft] = useState<SMSDraft | null>(null);
   const [error, setError] = useState("");
@@ -36,8 +39,8 @@ export default function SMSSetup({ onClose, embedded = false }: { onClose: () =>
   const lock = useRef(false);
   useEffect(() => {
     alive.current = true;
-    void smsOnboardingApi
-      .get()
+    void platformSMSRegistrationApi
+      .get(tenantId)
       .then((value) => {
         if (alive.current) {
           setRecord(value);
@@ -50,9 +53,10 @@ export default function SMSSetup({ onClose, embedded = false }: { onClose: () =>
     return () => {
       alive.current = false;
     };
-  }, []);
+  }, [tenantId]);
   const dirty =
     record && draft && JSON.stringify(record.fields) !== JSON.stringify(draft);
+  useEffect(() => { onDirtyChange?.(!!dirty); return () => onDirtyChange?.(false); }, [dirty, onDirtyChange]);
   const missing = draft ? [
     ...fields.filter(field => field.key !== "support_phone" && !draft[field.key]?.trim()).map(field => field.key),
     ...(!draft.message_description?.trim() ? ["message_description"] : []),
@@ -80,7 +84,7 @@ export default function SMSSetup({ onClose, embedded = false }: { onClose: () =>
     setNotice("");
     try {
       if (kind === "export") {
-        const value = await smsOnboardingApi.package();
+        const value = await platformSMSRegistrationApi.package(tenantId);
         if (!alive.current) return;
         const url = URL.createObjectURL(
           new Blob([JSON.stringify(value, null, 2)], {
@@ -93,7 +97,7 @@ export default function SMSSetup({ onClose, embedded = false }: { onClose: () =>
         link.click();
         URL.revokeObjectURL(url);
       } else if (kind === "rebase") {
-        const current = await smsOnboardingApi.get();
+        const current = await platformSMSRegistrationApi.get(tenantId);
         if (!alive.current) return;
         setRecord(current);
         setStale(false);
@@ -103,8 +107,8 @@ export default function SMSSetup({ onClose, embedded = false }: { onClose: () =>
       } else {
         const value =
           kind === "save"
-            ? await smsOnboardingApi.save(draft, record.version)
-            : await smsOnboardingApi.review(record.version);
+            ? await platformSMSRegistrationApi.save(tenantId, draft, record.version)
+            : await platformSMSRegistrationApi.review(tenantId, record.version);
         if (!alive.current) return;
         setRecord(value);
         setDraft(value.fields);
@@ -129,13 +133,13 @@ export default function SMSSetup({ onClose, embedded = false }: { onClose: () =>
   }
   return (
     <main className="sms-setup">
-      {!embedded && <button className="subtle-button" onClick={onClose}>
-        <ArrowLeft size={16} /> Back to inbox
+      {<button className="subtle-button" onClick={onClose}>
+        <ArrowLeft size={16} /> Back to shops
       </button>}
       <header className="sms-setup-header">
         <div>
           <h1>Repair texting registration</h1>
-          <p>Prepare your shop’s details for Twilio to review repair-update texting.</p>
+          <p>Prepare {shopName}’s details for Twilio to review repair-update texting.</p>
         </div>
         <span className="sms-state">
           {stage}

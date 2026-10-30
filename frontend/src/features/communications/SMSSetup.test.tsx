@@ -8,13 +8,15 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SMSSetup from "./SMSSetup";
 import SMSConsentPanel from "./SMSConsentPanel";
-import { smsOnboardingApi, type SMSOnboarding } from "./smsOnboardingApi";
+import { smsOnboardingApi, platformSMSRegistrationApi, type SMSOnboarding } from "./smsOnboardingApi";
 vi.mock("./smsOnboardingApi", () => ({
-  smsOnboardingApi: {
+  platformSMSRegistrationApi: {
     get: vi.fn(),
     save: vi.fn(),
     review: vi.fn(),
     package: vi.fn(),
+  },
+  smsOnboardingApi: {
     consents: vi.fn(),
     recordConsent: vi.fn(),
   },
@@ -48,14 +50,14 @@ const record: SMSOnboarding = {
 };
 beforeEach(() => {
   vi.resetAllMocks();
-  vi.mocked(smsOnboardingApi.get).mockResolvedValue(record);
+  vi.mocked(platformSMSRegistrationApi.get).mockResolvedValue(record);
   vi.mocked(smsOnboardingApi.consents).mockResolvedValue([]);
 });
 afterEach(cleanup);
 describe("SMS onboarding", () => {
   it("explains purpose and next step without treating a configured sender as approval", async () => {
-    vi.mocked(smsOnboardingApi.get).mockResolvedValue({...record, connection: {...record.connection, status: "legacy_configured", sender_last4: "0001"}, fields: {...record.fields, legal_name: null}, blockers: ["legal_name_required", "provider_registration_required"]});
-    render(<SMSSetup onClose={vi.fn()} />);
+    vi.mocked(platformSMSRegistrationApi.get).mockResolvedValue({...record, connection: {...record.connection, status: "legacy_configured", sender_last4: "0001"}, fields: {...record.fields, legal_name: null}, blockers: ["legal_name_required", "provider_registration_required"]});
+    render(<SMSSetup tenantId="shop-a" shopName="Shop A" onClose={vi.fn()} />);
     await screen.findByText("Next: complete the registration draft");
     expect(screen.getByText(/does not submit to Twilio or turn on automatic messages/)).toBeVisible();
     expect(screen.getByText("1 required item left")).toBeVisible();
@@ -63,21 +65,21 @@ describe("SMS onboarding", () => {
     fireEvent.click(screen.getByRole("button", {name: "Registration status and number"}));
     expect(screen.getByText(/does not confirm approval for repair texting/)).toBeVisible();
     expect(screen.getByLabelText("Legal business name")).toHaveAttribute("aria-required", "true");
-    expect(smsOnboardingApi.review).not.toHaveBeenCalled();
+    expect(platformSMSRegistrationApi.review).not.toHaveBeenCalled();
   });
 
   it("saves tenant draft with version and requires saved draft for review", async () => {
-    vi.mocked(smsOnboardingApi.save).mockResolvedValue({
+    vi.mocked(platformSMSRegistrationApi.save).mockResolvedValue({
       ...record,
       version: 2,
       fields: { ...record.fields, trade_name: "Changed shop" },
     });
-    vi.mocked(smsOnboardingApi.review).mockResolvedValue({
+    vi.mocked(platformSMSRegistrationApi.review).mockResolvedValue({
       ...record,
       version: 3,
       status: "ready_for_review",
     });
-    render(<SMSSetup onClose={vi.fn()} />);
+    render(<SMSSetup tenantId="shop-a" shopName="Shop A" onClose={vi.fn()} />);
     const input = await screen.findByLabelText("Shop / trade name");
     fireEvent.change(input, { target: { value: "Changed shop" } });
     expect(
@@ -85,7 +87,8 @@ describe("SMS onboarding", () => {
     ).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
     await screen.findByText("Draft saved.");
-    expect(smsOnboardingApi.save).toHaveBeenCalledWith(
+    expect(platformSMSRegistrationApi.save).toHaveBeenCalledWith(
+      "shop-a",
       { ...record.fields, trade_name: "Changed shop" },
       1,
     );
@@ -93,22 +96,22 @@ describe("SMS onboarding", () => {
     await screen.findByText(
       "Prepared for review. Registration remains on hold.",
     );
-    expect(smsOnboardingApi.review).toHaveBeenCalledWith(2);
+    expect(platformSMSRegistrationApi.review).toHaveBeenCalledWith("shop-a", 2);
     expect(
       screen.queryByRole("button", { name: /submit to twilio|activate/i }),
     ).not.toBeInTheDocument();
   });
   it("keeps edits on failure and conflicts, then rebases only the version", async () => {
-    vi.mocked(smsOnboardingApi.save).mockRejectedValue({
+    vi.mocked(platformSMSRegistrationApi.save).mockRejectedValue({
       response: { status: 409 },
     });
-    render(<SMSSetup onClose={vi.fn()} />);
+    render(<SMSSetup tenantId="shop-a" shopName="Shop A" onClose={vi.fn()} />);
     const input = await screen.findByLabelText("Legal business name");
     fireEvent.change(input, { target: { value: "Unsaved legal name" } });
     fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
     await screen.findByRole("alert");
     expect(input).toHaveValue("Unsaved legal name");
-    vi.mocked(smsOnboardingApi.get).mockResolvedValue({
+    vi.mocked(platformSMSRegistrationApi.get).mockResolvedValue({
       ...record,
       version: 5,
     });
@@ -119,13 +122,14 @@ describe("SMS onboarding", () => {
     );
     await screen.findByText(/Latest version loaded/);
     expect(input).toHaveValue("Unsaved legal name");
-    vi.mocked(smsOnboardingApi.save).mockResolvedValue({
+    vi.mocked(platformSMSRegistrationApi.save).mockResolvedValue({
       ...record,
       version: 6,
     });
     fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
     await waitFor(() =>
-      expect(smsOnboardingApi.save).toHaveBeenLastCalledWith(
+      expect(platformSMSRegistrationApi.save).toHaveBeenLastCalledWith(
+        "shop-a",
         { ...record.fields, legal_name: "Unsaved legal name" },
         5,
       ),
@@ -133,14 +137,14 @@ describe("SMS onboarding", () => {
   });
   it("discards late request results after tenant scope unmount", async () => {
     let resolve!: (v: SMSOnboarding) => void;
-    vi.mocked(smsOnboardingApi.get).mockReturnValueOnce(
+    vi.mocked(platformSMSRegistrationApi.get).mockReturnValueOnce(
       new Promise((r) => {
         resolve = r;
       }),
     );
-    const { unmount } = render(<SMSSetup onClose={vi.fn()} />);
-    unmount();
-    render(<SMSSetup onClose={vi.fn()} />);
+    const { rerender } = render(<SMSSetup tenantId="shop-a" shopName="Shop A" onClose={vi.fn()} />);
+    rerender(<SMSSetup tenantId="shop-b" shopName="Shop B" onClose={vi.fn()} />);
+    expect(platformSMSRegistrationApi.get).toHaveBeenLastCalledWith("shop-b");
     await screen.findByDisplayValue("Shop A LLC");
     resolve({
       ...record,
