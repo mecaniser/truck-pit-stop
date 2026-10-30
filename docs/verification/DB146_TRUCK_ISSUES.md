@@ -29,3 +29,7 @@ Actual CUA fictional Day/Night1280desktop and390mobile accepted: no-RO create; e
 Read-only local post-browser retention:184 of186 prior tables byte-hash identical. Only migration version and ordinary user appearance preferences differ; four additive tables contain2fictional issues,2links(one ended),8events and8request receipts. Zero invoices; financial/RO/labor/parts/stock/time/provider source unchanged. Targeted independent Security GO also covers final navigation.
 
 Fresh production baseline captured with REPEATABLE READ READ ONLY at sole191:31source cohorts,26,315rows, digest302d8d8d244c6f27507055763bd35fe1da8c327f390fa51a337f864c13e46209. Private per-identity evidence under db146-release-20261030. No production C3 writes performed. Protected CI, release and actual production acceptance remain pending.
+
+## Reviewed integration
+
+Independent QA GO covers source, real PostgreSQL checks, actual local Day/Night desktop/mobile journeys and retention. Released main fd0a8a14 (exports/badge) integrated as08011ccb;82 focused C3/export integration checks and production build pass. Released communications main48058a8f then integrated as5662530f; C3 application/test/migration bytes unchanged and both board histories preserved. No migration join required: sole192 remains additive from191, all207 old migration files unchanged. Final integrated build/CI follows.
