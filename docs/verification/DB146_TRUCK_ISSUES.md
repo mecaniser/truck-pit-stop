@@ -1,6 +1,6 @@
 # DB-146 / C3 implementation receipt
 
-Status: In progress. Backend & Integrations accountable; Architecture contract owner. Branch `codex/c3-truck-issues-implementation`, base8b611ea2. [Contract](../contracts/db146-truck-issues.md), [merge compatibility](../contracts/db146-vehicle-merge-compatibility.md).
+Status: **Done — merged, deployed and production accepted, 2026-10-30.** Backend & Integrations accountable; Architecture contract owner. Earlier sections retain the implementation and gate history. Branch `codex/c3-truck-issues-implementation`, base8b611ea2. [Contract](../contracts/db146-truck-issues.md), [merge compatibility](../contracts/db146-vehicle-merge-compatibility.md).
 
 ## Runtime preflight, 2026-10-30
 
@@ -41,3 +41,30 @@ Final released-main integration5662530f production build passes. Independent int
 PR698 candidate97aed6f1, workflow41119909254: the existing workflow was manually dispatched after no automatic PR run appeared. Migration/backend/full backend/frontend critical-build/Playwright pass; full frontend reports15 failures across force-void and void-revision tests because their ThemeContext mock omits appearanceTokenRecord. The C3 dialog legitimately consumes the exported theme function. Correct the test mocks while retaining their existing mocked useTheme behavior; no production source correction or relaxed assertion. New exact-head CI is required before release.
 
 Correction verified: both mocks now preserve real ThemeContext exports and provide DEFAULT_APPEARANCE. All45 focused checks pass (13force-void,3void-revision,29C3), scoped lint passes. No production source or test assertion changed.
+
+## Protected merge and deployment
+
+Corrected candidate93c55d2d62941c667540c04630f158e234d49414 passed all seven jobs in41121811152, including the full frontend suite. PR698 normally squash-merged18255c03dac148a3326ca95d334cda03365139a6. Both trees equal891138ef3538ad19fb328cd90267fdd539134e04. Automatic Web7cb8095e-97fb-4401-9fac-485aa9e36960 started on that exact merge. Production acceptance remains pending. Owned local frontend95285/backend95302 stopped gracefully after exact cwd verification; no live local preview claim.
+
+## Final release acceptance — 2026-10-30
+
+PR [698](https://github.com/mecaniser/truck-pit-stop/pull/698) passed all seven protected checks in [41121811152](https://github.com/mecaniser/truck-pit-stop/actions/runs/41121811152) on `93c55d2d62941c667540c04630f158e234d49414`. Full frontend: 1,934 passed across 185 files. Full backend: 4,156 passed, 415 skipped. The initial failing run above is not counted as release success; the test-only mock correction passed fresh independent QA before the final run.
+
+Normal squash merge: `18255c03dac148a3326ca95d334cda03365139a6`. Checked and merged trees both equal `891138ef3538ad19fb328cd90267fdd539134e04`.
+
+| Release gate | Observed result |
+| --- | --- |
+| Automatic Web | `7cb8095e-97fb-4401-9fac-485aa9e36960`, SUCCESS at exact merge SHA |
+| Automatic Worker | `d22a85d7-81f1-4bb8-bdd6-8b7d8e868101`, SUCCESS at exact merge SHA |
+| Served frontend | `/build-version` matches exact merge; built at 2026-10-30T20:26:45.841Z |
+| Runtime | `/health/ready` database and Redis OK; sole migration `192_vehicle_issues` |
+| Fixed source retention | 31 cohorts / 26,315 existing rows unchanged; zero new rows in those cohorts |
+| Production C3 metadata | Issues, links, events and request receipts all remain zero after browser QA |
+
+Production acceptance used an actual signed-in NC owner and existing customer/truck and paid native visit. Day and Night at desktop 1280 and mobile 390 passed: compact Truck issues placement, separate existing RO recommendations, readable open priority/staff menus, blank date shown as Not scheduled, full inline mobile calendar and footer without horizontal overflow, required description validation, unsaved draft Keep editing and Discard. Existing RO placement also passed on desktop/mobile. No issue Save, state change or visit-link mutation was submitted in production. Mutation lifecycles, exact issue reuse, link/end/relink and return navigation were exercised with fictional local fixtures as recorded above. Day appearance and default viewport were restored.
+
+Deployed read-only handlers using existing actual identities returned admin 200, customer/fleet manager/mechanic/super admin 403 and foreign vehicle 404 under REPEATABLE READ READ ONLY with rollback. This is deployed-handler proof, not authenticated nonowner browser evidence. No existing driver/receptionist identity was available; the selected owner identity had no truck, while the actual signed-in NC owner browser supplied the positive owner acceptance. Automated role and tenant cases remain the full negative coverage.
+
+Private fixed-cohort baseline SHA-256: `302d8d8d244c6f27507055763bd35fe1da8c327f390fa51a337f864c13e46209`. Post-browser receipt SHA-256: `ff6d3f76d1dbf5d694d2954b54905f389d17cde91c3222b6e7228256a37b45eb`. The receipt digest changes with schema/receipt metadata; all fixed source row hashes match. Private identity-bearing receipts and screenshots remain outside Git.
+
+No financial, invoice, payment, settlement, credit, selling-price, stock, time, attendance, order-status, provider, outreach or collector changes were made for acceptance. The ETS importer remains held; Shop Work redesign remains separate. No unresolved C3 release gate remains. Tracker advances to 8/30 completed, with R3 next under its own contract.
