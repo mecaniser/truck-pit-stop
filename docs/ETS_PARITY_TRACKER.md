@@ -1,3 +1,7 @@
+> **C3 accepted — 2026-10-30:** PR698 / `18255c03` is merged, exact Web/Worker deployed and production Day/Night desktop/mobile accepted. All 26,315 fixed source rows unchanged; no production C3 or financial QA writes. [Final receipt](verification/DB146_TRUCK_ISSUES.md). Progress **8/30**; **R3 next**. Earlier handoff entries below are historical. Importer held; Shop Work redesign separate.
+
+> **C3 release — 2026-10-30:** PR698 merged18255c03 after all7 exact-head checks passed; automatic deployment/production acceptance pending. Progress7/30 until acceptance.
+
 > **C3 CI correction — 2026-10-30:** Initial full frontend CI exposed two incomplete theme mocks. Test-only correction passes45 focused checks and fresh independent QA; new exact-head CI remains required. Progress7/30.
 
 > **C3 review — 2026-10-30:** Implementation/local Day/Night desktop/mobile and independent QA/Security gates pass; protected CI/release/production acceptance remain. Progress7/30. No financial/source/importer changes.
@@ -18,7 +22,7 @@
 
 Last updated: 2026-10-30. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
 
-**Progress: 7/30 completed; 6/6 original selected outcomes completed. A2 is Done. C3 / DB-146 is current; 23 discoveries remain incomplete, including held B4.**
+**Progress: 8/30 completed; 6/6 original selected outcomes completed. A2 and C3 are Done. R3 is next; 22 discoveries remain incomplete, including held B4.**
 
 ## Approved delivery order
 
@@ -68,12 +72,12 @@ Dependencies: P1 precedes C1 parts-price defaults. M1 must retain existing PM/te
 
 
 - [ ] **R2 — Repeat or selectively copy a prior repair order/estimate** — Backlog; after the priority wave. Relative value/size: Medium / M. See audit for evidence and dependencies.
-- [ ] **R3 — Defer an existing operation into tracked recommended work** — Backlog; after the priority wave. Relative value/size: High / L. See audit for evidence and dependencies.
+- [ ] **R3 — Defer an existing operation into tracked recommended work** — Queued next; source discovery and a separate contract precede implementation. Relative value/size: High / L. See audit for evidence and dependencies.
 - [ ] **R4 — Signed authorization attached to the exact estimate revision** — Backlog; after the priority wave. Relative value/size: High / L. See audit for evidence and dependencies.
 - [ ] **R5 — Operation/issue findings with linked photos and a customer-ready report** — Backlog; after the priority wave. Relative value/size: Medium / L. See audit for evidence and dependencies.
 - [ ] **R6 — Structured arrival and handover details: parking, key location, arrival condition** — Backlog; after the priority wave. Relative value/size: Medium / S–M. See audit for evidence and dependencies.
 - [ ] **C2 — Customer groups with directory/report filters** — Backlog; after the priority wave. Relative value/size: Medium / M. See audit for evidence and dependencies.
-- [ ] **C3 — Truck issues and follow-up work recorded without opening an RO** — **In progress**, DB-146. Backend & Integrations accountable; Architecture contract frozen from current source. Standalone technical issue, staff owner/date and metadata-only visit reference; existing priced recommendation conversion excluded. Issue-history merge veto and vehicle-first locking are approved; actual PostgreSQL races and tenant integrity remain implementation gates. [Contract](contracts/db146-truck-issues.md).
+- [x] **C3 — Truck issues and follow-up work recorded without opening an RO** — **Done — merged, deployed and production accepted**, DB-146. Backend & Integrations accountable. Standalone issues, staff responsibility/date, exact-truck next-visit visibility and metadata-only existing-visit references; priced recommendation conversion remains separate. Independent QA/Security, real PostgreSQL races/retention, all seven protected checks, exact Web/Worker deployment and Day/Night desktop/mobile acceptance passed. No production QA issue or financial writes. [Contract](contracts/db146-truck-issues.md); [final receipt](verification/DB146_TRUCK_ISSUES.md).
 - [ ] **C4 — Customer payment terms, credit limits and review warnings** — Backlog; after the priority wave. Relative value/size: High / L. See audit for evidence and dependencies.
 - [ ] **S1 — Capacity-aware appointment and dispatch calendar** — Backlog; after the priority wave. Relative value/size: High / L. See audit for evidence and dependencies.
 - [ ] **S2 — Reusable fees: flat, percent, capped and quantity-based** — Backlog; after the priority wave. Relative value/size: High / M–L. See audit for evidence and dependencies.
@@ -129,4 +133,4 @@ R1/P1/C1/M1/B1/A1 are Done, with exact release receipts. A1 is available under S
 
 ## Next wave selection — 2026-10-29
 
-User selected A2 first, with Shop Work as its primary surface. C3, R3, A3 and S1 follow in the recommended sequence, with separate contracts and implementation items. This does not authorize financial/stock/source mutations or release the held B4 importer. A2 is Done; completed count is7/30. Continue C3 → R3 → A3 → S1 with separate contracts and gates.
+User selected A2 first, with Shop Work as its primary surface. C3, R3, A3 and S1 follow in the recommended sequence, with separate contracts and implementation items. This does not authorize financial/stock/source mutations or release the held B4 importer. A2 and C3 are Done; completed count is 8/30. Continue R3 → A3 → S1 with separate contracts and gates.
