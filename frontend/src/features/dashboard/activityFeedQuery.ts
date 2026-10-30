@@ -46,5 +46,7 @@ export function useActivityFeed(filters: ActivityFilters = {}) {
 
 /** The endpoint returns a page, not a total or an unread count. */
 export function activityCountLabel(data: ActivityFeedResponse | undefined, isError: boolean): string | null {
-  return !data || isError ? null : `${data.items.length}${data.has_more ? '+' : ''}`
+  if (!data || isError) return null
+  const count = data.items.length
+  return `${Math.min(count, 9)}${count > 9 || data.has_more ? '+' : ''}`
 }
