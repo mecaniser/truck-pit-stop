@@ -91,7 +91,7 @@ async def test_snapshot_hash_and_retail_privacy(client,db_session):
     def digest(v):return hashlib.sha256(json.dumps(v,sort_keys=True,separators=(',',':'),ensure_ascii=True).encode()).hexdigest()
     assert result['snapshot_id']==digest({k:result[k] for k in ('version','shop_id','customer_id','items')})
     row=result['items'][0];inv=row['invoice']
-    assert row['revision']==digest({k:v for k,v in row.items() if k!='revision'})
+    assert row['revision']==digest({k:v for k,v in row.items() if k not in ('revision','settlement')})
     assert inv['revision']==digest({k:v for k,v in inv.items() if k!='revision'})
     assert 'private' in response.headers['cache-control']
 

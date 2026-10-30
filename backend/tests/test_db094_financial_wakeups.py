@@ -115,7 +115,11 @@ async def test_revoked_key_pauses_delivery_and_unattributed_invoice_does_not_enq
     key=(await db_session.execute(select(FleetInvoiceApiKey))).scalars().first();key.revoked_at=datetime.now(timezone.utc)
     invoice=(await db_session.execute(select(Invoice))).scalars().first()
     invoice.billed_customer_id=None;await db_session.commit()
-    assert await enqueue_financial_wakeup(db_session,invoice=invoice,order=invoice.repair_order,kind='invoice_changed') is None
+    # Explicit async load: relationship identity-cache lifetime must not decide
+    # whether this test performs synchronous lazy I/O after commit.
+    from app.db.models.repair_order import RepairOrder
+    order=await db_session.get(RepairOrder,invoice.repair_order_id)
+    assert await enqueue_financial_wakeup(db_session,invoice=invoice,order=order,kind='invoice_changed') is None
     await db_session.rollback()
     result=await process_due_financial_wakeups(session_factory=async_sessionmaker(db_session.bind,expire_on_commit=False))
     await db_session.refresh(event)

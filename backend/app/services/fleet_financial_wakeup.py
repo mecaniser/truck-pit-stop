@@ -32,7 +32,7 @@ def destinations():
         raise ValueError('Fleet financial webhook configuration is invalid.') from None
 
 
-async def enqueue_financial_wakeup(db,*,invoice,order,kind):
+async def enqueue_financial_wakeup(db,*,invoice,order,kind,settlement_event=None):
     if kind not in {'invoice_finalized','invoice_changed','invoice_cancelled'}:raise ValueError('Invalid wakeup kind.')
     configured=destinations()
     if not configured:return None
@@ -57,6 +57,7 @@ async def enqueue_financial_wakeup(db,*,invoice,order,kind):
            'line_items':invoice.line_items_snapshot,
            'money':{field:str(getattr(invoice,field)) for field in
                     ('subtotal','shop_supplies_amount','service_fee_amount','tax_amount','discount_amount','total_amount')}}
+    if settlement_event is not None:state['settlement_event']=settlement_event
     revision=hashlib.sha256(json.dumps(state,sort_keys=True,separators=(',',':'),default=str).encode()).hexdigest()
     key=f'db094:{invoice.id}:{target}:{kind}:{revision}'
     existing=await db.scalar(select(ProviderOutboxEvent).where(ProviderOutboxEvent.tenant_id==invoice.tenant_id,ProviderOutboxEvent.event_type==EVENT,ProviderOutboxEvent.idempotency_key==key))
@@ -204,3 +205,17 @@ async def enqueue_order_financial_change(db,order):
     invoice=await db.scalar(select(Invoice).where(Invoice.repair_order_id==order.id,Invoice.tenant_id==order.tenant_id,Invoice.status!=InvoiceStatus.CANCELLED))
     if invoice is None:return None
     return await enqueue_financial_wakeup(db,invoice=invoice,order=order,kind='invoice_changed')
+
+
+async def enqueue_settlement_wakeup(db,settlement):
+    """Called by the transactional source ledger, never by a read endpoint."""
+    if not destinations():return None
+    from app.db.models.invoice import Invoice
+    from app.db.models.repair_order import RepairOrder
+    pair=(await db.execute(select(Invoice,RepairOrder).join(RepairOrder,RepairOrder.id==Invoice.repair_order_id).where(
+        Invoice.id==settlement.invoice_id,Invoice.tenant_id==settlement.tenant_id,
+        RepairOrder.tenant_id==settlement.tenant_id,RepairOrder.customer_id==settlement.customer_id))).one_or_none()
+    if pair is None:return None
+    invoice,order=pair
+    return await enqueue_financial_wakeup(db,invoice=invoice,order=order,kind='invoice_changed',
+        settlement_event={'settlement_id':str(settlement.id),'sequence':settlement.last_event_sequence})
