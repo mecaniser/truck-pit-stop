@@ -16,6 +16,12 @@ import useTenantBranding from '@/hooks/useTenantBranding'
 import { ShopSearchButton, ShopSearchProvider } from '@/features/global-search/ShopSearch'
 
 const STAFF_RAIL_STORAGE_KEY = 'db-staff-rail-expanded'
+const STAFF_NAV_CATEGORIES: Record<string, string> = {
+  '/dashboard': 'work',
+  '/dashboard/repair-orders': 'orders',
+  '/dashboard/customers': 'customers',
+  '/dashboard/garage': 'shop',
+}
 const CustomersPage = lazy(lazyRouteLoader(() => import('@/features/customers/CustomersPage')))
 const RepairOrdersPage = lazy(lazyRouteLoader(() => import('@/features/repair-orders/RepairOrdersPage')))
 const MyGaragePage = lazy(lazyRouteLoader(() => import('@/features/garage/MyGaragePage')))
@@ -282,6 +288,7 @@ export default function DashboardLayout() {
       key={link.to}
       to={link.to}
       aria-current={isActive(link.to, link.exact) ? 'page' : undefined}
+      data-nav-category={isNewStaffPresentation ? STAFF_NAV_CATEGORIES[link.to] : undefined}
       title={presentationVariant === 'new' ? link.label : undefined}
       className={`db-staff-primary-nav__link db-staff-primary-nav__link--${kind} text-sm font-medium transition-colors ${
         isActive(link.to, link.exact)
@@ -295,7 +302,11 @@ export default function DashboardLayout() {
       style={!isSuperAdmin && presentationVariant === 'legacy' && isActive(link.to, link.exact) ? { color: accentHex, borderColor: accentHex } : undefined}
     >
       <span className="inline-flex items-center gap-2">
-        {presentationVariant === 'new' && <link.icon className="h-4 w-4" aria-hidden="true" />}
+        {isNewStaffPresentation ? (
+          <span className="db-staff-nav__glyph" aria-hidden="true">
+            <link.icon className="h-4 w-4" />
+          </span>
+        ) : presentationVariant === 'new' ? <link.icon className="h-4 w-4" aria-hidden="true" /> : null}
         <span className="db-staff-primary-nav__label">{link.label}</span>
         {link.to === '/dashboard/messages' && unreadCount > 0 && (
           <span className="inline-flex min-w-[1.25rem] h-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-semibold leading-none text-white">
@@ -311,6 +322,7 @@ export default function DashboardLayout() {
     <div
       className={`db-staff-shell db-presentation-${presentationVariant} h-screen overflow-hidden ${isGarageUser ? 'bg-blueNoir-900' : ''}`}
       data-presentation={presentationVariant}
+      data-nav-style={isNewStaffPresentation ? 'machined' : undefined}
       data-appearance-mode={appearance.mode}
       data-appearance-density={appearance.density}
       data-appearance-font-size={appearance.font_size}
