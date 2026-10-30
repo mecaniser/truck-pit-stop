@@ -316,6 +316,29 @@ def disposition(row, prior, field="location"):
     return "unchanged" if unchanged else "update"
 
 
+def relevant_location_history(start):
+    """Keep every interval that can affect timestamped location disposition.
+
+    Unknown observed times remain relevant even when captured long ago: unlike
+    speed history, location disposition may recover an interval from a legacy
+    evidence note. Only known intervals strictly before start can be omitted.
+    """
+    return or_(
+        Snapshot.observed_at.is_(None),
+        and_(
+            Snapshot.observed_precision == "minute",
+            Snapshot.observed_at > start - timedelta(minutes=1),
+        ),
+        and_(
+            or_(
+                Snapshot.observed_precision.is_(None),
+                Snapshot.observed_precision == "second",
+            ),
+            Snapshot.observed_at >= start,
+        ),
+    )
+
+
 def relevant_speed_history(start):
     """Only intervals that can hold this observation count toward the bound.
 
@@ -553,22 +576,30 @@ async def prepare(db, rows, tenant_id, actor_id, company_label, company_id):
                 else end,
             ):
                 raise ValueError("Membership does not cover observation")
+        location_scope = [
+            Snapshot.tenant_id == tenant_id,
+            Snapshot.vehicle_id == vehicle.id,
+            Snapshot.fleet_membership_id == member.id,
+            Snapshot.deleted_at.is_(None),
+            *(
+                []
+                if row["precision"] == "unknown"
+                else [Snapshot.captured_at >= stamp - timedelta(days=30)]
+            ),
+            Snapshot.lat.is_not(None),
+            Snapshot.lng.is_not(None),
+        ]
         prior = (
             (
                 await db.execute(
                     select(Snapshot)
                     .where(
-                        Snapshot.tenant_id == tenant_id,
-                        Snapshot.vehicle_id == vehicle.id,
-                        Snapshot.fleet_membership_id == member.id,
-                        Snapshot.deleted_at.is_(None),
+                        *location_scope,
                         *(
                             []
                             if row["precision"] == "unknown"
-                            else [Snapshot.captured_at >= stamp - timedelta(days=30)]
+                            else [relevant_location_history(interval(row)[0])]
                         ),
-                        Snapshot.lat.is_not(None),
-                        Snapshot.lng.is_not(None),
                     )
                     .order_by(
                         Snapshot.observed_at.desc().nulls_last(),
@@ -580,10 +611,24 @@ async def prepare(db, rows, tenant_id, actor_id, company_label, company_id):
             .scalars()
             .all()
         )
+        # The canonical unknown-position fallback depends on ORIGINAL history
+        # emptiness, not emptiness after excluding irrelevant known intervals.
+        had_location_history = bool(prior)
+        if (
+            not prior
+            and row["precision"] != "unknown"
+            and vehicle.last_lat is not None
+            and vehicle.last_lng is not None
+        ):
+            had_location_history = (
+                await db.execute(
+                    select(select(Snapshot.id).where(*location_scope).exists())
+                )
+            ).scalar_one()
         location_history_overflow = len(prior) > 1000
         # Include canonical unknown-time position: never silently replace it.
         if (
-            (not prior or row["precision"] == "unknown")
+            (not had_location_history or row["precision"] == "unknown")
             and vehicle.last_lat is not None
             and vehicle.last_lng is not None
         ):
