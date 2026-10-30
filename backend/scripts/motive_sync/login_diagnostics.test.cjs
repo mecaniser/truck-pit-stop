@@ -7,9 +7,9 @@ const steps=['login_navigate','login_auth_redirect','login_email','login_passwor
 for(const file of ['collect.cjs','collect_trips.cjs','collect_fuel.cjs','../motive_health/collect.cjs','../motive_drivers/collect.cjs']) {
  test(`${file}: every login operation identifies its failure without leaking browser content`,async()=>{
   const source=fs.readFileSync(path.join(__dirname,file),'utf8');
-  const health=file==='../motive_health/collect.cjs';
-  const checkedSteps=health?steps.slice(2):steps;
-  const start=source.indexOf(health?"phase('login_email');":"phase('login_navigate');");
+  const delegated=file==='../motive_health/collect.cjs'||file==='collect.cjs';
+  const checkedSteps=delegated?steps.slice(2):steps;
+  const start=source.indexOf(delegated?"phase('login_email');":"phase('login_navigate');");
   const terminal="await page.waitForURL('https://app.gomotive.com/**',{timeout:45000});";
   const end=source.indexOf(terminal,start)+terminal.length;
   assert.ok(start>=0&&end>start);
@@ -22,7 +22,7 @@ for(const file of ['collect.cjs','collect_trips.cjs','collect_fuel.cjs','../moti
     assert.deepEqual(failureDiagnostic(error),{phase:checkedSteps[target],error_kind:'browser_timeout'});return true;
    });
   }
-  if(health)return; // Anonymous health navigation is exercised through its helper below.
+  if(delegated)return; // Anonymous navigation is exercised through each wrapper below.
   let filled=false;
   await assert.rejects(execute({goto:async()=>{},waitForURL:async()=>{},url:()=> 'https://unexpected.invalid/',locator:()=>{filled=true;}},phase,'https://app.gomotive.com'),error=>{
    assert.deepEqual(failureDiagnostic(error),{phase:'login_origin_check',error_kind:'unexpected_login_origin'});return true;
@@ -50,14 +50,16 @@ test('legacy preflight diagnostics expose static categories only',()=>{
  }
 });
 
-// Health moved only anonymous bootstrap into its bounded context orchestrator.
+// Health and sync delegate only anonymous bootstrap to the bounded orchestrator.
 // Preserve fault injection of both navigation boundaries and the origin guard.
 const {prepareHealthLogin}=require('../motive_health/login.cjs');
-for(const target of ['login_navigate','login_auth_redirect','login_origin_check'])test(`health bootstrap diagnostic ${target} stays static`,async()=>{
+const {prepareSyncLogin}=require('./sync_login.cjs');
+for(const [kind,prepare] of [['health',prepareHealthLogin],['sync',prepareSyncLogin]])
+for(const target of ['login_navigate','login_auth_redirect','login_origin_check'])test(`${kind} bootstrap diagnostic ${target} stays static`,async()=>{
  const error=Object.assign(new Error('password=PRIVATE cookie=PRIVATE https://secret/?token=PRIVATE'),{name:'TimeoutError'});
  const page={setDefaultTimeout(){},async goto(){if(target==='login_navigate')throw error;},async waitForURL(){if(target==='login_auth_redirect')throw error;},url:()=>target==='login_origin_check'?'https://unexpected.invalid/':'https://auth.gomotive.com/login'};
  const browser={async newContext(){return {async newPage(){return page;},async close(){}};}};
- await assert.rejects(prepareHealthLogin(browser,{phase,diagnostic(){}}),actual=>{
+ await assert.rejects(prepare(browser,{phase,diagnostic(){}}),actual=>{
   assert.deepEqual(failureDiagnostic(actual),{phase:target,error_kind:target==='login_origin_check'?'unexpected_login_origin':'browser_timeout'});return true;
  });
 });
