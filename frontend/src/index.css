@@ -6252,6 +6252,29 @@ html.customer-portal-active {
 .db-parts-workbench__check input { inline-size:18px; block-size:18px; accent-color:var(--parts-oxide); }
 .db-parts-workbench__part-cell { min-inline-size:0; overflow:hidden; }
 .db-parts-workbench__row-select { min-inline-size:0; inline-size:100%; min-block-size:62px; padding:.4rem .3rem; border:0; border-radius:0; background:transparent; color:var(--text-primary); text-align:left; }
+/* Soft hotspot: only the existing part button opens the inspector. */
+.db-parts-workbench__row-select { position:relative; isolation:isolate; display:flex; align-items:center; gap:.45rem; }
+.db-parts-workbench__row-select > .db-parts-workbench__identity { flex:1; }
+.db-parts-workbench__row-select::before { content:''; position:absolute; z-index:-1; inset:4px; border:1px solid color-mix(in srgb,currentColor 20%,transparent); border-radius:6px; background:color-mix(in srgb,currentColor 6%,transparent); opacity:0; pointer-events:none; transition:opacity 120ms ease; }
+.db-parts-workbench__row-cue { flex:0 0 1rem; inline-size:1rem; block-size:1rem; opacity:0; transform:translateX(-2px); pointer-events:none; transition:opacity 120ms ease,transform 120ms cubic-bezier(.23,1,.32,1); }
+.db-parts-workbench__row-select:focus-visible { outline:2px solid var(--parts-oxide); outline-offset:-3px; }
+.db-parts-workbench__row-select:focus-visible::before { opacity:1; transition:none; }
+.db-parts-workbench__row-select:focus-visible > .db-parts-workbench__row-cue { opacity:.8; transform:none; transition:none; }
+@media (hover:hover) and (pointer:fine) {
+  .db-parts-workbench__row-select:hover::before { opacity:1; }
+  .db-parts-workbench__row-select:hover > .db-parts-workbench__row-cue { opacity:.8; transform:translateX(0); }
+}
+@media (hover:none) {
+  .db-parts-workbench__row-cue { opacity:.6; transform:none; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .db-parts-workbench__row-select::before,.db-parts-workbench__row-cue { transition:none; }
+  .db-parts-workbench__row-cue { transform:none; }
+}
+@media (forced-colors:active) {
+  .db-parts-workbench__row-select:focus-visible { outline-color:Highlight; }
+}
+
 .db-parts-workbench__row > strong,.db-parts-workbench__row > span:not(.db-parts-workbench__check):not(.db-parts-workbench__part-cell) { min-inline-size:0; padding:.3rem; overflow:hidden; color:inherit; font-size:.72rem; text-overflow:ellipsis; white-space:nowrap; }
 .db-parts-workbench__row > strong { font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace); text-align:right; font-size:.75rem; font-variant-numeric:tabular-nums; }
 .db-parts-workbench__row .is-bin { font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace); font-style:normal; }
