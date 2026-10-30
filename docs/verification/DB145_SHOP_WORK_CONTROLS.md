@@ -45,3 +45,8 @@ Status: **Done**, Frontend & UX accountable. PR694 closes the mobile-width findi
 - Open menus: Day white with rgb20,36,58 text; Night rgb17,31,51 with rgb246,248,251 text. Accent count digits retain transparent backgrounds. Header touch controls and compact trigger footprint remain unchanged.
 - Original Day appearance, default viewport and unfiltered Active work restored. Private screenshots under `/tmp/db145-controls-release/`; no customer identifiers or screenshots published to GitHub. No financial records, invoices, order statuses, provider actions or importer/collector settings changed.
 - C3 contract work resumes separately. No Shop Work redesign is included.
+
+
+## Display cap refinement — 2026-10-30
+
+User requested9+ instead of20+. Display exact0–9, then9+ for more than9 known events; retain server-more indication and null for missing/error. The underlying20-event page, filters, pagination and count-on-arrival are unchanged. Focused20 tests cover threshold8/9/10/20 and existing cache/permission/page behavior; changed-source lint passes. Mandatory runtime: a2-closeout-count branchcodex/shop-work-count-cap base8b611ea2, frontend5173 PID81937/backend8000 PID81884 exact cwd; approved config symlinks, localhost truckpitstop_db145_a2 sole191/0invoices, direct/proxy DB/Redis ready. Actual component badge9+ verified at1280/390 Day/Night with fictional data; harness removed. Protected CI/release/production acceptance pending. No financial/source/importer changes.
