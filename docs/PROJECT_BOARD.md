@@ -2845,3 +2845,6 @@ DB-147 motion correction (2026-10-30), Frontend & UX: normalized marker transfor
 
 
 DB-147 painted-marker QA correction: user screenshots exposed the shared marker being covered by selected row backgrounds. Raised marker stacking to z-index1; actual screenshot pixels now match icon RGB for all4 categories in expanded and compact rails. Motion regression passes. Prior CSS-value-only visibility acceptance was insufficient and is superseded. Local review only; Inventory excluded; no deployment.
+
+
+DB-147 category marker / SHIPPING (2026-10-30), Frontend & UX: Product accepted the painted-visibility and slide correction and authorized production. Candidate integrates current main including PR708. Local pixel checks confirm all four category colors actually paint in expanded/compact states; motion, rapid retarget and accessibility checks pass. Inventory API warning remains explicitly out of scope. Protected PR and production acceptance pending.
