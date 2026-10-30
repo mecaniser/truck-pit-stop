@@ -35,3 +35,9 @@ Fresh production baseline captured with REPEATABLE READ READ ONLY at sole191:31s
 Independent QA GO covers source, real PostgreSQL checks, actual local Day/Night desktop/mobile journeys and retention. Released main fd0a8a14 (exports/badge) integrated as08011ccb;82 focused C3/export integration checks and production build pass. Released communications main48058a8f then integrated as5662530f; C3 application/test/migration bytes unchanged and both board histories preserved. No migration join required: sole192 remains additive from191, all207 old migration files unchanged. Final integrated build/CI follows.
 
 Final released-main integration5662530f production build passes. Independent integration QA confirms all incoming released files retained, reviewed C3 application/test/migration blobs unchanged. Final source candidate includes documentation-only receipt updates. Runtime integrated08011ccb frontend95285/backend95302 exact cwd, same isolated192 database, direct/proxy readiness and actual Night desktop issue rendering verified; later communications integration is source-disjoint and final-build checked.
+
+## Initial CI correction
+
+PR698 candidate97aed6f1, workflow41119909254: the existing workflow was manually dispatched after no automatic PR run appeared. Migration/backend/full backend/frontend critical-build/Playwright pass; full frontend reports15 failures across force-void and void-revision tests because their ThemeContext mock omits appearanceTokenRecord. The C3 dialog legitimately consumes the exported theme function. Correct the test mocks while retaining their existing mocked useTheme behavior; no production source correction or relaxed assertion. New exact-head CI is required before release.
+
+Correction verified: both mocks now preserve real ThemeContext exports and provide DEFAULT_APPEARANCE. All45 focused checks pass (13force-void,3void-revision,29C3), scoped lint passes. No production source or test assertion changed.

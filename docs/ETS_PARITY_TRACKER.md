@@ -1,3 +1,5 @@
+> **C3 CI correction — 2026-10-30:** Initial full frontend CI exposed two incomplete theme mocks. Test-only correction passes45 focused checks and fresh independent QA; new exact-head CI remains required. Progress7/30.
+
 > **C3 review — 2026-10-30:** Implementation/local Day/Night desktop/mobile and independent QA/Security gates pass; protected CI/release/production acceptance remain. Progress7/30. No financial/source/importer changes.
 
 > **Implementation intake — 2026-10-30:** C3 / DB-146 implementation is active on `codex/c3-truck-issues-implementation` after finalized contract PR688. Backend owns metadata APIs/migration; Frontend owns compact truck/RO panels. Fresh independent QA/Security and release acceptance remain pending. Isolated fictional local fixtures only; importer held, Shop Work redesign separate, no production financial mutations. Progress remains7/30.
