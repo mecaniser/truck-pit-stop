@@ -53,6 +53,19 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe("SMS onboarding", () => {
+  it("explains purpose and next step without treating a configured sender as approval", async () => {
+    vi.mocked(smsOnboardingApi.get).mockResolvedValue({...record, connection: {...record.connection, status: "legacy_configured", sender_last4: "0001"}, fields: {...record.fields, legal_name: null}, blockers: ["legal_name_required", "provider_registration_required"]});
+    render(<SMSSetup onClose={vi.fn()} />);
+    await screen.findByText("Next: complete the registration draft");
+    expect(screen.getByText(/does not submit to Twilio or turn on automatic messages/)).toBeVisible();
+    expect(screen.getByText("1 required item left")).toBeVisible();
+    expect(screen.queryByText("legal name required", {exact: false})).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", {name: "Registration status and number"}));
+    expect(screen.getByText(/does not confirm approval for repair texting/)).toBeVisible();
+    expect(screen.getByLabelText("Legal business name")).toHaveAttribute("aria-required", "true");
+    expect(smsOnboardingApi.review).not.toHaveBeenCalled();
+  });
+
   it("saves tenant draft with version and requires saved draft for review", async () => {
     vi.mocked(smsOnboardingApi.save).mockResolvedValue({
       ...record,

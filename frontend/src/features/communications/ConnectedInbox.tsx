@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import api from "../../lib/api";
 import { useAuthStore } from "../../stores/authStore";
 import CommunicationsPreview from "./CommunicationsPreview";
-import SMSSetup from "./SMSSetup";
+import MessageSettings from "./MessageSettings";
 import InboxLoading from "./InboxLoading";
 import {
   createIntent,
@@ -338,13 +338,6 @@ function InboxContent({ embedded, onUnreadCountChange }: InboxProps) {
     }
   }
   if (loginRequired) return <InboxLogin onLogin={initialize} />;
-  if (showSetup && bootstrap && canSetup)
-    return (
-      <SMSSetup
-        key={`${sessionEpoch}:${bootstrap.tenant_id}:${bootstrap.user_id}`}
-        onClose={() => setShowSetup(false)}
-      />
-    );
   if (loading) return <InboxLoading />;
   if (!bootstrap || !rows.length)
     return (
@@ -353,10 +346,14 @@ function InboxContent({ embedded, onUnreadCountChange }: InboxProps) {
         <p>
           {error || "No conversations yet. Incoming SMS conversations will appear here."}
         </p>
-        {!loading && bootstrap && canSetup && (
+        {!loading && bootstrap && (
           <button className="subtle-button" onClick={() => setShowSetup(true)}>
-            SMS setup
+            Settings
           </button>
+        )}
+        {showSetup && bootstrap && (
+          <MessageSettings canSetupSMS={canSetup} channels={bootstrap.channels} deliveryMode={bootstrap.delivery_mode}
+            onClose={() => setShowSetup(false)} />
         )}
         {!loading && (
           <button className="primary-button" onClick={() => void initialize()}>
@@ -372,7 +369,7 @@ function InboxContent({ embedded, onUnreadCountChange }: InboxProps) {
         embedded,
         canManageCustomerContext: !!user && ["garage_owner", "garage_admin", "receptionist"].includes(user.role),
         rows,
-        onSMSSetup: canSetup ? () => setShowSetup(true) : undefined,
+        canSetupSMS: canSetup,
         searchIds,
         onSearch,
         tenantId: bootstrap.tenant_id,
