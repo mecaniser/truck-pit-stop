@@ -40,8 +40,6 @@ export default function ConnectedInbox({
 function InboxContent({ embedded, onUnreadCountChange }: InboxProps) {
   const sessionEpoch = useAuthStore((state) => state.authSessionEpoch);
   const user = useAuthStore((state) => state.user);
-  const canSetup =
-    !!user && ["garage_owner", "garage_admin"].includes(user.role);
   const [showSetup, setShowSetup] = useState(false);
   const [searchIds, setSearchIds] = useState<string[] | null>(null);
   const searchGeneration = useRef(0);
@@ -352,7 +350,7 @@ function InboxContent({ embedded, onUnreadCountChange }: InboxProps) {
           </button>
         )}
         {showSetup && bootstrap && (
-          <MessageSettings canSetupSMS={canSetup} channels={bootstrap.channels} deliveryMode={bootstrap.delivery_mode}
+          <MessageSettings channels={bootstrap.channels} deliveryMode={bootstrap.delivery_mode}
             onClose={() => setShowSetup(false)} />
         )}
         {!loading && (
@@ -369,7 +367,6 @@ function InboxContent({ embedded, onUnreadCountChange }: InboxProps) {
         embedded,
         canManageCustomerContext: !!user && ["garage_owner", "garage_admin", "receptionist"].includes(user.role),
         rows,
-        canSetupSMS: canSetup,
         searchIds,
         onSearch,
         tenantId: bootstrap.tenant_id,

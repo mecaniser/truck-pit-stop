@@ -1,4 +1,4 @@
-"""Tenant-owned review drafts. This module never contacts a provider."""
+"""Shop-scoped, platform-managed review drafts. This module never contacts a provider."""
 from datetime import datetime, timezone
 import re
 import hashlib
@@ -6,20 +6,12 @@ from sqlalchemy import select, text
 from fastapi import HTTPException
 from app.db.models.messaging_business import MessagingBusiness, TenantSMSBinding, SMSConsentEvidence, SMSConfigurationAudit
 from app.db.models.tenant import Tenant
-from app.db.models.user import UserRole
 from app.db.models.customer import Customer
-from app.services.communications_service import authorize, fail
+from app.services.communications_service import fail
 from app.services.messaging_service import _normalize_for_twilio
 
 DRAFT_FIELDS = ('legal_name','trade_name','website_url','support_email','support_phone','consent_source_url','privacy_url','terms_url','representative_name','representative_email','message_description','sample_messages')
 REQUIRED = ('legal_name','trade_name','website_url','support_email','consent_source_url','privacy_url','terms_url','representative_name','representative_email','message_description','sample_messages')
-
-
-async def owner_tenant(db, user):
-    tenant = await authorize(db,user)
-    if user.role not in {UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN}:
-        fail('forbidden','Shop owner or administrator access required.',403)
-    return tenant
 
 
 async def draft(db, tenant_id, *, lock=False):
