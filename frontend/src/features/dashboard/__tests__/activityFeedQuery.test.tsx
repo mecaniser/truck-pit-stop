@@ -52,6 +52,10 @@ describe('Shop Work activity summary', () => {
     await waitFor(() => expect(hook.result.current.isSuccess).toBe(true))
     expect(hook.result.current.data?.items).toHaveLength(0)
   })
+  it.each([[8, false, '8'], [9, false, '9'], [9, true, '9+'], [10, false, '9+'], [20, true, '9+']])('caps %s events with more=%s as %s', (count, more, label) => {
+    const items = Array.from({ length: count as number }, (_, index) => ({ id: `${index}`, event_type: 'order_created', label: 'Created', occurred_at: '2026-10-30T12:00:00Z' }))
+    expect(activityCountLabel({ ...page, items, has_more: more as boolean }, false)).toBe(label)
+  })
   it('distinguishes no results from loading or failure', () => {
     expect(activityCountLabel(undefined, false)).toBeNull()
     expect(activityCountLabel({ ...page, items: [], has_more: false }, false)).toBe('0')
