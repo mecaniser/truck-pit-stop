@@ -32,3 +32,16 @@ PR692 all seven checks41111029819 passed on40d8911c. Normal squash merge19900b7e
 Production acceptance found a narrow Activity staff trigger forced its open menu to approximately90px, splitting names across lines. This is a visual gate failure, not a data defect. Focused follow-up `codex/shop-work-menu-width` gives only the open menu a viewport-bounded200px minimum. Trigger footprint remains unchanged. No new application logic, data, API, dependency or migration change.
 
 Follow-up runtime aligned on2026-10-30: frontend5173 PID71845/backend8000 PID71717 exact a2-closeout-count source; localhost truckpitstop_db145_a2, sole191 and0invoices unchanged; direct/proxy DB/Redis ready. Real ShopWorkSelect component with fictional staff names verified Day/Night1280/390: menu200px, names legible, within viewport, keyboard Escape retained. Temporary harness removed. All14 WIP component tests and TypeScript/production build pass; CSS-only change has no changed TypeScript lint surface. Owned local servers stopped after exact-PID/cwd checks. Production timing/category menus and accent digits also pass Night1280/390; Day restored. Follow-up CI/deployment and actual full Day/Night production acceptance remain pending; no Done claim.
+
+
+## Final production acceptance — 2026-10-30
+
+Status: **Done**, Frontend & UX accountable. PR694 closes the mobile-width finding from PR692.
+
+- PR694 all seven checks41113337592 SUCCESS on `a7f1efc47f40f58c82fe34b2911eee62b30a73f7`; normal squash merge `ce473b88d221ef153cbe3dc5a2f721917cbb1f13`. Checked/merged trees both `35005fa951968cd0eaed450caef7dbc211ff264f`.
+- Automatic Web deployment `f14a49a1-32a2-469a-8f94-e41019a2d7df` SUCCESS. Public build matches ce473b88; production database/Redis readiness OK.
+- Authenticated production at1280×900 and390×844 in Day/Night: Activity20+ visible on fresh arrival before selecting Activity; Closeout1 remains separate. Activity filters can return no matches without changing the tab summary. The number is a capped recent page count, not an exact all-time or unread total.
+- Timing/sort selection, keyboard End/Enter, Escape and focus return, nested Filters persistence and outside dismissal pass. Mobile category menu scrolls within320px and stays inside viewport. Activity staff/type menus now200px minimum: names remain readable, right edges228/328 at390px, document width390. No horizontal overflow.
+- Open menus: Day white with rgb20,36,58 text; Night rgb17,31,51 with rgb246,248,251 text. Accent count digits retain transparent backgrounds. Header touch controls and compact trigger footprint remain unchanged.
+- Original Day appearance, default viewport and unfiltered Active work restored. Private screenshots under `/tmp/db145-controls-release/`; no customer identifiers or screenshots published to GitHub. No financial records, invoices, order statuses, provider actions or importer/collector settings changed.
+- C3 contract work resumes separately. No Shop Work redesign is included.
