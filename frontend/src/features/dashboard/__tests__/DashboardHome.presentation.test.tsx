@@ -158,7 +158,7 @@ describe('DashboardHome DB-035 presentation boundary', () => {
 
   it('shows capped Activity count before opening the feed and refreshes it with Shop Work', () => {
     render(<DashboardHome />)
-    expect(screen.getByRole('button', { name: 'Activity 20+', exact: true })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Activity 9+', exact: true })).toBeInTheDocument()
     expect(screen.queryByText('Activity surface')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Refresh Shop Work/ }))
     expect(testState.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['activity-feed'] })
