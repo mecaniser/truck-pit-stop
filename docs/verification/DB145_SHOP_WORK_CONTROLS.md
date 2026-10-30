@@ -27,4 +27,8 @@ Initial run41108481638 passed protected checks and browser smoke, but the inform
 
 ## Release
 
-Pending protected CI, normal merge, automatic Web deployment and signed-in production changed-journey acceptance. No Done claim before those gates.
+PR692 all seven checks41111029819 passed on40d8911c. Normal squash merge19900b7e; checked/merged tree d30382af8b5b947a253d0f4005c79866184ef4e4. Automatic Web825850fd-6919-43b9-a234-08255c3035ba SUCCESS; public build exact and DB/Redis ready. Authenticated production confirms Activity20+ on arrival before click, stable count while filters yield no matches, retained Closeout1, Day desktop timing/sort keyboard/Escape/focus/outside behavior and390px category menu bounds (320px maximum height, no horizontal overflow).
+
+Production acceptance found a narrow Activity staff trigger forced its open menu to approximately90px, splitting names across lines. This is a visual gate failure, not a data defect. Focused follow-up `codex/shop-work-menu-width` gives only the open menu a viewport-bounded200px minimum. Trigger footprint remains unchanged. No new application logic, data, API, dependency or migration change.
+
+Follow-up runtime aligned on2026-10-30: frontend5173 PID71845/backend8000 PID71717 exact a2-closeout-count source; localhost truckpitstop_db145_a2, sole191 and0invoices unchanged; direct/proxy DB/Redis ready. Real ShopWorkSelect component with fictional staff names verified Day/Night1280/390: menu200px, names legible, within viewport, keyboard Escape retained. Temporary harness removed. All14 WIP component tests and TypeScript/production build pass; CSS-only change has no changed TypeScript lint surface. Owned local servers stopped after exact-PID/cwd checks. Production timing/category menus and accent digits also pass Night1280/390; Day restored. Follow-up CI/deployment and actual full Day/Night production acceptance remain pending; no Done claim.
