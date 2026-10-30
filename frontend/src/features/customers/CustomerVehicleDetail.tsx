@@ -10,6 +10,8 @@ import { ExternalServiceHistory } from '@/features/external-services/ExternalSer
 import VehicleHistoryExport from './VehicleHistoryExport'
 import './customer-workspace.css'
 import MaintenanceSection from '@/features/maintenance/MaintenanceSection'
+import VehicleIssuesPanel from '@/features/vehicle-issues/VehicleIssuesPanel'
+import RecommendedWorkPanel from '@/features/repair-orders/RecommendedWorkPanel'
 import { isPricingScopeCurrent, usePricingScope } from '@/features/parts-pricing/usePricingScope'
 
 type Props = { customer: Customer; vehicle: Vehicle; onOpenOrder: (order: RepairOrder) => void; onCreateOrder?: () => void; createOrderButtonRef?: Ref<HTMLButtonElement> }
@@ -82,7 +84,9 @@ function VehicleRecord({ customer, vehicle, onOpenOrder, onCreateOrder, createOr
     </dl>
     {vehicle.notes && <div className="db-customer-record__notes"><h3>Notes</h3><p className="whitespace-pre-wrap">{vehicle.notes}</p></div>}
     <MaintenanceSection vehicleId={vehicle.id} customerId={customer.id} channel="shop" onOpenOrder={id => void openMaintenanceOrder(id)} />
-    {maintenanceOpenError && <p role="alert">Could not open maintenance work. Try Open work again.</p>}
+    {maintenanceOpenError && <p role="alert">Could not open this visit. Try again.</p>}
+    <VehicleIssuesPanel vehicleId={vehicle.id} customerId={customer.id} />
+    <RecommendedWorkPanel vehicleId={vehicle.id} customerId={customer.id} canConvert={false} noCurrentOrder />
     <section aria-label="Vehicle repair history">
       <h3>Repair history{history.data && !history.isError && !searchPending ? ` (${history.data.total})` : ''}</h3>
       <div className="db-vehicle-history-filters">

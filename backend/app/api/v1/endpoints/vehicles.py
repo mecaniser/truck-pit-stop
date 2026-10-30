@@ -96,6 +96,8 @@ async def preview_vehicle_merge(
             db, current_user.tenant_id, vehicle_id, duplicate_vehicle_id
         )
         match_basis, match_value = await validate_merge_pair(db, canonical, duplicate)
+        from app.services.vehicle_issues import guard_vehicle_merge as guard_issue_history
+        await guard_issue_history(db, canonical, duplicate)
     except VehicleMergeError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     warnings = [

@@ -340,6 +340,8 @@ async def merge_vehicles(
         raise VehicleMergeError("Confirm the matching unit number before merging")
     from app.services.maintenance import guard_vehicle_merge
     await guard_vehicle_merge(db, canonical, duplicate)
+    from app.services.vehicle_issues import guard_vehicle_merge as guard_issue_history
+    await guard_issue_history(db, canonical, duplicate)
     now = datetime.now(timezone.utc)
     before = {
         "canonical": {key: str(value) if isinstance(value, UUID) else value for key, value in (await vehicle_merge_summary(db, canonical)).items()},

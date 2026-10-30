@@ -55,6 +55,8 @@ import PriceBuilderPanel from './PriceBuilderPanel'
 import { ImportedBillingDetails } from './ImportedBillingDetails'
 import { importedMoney, useImportedBilling } from './importedBilling'
 import RecommendedWorkPanel from './RecommendedWorkPanel'
+import VehicleIssuesPanel from '@/features/vehicle-issues/VehicleIssuesPanel'
+import { readTruckIssueReturn } from '@/features/vehicle-issues/navigation'
 import { recommendationErrorMessage } from './recommendationConversion'
 import RepairOrdersLedger, { type RepairOrdersLedgerRow } from './RepairOrdersLedger'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
@@ -834,7 +836,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   })
 
   const closeDetail = () => {
+    const issueOrigin = readTruckIssueReturn(location.state, JSON.stringify([currentUser?.tenant_id, currentUser?.id, currentUser?.role, authSessionEpoch]), searchParams.get('selected'))
     clearDetailState()
+    if (issueOrigin) {
+      navigate({ pathname: issueOrigin.pathname, search: issueOrigin.search }, { replace: true, state: { truckIssueRestore: issueOrigin } })
+      return
+    }
     if (!searchParams.get('selected')) return
     // Customer/history drill-ins can leave another selected order behind us in
     // browser history. Dismiss the record explicitly, preserving this queue's
@@ -4852,7 +4859,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     workspaceNotice={recoveryInPriceBuilder ? pricingNotice : null}
                     focusedOperationId={searchParams.get('operation')}
                     focusedRecommendationId={searchParams.get('recommendation')}
-                    recommendedWorkPanel={(context) => <RecommendedWorkPanel vehicleId={selectedOrder.vehicle_id} contextOrderId={selectedOrder.id} {...context} />}
+                    recommendedWorkPanel={(context) => <><VehicleIssuesPanel vehicleId={selectedOrder.vehicle_id} contextOrderId={selectedOrder.id} /><RecommendedWorkPanel vehicleId={selectedOrder.vehicle_id} contextOrderId={selectedOrder.id} {...context} /></>}
                     orderId={selectedOrder.id}
                     workflowInfo={orderDetail ?? selectedOrder}
                     workHoldOrder={orderDetail ?? selectedOrder}
@@ -5061,7 +5068,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 )}
 
                 {!priceBuilderOwnsShell && (
-                  <RecommendedWorkPanel vehicleId={selectedOrder.vehicle_id} contextOrderId={selectedOrder.id} />
+                  <><VehicleIssuesPanel vehicleId={selectedOrder.vehicle_id} contextOrderId={selectedOrder.id} /><RecommendedWorkPanel vehicleId={selectedOrder.vehicle_id} contextOrderId={selectedOrder.id} /></>
                 )}
 
                 {showLaborBreakdown && !priceBuilderOwnsShell && (

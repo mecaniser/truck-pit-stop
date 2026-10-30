@@ -41,6 +41,14 @@ beforeEach(() => {
 afterEach(() => vi.clearAllMocks())
 
 describe('truck recommendation continuity', () => {
+  it('labels customer truck recommendations without implying a current RO or enabling conversion', async () => {
+    mocks.get.mockResolvedValueOnce(page([]))
+    setup({ vehicleId: 'truck-a', customerId: 'customer-a', noCurrentOrder: true, canConvert: false })
+    expect(await screen.findByText('No open recommendations from repair orders.')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Recommendations from repair orders' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: /add|convert|resolve|delete/i })).not.toBeInTheDocument()
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
   it('sends all context filters and cancellation signal, renders reduced work and navigates to the source', async () => {
     const { client } = setup()
     expect(await screen.findByText('Inspect left rear seal')).toBeInTheDocument()

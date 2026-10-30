@@ -1,0 +1,50 @@
+.db-truck-issues { min-width: 0; width: 100%; padding: 12px 0; border-top: 1px solid var(--workspace-border, #d9e2ec); color: var(--workspace-text, #14243a); }
+.db-truck-issues__header, .db-truck-issues__controls, .db-truck-issues__paging, .db-issue-dialog__actions, .db-issue-dialog__panel > header { display: flex; align-items: center; gap: 8px; }
+.db-truck-issues__header { justify-content: space-between; flex-wrap: wrap; }
+.db-truck-issues h3, .db-issue-dialog h2 { margin: 0; color: var(--workspace-text, #14243a) !important; font-size: 14px; font-weight: 650; }
+.db-truck-issues button, .db-issue-dialog button, .db-issue-dialog a { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 34px; border: 1px solid var(--workspace-border, #d9e2ec); border-radius: 7px; padding: 5px 8px; color: var(--workspace-text, #14243a); background: var(--surface-overlay, #fff); font-size: 12px; white-space: nowrap; }
+.db-truck-issues button svg, .db-issue-dialog button svg { flex-shrink: 0; }
+.db-truck-issues button:focus-visible, .db-issue-dialog button:focus-visible, .db-issue-dialog a:focus-visible, .db-issue-dialog textarea:focus-visible { outline: 2px solid var(--personal-accent-600, #0369a1); outline-offset: 2px; }
+.db-truck-issues button:disabled, .db-issue-dialog button:disabled { cursor: not-allowed; opacity: .5; }
+.db-truck-issues__controls .db-work-select { min-height: 34px; max-width: 112px; font-size: 12px; }
+.db-truck-issues .db-truck-issues__icon, .db-issue-dialog .db-truck-issues__icon { padding: 6px; }
+.db-truck-issues p, .db-issue-dialog p { margin: 8px 0; font-size: 13px; color: var(--workspace-muted, #52657b); overflow-wrap: anywhere; }
+.db-truck-issues__list { margin: 4px 0 0; padding: 0; list-style: none; }
+.db-truck-issues__list > li + li { border-top: 1px solid var(--workspace-border, #d9e2ec); }
+.db-truck-issues .db-truck-issues__row { display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 4px; width: 100%; border: 0; border-radius: 4px; padding: 9px 4px; white-space: normal; text-align: left; background: transparent; }
+.db-truck-issues__row:hover { background: var(--surface-raised, #f6f8fb); }
+.db-truck-issues__description { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; font-size: 13px; font-weight: 600; }
+.db-truck-issues__metadata { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--workspace-muted, #52657b); overflow-wrap: anywhere; }
+.db-truck-issues__metadata > strong { text-transform: capitalize; color: var(--workspace-text, #14243a) !important; }
+.db-truck-issues__metadata > strong[data-priority="urgent"], .db-truck-issues__metadata > span[data-follow-up="overdue"] { text-decoration: underline; text-underline-offset: 3px; font-weight: 700; }
+.db-truck-issues__muted { font-size: 12px; color: var(--workspace-muted, #52657b); }
+.db-truck-issues__paging { justify-content: flex-end; margin-top: 8px; font-size: 12px; }
+.db-truck-issues__paging > span { margin-right: auto; }
+.db-issue-dialog { position: relative; z-index: 100; color-scheme: light; font-family: var(--font-body, inherit); }
+.db-issue-dialog[data-appearance-mode="dark"] { --workspace-text: #f6f8fb; --workspace-muted: #b8c5d5; --workspace-border: #40536c; --surface-raised: #0d1a2a; --surface-overlay: #111f33; --text-primary: #f6f8fb; --text-secondary: #9fb0c5; --border-subtle: rgba(148, 163, 184, .2); color-scheme: dark; }
+.db-issue-dialog[data-appearance-mode="high_contrast"] { --workspace-text: #fff; --workspace-muted: #e5e7eb; --workspace-border: #fff; --surface-raised: #080808; --surface-overlay: #000; --text-primary: #fff; --text-secondary: #e5e7eb; --border-subtle: #fff; color-scheme: dark; }
+.db-issue-dialog[data-appearance-mode="light"] { --workspace-text: #14243a; --workspace-muted: #52657b; --workspace-border: #d9e2ec; --surface-raised: #f6f8fb; --surface-overlay: #fff; --text-primary: #101827; --text-secondary: #526176; --border-subtle: rgba(19, 35, 61, .17); color-scheme: light; }
+.db-issue-dialog__backdrop { position: fixed; inset: 0; background: rgb(8 17 30 / .52); }
+.db-issue-dialog__position { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; overflow-y: auto; }
+.db-issue-dialog__panel { width: 100%; max-width: 560px; max-height: calc(100dvh - 32px); overflow-y: auto; padding: 16px; border: 1px solid var(--workspace-border, #d9e2ec); border-radius: 12px; background: var(--surface-overlay, #fff); color: var(--workspace-text, #14243a); box-shadow: 0 16px 64px #0004; }
+.db-issue-dialog__panel > header { justify-content: space-between; margin-bottom: 12px; }
+.db-issue-dialog .db-truck-issues__full-description { white-space: pre-wrap; color: var(--workspace-text, #14243a); }
+.db-issue-dialog fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.db-issue-dialog label { display: grid; min-width: 0; gap: 5px; font-size: 12px; }
+.db-issue-dialog textarea { width: 100%; resize: vertical; min-height: 80px; padding: 8px; border: 1px solid var(--workspace-border, #d9e2ec); border-radius: 7px; background: var(--surface-overlay, #fff); color: var(--workspace-text, #14243a); font-size: 14px; }
+.db-issue-dialog__fields { display: grid; grid-template-columns: 1fr 1.5fr; align-items: start; gap: 12px; margin-top: 12px; }
+.db-issue-dialog__fields .db-work-select { width: 100%; justify-content: space-between; text-align: left; }
+/* Inside the bounded issue dialog the calendar expands the scrollable form;
+   an absolute popup would be clipped below the follow-up field on phones. */
+.db-issue-dialog .db-datepicker__calendar { position: static; width: 100%; min-width: 0; max-width: 100%; margin-top: 4px; box-shadow: none; }
+.db-issue-dialog__fields > .db-datepicker { grid-column: 1 / -1; }
+.db-issue-dialog__actions { flex-wrap: wrap; justify-content: flex-end; margin-top: 16px; }
+.db-issue-dialog button.db-issue-dialog__primary { border-color: var(--personal-accent-600, #0369a1); background: var(--personal-accent-600, #0369a1); color: #fff; font-weight: 600; }
+.db-issue-dialog [role="alert"], .db-truck-issues [role="alert"] { font-weight: 600; }
+@media (max-width: 680px) {
+  .db-truck-issues button, .db-issue-dialog button, .db-issue-dialog a, .db-truck-issues__controls .db-work-select { min-height: 44px; }
+  .db-truck-issues__controls { gap: 5px; }
+  .db-issue-dialog__position { padding: 10px; }
+  .db-issue-dialog__panel { padding: 12px; max-height: calc(100dvh - 20px); }
+  .db-issue-dialog__fields { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+}
