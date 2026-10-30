@@ -55,3 +55,25 @@ Browser extension actions timed out; switched to the in-app browser for successf
 ## Release status
 
 Local implementation and synthetic acceptance complete at implementation commit `31eb3dc144cba9c37b98a5084dbf2a04d75d5d55`. [Draft PR705](https://github.com/mecaniser/truck-pit-stop/pull/705) is open; no checks were reported on the draft at creation. Protected CI, merge, deployment and signed-in acceptance remain pending. Do not mark the board item Done or infer production availability from this receipt.
+
+## Signed-in acceptance and release follow-up — October 30, 2026
+
+User explicitly authorized signed-in QA followed by merge/deploy when gates pass.
+
+Normal staff login passed on the actual application at localhost5198, API8014. Both serve this checkout; backend binds this checkout/backend at/app. Approved canonical backend environment symlink used (same mechanism as the existing runtime); no secrets copied. A new isolated database `truckpitstop_db042_qa` was cloned from the existing fictional DB146 database. Both source/target had sole192 schema before startup; upgrade head was a no-op. Redis index12 isolates this environment; no workers started. Only the cloned fictional owner's parts-operations tenant flag was enabled as explicit fixture preparation. The source database remains zero inventory / zero parts-enabled tenants. Shared5173/8000 untouched.
+
+Browser acceptance on the real authenticated API/database:
+- Created one disposable QA fitting using Add Part, then edited name/SKU/category/bin/unit/description/cost/core/price/supplier/on-order fields. Saved values were independently read back from the database and authenticated API.
+- Empty cost, negative core, fractional on-order and empty markup rejected; invalid-markup Save keeps editor open. Database retained original values before the valid save.
+- Actual concurrent admin update appeared on reopening (fresh cost16/on-order3), despite the earlier cached values.
+- Actual pricing version conflict (admin cost18 versus owner draft17) preserved draft17, displayed recovery, and disabled Save until explicit Keep my draft. Subsequent save succeeded with current version.
+- Normal receptionist GET200/PUT403; foreign owner GET404/PUT404 against the fixture. Denied description change did not persist. No auth/tenant contract changed.
+- Signed-in wide1920 viewport/workbench1604: Cancel visible; click closes and restores Edit focus. Signed-in390x844: Cancel visible, zero horizontal overflow, and bin edit persisted as C-09. Viewport override restored.
+
+Signed-in QA caught a sixth defect: after a valid save the inspector retained old derived unit cost/incoming facts while the table refreshed. Added a failing regression, then refreshed detail/summary projections after saving, retaining catalog-only fields (selling_price) omitted by the projection. Extended regression failed first for catalog-price retention, then passed. Real browser verified incoming6, cost14.00 and selling20.50 together immediately after save; later real conflict recovery displayed incoming3/cost17/selling20.50. This stays within existing read/write contracts.
+
+Final focused suites:50inventory +16pricing =66passed; changed-source lint and production TypeScript/Vite build pass. Quick pre-landing checklist found no remaining issue in scope. Previous CI head cb059bfe passed all seven jobs, but new fix invalidates it as release evidence: final candidate must pass fresh exact-head CI.
+
+[Signed-in wide screenshot](db042-part-editor-2026-10-30/signed-in-wide-editor.png) · [Signed-in compact screenshot](db042-part-editor-2026-10-30/signed-in-compact-editor.png).
+
+Deployment baseline (read-only): Web53068981 SUCCESS, public build1b954590e6f2c16e9fe2c1b6fa3d407135c2249b. Merge/deploy remains pending until final checks pass. No production part records changed.

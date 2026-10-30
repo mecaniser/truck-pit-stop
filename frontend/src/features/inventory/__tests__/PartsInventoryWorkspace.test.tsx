@@ -1450,4 +1450,22 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(editor).toBeInTheDocument()
   })
 
+  it('refreshes derived inspector facts after saving catalog cost and incoming quantity', async () => {
+    const { user, editor } = await openEditorForValidation()
+    const baseGet = apiMocks.get.getMockImplementation()!
+    let saved = false
+    apiMocks.get.mockImplementation((url: string, config: unknown) => saved && url === '/parts-operations/parts/part-active'
+      ? Promise.resolve({ data: { ...detail(activePart), average_unit_cost: '12.50', incoming_packages: 4 } })
+      : baseGet(url, config))
+    apiMocks.put.mockImplementation(async () => { saved = true; return { data: { ...editableInventory(activePart), cost: '12.50', selling_price: '18.75', on_order_quantity: 4 } } })
+    fireEvent.change(within(editor).getByRole('textbox', { name: 'Cost per unit' }), { target: { value: '12.50' } })
+    fireEvent.change(within(editor).getByRole('textbox', { name: 'On order' }), { target: { value: '4' } })
+    await user.click(within(editor).getByRole('button', { name: 'Save details' }))
+    await waitFor(() => expect(screen.queryByRole('form', { name: 'Edit part details' })).not.toBeInTheDocument())
+    const overview = screen.getByRole('tabpanel', { name: 'Overview' })
+    expect(within(overview).getByText('Unit cost').nextElementSibling).toHaveTextContent('$12.50')
+    expect(within(overview).getByText('Incoming').nextElementSibling).toHaveTextContent('4')
+    expect(within(overview).getByText('Selling price').nextElementSibling).toHaveTextContent('$18.75')
+  })
+
 })

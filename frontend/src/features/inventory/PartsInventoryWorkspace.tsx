@@ -817,6 +817,15 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
     const response = await api.put(`/inventory/${part.id}`, patch)
     const updated = response.data as Partial<InventoryEditorRecord>
     syncPartCaches(part.id, { ...patch, ...updated })
+    // The inventory response omits derived facts such as unit cost, incoming
+    // quantity and stock value. Refresh their projections after the save.
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['parts-operations', 'part', part.id] }),
+      queryClient.invalidateQueries({ queryKey: ['parts-operations', 'summary'] }),
+    ])
+    // The projection also omits catalog-only fields (notably selling_price).
+    // Keep those authoritative saved values alongside the refreshed facts.
+    syncPartCaches(part.id, { ...patch, ...updated })
     setPartsSequence((current) => current + 1)
     setNotice(`${typeof patch.name === 'string' ? patch.name : part.name} details saved.`)
   }
