@@ -23,7 +23,7 @@ const fields: {
   { key: "terms_url", label: "Terms URL", type: "url" },
 ];
 const readable = (value: string) => value.replace(/_/g, " ");
-export default function SMSSetup({ onClose }: { onClose: () => void }) {
+export default function SMSSetup({ onClose, embedded = false }: { onClose: () => void; embedded?: boolean }) {
   const [record, setRecord] = useState<SMSOnboarding | null>(null);
   const [draft, setDraft] = useState<SMSDraft | null>(null);
   const [error, setError] = useState("");
@@ -108,9 +108,9 @@ export default function SMSSetup({ onClose }: { onClose: () => void }) {
   }
   return (
     <main className="sms-setup">
-      <button className="subtle-button" onClick={onClose}>
+      {!embedded && <button className="subtle-button" onClick={onClose}>
         <ArrowLeft size={16} /> Back to inbox
-      </button>
+      </button>}
       <header className="sms-setup-header">
         <div>
           <p className="sms-eyebrow">Communication · Shop registration</p>

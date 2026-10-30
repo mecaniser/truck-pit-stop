@@ -410,7 +410,7 @@ describe("SMS setup entry", () => {
     vi.mocked(inboxApi.list).mockResolvedValue([]);
     render(<ConnectedInbox />);
     expect(
-      await screen.findByRole("button", { name: "SMS setup" }),
+      await screen.findByRole("button", { name: "Settings" }),
     ).toBeVisible();
   });
   it("hides registration actions from reception staff", async () => {

@@ -1,3 +1,4 @@
+import MessageSettings from "./MessageSettings";
 import InboxSelect from "./InboxSelect";
 import CustomerRepairContext from "./CustomerRepairContext";
 import { rememberConversation, restoredConversation } from "./inboxSelection";
@@ -95,7 +96,7 @@ const day = (value: string) =>
 export interface InboxConnection {
   embedded?: boolean;
   canManageCustomerContext?: boolean;
-  onSMSSetup?: () => void;
+  canSetupSMS?: boolean;
   rows: Conversation[];
   searchIds?: string[] | null;
   onSearch?: (search: string) => void;
@@ -156,7 +157,6 @@ export default function CommunicationsPreview({
   const [feedback, setFeedback] = useState("");
   const [detailsId, setDetailsId] = useState<string | null>(null);
   const [showReplies, setShowReplies] = useState(false);
-  const channelSheetRef = useRef<HTMLElement>(null);
   const channelsButtonRef = useRef<HTMLButtonElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const composeRef = useRef<HTMLTextAreaElement>(null);
@@ -216,28 +216,6 @@ export default function CommunicationsPreview({
   useEffect(() => {
     endRef.current?.scrollIntoView?.({ block: "nearest" });
   }, [selectedId, selected.messages.length, showAutomation, mobileThread]);
-  useEffect(() => {
-    if (!showConnections) return;
-    const opener = channelsButtonRef.current;
-    const closeButton =
-      channelSheetRef.current?.querySelector<HTMLButtonElement>("button");
-    closeButton?.focus();
-    const handleKeys = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setShowConnections(false);
-      }
-      if (event.key === "Tab") {
-        event.preventDefault();
-        closeButton?.focus();
-      }
-    };
-    document.addEventListener("keydown", handleKeys);
-    return () => {
-      document.removeEventListener("keydown", handleKeys);
-      opener?.focus();
-    };
-  }, [showConnections]);
   useEffect(() => {
     const before = previousRoute.current;
     previousRoute.current = { key, thread: selected.id, recipient: selected.contactIdentityId, channel: composeChannel, tenantId, userId };
@@ -403,24 +381,14 @@ export default function CommunicationsPreview({
             </h1>
           </div>
           <div className="page-actions">
-            {connection?.onSMSSetup && (
-              <button
-                className="subtle-button"
-                aria-label="SMS setup"
-                title="SMS setup"
-                onClick={connection.onSMSSetup}
-              >
-                <Settings2 size={16} /> <span>SMS setup</span>
-              </button>
-            )}
             <button
               ref={channelsButtonRef}
-              aria-label="Channels"
+              aria-label="Settings"
               className="subtle-button"
               onClick={() => setShowConnections(true)}
             >
               <Settings2 size={16} />
-              <span>Channels</span>
+              <span>Settings</span>
             </button>
             <button
               className="primary-button"
@@ -1046,77 +1014,13 @@ export default function CommunicationsPreview({
         </div>
       </main>
       {showConnections && (
-        <div
-          className="sheet-backdrop"
-          onClick={() => setShowConnections(false)}
-        >
-          <section
-            ref={channelSheetRef}
-            className="connections-sheet"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Channel connections"
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") setShowConnections(false);
-            }}
-          >
-            <header>
-              <div>
-                <h2>Channel connections</h2>
-                <p>One inbox. Every conversation in context.</p>
-              </div>
-              <button
-                autoFocus
-                className="icon-button"
-                aria-label="Close channel connections"
-                onClick={() => setShowConnections(false)}
-              >
-                <X size={20} />
-              </button>
-            </header>
-            {(["sms", "whatsapp", "telegram"] as const).map((value) => (
-              <div className="connection-row" key={value}>
-                <span className={`channel-chip ${value}`}>
-                  {channelIcon(value)}
-                </span>
-                <div>
-                  <h3>{channelLabels[value]}</h3>
-                  <p>
-                    {value === "sms"
-                      ? connection
-                        ? `SMS delivery: ${connection.deliveryMode}`
-                        : "Existing Twilio connection · Sample data in this preview"
-                      : value === "whatsapp"
-                        ? "Business sender and approved templates required"
-                        : "Shop bot and customer-started conversation required"}
-                  </p>
-                </div>
-                <span
-                  className={`connection-state ${value === "sms" && (!connection || connection.channels?.some((c) => c.channel === value && c.connected)) ? "ready" : ""}`}
-                >
-                  {value === "sms"
-                    ? connection
-                      ? connection.channels?.some(
-                          (c) => c.channel === value && c.connected,
-                        )
-                        ? "Connected"
-                        : "Unavailable"
-                      : "Preview active"
-                    : "Planned"}
-                </span>
-              </div>
-            ))}
-            <div className="connection-summary">
-              <ShieldCheck size={18} />
-              <p>
-                {connection
-                  ? "New channels require setup and approval before messages can be sent."
-                  : "Provider setup and live messaging are separate from this prototype. No account changes are made here."}
-              </p>
-            </div>
-          </section>
-        </div>
+        <MessageSettings
+          canSetupSMS={!!connection?.canSetupSMS}
+          channels={connection?.channels}
+          deliveryMode={connection?.deliveryMode}
+          onClose={() => setShowConnections(false)}
+          opener={channelsButtonRef}
+        />
       )}
     </div>
   );
