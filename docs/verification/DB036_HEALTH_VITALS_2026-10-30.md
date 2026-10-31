@@ -1,3 +1,5 @@
+**Health-vitals outcome released:** PR714 merged17608d10; exact web/API and worker production verification complete. [Final release evidence](DB036_HEALTH_VITALS_RELEASE_2026-10-30.md). Historical gate snapshots below are retained.
+
 # DB-036 health vitals implementation — 2026-10-30
 
 Owner: Backend & Integrations. Branch: `codex/health-truck-vitals`, base `9dea1f1ae58a62d10d741113275fae0a371085c5`. Contract: `docs/DB036_HEALTH_VITALS_CONTRACT.md`. No migration or external endpoint change.

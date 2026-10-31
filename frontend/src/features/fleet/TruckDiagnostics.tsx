@@ -1,6 +1,7 @@
+import { useId, useState } from 'react'
 import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, RotateCcw, X } from 'lucide-react'
+import { Activity, Info, RotateCcw, X } from 'lucide-react'
 import api from '@/lib/api'
 import { readingCaption, retained, useTelemetryClock, type FleetTelemetry } from './telemetry'
 import './truckDiagnostics.css'
@@ -34,8 +35,8 @@ export default function TruckDiagnostics({ truckId, telemetry }: { truckId: stri
   return <Popover className="truck-health">
     <PopoverButton className="dbtn dbtn-ghost dhead-health"><Activity size={15} aria-hidden="true" /> View health</PopoverButton>
     <PopoverPanel className="truck-health-panel" focus>
-      <div className="truck-health-heading"><h2>Truck health</h2><PopoverButton className="truck-health-close" aria-label="Close truck health"><X size={18} aria-hidden="true" /></PopoverButton></div>
-      <HealthVitals telemetry={telemetry} /><TruckDiagnosticsContent truckId={truckId} />
+      <div className="truck-health-header"><div className="truck-health-heading"><h2>Truck health</h2><PopoverButton className="truck-health-close" aria-label="Close truck health"><X size={18} aria-hidden="true" /></PopoverButton></div>
+      <HealthVitals telemetry={telemetry} /></div><TruckDiagnosticsContent truckId={truckId} />
     </PopoverPanel>
   </Popover>
 }
@@ -73,10 +74,24 @@ function TruckDiagnosticsContent({ truckId }: { truckId: string }) {
 
 function HealthVitals({ telemetry }: { telemetry?: FleetTelemetry | null }) {
   const now = useTelemetryClock()
-  return <dl className="health-vitals">{([
-    ['odometer', 'Mileage', 'mi'], ['engine_hours', 'Engine hours', 'h'],
-  ] as const).map(([field, label, unit]) => {
-    const reading = retained(telemetry?.[field], now)
-    return <div key={field}><dt>{label}</dt><dd>{reading ? `${reading.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${unit}` : 'Unavailable'}</dd>{reading && <small>{reading.source === 'motive_api' ? 'Motive API' : 'Motive dashboard'} · {readingCaption(reading)}{!reading.observed_at && ' · Observation time unknown'}</small>}</div>
-  })}</dl>
+  const [open, setOpen] = useState(false)
+  const [pinned, setPinned] = useState(false)
+  const id = useId()
+  const fields = ([['odometer', 'Mileage', 'mi'], ['engine_hours', 'Engine hours', 'h']] as const)
+    .map(([field, label, unit]) => ({ label, unit, reading: retained(telemetry?.[field], now) }))
+  const provenance = fields.map(({ label, reading }) => ({ label, caption: reading ? `${reading.source === 'motive_api' ? 'Motive API' : 'Motive dashboard'} · ${readingCaption(reading)}${!reading.observed_at ? ' · Observation time unknown' : reading.observed_precision !== 'minute' ? ` · Observed ${new Date(reading.observed_at).toLocaleString()}` : ''}` : 'No retained reading available.' }))
+  const shared = provenance[0].caption === provenance[1].caption && JSON.stringify(fields[0].reading && [fields[0].reading.source, fields[0].reading.observed_at, fields[0].reading.captured_at, fields[0].reading.observed_precision]) === JSON.stringify(fields[1].reading && [fields[1].reading.source, fields[1].reading.observed_at, fields[1].reading.captured_at, fields[1].reading.observed_precision])
+  const descriptions = shared ? [{ label: 'Mileage and engine hours', caption: provenance[0].caption }] : provenance
+  return <div className="health-vitals-wrap">
+    <dl className="health-vitals">{fields.map(({ label, unit, reading }) =>
+      <div key={label}><dt>{label}</dt><dd>{reading ? `${reading.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${unit}` : 'Unavailable'}</dd></div>
+    )}</dl>
+    <div className="health-vitals-info" onPointerEnter={event => { if (event.pointerType === 'mouse') setOpen(true) }} onPointerLeave={() => { if (!pinned) setOpen(false) }}>
+      <button type="button" className="health-vitals-info-button" aria-label="Mileage and engine hours information" aria-expanded={open} aria-describedby={open ? id : undefined}
+        onFocus={() => setOpen(true)} onBlur={() => { setOpen(false); setPinned(false) }}
+        onClick={() => { setPinned(!pinned); setOpen(!pinned) }}
+        onKeyDown={event => { if (event.key === 'Escape' && open) { event.stopPropagation(); setOpen(false); setPinned(false) } }}><Info size={16} aria-hidden="true" /></button>
+      {open && <div role="tooltip" id={id} className="health-vitals-tooltip">{descriptions.map(({ label, caption }) => <p key={label}><strong>{label}</strong><span>{caption}</span></p>)}</div>}
+    </div>
+  </div>
 }
