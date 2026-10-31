@@ -79,6 +79,9 @@ function HealthVitals({ telemetry }: { telemetry?: FleetTelemetry | null }) {
   const id = useId()
   const fields = ([['odometer', 'Mileage', 'mi'], ['engine_hours', 'Engine hours', 'h']] as const)
     .map(([field, label, unit]) => ({ label, unit, reading: retained(telemetry?.[field], now) }))
+  const provenance = fields.map(({ label, reading }) => ({ label, caption: reading ? `${reading.source === 'motive_api' ? 'Motive API' : 'Motive dashboard'} · ${readingCaption(reading)}${!reading.observed_at ? ' · Observation time unknown' : reading.observed_precision !== 'minute' ? ` · Observed ${new Date(reading.observed_at).toLocaleString()}` : ''}` : 'No retained reading available.' }))
+  const shared = provenance[0].caption === provenance[1].caption && JSON.stringify(fields[0].reading && [fields[0].reading.source, fields[0].reading.observed_at, fields[0].reading.captured_at, fields[0].reading.observed_precision]) === JSON.stringify(fields[1].reading && [fields[1].reading.source, fields[1].reading.observed_at, fields[1].reading.captured_at, fields[1].reading.observed_precision])
+  const descriptions = shared ? [{ label: 'Mileage and engine hours', caption: provenance[0].caption }] : provenance
   return <div className="health-vitals-wrap">
     <dl className="health-vitals">{fields.map(({ label, unit, reading }) =>
       <div key={label}><dt>{label}</dt><dd>{reading ? `${reading.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${unit}` : 'Unavailable'}</dd></div>
@@ -88,7 +91,7 @@ function HealthVitals({ telemetry }: { telemetry?: FleetTelemetry | null }) {
         onFocus={() => setOpen(true)} onBlur={() => { setOpen(false); setPinned(false) }}
         onClick={() => { setPinned(!pinned); setOpen(!pinned) }}
         onKeyDown={event => { if (event.key === 'Escape' && open) { event.stopPropagation(); setOpen(false); setPinned(false) } }}><Info size={16} aria-hidden="true" /></button>
-      {open && <div role="tooltip" id={id} className="health-vitals-tooltip">{fields.map(({ label, reading }) => <p key={label}><strong>{label}</strong><span>{reading ? `${reading.source === 'motive_api' ? 'Motive API' : 'Motive dashboard'} · ${readingCaption(reading)}` : 'No retained reading available.'}{reading && !reading.observed_at && ' · Observation time unknown'}</span></p>)}</div>}
+      {open && <div role="tooltip" id={id} className="health-vitals-tooltip">{descriptions.map(({ label, caption }) => <p key={label}><strong>{label}</strong><span>{caption}</span></p>)}</div>}
     </div>
   </div>
 }
