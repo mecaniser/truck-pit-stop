@@ -7456,15 +7456,14 @@ html.customer-portal-active {
 }
 .db-presentation-new .db-customer-navigator__summary { border-radius: 10px; }
 
-/* Header actions occupy real space, including the full Edit details label. */
+/* Header actions occupy real space; the Edit pencil stays a fixed size. */
 .db-parts-workbench__selected-action { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start; gap:0 .5rem; }
 .db-parts-workbench__selected-action .db-parts-workbench__selected-label-row,
 .db-parts-workbench__selected-action.is-editing .db-parts-workbench__selected-label-row { position:static; grid-column:2; grid-row:1; }
 .db-parts-workbench__selected-action .db-parts-workbench__selected-part,
 .db-parts-workbench__selected-action.is-editing .db-parts-workbench__selected-part { grid-column:1; grid-row:1; padding-inline-end:0; }
 .db-parts-workbench__selected-action > :is(.db-parts-workbench__identity-editor,.db-parts-workbench__selected-permission) { grid-column:1 / -1; }
-.db-parts-workbench__selected-controls .db-parts-workbench__identity-trigger { inline-size:auto; padding-inline:.5rem; }
-.db-parts-workbench__identity-trigger.db-parts-workbench__icon-action .db-parts-workbench__collapsible-label { max-inline-size:none; margin-inline-start:.35rem; opacity:1; transform:none; transition:none; }
+.db-parts-workbench__selected-controls .db-parts-workbench__identity-trigger { inline-size:44px; padding-inline:0; }
 /* Compact desktop fields override the shared staff form's 16px text floor. */
 .db-parts-workbench__identity-editor { margin-block-start:.35rem; padding-block-start:.35rem; }
 .db-parts-workbench__identity-editor > form { gap:.3rem; margin-block-start:.35rem; }
@@ -7491,7 +7490,6 @@ html.customer-portal-active {
 }
 @media (max-width:560px) {
  .db-parts-workbench__selected-controls .db-parts-workbench__identity-trigger { inline-size:44px; padding-inline:0; }
- .db-parts-workbench__identity-trigger.db-parts-workbench__icon-action .db-parts-workbench__collapsible-label { max-inline-size:0; inline-size:0; margin-inline-start:0; opacity:0; }
  .db-parts-workbench__identity-editor .db-parts-workbench__identity-fields.db-parts-workbench__supplier-fields { grid-template-columns:repeat(2,minmax(0,1fr)); }
  .db-parts-workbench__supplier-fields > label:last-child { grid-column:1 / -1; }
 }

@@ -1534,7 +1534,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
       <div className="db-parts-workbench__selected-label-row">
         <p className="db-parts-workbench__selected-label">Selected part</p>
         <div className="db-parts-workbench__selected-controls">
-          {manage && !part.is_archived && !edit && !identityOpen && <button ref={identityTrigger} className="db-parts-workbench__identity-trigger db-parts-workbench__icon-action" type="button" aria-expanded="false" aria-controls="selected-part-identity-editor" onClick={openIdentity}><Pencil aria-hidden="true" /><span className="db-parts-workbench__collapsible-label">Edit details</span></button>}
+          {manage && !part.is_archived && !edit && !identityOpen && <button ref={identityTrigger} className="db-parts-workbench__identity-trigger db-parts-workbench__icon-action db-parts-workbench__icon-action--icon-only" type="button" aria-label="Edit details" aria-expanded="false" aria-controls="selected-part-identity-editor" onClick={openIdentity}><Pencil aria-hidden="true" /></button>}
           <button className={`db-parts-workbench__mobile-back db-parts-workbench__icon-action db-parts-workbench__icon-action--icon-only${identityOpen ? ' is-editing' : ''}`} type="button" disabled={identityOpen && (identitySaving || photoSaving)} onClick={identityOpen ? closeIdentity : onBack} aria-label={identityOpen ? 'Cancel editing' : 'Back to parts'}>
             <ArrowLeft className="db-parts-workbench__mobile-back-arrow" aria-hidden="true" />
             <span className="db-parts-workbench__mobile-back-label">Back to parts</span>
