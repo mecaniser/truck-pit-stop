@@ -460,7 +460,7 @@ html::-webkit-scrollbar-thumb:hover {
 
 .db-presentation-new .db-staff-main {
   height: calc(100vh - 64px);
-  padding: clamp(16px, 2vw, 30px) clamp(16px, 2.3vw, 40px);
+  padding: 16px;
   background: var(--workspace-canvas);
   color: var(--workspace-text);
   color-scheme: light;
@@ -490,7 +490,7 @@ html::-webkit-scrollbar-thumb:hover {
     padding-right: 0 !important;
   }
   .db-presentation-new .db-staff-content {
-    padding-right: clamp(16px, 2.3vw, 40px);
+    padding-right: 16px;
   }
 }
 
@@ -4012,11 +4012,10 @@ html::-webkit-scrollbar-thumb:hover {
 /* Repair work owns the canvas; do not change spacing on unrelated staff routes. */
 .db-presentation-new .db-staff-main:has(.db-repair-orders-workspace--new) {
   padding: 10px !important;
-  margin-block: 6px;
-  margin-right: 6px;
+  margin: 0;
 }
 @media (min-width: 960px) {
-  .db-presentation-new .db-staff-main:has(.db-repair-orders-workspace--new) { height: calc(100dvh - 12px); }
+  .db-presentation-new .db-staff-main:has(.db-repair-orders-workspace--new) { height: var(--db-staff-main-block); padding: 16px !important; }
 }
 @media (max-width: 959px) {
   .db-presentation-new .db-staff-main:has(.db-repair-orders-workspace--new) { padding-bottom: calc(74px + env(safe-area-inset-bottom)) !important; }
@@ -4606,7 +4605,7 @@ html::-webkit-scrollbar-thumb:hover {
 @media (min-width: 960px) {
   .db-staff-shell {
     --db-shell-nav-block: 0px;
-    --db-shell-main-inset: 24px;
+    --db-shell-main-inset: 0px;
   }
 }
 
@@ -4624,7 +4623,7 @@ html::-webkit-scrollbar-thumb:hover {
     position: relative;
     height: 100dvh;
     min-height: 0;
-    border-right: 0 !important;
+    border-right: 1px solid var(--workspace-border) !important;
     border-bottom: 0 !important;
     box-shadow: none !important;
   }
@@ -4852,11 +4851,11 @@ html::-webkit-scrollbar-thumb:hover {
   .db-presentation-new .db-staff-main {
     grid-column: 2;
     grid-row: 1;
-    height: var(--db-staff-main-block); /* == calc(100dvh - 24px) at >=960 */
-    margin: 12px 12px 12px 0;
-    padding: clamp(20px, 2.2vw, 38px);
-    border: 1px solid var(--workspace-border);
-    border-radius: 18px;
+    height: var(--db-staff-main-block); /* Full viewport beside desktop navigation. */
+    margin: 0;
+    padding: 16px;
+    border: 0;
+    border-radius: 0;
     overflow: hidden;
   }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] {
@@ -7400,3 +7399,59 @@ html.customer-portal-active {
 .db-parts-workbench__inspector-panel .db-parts-workbench__section-head > button { padding:.3rem .4rem; font-size:.75rem; }
 .db-parts-workbench__supplier-relationship dd { min-inline-size:0; overflow-wrap:anywhere; }
 .db-parts-workbench__supplier-name,.db-parts-workbench__source-name { overflow-wrap:anywhere; }
+
+
+/* DB-150: one shared 12px gutter separates navigation from the working
+   surface. Page content adds no second inset or enclosing frame. */
+.db-presentation-new .db-staff-main:has(.db-parts-workbench, .db-customers-workspace, .db-repair-orders-workspace--new, .db-shop-work-new) {
+  padding-inline: 12px !important;
+  padding-top: 12px !important;
+}
+.db-presentation-new .db-staff-main:has(.db-parts-workbench, .db-customers-workspace, .db-repair-orders-workspace--new, .db-shop-work-new) > .db-staff-content {
+  padding-inline: 0;
+}
+.db-presentation-new .db-parts-workbench { padding: 0; }
+.db-presentation-new :is(.db-parts-workbench__body, .db-customers-workspace__ledger .db-operating-surface__card, .db-repair-orders-ledger__card, .db-wip__rows, .db-shop-work-new > .db-operating-surface__scroller > .db-operating-surface__card, .db-customers-workspace__loading-ledger) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none;
+}
+.db-presentation-new :is(.db-customers-workspace, .db-shop-work-new, .db-repair-orders-workspace--new) .db-operating-surface__scroller {
+  padding-inline-end: 0;
+  scrollbar-gutter: auto;
+}
+@media (min-width: 960px) {
+  .db-presentation-new .db-staff-main:has(.db-repair-orders-workspace--new) { padding: 12px 12px 0 !important; }
+  .db-presentation-new :is(.db-repair-orders-workspace--detail-open, .db-customers-workspace--detail-open) { column-gap: 0; }
+  .db-presentation-new :is(.db-customer-detail-workspace, .db-repair-orders-workspace--detail-open > .db-slide-panel-workspace) {
+    border-radius: 0;
+    box-shadow: none;
+    border-inline: 0;
+    border-inline-start: 1px solid var(--workspace-border);
+  }
+}
+
+@media (min-width: 960px) {
+  .db-presentation-new .db-staff-main:has(.db-parts-workbench, .db-customers-workspace, .db-repair-orders-workspace--new, .db-shop-work-new) { padding-bottom: 0 !important; }
+}
+
+
+/* Parts keeps a soft list edge without restoring a frame around the workspace.
+   Row overflow stays visible so focus indicators and row actions remain usable. */
+.db-presentation-new .db-parts-workbench__ledger-workspace { border-radius: 12px; }
+.db-presentation-new .db-parts-workbench__row { border-radius: 10px; margin-block: 4px; }
+.db-presentation-new .db-parts-workbench__row:not(.is-selected):not(:hover) { background: var(--surface-overlay); }
+
+
+/* Match the Parts list softness across the remaining working lists. Keep
+   backgrounds on records so the small gaps reveal the unboxed page canvas. */
+.db-presentation-new :is(.db-customers-workspace__ledger .db-operating-surface__card, .db-customers-workspace__loading-ledger, .db-repair-orders-ledger__card, .db-wip__rows, .db-shop-work-new > .db-operating-surface__scroller > .db-operating-surface__card) {
+  border-radius: 12px !important;
+  background: transparent !important;
+}
+.db-presentation-new :is(.db-customer-navigator__record, .db-repair-orders-ledger__row-shell, .db-wip__row, .db-action-ledger__row) {
+  border-radius: 10px;
+  border-bottom: 0;
+  margin-block: 4px;
+}
+.db-presentation-new .db-customer-navigator__summary { border-radius: 10px; }
