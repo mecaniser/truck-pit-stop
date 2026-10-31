@@ -7494,3 +7494,6 @@ html.customer-portal-active {
  .db-parts-workbench__supplier-fields > label:last-child { grid-column:1 / -1; }
 }
 .db-presentation-new .db-staff-content .db-parts-workbench__identity-editor :is(input,textarea,button):focus-visible { outline-offset:0; box-shadow:none; }
+/* Sticky column labels cover inline photos (2) and row actions (4);
+   floating menus retain their existing layer (9). */
+.db-parts-workbench__table-head { z-index:5; }

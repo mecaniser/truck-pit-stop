@@ -18,3 +18,10 @@ Vite5198 PID96068 cwd this checkout/frontend; API8014 container `dieselbridge_ap
 Protected PR CI, merge/deployment and live smoke pending; item Review rather than Done.
 
 Final pencil-only regression assertions preserve the accessible Edit details name, an empty visible-text node, and the icon-only action. User chose no expanding label after initial layout review; fixed44px geometry is verified for hover and keyboard focus.
+
+
+## Sticky ledger header regression found during review
+
+User reported a row thumbnail floating over column labels while scrolling. Reproduced in a separate real signed-in local tab at1920×520 with two fixture rows: ledger clientHeight161px, scrollTop65px, photo top356.34px, sticky header359.34–407.34px. Before fix the header-center hit test returned the photo rather than the header. Photo and header both usedz-index2, so the later photo painted above.
+
+Final fix makes the sticky header layer5, above inline photo2 and row action4 while preserving floating menu9. No new row stacking contexts or menu positioning changes. At identical scroll position, hit test now returns the header and never the photo. Real-image capture: [fixed scrolling](db042-edit-controls/sticky-header-fixed.png). Hover remains scale1.08, media preview opens/closes and restores focus, and row selection remains functional. Temporary per-tab device metrics were cleared. Existing optional row-action/menu/Escape component regression is included in the focused61 tests. Updated protected head required before release.
