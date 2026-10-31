@@ -5,7 +5,11 @@ from decimal import Decimal
 from uuid import UUID
 
 
+EquipmentType = Literal["unknown", "tractor", "trailer", "other"]
+
+
 class VehicleBase(BaseModel):
+    equipment_type: EquipmentType = "unknown"
     vin: Optional[str] = None
     unit_number: Optional[str] = None
     make: str
@@ -26,6 +30,7 @@ class VehicleCreate(VehicleBase):
 
 
 class VehicleUpdate(BaseModel):
+    equipment_type: EquipmentType = "unknown"
     vin: Optional[str] = None
     unit_number: Optional[str] = None
     make: Optional[str] = None
@@ -112,6 +117,7 @@ class VehicleMergeRequest(BaseModel):
 
 
 class VehicleMergeVehicleSummary(BaseModel):
+    equipment_type: EquipmentType = "unknown"
     id: UUID
     customer_id: UUID
     customer_name: str

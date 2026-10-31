@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, String, Integer, ForeignKey, Text, Float, DateTime, Date, UniqueConstraint
+from sqlalchemy import Boolean, Column, String, Integer, ForeignKey, Text, Float, DateTime, Date, UniqueConstraint, CheckConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.base import BaseModel
@@ -6,7 +6,10 @@ from app.db.base import BaseModel
 
 class Vehicle(BaseModel):
     __tablename__ = "vehicles"
-    __table_args__ = (UniqueConstraint("tenant_id", "id", name="uq_vehicles_tenant_id"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_vehicles_tenant_id"),
+        CheckConstraint("equipment_type IN ('unknown', 'tractor', 'trailer', 'other')", name="ck_vehicles_equipment_type"),
+    )
     
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     tenant = relationship("Tenant", backref="vehicles")
@@ -14,6 +17,7 @@ class Vehicle(BaseModel):
     customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=False, index=True)
     customer = relationship("Customer", back_populates="vehicles")
     
+    equipment_type = Column(String(20), nullable=False, default="unknown", server_default="unknown")
     vin = Column(String(17), nullable=True, index=True)
     unit_number = Column(String(50), nullable=True, index=True)  # Fleet/company unit identifier
     make = Column(String(100), nullable=False)

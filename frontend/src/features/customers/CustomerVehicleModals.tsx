@@ -11,7 +11,7 @@ import { useTheme } from '@/contexts/ThemeContext'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { vehicleDisplayLabel } from '@/lib/vehicleName'
 import { LoadingLine, Spinner } from '@/components/ui'
-import type { Customer, Vehicle, VINDecodeResult } from '@/types'
+import type { Customer, Vehicle, VINDecodeResult, EquipmentType } from '@/types'
 
 interface DuplicateVinVehicleSummary {
   id: string
@@ -104,6 +104,7 @@ interface FleetCompanyOption {
 }
 
 interface VehicleFormData {
+  equipment_type: EquipmentType
   make: string
   model: string
   year: string
@@ -116,6 +117,7 @@ interface VehicleFormData {
 }
 
 const emptyVehicleForm: VehicleFormData = {
+  equipment_type: 'tractor',
   make: '',
   model: '',
   year: '',
@@ -270,6 +272,7 @@ export default function CustomerVehicleModals({
   const createVehicleMutation = useMutation({
     mutationFn: async ({ customerId, data }: { customerId: string; data: VehicleFormData }) => {
       const payload = {
+        equipment_type: data.equipment_type,
         make: data.make,
         model: data.model,
         year: data.year ? parseInt(data.year) : null,
@@ -301,6 +304,7 @@ export default function CustomerVehicleModals({
   const updateVehicleMutation = useMutation({
     mutationFn: async ({ customerId, vehicleId, data }: { customerId: string; vehicleId: string; data: VehicleFormData }) => {
       const payload = {
+        equipment_type: data.equipment_type,
         make: data.make,
         model: data.model,
         year: data.year ? parseInt(data.year) : null,
@@ -457,6 +461,7 @@ export default function CustomerVehicleModals({
     setVehicleModalMode('new')
     lastDecodedVehicleVin.current = (vehicle.vin || '').trim().toUpperCase()
     setVehicleFormData({
+      equipment_type: vehicle.equipment_type || 'unknown',
       make: vehicle.make,
       model: vehicle.model,
       year: vehicle.year?.toString() || '',
@@ -708,7 +713,7 @@ const {
           vehicleModalMode === 'new' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
         }`}
       >
-        New truck
+        New equipment
       </button>
       <button
         type="button"
@@ -717,7 +722,7 @@ const {
           vehicleModalMode === 'existing' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
         }`}
       >
-        Link / manage truck
+        Link / manage equipment
       </button>
     </div>
   )
@@ -947,6 +952,17 @@ const {
   const renderVehicleForm = () => (
     <form onSubmit={handleVehicleSubmit} className="p-6 space-y-4">
       {!editingVehicle && renderVehicleModeTabs()}
+      <div>
+        <label htmlFor="equipment-type" className="block text-sm font-medium text-gray-700 mb-1">Equipment type</label>
+        <select id="equipment-type" value={vehicleFormData.equipment_type}
+          onChange={(e) => setVehicleFormData(prev => ({ ...prev, equipment_type: e.target.value as EquipmentType }))}
+          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg">
+          <option value="tractor">Tractor / Truck</option>
+          <option value="trailer">Trailer</option>
+          <option value="other">Other equipment</option>
+          <option value="unknown">Unclassified</option>
+        </select>
+      </div>
       {/* Make & Model */}
       <div className="grid grid-cols-2 gap-4">
         <div>
@@ -1018,7 +1034,7 @@ const {
             onChange={handleVehicleInputChange}
             aria-invalid={vehicleVinError ? 'true' : undefined}
             aria-describedby={vehicleVinError ? 'vehicle-vin-error' : 'vehicle-vin-help'}
-            className={`flex-1 px-4 py-2.5 border rounded-lg focus:ring-2 transition-colors font-mono uppercase ${
+            className={`min-w-0 flex-1 px-4 py-2.5 border rounded-lg focus:ring-2 transition-colors font-mono uppercase ${
               vehicleVinError
                 ? 'border-red-500 bg-red-50 focus:ring-red-200 focus:border-red-500'
                 : 'border-gray-300 focus:ring-amber-500 focus:border-amber-500'
@@ -1030,7 +1046,7 @@ const {
             type="button"
             onClick={() => decodeVehicleVin(vehicleFormData.vin)}
             disabled={isDecodingVehicleVin || vehicleFormData.vin.length < 11}
-            className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 font-medium rounded-lg transition-colors flex items-center gap-2"
+            className="shrink-0 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 font-medium rounded-lg transition-colors flex items-center gap-2"
           >
             {isDecodingVehicleVin ? (
               <Spinner size="xs" />
@@ -1174,7 +1190,7 @@ const {
           {(createVehicleMutation.isPending || updateVehicleMutation.isPending) && (
             <Spinner size="xs" className="border-white/40 border-t-white" />
           )}
-          {editingVehicle ? 'Save Changes' : 'Add Vehicle'}
+          {editingVehicle ? 'Save Changes' : 'Add Equipment'}
         </button>
       </div>
     </form>
@@ -1202,7 +1218,7 @@ const {
                 <div className="flex items-center justify-between">
                   <div>
                     <h2 className="text-xl font-bold text-gray-900">
-                      {editingVehicle ? 'Edit Vehicle' : vehicleModalMode === 'existing' ? 'Truck Roles & Fleet Assignment' : 'Add Vehicle'}
+                      {editingVehicle ? 'Edit Equipment' : vehicleModalMode === 'existing' ? 'Equipment Roles & Fleet Assignment' : 'Add Equipment'}
                     </h2>
                     <p className="text-sm text-gray-500">
                       for {selectedCustomer.company_name || `${selectedCustomer.first_name} ${selectedCustomer.last_name}`}
