@@ -19,8 +19,25 @@ function parseVitals(fields) {
  };
  return {odometer_miles:value('odometer',100000000,'mi'),engine_hours:value('engine hours',10000000,'h')};
 }
+function liveVitals(snapshot,identity,vin) {
+ const {assertLiveProvider}=require('../motive_sync/collect.cjs');
+ try{assertLiveProvider(snapshot.url,identity.href.split('/').pop());}catch{throw new Error('vehicle_source_changed');}
+ const vins=snapshot.fields.filter(f=>f.label.trim().toUpperCase()==='VIN');
+ if(vins.length!==1||vins[0].value.trim()!==vin)throw new Error('vehicle_identity_changed');
+ return parseVitals(snapshot.fields);
+}
+function liveVitalsSnapshot() {
+ const visible=el=>el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden';
+ const tables=Array.from(document.querySelectorAll('table.detail-table')).filter(visible).filter(table=>Array.from(table.querySelectorAll('tr')).some(row=>row.querySelector('td')?.textContent.trim().toUpperCase()==='VIN'));
+ const fields=tables.length===1?Array.from(tables[0].querySelectorAll('tr')).filter(visible).flatMap(row=>{
+  const cells=row.querySelectorAll(':scope > td');
+  return cells.length===2?[{label:cells[0].textContent.trim(),value:cells[1].textContent.trim()}]:[];
+ }):[];
+ return {url:location.href,fields};
+}
 async function readVitals(context,identity,vin) {
  const page=await context.newPage();page.setDefaultTimeout(15000);
+ let summary={odometer_miles:null,engine_hours:null,source_read_at:new Date().toISOString()};
  try {
   await page.goto(ORIGIN+'/en-US/'+identity.href,{waitUntil:'domcontentloaded',timeout:45000});
   const before=await readReviewedPageIdentity(page,identity);
@@ -28,11 +45,17 @@ async function readVitals(context,identity,vin) {
   const fields=(await page.evaluate(summarySnapshot)).fields;
   const after=await readReviewedPageIdentity(page,identity);
   if(after.vin!==vin)throw new Error('vehicle_identity_changed');
-  return {...parseVitals(fields),source_read_at:new Date().toISOString()};
+  summary={...parseVitals(fields),source_read_at:new Date().toISOString()};
+  // Live > Other details has engine hours; the vehicle summary omits this field.
+  await page.getByRole('link',{name:'Live',exact:true}).filter({visible:true}).first().click();
+  await page.getByText(vin,{exact:true}).first().waitFor();
+  await page.locator('table.detail-table').filter({visible:true}).first().waitFor();
+  const values=liveVitals(await page.evaluate(liveVitalsSnapshot),identity,vin);
+  return {...values,source_read_at:new Date().toISOString()};
  }catch(error){
   if(['vehicle_identity_changed','vin_changed','vehicle_source_changed','ambiguous_vin'].includes(error.message))throw error;
   if(new URL(page.url()).origin!==ORIGIN)throw new Error('session_lost');
-  return {odometer_miles:null,engine_hours:null,source_read_at:new Date().toISOString()};
+  return summary;
  }finally{await page.close();}
 }
 const HEADERS=['vehicle or asset','availability','defects','fault codes','next service','',''];
@@ -214,4 +237,4 @@ function safeReason(error) {
  return known.includes(error?.message)?error.message:error?.name==='TimeoutError'?'ui_timeout':'health_data_unavailable';
 }
 if(require.main===module){if(!process.argv[2]){console.error('Output file required');process.exitCode=1;}else collect(process.argv[2]).then(r=>console.log(JSON.stringify({stage:'health_collection_complete',complete:r.complete,vehicles:r.vehicles.length}))).catch(error=>{failed(process.argv[2],error);console.error(JSON.stringify({stage:'health_collection_failed',reason:safeReason(error),import_permitted:false}));process.exitCode=1;});}
-module.exports={parseVitals,readVitals,collect,parseCount,parseCard,validateCounts,validateInventory,vehicleCodes,safeReason};
+module.exports={parseVitals,liveVitals,liveVitalsSnapshot,readVitals,collect,parseCount,parseCard,validateCounts,validateInventory,vehicleCodes,safeReason};

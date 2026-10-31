@@ -2,7 +2,7 @@
 
 Architecture & API Contracts: additive existing-contract use; no migration or external API change. Backend & Integrations accountable.
 
-Health source rows gain optional vitals containing odometer_miles and engine_hours (finite nonnegative bounded numbers or null) plus source_read_at. Read visible vehicle-summary labels under the same exact provider route and verified VIN; no location/fault timestamp substitution. Unknown provider observation time remains null. Values in mi/h; convert explicitly labeled km to miles. Ambiguous/malformed/missing fields remain unavailable independently.
+Health source rows gain optional vitals containing odometer_miles and engine_hours (finite nonnegative bounded numbers or null) plus source_read_at. Read visible vehicle-summary labels and Live > Other details table under the same exact provider route and verified VIN; no location/fault timestamp substitution. Unknown provider observation time remains null. Values in mi/h; convert explicitly labeled km to miles. Ambiguous/malformed/missing fields remain unavailable independently.
 
 Import vitals as separate deterministic eligible requests through fleet_telemetry.capture with existing tenant/admin, exact unique VIN and active membership enforcement. Require membership effective at source read time. Preserve original source read in evidence; capture timestamp denotes import, not engine observation. Keep receipt dry-run/commit/replay/readback atomic with diagnostics. Old source documents without vitals retain existing recovery behavior. No canonical vehicle mileage update.
 
