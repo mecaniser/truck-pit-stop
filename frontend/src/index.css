@@ -5780,7 +5780,7 @@ html.customer-portal-active {
   }
 }
 .db-parts-workbench__search { display:flex; align-items:center; gap:.5rem; min-block-size:46px; padding-inline:.7rem; border:1px solid var(--workspace-border); border-radius:.75rem; background:var(--surface-overlay); }
-.db-parts-workbench__search:focus-within { outline:2px solid var(--accent-primary,var(--accent-400)); outline-offset:2px; }
+.db-parts-workbench__search:focus-within { outline:2px solid var(--accent-primary,var(--accent-400)); outline-offset:-2px; }
 .db-parts-workbench__search svg { flex:0 0 auto; inline-size:1.1rem; color:var(--text-secondary); }
 .db-parts-workbench .db-parts-workbench__search input { min-inline-size:0; inline-size:100%; min-block-size:44px; padding:0 !important; border:0 !important; outline:0 !important; background:transparent !important; box-shadow:none !important; color:var(--text-primary) !important; }
 .db-parts-workbench__body { display:grid; grid-template-columns:minmax(30rem,1fr) minmax(22rem,24rem); gap:0; min-block-size:0; overflow:hidden; border:1px solid var(--workspace-border); border-radius:var(--parts-radius-workspace); background:var(--surface-canvas); }
@@ -7497,3 +7497,10 @@ html.customer-portal-active {
 /* Sticky column labels cover inline photos (2) and row actions (4);
    floating menus retain their existing layer (9). */
 .db-parts-workbench__table-head { z-index:5; }
+/* Keep the Parts page and ledger continuous; the selected-part inspector
+   retains its existing gray canvas and selected header treatment. */
+.db-presentation-new .db-staff-main:has(.db-parts-workbench) { background:var(--surface-overlay); }
+.db-presentation-new :is(.db-parts-workbench__body,.db-parts-workbench__ledger-workspace,.db-parts-workbench__ledger,.db-parts-workbench__rows,.db-parts-workbench__table-head,.db-parts-workbench__load-more) { background:var(--surface-overlay); }
+.db-presentation-new .db-parts-workbench__row { outline:1px solid var(--workspace-border); outline-offset:-1px; }
+/* Supplier search meets its scroll container edge; contain focus paint. */
+.db-presentation-new .db-suppliers-workspace .db-search-add-bar__field:focus-within { outline-offset:-2px; }
