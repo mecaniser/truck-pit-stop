@@ -9,8 +9,14 @@ async function menuFits(page){
  assert.ok(bounds.scroll<=bounds.client+1,JSON.stringify(bounds));assert.ok(bounds.onTop,JSON.stringify(bounds));return bounds;
 }
 (async()=>{
- const browser=await chromium.launch({headless:true}); const results=[];
+ const browser=await chromium.launch({headless:true}); const results=[], created=[];
  try {
+ const frontend=path.resolve(out,'../../frontend');
+ for(const [name,content] of [
+  ['dropdown-qa.tsx',fs.readFileSync(path.join(out,'gallery.template.tsx'))],
+  ['dropdown-qa.html','<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"/></head><body><div id="root"></div><script type="module" src="/dropdown-qa.tsx"></script></body></html>'],
+ ]) { const target=path.join(frontend,name);fs.writeFileSync(target,content,{flag:'wx'});created.push(target) }
+
  for(const viewport of [{width:1440,height:1000},{width:390,height:844}])for(const mode of ['light','dark','high_contrast']){
   const context=await browser.newContext({viewport}); const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
   if(mode==='high_contrast')await page.emulateMedia({forcedColors:'active'});
@@ -41,5 +47,5 @@ async function menuFits(page){
   results.push({viewport,mode,equipment,gallery,long,modal,keyboard:true,cancelPreservesStoredValue:true,requiredValidation:true,inheritedDisabled:true,pageErrors:errors});await context.close();
  }
  fs.writeFileSync(path.join(out,'browser-results.json'),JSON.stringify(results,null,2));console.log(`PASS ${results.length} desktop/mobile theme cases`);
- }finally{await browser.close()}
+ }finally{await browser.close();for(const file of created)fs.unlinkSync(file)}
 })().catch(e=>{console.error(e);process.exit(1)});
