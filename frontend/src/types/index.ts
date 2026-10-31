@@ -690,8 +690,18 @@ export interface InvoicePaymentSummary {
 }
 
 export interface InvoiceDetail extends Invoice {
+  payment_summary?: InvoicePaymentPresentation | null
   review_url?: string | null
   order_number: string
   customer_name: string
   vehicle_info: string
+}
+
+export interface InvoicePaymentPresentation {
+  state: 'paid' | 'unpaid' | 'partially_paid' | 'payment_pending' | 'partially_paid_pending' | 'overdue' | 'cancelled' | 'unknown'
+  applied_amount: string | null
+  balance_due: string | null
+  pending_amount: string | null
+  note: string | null
+  basis: string
 }
