@@ -168,6 +168,8 @@ async def run(
                     or row["capture_id"] != saved_ids[row["client_request_id"]]
                 ):
                     raise ValueError("Committed health readback mismatch")
+                if row.get("kind") == "vitals":
+                    continue  # Exact immutable snapshot identity was read back by batch.
                 # Auth-independent current-member projection, same path as fleet API.
                 projection = await service.read(db, tenant_id, UUID(row["vehicle_id"]))
                 if projection.last_checked_at is None:

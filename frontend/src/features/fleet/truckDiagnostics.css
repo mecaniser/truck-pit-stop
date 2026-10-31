@@ -21,3 +21,6 @@
 .fleet-root .diagnostics-codes dt{color:var(--muted);font-size:11px;}
 .fleet-root .diagnostics-codes dd{margin:3px 0 0;}
 .fleet-root .diagnostics-body .btn{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
+
+.fleet-root .health-vitals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:0;padding:0 16px 16px;border-bottom:1px solid var(--line);overflow-wrap:anywhere;}
+.fleet-root .health-vitals dt{font-size:11px;color:var(--muted);}.fleet-root .health-vitals dd{margin:4px 0;font-weight:600;}.fleet-root .health-vitals small{display:block;font-size:11px;color:var(--muted);}

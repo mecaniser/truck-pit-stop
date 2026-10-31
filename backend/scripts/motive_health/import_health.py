@@ -1,4 +1,4 @@
-"""Validate rendered health observations and write only through diagnostics service."""
+"""Validate rendered health observations through diagnostics and telemetry contracts."""
 
 import hashlib
 import json
@@ -7,10 +7,13 @@ from datetime import timedelta
 from uuid import NAMESPACE_URL, uuid5
 
 from app.db.models.customer import Customer
+from app.db.models.user import User
 from app.db.models.vehicle import Vehicle
 from app.db.models.vehicle_relationship import FleetMembership
 from app.schemas.fleet_diagnostic import DiagnosticCapture
+from app.schemas.fleet_telemetry import TelemetryCapture
 from app.services import fleet_diagnostics as service
+from app.services import fleet_telemetry as telemetry
 from app.services.fleet_telemetry import active_membership, now
 from fastapi import HTTPException
 from scripts.motive_sync.import_locations import time_value
@@ -85,6 +88,24 @@ def validate(document, company_label, company_id, *, recovery=False):
                 raise ValueError("Unavailable source must not claim health readings")
         elif not vin:
             raise ValueError("Captured health requires verified VIN")
+        vitals = row.get("vitals")
+        if vitals is not None:
+            if not isinstance(vitals, dict) or not vin:
+                raise ValueError("Vitals require verified VIN")
+            read = time_value(vitals["source_read_at"])
+            if not started <= read <= finished:
+                raise ValueError("Vitals time outside collection")
+            for field, maximum in (
+                ("odometer_miles", 100_000_000),
+                ("engine_hours", 10_000_000),
+            ):
+                value = vitals.get(field)
+                if value is not None and (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not 0 <= value <= maximum
+                ):
+                    raise ValueError("Invalid vitals measurement")
     return document
 
 
@@ -129,6 +150,83 @@ async def batch(
     await service.authorize(db, tenant_id, actor_id)
     results, matched = [], set()
     for row in document["vehicles"]:
+        vitals = row.get("vitals")
+        if vitals and any(
+            vitals.get(field) is not None
+            for field in ("odometer_miles", "engine_hours")
+        ):
+            request = uuid5(
+                NAMESPACE_URL,
+                f"dieselbridge-health-vitals:{tenant_id}:{source_hash(document)}:{row['provider_vehicle_id']}",
+            )
+            vitals_item = {
+                "kind": "vitals",
+                "provider_vehicle_id": row["provider_vehicle_id"],
+                "client_request_id": str(request),
+                "capture_id": None,
+            }
+            if eligible is not None and str(request) not in eligible:
+                results.append({**vitals_item, "status": "excluded"})
+            else:
+                try:
+                    read = time_value(vitals["source_read_at"])
+                    vehicle, member = await service.resolve(
+                        db, tenant_id, row["vin"], now(), expected_customer_id
+                    )
+                    if not telemetry.within(member, read):
+                        raise ValueError("Vitals outside current membership")
+                    actor = await db.get(User, actor_id)
+                    body = TelemetryCapture(
+                        client_request_id=request,
+                        fleet_customer_id=member.fleet_customer_id,
+                        vin=row["vin"],
+                        provider_company_label=company_label,
+                        provider_vehicle_id=row["provider_vehicle_id"],
+                        provider_vehicle_number=row["unit"],
+                        odometer_miles=vitals.get("odometer_miles"),
+                        engine_hours=vitals.get("engine_hours"),
+                        observed_at=None,
+                        evidence_note=json.dumps(
+                            {
+                                "kind": "motive_health_vitals_v1",
+                                "source_read_at": vitals["source_read_at"],
+                                "company_id": company_id,
+                            }
+                        ),
+                    )
+                    # Dry-run must exercise the real contract without leaving writes.
+                    savepoint = await db.begin_nested() if not apply else None
+                    try:
+                        saved, created = await telemetry.capture(
+                            db, actor, vehicle.id, body
+                        )
+                        if created:
+                            saved.captured_at = read
+                            await db.flush()
+                        vitals_item.update(
+                            vehicle_id=str(vehicle.id),
+                            capture_id=str(saved.id),
+                            status=("created" if apply else "would_create")
+                            if created
+                            else "unchanged",
+                        )
+                    finally:
+                        if savepoint:
+                            await savepoint.rollback()
+                    results.append(vitals_item)
+                except HTTPException as exc:
+                    reason = (
+                        exc.detail.get("code") if isinstance(exc.detail, dict) else None
+                    )
+                    if eligible is None and reason in {
+                        "exact_unique_vin_required",
+                        "unique_current_membership_required",
+                    }:
+                        results.append(
+                            {**vitals_item, "status": "excluded", "reason": reason}
+                        )
+                    else:
+                        raise
         item = {
             "provider_vehicle_id": row["provider_vehicle_id"],
             "unit": row.get("unit"),
