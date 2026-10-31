@@ -65,3 +65,5 @@ Draft PR and protected CI are integration/review evidence, not release approval.
 Actual invoice evidence review/access and production financial entries remain
 outside this development task. Browser acceptance does not apply: no UI changed;
 real authenticated ASGI and PostgreSQL journeys cover the changed API boundary.
+
+[Draft PR723](https://github.com/mecaniser/truck-pit-stop/pull/723) is published with user authorization. Final exact-head protected CI receipt will be linked in the PR description. Draft remains unmerged and undeployed.
