@@ -1579,7 +1579,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
             </fieldset>
             <fieldset className="db-parts-workbench__identity-group">
               <legend>Supplier</legend>
-              <div className="db-parts-workbench__identity-fields">
+              <div className="db-parts-workbench__identity-fields db-parts-workbench__supplier-fields">
                 <label>Supplier name<input maxLength={255} disabled={identitySaving || photoSaving} value={identityForm.supplierName} onChange={(event) => updateIdentity('supplierName', event.target.value)} /></label>
                 <label>On order<input inputMode="numeric" disabled={identitySaving || photoSaving} value={identityForm.onOrderQuantity} onChange={(event) => updateIdentity('onOrderQuantity', event.target.value)} /></label>
                 <label>Supplier contact<input maxLength={255} disabled={identitySaving || photoSaving} value={identityForm.supplierContact} onChange={(event) => updateIdentity('supplierContact', event.target.value)} /></label>
