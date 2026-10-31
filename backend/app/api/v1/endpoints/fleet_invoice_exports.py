@@ -27,6 +27,7 @@ from app.db.models.vehicle import Vehicle
 from app.api.v1.endpoints.invoices import _load_line_items
 from app.services.invoice_charge_state import effective_tax_exempt
 from app.services.pdf_service import generate_invoice_pdf
+from app.services.invoice_review_service import invoice_review_url
 from app.services.conversion_export_audit_service import record_conversion_audit
 
 router = APIRouter()
@@ -241,6 +242,7 @@ def _integration_pdf(invoice: Invoice, order: RepairOrder, customer: Customer,
         shop_email=tenant.email,
         shop_phone=tenant.phone,
         shop_logo_url=tenant.logo_url,
+        review_url=invoice_review_url(tenant, invoice),
         vehicle_year=str(vehicle.year) if vehicle.year else None,
         vehicle_make=vehicle.make,
         vehicle_model=vehicle.model,

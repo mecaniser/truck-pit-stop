@@ -250,3 +250,39 @@ def test_cursor_rejects_bad_input_and_round_trips():
     with pytest.raises(Exception) as error:
         exports._cursor_decode(cursor, different_key, since, before)
     assert error.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_export_pdf_includes_only_own_shop_review_url(db_session):
+    owner, customer, invoice, vehicle = await _seed(db_session, f"review-export-{uuid4().hex}")
+    tenant = await db_session.get(Tenant, owner.tenant_id)
+    tenant.review_url = "https://example.com/fleet-review"
+    order = await db_session.get(RepairOrder, invoice.repair_order_id)
+    pdf = exports._integration_pdf(invoice, order, customer, vehicle, tenant, [], [])
+    assert b"/URI (https://example.com/fleet-review)" in pdf
+    tenant.id = uuid4()  # a mismatched shop must never supply its review URL
+    assert b"fleet-review" not in exports._integration_pdf(invoice, order, customer, vehicle, tenant, [], [])
+
+
+@pytest.mark.asyncio
+async def test_customer_invoice_responses_use_invoice_shop_review_url(client, db_session, monkeypatch):
+    from app.core.security import create_access_token
+    owner, customer, invoice, vehicle = await _seed(db_session, f"review-response-{uuid4().hex}")
+    tenant = await db_session.get(Tenant, invoice.tenant_id)
+    tenant.review_url = "https://example.com/own-shop-review"
+    await db_session.commit()
+    token = create_access_token({"sub": str(owner.id)})
+    response = await client.get(f"/api/v1/invoices/{invoice.id}", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200, response.text
+    assert response.json()["review_url"] == tenant.review_url
+    payload = {"invoice_id": str(invoice.id), "tenant_id": str(invoice.tenant_id), "customer_id": str(customer.id), "email": customer.email}
+    from unittest.mock import AsyncMock
+    from app.api.v1.endpoints import invoice_access
+    monkeypatch.setattr(invoice_access, "_get_active_invoice_payload_or_400", AsyncMock(return_value=payload))
+    guest = await client.post("/api/v1/invoice-access/resolve", json={"token": "fictional-test-token"})
+    assert guest.status_code == 200, guest.text
+    assert guest.json()["review_url"] == tenant.review_url
+    invoice.is_internal = True
+    await db_session.commit()
+    response = await client.get(f"/api/v1/invoices/{invoice.id}", headers={"Authorization": f"Bearer {token}"})
+    assert response.json()["review_url"] is None

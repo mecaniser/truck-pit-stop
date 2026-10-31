@@ -8,10 +8,11 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
-from pydantic import BaseModel, EmailStr, Field, HttpUrl
+from pydantic import BaseModel, EmailStr, Field, HttpUrl, field_validator
 from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
 
+from app.services.invoice_review_service import normalize_review_url
 from app.core.config import settings
 from app.core.dependencies import get_db, get_current_active_user, require_permission
 from app.core.phone import normalize_phone
@@ -1082,6 +1083,7 @@ class GarageProfileResponse(BaseModel):
     address: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
+    review_url: Optional[str] = None
     website: Optional[str] = None
     logo_url: Optional[str] = None
     partner_summary: Optional[str] = None
@@ -1097,11 +1099,17 @@ class GarageProfileUpdateRequest(BaseModel):
     address: Optional[str] = Field(None, max_length=500)
     phone: Optional[str] = Field(None, max_length=20)
     email: Optional[EmailStr] = None
+    review_url: Optional[str] = Field(None, max_length=2048)
     website: Optional[str] = Field(None, max_length=255)
     logo_url: Optional[str] = Field(None, max_length=500)
     partner_summary: Optional[str] = Field(None, max_length=280)
     partner_services: Optional[str] = Field(None, max_length=180)
     order_number_prefix: Optional[str] = Field(None, max_length=10)
+
+    @field_validator("review_url")
+    @classmethod
+    def validate_review_url(cls, value):
+        return normalize_review_url(value)
 
 
 class GarageLogoImportRequest(BaseModel):
@@ -1142,6 +1150,7 @@ async def get_garage_profile(
         phone=tenant.phone,
         email=tenant.email,
         website=tenant.website,
+        review_url=tenant.review_url,
         logo_url=tenant.logo_url,
         partner_summary=tenant.partner_summary,
         partner_services=tenant.partner_services,
@@ -1189,6 +1198,8 @@ async def update_garage_profile(
     tenant.address = clean_optional_text(body.address)
     tenant.phone = normalize_phone(body.phone)
     tenant.email = clean_optional_text(str(body.email)) if body.email else None
+    if "review_url" in body.model_fields_set:
+        tenant.review_url = body.review_url
     tenant.website = clean_optional_text(body.website)
     tenant.logo_url = clean_optional_text(body.logo_url)
     tenant.partner_summary = clean_optional_text(body.partner_summary)
@@ -1205,6 +1216,7 @@ async def update_garage_profile(
         phone=tenant.phone,
         email=tenant.email,
         website=tenant.website,
+        review_url=tenant.review_url,
         logo_url=tenant.logo_url,
         partner_summary=tenant.partner_summary,
         partner_services=tenant.partner_services,
@@ -1367,6 +1379,7 @@ async def import_garage_profile_logo(
         phone=tenant.phone,
         email=tenant.email,
         website=tenant.website,
+        review_url=tenant.review_url,
         logo_url=tenant.logo_url,
         partner_summary=tenant.partner_summary,
         partner_services=tenant.partner_services,

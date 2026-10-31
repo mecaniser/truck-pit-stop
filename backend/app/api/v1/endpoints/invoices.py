@@ -1,3 +1,4 @@
+from app.services.invoice_review_service import invoice_review_url, invoice_review_html
 from datetime import datetime, date, timezone
 from types import SimpleNamespace
 from typing import List, Optional
@@ -169,6 +170,7 @@ def _build_invoice_pdf_bytes(
         shop_email=tenant.email if tenant else None,
         shop_phone=tenant.phone if tenant else None,
         shop_logo_url=tenant.logo_url if tenant else None,
+        review_url=invoice_review_url(tenant, invoice),
         vehicle_year=str(vehicle.year) if vehicle and vehicle.year else None,
         vehicle_make=vehicle.make if vehicle else "",
         vehicle_model=vehicle.model if vehicle else "",
@@ -389,6 +391,7 @@ def _build_invoice_email_html(
   <div style="background:#f3f4f6;padding:16px 28px;border-radius:0 0 8px 8px;text-align:center;">
     <p style="margin:0;font-size:12px;color:#6b7280;">{shop_name}{shop_contact}</p>
     <p style="margin:6px 0 0 0;font-size:11px;color:#9ca3af;">Thank you for your business!</p>
+    {invoice_review_html(tenant, invoice)}
     <p style="margin:10px 0 0 0;font-size:10px;color:#d1d5db;">Powered by DieselBridge Network</p>
   </div>
 
@@ -471,6 +474,7 @@ class InvoiceResponse(BaseModel):
 
 
 class InvoiceDetailResponse(InvoiceResponse):
+    review_url: Optional[str] = None
     order_number: str
     customer_name: str
     vehicle_info: str
@@ -1192,7 +1196,9 @@ async def get_invoice(
     customer_name = f"{customer.first_name} {customer.last_name}"
     response = InvoiceResponse.model_validate(inv)
     response.cash_receipt = await load_cash_receipt(db, inv)
+    tenant = (await db.execute(select(Tenant).where(Tenant.id == inv.tenant_id))).scalar_one_or_none()
     return InvoiceDetailResponse(
+        review_url=invoice_review_url(tenant, inv),
         **response.model_dump(),
         order_number=order.order_number,
         customer_name=customer_name,
