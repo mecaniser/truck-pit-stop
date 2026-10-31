@@ -1,3 +1,4 @@
+from app.schemas.vehicle import EquipmentType
 """Small, purpose-built payloads for repair-order workspace typeaheads.
 
 These are deliberately not aliases of the full list/detail response models.
@@ -23,6 +24,7 @@ class CustomerTypeaheadResponse(BaseModel):
 
 
 class VehicleTypeaheadResponse(BaseModel):
+    equipment_type: EquipmentType = "unknown"
     id: UUID
     customer_id: UUID
     make: str

@@ -9,7 +9,7 @@ import { LoadingLine } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import ViewToggle from '@/components/ViewToggle'
 import { formatUSPhone } from '@/utils/phone'
-import { vehicleDisplayLabel } from '@/lib/vehicleName'
+import { equipmentTypeLabel, vehicleDisplayLabel } from '@/lib/vehicleName'
 import type { Contact, Customer, Vehicle } from '@/types'
 import {
   balanceAmountLabel,
@@ -333,7 +333,7 @@ export default function CustomerDetailPanel({
       <section className="db-customer-record__trucks">
         <div className="db-customer-record__section-heading mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500">Truck relationships <span className="db-customer-record__count">{vehiclesError ? "—" : isLoadingVehicles ? "…" : vehicleCount}</span></h3>
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500">Equipment relationships <span className="db-customer-record__count">{vehiclesError ? "—" : isLoadingVehicles ? "…" : vehicleCount}</span></h3>
           </div>
           <div className="flex items-center justify-end gap-2">
             {isLoadingVehicles && <span className="text-xs text-gray-400">Loading...</span>}
@@ -351,7 +351,7 @@ export default function CustomerDetailPanel({
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
               {shouldShowVehicleSearch && (
                 <div className="relative min-w-0 flex-1">
-                  <label className="sr-only" htmlFor="customer-truck-search">Search connected trucks</label>
+                  <label className="sr-only" htmlFor="customer-truck-search">Search connected equipment</label>
                   <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
                   <input
                     id="customer-truck-search"
@@ -367,7 +367,7 @@ export default function CustomerDetailPanel({
                     <button
                       type="button"
                       onClick={() => setVehicleRelationshipSearch('')}
-                      aria-label="Clear truck search"
+                      aria-label="Clear equipment search"
                       className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                     >
                       <X className="h-4 w-4" />
@@ -376,7 +376,7 @@ export default function CustomerDetailPanel({
                 </div>
               )}
               {ownedVehicles.length > 0 && authorityVehicles.length > 0 && (
-                <div className="flex shrink-0 flex-wrap gap-2" role="group" aria-label="Quick filters for truck relationships">
+                <div className="flex shrink-0 flex-wrap gap-2" role="group" aria-label="Quick filters for equipment relationships">
                   {([
                     ['all', 'All', vehicleCount],
                     ['owned', 'Owned', ownedVehicles.length],
@@ -403,7 +403,7 @@ export default function CustomerDetailPanel({
               <div className="mt-2 flex min-h-11 items-center justify-between gap-3">
                 {shouldShowVehicleSearch && vehicleRelationshipSearch.trim() ? (
                   <p className="text-xs text-gray-600" role="status">
-                    Showing {visibleVehicleCount} of {vehicleCount} trucks
+                    Showing {visibleVehicleCount} of {vehicleCount} equipment records
                   </p>
                 ) : (
                   <span />
@@ -423,8 +423,8 @@ export default function CustomerDetailPanel({
           visibleCustomerVehicleGroups.length === 0 ? (
             <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-5 py-8 text-center">
               <Search className="mx-auto h-7 w-7 text-gray-400" />
-              <p className="mt-2 text-sm font-semibold text-gray-800">No connected trucks match</p>
-              <p className="mt-1 text-sm text-gray-500">Clear the search or relationship filter to see every truck.</p>
+              <p className="mt-2 text-sm font-semibold text-gray-800">No connected equipment matches</p>
+              <p className="mt-1 text-sm text-gray-500">Clear the search or relationship filter to see every asset.</p>
               <button
                 type="button"
                 onClick={() => {
@@ -441,7 +441,7 @@ export default function CustomerDetailPanel({
               {visibleCustomerVehicleGroups.map(group => (
                 <section key={group.key} aria-label={group.title}>
                   <div className="db-customer-trucks__group" title={group.description}>
-                    <group.icon aria-hidden="true" /><span>{group.key === 'authority' ? 'Under operating authority' : 'Owned trucks'}</span><span>{group.visibleVehicles.length}</span>
+                    <group.icon aria-hidden="true" /><span>{group.key === 'authority' ? 'Under operating authority' : 'Owned equipment'}</span><span>{group.visibleVehicles.length}</span>
                   </div>
                   <ul>
                     {group.visibleVehicles.map(vehicle => (
@@ -454,6 +454,7 @@ export default function CustomerDetailPanel({
                             <span className="db-customer-trucks__identifiers">
                               {vehicle.vin && <span>VIN <span className="font-mono">{vehicle.vin}</span></span>}
                               {vehicle.license_plate && <span>Plate {vehicle.license_plate}</span>}
+                              <span>{equipmentTypeLabel(vehicle.equipment_type)}</span>
                               {vehicle.color && <span>{vehicle.color}</span>}
                             </span>
                           </div>
@@ -517,6 +518,7 @@ export default function CustomerDetailPanel({
                             {cardTitle}
                           </p>
                           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                            <span>{equipmentTypeLabel(vehicle.equipment_type)}</span>
                             {vehicle.color && <span>{vehicle.color}</span>}
                             <span>{typeof vehicle.mileage === 'number' ? `${vehicle.mileage.toLocaleString()} mi` : 'No mileage'}</span>
                           </div>

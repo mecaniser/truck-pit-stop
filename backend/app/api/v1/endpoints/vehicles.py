@@ -747,6 +747,7 @@ async def vehicle_typeahead(
 
     return [
         VehicleTypeaheadResponse(
+            equipment_type=vehicle.equipment_type,
             id=vehicle.id,
             customer_id=vehicle.customer_id,
             make=vehicle.make,

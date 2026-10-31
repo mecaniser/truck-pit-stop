@@ -1,0 +1,34 @@
+[
+  {
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "tag": "desktop",
+    "pass": true,
+    "realJwtAuth": true,
+    "create": "trailer",
+    "editTrailerPreserved": true,
+    "isolatedTrailerHistory": true,
+    "repairWorkspaceInvoiceVisible": true,
+    "invoiceLinksVerified": 4,
+    "horizontalOverflow": false,
+    "runtimeErrors": []
+  },
+  {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "tag": "mobile",
+    "pass": true,
+    "realJwtAuth": true,
+    "create": "other",
+    "editTrailerPreserved": true,
+    "isolatedTrailerHistory": true,
+    "repairWorkspaceInvoiceVisible": true,
+    "invoiceLinksVerified": 4,
+    "horizontalOverflow": false,
+    "runtimeErrors": []
+  }
+]
