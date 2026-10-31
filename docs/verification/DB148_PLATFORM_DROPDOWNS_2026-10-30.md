@@ -26,6 +26,6 @@ Evidence: output/dropdowns/browser-results.json and twelve equipment/modal scree
 
 ## Release state
 
-Local implementation verified. User explicitly approved publishing the follow-up PR; description is prepared at output/dropdowns/pr-draft.md. Prior PR713 is already merged. Protected CI remains the integration gate. Merge and deployment are separately restricted; no production data changed.
+Local implementation verified. User explicitly approved publishing the follow-up PR; description is prepared at output/dropdowns/pr-draft.md. Prior PR713 is already merged. [PR718](https://github.com/mecaniser/truck-pit-stop/pull/718) is published. Protected CI remains the integration gate; final exact-head receipts are recorded in the PR description. Merge and deployment are separately restricted; no production data changed.
 
 Historical attribution work is isolated in a separate checkout and branch, outside this UI diff.
