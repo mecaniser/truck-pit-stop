@@ -1,3 +1,4 @@
+from app.schemas.vehicle import EquipmentType
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 from typing import Optional, List, TYPE_CHECKING
 from datetime import datetime
@@ -128,6 +129,7 @@ class CustomerResponse(CustomerBase):
 
 class VehicleInCustomer(BaseModel):
     """Embedded vehicle schema for CustomerWithVehiclesResponse"""
+    equipment_type: EquipmentType = "unknown"
     id: UUID
     tenant_id: UUID
     customer_id: UUID

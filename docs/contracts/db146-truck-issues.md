@@ -1,6 +1,6 @@
 # DB-146 / C3 — Standalone truck issues and staff follow-up
 
-Status: Frozen for implementation by Product & Delivery Lead after Architecture merge-compatibility GO, 2026-10-30. A2 and its UI corrections are production-accepted through PR694. Backend & Integrations is accountable, with Frontend & UX consuming this contract. Independent QA and tenant/security review remain required for the additive data model and authorization boundary. This is contract approval, not implementation or release acceptance.
+Status: Implemented and released in PR698 / `18255c03` on 2026-10-30 after Architecture, independent QA/Security, protected CI and production acceptance. Backend & Integrations is accountable. Contract semantics remain frozen; [final verification receipt](../verification/DB146_TRUCK_ISSUES.md) records exact release evidence and production read-only coverage limits.
 
 ## Outcome and fixed limits
 
@@ -55,7 +55,9 @@ All requests reject unknown fields. Tenant, actor, timestamps, target snapshots 
 7. `POST /vehicles/{vehicle_id}/issues/{issue_id}/links`
    `{request_id,expected_version,target_order_id:UUID}`. Issue must be open. Target exact same tenant/truck, undeleted, noncancelled native order under existing ownership-veto rules (including linked ETS/historical-hold provenance). It may already be completed/invoiced/paid: link is a reference only. New link201; identical replay200. New request to same current target returns existing link without extra audit/version increment; different current link409. UI default is Link this visit when context RO eligible, not a universal RO picker. No RO creation.
 8. `POST /vehicles/{vehicle_id}/issues/{issue_id}/links/{link_id}/end`
-   `{request_id,expected_version,reason:string}`. End exact current link; preserve it, leave issue open/state unchanged. User can then deliberately link a different visit. Stale/already ended link with a new request409. No implicit unlink or repair after target removal. Return200 `{issue,replayed}`.
+   `{request_id,expected_version,reason:string}`. End exact current link; preserve it and leave issue state unchanged, including already resolved or dismissed issues; never reopen as a side effect. User can then deliberately link a different visit. Stale/already ended link with a new request409. No implicit unlink or repair after target removal. Return200 `{issue,replayed}`.
+
+Mutation responses have no customer/context_order parameter. Return `can_link_context=false` there; the UI refetches its validated context-scoped list after a mutation to obtain current contextual capabilities.
 
 Issue response shape:
 ```ts

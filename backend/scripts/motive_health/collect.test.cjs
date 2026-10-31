@@ -54,3 +54,24 @@ test('observed J1708 SID and PID retain their own code namespace, never fabricat
  assert.ok(codes.every(c=>c.spn===null&&c.fmi==='03'&&c.network==='J1708'&&c.occurrence_count===0));
  assert.ok(codes.every(c=>c.last_observed_at===null&&c.timezone_basis==='unverified'));
 });
+
+test('vitals parse source units, zero and independent missing fields',()=>{
+ const {parseVitals}=require('./collect.cjs');
+ assert.deepEqual(parseVitals([{label:'ODOMETER',value:'692,224.14 mi'},{label:'Engine hours',value:'23,520'}]),{odometer_miles:692224.14,engine_hours:23520});
+ assert.deepEqual(parseVitals([{label:'Odometer',value:'0 mi'},{label:'Engine hours',value:'0'}]),{odometer_miles:0,engine_hours:0});
+ assert.equal(parseVitals([{label:'Odometer',value:'160.9344 km'}]).odometer_miles,100);
+ for(const raw of ['—','NaN','12,34 mi','-1 mi','123','999999999 mi'])assert.equal(parseVitals([{label:'Odometer',value:raw}]).odometer_miles,null);
+ assert.deepEqual(parseVitals([{label:'Odometer',value:'1 mi'},{label:'Odometer',value:'2 mi'},{label:'Engine hours',value:'34 h'}]),{odometer_miles:null,engine_hours:34});
+});
+
+test('live Other details owns vitals only for exact provider and VIN',()=>{
+ const {liveVitals}=require('./collect.cjs');
+ const identity={href:'#/fleetview/vehicles/summary/123',unit:'example'};
+ const vin='1M8GDM9AXKP042788';
+ const snapshot={url:'https://app.gomotive.com/en-US/#/fleetview/map/vehicle/123-null-null/123/live',fields:[{label:'VIN',value:vin},{label:'ODOMETER',value:'692,224.14 mi'},{label:'ENGINE HOURS',value:'23,520'}]};
+ assert.deepEqual(liveVitals(snapshot,identity,vin),{odometer_miles:692224.14,engine_hours:23520});
+ assert.throws(()=>liveVitals(snapshot,identity,'1M8GDM9AXKP042789'),/identity/);
+ assert.throws(()=>liveVitals({...snapshot,url:snapshot.url.replace('/123/live','/456/live')},identity,vin));
+ assert.throws(()=>liveVitals({...snapshot,url:snapshot.url.replace('app.gomotive.com','example.test')},identity,vin));
+ assert.throws(()=>liveVitals({...snapshot,fields:[...snapshot.fields,{label:'VIN',value:vin}]},identity,vin),/identity/);
+});

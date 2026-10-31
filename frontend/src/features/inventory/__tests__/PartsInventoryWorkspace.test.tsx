@@ -1326,4 +1326,253 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(freshness).toHaveAttribute('data-stale', 'true')
   })
 
+  async function openEditorForValidation() {
+    installApi()
+    const baseGet = apiMocks.get.getMockImplementation()!
+    let record = { ...editableInventory(activePart), cost: '10.00', selling_price: '15.00', core_charge: '2.00', on_order_quantity: 5, pricing_version: 1 }
+    apiMocks.get.mockImplementation((url: string, config: unknown) => url === '/inventory/part-active'
+      ? Promise.resolve({ data: { ...record } }) : baseGet(url, config))
+    const user = userEvent.setup()
+    renderWorkspace()
+    await screen.findByRole('heading', { name: 'Alternator' })
+    await user.click(screen.getByRole('button', { name: 'Edit details' }))
+    const editor = await screen.findByRole('form', { name: 'Edit part details' })
+    return { user, editor, changeSavedRecord: (changes: Partial<typeof record>) => { record = { ...record, ...changes } } }
+  }
+
+  it.each([
+    ['Cost per unit', '', 'Cost per unit'],
+    ['Cost per unit', '-5', 'Cost per unit'],
+    ['Core charge', 'abc', 'Core charge'],
+    ['Selling price', '', 'Selling price'],
+    ['On order', '1.5', 'On order'],
+    ['On order', '', 'On order'],
+  ])('validates invalid editor %s value "%s" instead of saving other edits', async (label, value, errorLabel) => {
+    const { user, editor } = await openEditorForValidation()
+    fireEvent.change(within(editor).getByRole('textbox', { name: label, exact: true }), { target: { value } })
+    await user.type(within(editor).getByRole('textbox', { name: 'Part name' }), ' revised')
+    await user.click(within(editor).getByRole('button', { name: 'Save details' }))
+    expect(apiMocks.put).not.toHaveBeenCalled()
+    expect(within(editor).getByRole('alert')).toHaveTextContent(errorLabel)
+  })
+
+  it.each(['', 'abc', '-101'])('validates invalid editor markup "%s" without changing the saved price', async (value) => {
+    const { user, editor } = await openEditorForValidation()
+    await user.click(within(editor).getByRole('button', { name: 'Markup', exact: true }))
+    fireEvent.change(within(editor).getByRole('textbox', { name: 'Markup percent' }), { target: { value } })
+    await user.type(within(editor).getByRole('textbox', { name: 'Part name' }), ' revised')
+    await user.click(within(editor).getByRole('button', { name: 'Save details' }))
+    expect(apiMocks.put).not.toHaveBeenCalled()
+    expect(within(editor).getByRole('alert')).toHaveTextContent(/markup/i)
+    await user.click(within(editor).getByRole('button', { name: 'Price', exact: true }))
+    expect(within(editor).getByRole('textbox', { name: 'Selling price', exact: true })).toHaveValue('15.00')
+  })
+
+  it('allows explicit zero editor amounts and quantity', async () => {
+    const { user, editor } = await openEditorForValidation()
+    for (const label of ['Cost per unit', 'Core charge', 'Selling price', 'On order']) {
+      fireEvent.change(within(editor).getByRole('textbox', { name: label, exact: true }), { target: { value: '0' } })
+    }
+    await user.click(within(editor).getByRole('button', { name: 'Save details' }))
+    await waitFor(() => expect(apiMocks.put).toHaveBeenCalledWith('/inventory/part-active', {
+      cost: '0.00', core_charge: '0.00', selling_price: '0.00', on_order_quantity: 0, expected_pricing_version: 1,
+    }))
+  })
+
+  it('initializes reopened editor from the fresh record rather than cached values', async () => {
+    const { user, changeSavedRecord } = await openEditorForValidation()
+    await user.click(screen.getByRole('button', { name: 'Cancel editing' }))
+    changeSavedRecord({ name: 'Fresh alternator', cost: '20.00', pricing_version: 2 })
+    await user.click(screen.getByRole('button', { name: 'Edit details' }))
+    const reopened = await screen.findByRole('form', { name: 'Edit part details' })
+    await waitFor(() => expect(within(reopened).getByRole('textbox', { name: 'Part name' })).toHaveValue('Fresh alternator'))
+    expect(within(reopened).getByRole('textbox', { name: 'Cost per unit' })).toHaveValue('20.00')
+  })
+
+  it('blocks editor cancel while a save is pending and retains the draft on failure', async () => {
+    const { user, editor } = await openEditorForValidation()
+    let rejectSave!: (error: Error) => void
+    apiMocks.put.mockImplementation(() => new Promise((_resolve, reject) => { rejectSave = reject }))
+    await user.type(within(editor).getByRole('textbox', { name: 'Part name' }), ' revised')
+    await user.click(within(editor).getByRole('button', { name: 'Save details' }))
+    expect(screen.getByRole('button', { name: 'Cancel editing' })).toBeDisabled()
+    await user.keyboard('{Escape}')
+    expect(editor).toBeInTheDocument()
+    rejectSave(new Error('Could not save'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel editing' })).toBeEnabled())
+    expect(within(editor).getByRole('textbox', { name: 'Part name' })).toHaveValue('Alternator revised')
+  })
+
+  it('ignores an older editor save completion after selecting another part', async () => {
+    const { user, editor } = await openEditorForValidation()
+    let finishSave!: (result: unknown) => void
+    apiMocks.put.mockImplementation(() => new Promise((resolve) => { finishSave = resolve }))
+    await user.type(within(editor).getByRole('textbox', { name: 'Part name' }), ' revised')
+    await user.click(within(editor).getByRole('button', { name: 'Save details' }))
+    await user.type(screen.getByRole('searchbox', { name: 'Search parts' }), 'brake')
+    await screen.findByRole('heading', { name: 'Brake shoe kit' })
+    await user.click(screen.getByRole('button', { name: 'Edit details' }))
+    const nextEditor = await screen.findByRole('form', { name: 'Edit part details' })
+    finishSave({ data: editableInventory(activePart) })
+    await waitFor(() => expect(screen.getByText('Alternator revised details saved.')).toBeInTheDocument())
+    expect(nextEditor).toBeInTheDocument()
+    expect(within(nextEditor).getByRole('textbox', { name: 'Part name' })).toHaveValue('Brake shoe kit')
+  })
+
+  it('keeps cached editor values hidden when reopening cannot fetch fresh data and supports retry', async () => {
+    const { user, changeSavedRecord } = await openEditorForValidation()
+    await user.click(screen.getByRole('button', { name: 'Cancel editing' }))
+    changeSavedRecord({ name: 'Fresh after retry' })
+    const baseGet = apiMocks.get.getMockImplementation()!
+    let fail = true
+    apiMocks.get.mockImplementation((url: string, config: unknown) => {
+      if (url === '/inventory/part-active' && fail) { fail = false; return Promise.reject(new Error('Offline')) }
+      return baseGet(url, config)
+    })
+    await user.click(screen.getByRole('button', { name: 'Edit details' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Editable part details could not be loaded.')
+    expect(screen.queryByRole('form', { name: 'Edit part details' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Retry', exact: true }))
+    const editor = await screen.findByRole('form', { name: 'Edit part details' })
+    expect(within(editor).getByRole('textbox', { name: 'Part name' })).toHaveValue('Fresh after retry')
+  })
+
+  it('blocks editor cancel while a photo upload is pending and recovers on upload failure', async () => {
+    const { user, editor } = await openEditorForValidation()
+    let rejectUpload!: (error: Error) => void
+    apiMocks.post.mockImplementation(() => new Promise((_resolve, reject) => { rejectUpload = reject }))
+    const input = editor.parentElement!.querySelector<HTMLInputElement>('input[type="file"]')!
+    await user.upload(input, new File(['image'], 'qa.webp', { type: 'image/webp' }))
+    expect(screen.getByRole('button', { name: 'Cancel editing' })).toBeDisabled()
+    rejectUpload(new Error('Photo upload failed'))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Photo upload failed')
+    expect(screen.getByRole('button', { name: 'Cancel editing' })).toBeEnabled()
+    expect(editor).toBeInTheDocument()
+  })
+
+  it('refreshes derived inspector facts after saving catalog cost and incoming quantity', async () => {
+    const { user, editor } = await openEditorForValidation()
+    const baseGet = apiMocks.get.getMockImplementation()!
+    let saved = false
+    apiMocks.get.mockImplementation((url: string, config: unknown) => saved && url === '/parts-operations/parts/part-active'
+      ? Promise.resolve({ data: { ...detail(activePart), average_unit_cost: '12.50', incoming_packages: 4 } })
+      : baseGet(url, config))
+    apiMocks.put.mockImplementation(async () => { saved = true; return { data: { ...editableInventory(activePart), cost: '12.50', selling_price: '18.75', on_order_quantity: 4 } } })
+    fireEvent.change(within(editor).getByRole('textbox', { name: 'Cost per unit' }), { target: { value: '12.50' } })
+    fireEvent.change(within(editor).getByRole('textbox', { name: 'On order' }), { target: { value: '4' } })
+    await user.click(within(editor).getByRole('button', { name: 'Save details' }))
+    await waitFor(() => expect(screen.queryByRole('form', { name: 'Edit part details' })).not.toBeInTheDocument())
+    const overview = screen.getByRole('tabpanel', { name: 'Overview' })
+    expect(within(overview).getByText('Unit cost').nextElementSibling).toHaveTextContent('$12.50')
+    expect(within(overview).getByText('Incoming').nextElementSibling).toHaveTextContent('4')
+    expect(within(overview).getByText('Selling price').nextElementSibling).toHaveTextContent('$18.75')
+  })
+
+  it('previews a row placeholder independently of selection and restores keyboard focus', async () => {
+    installApi()
+    const user = userEvent.setup()
+    renderWorkspace()
+    await screen.findByRole('heading', { name: 'Alternator' })
+    await user.click(screen.getByRole('button', { name: 'Load 50 more' }))
+    const row = (await screen.findByRole('button', { name: 'Brake shoe kit BRK-9' })).closest('[role="row"]') as HTMLElement
+    const preview = within(row).getByRole('button', { name: 'Expand image for Brake shoe kit' })
+    preview.focus()
+    await user.keyboard('{Enter}')
+    const dialog = await screen.findByRole('dialog', { name: 'Brake shoe kit image' })
+    expect(within(dialog).getByRole('img')).toHaveAccessibleName(/Brake shoe kit/)
+    expect(screen.getByRole('heading', { name: 'Alternator', hidden: true })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() => expect(preview).toHaveFocus())
+    expect(apiMocks.put).not.toHaveBeenCalled()
+  })
+
+  it('expands the part photo and the displayed shop-logo fallback', async () => {
+    installApi()
+    const user = userEvent.setup()
+    renderWorkspace()
+    const selected = await screen.findByRole('complementary', { name: 'Alternator' })
+    const preview = within(selected).getByRole('button', { name: 'Expand image for Alternator' })
+    await user.click(preview)
+    let dialog = await screen.findByRole('dialog', { name: 'Alternator image' })
+    expect(within(dialog).getByRole('img')).toHaveAttribute('src', activePart.image_url)
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(preview).toHaveFocus())
+    fireEvent.error(within(preview).getByRole('img'))
+    await user.click(preview)
+    dialog = await screen.findByRole('dialog', { name: 'Alternator image' })
+    expect(within(dialog).getByRole('img')).toHaveAttribute('src', brandingState.logoUrl)
+    expect(within(dialog).getByText('Shop logo placeholder')).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(preview).toHaveFocus())
+  })
+
+  it('expands the displayed photo fallback and closes with the preview close control', async () => {
+    installApi()
+    const user = userEvent.setup()
+    renderWorkspace()
+    const selected = await screen.findByRole('complementary', { name: 'Alternator' })
+    const preview = within(selected).getByRole('button', { name: 'Expand image for Alternator' })
+    fireEvent.error(within(preview).getByRole('img'))
+    fireEvent.error(within(preview).getByRole('img'))
+    await user.click(preview)
+    const dialog = await screen.findByRole('dialog', { name: 'Alternator image' })
+    expect(within(dialog).getByRole('img', { name: 'No image available for Alternator' })).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Close image preview' }))
+    await waitFor(() => expect(preview).toHaveFocus())
+    expect(apiMocks.post).not.toHaveBeenCalled()
+  })
+
+  it('keeps the soft-hotspot cue decorative and the keyboard target on the part button', async () => {
+    installApi()
+    renderWorkspace()
+    const partButton = await screen.findByRole('button', { name: 'Alternator ALT-42' })
+    const cue = partButton.querySelector('.db-parts-workbench__row-cue')
+    expect(cue).not.toBeNull()
+    expect(cue).toHaveAttribute('aria-hidden', 'true')
+    expect(partButton).toHaveAttribute('aria-controls', 'selected-part-inspector')
+    expect(partButton.querySelectorAll('button, a, [tabindex]')).toHaveLength(0)
+  })
+
+  it('opens parts with Enter and Space while other cells and purchase checkboxes do not select them', async () => {
+    installApi()
+    const user = userEvent.setup()
+    renderWorkspace()
+    await screen.findByRole('heading', { name: 'Alternator' })
+    await user.click(screen.getByRole('button', { name: 'Load 50 more' }))
+    const brakeButton = await screen.findByRole('button', { name: 'Brake shoe kit BRK-9' })
+    const row = brakeButton.closest('[role="row"]')!
+    await user.click(within(row as HTMLElement).getByRole('cell', { name: '9', exact: true }))
+    expect(screen.getByRole('heading', { name: 'Alternator' })).toBeInTheDocument()
+    const checkbox = screen.getByRole('checkbox', { name: 'Select Brake shoe kit for purchase preparation' })
+    await user.click(checkbox)
+    expect(screen.getByRole('heading', { name: 'Alternator' })).toBeInTheDocument()
+    await user.tab()
+    expect(brakeButton).toHaveFocus()
+    await user.keyboard('{Enter}')
+    expect(await screen.findByRole('heading', { name: 'Brake shoe kit' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Alternator ALT-42' }))
+    brakeButton.focus()
+    await user.keyboard(' ')
+    expect(await screen.findByRole('heading', { name: 'Brake shoe kit' })).toBeInTheDocument()
+    expect(apiMocks.put).not.toHaveBeenCalled()
+  })
+
+  it('keeps the optional row action menu separate from part selection and restores its keyboard focus', async () => {
+    installApi()
+    const user = userEvent.setup()
+    const summary = { needs_reorder_count: 5, low_stock_count: 7, open_purchase_order_count: 2, capabilities: { counter_sales: true } }
+    renderWorkspace(summary)
+    await screen.findByRole('heading', { name: 'Alternator' })
+    await user.click(screen.getByRole('button', { name: 'Load 50 more' }))
+    const more = await screen.findByRole('button', { name: 'More actions for Brake shoe kit' })
+    await user.click(more)
+    expect(screen.getByRole('heading', { name: 'Alternator' })).toBeInTheDocument()
+    expect(screen.getByRole('menu', { name: 'Actions for Brake shoe kit' })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(more).toHaveFocus())
+    expect(screen.queryByRole('menu', { name: 'Actions for Brake shoe kit' })).not.toBeInTheDocument()
+    expect(apiMocks.put).not.toHaveBeenCalled()
+  })
+
 })

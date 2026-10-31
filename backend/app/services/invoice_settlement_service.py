@@ -883,6 +883,8 @@ async def append_ledger_event(
         evidence_snapshot=evidence or {},
     )
     db.add(event_row)
+    from app.services.fleet_financial_wakeup import enqueue_settlement_wakeup
+    await enqueue_settlement_wakeup(db,settlement)
     return event_row
 
 

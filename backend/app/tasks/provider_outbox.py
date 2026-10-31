@@ -93,3 +93,10 @@ def purge_callrail_media_cache():
             async with db.begin():
                 await purge_expired(db)
     return run_async(purge())
+
+
+@celery_app.task(name="process_fleet_financial_wakeups", acks_late=True, reject_on_worker_lost=True, soft_time_limit=45, time_limit=60)
+def process_fleet_financial_wakeups():
+    """Separate lease/cadence prevents email traffic starving financial wakeups."""
+    from app.services.fleet_financial_wakeup import process_due_financial_wakeups
+    return run_async(process_due_financial_wakeups(limit=1))

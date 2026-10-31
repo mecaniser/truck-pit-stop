@@ -1,3 +1,4 @@
+from app.api.v1.endpoints import fleet_repair_financial_exports
 from app.api.v1.endpoints import fleet_repair_history_exports
 from app.api.v1.endpoints import motive, motive_webhooks
 from app.api.v1.endpoints import external_services, vehicle_history_exports
@@ -26,6 +27,7 @@ from app.api.v1.endpoints import labor_cost
 api_router.include_router(labor_cost.router, prefix="/reports", tags=["owner-job-contribution"])
 api_router.include_router(conversion_exports.router, prefix="/conversion-exports", tags=["conversion-exports"])
 api_router.include_router(fleet_invoice_exports.router, prefix="/fleet-invoice-exports", tags=["fleet-invoice-exports"])
+api_router.include_router(fleet_repair_financial_exports.router, prefix="/fleet-invoice-exports", tags=["fleet-repair-financial"])
 api_router.include_router(fleet_repair_history_exports.router, prefix="/fleet-invoice-exports", tags=["fleet-repair-history"])
 api_router.include_router(historical_invoice_reviews.router, prefix="/fleet-invoice-exports", tags=["fleet-invoice-reviews"])
 api_router.include_router(parts_operations.router, prefix="/parts-operations", tags=["parts-operations"])
@@ -73,3 +75,9 @@ api_router.include_router(maintenance.work_router, tags=["maintenance"])
 
 from app.api.v1.endpoints import callrail
 api_router.include_router(callrail.router, prefix='/webhooks/callrail', tags=['webhooks'])
+
+from app.api.v1.endpoints import vehicle_issues
+api_router.include_router(vehicle_issues.router, prefix="/vehicles", tags=["truck issues"])
+
+from app.api.v1.endpoints import platform_sms_onboarding
+api_router.include_router(platform_sms_onboarding.router, prefix="/admin/tenants/{tenant_id}/sms", tags=["platform-sms-registration"])

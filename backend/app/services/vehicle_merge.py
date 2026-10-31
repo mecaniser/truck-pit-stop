@@ -50,6 +50,7 @@ async def vehicle_merge_summary(db: AsyncSession, vehicle: Vehicle) -> dict[str,
         "customer_name": customer_name.company_name or f"{customer_name.first_name} {customer_name.last_name}".strip(),
         "vin": normalize_vin(vehicle.vin) or "",
         "unit_number": vehicle.unit_number,
+        "equipment_type": vehicle.equipment_type or "unknown",
         "make": vehicle.make,
         "model": vehicle.model,
         "year": vehicle.year,
@@ -105,6 +106,12 @@ def validate_same_physical_vehicle(
     confirm_vin: str | None = None,
     confirm_unit_number: str | None = None,
 ) -> tuple[str, str]:
+    # Type reconciliation is explicit; a shared unit number is not proof that
+    # a tractor and its trailer are the same physical asset.
+    canonical_type = canonical.equipment_type or "unknown"
+    duplicate_type = duplicate.equipment_type or "unknown"
+    if canonical_type != duplicate_type:
+        raise VehicleMergeError("Equipment types must match before merging; classify both records first")
     canonical_vin = normalize_vin(canonical.vin)
     duplicate_vin = normalize_vin(duplicate.vin)
     if canonical_vin and len(canonical_vin) == 17 and canonical_vin == duplicate_vin:
@@ -340,6 +347,8 @@ async def merge_vehicles(
         raise VehicleMergeError("Confirm the matching unit number before merging")
     from app.services.maintenance import guard_vehicle_merge
     await guard_vehicle_merge(db, canonical, duplicate)
+    from app.services.vehicle_issues import guard_vehicle_merge as guard_issue_history
+    await guard_issue_history(db, canonical, duplicate)
     now = datetime.now(timezone.utc)
     before = {
         "canonical": {key: str(value) if isinstance(value, UUID) else value for key, value in (await vehicle_merge_summary(db, canonical)).items()},

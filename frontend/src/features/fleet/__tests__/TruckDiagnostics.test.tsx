@@ -71,3 +71,20 @@ it('shows loading and dismisses on an outside click', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Outside' }))
   await waitFor(() => expect(screen.queryByText('Truck health')).not.toBeInTheDocument())
 })
+
+it('shows zero vitals and provenance even when fault-code loading fails', async () => {
+  get.mockRejectedValue(new Error('offline'))
+  const reading = { value: 0, unit: 'mi', basis: 'dashboard_unspecified', source: 'motive_dashboard_manual' as const, observed_at: null, captured_at: new Date().toISOString(), freshness: 'unknown' as const, snapshot_id: 'capture', source_age_text: null }
+  const telemetry = { location: null, speed: null, odometer: reading, engine_hours: { ...reading, value: 23520, unit: 'h' }, fuel: null, fault_count: null, motion: 'unknown' as const }
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><TruckDiagnostics truckId="truck-one" telemetry={telemetry} /></QueryClientProvider>)
+  await userEvent.click(screen.getByRole('button', { name: 'View health' }))
+  expect(await screen.findByText('0 mi')).toBeVisible()
+  expect(screen.getByText('23,520 h')).toBeVisible()
+  expect(screen.getAllByText(/Observation time unknown/)).toHaveLength(2)
+  expect(await screen.findByRole('alert')).toHaveTextContent('Fault codes could not be loaded.')
+})
+it('shows unavailable vitals alongside a verified empty fault check', async () => {
+  await open({ last_checked_at: new Date().toISOString(), coverage: 'complete', explicit_empty: true, codes: [] })
+  expect(await screen.findByText('No current fault codes were reported at this check.')).toBeVisible()
+  expect(screen.getAllByText('Unavailable')).toHaveLength(2)
+})

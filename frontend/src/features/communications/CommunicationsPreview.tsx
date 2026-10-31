@@ -96,7 +96,6 @@ const day = (value: string) =>
 export interface InboxConnection {
   embedded?: boolean;
   canManageCustomerContext?: boolean;
-  canSetupSMS?: boolean;
   rows: Conversation[];
   searchIds?: string[] | null;
   onSearch?: (search: string) => void;
@@ -1015,7 +1014,6 @@ export default function CommunicationsPreview({
       </main>
       {showConnections && (
         <MessageSettings
-          canSetupSMS={!!connection?.canSetupSMS}
           channels={connection?.channels}
           deliveryMode={connection?.deliveryMode}
           onClose={() => setShowConnections(false)}

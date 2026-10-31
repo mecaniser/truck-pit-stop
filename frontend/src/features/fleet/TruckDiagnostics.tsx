@@ -2,6 +2,7 @@ import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
 import { useQuery } from '@tanstack/react-query'
 import { Activity, RotateCcw, X } from 'lucide-react'
 import api from '@/lib/api'
+import { readingCaption, retained, useTelemetryClock, type FleetTelemetry } from './telemetry'
 import './truckDiagnostics.css'
 
 export interface DiagnosticCode {
@@ -29,12 +30,12 @@ function checkedTime(value: string) {
   return new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-export default function TruckDiagnostics({ truckId }: { truckId: string }) {
+export default function TruckDiagnostics({ truckId, telemetry }: { truckId: string; telemetry?: FleetTelemetry | null }) {
   return <Popover className="truck-health">
     <PopoverButton className="dbtn dbtn-ghost dhead-health"><Activity size={15} aria-hidden="true" /> View health</PopoverButton>
     <PopoverPanel className="truck-health-panel" focus>
       <div className="truck-health-heading"><h2>Truck health</h2><PopoverButton className="truck-health-close" aria-label="Close truck health"><X size={18} aria-hidden="true" /></PopoverButton></div>
-      <TruckDiagnosticsContent truckId={truckId} />
+      <HealthVitals telemetry={telemetry} /><TruckDiagnosticsContent truckId={truckId} />
     </PopoverPanel>
   </Popover>
 }
@@ -68,4 +69,14 @@ function TruckDiagnosticsContent({ truckId }: { truckId: string }) {
           <p className="diagnostics-meta">Codes reflect the last dashboard check. Missing codes do not confirm a repair.</p>
         </>}
   </div>
+}
+
+function HealthVitals({ telemetry }: { telemetry?: FleetTelemetry | null }) {
+  const now = useTelemetryClock()
+  return <dl className="health-vitals">{([
+    ['odometer', 'Mileage', 'mi'], ['engine_hours', 'Engine hours', 'h'],
+  ] as const).map(([field, label, unit]) => {
+    const reading = retained(telemetry?.[field], now)
+    return <div key={field}><dt>{label}</dt><dd>{reading ? `${reading.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${unit}` : 'Unavailable'}</dd>{reading && <small>{reading.source === 'motive_api' ? 'Motive API' : 'Motive dashboard'} · {readingCaption(reading)}{!reading.observed_at && ' · Observation time unknown'}</small>}</div>
+  })}</dl>
 }

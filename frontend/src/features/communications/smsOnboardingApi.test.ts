@@ -1,10 +1,21 @@
-import { beforeEach, expect, it, vi } from "vitest";
-import api from "../../lib/api";
-import { smsOnboardingApi, type SMSDraft } from "./smsOnboardingApi";
-vi.mock("../../lib/api", () => ({
-  default: { get: vi.fn(), put: vi.fn(), post: vi.fn() },
-}));
-beforeEach(() => vi.resetAllMocks());
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import api from '../../lib/api'
+import { platformSMSRegistrationApi, smsOnboardingApi, type SMSDraft } from './smsOnboardingApi'
+vi.mock('../../lib/api', () => ({default:{get:vi.fn(),put:vi.fn(),post:vi.fn()}}))
+beforeEach(()=> {vi.resetAllMocks(); vi.mocked(api.get).mockResolvedValue({data:{items:[]}});vi.mocked(api.post).mockResolvedValue({data:{}})})
+describe('Registration scope',()=>{
+ it('requires selected shop in admin paths and leaves consent tenant scoped',async()=>{
+  await platformSMSRegistrationApi.get('shop-a')
+  expect(api.get).toHaveBeenLastCalledWith('/admin/tenants/shop-a/sms/onboarding')
+  await platformSMSRegistrationApi.review('shop-b',2)
+  expect(api.post).toHaveBeenLastCalledWith('/admin/tenants/shop-b/sms/onboarding/review',{expected_version:2})
+  await platformSMSRegistrationApi.package('shop-b')
+  expect(api.get).toHaveBeenLastCalledWith('/admin/tenants/shop-b/sms/onboarding/review-package')
+  await smsOnboardingApi.consents('customer')
+  expect(api.get).toHaveBeenLastCalledWith('/communications/sms/consents',{params:{customer_id:'customer'}})
+ })
+})
+
 it("sends blank optional fields as null so partial drafts can be saved", async () => {
   vi.mocked(api.put).mockResolvedValue({ data: { version: 1 } });
   const draft: SMSDraft = {
@@ -21,8 +32,8 @@ it("sends blank optional fields as null so partial drafts can be saved", async (
     message_description: "",
     sample_messages: ["Shop repair update.", ""],
   };
-  await smsOnboardingApi.save(draft, 0);
-  expect(api.put).toHaveBeenCalledWith("/communications/sms/onboarding", {
+  await platformSMSRegistrationApi.save("shop-a", draft, 0);
+  expect(api.put).toHaveBeenCalledWith("/admin/tenants/shop-a/sms/onboarding", {
     ...draft,
     trade_name: null,
     website_url: null,
@@ -40,9 +51,9 @@ it("prepares a versioned local review without provider submission", async () => 
   vi.mocked(api.post).mockResolvedValue({
     data: { status: "ready_for_review" },
   });
-  await smsOnboardingApi.review(3);
+  await platformSMSRegistrationApi.review("shop-a", 3);
   expect(api.post).toHaveBeenCalledWith(
-    "/communications/sms/onboarding/review",
+    "/admin/tenants/shop-a/sms/onboarding/review",
     { expected_version: 3 },
   );
 });

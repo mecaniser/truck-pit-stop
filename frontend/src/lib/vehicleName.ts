@@ -34,3 +34,12 @@ export function vehicleDisplayLabel(vehicle: VehicleNameFields, options?: { incl
   const year = includeYear && vehicle.year ? `${vehicle.year} ` : ''
   return `${year}${[knownMake, knownModel].filter(Boolean).join(' ')}`.trim()
 }
+
+export function equipmentTypeLabel(type?: string): string {
+  switch (type) {
+    case 'tractor': return 'Tractor / Truck'
+    case 'trailer': return 'Trailer'
+    case 'other': return 'Other equipment'
+    default: return 'Unclassified'
+  }
+}

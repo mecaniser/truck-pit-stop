@@ -6,6 +6,7 @@ import toast from 'react-hot-toast'
 import { GlassNoirCard, GlassNoirButton, GlassNoirBadge } from '../../components/ui/GlassNoirCard'
 import { formatUSPhone } from '../../utils/phone'
 import GarageTeamModal from './components/GarageTeamModal'
+import ShopSMSRegistration from './components/ShopSMSRegistration'
 
 interface Tenant {
   id: string
@@ -47,6 +48,7 @@ export default function GaragesPage() {
   const [smsProvisioning, setSmsProvisioning] = useState(false)
   const [smsProvisionError, setSmsProvisionError] = useState<string | null>(null)
   const [smsStateUpdatingGarageId, setSmsStateUpdatingGarageId] = useState<string | null>(null)
+  const [registrationGarage, setRegistrationGarage] = useState<Tenant | null>(null)
   const [teamModalGarage, setTeamModalGarage] = useState<Tenant | null>(null)
   const [activationModalGarage, setActivationModalGarage] = useState<Tenant | null>(null)
   const [activationUpdating, setActivationUpdating] = useState(false)
@@ -476,6 +478,7 @@ export default function GaragesPage() {
                 >
                   Manage Team
                 </GlassNoirButton>
+                <GlassNoirButton variant="ghost" size="sm" onClick={() => setRegistrationGarage(garage)}>Repair texting registration</GlassNoirButton>
                 <a
                   href={`/dashboard/garages/${garage.id}/analytics`}
                   className="px-3 sm:px-4 py-2 bg-gold-500 hover:bg-gold-400 text-black rounded-lg text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap"
@@ -533,6 +536,8 @@ export default function GaragesPage() {
           ))
         )}
       </div>
+
+      {registrationGarage && <ShopSMSRegistration tenantId={registrationGarage.id} shopName={registrationGarage.name} onClose={() => setRegistrationGarage(null)} />}
 
       {teamModalGarage && (
         <GarageTeamModal

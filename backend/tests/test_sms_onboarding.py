@@ -44,7 +44,7 @@ async def isolated():
 
 
 @pytest.mark.asyncio
-async def test_draft_version_review_redaction_and_staff_denial(isolated,monkeypatch):
+async def test_draft_version_review_and_redaction(isolated,monkeypatch):
     from app.services import sms_onboarding_service as svc
     from app.services import messaging_service
     db,tenant,user,_=isolated
@@ -64,10 +64,6 @@ async def test_draft_version_review_redaction_and_staff_denial(isolated,monkeypa
     result=await svc.request_review(db,tenant,user,1)
     assert result['status']=='ready_for_review' and result['version']==2
     assert result['submission_enabled'] is False
-    user.role='mechanic'
-    with pytest.raises(HTTPException) as exc:
-        await svc.owner_tenant(db,user)
-    assert exc.value.status_code==403
 
 
 @pytest.mark.asyncio
@@ -106,31 +102,35 @@ async def test_binding_versioning_attestation_and_account_ownership(isolated):
     await db.commit()
 
 @pytest.mark.asyncio
-async def test_http_owner_draft_export_injection_and_staff_permissions(isolated):
+async def test_http_platform_draft_export_injection_and_staff_permissions(isolated):
     from fastapi import FastAPI
     import httpx
     from app.api.v1.endpoints.sms_onboarding import router
+    from app.api.v1.endpoints.platform_sms_onboarding import router as platform_router
     from app.core.dependencies import get_db,get_current_active_user
     db,tenant,user,customer=isolated
     app=FastAPI();app.include_router(router,prefix='/communications/sms')
+    app.include_router(platform_router,prefix='/admin/tenants/{tenant_id}/sms')
+    user.role='super_admin'
+    path=f'/admin/tenants/{tenant.id}/sms/onboarding'
     async def session():
         yield db
     app.dependency_overrides[get_db]=session
     app.dependency_overrides[get_current_active_user]=lambda:user
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://isolated.test') as client:
-        response=await client.get('/communications/sms/onboarding')
+        response=await client.get(path)
         assert response.status_code==200 and response.json()['version']==0
-        response=await client.put('/communications/sms/onboarding',json={'expected_version':0,'legal_name':'HTTP synthetic LLC','enabled':True})
+        response=await client.put(path,json={'expected_version':0,'legal_name':'HTTP synthetic LLC','enabled':True})
         assert response.status_code==422
-        response=await client.put('/communications/sms/onboarding',json={'expected_version':0,'legal_name':'HTTP synthetic LLC'})
+        response=await client.put(path,json={'expected_version':0,'legal_name':'HTTP synthetic LLC'})
         assert response.status_code==200 and response.json()['version']==1
-        response=await client.get('/communications/sms/onboarding/review-package')
+        response=await client.get(path+'/review-package')
         assert response.status_code==200 and response.json()['review_only'] is True
         assert response.json()['submission_enabled'] is False
-        response=await client.post('/communications/sms/onboarding/review',json={'expected_version':1})
+        response=await client.post(path+'/review',json={'expected_version':1})
         assert response.status_code==409 and response.json()['detail']['code']=='draft_incomplete'
         user.role='mechanic'
-        assert (await client.get('/communications/sms/onboarding')).status_code==403
+        assert (await client.get(path)).status_code==403
         assert (await client.get('/communications/sms/consents',params={'customer_id':str(customer.id)})).status_code==200
         assert (await client.get('/communications/sms/consents',params={'customer_id':str(uuid4())})).status_code==404
         assert (await client.post('/communications/sms/activate')).status_code==404

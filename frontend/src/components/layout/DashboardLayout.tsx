@@ -3,7 +3,7 @@ import { useWorkspaceViewport } from '@/hooks/useWorkspaceViewport'
 import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
 import { lazyRouteLoader } from '@/lib/staleDeploy'
 import { useQuery } from '@tanstack/react-query'
-import { lazy, Suspense, type MouseEvent as ReactMouseEvent, type TouchEvent, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, type MouseEvent as ReactMouseEvent, type TouchEvent, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useAuthStore } from '../../stores/authStore'
 import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown, MessageSquare, CreditCard, MoreHorizontal, ChevronLeft, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { useTheme } from '../../contexts/ThemeContext'
@@ -16,6 +16,12 @@ import useTenantBranding from '@/hooks/useTenantBranding'
 import { ShopSearchButton, ShopSearchProvider } from '@/features/global-search/ShopSearch'
 
 const STAFF_RAIL_STORAGE_KEY = 'db-staff-rail-expanded'
+const STAFF_NAV_CATEGORIES: Record<string, string> = {
+  '/dashboard': 'work',
+  '/dashboard/repair-orders': 'orders',
+  '/dashboard/customers': 'customers',
+  '/dashboard/garage': 'shop',
+}
 const CustomersPage = lazy(lazyRouteLoader(() => import('@/features/customers/CustomersPage')))
 const RepairOrdersPage = lazy(lazyRouteLoader(() => import('@/features/repair-orders/RepairOrdersPage')))
 const MyGaragePage = lazy(lazyRouteLoader(() => import('@/features/garage/MyGaragePage')))
@@ -51,6 +57,9 @@ export default function DashboardLayout() {
   const [staffRailCanExpand, setStaffRailCanExpand] = useState(getStaffRailCanExpand)
   const mobileNavTouchStart = useRef<{ x: number; y: number } | null>(null)
   const suppressMobileNavClick = useRef(false)
+  const primaryNavRef = useRef<HTMLDivElement>(null)
+  const selectionMarkerRef = useRef<HTMLSpanElement>(null)
+  const pointerNavigation = useRef(false)
   const { accentColors, presentationVariant, appearance } = useTheme()
   // Owner/admin/receptionist/mechanic have messaging by role; other roles
   // (notably fleet managers) need the can_access_messaging grant. Either way,
@@ -257,6 +266,43 @@ export default function DashboardLayout() {
   const showStaffRailToggle = presentationVariant === 'new' && isGarageUser
   const isStaffRailExpanded = showStaffRailToggle && staffRailCanExpand && staffRailExpanded
 
+  useLayoutEffect(() => {
+    const nav = primaryNavRef.current
+    const marker = selectionMarkerRef.current
+    if (!isNewStaffPresentation || !nav || !marker) return
+
+    const alignMarker = (animate = false) => {
+      const selected = nav.querySelector<HTMLElement>('.db-staff-primary-nav__link[aria-current="page"]')
+      const glyph = selected?.querySelector<HTMLElement>('.db-staff-nav__glyph')
+      if (!selected || !glyph || !nav.getClientRects().length || !nav.clientWidth) {
+        marker.style.opacity = '0'
+        marker.dataset.ready = 'false'
+        return
+      }
+      const top = selected.getBoundingClientRect().top - nav.getBoundingClientRect().top
+        + (selected.offsetHeight - marker.offsetHeight) / 2
+      // CSSOM rounds fractional transforms; normalize before comparing so
+      // ResizeObserver does not cancel a route slide for subpixel noise.
+      const transform = `translateY(${Math.round(top * 1000) / 1000}px)`
+      const color = window.getComputedStyle(glyph).color
+      // ResizeObserver fires once when attached. Do not cancel an in-flight
+      // route transition when its destination geometry is already correct.
+      if (marker.style.transform === transform && marker.style.color === color && marker.style.opacity === '1') return
+      marker.dataset.animate = String(animate && marker.dataset.ready === 'true')
+      marker.style.color = color
+      marker.style.transform = transform
+      marker.style.opacity = '1'
+      marker.dataset.ready = 'true'
+    }
+
+    alignMarker(pointerNavigation.current)
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => alignMarker())
+    observer.observe(nav)
+    nav.querySelectorAll('.db-staff-primary-nav__link').forEach(link => observer.observe(link))
+    return () => observer.disconnect()
+  }, [location.pathname, isNewStaffPresentation, isStaffRailExpanded, appearance.density, appearance.font_size, appearance.font_family, appearance.mode])
+
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') return
     const query = window.matchMedia('(min-width: 1280px)')
@@ -282,6 +328,7 @@ export default function DashboardLayout() {
       key={link.to}
       to={link.to}
       aria-current={isActive(link.to, link.exact) ? 'page' : undefined}
+      data-nav-category={isNewStaffPresentation ? STAFF_NAV_CATEGORIES[link.to] : undefined}
       title={presentationVariant === 'new' ? link.label : undefined}
       className={`db-staff-primary-nav__link db-staff-primary-nav__link--${kind} text-sm font-medium transition-colors ${
         isActive(link.to, link.exact)
@@ -295,7 +342,11 @@ export default function DashboardLayout() {
       style={!isSuperAdmin && presentationVariant === 'legacy' && isActive(link.to, link.exact) ? { color: accentHex, borderColor: accentHex } : undefined}
     >
       <span className="inline-flex items-center gap-2">
-        {presentationVariant === 'new' && <link.icon className="h-4 w-4" aria-hidden="true" />}
+        {isNewStaffPresentation ? (
+          <span className="db-staff-nav__glyph" aria-hidden="true">
+            <link.icon className="h-4 w-4" />
+          </span>
+        ) : presentationVariant === 'new' ? <link.icon className="h-4 w-4" aria-hidden="true" /> : null}
         <span className="db-staff-primary-nav__label">{link.label}</span>
         {link.to === '/dashboard/messages' && unreadCount > 0 && (
           <span className="inline-flex min-w-[1.25rem] h-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-semibold leading-none text-white">
@@ -311,6 +362,7 @@ export default function DashboardLayout() {
     <div
       className={`db-staff-shell db-presentation-${presentationVariant} h-screen overflow-hidden ${isGarageUser ? 'bg-blueNoir-900' : ''}`}
       data-presentation={presentationVariant}
+      data-nav-style={isNewStaffPresentation ? 'machined' : undefined}
       data-appearance-mode={appearance.mode}
       data-appearance-density={appearance.density}
       data-appearance-font-size={appearance.font_size}
@@ -384,7 +436,14 @@ export default function DashboardLayout() {
 
             <ShopSearchButton mobile />
             {/* Desktop nav */}
-            <div id="db-staff-primary-navigation" className="db-staff-primary-nav hidden md:flex md:items-center md:space-x-6">
+            <div
+              id="db-staff-primary-navigation"
+              ref={primaryNavRef}
+              className="db-staff-primary-nav hidden md:flex md:items-center md:space-x-6"
+              onPointerDownCapture={() => { pointerNavigation.current = true }}
+              onKeyDownCapture={() => { pointerNavigation.current = false }}
+            >
+              {isNewStaffPresentation && <span ref={selectionMarkerRef} className="db-staff-primary-nav__marker" aria-hidden="true" />}
               {isNewStaffPresentation ? (
                 <>
                   {operationalNavLinks.map((link) => renderDesktopNavLink(link))}

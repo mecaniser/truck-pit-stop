@@ -172,7 +172,10 @@ export interface MessagesUnreadSummary {
   unread_count_staff: number
 }
 
+export type EquipmentType = 'unknown' | 'tractor' | 'trailer' | 'other'
+
 export interface Vehicle {
+  equipment_type?: EquipmentType
   id: string
   tenant_id: string
   customer_id: string
@@ -687,6 +690,7 @@ export interface InvoicePaymentSummary {
 }
 
 export interface InvoiceDetail extends Invoice {
+  review_url?: string | null
   order_number: string
   customer_name: string
   vehicle_info: string

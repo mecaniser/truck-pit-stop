@@ -1,7 +1,7 @@
 import { Building2, Route } from 'lucide-react'
 
 import { customerDisplayName } from '@/lib/customerName'
-import { vehicleDisplayLabel } from '@/lib/vehicleName'
+import { equipmentTypeLabel, vehicleDisplayLabel } from '@/lib/vehicleName'
 import type { Customer, Vehicle } from '@/types'
 
 /**
@@ -36,7 +36,7 @@ const normalizedVehicleSearch = shouldShowVehicleSearch ? vehicleRelationshipSea
 const matchesVehicleSearch = (vehicle: Vehicle) => {
   if (!normalizedVehicleSearch) return true
   const searchable = [
-    vehicleDisplayLabel(vehicle), vehicle.unit_number, vehicle.vin, vehicle.license_plate,
+    vehicleDisplayLabel(vehicle), equipmentTypeLabel(vehicle.equipment_type), vehicle.unit_number, vehicle.vin, vehicle.license_plate,
     vehicle.make, vehicle.model, vehicle.owner_company_name, vehicle.operating_authority_company_name,
   ].filter(Boolean).join(' ').toLowerCase()
   return normalizedVehicleSearch.split(/\s+/).every((term) => searchable.includes(term))
@@ -45,7 +45,7 @@ const customerVehicleGroups = [
   {
     key: 'owned',
     title: `Owned by ${selectedCustomer ? customerDisplayName(selectedCustomer) : 'this company'}`,
-    description: 'Trucks this company owns or leases to another operating authority.',
+    description: 'Equipment this company owns or leases to another operating authority.',
     vehicles: ownedVehicles,
     visibleVehicles: ownedVehicles.filter(matchesVehicleSearch),
     icon: Building2,

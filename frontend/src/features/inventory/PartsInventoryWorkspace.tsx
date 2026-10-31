@@ -2,9 +2,10 @@ import { pricingError, pricingMoney } from '@/features/parts-pricing/contract'
 import PartPolicySummary from '@/features/parts-pricing/PartPolicySummary'
 /* eslint-disable react-refresh/only-export-components -- Session-scoped purchase preparation is shared with Purchasing. */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { Archive, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Boxes, Camera, ChevronsUpDown, EllipsisVertical, History, MapPin, Package, Pencil, Plus, Search, Settings2, ShoppingCart, Trash2, X } from 'lucide-react'
+import { Archive, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Boxes, Camera, ChevronRight, ChevronsUpDown, EllipsisVertical, History, MapPin, Package, Pencil, Plus, Search, Settings2, ShoppingCart, Trash2, X } from 'lucide-react'
 
 import PartsPricingSettings from '@/features/parts-pricing/PartsPricingSettings'
 import PartPricingPolicy from '@/features/parts-pricing/PartPricingPolicy'
@@ -259,6 +260,14 @@ function skuStem(name: string, category: string) {
   return abbrev ? `${prefix}-${abbrev}` : ''
 }
 
+function isNonNegativeAmount(value: string) {
+  return /^(?:\d+(?:\.\d*)?|\.\d+)$/.test(value.trim()) && Number.isFinite(Number(value))
+}
+
+function validMarkup(value: string) {
+  return /^-?(?:\d+(?:\.\d*)?|\.\d+)$/.test(value.trim()) && Number.isFinite(Number(value)) && Number(value) >= -100
+}
+
 function SellingPriceField({ cost, value, disabled, onChange }: {
   cost: string
   value: string
@@ -268,12 +277,14 @@ function SellingPriceField({ cost, value, disabled, onChange }: {
   const [mode, setMode] = useState<'price' | 'markup'>('price')
   const [pct, setPct] = useState('')
   const costNum = Number(cost)
-  const costValid = Number.isFinite(costNum) && costNum > 0
+  const costValid = isNonNegativeAmount(cost) && costNum > 0
+  const markupError = mode === 'markup' && costValid && !validMarkup(pct) ? 'Enter a markup of -100% or more.' : null
 
   const applyPct = (nextPct: string, c: number) => {
     const p = Number(nextPct)
-    if (!Number.isFinite(p) || !Number.isFinite(c) || c <= 0) return
-    onChange((c * (1 + p / 100)).toFixed(2))
+    const price = c * (1 + p / 100)
+    if (!validMarkup(nextPct) || !Number.isFinite(c) || c <= 0 || !Number.isFinite(price)) return
+    onChange(price.toFixed(2))
   }
 
   // Editing cost while in Markup mode holds the margin and moves the price.
@@ -310,12 +321,12 @@ function SellingPriceField({ cost, value, disabled, onChange }: {
         </span>
       ) : (
         <span className="db-parts-workbench__price-input">
-          <input inputMode="decimal" disabled={disabled || !costValid} aria-label="Markup percent" value={pct}
+          <input inputMode="decimal" required disabled={disabled || !costValid} aria-label="Markup percent" aria-invalid={Boolean(markupError)} ref={(input) => input?.setCustomValidity(markupError || '')} value={pct}
             onChange={(event) => { setPct(event.target.value); applyPct(event.target.value, costNum) }} />
           <span aria-hidden="true">%</span>
         </span>
       )}
-      <small>{!costValid ? 'Set a cost first to work in markup' : markup == null ? 'Enter a price' : `$${money(value)} per unit · ${markup.toFixed(1)}% markup`}</small>
+      <small role={markupError ? 'alert' : undefined}>{markupError || (!costValid ? 'Set a cost first to work in markup' : markup == null ? 'Enter a price' : `$${money(value)} per unit · ${markup.toFixed(1)}% markup`)}</small>
     </div>
   )
 }
@@ -414,13 +425,30 @@ function toPreparationLine(part: PartRecord): PurchasePreparationLine {
 
 function PartPhoto({ part, logoUrl, companyName, detail = false }: { part: Pick<PartRecord, 'name' | 'image_url'>; logoUrl: string | null; companyName: string | null; detail?: boolean }) {
   const [source, setSource] = useState<'part' | 'company' | 'icon'>(() => part.image_url ? 'part' : logoUrl ? 'company' : 'icon')
+  const [expanded, setExpanded] = useState(false)
   useEffect(() => {
     setSource(part.image_url ? 'part' : logoUrl ? 'company' : 'icon')
-  }, [part.image_url, logoUrl])
+    setExpanded(false)
+  }, [part.name, part.image_url, logoUrl])
   const src = source === 'part' ? part.image_url : source === 'company' ? logoUrl : null
   const fail = () => setSource((current) => current === 'part' && logoUrl && logoUrl !== part.image_url ? 'company' : 'icon')
-  if (!src || source === 'icon') return <span className={`db-parts-workbench__photo ${detail ? 'is-detail' : ''}`} role={detail ? 'img' : undefined} aria-label={detail ? `No image available for ${part.name}` : undefined} aria-hidden={detail ? undefined : 'true'}><Package aria-hidden="true" /></span>
-  return <span className={`db-parts-workbench__photo ${detail ? 'is-detail' : ''} ${source === 'company' ? 'is-company' : ''}`} aria-hidden={detail ? undefined : 'true'}><img src={src} alt={detail ? source === 'part' ? `${part.name} part photo` : `${companyName || 'Shop'} logo placeholder for ${part.name}` : ''} onError={fail} loading={detail ? 'eager' : 'lazy'} /></span>
+  const imageLabel = source === 'part' ? `${part.name} part photo` : `${companyName || 'Shop'} logo placeholder for ${part.name}`
+  const photo = (accessible: boolean) => <span className={`db-parts-workbench__photo ${detail ? 'is-detail' : ''} ${source === 'company' ? 'is-company' : ''}`} role={!src && accessible ? 'img' : undefined} aria-label={!src && accessible ? `No image available for ${part.name}` : undefined} aria-hidden={accessible ? undefined : 'true'}>
+    {src ? <img src={src} alt={accessible ? imageLabel : ''} onError={fail} loading={accessible ? 'eager' : 'lazy'} /> : <Package aria-hidden="true" />}
+  </span>
+  return <>
+    <button type="button" className={`db-parts-workbench__photo-trigger${detail ? ' is-detail' : ''}`} aria-label={`Expand image for ${part.name}`} aria-haspopup="dialog" onClick={() => setExpanded(true)}>{photo(detail)}</button>
+    <Dialog open={expanded} onClose={() => setExpanded(false)} className="db-part-photo-preview">
+      <DialogBackdrop className="db-part-photo-preview__backdrop" />
+      <div className="db-part-photo-preview__positioner">
+        <DialogPanel className="db-part-photo-preview__panel">
+          <div className="db-part-photo-preview__header"><DialogTitle>{part.name} image</DialogTitle><button type="button" aria-label="Close image preview" onClick={() => setExpanded(false)}><X aria-hidden="true" /></button></div>
+          <div className="db-part-photo-preview__image">{photo(true)}</div>
+          {source !== 'part' && <p>{source === 'company' ? 'Shop logo placeholder' : 'No part photo available'}</p>}
+        </DialogPanel>
+      </div>
+    </Dialog>
+  </>
 }
 
 export function PartsInventoryGate({ legacy }: { legacy: ReactNode }) {
@@ -807,6 +835,15 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
     const response = await api.put(`/inventory/${part.id}`, patch)
     const updated = response.data as Partial<InventoryEditorRecord>
     syncPartCaches(part.id, { ...patch, ...updated })
+    // The inventory response omits derived facts such as unit cost, incoming
+    // quantity and stock value. Refresh their projections after the save.
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['parts-operations', 'part', part.id] }),
+      queryClient.invalidateQueries({ queryKey: ['parts-operations', 'summary'] }),
+    ])
+    // The projection also omits catalog-only fields (notably selling_price).
+    // Keep those authoritative saved values alongside the refreshed facts.
+    syncPartCaches(part.id, { ...patch, ...updated })
     setPartsSequence((current) => current + 1)
     setNotice(`${typeof patch.name === 'string' ? patch.name : part.name} details saved.`)
   }
@@ -980,8 +1017,10 @@ function PartLedger({ page, loading, loadingMore, failed, manage, salesEnabled, 
           {manage && <span role="cell" className="db-parts-workbench__check" onClick={(event) => event.stopPropagation()}>{eligible && <label><input type="checkbox" aria-label={`Select ${part.name} for purchase preparation`} checked={checkedIds.has(part.id)} onClick={(event) => event.stopPropagation()} onChange={(event) => onCheck(part, event.target.checked)} /></label>}</span>}
           <span role="cell" className="db-parts-workbench__part-cell">
             <button type="button" className="db-parts-workbench__row-select" aria-current={selected ? 'true' : undefined} aria-controls="selected-part-inspector" onClick={() => onSelect(part.id)}>
-              <span className="db-parts-workbench__identity"><PartPhoto part={part} logoUrl={logoUrl} companyName={companyName} /><span><strong>{part.name}</strong><small>{part.sku}</small></span></span>
+              <span className="db-parts-workbench__identity"><span className="db-parts-workbench__photo-spacer" aria-hidden="true" /><span><strong>{part.name}</strong><small>{part.sku}</small></span></span>
+              <ChevronRight className="db-parts-workbench__row-cue" aria-hidden="true" />
             </button>
+            <PartPhoto part={part} logoUrl={logoUrl} companyName={companyName} />
             {salesEnabled && eligible && <span className="db-parts-workbench__row-actions" data-row-actions={part.id} onClick={(event) => event.stopPropagation()}><button type="button" aria-label={`More actions for ${part.name}`} aria-haspopup="menu" aria-expanded={openActions === part.id} onClick={() => setOpenActions((current) => current === part.id ? null : part.id)}><EllipsisVertical aria-hidden="true" /></button>{openActions === part.id && <span role="menu" aria-label={`Actions for ${part.name}`}><button type="button" role="menuitem" onClick={() => { setOpenActions(null); onSell(part.id) }}>Sell part</button></span>}</span>}
           </span>
           <strong role="cell" data-label="Available" className="is-available">{part.available_to_sell_packages ?? part.available_packages}</strong>
@@ -1157,6 +1196,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
   const [identityFresh, setIdentityFresh] = useState<InventoryEditorRecord | null>(null)
   const [identityOriginal, setIdentityOriginal] = useState<InventoryEditorRecord | null>(null)
   const [identitySaving, setIdentitySaving] = useState(false)
+  const identitySession = useRef(0)
   const [photoAction, setPhotoAction] = useState<'upload' | 'remove' | null>(null)
   // Removing a photo is destructive and was firing on a single click, so it
   // takes the same two-step confirm the supplier-source removal uses.
@@ -1184,9 +1224,30 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     enabled: Boolean(supplierId),
     retry: false,
   })
-  useEffect(() => { setInspectorView('overview'); setEdit(null); setEditFocusMode('pointer'); setLocalError(null); setReason(''); setIdentityOpen(false); setIdentityForm(null); setIdentityOriginal(null); setIdentityFresh(null); setIdentityError(null); setPhotoError(null); editOrigin.current = null; restore.current = null }, [part?.id])
   useEffect(() => {
-    if (!identityOpen || !identityQuery.data || identityOriginal?.id === identityQuery.data.id) return
+    // Ignore work still settling for the previous selected part.
+    identitySession.current += 1
+    setIdentitySaving(false)
+    setPhotoAction(null)
+    setConfirmPhotoRemove(false)
+    setInspectorView('overview')
+    setEdit(null)
+    setEditFocusMode('pointer')
+    setLocalError(null)
+    setReason('')
+    setIdentityOpen(false)
+    setIdentityForm(null)
+    setIdentityOriginal(null)
+    setIdentityFresh(null)
+    setIdentityError(null)
+    setPhotoError(null)
+    editOrigin.current = null
+    restore.current = null
+  }, [part?.id])
+  useEffect(() => {
+    // An enabled query can expose cached data while its fresh request is pending.
+    // Initialize once that request succeeds; later refetches must preserve the draft.
+    if (!identityOpen || !identityQuery.isSuccess || identityQuery.isFetching || !identityQuery.data || identityQuery.data.id !== part?.id || identityOriginal?.id === identityQuery.data.id) return
     const record = identityQuery.data
     setIdentityOriginal(record)
     setIdentityForm({
@@ -1203,7 +1264,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
       supplierContact: record.supplier_contact || '',
       onOrderQuantity: String(record.on_order_quantity ?? 0),
     })
-  }, [identityOpen, identityOriginal?.id, identityQuery.data])
+  }, [identityOpen, identityOriginal?.id, identityQuery.data, identityQuery.isFetching, identityQuery.isSuccess, part?.id])
   useEffect(() => {
     if (edit || !restore.current) return
     const target = restore.current === 'available-shortcut' ? availableTrigger : reorderTrigger
@@ -1214,6 +1275,8 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
   const open = (next: 'available' | 'reorder', origin: 'available-shortcut' | 'reorder', event: ReactMouseEvent<HTMLButtonElement>) => { if (!part) return; editOrigin.current = origin; setEditFocusMode(event.detail === 0 ? 'keyboard' : 'pointer'); setInspectorView('stock'); setValue(String(next === 'available' ? part.available_packages : part.reorder_level)); setReason(''); setLocalError(null); setEdit(next) }
   const close = () => { restore.current = editOrigin.current; editOrigin.current = null; setEdit(null); setLocalError(null) }
   const openIdentity = () => {
+    if (identitySaving || photoSaving) return
+    identitySession.current += 1
     setEdit(null)
     setIdentityError(null)
     setPhotoError(null)
@@ -1223,6 +1286,8 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     setIdentityOpen(true)
   }
   const closeIdentity = () => {
+    identitySession.current += 1
+    setIdentitySaving(false)
     setConfirmPhotoRemove(false)
     setIdentityOpen(false)
     setIdentityFresh(null)
@@ -1236,6 +1301,14 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     setIdentityForm((current) => current ? { ...current, [field]: next, ...(field === 'category' || field === 'unitType' ? fluidLink(field, next, current) : {}) } : current)
     setIdentityError(null)
   }
+  const identityValidation = useMemo(() => {
+    if (!identityForm) return null
+    for (const [field, label] of [['cost', 'Cost per unit'], ['sellingPrice', 'Selling price'], ['coreCharge', 'Core charge']] as const) {
+      if (!isNonNegativeAmount(identityForm[field])) return `${label}: enter an amount of zero or more.`
+    }
+    if (!/^\d+$/.test(identityForm.onOrderQuantity.trim()) || !Number.isSafeInteger(Number(identityForm.onOrderQuantity))) return 'On order: enter a whole number of zero or more.'
+    return null
+  }, [identityForm])
   const identityPatch = useMemo<Record<string, unknown>>(() => {
     if (!identityForm || !identityOriginal) return {}
     const patch: Record<string, unknown> = {}
@@ -1257,14 +1330,14 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     if (supplierContact !== (identityOriginal.supplier_contact || '')) patch.supplier_contact = supplierContact
     const moneyChanged = (next: string, before: string | number) => {
       const a = Number(next)
-      if (!Number.isFinite(a) || a < 0) return false
+      if (!isNonNegativeAmount(next)) return false
       return a.toFixed(2) !== Number(before || 0).toFixed(2)
     }
     if (moneyChanged(identityForm.cost, identityOriginal.cost)) patch.cost = Number(identityForm.cost).toFixed(2)
     if (moneyChanged(identityForm.sellingPrice, identityOriginal.selling_price)) patch.selling_price = Number(identityForm.sellingPrice).toFixed(2)
     if (moneyChanged(identityForm.coreCharge, identityOriginal.core_charge)) patch.core_charge = Number(identityForm.coreCharge).toFixed(2)
     const onOrder = Number(identityForm.onOrderQuantity)
-    if (Number.isInteger(onOrder) && onOrder >= 0 && onOrder !== (identityOriginal.on_order_quantity ?? 0)) patch.on_order_quantity = onOrder
+    if (/^\d+$/.test(identityForm.onOrderQuantity.trim()) && Number.isSafeInteger(onOrder) && onOrder !== (identityOriginal.on_order_quantity ?? 0)) patch.on_order_quantity = onOrder
     return patch
   }, [identityForm, identityOriginal])
   const identityDirty = Object.keys(identityPatch).length > 0
@@ -1274,20 +1347,23 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     const sku = identityForm.sku.trim()
     if (!name) { setIdentityError('Part name is required.'); return }
     if (!sku) { setIdentityError('SKU is required.'); return }
+    if (identityValidation) { setIdentityError(identityValidation); return }
     if (!identityDirty) { closeIdentity(); return }
+    const session = identitySession.current
     setIdentitySaving(true)
     setIdentityError(null)
     try {
       await onUpdateIdentity(part, { ...identityPatch, ...('cost' in identityPatch || 'selling_price' in identityPatch ? { expected_pricing_version: identityOriginal.pricing_version } : {}) })
-      closeIdentity()
+      if (identitySession.current === session) closeIdentity()
     } catch (cause) {
+      if (identitySession.current !== session) return
       setIdentityError(pricingError(cause, errorMessage(cause)))
       if ((cause as { response?: { status?: number } }).response?.status === 409) {
         const current = await identityQuery.refetch()
-        if (current.data?.id === part.id) setIdentityFresh(current.data)
+        if (identitySession.current === session && current.data?.id === part.id) setIdentityFresh(current.data)
       }
     } finally {
-      setIdentitySaving(false)
+      if (identitySession.current === session) setIdentitySaving(false)
     }
   }
   const choosePhoto = async (file: File) => {
@@ -1296,19 +1372,21 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     if (!PART_PHOTO_TYPES.has(type)) { setPhotoError('Choose a JPEG, PNG, WebP, HEIC, or HEIF image.'); return }
     if (!file.size) { setPhotoError('Choose an image that is not empty.'); return }
     if (file.size > PART_PHOTO_MAX_BYTES) { setPhotoError('Choose an image smaller than 10 MB.'); return }
+    const session = identitySession.current
     setPhotoAction('upload')
     setPhotoError(null)
     try { await onUploadPhoto(part, file) }
-    catch (cause) { setPhotoError(errorMessage(cause)) }
-    finally { setPhotoAction(null) }
+    catch (cause) { if (identitySession.current === session) setPhotoError(errorMessage(cause)) }
+    finally { if (identitySession.current === session) setPhotoAction(null) }
   }
   const removePhoto = async () => {
     if (!part || photoSaving) return
+    const session = identitySession.current
     setPhotoAction('remove')
     setPhotoError(null)
     try { await onRemovePhoto(part) }
-    catch (cause) { setPhotoError(errorMessage(cause)) }
-    finally { setPhotoAction(null) }
+    catch (cause) { if (identitySession.current === session) setPhotoError(errorMessage(cause)) }
+    finally { if (identitySession.current === session) setPhotoAction(null) }
   }
   const selectInspectorView = (next: InspectorView, focus = false) => {
     setInspectorView(next)
@@ -1419,7 +1497,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
                   onChange={(next) => { setValue(String(next)); setLocalError(null) }}
                 />
               </div>
-              {kind === 'available' && <label className="db-parts-workbench__edit-reason">Adjustment reason<textarea disabled={saving} rows={3} value={reason} onChange={(event) => { setReason(event.target.value); setLocalError(null) }} placeholder="Cycle count, damage, return to shelf…" /></label>}
+              {kind === 'available' && <label className="db-parts-workbench__edit-reason">Adjustment reason<textarea disabled={saving} rows={2} value={reason} onChange={(event) => { setReason(event.target.value); setLocalError(null) }} placeholder="Cycle count, damage, return to shelf…" /></label>}
               {localError && <p role="alert">{localError}</p>}
               <button className="db-parts-workbench__edit-save" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
             </form>
@@ -1451,12 +1529,12 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     : [availableStockFact, heldStockFact, sellableStockFact, neededStockFact, reorderStockFact, incomingStockFact]
   return <aside id="selected-part-inspector" className="db-parts-workbench__inspector" aria-labelledby="selected-part-name">
     {pricingPolicyOpen && <PartPricingPolicy inventoryId={part.id} name={part.name} onClose={() => setPricingPolicyOpen(false)} onSaved={onRetry} />}
-    <div className="db-parts-workbench__selected-action" data-selected-surface="true">
+    <div className={`db-parts-workbench__selected-action${identityOpen ? ' is-editing' : ''}`} data-selected-surface="true">
       <div className="db-parts-workbench__selected-label-row">
         <p className="db-parts-workbench__selected-label">Selected part</p>
         <div className="db-parts-workbench__selected-controls">
           {manage && !part.is_archived && !edit && !identityOpen && <button ref={identityTrigger} className="db-parts-workbench__identity-trigger db-parts-workbench__icon-action" type="button" aria-expanded="false" aria-controls="selected-part-identity-editor" onClick={openIdentity}><Pencil aria-hidden="true" /><span className="db-parts-workbench__collapsible-label">Edit details</span></button>}
-          <button className={`db-parts-workbench__mobile-back db-parts-workbench__icon-action db-parts-workbench__icon-action--icon-only${identityOpen ? ' is-editing' : ''}`} type="button" onClick={identityOpen ? closeIdentity : onBack} aria-label={identityOpen ? 'Cancel editing' : 'Back to parts'}>
+          <button className={`db-parts-workbench__mobile-back db-parts-workbench__icon-action db-parts-workbench__icon-action--icon-only${identityOpen ? ' is-editing' : ''}`} type="button" disabled={identityOpen && (identitySaving || photoSaving)} onClick={identityOpen ? closeIdentity : onBack} aria-label={identityOpen ? 'Cancel editing' : 'Back to parts'}>
             <ArrowLeft className="db-parts-workbench__mobile-back-arrow" aria-hidden="true" />
             <span className="db-parts-workbench__mobile-back-label">Back to parts</span>
             <X className="db-parts-workbench__mobile-back-close" aria-hidden="true" />
@@ -1468,7 +1546,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
         <div className="db-parts-workbench__selected-copy"><h2 id="selected-part-name">{part.name}</h2><p className="db-parts-workbench__technical-line">{part.sku} · {part.location ? <><MapPin aria-hidden="true" />Bin {part.location}</> : 'Bin not set'} · {part.unit_type || 'No unit specified'}</p><span className={`db-parts-workbench__stock-state ${stockStateClass}`}>{stockState}</span></div>
       </div>
       {identityOpen && <div id="selected-part-identity-editor" className="db-parts-workbench__identity-editor" aria-busy={identitySaving || photoSaving}>
-        {identityQuery.isPending && <p role="status">Loading editable part details…</p>}
+        {(identityQuery.isPending || (identityQuery.isFetching && !identityForm)) && <p role="status">Loading editable part details…</p>}
         {identityQuery.isError && <div className="db-parts-workbench__identity-recovery" role="alert"><span>Editable part details could not be loaded.</span><button type="button" onClick={() => void identityQuery.refetch()}>Retry</button></div>}
         {identityForm && <>
           <div className="db-parts-workbench__photo-editor" role="group" aria-label="Part photo">
@@ -1488,11 +1566,10 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
               <label>Category<input maxLength={100} disabled={identitySaving || photoSaving} value={identityForm.category} onChange={(event) => updateIdentity('category', event.target.value)} placeholder="Brakes, electrical, fluids…" /></label>
               <label>Bin location<input maxLength={100} disabled={identitySaving || photoSaving} value={identityForm.location} onChange={(event) => updateIdentity('location', event.target.value)} placeholder="A-12" /></label>
               <label>Unit label<input maxLength={20} disabled={identitySaving || photoSaving} value={identityForm.unitType} onChange={(event) => updateIdentity('unitType', event.target.value)} placeholder="each" /></label>
-              <label className="is-wide">Description<textarea maxLength={5000} disabled={identitySaving || photoSaving} rows={3} value={identityForm.description} onChange={(event) => updateIdentity('description', event.target.value)} placeholder="Catalog details or identifying notes" /></label>
+              <label>Description<textarea maxLength={5000} disabled={identitySaving || photoSaving} rows={2} value={identityForm.description} onChange={(event) => updateIdentity('description', event.target.value)} placeholder="Catalog details or identifying notes" /></label>
             </div>
             <fieldset className="db-parts-workbench__identity-group">
-              <legend>Pricing</legend>
-              <button type="button" disabled={identitySaving || photoSaving} onClick={() => setPricingPolicyOpen(true)}>Part pricing policy</button>
+              <legend><span>Pricing</span><button type="button" disabled={identitySaving || photoSaving} onClick={() => setPricingPolicyOpen(true)}>Part pricing policy</button></legend>
               <div className="db-parts-workbench__identity-fields">
                 <label>Cost per unit<span className="db-parts-workbench__price-input"><span aria-hidden="true">$</span><input inputMode="decimal" disabled={identitySaving || photoSaving} value={identityForm.cost} onChange={(event) => updateIdentity('cost', event.target.value)} /></span></label>
                 <label>Core charge<span className="db-parts-workbench__price-input"><span aria-hidden="true">$</span><input inputMode="decimal" disabled={identitySaving || photoSaving} value={identityForm.coreCharge} onChange={(event) => updateIdentity('coreCharge', event.target.value)} /></span></label>
@@ -1508,8 +1585,8 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
               </div>
             </fieldset>
             {identityFresh && <div className="db-parts-workbench__identity-recovery"><span>Saved prices changed · Cost {pricingMoney(String(identityFresh.cost))} · Catalog {pricingMoney(String(identityFresh.selling_price))}. Your draft is kept.</span><button type="button" onClick={() => { setIdentityOriginal(identityFresh); setIdentityFresh(null); setIdentityError(null) }}>Keep my draft</button></div>}
-            {identityError && <p className="db-parts-workbench__identity-error" role="alert">{identityError}</p>}
-            <div className="db-parts-workbench__identity-actions"><button type="submit" disabled={identitySaving || photoSaving || Boolean(identityFresh) || !identityDirty}>{identitySaving ? 'Saving…' : 'Save details'}</button></div>
+            {(identityValidation || identityError) && <p className="db-parts-workbench__identity-error" role="alert">{identityValidation || identityError}</p>}
+            <div className="db-parts-workbench__identity-actions"><button type="submit" disabled={identitySaving || photoSaving || Boolean(identityFresh) || Boolean(identityValidation) || !identityDirty}>{identitySaving ? 'Saving…' : 'Save details'}</button></div>
           </form>
         </>}
       </div>}
@@ -1519,7 +1596,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     <div className="db-parts-workbench__inspector-tabs" role="tablist" aria-label="Selected part details" onKeyDown={handleInspectorKeys}>
       {INSPECTOR_VIEWS.map((view, index) => <button key={view.id} ref={(node) => { inspectorTabs.current[index] = node }} id={`part-inspector-${view.id}-tab`} type="button" role="tab" aria-selected={inspectorView === view.id} aria-controls={`part-inspector-${view.id}-panel`} tabIndex={inspectorView === view.id ? 0 : -1} onClick={() => selectInspectorView(view.id)}>{view.label}</button>)}
     </div>
-    <div className="db-parts-workbench__inspector-panel" id={`part-inspector-${inspectorView}-panel`} role="tabpanel" aria-labelledby={`part-inspector-${inspectorView}-tab`}>
+    <div className={`db-parts-workbench__inspector-panel is-${inspectorView}`} id={`part-inspector-${inspectorView}-panel`} role="tabpanel" aria-labelledby={`part-inspector-${inspectorView}-tab`}>
       {inspectorView === 'overview' && <>
         {part.is_placeholder && <section className="db-parts-workbench__promote" role="region" aria-label="Placeholder part">
           <div>
