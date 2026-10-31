@@ -26,6 +26,6 @@ Evidence: output/dropdowns/browser-results.json and twelve equipment/modal scree
 
 ## Release state
 
-Local implementation verified. A follow-up PR description is prepared at output/dropdowns/pr-draft.md. Prior PR713 is already merged; the earlier handoff required explicit approval before PR publication. This broader follow-up is not pushed, published, merged or deployed. No production data changed.
+Local implementation verified. User explicitly approved publishing the follow-up PR; description is prepared at output/dropdowns/pr-draft.md. Prior PR713 is already merged. Protected CI remains the integration gate. Merge and deployment are separately restricted; no production data changed.
 
 Historical attribution work is isolated in a separate checkout and branch, outside this UI diff.
