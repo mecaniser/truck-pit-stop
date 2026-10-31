@@ -7,6 +7,8 @@ Logic:
 - Respects per-tenant settings: enabled, frequency, max reminders
 - Sends reminder on due date, then per tenant's frequency setting
 """
+from app.services.invoice_review_service import invoice_review_html
+
 import asyncio
 from datetime import date, datetime, timedelta, timezone
 from app.tasks import celery_app
@@ -213,6 +215,7 @@ async def _process_invoice_reminders(tenant_id: str = None):
                         If you've already paid, please disregard this message. 
                         Contact us if you have any questions about your invoice.
                     </p>
+                    {invoice_review_html(tenant, invoice)}
                 </body>
                 </html>
                 """

@@ -1,3 +1,4 @@
+import InvoiceReviewLink from '@/components/InvoiceReviewLink'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import type { Stripe } from '@stripe/stripe-js'
@@ -631,6 +632,8 @@ export default function CustomerInvoicePage() {
             ))}
           </div>}
         </section>
+
+        <InvoiceReviewLink url={invoice.review_url} className="mt-4 text-[#d9a521]" />
 
         <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[11px] text-[#5c6375]">
           <Lock className="h-3 w-3" />

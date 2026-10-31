@@ -1,3 +1,4 @@
+from app.services.invoice_review_service import invoice_review_url, invoice_review_html
 from app.services.cash_receipt_service import load_cash_receipt, receipt_invoice_view
 from decimal import Decimal
 from typing import Optional
@@ -223,6 +224,7 @@ async def send_invoice_payment_confirmation_email(
   <div style="background:#f3f4f6;padding:16px 28px;border-radius:0 0 8px 8px;text-align:center;">
     <p style="margin:0;font-size:12px;color:#6b7280;">{shop_name}{shop_contact}</p>
     <p style="margin:6px 0 0 0;font-size:11px;color:#9ca3af;">Thank you for your business!</p>
+    {invoice_review_html(tenant, invoice)}
     <p style="margin:10px 0 0 0;font-size:10px;color:#d1d5db;">Powered by DieselBridge Network</p>
   </div>
 
@@ -255,6 +257,7 @@ async def send_invoice_payment_confirmation_email(
             shop_email=tenant.email if tenant else None,
             shop_phone=tenant.phone if tenant else None,
             shop_logo_url=tenant.logo_url if tenant else None,
+            review_url=invoice_review_url(tenant, invoice),
             vehicle_year=str(vehicle.year) if vehicle and vehicle.year else None,
             vehicle_make=vehicle.make if vehicle else "",
             vehicle_model=vehicle.model if vehicle else "",

@@ -132,6 +132,22 @@ describe('UnifiedSettingsPage garage logo import', () => {
     })
   })
 
+  it('saves and clears the customer invoice review URL', async () => {
+    const user = userEvent.setup()
+    apiMocks.put.mockImplementation(async (_url, body) => ({ data: { ...garageProfile, ...body } }))
+    renderPage()
+    await user.click(screen.getByRole('button', { name: 'Shop Profile' }))
+    await user.click(await screen.findByRole('button', { name: 'Edit Shop Profile' }))
+    const input = screen.getByLabelText('Review link')
+    await user.type(input, 'https://g.page/r/example/review')
+    await user.click(screen.getByRole('button', { name: /save/i }))
+    await waitFor(() => expect(apiMocks.put).toHaveBeenCalledWith('/admin/garage-profile', expect.objectContaining({ review_url: 'https://g.page/r/example/review' })))
+    await user.click(await screen.findByRole('button', { name: 'Edit Shop Profile' }))
+    await user.clear(screen.getByLabelText('Review link'))
+    await user.click(screen.getByRole('button', { name: /save/i }))
+    await waitFor(() => expect(apiMocks.put).toHaveBeenLastCalledWith('/admin/garage-profile', expect.objectContaining({ review_url: null })))
+  })
+
   it('imports a logo from the saved website and updates the form', async () => {
     const user = userEvent.setup()
     renderPage()

@@ -100,6 +100,7 @@ class Tenant(BaseModel):
     enrollment_status = Column(String(20), default="pending", nullable=False)  # pending, approved, rejected
     business_license = Column(String(100), nullable=True)
     ein = Column(String(20), nullable=True)  # Employer Identification Number
+    review_url = Column(String(2048), nullable=True)
     website = Column(String(255), nullable=True)
     logo_url = Column(String(500), nullable=True)
     # Name of the company that operates the garage's internal fleet (e.g. "77 Cargo").

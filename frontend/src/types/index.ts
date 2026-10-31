@@ -690,6 +690,7 @@ export interface InvoicePaymentSummary {
 }
 
 export interface InvoiceDetail extends Invoice {
+  review_url?: string | null
   order_number: string
   customer_name: string
   vehicle_info: string
