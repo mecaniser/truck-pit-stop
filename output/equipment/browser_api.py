@@ -1,6 +1,6 @@
 """Loopback-only test API: real routes/JWT auth, disposable in-memory database."""
 import os
-os.environ.update(DATABASE_URL='sqlite+aiosqlite://', SECRET_KEY='db097-isolated-browser-test-key-32-characters', TWILIO_ACCOUNT_SID='AC00000000000000000000000000000000', TWILIO_AUTH_TOKEN='fixture', ENVIRONMENT='test')
+os.environ.update(DATABASE_URL='sqlite+aiosqlite://', SECRET_KEY='db148-isolated-browser-test-key-32-characters', TWILIO_ACCOUNT_SID='AC00000000000000000000000000000000', TWILIO_AUTH_TOKEN='fixture', ENVIRONMENT='test')
 import sys, asyncio, json
 from pathlib import Path
 from uuid import uuid4
@@ -23,7 +23,15 @@ from app.api.v1.endpoints import customers, vehicles
 import uvicorn
 
 async def main():
-    fixture = conftest._db_engine.__wrapped__()
+    import tempfile
+    temporary = tempfile.TemporaryDirectory(prefix='db148-browser-')
+    class TempFactory:
+        def mktemp(self, name):
+            folder = Path(temporary.name) / name
+            folder.mkdir()
+            return folder
+    schema = conftest._sqlite_schema_template.__wrapped__(TempFactory())
+    fixture = conftest._db_engine.__wrapped__(next(schema))
     engine = await fixture.__anext__()
     factory = async_sessionmaker(engine, expire_on_commit=False)
     app = FastAPI()
@@ -34,7 +42,7 @@ async def main():
     limiter.enabled = False
     app.include_router(api_router, prefix='/api/v1')
     @app.get('/health')
-    def health(): return {'status':'ok','fixture':'DB097','source':str(root)}
+    def health(): return {'status':'ok','fixture':'DB148','source':str(root)}
     async def db():
         async with factory() as session: yield session
     app.dependency_overrides[get_db] = db
@@ -44,9 +52,9 @@ async def main():
     customers.sync_vehicle_nhtsa_snapshot = no_decode
     vehicles.sync_vehicle_nhtsa_snapshot = no_decode
     async with factory() as session:
-        tenant = Tenant(id=uuid4(), name='DB097 Isolated Test Shop', slug='db097-browser', labor_rate=Decimal('100'))
-        company = Customer(id=uuid4(), tenant_id=tenant.id, first_name='Ellis', last_name='Fixture', company_name='Ellis Logistics Test', email='db097@example.test')
-        owner = User(id=uuid4(), tenant_id=tenant.id, email='owner-db097@example.test', first_name='Test', last_name='Owner', hashed_password='unused', role=UserRole.GARAGE_OWNER, is_active=True, is_verified=True)
+        tenant = Tenant(id=uuid4(), name='DB148 Isolated Test Shop', slug='db148-browser', labor_rate=Decimal('100'))
+        company = Customer(id=uuid4(), tenant_id=tenant.id, first_name='Ellis', last_name='Fixture', company_name='Ellis Logistics Test', email='db148@example.test')
+        owner = User(id=uuid4(), tenant_id=tenant.id, email='owner-db148@example.test', first_name='Test', last_name='Owner', hashed_password='unused', role=UserRole.GARAGE_OWNER, is_active=True, is_verified=True)
         session.add_all([tenant, company, owner]); await session.flush()
         assets = []
         for typ, unit in [('tractor','603'),('tractor','609'),('trailer','T1003130'),('trailer','T1003142')]:
@@ -67,4 +75,6 @@ async def main():
         await uvicorn.Server(uvicorn.Config(app, host='127.0.0.1',port=8017,log_level='warning')).serve()
     finally:
         await fixture.aclose()
+        schema.close()
+        temporary.cleanup()
 asyncio.run(main())

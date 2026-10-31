@@ -10,13 +10,13 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 
 root = Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location('equipment_migration', root / 'backend/alembic/versions/157_vehicle_equipment_type.py')
+spec = importlib.util.spec_from_file_location('equipment_migration', root / 'backend/alembic/versions/193_vehicle_equipment_type.py')
 migration = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(migration)
 
 async def main():
     engine = create_async_engine('postgresql+asyncpg://dieselbridge:dieselbridge_dev@127.0.0.1:5432/truckpitstop')
-    schema = 'db097_rehearsal_' + uuid4().hex
+    schema = 'db148_rehearsal_' + uuid4().hex
     async with engine.connect() as conn:
         transaction = await conn.begin()
         try:

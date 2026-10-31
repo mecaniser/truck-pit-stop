@@ -1,4 +1,4 @@
-# DB-097 company equipment types
+# DB-148 company equipment types
 
 Owner: Backend & Integrations. Architecture reviewed; high-risk schema lane.
 
@@ -15,6 +15,6 @@ Architecture cross-checked EDG `dieselbridge_financial.validate_manifest` (exact
 Changing an RO's source vehicle ID or VIN invalidates prior reviewed attribution and requires fresh review against the authorized revision. Imported costs require explicit financial reclassification; no silent reassignment or reserve/accounting rewrite occurs. Repaired equipment identity remains separate from its towing tractor. The owner-confirmed Aufine invoice000023 → T1003130 correction is a separate audited source-data action, not part of this schema/UI change. This equipment fact establishes no price, payment, funding, date or billing-access claim. Mixed-equipment invoices require line-specific amounts/identities before splitting.
 
 
-Migration157 adds the nonnull column/default/check only. No production migration executed. Rehearse PostgreSQL upgrade, populated legacy rows, constraints, downgrade (which discards classifications), and re-upgrade before release. Downgrade requires preserving classifications for later restoration.
+Migration193 adds the nonnull column/default/check only. No production migration executed. Rehearse PostgreSQL upgrade, populated legacy rows, constraints, downgrade (which discards classifications), and re-upgrade before release. Downgrade requires preserving classifications for later restoration.
 
 Acceptance: typed CRUD, legacy/omitted/null/invalid cases, same-company tractors and trailers, distinct repair/invoice links, cross-tenant denial, cross-type merge rejection, unchanged export shape/revision parity; independent QA/Security, signed-in desktop/mobile runtime, protected PR CI and approved release required.

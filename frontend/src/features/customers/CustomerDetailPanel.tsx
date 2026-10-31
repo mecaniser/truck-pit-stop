@@ -450,12 +450,12 @@ export default function CustomerDetailPanel({
                           aria-label={`Open ${vehicleDisplayLabel(vehicle)}${vehicle.unit_number ? ` · Unit ${vehicle.unit_number}` : ''}`}>
                           <div className="db-customer-trucks__identity">
                             <strong>{vehicle.unit_number && <span className="db-customer-trucks__unit">{vehicle.unit_number}</span>}{vehicleDisplayLabel(vehicle)}</strong>
-                            <span className="db-customer-trucks__relationship">{equipmentTypeLabel(vehicle.equipment_type)} · {vehicleRelationshipNote(vehicle, group.key)}</span>
+                            <span className="db-customer-trucks__relationship">{vehicleRelationshipNote(vehicle, group.key)}</span>
                             <span className="db-customer-trucks__identifiers">
                               {vehicle.vin && <span>VIN <span className="font-mono">{vehicle.vin}</span></span>}
                               {vehicle.license_plate && <span>Plate {vehicle.license_plate}</span>}
                               <span>{equipmentTypeLabel(vehicle.equipment_type)}</span>
-                            {vehicle.color && <span>{vehicle.color}</span>}
+                              {vehicle.color && <span>{vehicle.color}</span>}
                             </span>
                           </div>
                           <span className={`db-customer-trucks__balance ${balanceLabelClass(vehicle.balance)}`}>

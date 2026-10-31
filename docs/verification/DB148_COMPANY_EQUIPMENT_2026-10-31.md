@@ -1,4 +1,4 @@
-# DB-097 local implementation evidence
+# DB-148 local implementation evidence
 
 Accountable owner: Backend & Integrations. Architecture reviewed the contract; independent reviewer `equipment_review` issued source-level QA/security GO, not runtime/release GO.
 
@@ -17,7 +17,7 @@ User evidence: Aufine invoice 000023 belongs to trailer T1003130, not tractor609
 - Existing vehicle identity/merge regressions:11/11.
 - Existing company workstation:15/15; new equipment modal create/edit:2/2.
 - Production frontend build, TypeScript noEmit and changed-source ESLint pass.
-- PostgreSQL15 rehearsal: actual migration157 applied to isolated populated vehicles schema; unknown defaults preserve both tractor/trailer unit IDs, typed writes accepted, invalid/null rejected, downgrade/re-upgrade preserve row identities/count. Entire transaction rolled back. Rehearsal source:output/equipment/rehearse_migration.py. This tests the new migration against a minimal populated target, not the full historical migration chain.
+- PostgreSQL15 rehearsal: actual migration193 applied to isolated populated vehicles schema; unknown defaults preserve both tractor/trailer unit IDs, typed writes accepted, invalid/null rejected, downgrade/re-upgrade preserve row identities/count. Entire transaction rolled back. Rehearsal source:output/equipment/rehearse_migration.py. This tests the new migration against a minimal populated target, not the full historical migration chain.
 - `git diff --check` pass.
 
 ## Signed-in browser acceptance
@@ -28,7 +28,7 @@ On both sizes: select the test company; open T1003130; see only its maintenance 
 
 Visual review found the preexisting VIN Decode control clipped at mobile size; the input now has min-w-0 and button shrink-0. Final screenshots show contained controls and no page or VIN-row horizontal overflow. Add-mode copy now says New equipment and Link/manage equipment.
 
-Evidence: output/equipment/browser-results.json; desktop/mobile-create-equipment.png; desktop/mobile-edit-trailer.png; desktop/mobile-company-equipment.png; desktop/mobile-repair-workspace.png. Repeatable fixture/API and browser drivers: browser_api.py, browser_acceptance.cjs; test Vite config frontend/vite.db097.config.ts. Generated browser_fixture.json contains a disposable JWT and must never be committed/published. Browser drivers require installed e2e dependencies; no real configuration/secrets are copied.
+Evidence: output/equipment/browser-results.json; desktop/mobile-create-equipment.png; desktop/mobile-edit-trailer.png; desktop/mobile-company-equipment.png; desktop/mobile-repair-workspace.png. Repeatable fixture/API and browser drivers: browser_api.py, browser_acceptance.cjs; test Vite config frontend/vite.db148.config.ts. Generated browser_fixture.json contains a disposable JWT and must never be committed/published. Browser drivers require installed e2e dependencies; no real configuration/secrets are copied.
 
 Runtime receipt: base6336ef16 with the recorded HMR-served VIN/copy diff, branch codex/company-equipment-types. Test frontend PID99367 cwd frontend under this checkout; test API first PID99350, then PID2514, restarted only after its exit to register the existing domain handler. Readiness source root matched this checkout. Existing5173 belonged to machined-sidebar and8000 to Docker; neither was restarted or changed. Test runtime was aligned and browser-verified during acceptance, then shut down; the disposable database and JWT fixture were discarded.
 
@@ -36,10 +36,10 @@ Independent equipment_review source and browser-evidence QA/security GO, includi
 
 ## EDG contract coordination
 
-Architecture cross-checked the active EDG task's docs/DB094_EQUIPMENT_CONTRACT_HANDOFF.md and services dieselbridge_financial.py/dieselbridge_equipment.py. EDG already accepts trucks/trailers via VIN or reviewed equipment allocation. DBN company equipment types need no receiver change while v2 exact keys/revisions/hashes remain unchanged. Future exported fields need a separately versioned contract; no fields were added by this PR. See docs/contracts/db097-company-equipment.md.
+Architecture cross-checked the active EDG task's docs/DB094_EQUIPMENT_CONTRACT_HANDOFF.md and services dieselbridge_financial.py/dieselbridge_equipment.py. EDG already accepts trucks/trailers via VIN or reviewed equipment allocation. DBN company equipment types need no receiver change while v2 exact keys/revisions/hashes remain unchanged. Future exported fields need a separately versioned contract; no fields were added by this PR. See docs/contracts/db148-company-equipment.md.
 
 Changing source vehicle/VIN requires fresh attribution review against the authorized revision; booked financial effects require explicit reclassification. The user-confirmed Aufine000023→T1003130 fact is recorded without production correction, historical merging, changed billing access, or assumptions about price/date/payment/funding.
 
 ## Remaining gates
 
-Local PR draft prepared at output/equipment/pr-draft.md. Per explicit instruction, no branch push or PR publication. Protected CI, merge, and authorized release remain pending. No production migration, deployment or source-data correction occurred.
+The user explicitly approved PR publication. Replayed only the two equipment commits onto GitHub main9dea1f1a, excluding unrelated local inventory work. The prior provisional DB-097 ID was already assigned on current main, so this feature is DB-148; its migration193 now follows192. Preserved current main compact customer layout and refreshed browser screenshots/assertions. Current-main focused backend31/31, frontend30/30, build/lint, linear migration graph and PostgreSQL rehearsal pass. Publication/required-check evidence is recorded on the board; merge and release are not authorized. No production migration, deployment or source-data correction occurred.
