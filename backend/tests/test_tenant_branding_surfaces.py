@@ -158,6 +158,15 @@ async def test_invoice_access_resolve_includes_shop_branding(monkeypatch):
     async def _fake_load_invoice_context(_db, _invoice_id: str):
         return invoice, order, customer, vehicle
 
+    # This unit owns branding; payment projection has separate real-DB coverage.
+    async def _fake_load_payment_summary(_db, resolved_invoice, cash_receipt):
+        assert resolved_invoice is invoice
+        assert cash_receipt is None
+        return invoice_access.InvoicePaymentSummary(
+            state="unpaid", applied_amount="0.00", balance_due="125.00", basis="legacy_payments"
+        )
+
+    monkeypatch.setattr(invoice_access, "load_payment_summary", _fake_load_payment_summary)
     monkeypatch.setattr(invoice_access, "_get_active_invoice_payload_or_400", _fake_get_active_payload)
     monkeypatch.setattr(invoice_access, "_load_invoice_context", _fake_load_invoice_context)
     monkeypatch.setattr(invoice_access, "_validate_invoice_link_subject", lambda *_args, **_kwargs: None)
