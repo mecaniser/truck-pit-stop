@@ -648,7 +648,7 @@ async def _resolve_or_create_customer(
         customer = result.scalar_one_or_none()
         if customer and "@placeholder" in (customer.email or ""):
             await guard_mapped_customer_name(db, customer, {
-                "first_name": user_data.first_name, "last_name": user_data.last_name,
+                "first_name": user_data.first_name, "last_name": user_data.last_name, "email": user_data.email,
             })
             customer.email = user_data.email
             customer.first_name = user_data.first_name
@@ -1710,6 +1710,7 @@ async def verify_email_change(
         )
         customer = result.scalar_one_or_none()
         if customer:
+            await guard_mapped_customer_name(db, customer, {"email": new_email})
             customer.email = new_email
     
     # Commit to database FIRST - only delete tokens if commit succeeds
