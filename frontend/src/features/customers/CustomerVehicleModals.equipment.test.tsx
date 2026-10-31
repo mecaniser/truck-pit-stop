@@ -1,4 +1,5 @@
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi } from 'vitest'
 import type { Customer, Vehicle } from '@/types'
@@ -22,11 +23,12 @@ describe('company equipment type', () => {
     const controls = mount()
     act(() => controls.current!.openAdd())
     const type = await screen.findByLabelText('Equipment type')
-    expect(type).toHaveValue('tractor')
-    fireEvent.change(type, { target: { value: 'trailer' } })
+    expect(type).toHaveTextContent('Tractor / Truck')
+    fireEvent.click(type)
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'Trailer', exact: true }))
     fireEvent.change(document.querySelector('input[name="make"]')!, { target: { value: 'Great Dane' } })
     fireEvent.change(document.querySelector('input[name="model"]')!, { target: { value: 'Dry Van' } })
-    fireEvent.submit(type.closest('form')!)
+    fireEvent.submit(screen.getByLabelText('Equipment type').closest('form')!)
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/customers/ellis/vehicles', expect.objectContaining({ equipment_type: 'trailer', make: 'Great Dane' })))
   })
   it('preserves an existing trailer when editing', async () => {
@@ -34,8 +36,23 @@ describe('company equipment type', () => {
     const controls = mount()
     act(() => controls.current!.openEdit({ id: 'trailer', equipment_type: 'trailer', make: 'Great Dane', model: 'Dry Van', unit_number: 'T1003130' } as Vehicle))
     const type = await screen.findByLabelText('Equipment type')
-    expect(type).toHaveValue('trailer')
-    fireEvent.submit(type.closest('form')!)
+    expect(type).toHaveTextContent('Trailer')
+    fireEvent.submit(screen.getByLabelText('Equipment type').closest('form')!)
     await waitFor(() => expect(api.put).toHaveBeenCalledWith('/customers/ellis/vehicles/trailer', expect.objectContaining({ equipment_type: 'trailer', unit_number: 'T1003130' })))
   })
+  it('supports keyboard selection and dismisses the menu without closing the editor', async () => {
+    const controls = mount()
+    act(() => controls.current!.openAdd())
+    const trigger = await screen.findByLabelText('Equipment type')
+    expect(document.querySelector('select')).toBeNull()
+    trigger.focus()
+    await userEvent.keyboard('{ArrowDown}{End}{Enter}')
+    await waitFor(() => expect(screen.getByLabelText('Equipment type')).toHaveFocus())
+    expect(screen.getByLabelText('Equipment type')).toHaveTextContent('Unclassified')
+    await userEvent.keyboard('{ArrowDown}{Escape}')
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByLabelText('Equipment type')).toHaveFocus())
+    expect(screen.getByRole('heading', { name: 'Add Equipment' })).toBeVisible()
+  })
+
 })

@@ -1,3 +1,4 @@
+import { chooseSelectOption } from '@/test-utils/selectOption'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -22,7 +23,7 @@ describe('Closed repair order history', () => {
     ] })
     const open = mount()
     expect(mocks.get).not.toHaveBeenCalled()
-    await userEvent.selectOptions(screen.getByLabelText('Truck'), 'truck-1')
+    await chooseSelectOption(screen.getByLabelText('Truck'), 'truck-1', userEvent)
     await userEvent.click(await screen.findByRole('button', { name: /Replace steering tire/ }))
     expect(mocks.get).toHaveBeenCalledWith('/fleet/trucks/truck-1/history')
     expect(screen.queryByText('Weekly inspection')).not.toBeInTheDocument()
@@ -31,7 +32,7 @@ describe('Closed repair order history', () => {
   it('distinguishes a failed history request from an empty list and allows retry', async () => {
     mocks.get.mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ data: [] })
     mount()
-    await userEvent.selectOptions(screen.getByLabelText('Truck'), 'truck-1')
+    await chooseSelectOption(screen.getByLabelText('Truck'), 'truck-1', userEvent)
     expect(await screen.findByRole('alert')).toHaveTextContent('could not be loaded')
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(await screen.findByText('No closed repair orders in this truck’s recent service history.')).toBeInTheDocument()

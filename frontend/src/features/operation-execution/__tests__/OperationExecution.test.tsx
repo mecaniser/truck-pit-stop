@@ -1,3 +1,4 @@
+import { chooseSelectOption } from '@/test-utils/selectOption'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -41,15 +42,15 @@ describe('operation execution', () => {
     mount()
     const select = await screen.findByRole('combobox', { name: 'Technician for Inspect steering' })
     await waitFor(() => expect(select).toBeEnabled())
-    await user.selectOptions(select, 'tech-a')
-    expect(select).toHaveValue('')
-    expect(select).toBeDisabled()
+    await chooseSelectOption(select, 'tech-a', user)
+    expect(screen.getByRole('combobox', { name: 'Technician for Inspect steering' })).toHaveValue('')
+    expect(screen.getByRole('combobox', { name: 'Technician for Inspect steering' })).toBeDisabled()
     expect(api.put).toHaveBeenCalledWith('/repair-orders/order-a/operations/labor-a/assignment', { mechanic_id: 'tech-a', expected_version: 0 })
     expect(api.post).not.toHaveBeenCalled()
     const assigned = page({ ...operation, mechanic_id: 'tech-a', mechanic_name: 'Alex Mechanic', version: 1 })
     api.get.mockResolvedValue({ data: assigned })
     await act(async () => resolve({ data: assigned }))
-    await waitFor(() => expect(select).toHaveValue('tech-a'))
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Technician for Inspect steering' })).toHaveValue('tech-a'))
     expect(screen.getByText('No tracked time')).toBeVisible()
   })
   it('refreshes a stale completion without replaying it or falsely completing the row', async () => {

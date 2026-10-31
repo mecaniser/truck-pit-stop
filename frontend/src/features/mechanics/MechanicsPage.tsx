@@ -1,6 +1,7 @@
+import PlatformSelect from '@/components/PlatformSelect'
 import React, { useMemo, useState, useEffect } from 'react'
 import { Spinner, LoadingLine } from '@/components/ui'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -170,6 +171,7 @@ export default function MechanicsPage() {
 
   const {
     register,
+    control,
     handleSubmit,
     reset,
     setValue,
@@ -889,14 +891,12 @@ export default function MechanicsPage() {
                 {!editingMechanic && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">Role</label>
-                    <select
-                      {...register('role')}
-                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors"
-                    >
-                      {STAFF_ROLE_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
-                      ))}
-                    </select>
+                    <Controller control={control} name="role" render={({ field }) => (
+                      <PlatformSelect {...field}
+                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors">
+                        {STAFF_ROLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </PlatformSelect>
+                    )} />
                     <p className="mt-1 text-xs text-gray-400">Technician adds shift &amp; attendance tracking. Other roles get portal access for their job.</p>
                   </div>
                 )}
@@ -1304,9 +1304,9 @@ function StaffEditModal({
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div>
             <label className={label}>Role</label>
-            <select value={f.role} onChange={set('role')} className={input}>
+            <PlatformSelect value={f.role} onChange={set('role')} className={input}>
               {STAFF_ROLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
+            </PlatformSelect>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div><label className={label}>First name</label><input value={f.first_name} onChange={set('first_name')} className={input} /></div>

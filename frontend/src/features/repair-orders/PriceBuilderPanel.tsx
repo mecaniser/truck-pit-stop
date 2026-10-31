@@ -1,3 +1,4 @@
+import PlatformSelect from '@/components/PlatformSelect'
 import { useAdHocPartCommand } from '@/features/parts-pricing/useAdHocPartCommand'
 import { usePricingCommand } from '@/features/parts-pricing/usePricingCommand'
 import { useMaintenanceRemoval } from '@/features/maintenance/useMaintenanceRemoval'
@@ -4234,7 +4235,7 @@ export default function PriceBuilderPanel({
                   className="w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-200"
                 />
                 <div className="grid grid-cols-2 gap-2">
-                  <select
+                  <PlatformSelect
                     value={recommendedServiceForm.priority}
                     onChange={(e) => onRecommendedServiceFormChange({ ...recommendedServiceForm, priority: e.target.value as RecommendedServicePriority })}
                     className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
@@ -4242,7 +4243,7 @@ export default function PriceBuilderPanel({
                     <option value="urgent">Urgent</option>
                     <option value="soon">Soon</option>
                     <option value="monitor">Monitor</option>
-                  </select>
+                  </PlatformSelect>
                   <input
                     type="number"
                     value={recommendedServiceForm.estimated_cost}
@@ -4661,7 +4662,7 @@ export default function PriceBuilderPanel({
                         {invoiceRecipientOptions.length > 0 && (
                           <label className="block rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm">
                             <span className="mb-1 block font-semibold text-gray-700">Invoice this visit to</span>
-                            <select
+                            <PlatformSelect
                               value={invoiceRecipientId}
                               onChange={(e) => onInvoiceRecipientChange?.(e.target.value)}
                               className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
@@ -4669,7 +4670,7 @@ export default function PriceBuilderPanel({
                               {invoiceRecipientOptions.map((recipient) => (
                                 <option key={recipient.id} value={recipient.id}>{recipient.company_name} · {recipient.relationship_label}</option>
                               ))}
-                            </select>
+                            </PlatformSelect>
                           </label>
                         )}
                         <button

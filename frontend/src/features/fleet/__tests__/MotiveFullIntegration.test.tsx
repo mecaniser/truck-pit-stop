@@ -1,3 +1,4 @@
+import { chooseSelectOption } from '@/test-utils/selectOption'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -76,8 +77,7 @@ describe('complete Motive customer and staff flow', () => {
     mocks.put.mockImplementation(async () => { granted = true; return { data: person } })
     mocks.delete.mockImplementation(async () => { granted = false; return {} })
     const user = userEvent.setup(); wrap(<MotiveGrants companyId="company-a" />)
-    await screen.findByRole('option', { name: 'Fleet Admin · admin@example.test' })
-    await user.selectOptions(screen.getByLabelText('Linked customer'), 'linked-user')
+    await chooseSelectOption(screen.getByLabelText('Linked customer'), 'linked-user', user)
     await user.click(screen.getByRole('button', { name: 'Grant administrator access' }))
     await waitFor(() => expect(mocks.put).toHaveBeenCalledWith('/fleet/motive/grants/linked-user', { fleet_customer_id: 'company-a' }))
     await user.click(await screen.findByRole('button', { name: 'Revoke Fleet Admin' }))

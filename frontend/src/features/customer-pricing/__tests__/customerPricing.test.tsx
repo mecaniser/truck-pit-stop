@@ -31,13 +31,13 @@ beforeEach(() => {
   })
   mocks.put.mockResolvedValue({ data: configured })
 })
-async function edit() { await userEvent.click(await screen.findByRole('button', { name: 'Edit pricing' })); await screen.findByRole('option', { name: matrix.name }) }
+async function edit() { await userEvent.click(await screen.findByRole('button', { name: 'Edit pricing' })); await waitFor(() => expect(screen.getByLabelText('Parts matrix')).toBeEnabled()) }
 
 describe('customer pricing settings', () => {
   it('writes the two defaults atomically without a generic customer update', async () => {
     setup(); await edit()
     fireEvent.change(screen.getByLabelText('Labor rate / hr'), { target: { value: '125' } })
-    fireEvent.change(screen.getByLabelText('Parts matrix'), { target: { value: matrix.id } })
+    fireEvent.click(screen.getByLabelText('Parts matrix')); fireEvent.mouseDown(screen.getByRole('option', { name: matrix.name }))
     fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'Agreed account terms' } })
     fireEvent.click(screen.getByText('Save pricing'))
     await screen.findByText('Pricing saved.')
@@ -71,7 +71,7 @@ describe('customer pricing settings', () => {
     setup(); await edit()
     fireEvent.change(screen.getByLabelText('Labor rate / hr'), { target: { value: '135' } }); fireEvent.click(screen.getByText('Cancel'))
     expect(mocks.put).not.toHaveBeenCalled(); await edit(); expect(screen.getByLabelText('Labor rate / hr')).toHaveValue('125.00')
-    fireEvent.change(screen.getByLabelText('Labor rate / hr'), { target: { value: '' } }); fireEvent.change(screen.getByLabelText('Parts matrix'), { target: { value: '' } }); fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'Return to shop defaults' } }); fireEvent.click(screen.getByText('Save pricing'))
+    fireEvent.change(screen.getByLabelText('Labor rate / hr'), { target: { value: '' } }); fireEvent.click(screen.getByLabelText('Parts matrix')); fireEvent.mouseDown(screen.getByRole('option', { name: 'Use shop default' })); fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'Return to shop defaults' } }); fireEvent.click(screen.getByText('Save pricing'))
     await waitFor(() => expect(mocks.put).toHaveBeenCalledOnce()); expect(mocks.put.mock.calls[0][1]).toMatchObject({ labor_rate: null, parts_matrix_id: null, expected_version: 1 })
   })
   it.each(['0', '-1', '1e2', '1.005', '999999999'])('rejects invalid agreed rate %s and keeps the draft', async value => {

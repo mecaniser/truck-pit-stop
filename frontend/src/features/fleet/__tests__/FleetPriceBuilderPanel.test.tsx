@@ -1,3 +1,4 @@
+import { chooseSelectOption } from '@/test-utils/selectOption'
 import type { OperationExecution, OperationPage } from '@/features/operation-execution/queries'
 import { orderMaintenance, program, targetPreview, work } from '@/features/maintenance/__tests__/fixtures'
 import type { TargetRequest } from '@/features/maintenance/contract'
@@ -557,8 +558,8 @@ it('assigns and completes the operation before reviewing maintenance and complet
   await user.click(screen.getByRole('button', { name: /^Replace air line/ }))
   const technician = screen.getByRole('combobox', { name: 'Technician for Replace air line' })
   await waitFor(() => expect(technician).toBeEnabled())
-  await user.selectOptions(technician, 'tech-1')
-  await waitFor(() => expect(technician).toHaveValue('tech-1'))
+  await chooseSelectOption(technician, 'tech-1', user)
+  await waitFor(() => expect(screen.getByRole('combobox', { name: 'Technician for Replace air line' })).toHaveValue('tech-1'))
   const completeOperation = screen.getByRole('button', { name: 'Complete operation' })
   await waitFor(() => expect(completeOperation).toBeEnabled())
   await user.click(completeOperation)

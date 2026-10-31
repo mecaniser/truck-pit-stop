@@ -1,3 +1,4 @@
+import PlatformSelect from '@/components/PlatformSelect'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '@/lib/api'
@@ -18,10 +19,10 @@ export default function ClosedRepairOrders({ trucks, onOpenRepairOrder }: {
   const orders = (history.data || []).filter((entry) => entry.kind === 'Repair' || entry.kind === 'PM')
   return <div>
     <label className="board-sort-lbl" htmlFor="closed-order-truck">Truck</label>
-    <select id="closed-order-truck" className="fld-sel" value={selected ? truckId : ''} onChange={(event) => setTruckId(event.target.value)}>
+    <PlatformSelect id="closed-order-truck" className="fld-sel" value={selected ? truckId : ''} onChange={(event) => setTruckId(event.target.value)}>
       <option value="">Choose a truck…</option>
       {trucks.map((truck) => <option key={truck.id} value={truck.id}>{fleetUnitLabel(truck)}</option>)}
-    </select>
+    </PlatformSelect>
     <p className="empty-note">Recent closed repair orders and PM from the selected truck’s service history.</p>
     {!selected ? <div className="tgrid-empty">Choose a truck to view its closed repair orders.</div>
       : history.isLoading ? <div role="status" className="tgrid-empty">Loading closed repair orders…</div>

@@ -1,3 +1,4 @@
+import PlatformSelect from '@/components/PlatformSelect'
 import { useEffect, useState, useCallback } from 'react'
 import {
   AlertTriangle, AlertCircle, AlertOctagon, Search,
@@ -328,7 +329,7 @@ export default function ErrorsTab() {
         {/* Expanded filters */}
         {showFilters && (
           <div className="mt-4 pt-4 border-t border-gold-500/20 grid grid-cols-2 md:grid-cols-5 gap-4">
-            <select
+            <PlatformSelect
               value={category}
               onChange={(e) => { setCategory(e.target.value); setPage(0); }}
               className="bg-black/40 border border-gold-500/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-gold-500"
@@ -337,9 +338,9 @@ export default function ErrorsTab() {
               {CATEGORIES.map(cat => (
                 <option key={cat} value={cat}>{cat}</option>
               ))}
-            </select>
+            </PlatformSelect>
 
-            <select
+            <PlatformSelect
               value={severity}
               onChange={(e) => { setSeverity(e.target.value); setPage(0); }}
               className="bg-black/40 border border-gold-500/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-gold-500"
@@ -348,9 +349,9 @@ export default function ErrorsTab() {
               {SEVERITIES.map(sev => (
                 <option key={sev} value={sev}>{sev}</option>
               ))}
-            </select>
+            </PlatformSelect>
 
-            <select
+            <PlatformSelect
               value={resolved}
               onChange={(e) => { setResolved(e.target.value); setPage(0); }}
               className="bg-black/40 border border-gold-500/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-gold-500"
@@ -358,9 +359,9 @@ export default function ErrorsTab() {
               <option value="">All Status</option>
               <option value="false">Unresolved</option>
               <option value="true">Resolved</option>
-            </select>
+            </PlatformSelect>
 
-            <select
+            <PlatformSelect
               value={selectedType}
               onChange={(e) => { setSelectedType(e.target.value); setPage(0); }}
               className="bg-black/40 border border-gold-500/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-gold-500"
@@ -369,7 +370,7 @@ export default function ErrorsTab() {
               {errorTypes.map(type => (
                 <option key={type} value={type}>{type}</option>
               ))}
-            </select>
+            </PlatformSelect>
 
             <button
               onClick={clearFilters}

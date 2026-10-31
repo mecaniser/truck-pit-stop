@@ -1,3 +1,4 @@
+import PlatformSelect from '@/components/PlatformSelect'
 import { useState, type CSSProperties } from 'react'
 import { Wrench, Gauge, ClipboardList, User, Search, ChevronDown, ChevronRight, Check, AlertTriangle, X } from 'lucide-react'
 import type { BoardTruck, FleetBoard as FleetBoardData, TruckStatus } from './types'
@@ -298,12 +299,12 @@ export default function FleetBoard({
         <div className="board-bar-r">
           <span className="board-sort-lbl">Sort</span>
           <div className="board-sort-select">
-            <select className="fld-sel" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
+            <PlatformSelect className="fld-sel" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
               <option value="attention">Needs attention</option>
               <option value="unit">Unit number</option>
               <option value="pm">PM soonest</option>
               <option value="odo">Highest mileage</option>
-            </select>
+            </PlatformSelect>
             <ChevronDown size={16} aria-hidden="true" />
           </div>
         </div>

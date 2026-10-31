@@ -1,3 +1,4 @@
+import PlatformSelect from '@/components/PlatformSelect'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link2, RefreshCw, Unplug } from 'lucide-react'
@@ -174,11 +175,11 @@ export function MotiveConnectionCard({ companyId, trucks = [], canManageGrants =
           return <div className="motive-truck" key={remote.provider_vehicle_id}>
             <strong>Motive truck {label}</strong><span className="motive-muted">VIN: {remote.vin || 'Unavailable'} · Device: {remote.gateway_identifier || remote.gateway_id || 'Not reported'}{remote.gateway_model ? ` · ${remote.gateway_model}` : ''}</span>
             <label htmlFor={`motive-truck-${remote.provider_vehicle_id}`}>DieselBridge truck</label>
-            <div className="motive-mapping"><select id={`motive-truck-${remote.provider_vehicle_id}`} aria-label={`DieselBridge truck for ${label}`} value={selected} disabled={busy || scopedTrucks.isError || scopedTrucks.isPending} onChange={(event) => setSelections((previous) => ({ ...previous, [remote.provider_vehicle_id]: event.target.value }))}>
+            <div className="motive-mapping"><PlatformSelect id={`motive-truck-${remote.provider_vehicle_id}`} aria-label={`DieselBridge truck for ${label}`} value={selected} disabled={busy || scopedTrucks.isError || scopedTrucks.isPending} onChange={(event) => setSelections((previous) => ({ ...previous, [remote.provider_vehicle_id]: event.target.value }))}>
               <option value="">Not mapped</option>
               {remote.vehicle_id && !eligibleTrucks.some((truck) => truck.id === remote.vehicle_id) && <option value={remote.vehicle_id} disabled>Previous truck (no longer in fleet)</option>}
               {eligibleTrucks.map((truck) => <option key={truck.id} value={truck.id}>{truck.unit_number || truck.vin || truck.id}{remote.match_candidates.some((candidate) => candidate.vehicle_id === truck.id) ? ' (VIN match)' : ''}</option>)}
-            </select><button className="dbtn dbtn-ghost" disabled={busy || scopedTrucks.isError || scopedTrucks.isPending || selected === (remote.vehicle_id ?? '')} onClick={() => binding.mutate({ remoteId: remote.provider_vehicle_id, vehicleId: selected })}>Save mapping</button></div>
+            </PlatformSelect><button className="dbtn dbtn-ghost" disabled={busy || scopedTrucks.isError || scopedTrucks.isPending || selected === (remote.vehicle_id ?? '')} onClick={() => binding.mutate({ remoteId: remote.provider_vehicle_id, vehicleId: selected })}>Save mapping</button></div>
             {remote.vehicle_id && !eligibleTrucks.some((truck) => truck.id === remote.vehicle_id) && <p role="alert">The mapped truck is no longer in this fleet. Remove or update its mapping.</p>}
             {remote.vehicle_id && <p className="motive-muted">{reading
               ? <>Motive location · {freshness} · {time(reading.location.located_at)}<br />{reading.location.lat.toFixed(5)}, {reading.location.lng.toFixed(5)}{reading.speed_mph != null ? ` · Recorded speed: ${reading.speed_mph.toFixed(1)} mph` : ''}</>
@@ -223,9 +224,9 @@ export function MotiveIntegrationWorkspace({ initialCompanyId = '' }: { initialC
   const selected = options.some((company) => company.id === companyId) ? companyId : options.length === 1 ? options[0].id : ''
   return !allowed ? <p>Ask your company administrator to manage integrations.</p> : <div className="motive-panel">
     <label htmlFor="motive-company">Fleet company</label>
-    <select id="motive-company" value={selected} onChange={(event) => setCompanyId(event.target.value)}>
+    <PlatformSelect id="motive-company" value={selected} onChange={(event) => setCompanyId(event.target.value)}>
       <option value="">Choose a company</option>{options.map((company) => <option key={company.id} value={company.id}>{company.company_name}</option>)}
-    </select>
+    </PlatformSelect>
     {companies.isPending && <p role="status">Loading companies…</p>}
     {companies.isError && <p role="alert">Could not load your authorized companies. <button className="dbtn dbtn-ghost" onClick={() => companies.refetch()}>Retry</button></p>}
     {companies.isSuccess && options.length === 0 && <p>{user?.role === 'customer' ? 'Ask your shop administrator to grant Motive access for your fleet company.' : 'Enable a fleet company before connecting Motive.'}</p>}

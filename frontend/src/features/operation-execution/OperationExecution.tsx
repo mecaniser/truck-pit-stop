@@ -1,3 +1,4 @@
+import PlatformSelect from '@/components/PlatformSelect'
 import { useState } from 'react'
 import { trackedTimeLabel } from './format'
 import { OperationNotes } from './OperationNotes'
@@ -62,11 +63,11 @@ export function OperationExecutionControls({ orderId, item, technicians = [], di
     <div className="flex min-w-0 flex-wrap items-center gap-2">
       {item.can_assign && <label className="flex min-w-0 max-w-full items-center gap-2 text-xs">
         <span className="shrink-0">Technician</span>
-        <select aria-label={`Technician for ${item.description}`} value={item.mechanic_id ?? ''} disabled={busy} onChange={event => mutation.mutate({ type: 'assignment', mechanicId: event.target.value || null })} className={`${control} min-w-0 max-w-[min(100%,16rem)] flex-1`}>
+        <PlatformSelect aria-label={`Technician for ${item.description}`} value={item.mechanic_id ?? ''} disabled={busy} onChange={event => mutation.mutate({ type: 'assignment', mechanicId: event.target.value || null })} className={`${control} min-w-0 max-w-[min(100%,16rem)] flex-1`}>
           <option value="">Unassigned</option>
           {assignedMissing && <option value={item.mechanic_id!} disabled>{item.mechanic_name || 'Previous technician'}</option>}
           {technicians.map(tech => <option key={tech.mechanic_id} value={tech.mechanic_id}>{tech.mechanic_name}</option>)}
-        </select>
+        </PlatformSelect>
       </label>}
       {item.status === null && item.can_assign && item.mechanic_id && <button type="button" disabled={busy} onClick={() => mutation.mutate({ type: 'assignment', mechanicId: item.mechanic_id })} className={control}>Track operation</button>}
       {item.can_start_timer && <button type="button" disabled={busy} onClick={() => mutation.mutate({ type: 'start' })} className={control}><Play size={14} />Start timer</button>}

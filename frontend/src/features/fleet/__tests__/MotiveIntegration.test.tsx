@@ -1,3 +1,4 @@
+import { chooseSelectOption } from '@/test-utils/selectOption'
 import { StrictMode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
@@ -46,7 +47,7 @@ describe('Motive integration', () => {
     expect(select).toHaveValue('')
     expect(within(select).queryByText('99')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save mapping' })).toBeDisabled()
-    await user.selectOptions(select, 'truck-a')
+    await chooseSelectOption(select, 'truck-a', user)
     await user.click(screen.getByRole('button', { name: 'Save mapping' }))
     await waitFor(() => expect(mocks.put).toHaveBeenCalledWith('/fleet/motive/bindings/123', { fleet_customer_id: 'company-a', vehicle_id: 'truck-a' }))
   })
@@ -95,7 +96,7 @@ describe('Motive integration', () => {
     mocks.get.mockImplementation(async (url: string) => ({ data: url.endsWith('/trucks') ? { items: [{ id: 'truck-a', unit_number: '7', vin: 'VIN-7' }] } : url.endsWith('/webhook') ? { status: 'not_configured', url: null, pending_count: 0, failed_count: 0 } : url.endsWith('/connection') ? connected : { items: [{ ...remote, vehicle_id: 'truck-a' }], synced_at: null } }))
     mocks.delete.mockResolvedValue({})
     wrap(<MotiveConnectionCard companyId="company-a" trucks={trucks} />)
-    await user.selectOptions(await screen.findByLabelText('DieselBridge truck for Truck 7'), '')
+    await chooseSelectOption(await screen.findByLabelText('DieselBridge truck for Truck 7'), '', user)
     await user.click(screen.getByRole('button', { name: 'Save mapping' }))
     await waitFor(() => expect(mocks.delete).toHaveBeenCalledWith('/fleet/motive/bindings/123', { params: { fleet_customer_id: 'company-a' } }))
   })
@@ -110,17 +111,18 @@ describe('Motive integration', () => {
     const user = userEvent.setup()
     wrap(<MotiveIntegrationPanel onClose={() => {}} trucks={trucks} />)
     const select = await screen.findByLabelText('Fleet company')
-    await screen.findByRole('option', { name: 'Pilot fleet' })
     expect(screen.queryByLabelText('Motive connection')).not.toBeInTheDocument()
-    await user.selectOptions(select, 'company-a')
+    await chooseSelectOption(select, 'company-a', user)
     await screen.findByLabelText('Motive connection')
-    await user.selectOptions(select, 'company-b')
+    await chooseSelectOption(select, 'company-b', user)
     await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('/fleet/motive/connection', expect.objectContaining({ params: { fleet_customer_id: 'company-b' } })))
   })
   it('includes internal fleet companies even when the separate fleet flag is false', async () => {
     mocks.get.mockImplementation(async (url: string) => ({ data: url.endsWith('/companies') ? { items: [{ id: 'company-a', company_name: 'Internal fleet', fleet_enabled: false, is_internal_fleet: true }] } : url.endsWith('/connection') ? connected : { items: [], synced_at: null } }))
     wrap(<MotiveIntegrationPanel onClose={() => {}} trucks={trucks} />)
+    await userEvent.click(await screen.findByLabelText('Fleet company'))
     expect(await screen.findByRole('option', { name: 'Internal fleet' })).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
     expect(await screen.findByLabelText('Motive connection')).toBeInTheDocument()
   })
   it('does not load integrations for unscoped fleet managers', () => {
