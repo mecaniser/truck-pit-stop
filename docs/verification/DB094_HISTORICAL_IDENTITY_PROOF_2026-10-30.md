@@ -87,3 +87,5 @@ PostgreSQL migration cycle, audit guards and both concurrency ordersPASS
 (`/tmp/db094-publication-postgres.log`); synthetic schema removed. Alembic has
 one195 head and diff integrity passes. No proof logic or authorization changes
 were introduced by this integration refresh. Actual invoice review remains pending.
+
+[PR720](https://github.com/mecaniser/truck-pit-stop/pull/720) published with user approval. Final exact-head CI results will be linked in its description; merge remains held.
