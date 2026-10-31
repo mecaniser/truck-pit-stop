@@ -38,9 +38,9 @@ are unchanged. No frontend or new credentials are required for this API workflow
   authentication/inactive identity, client audit/actor injection, another uploader,
   tenant/hash/invoice/alias/UUID/recipient/proof errors, source drift, malformed
   missing-actor audit and legacy independent compatibility.
-- Independent Security/QA:47 focused tests and7 additional adversarial probes
+- Independent Security/QA:47 focused tests and8 additional adversarial probes
   passed (stale role/tenant/deletion/deactivation snapshots, API-key-only attempt,
-  proofless unique-name owner path, legacy compatibility). Source-only findings
+  proofless unique-name owner path, legacy compatibility and missing-verifier denial). Source-only findings
   resolved; missing-actor guard regression added. Architecture GO with16 owner
   cases and2 final legacy cases independently passed.
 - Actual local asyncpg/PostgreSQL private schema: populated195→196→195→196,
