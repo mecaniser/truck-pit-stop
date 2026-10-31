@@ -19,9 +19,9 @@ vi.mock('@/features/payments', () => ({
 }))
 import CustomerInvoicePage from '../CustomerInvoicePage'
 
-function renderInvoice(receipt?: CashReceiptSummary) {
+function renderInvoice(receipt?: CashReceiptSummary, reviewUrl?: string | null) {
   mocks.get.mockResolvedValue({ data: {
-    id: 'invoice-1', status: 'paid', invoice_number: 'INV-1', order_number: 'RO-1',
+    review_url: reviewUrl, id: 'invoice-1', status: 'paid', invoice_number: 'INV-1', order_number: 'RO-1',
     subtotal: '100.00', shop_supplies_amount: '3.00', service_fee_amount: '4.00',
     tax_amount: '8.00', discount_amount: '0.00', total_amount: '115.00',
     paid_at: '2026-09-12T18:00:00Z', cash_receipt: receipt,
@@ -35,6 +35,14 @@ function renderInvoice(receipt?: CashReceiptSummary) {
 const cash: CashReceiptSummary = { method: 'cash', amount: '101.00', subtotal: '100.00', shop_supplies_amount: '3.00', service_fee_amount: '0.00', tax_amount: '0.00', discount_amount: '2.00', paid_at: '2026-09-12T18:00:00Z' }
 
 describe('customer cash receipt', () => {
+  it('shows a shop review link on cash receipts', async () => {
+    renderInvoice(cash, 'https://g.page/r/example/review')
+    const link = await screen.findByRole('link', { name: 'Leave a review' })
+    expect(link).toHaveAttribute('href', 'https://g.page/r/example/review')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(link).toHaveAttribute('target', '_blank')
+  })
+
   it.each(['0.00', '8.00'])('uses recorded totals and explicitly displays tax %s', async tax => {
     renderInvoice({ ...cash, tax_amount: tax, amount: tax === '0.00' ? '101.00' : '109.00' })
     expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(tax === '0.00' ? '$101.00' : '$109.00')
@@ -53,6 +61,7 @@ describe('customer cash receipt', () => {
     renderInvoice()
     await screen.findByRole('heading', { level: 1 })
     expect(screen.queryByText('Sales tax — not charged')).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Leave a review' })).not.toBeInTheDocument()
     expect(screen.queryByText('Balance due')).not.toBeInTheDocument()
     expect(screen.getByText('Tax').closest('div')).toHaveTextContent('$8.00')
   })

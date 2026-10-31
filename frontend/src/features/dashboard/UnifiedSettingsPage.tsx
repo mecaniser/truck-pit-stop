@@ -147,6 +147,16 @@ const garageProfileSchema = z.object({
   email: z.string().optional().refine((value) => !value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value), {
     message: 'Valid email required',
   }),
+  review_url: z.string().optional()
+    .refine((value) => !value || value.length <= 2048, { message: 'Maximum 2048 characters' })
+    .refine((value) => {
+      if (!value?.trim()) return true
+      try {
+        const url = new URL(value.trim())
+        return url.protocol === 'https:' && url.hostname.includes('.') && !url.username && !url.password
+          && (!url.port || url.port === '443') && !/[\s<>"\\]/.test(value.trim())
+      } catch { return false }
+    }, { message: 'Enter a valid HTTPS review link without sign-in details' }),
   website: z.string().optional()
     .refine((value) => !value || value.length <= 255, {
       message: 'Maximum 255 characters',
@@ -305,6 +315,7 @@ interface GarageProfile {
   address: string | null
   phone: string | null
   email: string | null
+  review_url?: string | null
   website: string | null
   logo_url: string | null
   partner_summary: string | null
@@ -707,6 +718,7 @@ function GarageProfileSection() {
       phone: garageProfile.phone || '',
       email: garageProfile.email || '',
       website: garageProfile.website || '',
+      review_url: garageProfile.review_url || '',
       logo_url: garageProfile.logo_url || '',
       partner_summary: garageProfile.partner_summary || '',
       partner_services: garageProfile.partner_services || '',
@@ -742,6 +754,7 @@ function GarageProfileSection() {
         phone: data.phone?.trim() || null,
         email: data.email?.trim() || null,
         website: data.website?.trim() || null,
+        review_url: data.review_url?.trim() || null,
         logo_url: data.logo_url?.trim() || null,
         partner_summary: data.partner_summary?.trim() || null,
         partner_services: data.partner_services?.trim() || null,
@@ -810,6 +823,7 @@ function GarageProfileSection() {
         phone: garageProfile.phone || '',
         email: garageProfile.email || '',
         website: garageProfile.website || '',
+        review_url: garageProfile.review_url || '',
         logo_url: garageProfile.logo_url || '',
         partner_summary: garageProfile.partner_summary || '',
         partner_services: garageProfile.partner_services || '',
@@ -883,6 +897,7 @@ function GarageProfileSection() {
                 { label: 'Shop Email', value: garageProfile?.email || '—' },
                 { label: 'Shop Phone', value: garageProfile?.phone ? formatUSPhone(garageProfile.phone) : '—' },
                 { label: 'Website', value: garageProfile?.website || '—' },
+                { label: 'Review link', value: garageProfile?.review_url || 'Not configured' },
                 { label: 'Address', value: garageProfile?.address || '—' },
                 {
                   label: 'Repair Order Prefix',
@@ -970,6 +985,13 @@ function GarageProfileSection() {
               <label className={industrialStyles.label}>Website</label>
               <input {...register('website')} className={inputClasses(!!errors.website)} placeholder="https://example.com" />
               {errors.website && <p className="mt-2 text-xs text-red-400">{errors.website.message}</p>}
+            </div>
+
+            <div>
+              <label htmlFor="shop-review-url" className={industrialStyles.label}>Review link</label>
+              <input id="shop-review-url" {...register('review_url')} className={inputClasses(!!errors.review_url)} placeholder="https://g.page/r/your-business/review" />
+              <p className="mt-2 text-xs text-gray-400">Shown on customer invoices, PDFs and invoice emails. Paste your Google review link or another HTTPS review page.</p>
+              {errors.review_url && <p className="mt-2 text-xs text-red-400">{errors.review_url.message}</p>}
             </div>
 
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
@@ -1109,6 +1131,7 @@ function GarageProfileSection() {
                       phone: garageProfile.phone || '',
                       email: garageProfile.email || '',
                       website: garageProfile.website || '',
+                      review_url: garageProfile.review_url || '',
                       logo_url: garageProfile.logo_url || '',
                       partner_summary: garageProfile.partner_summary || '',
                       partner_services: garageProfile.partner_services || '',
