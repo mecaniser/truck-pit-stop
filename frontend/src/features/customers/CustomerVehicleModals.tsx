@@ -11,7 +11,7 @@ import { useTheme } from '@/contexts/ThemeContext'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { vehicleDisplayLabel } from '@/lib/vehicleName'
 import { LoadingLine, Spinner } from '@/components/ui'
-import type { Customer, Vehicle, VINDecodeResult } from '@/types'
+import type { Customer, Vehicle, VINDecodeResult, EquipmentType } from '@/types'
 
 interface DuplicateVinVehicleSummary {
   id: string
@@ -104,6 +104,7 @@ interface FleetCompanyOption {
 }
 
 interface VehicleFormData {
+  equipment_type: EquipmentType
   make: string
   model: string
   year: string
@@ -116,6 +117,7 @@ interface VehicleFormData {
 }
 
 const emptyVehicleForm: VehicleFormData = {
+  equipment_type: 'tractor',
   make: '',
   model: '',
   year: '',
@@ -270,6 +272,7 @@ export default function CustomerVehicleModals({
   const createVehicleMutation = useMutation({
     mutationFn: async ({ customerId, data }: { customerId: string; data: VehicleFormData }) => {
       const payload = {
+        equipment_type: data.equipment_type,
         make: data.make,
         model: data.model,
         year: data.year ? parseInt(data.year) : null,
@@ -301,6 +304,7 @@ export default function CustomerVehicleModals({
   const updateVehicleMutation = useMutation({
     mutationFn: async ({ customerId, vehicleId, data }: { customerId: string; vehicleId: string; data: VehicleFormData }) => {
       const payload = {
+        equipment_type: data.equipment_type,
         make: data.make,
         model: data.model,
         year: data.year ? parseInt(data.year) : null,
@@ -457,6 +461,7 @@ export default function CustomerVehicleModals({
     setVehicleModalMode('new')
     lastDecodedVehicleVin.current = (vehicle.vin || '').trim().toUpperCase()
     setVehicleFormData({
+      equipment_type: vehicle.equipment_type || 'unknown',
       make: vehicle.make,
       model: vehicle.model,
       year: vehicle.year?.toString() || '',
@@ -947,6 +952,17 @@ const {
   const renderVehicleForm = () => (
     <form onSubmit={handleVehicleSubmit} className="p-6 space-y-4">
       {!editingVehicle && renderVehicleModeTabs()}
+      <div>
+        <label htmlFor="equipment-type" className="block text-sm font-medium text-gray-700 mb-1">Equipment type</label>
+        <select id="equipment-type" value={vehicleFormData.equipment_type}
+          onChange={(e) => setVehicleFormData(prev => ({ ...prev, equipment_type: e.target.value as EquipmentType }))}
+          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg">
+          <option value="tractor">Tractor / Truck</option>
+          <option value="trailer">Trailer</option>
+          <option value="other">Other equipment</option>
+          <option value="unknown">Unclassified</option>
+        </select>
+      </div>
       {/* Make & Model */}
       <div className="grid grid-cols-2 gap-4">
         <div>
@@ -1174,7 +1190,7 @@ const {
           {(createVehicleMutation.isPending || updateVehicleMutation.isPending) && (
             <Spinner size="xs" className="border-white/40 border-t-white" />
           )}
-          {editingVehicle ? 'Save Changes' : 'Add Vehicle'}
+          {editingVehicle ? 'Save Changes' : 'Add Equipment'}
         </button>
       </div>
     </form>
@@ -1202,7 +1218,7 @@ const {
                 <div className="flex items-center justify-between">
                   <div>
                     <h2 className="text-xl font-bold text-gray-900">
-                      {editingVehicle ? 'Edit Vehicle' : vehicleModalMode === 'existing' ? 'Truck Roles & Fleet Assignment' : 'Add Vehicle'}
+                      {editingVehicle ? 'Edit Equipment' : vehicleModalMode === 'existing' ? 'Equipment Roles & Fleet Assignment' : 'Add Equipment'}
                     </h2>
                     <p className="text-sm text-gray-500">
                       for {selectedCustomer.company_name || `${selectedCustomer.first_name} ${selectedCustomer.last_name}`}

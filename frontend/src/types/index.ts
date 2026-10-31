@@ -172,7 +172,10 @@ export interface MessagesUnreadSummary {
   unread_count_staff: number
 }
 
+export type EquipmentType = 'unknown' | 'tractor' | 'trailer' | 'other'
+
 export interface Vehicle {
+  equipment_type?: EquipmentType
   id: string
   tenant_id: string
   customer_id: string
