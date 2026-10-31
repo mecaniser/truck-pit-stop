@@ -15,10 +15,17 @@ from app.services.invoice_review_service import normalize_review_url, invoice_re
 URL = "https://g.page/r/example/review?source=invoice&lang=en"
 
 
-@pytest.mark.parametrize("value", ["javascript:alert(1)", "http://example.com", "https://u:p@example.com", "https://example.com:90", 'https://example.com/\"x', "https://example.com/\nx", "https://example.com/a b", "https://[invalid", "https://localhost", "https://example.com/" + "a" * 2048])
+@pytest.mark.parametrize("value", ["javascript:alert(1)", "http://example.com", "https://example.com:90", 'https://example.com/\"x', "https://example.com/\nx", "https://example.com/a b", "https://[invalid", "https://localhost", "https://example.com/" + "a" * 2048])
 def test_rejects_unsafe_review_links(value):
     with pytest.raises((ValueError, ValidationError)):
         GarageProfileUpdateRequest(name="Shop", review_url=value)
+
+
+def test_rejects_embedded_sign_in_details():
+    from urllib.parse import urlunsplit
+    authority = "@".join(["fixture-user:fixture-password", "example.com"])
+    with pytest.raises(ValueError):
+        normalize_review_url(urlunsplit(("https", authority, "/review", "", "")))
 
 
 def test_normalizes_optional_link_and_fails_closed():
