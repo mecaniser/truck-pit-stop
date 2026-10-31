@@ -1596,7 +1596,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     <div className="db-parts-workbench__inspector-tabs" role="tablist" aria-label="Selected part details" onKeyDown={handleInspectorKeys}>
       {INSPECTOR_VIEWS.map((view, index) => <button key={view.id} ref={(node) => { inspectorTabs.current[index] = node }} id={`part-inspector-${view.id}-tab`} type="button" role="tab" aria-selected={inspectorView === view.id} aria-controls={`part-inspector-${view.id}-panel`} tabIndex={inspectorView === view.id ? 0 : -1} onClick={() => selectInspectorView(view.id)}>{view.label}</button>)}
     </div>
-    <div className="db-parts-workbench__inspector-panel" id={`part-inspector-${inspectorView}-panel`} role="tabpanel" aria-labelledby={`part-inspector-${inspectorView}-tab`}>
+    <div className={`db-parts-workbench__inspector-panel is-${inspectorView}`} id={`part-inspector-${inspectorView}-panel`} role="tabpanel" aria-labelledby={`part-inspector-${inspectorView}-tab`}>
       {inspectorView === 'overview' && <>
         {part.is_placeholder && <section className="db-parts-workbench__promote" role="region" aria-label="Placeholder part">
           <div>

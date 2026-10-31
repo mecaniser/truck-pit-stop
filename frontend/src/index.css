@@ -7352,3 +7352,51 @@ html.customer-portal-active {
  .db-parts-workbench__selected-controls { flex-direction:column; gap:2px; }
  .db-parts-workbench__selected-part { min-block-size:88px; }
 }
+
+/* Overview and Ordering share Stock/Activity's compact fact-and-action rhythm. */
+.db-parts-workbench__inspector-panel.is-overview .db-parts-workbench__facts.is-overview { grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 .75rem; padding:0; }
+.db-parts-workbench__facts.is-overview > div { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:baseline; gap:.25rem; padding:.35rem 0; }
+.db-parts-workbench__facts.is-overview dd { margin:0; font-size:.85rem; text-align:end; }
+.db-parts-workbench__inspector-panel.is-overview .db-parts-workbench__section > h3 { margin-block-end:.3rem; }
+.db-parts-workbench__supplier-section-head { gap:.5rem; margin-block-end:.25rem; }
+.db-parts-workbench__supplier-relationship { border:0; border-radius:0; background:transparent; }
+.db-parts-workbench__supplier-identity { grid-template-columns:minmax(0,1fr) auto; gap:.5rem; padding:.35rem 0; }
+.db-parts-workbench__supplier-identity > span { display:none; }
+.db-parts-workbench__supplier-relationship dl div { flex-direction:row; gap:.4rem; padding:.35rem 0; }
+.db-parts-workbench__supplier-relationship dd { text-align:end; }
+.db-parts-workbench__supplier-unlinked { padding:.4rem 0; border:0; }
+.db-parts-workbench__supplier-unlinked small { margin-block-start:.1rem; line-height:1.35; font-size:.7rem; }
+.db-parts-workbench__inspector :is(.db-parts-workbench__linked-row,.db-parts-workbench__movement-row) { min-block-size:44px; padding:.4rem 0; gap:.5rem; }
+.db-parts-workbench__inspector .db-parts-workbench__muted { margin:.2rem 0; font-size:.75rem; line-height:1.4; }
+.db-parts-workbench__ordering-action { gap:.4rem .6rem; padding:.5rem 0; }
+.db-parts-workbench__ordering-action small { font-size:.7rem; line-height:1.35; }
+.db-parts-workbench__ordering-action button { padding:.35rem .5rem; font-size:.72rem; }
+.db-parts-workbench__supplier-sources { margin-block-start:.5rem; }
+.db-parts-workbench__sources-heading { gap:.5rem; align-items:center; }
+.db-parts-workbench__sources-heading button { padding:.25rem .1rem; font-size:.72rem; }
+.db-parts-workbench__source-row { padding:.4rem 0; gap:.25rem .5rem; }
+.db-parts-workbench__source-facts { grid-template-columns:repeat(3,minmax(0,1fr)); gap:.3rem .55rem; }
+.db-parts-workbench__source-facts > div:first-child { grid-column:span 2; }
+.db-parts-workbench__source-facts dd { margin-block-start:.1rem; font-size:.72rem; }
+.db-parts-workbench__source-editor { gap:.4rem; margin-block-start:.4rem; padding:.5rem 0; border-inline:0; border-radius:0; background:transparent; }
+.db-parts-workbench__source-editor label { gap:.2rem; font-size:.72rem; }
+.db-parts-workbench__source-editor :is(input,select) { padding:.35rem .45rem; border-radius:.4rem; }
+.db-parts-workbench__source-editor > div:not(.db-parts-workbench__source-actions) { grid-template-columns:repeat(3,minmax(0,1fr)); gap:.4rem; }
+.db-parts-workbench__source-actions { display:flex; flex-wrap:wrap; gap:.35rem; }
+.db-parts-workbench__source-actions > span { flex:1; }
+.db-parts-workbench__source-actions button { padding:.3rem .5rem; font-size:.75rem; }
+.db-parts-workbench__purchase-activity { margin-block-start:.55rem; }
+.db-parts-workbench__purchase-activity-title { min-block-size:32px; gap:.5rem; }
+.db-parts-workbench__purchase-activity-title h5 { font-size:.7rem; text-transform:none; }
+@media (pointer:fine) {
+ .db-parts-workbench__supplier-section-head button,.db-parts-workbench__sources-heading button,.db-parts-workbench__source-action,.db-parts-workbench__source-editor :is(input:not([type='checkbox']),select),.db-parts-workbench__source-actions button { min-block-size:34px; }
+}
+@media (max-width:420px) {
+ .db-parts-workbench__sources-heading { flex-direction:row; }
+ .db-parts-workbench__ordering-action { grid-template-columns:minmax(0,1fr); }
+ .db-parts-workbench__source-editor > div:not(.db-parts-workbench__source-actions) { grid-template-columns:repeat(2,minmax(0,1fr)); }
+ .db-parts-workbench__source-editor > div:not(.db-parts-workbench__source-actions) > label:last-child { grid-column:1 / -1; }
+}
+.db-parts-workbench__inspector-panel .db-parts-workbench__section-head > button { padding:.3rem .4rem; font-size:.75rem; }
+.db-parts-workbench__supplier-relationship dd { min-inline-size:0; overflow-wrap:anywhere; }
+.db-parts-workbench__supplier-name,.db-parts-workbench__source-name { overflow-wrap:anywhere; }
