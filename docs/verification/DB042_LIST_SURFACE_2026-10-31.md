@@ -15,3 +15,9 @@ Signed-in real desktop/mobile QA confirms matching surfaces, visible rounded out
 ## Runtime receipt
 
 2026-10-31: Vite5198 PID26431 cwd this checkout/frontend; API8014 `dieselbridge_api_inventory-surface` binds this checkout/backend. Existing fictional truckpitstop_db042_qa, Redis12, schema196_historical_owner_self_review verified before startup; upgrade no-op. Direct/proxied readiness passes. Prior owned PID96068/API source-checked and gracefully replaced; shared5173/8000/8018 sessions preserved. Branch/base above, changed source browser-verified. http://127.0.0.1:5198/dashboard/garage/inventory aligned and browser-verified. No production record writes.
+
+## Superseding user direction — white surrounding page, gray Parts section
+
+User rejected the continuous white list and added row outlines. Final implementation replaces that treatment: the Parts route main canvas uses surface-overlay (white in Day), while body/list/header/gutters/footer use surface-canvas (rgb(232,237,244) in Day). Existing rounded white records and beige selection remain; no added row outlines. Other routes remain untouched.
+
+Updated signed-in desktop and390px QA confirms white page, gray ledger/header/footer, retained rounded rows and selection, no page horizontal overflow. Screenshots above replaced with this final direction. Prior preview/Escape/sticky-header journey remains applicable because only background paint changed. Updated-head lint/build and protected CI required before release. PR #726 held during revision.
