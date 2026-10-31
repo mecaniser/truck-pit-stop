@@ -27,6 +27,8 @@ from app.db.models.vehicle import Vehicle
 from app.api.v1.endpoints.invoices import _load_line_items
 from app.services.invoice_charge_state import effective_tax_exempt
 from app.services.pdf_service import generate_invoice_pdf
+from app.services.invoice_payment_presentation import load_payment_summary
+from app.services.cash_receipt_service import load_cash_receipt, receipt_invoice_view
 from app.services.invoice_review_service import invoice_review_url
 from app.services.conversion_export_audit_service import record_conversion_audit
 
@@ -223,10 +225,13 @@ def _money(value) -> str:
 
 
 def _integration_pdf(invoice: Invoice, order: RepairOrder, customer: Customer,
-                     vehicle: Vehicle, tenant: Tenant, labor: list, parts: list) -> bytes:
+                     vehicle: Vehicle, tenant: Tenant, labor: list, parts: list, payment_summary=None, cash_receipt=None) -> bytes:
     """Render financial invoice facts without contact, private notes or payment rails."""
+    if cash_receipt:
+        invoice = receipt_invoice_view(invoice, cash_receipt)
     return generate_invoice_pdf(
-        invoice_number=invoice.invoice_number,
+        payment_summary=payment_summary.model_dump() if payment_summary else None,
+        cash_receipt=bool(cash_receipt),        invoice_number=invoice.invoice_number,
         order_number=order.order_number,
         invoice_date=(invoice.ets_invoiced_at or invoice.created_at.date()).strftime("%m/%d/%Y"),
         service_completed=order.work_completed_at.strftime("%m/%d/%Y") if order.work_completed_at else None,
@@ -363,7 +368,8 @@ async def invoice_pdf(
     invoice, order, customer, vehicle = row
     tenant = await db.get(Tenant, key.tenant_id)
     labor, parts = await _load_line_items(db, order.id, invoice)
-    pdf = _integration_pdf(invoice, order, customer, vehicle, tenant, labor, parts)
+    cash_receipt = await load_cash_receipt(db, invoice)
+    pdf = _integration_pdf(invoice, order, customer, vehicle, tenant, labor, parts, await load_payment_summary(db, invoice, cash_receipt), cash_receipt)
     key.last_used_at = datetime.now(timezone.utc)
     await db.commit()
     return Response(pdf, media_type="application/pdf", headers={

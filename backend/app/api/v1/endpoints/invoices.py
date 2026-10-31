@@ -1,3 +1,4 @@
+from app.services.invoice_payment_presentation import InvoicePaymentSummary, load_payment_summary, payment_summary_html
 from app.services.invoice_review_service import invoice_review_url, invoice_review_html
 from datetime import datetime, date, timezone
 from types import SimpleNamespace
@@ -136,7 +137,7 @@ def _line_items_snapshot(labor_items: list[dict], parts_items: list[dict]) -> di
 
 def _build_invoice_pdf_bytes(
     invoice, order, customer, vehicle, tenant,
-    labor_items, parts_items, invoice_access_url: Optional[str], cash_receipt=None
+    labor_items, parts_items, invoice_access_url: Optional[str], cash_receipt=None, payment_summary=None
 ) -> bytes:
     if cash_receipt:
         invoice = receipt_invoice_view(invoice, cash_receipt)
@@ -154,6 +155,7 @@ def _build_invoice_pdf_bytes(
 
     return generate_invoice_pdf(
         cash_receipt=bool(cash_receipt),
+        payment_summary=payment_summary.model_dump() if payment_summary else None,
         invoice_number=invoice.invoice_number,
         order_number=order.order_number,
         invoice_date=invoice.created_at.strftime("%m/%d/%Y") if invoice.created_at else "",
@@ -226,6 +228,7 @@ def _build_invoice_email_html(
     tenant=None,
     pdf_attached: bool = True,
     cash_receipt=None,
+    payment_summary=None,
 ) -> str:
     shop_name = tenant.name if tenant else "Your Shop"
     shop_phone = tenant.phone if tenant else ""
@@ -379,6 +382,7 @@ def _build_invoice_email_html(
     </table>
   </div>
 
+  {payment_summary_html(payment_summary) if payment_summary else ""}
   <!-- CTA -->
   <div style="padding:0 28px 24px 28px;text-align:center;">
     <a href="{invoice_access_url}" style="display:inline-block;background:#d97706;color:#ffffff;padding:13px 32px;text-decoration:none;border-radius:8px;font-weight:700;font-size:15px;">
@@ -474,6 +478,7 @@ class InvoiceResponse(BaseModel):
 
 
 class InvoiceDetailResponse(InvoiceResponse):
+    payment_summary: Optional[InvoicePaymentSummary] = None
     review_url: Optional[str] = None
     order_number: str
     customer_name: str
@@ -544,7 +549,9 @@ async def enqueue_invoice_created_email(
     # the convenience enrollment token after commit.
     invoice_access_url = f"{settings.FRONTEND_URL}/portal/invoices/{invoice.id}"
     labor_items, parts_items = await _load_line_items(db, order.id, invoice)
+    payment_summary = await load_payment_summary(db, invoice, await load_cash_receipt(db, invoice))
     email_html = _build_invoice_email_html(
+        payment_summary=payment_summary,
         customer=recipient,
         vehicle_info=vehicle_info,
         invoice=invoice,
@@ -624,7 +631,9 @@ async def notify_invoice_created(
         shop_logo_url=tenant.logo_url,
     )
     labor_items, parts_items = await _load_line_items(db, order.id, invoice)
+    payment_summary = await load_payment_summary(db, invoice, await load_cash_receipt(db, invoice))
     email_html = _build_invoice_email_html(
+        payment_summary=payment_summary,
         customer=recipient,
         vehicle_info=vehicle_info,
         invoice=invoice,
@@ -636,6 +645,7 @@ async def notify_invoice_created(
     )
     try:
         pdf_bytes = _build_invoice_pdf_bytes(
+            payment_summary=payment_summary,
             invoice=invoice,
             order=order,
             customer=recipient,
@@ -1198,6 +1208,7 @@ async def get_invoice(
     response.cash_receipt = await load_cash_receipt(db, inv)
     tenant = (await db.execute(select(Tenant).where(Tenant.id == inv.tenant_id))).scalar_one_or_none()
     return InvoiceDetailResponse(
+        payment_summary=await load_payment_summary(db, inv, response.cash_receipt),
         review_url=invoice_review_url(tenant, inv),
         **response.model_dump(),
         order_number=order.order_number,
@@ -1423,7 +1434,9 @@ async def resend_invoice(
     labor_items, parts_items = await _load_line_items(db, order.id, invoice)
 
     cash_receipt = await load_cash_receipt(db, invoice)
+    payment_summary = await load_payment_summary(db, invoice, cash_receipt)
     email_html = _build_invoice_email_html(
+        payment_summary=payment_summary,
         customer=recipient,
         vehicle_info=vehicle_info,
         invoice=invoice,
@@ -1437,6 +1450,7 @@ async def resend_invoice(
 
     try:
         pdf_bytes = _build_invoice_pdf_bytes(
+            payment_summary=payment_summary,
             invoice=invoice, order=order, customer=recipient,
             vehicle=vehicle, tenant=tenant,
             labor_items=labor_items, parts_items=parts_items,
@@ -1490,11 +1504,13 @@ async def download_invoice_pdf(
 
     labor_items, parts_items = await _load_line_items(db, order.id, inv)
 
+    cash_receipt = await load_cash_receipt(db, inv)
     pdf_bytes = _build_invoice_pdf_bytes(
+        payment_summary=await load_payment_summary(db, inv, cash_receipt),
         invoice=inv, order=order, customer=customer,
         vehicle=vehicle, tenant=tenant,
         labor_items=labor_items, parts_items=parts_items,
-        invoice_access_url=None, cash_receipt=await load_cash_receipt(db, inv),
+        invoice_access_url=None, cash_receipt=cash_receipt,
     )
 
     filename = f"Invoice-{inv.invoice_number}.pdf"

@@ -1,3 +1,4 @@
+from app.services.invoice_payment_presentation import InvoicePaymentSummary, load_payment_summary
 from app.services.invoice_review_service import invoice_review_url
 from app.services.cash_receipt_service import CashReceipt, load_cash_receipt
 from datetime import datetime, timezone
@@ -123,6 +124,7 @@ class GuestSettlementConfirmRequest(PaymentAttemptConfirm):
 
 
 class ResolveInvoiceLinkResponse(BaseModel):
+    payment_summary: Optional[InvoicePaymentSummary] = None
     cash_receipt: Optional[CashReceipt] = None
     invoice_id: str
     invoice_number: str
@@ -444,8 +446,10 @@ async def resolve_invoice_link(
     # using a subsequently changed customer default or shop tax rate.
     from app.services.invoice_settlement_service import invoice_money_snapshot
     _zelle_amount = invoice_money_snapshot(invoice)[0]
+    cash_receipt = await load_cash_receipt(db, invoice)
     return ResolveInvoiceLinkResponse(
-        cash_receipt=await load_cash_receipt(db, invoice),
+        payment_summary=await load_payment_summary(db, invoice, cash_receipt),
+        cash_receipt=cash_receipt,
         invoice_id=str(invoice.id),
         invoice_number=invoice.invoice_number,
         order_number=order.order_number,
@@ -1194,8 +1198,9 @@ async def create_portal_from_invoice_link(
 async def download_invoice_pdf_by_token(
     token: str,
     db: AsyncSession = Depends(get_db),
+    print_view: bool = False,
 ):
-    """Public PDF download via invoice access token (no login required)."""
+    """The same authorized invoice PDF, downloaded or opened for printing."""
     from app.api.v1.endpoints.invoices import _load_line_items, _build_invoice_pdf_bytes
 
     payload = await get_invoice_access_payload(token)
@@ -1212,16 +1217,22 @@ async def download_invoice_pdf_by_token(
 
     labor_items, parts_items = await _load_line_items(db, order.id, invoice)
 
+    cash_receipt = await load_cash_receipt(db, invoice)
     pdf_bytes = _build_invoice_pdf_bytes(
+        payment_summary=await load_payment_summary(db, invoice, cash_receipt),
         invoice=invoice, order=order, customer=customer,
         vehicle=vehicle, tenant=tenant,
         labor_items=labor_items, parts_items=parts_items,
-        invoice_access_url=None, cash_receipt=await load_cash_receipt(db, invoice),
+        invoice_access_url=None, cash_receipt=cash_receipt,
     )
 
     filename = f"Invoice-{invoice.invoice_number}.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f'{"inline" if print_view else "attachment"}; filename="{filename}"',
+            "Cache-Control": "private, no-store",
+            "Referrer-Policy": "no-referrer",
+        },
     )

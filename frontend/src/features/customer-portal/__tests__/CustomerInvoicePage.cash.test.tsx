@@ -19,9 +19,9 @@ vi.mock('@/features/payments', () => ({
 }))
 import CustomerInvoicePage from '../CustomerInvoicePage'
 
-function renderInvoice(receipt?: CashReceiptSummary, reviewUrl?: string | null) {
+function renderInvoice(receipt?: CashReceiptSummary, reviewUrl?: string | null, paymentSummary?: import('@/types').InvoicePaymentPresentation) {
   mocks.get.mockResolvedValue({ data: {
-    review_url: reviewUrl, id: 'invoice-1', status: 'paid', invoice_number: 'INV-1', order_number: 'RO-1',
+    payment_summary: paymentSummary, review_url: reviewUrl, id: 'invoice-1', status: 'paid', invoice_number: 'INV-1', order_number: 'RO-1',
     subtotal: '100.00', shop_supplies_amount: '3.00', service_fee_amount: '4.00',
     tax_amount: '8.00', discount_amount: '0.00', total_amount: '115.00',
     paid_at: '2026-09-12T18:00:00Z', cash_receipt: receipt,
@@ -35,6 +35,13 @@ function renderInvoice(receipt?: CashReceiptSummary, reviewUrl?: string | null) 
 const cash: CashReceiptSummary = { method: 'cash', amount: '101.00', subtotal: '100.00', shop_supplies_amount: '3.00', service_fee_amount: '0.00', tax_amount: '0.00', discount_amount: '2.00', paid_at: '2026-09-12T18:00:00Z' }
 
 describe('customer cash receipt', () => {
+  it('uses authoritative partial balance even when a legacy flag says paid', async () => {
+    renderInvoice(undefined, null, { state: 'partially_paid', applied_amount: '400.00', balance_due: '600.00', pending_amount: null, basis: 'settlement', note: null })
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('$600.00')
+    expect(screen.queryByRole('link', { name: 'Receipt', exact: true })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Partially paid' })).toBeInTheDocument()
+  })
+
   it('shows a shop review link on cash receipts', async () => {
     renderInvoice(cash, 'https://g.page/r/example/review')
     const link = await screen.findByRole('link', { name: 'Leave a review' })

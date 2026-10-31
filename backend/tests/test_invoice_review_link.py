@@ -105,3 +105,30 @@ async def test_paid_confirmation_includes_link_in_email_and_pdf(monkeypatch):
     args, kwargs = send.call_args
     assert "Leave a review" in str(args) + str(kwargs)
     assert b"g.page" in kwargs["attachments"][0]["content"]
+
+
+@pytest.mark.parametrize("status", ["paid", "sent", "cancelled"])
+def test_pdf_payment_copy_and_review_qr(monkeypatch, status):
+    from app.services import pdf_service as svc
+    tenant, invoice, order, customer = entities()
+    invoice.status = status
+    paragraphs = []
+    qr_values = []
+    original_p, original_qr = svc._p, svc.QrCodeWidget
+    def paragraph(text, *args, **kwargs):
+        paragraphs.append(text)
+        return original_p(text, *args, **kwargs)
+    def qr(value, *args, **kwargs):
+        qr_values.append(value)
+        return original_qr(value, *args, **kwargs)
+    monkeypatch.setattr(svc, "_p", paragraph)
+    monkeypatch.setattr(svc, "QrCodeWidget", qr)
+    _build_invoice_pdf_bytes(invoice, order, customer, None, tenant, [], [], "https://example.com/invoice")
+    copy = " ".join(paragraphs)
+    assert ("Balance due: <b>$0.00</b>" in copy) == (status == "paid")
+    assert ("Pay Online:" in copy) == (status == "sent")
+    assert qr_values == [URL]
+    tenant.review_url = None
+    qr_values.clear()
+    _build_invoice_pdf_bytes(invoice, order, customer, None, tenant, [], [], None)
+    assert qr_values == []
