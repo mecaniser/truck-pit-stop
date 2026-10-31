@@ -1,0 +1,517 @@
+{
+  "base": "17608d101a66733a4f75fd88ec52f0dd4b3ef6c1",
+  "count": 57,
+  "files": 31,
+  "entries": [
+    {
+      "file": "frontend/src/features/customers/CustomerFormModals.tsx",
+      "line": 701,
+      "props": [
+        "name",
+        "value",
+        "onChange",
+        "className"
+      ]
+    },
+    {
+      "file": "frontend/src/features/customers/CustomerFormModals.tsx",
+      "line": 809,
+      "props": [
+        "name",
+        "value",
+        "onChange",
+        "className"
+      ]
+    },
+    {
+      "file": "frontend/src/features/customers/CustomerPricingControl.tsx",
+      "line": 74,
+      "props": [
+        "value",
+        "disabled",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/customers/CustomerVehicleDetail.tsx",
+      "line": 100,
+      "props": [
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/customers/CustomerVehicleModals.tsx",
+      "line": 911,
+      "props": [
+        "id",
+        "value",
+        "onChange",
+        "className"
+      ]
+    },
+    {
+      "file": "frontend/src/features/customers/CustomerVehicleModals.tsx",
+      "line": 957,
+      "props": [
+        "id",
+        "value",
+        "onChange",
+        "className"
+      ]
+    },
+    {
+      "file": "frontend/src/features/dashboard/UnifiedSettingsPage.tsx",
+      "line": 2947,
+      "props": [
+        "value",
+        "onChange",
+        "className"
+      ]
+    },
+    {
+      "file": "frontend/src/features/dashboard/UnifiedSettingsPage.tsx",
+      "line": 3175,
+      "props": [
+        "value",
+        "onChange",
+        "className"
+      ]
+    },
+    {
+      "file": "frontend/src/features/driver-portal/DriverPortalPage.tsx",
+      "line": 289,
+      "props": [
+        "disabled",
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/driver-portal/DriverPortalPage.tsx",
+      "line": 290,
+      "props": [
+        "disabled",
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/fleet/ClosedRepairOrders.tsx",
+      "line": 21,
+      "props": [
+        "id",
+        "className",
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/fleet/FleetBoard.tsx",
+      "line": 301,
+      "props": [
+        "className",
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/fleet/FleetModals.tsx",
+      "line": 848,
+      "props": [
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/fleet/MotiveIntegrationPanel.tsx",
+      "line": 177,
+      "props": [
+        "id",
+        "aria-label",
+        "value",
+        "disabled",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/fleet/MotiveIntegrationPanel.tsx",
+      "line": 226,
+      "props": [
+        "id",
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/fleet/MotiveManagement.tsx",
+      "line": 41,
+      "props": [
+        "id",
+        "value",
+        "onChange",
+        "disabled"
+      ]
+    },
+    {
+      "file": "frontend/src/features/garage/job-contribution/JobContribution.tsx",
+      "line": 45,
+      "props": [
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/garage/job-contribution/JobContribution.tsx",
+      "line": 73,
+      "props": [
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/garage/job-contribution/JobContribution.tsx",
+      "line": 73,
+      "props": [
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/garage/job-contribution/JobContribution.tsx",
+      "line": 163,
+      "props": [
+        "required",
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/garage/job-contribution/JobContribution.tsx",
+      "line": 165,
+      "props": [
+        "required",
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/inventory/ActivityWorkspace.tsx",
+      "line": 292,
+      "props": [
+        "aria-label",
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/inventory/ActivityWorkspace.tsx",
+      "line": 297,
+      "props": [
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/inventory/CounterSalesWorkspace.tsx",
+      "line": 76,
+      "props": [
+        "aria-label",
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/inventory/CounterSalesWorkspace.tsx",
+      "line": 395,
+      "props": [
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/inventory/InventoryPage.tsx",
+      "line": 1767,
+      "props": [
+        "value",
+        "onChange",
+        "className"
+      ]
+    },
+    {
+      "file": "frontend/src/features/inventory/InventoryPage.tsx",
+      "line": 2050,
+      "props": [
+        "value",
+        "onChange",
+        "className"
+      ]
+    },
+    {
+      "file": "frontend/src/features/inventory/PartsInventoryWorkspace.tsx",
+      "line": 1868,
+      "props": [
+        "ref",
+        "disabled",
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/inventory/PartsOperationsWorkspace.tsx",
+      "line": 657,
+      "props": [
+        "aria-label",
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/maintenance/MaintenanceEvidence.tsx",
+      "line": 54,
+      "props": [
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/maintenance/MaintenanceEvidence.tsx",
+      "line": 55,
+      "props": [
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/maintenance/MaintenanceEvidence.tsx",
+      "line": 55,
+      "props": [
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/maintenance/MaintenanceEvidence.tsx",
+      "line": 56,
+      "props": [
+        "value",
+        "disabled",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/maintenance/MaintenanceFields.tsx",
+      "line": 15,
+      "props": [
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/maintenance/MaintenanceFields.tsx",
+      "line": 35,
+      "props": [
+        "value",
+        "disabled",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/maintenance/MaintenanceSection.tsx",
+      "line": 92,
+      "props": [
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/maintenance/MaintenanceWork.tsx",
+      "line": 40,
+      "props": [
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/maintenance/MaintenanceWork.tsx",
+      "line": 42,
+      "props": [
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/maintenance/MaintenanceWork.tsx",
+      "line": 44,
+      "props": [
+        "value",
+        "disabled",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/maintenance/ProgramEditor.tsx",
+      "line": 56,
+      "props": [
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/maintenance/ProgramEditor.tsx",
+      "line": 57,
+      "props": [
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/mechanics/MechanicsPage.tsx",
+      "line": 892,
+      "props": [
+        "...form registration",
+        "className"
+      ]
+    },
+    {
+      "file": "frontend/src/features/mechanics/MechanicsPage.tsx",
+      "line": 1307,
+      "props": [
+        "value",
+        "onChange",
+        "className"
+      ]
+    },
+    {
+      "file": "frontend/src/features/operation-execution/OperationExecution.tsx",
+      "line": 65,
+      "props": [
+        "aria-label",
+        "value",
+        "disabled",
+        "onChange",
+        "className"
+      ]
+    },
+    {
+      "file": "frontend/src/features/payments/SettlementResolutionPanel.tsx",
+      "line": 136,
+      "props": [
+        "value",
+        "onChange",
+        "className"
+      ]
+    },
+    {
+      "file": "frontend/src/features/platform-admin/ErrorsTab.tsx",
+      "line": 331,
+      "props": [
+        "value",
+        "onChange",
+        "className"
+      ]
+    },
+    {
+      "file": "frontend/src/features/platform-admin/ErrorsTab.tsx",
+      "line": 342,
+      "props": [
+        "value",
+        "onChange",
+        "className"
+      ]
+    },
+    {
+      "file": "frontend/src/features/platform-admin/ErrorsTab.tsx",
+      "line": 353,
+      "props": [
+        "value",
+        "onChange",
+        "className"
+      ]
+    },
+    {
+      "file": "frontend/src/features/platform-admin/ErrorsTab.tsx",
+      "line": 363,
+      "props": [
+        "value",
+        "onChange",
+        "className"
+      ]
+    },
+    {
+      "file": "frontend/src/features/platform-admin/components/GarageTeamModal.tsx",
+      "line": 403,
+      "props": [
+        "className",
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/repair-orders/PriceBuilderPanel.tsx",
+      "line": 4237,
+      "props": [
+        "value",
+        "onChange",
+        "className"
+      ]
+    },
+    {
+      "file": "frontend/src/features/repair-orders/PriceBuilderPanel.tsx",
+      "line": 4664,
+      "props": [
+        "value",
+        "onChange",
+        "className"
+      ]
+    },
+    {
+      "file": "frontend/src/features/repair-orders/RepairOrdersPage.tsx",
+      "line": 3358,
+      "props": [
+        "className",
+        "value",
+        "onChange"
+      ]
+    },
+    {
+      "file": "frontend/src/features/repair-orders/RepairOrdersPage.tsx",
+      "line": 6110,
+      "props": [
+        "value",
+        "onChange",
+        "className"
+      ]
+    },
+    {
+      "file": "frontend/src/features/repair-orders/RepairOrdersPage.tsx",
+      "line": 6520,
+      "props": [
+        "value",
+        "onChange",
+        "className"
+      ]
+    },
+    {
+      "file": "frontend/src/features/repair-orders/StaffHoldDialog.tsx",
+      "line": 71,
+      "props": [
+        "autoFocus",
+        "value",
+        "disabled",
+        "onChange",
+        "className"
+      ]
+    },
+    {
+      "file": "frontend/src/features/reviews/GoogleReviewsSettingsPage.tsx",
+      "line": 59,
+      "props": [
+        "id",
+        "value",
+        "onChange",
+        "className"
+      ]
+    }
+  ]
+}

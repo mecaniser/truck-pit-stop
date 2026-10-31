@@ -1,3 +1,4 @@
+import { chooseSelectOption } from '@/test-utils/selectOption'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -52,11 +53,11 @@ describe('DB-045 inventory Activity workspace', () => {
     expect(screen.getByText('6')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /MOV-100/ })).toHaveAttribute('href', '/dashboard/garage/inventory?activity=movement-1')
     await user.type(screen.getByRole('searchbox', { name: 'Search Activity' }), 'filter')
-    await user.selectOptions(screen.getByLabelText('Category'), 'stock')
+    await chooseSelectOption(screen.getByLabelText('Category'), 'stock', user)
     await user.click(screen.getByText('Advanced'))
     await user.type(screen.getByRole('textbox', { name: 'Event types' }), 'stock.adjusted, stock.reserved')
     await user.type(screen.getByLabelText('Actor reference'), 'user-1')
-    await user.selectOptions(screen.getByLabelText('Source'), 'inventory_movement')
+    await chooseSelectOption(screen.getByLabelText('Source'), 'inventory_movement', user)
     await user.type(screen.getByLabelText('Source reference'), 'movement-1')
     await user.click(screen.getByRole('button', { name: 'Apply' }))
 
@@ -94,7 +95,7 @@ describe('DB-045 inventory Activity workspace', () => {
 
     await screen.findByText('No events match these filters.')
     await user.type(screen.getByRole('searchbox', { name: 'Search Activity' }), 'sale')
-    await user.selectOptions(screen.getByLabelText('Category'), 'sales')
+    await chooseSelectOption(screen.getByLabelText('Category'), 'sales', user)
     await user.click(screen.getByRole('button', { name: 'Apply' }))
     await user.click(screen.getByRole('button', { name: 'Export CSV' }))
 
@@ -143,7 +144,7 @@ describe('DB-045 inventory Activity workspace', () => {
     expect(screen.queryByText('A searchable record of catalog, stock, repair, purchasing, returns, and recorded part sales.')).not.toBeInTheDocument()
     expect(screen.getByPlaceholderText('Search activity')).toHaveAccessibleName('Search Activity')
     await user.type(screen.getByRole('searchbox'), 'Shelf')
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Category' }), 'stock')
+    await chooseSelectOption(screen.getByRole('combobox', { name: 'Category' }), 'stock', user)
     await user.click(screen.getByRole('button', { name: 'Apply' }))
     await waitFor(() => expect(apiMocks.get).toHaveBeenLastCalledWith('/parts-operations/activity-events', { params: expect.objectContaining({ inventory_id: 'part-1', search: 'Shelf', category: 'stock', limit: 20 }) }))
     await user.click(screen.getByRole('button', { name: 'Reset' }))

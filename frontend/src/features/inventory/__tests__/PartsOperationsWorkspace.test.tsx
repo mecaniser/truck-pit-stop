@@ -1,3 +1,4 @@
+import { chooseSelectOption } from '@/test-utils/selectOption'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -411,14 +412,14 @@ describe('DB-038 Parts Operations workspace', () => {
     expect(names()[0]).toContain('Coolant')
 
     await user.click(screen.getByRole('button', { name: 'All active' }))
-    await user.selectOptions(screen.getByLabelText('Sort inventory'), 'low-stock')
+    await chooseSelectOption(screen.getByLabelText('Sort inventory'), 'low-stock', user)
     expect(names()[0]).toContain('Air filter')
     expect(names()[1]).toContain('Brake shoe')
-    await user.selectOptions(screen.getByLabelText('Sort inventory'), 'high-stock')
+    await chooseSelectOption(screen.getByLabelText('Sort inventory'), 'high-stock', user)
     expect(names()[0]).toContain('Coolant')
-    await user.selectOptions(screen.getByLabelText('Sort inventory'), 'name-desc')
+    await chooseSelectOption(screen.getByLabelText('Sort inventory'), 'name-desc', user)
     expect(names()[0]).toContain('Temporary catalog item')
-    await user.selectOptions(screen.getByLabelText('Sort inventory'), 'name-asc')
+    await chooseSelectOption(screen.getByLabelText('Sort inventory'), 'name-asc', user)
     expect(names()[0]).toContain('Air filter')
 
     await user.click(screen.getByRole('button', { name: 'Archived' }))
@@ -515,7 +516,7 @@ describe('DB-038 Parts Operations workspace', () => {
     const brake = screen.getByRole('button', { name: /Brake shoe/i })
     await user.click(brake)
     for (const sort of ['low-stock', 'high-stock', 'name-desc', 'name-asc']) {
-      await user.selectOptions(screen.getByLabelText('Sort inventory'), sort)
+      await chooseSelectOption(screen.getByLabelText('Sort inventory'), sort, user)
       const selected = screen.getByRole('button', { name: /Brake shoe/i })
       expect(selected).toHaveAttribute('aria-current', 'true')
       expect(selected).toHaveAttribute('tabindex', '0')

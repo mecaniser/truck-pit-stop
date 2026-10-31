@@ -1,3 +1,4 @@
+import { chooseSelectOption } from '@/test-utils/selectOption'
 import { useState } from 'react'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -58,7 +59,7 @@ describe('staff work hold', () => {
     api.post.mockRejectedValue({ response: { status: 409, data: { detail: 'Another workflow update is in progress.' } } })
     mount(); const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Manage hold' }))
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Hold reason' }), 'custom')
+    await chooseSelectOption(screen.getByRole('combobox', { name: 'Hold reason' }), 'custom', user)
     const reason = screen.getByRole('textbox', { name: /Other hold reason/ })
     expect(reason).toHaveAttribute('maxlength', '100')
     await user.type(reason, '   ')

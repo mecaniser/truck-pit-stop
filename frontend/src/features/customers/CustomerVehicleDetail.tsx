@@ -1,3 +1,4 @@
+import PlatformSelect from '@/components/PlatformSelect'
 import { useEffect, useRef, useState, type Ref } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -97,10 +98,10 @@ function VehicleRecord({ customer, vehicle, onOpenOrder, onCreateOrder, createOr
         </label>
         <label>
           <span className="sr-only">Repair history status</span>
-          <select value={status} onChange={event => updateFilters({ status: event.target.value })}>
+          <PlatformSelect value={status} onChange={event => updateFilters({ status: event.target.value })}>
             <option value="">All statuses</option>
             {historyStatuses.map(value => <option key={value} value={value}>{statusLabel(value)}</option>)}
-          </select>
+          </PlatformSelect>
         </label>
         {filtered && <button type="button" onClick={() => updateFilters({ search: '', status: '' })}>Clear filters</button>}
       </div>

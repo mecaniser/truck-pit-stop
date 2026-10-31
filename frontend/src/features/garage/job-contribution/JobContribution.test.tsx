@@ -1,3 +1,4 @@
+import { chooseSelectOption } from '@/test-utils/selectOption'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
@@ -90,7 +91,7 @@ describe('Owner rate schedule workflow', () => {
     await user.click(screen.getByRole('button', { name: 'Append approved cost schedule' }))
     expect(await screen.findByLabelText('Repeated start time')).toBeVisible()
     expect(api.post).not.toHaveBeenCalled()
-    await user.selectOptions(screen.getByLabelText('Repeated start time'), '1')
+    await chooseSelectOption(screen.getByLabelText('Repeated start time'), '1', user)
     vi.mocked(api.post).mockResolvedValue({ data: mechanic })
     await user.click(screen.getByRole('button', { name: 'Append approved cost schedule' }))
     await waitFor(() => expect(api.post).toHaveBeenCalledOnce())
@@ -111,7 +112,7 @@ describe('Explicit owner job review', () => {
     await user.click(await screen.findByRole('button', { name: /SYNTHETIC-001/ }))
     await screen.findByText('Owner scope review')
     expect(screen.getByLabelText('Business activity')).toHaveValue('unknown')
-    await user.selectOptions(screen.getByLabelText('Business activity'), 'real')
+    await chooseSelectOption(screen.getByLabelText('Business activity'), 'real', user)
     await user.type(screen.getByLabelText('Review reason'), 'First review of synthetic native work')
     await user.click(screen.getByRole('button', { name: 'Append owner review' }))
     await waitFor(() => expect(api.post).toHaveBeenCalledOnce())
@@ -124,8 +125,8 @@ describe('Explicit owner job review', () => {
     const user = userEvent.setup(); show()
     await user.click(await screen.findByRole('button', { name: /SYNTHETIC-001/ }))
     await screen.findByText('Owner scope review')
-    await user.selectOptions(screen.getByLabelText('Business activity'), 'real')
-    await user.selectOptions(screen.getByLabelText('Time capture assertion'), 'complete')
+    await chooseSelectOption(screen.getByLabelText('Business activity'), 'real', user)
+    await chooseSelectOption(screen.getByLabelText('Time capture assertion'), 'complete', user)
     await user.type(screen.getByLabelText('Review reason'), 'All direct work captured for this synthetic job')
     await user.click(screen.getByRole('button', { name: 'Append owner review' }))
     await waitFor(() => expect(api.post).toHaveBeenCalledOnce())
@@ -140,7 +141,7 @@ describe('Explicit owner job review', () => {
     const user = userEvent.setup(); show()
     await user.click(await screen.findByRole('button', { name: /SYNTHETIC-001/ }))
     await screen.findByText('Owner scope review')
-    await user.selectOptions(screen.getByLabelText('Business activity'), 'test')
+    await chooseSelectOption(screen.getByLabelText('Business activity'), 'test', user)
     await user.type(screen.getByLabelText('Review reason'), 'Synthetic test, exclude')
     await user.click(screen.getByRole('button', { name: 'Append owner review' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Source or version changed')
