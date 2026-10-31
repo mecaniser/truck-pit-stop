@@ -90,7 +90,7 @@ def _status_color(status: str):
 
 def _status_label(status: str) -> str:
     return {"paid": "PAID", "overdue": "OVERDUE", "cancelled": "CANCELLED"}.get(
-        status.lower(), "OUTSTANDING"
+        status.lower(), {"unpaid":"UNPAID", "partially_paid":"PARTIALLY PAID", "partially_paid_pending":"PARTIAL / PENDING", "payment_pending":"PAYMENT PENDING", "unknown":"VERIFY BALANCE"}.get(status.lower(), "OUTSTANDING")
     )
 
 
@@ -215,6 +215,7 @@ def generate_invoice_pdf(
     shop_supplies_amount: Decimal = Decimal("0"),
     service_fee_amount: Decimal = Decimal("0"),
     cash_receipt: bool = False,
+    payment_summary: Optional[dict] = None,
     subtotal: Decimal = Decimal("0"),
     tax_amount: Decimal = Decimal("0"),
     tax_rate: Optional[float] = None,
@@ -269,6 +270,8 @@ def generate_invoice_pdf(
 
     story = []
 
+    if payment_summary:
+        status = payment_summary.get("state", "unknown")
     # ── Bill To / Invoice Info (2-column) ──────────────────────────────────────
     status_col = _status_color(status)
     status_lbl = _status_label(status)
@@ -287,7 +290,7 @@ def generate_invoice_pdf(
     ]
     if service_completed:
         info_rows.append([_p("Service Completed", S_LABEL), _p(service_completed, S_BODY)])
-    if due_date and status.lower() not in ("paid", "cancelled"):
+    if due_date and status.lower() not in ("paid", "cancelled", "unknown"):
         info_rows.append([_p("Due Date", S_LABEL), _p(due_date, S_BOLD)])
     info_rows.append([_p("Order #", S_LABEL), _p(order_number, S_BODY)])
 
@@ -526,23 +529,34 @@ def generate_invoice_pdf(
 
     sum_tbl.setStyle(TableStyle(sum_style))
     summary = [sum_tbl]
-    if status.lower() == "paid":
-        summary.extend([
-            Spacer(1, 7),
-            _p('<b>PAID</b>  |  Balance due: <b>$0.00</b>',
-               _style("paid-summary", alignment=TA_RIGHT, fontSize=11, leading=16, textColor=C_GREEN)),
-        ])
+    if payment_summary:
+        applied = payment_summary.get("applied_amount")
+        balance = payment_summary.get("balance_due")
+        pending = payment_summary.get("pending_amount")
+        payment_rows = []
+        if applied is not None:
+            label = "Cash received" if payment_summary.get("basis") == "cash_receipt" else "Payments / credits applied"
+            payment_rows.append(total_row(label, Decimal(applied)))
+        if pending is not None:
+            payment_rows.append(total_row("Awaiting confirmation", Decimal(pending)))
+        if balance is not None:
+            payment_rows.append(total_row("BALANCE DUE", Decimal(balance), bold=True, color=C_GREEN if Decimal(balance)==0 else C_DARK))
+        if payment_rows:
+            payment_table = Table(payment_rows, colWidths=[CONTENT_W * .32, CONTENT_W * .44, CONTENT_W * .24])
+            payment_table.setStyle(TableStyle([("TOPPADDING",(0,0),(-1,-1),5),("ALIGN",(1,0),(-1,-1),"RIGHT")]))
+            summary.extend([Spacer(1, 5), payment_table])
+        if payment_summary.get("note"):
+            summary.extend([Spacer(1, 5), _p(escape(payment_summary["note"]), S_SMALL)])
+    elif status.lower() == "paid":
+        summary.extend([Spacer(1, 7), _p('<b>PAID</b>  |  Balance due: <b>$0.00</b>', _style("paid-summary", alignment=TA_RIGHT, fontSize=11, leading=16, textColor=C_GREEN))])
     elif status.lower() != "cancelled":
-        summary.extend([
-            Spacer(1, 5),
-            _p("Invoice total shown above. See your online invoice for the current balance and payment history.", S_SMALL),
-        ])
+        summary.extend([Spacer(1, 5), _p("Invoice total shown above. See your online invoice for the current balance and payment history.", S_SMALL)])
     story.append(KeepTogether(summary))
     story.append(Spacer(1, 16))
 
     # ── Payment instructions ───────────────────────────────────────────────────
     payment_items = []
-    if invoice_access_url and status.lower() not in ("paid", "cancelled"):
+    if invoice_access_url and status.lower() not in ("paid", "cancelled", "unknown"):
         # Strip query params so the URL is clean and readable in print
         from urllib.parse import urlparse
         _parsed = urlparse(invoice_access_url)
@@ -551,7 +565,7 @@ def generate_invoice_pdf(
             f'<b>Pay Online:</b> <font color="#D97706">{clean_url}</font>',
             _style("paylink", fontSize=8, textColor=C_DARK, leading=12),
         ))
-    if (zelle_email or zelle_phone) and status.lower() not in ("paid", "cancelled"):
+    if (zelle_email or zelle_phone) and status.lower() not in ("paid", "cancelled", "unknown"):
         zelle_parts = ["<b>Zelle:</b>"]
         if zelle_email:
             zelle_parts.append(zelle_email)

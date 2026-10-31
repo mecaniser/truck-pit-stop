@@ -270,6 +270,8 @@ async def test_customer_invoice_responses_use_invoice_shop_review_url(client, db
     owner, customer, invoice, vehicle = await _seed(db_session, f"review-response-{uuid4().hex}")
     tenant = await db_session.get(Tenant, invoice.tenant_id)
     tenant.review_url = "https://example.com/own-shop-review"
+    from app.db.models.payment import Payment, PaymentMethod, PaymentStatus
+    db_session.add(Payment(tenant_id=tenant.id,invoice_id=invoice.id,payment_number=f"summary-{uuid4().hex}",amount=Decimal("40"),method=PaymentMethod.CHECK,status=PaymentStatus.COMPLETED))
     await db_session.commit()
     token = create_access_token({"sub": str(owner.id)})
     response = await client.get(f"/api/v1/invoices/{invoice.id}", headers={"Authorization": f"Bearer {token}"})
@@ -282,6 +284,9 @@ async def test_customer_invoice_responses_use_invoice_shop_review_url(client, db
     guest = await client.post("/api/v1/invoice-access/resolve", json={"token": "fictional-test-token"})
     assert guest.status_code == 200, guest.text
     assert guest.json()["review_url"] == tenant.review_url
+    assert guest.json()["payment_summary"] == response.json()["payment_summary"]
+    assert guest.json()["payment_summary"]["state"] == "partially_paid"
+    assert guest.json()["payment_summary"]["balance_due"] == "60.00"
     invoice.is_internal = True
     await db_session.commit()
     response = await client.get(f"/api/v1/invoices/{invoice.id}", headers={"Authorization": f"Bearer {token}"})

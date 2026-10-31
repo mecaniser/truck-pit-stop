@@ -1,3 +1,4 @@
+from app.services.invoice_payment_presentation import load_payment_summary, payment_summary_html
 from app.services.invoice_review_service import invoice_review_url, invoice_review_html
 from app.services.cash_receipt_service import load_cash_receipt, receipt_invoice_view
 from decimal import Decimal
@@ -74,6 +75,7 @@ async def send_invoice_payment_confirmation_email(
         return
 
     cash_receipt = await load_cash_receipt(db, invoice)
+    payment_summary = await load_payment_summary(db, invoice, cash_receipt)
     if cash_receipt:
         invoice = receipt_invoice_view(invoice, cash_receipt)
     shop_name = tenant.name if tenant else "Your Shop"
@@ -212,6 +214,7 @@ async def send_invoice_payment_confirmation_email(
     </table>
   </div>
 
+  {payment_summary_html(payment_summary)}
   <!-- CTA -->
   <div style="padding:0 28px 24px 28px;text-align:center;">
     <a href="{invoice_access_url}" style="display:inline-block;background:#16a34a;color:#fff;padding:13px 32px;text-decoration:none;border-radius:8px;font-weight:700;font-size:15px;">
@@ -241,7 +244,7 @@ async def send_invoice_payment_confirmation_email(
         snapshot_parts_total = sum(Decimal(str(item.get("total_price", 0))) for item in parts_items)
 
         pdf_bytes = generate_invoice_pdf(
-            invoice_number=invoice.invoice_number,
+            payment_summary=payment_summary.model_dump(),            invoice_number=invoice.invoice_number,
             order_number=order.order_number,
             invoice_date=invoice.created_at.strftime("%m/%d/%Y") if invoice.created_at else "",
             service_completed=service_date,
