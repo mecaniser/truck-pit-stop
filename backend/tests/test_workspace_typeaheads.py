@@ -240,8 +240,9 @@ async def test_workspace_typeaheads_are_tenant_scoped_capped_and_minimal(client,
     # this assertion exists to keep out.
     assert set(vehicles.json()[0]) == {
         "id", "customer_id", "make", "model", "year", "unit_number", "license_plate", "vin",
-        "last_known_mileage",
+        "last_known_mileage", "equipment_type",
     }
+    assert vehicles.json()[0]["equipment_type"] == "unknown"
 
     services = await client.get("/api/v1/services/typeahead", params={"q": "inspection"}, headers=headers)
     assert services.status_code == 200
@@ -333,3 +334,18 @@ async def test_inventory_typeahead_ranks_usable_parts_above_placeholders(
     returned = [item["id"] for item in response.json()]
     assert str(stocked.id) in returned, "the stocked part was crowded out by placeholders"
     assert returned[0] == str(stocked.id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("equipment_type", ["unknown", "tractor", "trailer", "other"])
+async def test_vehicle_typeahead_returns_equipment_classification(client, db_session, workspace_typeahead_context, equipment_type):
+    ctx = workspace_typeahead_context
+    ctx["vehicle"].equipment_type = equipment_type
+    await db_session.commit()
+    response = await client.get(
+        "/api/v1/vehicles/typeahead",
+        params={"customer_id": str(ctx["customer"].id), "q": "freight"},
+        headers=_auth(ctx["owner_token"]),
+    )
+    assert response.status_code == 200
+    assert [(item["id"], item["equipment_type"]) for item in response.json()] == [(str(ctx["vehicle"].id), equipment_type)]
