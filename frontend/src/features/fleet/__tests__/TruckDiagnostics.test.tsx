@@ -80,11 +80,38 @@ it('shows zero vitals and provenance even when fault-code loading fails', async 
   await userEvent.click(screen.getByRole('button', { name: 'View health' }))
   expect(await screen.findByText('0 mi')).toBeVisible()
   expect(screen.getByText('23,520 h')).toBeVisible()
+  expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  const info = screen.getByRole('button', { name: 'Mileage and engine hours information' })
+  await userEvent.click(info)
   expect(screen.getAllByText(/Observation time unknown/)).toHaveLength(2)
+  await userEvent.keyboard('{Escape}')
+  expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  expect(screen.getByText('Truck health')).toBeVisible()
   expect(await screen.findByRole('alert')).toHaveTextContent('Fault codes could not be loaded.')
 })
 it('shows unavailable vitals alongside a verified empty fault check', async () => {
   await open({ last_checked_at: new Date().toISOString(), coverage: 'complete', explicit_empty: true, codes: [] })
   expect(await screen.findByText('No current fault codes were reported at this check.')).toBeVisible()
   expect(screen.getAllByText('Unavailable')).toHaveLength(2)
+})
+
+it('preserves separate sources and capture times in shared keyboard information', async () => {
+  get.mockResolvedValue({ data: empty })
+  const base = { value: 1, unit: 'mi', basis: null, source: 'motive_api' as const, observed_at: new Date().toISOString(), captured_at: new Date().toISOString(), freshness: 'fresh' as const, snapshot_id: null, source_age_text: null }
+  const hours = { ...base, source: 'motive_dashboard_manual' as const, observed_at: null, captured_at: new Date(Date.now() - 3600000).toISOString(), unit: 'h' }
+  const telemetry = { location: null, speed: null, odometer: base, engine_hours: hours, fuel: null, fault_count: null, motion: 'unknown' as const }
+  render(<QueryClientProvider client={new QueryClient()}><TruckDiagnostics truckId="truck-one" telemetry={telemetry} /></QueryClientProvider>)
+  await userEvent.click(screen.getByRole('button', { name: 'View health' }))
+  const info = screen.getByRole('button', { name: 'Mileage and engine hours information' })
+  await userEvent.tab()
+  info.focus()
+  const tip = await screen.findByRole('tooltip')
+  expect(tip).toHaveTextContent('Motive API')
+  expect(tip).toHaveTextContent('Motive dashboard')
+  expect(tip).toHaveTextContent(new Date(base.captured_at).toLocaleString())
+  expect(tip).toHaveTextContent(new Date(hours.captured_at).toLocaleString())
+  expect(info).toHaveAttribute('aria-describedby', tip.id)
+  await userEvent.click(info)
+  await userEvent.click(info)
+  expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
 })
