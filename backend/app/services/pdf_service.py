@@ -11,6 +11,8 @@ from decimal import Decimal
 from io import BytesIO
 from typing import Optional
 
+from reportlab.graphics.barcode.qr import QrCodeWidget
+from reportlab.graphics.shapes import Drawing
 from reportlab.lib.colors import HexColor, white, black
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import letter
@@ -101,6 +103,7 @@ def _make_page_handler(
     logo_data: Optional[BytesIO],
     invoice_number: str,
     invoice_date: str,
+    header_height: float,
 ):
     W, H = letter
     MARGIN = 0.5 * inch
@@ -150,7 +153,7 @@ def _make_page_handler(
             canvas.drawRightString(info_x, text_y, format_phone_display(shop_phone))
 
         # ── Divider line (below the tallest header element) ─────────────────
-        div_y = y_top - 120
+        div_y = y_top - header_height
         canvas.setStrokeColor(C_BORDER)
         canvas.setLineWidth(0.75)
         canvas.line(MARGIN, div_y, W - MARGIN, div_y)
@@ -236,6 +239,9 @@ def generate_invoice_pdf(
     if shop_logo_url:
         logo_data = _fetch_logo(shop_logo_url)
 
+    # Reserve only the space occupied by the actual shop header.
+    contact_lines = sum(bool(v) for v in (shop_address, shop_email, shop_phone))
+    header_height = max(54, (0.7 * inch + 4 if logo_data else 10) + 13 + contact_lines * 11 + 12)
     page_handler = _make_page_handler(
         shop_name=shop_name,
         shop_address=shop_address,
@@ -244,11 +250,11 @@ def generate_invoice_pdf(
         logo_data=logo_data,
         invoice_number=invoice_number,
         invoice_date=invoice_date,
+        header_height=header_height,
     )
 
-    # Canvas divider is MARGIN + 120 points below the page top. Start
-    # the body below it, with 12 points of clear space on every page.
-    TOP_MARGIN = MARGIN + 120 + 12
+    # Keep each page body below the content-aware shop header.
+    TOP_MARGIN = MARGIN + header_height + 10
     BOT_MARGIN = 0.6 * inch
     doc = BaseDocTemplate(
         buf,
@@ -281,11 +287,11 @@ def generate_invoice_pdf(
     ]
     if service_completed:
         info_rows.append([_p("Service Completed", S_LABEL), _p(service_completed, S_BODY)])
-    if due_date:
+    if due_date and status.lower() not in ("paid", "cancelled"):
         info_rows.append([_p("Due Date", S_LABEL), _p(due_date, S_BOLD)])
     info_rows.append([_p("Order #", S_LABEL), _p(order_number, S_BODY)])
 
-    info_tbl = Table(info_rows, colWidths=[0.9 * inch, 1.5 * inch])
+    info_tbl = Table(info_rows, colWidths=[1.25 * inch, 1.35 * inch])
     info_tbl.setStyle(TableStyle([
         ("ALIGN", (0, 0), (-1, -1), "LEFT"),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -519,12 +525,24 @@ def generate_invoice_pdf(
             sum_style.append(("TEXTCOLOR", (1, i), (-1, i), C_GREEN))
 
     sum_tbl.setStyle(TableStyle(sum_style))
-    story.append(KeepTogether([sum_tbl]))
+    summary = [sum_tbl]
+    if status.lower() == "paid":
+        summary.extend([
+            Spacer(1, 7),
+            _p('<b>PAID</b>  |  Balance due: <b>$0.00</b>',
+               _style("paid-summary", alignment=TA_RIGHT, fontSize=11, leading=16, textColor=C_GREEN)),
+        ])
+    elif status.lower() != "cancelled":
+        summary.extend([
+            Spacer(1, 5),
+            _p("Invoice total shown above. See your online invoice for the current balance and payment history.", S_SMALL),
+        ])
+    story.append(KeepTogether(summary))
     story.append(Spacer(1, 16))
 
     # ── Payment instructions ───────────────────────────────────────────────────
     payment_items = []
-    if invoice_access_url and not cash_receipt:
+    if invoice_access_url and status.lower() not in ("paid", "cancelled"):
         # Strip query params so the URL is clean and readable in print
         from urllib.parse import urlparse
         _parsed = urlparse(invoice_access_url)
@@ -533,7 +551,7 @@ def generate_invoice_pdf(
             f'<b>Pay Online:</b> <font color="#D97706">{clean_url}</font>',
             _style("paylink", fontSize=8, textColor=C_DARK, leading=12),
         ))
-    if (zelle_email or zelle_phone) and not cash_receipt:
+    if (zelle_email or zelle_phone) and status.lower() not in ("paid", "cancelled"):
         zelle_parts = ["<b>Zelle:</b>"]
         if zelle_email:
             zelle_parts.append(zelle_email)
@@ -574,11 +592,23 @@ def generate_invoice_pdf(
         review_url = None
     if review_url:
         safe_url = escape(review_url, quote=True)
-        story.append(KeepTogether([
-            Spacer(1, 6),
-            _p(f'Share your experience: <a href="{safe_url}" color="#B45309">Leave a review</a>', S_CENTER_SMALL),
-            _p(f'<a href="{safe_url}" color="#B45309">{safe_url}</a>', S_CENTER_SMALL),
+        qr = QrCodeWidget(review_url, barBorder=4)
+        bounds = qr.getBounds()
+        size = 76
+        qr_drawing = Drawing(size, size, transform=[size / (bounds[2] - bounds[0]), 0, 0, size / (bounds[3] - bounds[1]), 0, 0])
+        qr_drawing.add(qr)
+        review_copy = [
+            _p('<b>How was your experience?</b>', S_BOLD),
+            _p(f'<a href="{safe_url}" color="#B45309">Leave a review</a> or scan the QR code.', S_SMALL),
+            _p(f'<a href="{safe_url}" color="#B45309">{safe_url}</a>', S_SMALL),
+        ]
+        review_block = Table([[qr_drawing, review_copy]], colWidths=[90, CONTENT_W - 90])
+        review_block.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ]))
+        story.append(KeepTogether([review_block]))
 
     doc.build(story)
     return buf.getvalue()
