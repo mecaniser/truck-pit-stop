@@ -74,8 +74,12 @@ shows actual line items; page2 shows issued cash total252.70, Cash received252.7
 Balance due0, review label/full exact URL and QR. The guest Print anchor's
 `?print_view=true` target was observed; direct opening of that same inline endpoint
 was viewer-verified. The extension-driven click attempt did not provide a reliable
-event result, so no claim is made that its click event fired. Native OS dialog
-confirmation or physical printing is not part of this receipt.
+event result, so no claim is made that its click event fired. Native Chrome PDF-viewer Print was then clicked successfully: `chrome://print`
+showed the actual generated2-page PDF, including correct cash252.70/balance0
+and reviewQR on page2, without the guest webpage. The dialog was cancelled
+without printing or saving. A local screenshot under
+`output/playwright/live-invoice-pdf-print.png` excludes customer identity and
+access-token URL. No physical print is claimed.
 
 Release acceptance: current payment summary, PDFs, QR and inline Print behavior
 are live and verified, including legitimate signed-in customer portal facts. The
