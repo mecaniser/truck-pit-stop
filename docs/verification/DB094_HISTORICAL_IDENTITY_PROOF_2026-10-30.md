@@ -76,3 +76,14 @@ No operational blocker remains for the local candidate. Separate authorization
 and normal release review are needed before publication, production migration,
 real evidence upload, independent verification, owner decisions or access grants.
 No push, PR, merge, deployment or production mutation was performed.
+
+## Approved publication preflight
+
+User approved PR publication, with merge separately held. Rebased onto main
+`0efda9fb`; preserved both board histories and sequenced the unchanged migration
+body as195 after194_invoice_review_url. Refreshed six-file review/export/hold
+regression:75PASS (`/tmp/db094-publication-tests.log`). Actual private-schema
+PostgreSQL migration cycle, audit guards and both concurrency ordersPASS
+(`/tmp/db094-publication-postgres.log`); synthetic schema removed. Alembic has
+one195 head and diff integrity passes. No proof logic or authorization changes
+were introduced by this integration refresh. Actual invoice review remains pending.

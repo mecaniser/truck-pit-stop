@@ -1,13 +1,13 @@
 # DB-094 historical correspondence identity proof (local candidate)
 
-Owner: Backend & Integrations. Architecture conditional GO for this narrow
-sent-notification design; independent Security/QA gate remains required.
+Owner: Backend & Integrations. Independent Architecture and Security/QA local
+candidate GO recorded in the verification report. Protected CI and release review remain required.
 
 This extends historical evidence verification only. It never uploads evidence,
 creates mappings, grants keys, changes invoices, rewrites source identities,
 posts costs/payments or changes financial v2 keys/revisions/hash vocabulary.
-Production use, evidence uploads, owner approvals, publication and deployment
-are outside this local task's authorization.
+PR publication is user-authorized. Production use, evidence uploads, owner
+approvals, merge and deployment remain outside this task's authorization.
 
 ## Additive verification request
 
