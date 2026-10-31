@@ -511,7 +511,7 @@ export default function CustomersPage() {
 
   if (isLoading) {
     return (
-      <div className="flex flex-col h-full min-h-0">
+      <div className="db-customers-workspace flex flex-col h-full min-h-0">
         <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0${presentationVariant === 'new' ? ' db-operating-page-header' : ''}`}>
           <div>
             <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>
@@ -529,7 +529,7 @@ export default function CustomersPage() {
         {/* Search Bar */}
         {renderCustomerSearch(true)}
 
-        <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden flex flex-col flex-1 min-h-0">
+        <div className="db-customers-workspace__loading-ledger bg-white/5 border border-white/10 rounded-xl overflow-hidden flex flex-col flex-1 min-h-0">
           <div className="hidden lg:flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
             <div className="h-7 w-32 bg-white/10 rounded-lg animate-pulse" />
             <div className="flex items-center gap-2 text-sm text-white/50">
