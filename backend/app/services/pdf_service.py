@@ -1,6 +1,9 @@
 """Invoice PDF generation using ReportLab."""
 from __future__ import annotations
 
+from html import escape
+
+from app.services.invoice_review_service import normalize_review_url
 from app.core.phone import format_phone_display
 
 import urllib.request
@@ -192,6 +195,7 @@ def generate_invoice_pdf(
     shop_email: Optional[str],
     shop_phone: Optional[str],
     shop_logo_url: Optional[str] = None,
+    review_url: Optional[str] = None,
     # Vehicle
     vehicle_year: Optional[str],
     vehicle_make: str,
@@ -563,6 +567,18 @@ def generate_invoice_pdf(
     # ── Thank-you ──────────────────────────────────────────────────────────────
     story.append(HRFlowable(width=CONTENT_W, thickness=0.5, color=C_BORDER, spaceBefore=4, spaceAfter=6))
     story.append(_p("Thank you for your business!", S_CENTER_SMALL))
+
+    try:
+        review_url = normalize_review_url(review_url)
+    except ValueError:
+        review_url = None
+    if review_url:
+        safe_url = escape(review_url, quote=True)
+        story.append(KeepTogether([
+            Spacer(1, 6),
+            _p(f'Share your experience: <a href="{safe_url}" color="#B45309">Leave a review</a>', S_CENTER_SMALL),
+            _p(f'<a href="{safe_url}" color="#B45309">{safe_url}</a>', S_CENTER_SMALL),
+        ]))
 
     doc.build(story)
     return buf.getvalue()

@@ -1,3 +1,4 @@
+import InvoiceReviewLink from '@/components/InvoiceReviewLink'
 import { useState } from 'react'
 import type { CashReceiptSummary } from '../../types'
 import { Spinner } from '@/components/ui'
@@ -34,6 +35,7 @@ interface InvoiceAccessResolve {
   vehicle_info: string
   shop_name: string | null
   shop_logo_url: string | null
+  review_url?: string | null
   amount_due: string
   subtotal: string
   shop_supplies_amount: string
@@ -847,6 +849,7 @@ export default function InvoiceAccessPage() {
         </div>
 
         <div className="text-center text-sm text-gray-600 space-y-1">
+          <InvoiceReviewLink url={invoice?.review_url} className="text-amber-700" />
           <p>Need help with this invoice? Contact {shopContact.shopName || 'the shop'} directly.</p>
           {shopContact.shopPhone || shopContact.shopEmail ? (
             <p className="text-gray-700">

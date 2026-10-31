@@ -1,3 +1,4 @@
+from app.services.invoice_review_service import invoice_review_url
 from app.services.cash_receipt_service import CashReceipt, load_cash_receipt
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -130,6 +131,7 @@ class ResolveInvoiceLinkResponse(BaseModel):
     vehicle_info: str
     shop_name: Optional[str] = None
     shop_logo_url: Optional[str] = None
+    review_url: Optional[str] = None
     amount_due: Decimal
     subtotal: Decimal
     shop_supplies_amount: Decimal
@@ -451,6 +453,7 @@ async def resolve_invoice_link(
         vehicle_info=vehicle_info,
         shop_name=tenant.name if tenant else None,
         shop_logo_url=tenant.logo_url if tenant else None,
+        review_url=invoice_review_url(tenant, invoice),
         amount_due=invoice.total_amount,
         subtotal=invoice.subtotal,
         shop_supplies_amount=invoice.shop_supplies_amount,
