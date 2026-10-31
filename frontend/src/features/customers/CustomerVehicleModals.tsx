@@ -713,7 +713,7 @@ const {
           vehicleModalMode === 'new' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
         }`}
       >
-        New truck
+        New equipment
       </button>
       <button
         type="button"
@@ -722,7 +722,7 @@ const {
           vehicleModalMode === 'existing' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
         }`}
       >
-        Link / manage truck
+        Link / manage equipment
       </button>
     </div>
   )
@@ -1034,7 +1034,7 @@ const {
             onChange={handleVehicleInputChange}
             aria-invalid={vehicleVinError ? 'true' : undefined}
             aria-describedby={vehicleVinError ? 'vehicle-vin-error' : 'vehicle-vin-help'}
-            className={`flex-1 px-4 py-2.5 border rounded-lg focus:ring-2 transition-colors font-mono uppercase ${
+            className={`min-w-0 flex-1 px-4 py-2.5 border rounded-lg focus:ring-2 transition-colors font-mono uppercase ${
               vehicleVinError
                 ? 'border-red-500 bg-red-50 focus:ring-red-200 focus:border-red-500'
                 : 'border-gray-300 focus:ring-amber-500 focus:border-amber-500'
@@ -1046,7 +1046,7 @@ const {
             type="button"
             onClick={() => decodeVehicleVin(vehicleFormData.vin)}
             disabled={isDecodingVehicleVin || vehicleFormData.vin.length < 11}
-            className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 font-medium rounded-lg transition-colors flex items-center gap-2"
+            className="shrink-0 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 font-medium rounded-lg transition-colors flex items-center gap-2"
           >
             {isDecodingVehicleVin ? (
               <Spinner size="xs" />

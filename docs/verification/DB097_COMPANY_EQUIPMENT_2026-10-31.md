@@ -20,8 +20,26 @@ User evidence: Aufine invoice 000023 belongs to trailer T1003130, not tractor609
 - PostgreSQL15 rehearsal: actual migration157 applied to isolated populated vehicles schema; unknown defaults preserve both tractor/trailer unit IDs, typed writes accepted, invalid/null rejected, downgrade/re-upgrade preserve row identities/count. Entire transaction rolled back. Rehearsal source:output/equipment/rehearse_migration.py. This tests the new migration against a minimal populated target, not the full historical migration chain.
 - `git diff --check` pass.
 
+## Signed-in browser acceptance
+
+Final acceptance: PASS at desktop1440×1000 and mobile390×844. Chromium served the real staff app from this checkout on5187, proxying to a loopback-only fixture API on8017. The API includes the real API router and JWT identity dependencies, plus production settlement-domain error handling; database/Redis state is disposable test state. It is not a WorkOS/SSO or production-middleware verification. No external provider was used.
+
+On both sizes: select the test company; open T1003130; see only its maintenance history; edit notes while preserving trailer type and unit; open the history RO and see Invoice TEST-INV-T1003130; create an equipment record (desktop trailer/mobile other), verify persisted type/customer and visible list item; check all four seeded equipment→RO→invoice identities using real authenticated APIs. Assertions passed with no page errors or unexpected API failures. The disabled settlement endpoint returns its expected409; payment/settlement behavior is outside this change. No payment controls were used.
+
+Visual review found the preexisting VIN Decode control clipped at mobile size; the input now has min-w-0 and button shrink-0. Final screenshots show contained controls and no page or VIN-row horizontal overflow. Add-mode copy now says New equipment and Link/manage equipment.
+
+Evidence: output/equipment/browser-results.json; desktop/mobile-create-equipment.png; desktop/mobile-edit-trailer.png; desktop/mobile-company-equipment.png; desktop/mobile-repair-workspace.png. Repeatable fixture/API and browser drivers: browser_api.py, browser_acceptance.cjs; test Vite config frontend/vite.db097.config.ts. Generated browser_fixture.json contains a disposable JWT and must never be committed/published. Browser drivers require installed e2e dependencies; no real configuration/secrets are copied.
+
+Runtime receipt: base6336ef16 with the recorded HMR-served VIN/copy diff, branch codex/company-equipment-types. Test frontend PID99367 cwd frontend under this checkout; test API first PID99350, then PID2514, restarted only after its exit to register the existing domain handler. Readiness source root matched this checkout. Existing5173 belonged to machined-sidebar and8000 to Docker; neither was restarted or changed. Test runtime was aligned and browser-verified during acceptance, then shut down; the disposable database and JWT fixture were discarded.
+
+Independent equipment_review source and browser-evidence QA/security GO, including the final history→RO→invoice expansion. This is local acceptance, not production verification.
+
+## EDG contract coordination
+
+Architecture cross-checked the active EDG task's docs/DB094_EQUIPMENT_CONTRACT_HANDOFF.md and services dieselbridge_financial.py/dieselbridge_equipment.py. EDG already accepts trucks/trailers via VIN or reviewed equipment allocation. DBN company equipment types need no receiver change while v2 exact keys/revisions/hashes remain unchanged. Future exported fields need a separately versioned contract; no fields were added by this PR. See docs/contracts/db097-company-equipment.md.
+
+Changing source vehicle/VIN requires fresh attribution review against the authorized revision; booked financial effects require explicit reclassification. The user-confirmed Aufine000023→T1003130 fact is recorded without production correction, historical merging, changed billing access, or assumptions about price/date/payment/funding.
+
 ## Remaining gates
 
-Signed-in desktop/mobile equipment and repair-to-invoice browser acceptance is pending. Component fixtures and database join tests do not replace that gate. Browser CLI startup was cancelled after it yielded no output; shared app services were not changed. Protected PR/CI, merge and release are pending. No production migration/deployment/data change occurred.
-
-EDG's existing v2 consumer rejects extra fields, so the producer shape is unchanged. Equipment-type export requires a coordinated version change; trailers must not be automatically posted through a truck-only consumer. A VIN/vehicle correction must require fresh attribution review. Keep this item release pending until those rollout constraints are addressed; existing billing access is never inferred from a source reassignment.
+Local PR draft prepared at output/equipment/pr-draft.md. Per explicit instruction, no branch push or PR publication. Protected CI, merge, and authorized release remain pending. No production migration, deployment or source-data correction occurred.
