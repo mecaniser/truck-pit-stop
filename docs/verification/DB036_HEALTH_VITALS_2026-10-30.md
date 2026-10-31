@@ -15,7 +15,7 @@ Popup receives existing detail telemetry and displays mileage and engine hours a
 - Backend diagnostics, worker and adjacent fleet telemetry: 63 passed (includes 34 diagnostics cases).
 - Collector Node suite: 8 passed, including units, decimal/comma formatting, zero, missing, malformed, ambiguous, range limits and km conversion.
 - Frontend popup and detail hardening: 22 passed, including vitals with failed fault query and unavailable vitals with an explicit empty fault check.
-- Changed-source Ruff and ESLint, TypeScript and diff integrity pass. Production build result recorded by parent if still running at handoff.
+- Changed-source Ruff and ESLint, TypeScript, production Vite build (3328 modules) and diff integrity pass.
 - Independent QA agent `/root/qa`: offline GO; independently 34 backend,22 frontend,8 collector passed. Independent Security/Architecture `/root/security`: local GO, no blocking finding. Implementer did not issue these gates.
 
 ## Local runtime receipt and limits
