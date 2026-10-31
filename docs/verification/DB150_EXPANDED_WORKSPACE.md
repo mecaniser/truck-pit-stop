@@ -39,3 +39,35 @@ Open http://127.0.0.1:5210/tests/db150-comparison.html. Four area buttons, full-
 | Shop Work | [Before](../../frontend/tests/db150/shop-work-before.png) | [After](../../frontend/tests/db150/shop-work-after.png) |
 
 Protected PR CI is the integration gate. All seven checks passed on7a201c38; concurrent main a7c0ed74 integrated with board-only conflict resolution. Fresh exact-head CI, merge, deployment and production smoke pending.
+
+## Production release — 2026-10-31
+
+# Release receipt — PR #724
+
+Observed: 2026-10-31T16:34:43+00:00
+PR: https://github.com/mecaniser/truck-pit-stop/pull/724
+Head SHA: `8c0543ec6aef5d993eff2cd46558dff8aa48cc93`
+Merge SHA: `e4b692adc332caa0673dca2d513bd9cbe9952cf4`
+
+## CI
+
+- PR checks: completed/success — https://github.com/mecaniser/truck-pit-stop/actions/runs/41219069168
+  - Migration graph: success
+  - Backend tests: success
+  - Backend full suite (informational): success
+  - Frontend checks: success
+  - Frontend full suite (informational): success
+  - Playwright smoke: success
+- Main checks: not scheduled by repository policy; quality.yml runs protected PR checks, scheduled and manual checks only.
+
+## Production web
+
+- Railway deployment: `c21945cf-d316-4cfd-b7fa-b4601a3e8475` / SUCCESS
+- Railway source SHA: `e4b692adc332caa0673dca2d513bd9cbe9952cf4`
+- Merge SHA matches Railway source: yes
+- Served build SHA: `e4b692adc332caa0673dca2d513bd9cbe9952cf4`
+- Health: alive
+- Merge SHA matches served build: yes
+
+Browser acceptance: signed-in production Shop Work and Customers loaded successfully. Screenshots confirm the frameless workspace, retained sidebar gutter and rounded populated customer records. No visible layout regression. Production DOM measurements and click smoke were unavailable due browser-control dispatch timeouts; exact geometry and interaction coverage remain the prior signed-in local checks plus passing PR browser smoke. No production records mutated.
+A successful CI run, Railway status, and HTTP response are distinct evidence.
