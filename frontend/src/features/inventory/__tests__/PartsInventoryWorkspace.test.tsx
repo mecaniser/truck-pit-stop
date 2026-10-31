@@ -409,6 +409,9 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(selectedSurfaces[1]).toHaveClass('db-parts-workbench__selected-action')
     // Edit now shares a controls group with the dismiss on the same label row.
     const editDetails = screen.getByRole('button', { name: 'Edit details' })
+    expect(editDetails).toHaveAttribute('aria-label', 'Edit details')
+    expect(editDetails.textContent).toBe('')
+    expect(editDetails).toHaveClass('db-parts-workbench__icon-action--icon-only')
     expect(editDetails.parentElement).toHaveClass('db-parts-workbench__selected-controls')
     expect(editDetails.closest('.db-parts-workbench__selected-label-row')).not.toBeNull()
     expect(screen.getByRole('tabpanel', { name: 'Overview' })).toHaveTextContent('At a glance')
