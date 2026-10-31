@@ -15,7 +15,7 @@ vi.mock('@/stores/authStore', () => ({
 const api = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn() }))
 vi.mock('@/lib/api', () => ({ default: api }))
 const customer = { id: 'customer-a', company_name: 'Northline', first_name: 'Nora', last_name: 'North', email: 'dispatch@example.invalid', phone: '5550100001', balance: '145.00', billing_address_line1: '1 Fleet Road', billing_address_line2: 'Suite 2', billing_city: 'Raleigh', billing_state: 'NC', billing_zip: '27601', created_at: '2026-10-12T12:00:00Z' } as Customer
-const truck = { id: 'truck-a', customer_id: customer.id, unit_number: 'C-001', year: 2021, make: 'Freightliner', model: 'Cascadia', vin: 'P0000000000000001', license_plate: 'PC001', balance: '145.00' } as Vehicle
+const truck = { equipment_type: 'tractor', id: 'truck-a', customer_id: customer.id, unit_number: 'C-001', year: 2021, make: 'Freightliner', model: 'Cascadia', vin: 'P0000000000000001', license_plate: 'PC001', balance: '145.00' } as Vehicle
 const openTruck = vi.fn()
 function Harness({ record = customer, ...overrides }: Partial<CustomerDetailPanelProps> & { record?: Customer }) {
   const [tab, setTab] = useState<'overview' | 'history'>('overview')
@@ -57,11 +57,12 @@ describe('compact customer record', () => {
     expect(within(details).getByRole('textbox')).toHaveValue('Certificate draft')
     expect(api.put).not.toHaveBeenCalled()
   })
-  it('puts truck relationships before named contacts and supports keyboard truck opening', async () => {
+  it('puts equipment relationships before named contacts and supports keyboard opening', async () => {
     setup()
-    const trucks = screen.getByRole('heading', { name: /Truck relationships/ })
+    const trucks = screen.getByRole('heading', { name: /Equipment relationships/ })
     const contacts = screen.getByRole('heading', { name: /Contacts/ })
     expect(trucks.compareDocumentPosition(contacts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText('Tractor / Truck')).toBeVisible()
     const open = screen.getByRole('button', { name: /Open .*C-001/ })
     open.focus()
     await userEvent.keyboard('{Enter}')
@@ -117,6 +118,7 @@ describe('compact customer record', () => {
   })
   it('opens card-view trucks from the keyboard', async () => {
     setup({ vehiclesViewMode: 'grid' })
+    expect(screen.getByText('Tractor / Truck')).toBeVisible()
     const open = screen.getByRole('button', { name: /Open .*C-001/ })
     open.focus()
     await userEvent.keyboard('{Enter}')
@@ -143,7 +145,7 @@ it('shows failed trucks and contacts without false emptiness or stale counts', (
   const trucks = vi.fn(), contacts = vi.fn()
   setup({ vehiclesError: true, contactsError: true, onRetryVehicles: trucks, onRetryContacts: contacts })
   expect(screen.getAllByRole('alert')).toHaveLength(2)
-  expect(screen.getByRole('heading', { name: /Truck relationships/ })).toHaveTextContent('—')
+  expect(screen.getByRole('heading', { name: /Equipment relationships/ })).toHaveTextContent('—')
   expect(screen.queryByText('No vehicles on file')).not.toBeInTheDocument()
   expect(screen.queryByText('Using company contact details above.')).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: /Open .*C-001/ })).not.toBeInTheDocument()
