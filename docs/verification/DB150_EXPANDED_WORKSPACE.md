@@ -1,6 +1,6 @@
 # DB-150 — Expanded working area and consistent rounded lists
 
-Owner: Frontend & UX. Fast UI lane. User approved this local design and authorized a pull request; merge and deployment are not authorized.
+Owner: Frontend & UX. Fast UI lane. User approved the final design and subsequently authorized merge and deployment on2026-10-31.
 
 ## Final behavior
 
@@ -38,4 +38,4 @@ Open http://127.0.0.1:5210/tests/db150-comparison.html. Four area buttons, full-
 | Repair Orders | [Before](../../frontend/tests/db150/repairs-before.png) | [After](../../frontend/tests/db150/repairs-after.png) |
 | Shop Work | [Before](../../frontend/tests/db150/shop-work-before.png) | [After](../../frontend/tests/db150/shop-work-after.png) |
 
-Protected PR CI is the integration gate. No merge or deployment performed; item remains Review.
+Protected PR CI is the integration gate. All seven checks passed on7a201c38; concurrent main a7c0ed74 integrated with board-only conflict resolution. Fresh exact-head CI, merge, deployment and production smoke pending.
