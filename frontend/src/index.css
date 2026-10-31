@@ -7497,7 +7497,8 @@ html.customer-portal-active {
 /* Sticky column labels cover inline photos (2) and row actions (4);
    floating menus retain their existing layer (9). */
 .db-parts-workbench__table-head { z-index:5; }
-/* Keep the surrounding Parts page light while the working list retains its
-   gray canvas and distinct rounded records. Scope this to Parts only. */
+/* Keep the Parts page and ledger continuous; the selected-part inspector
+   retains its existing gray canvas and selected header treatment. */
 .db-presentation-new .db-staff-main:has(.db-parts-workbench) { background:var(--surface-overlay); }
-.db-presentation-new :is(.db-parts-workbench__body,.db-parts-workbench__ledger-workspace,.db-parts-workbench__ledger,.db-parts-workbench__rows,.db-parts-workbench__table-head,.db-parts-workbench__load-more) { background:var(--surface-canvas); }
+.db-presentation-new :is(.db-parts-workbench__body,.db-parts-workbench__ledger-workspace,.db-parts-workbench__ledger,.db-parts-workbench__rows,.db-parts-workbench__table-head,.db-parts-workbench__load-more) { background:var(--surface-overlay); }
+.db-presentation-new .db-parts-workbench__row { outline:1px solid var(--workspace-border); outline-offset:-1px; }

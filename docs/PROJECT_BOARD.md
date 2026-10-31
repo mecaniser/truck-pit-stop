@@ -1,3 +1,7 @@
+> **DB-042 Row borders / IN PROGRESS (2026-10-31), Frontend & UX:** Final user acceptance: white surrounding page and full list, gray selected-part inspector, thin rounded border on every list item. Use inset outline with no geometry shift; retain selected/hover/keyboard states. Final QA/CI pending on updated PR #726.
+
+> **DB-042 Final surface clarification / IN PROGRESS (2026-10-31), Frontend & UX:** Only selected-part inspector stays gray. Surrounding page AND list/header/gaps/gutters/footer white; preserve selected beige and hover/focus. Supersedes gray-list interpretation; PR #726 held for final QA and exact-head CI.
+
 > **DB-042 Surface direction revised / IN PROGRESS (2026-10-31), Frontend & UX:** User requests white surrounding page with gray Parts working section retained. Hold PR #726 merge; replace continuous white list/row outlines with white Parts page canvas and gray list/header/footer backing, retaining existing rounded white records and selected/hover states. Recheck desktop/narrow appearance and updated-head CI.
 
 > **DB-042 Coherent inventory surface/rounded edges / LOCAL QA PASSED, REVIEW (2026-10-31), Frontend & UX:** One themed light backing through body/header/ledger/gaps/gutter/footer, with1px inset outlines preserving10px row corners. Matching white surface values verified; selected beige retained.61 focused tests, signed-in desktop/390px preview/selection/no-overflow and sticky-header scroll test pass. [Receipt](verification/DB042_LIST_SURFACE_2026-10-31.md). CSS-only; protected CI/release pending.
