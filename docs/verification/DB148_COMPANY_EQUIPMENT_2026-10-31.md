@@ -43,3 +43,7 @@ Changing source vehicle/VIN requires fresh attribution review against the author
 ## Remaining gates
 
 The user explicitly approved PR publication. Replayed only the two equipment commits onto GitHub main9dea1f1a, excluding unrelated local inventory work. The prior provisional DB-097 ID was already assigned on current main, so this feature is DB-148; its migration193 now follows192. Preserved current main compact customer layout and refreshed browser screenshots/assertions. Current-main focused backend31/31, frontend30/30, build/lint, linear migration graph and PostgreSQL rehearsal pass. Publication/required-check evidence is recorded on the board; merge and release are not authorized. No production migration, deployment or source-data correction occurred.
+
+## PR publication
+
+User approved publication after reviewing the local candidate. Existing-PR lookup returned none. Published PR713: https://github.com/mecaniser/truck-pit-stop/pull/713 on branch codex/company-equipment-types. Required CI is being monitored; merge/deploy/production-data authority is explicitly absent. Independent current-main source/QA review GO is scoped to the changed journey; inherited pale unselected desktop row text was observed and is not broad contrast approval.

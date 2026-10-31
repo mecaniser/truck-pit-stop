@@ -3,7 +3,7 @@ Title: Support company equipment types and separate trailer maintenance
 Target repository: mecaniser/truck-pit-stop
 Base: main
 Head: codex/company-equipment-types
-Status: User approved PR publication; merge/deployment not authorized
+Status: Published with user approval as https://github.com/mecaniser/truck-pit-stop/pull/713; merge/deployment not authorized
 
 Companies currently have unclassified vehicle records and truck-oriented controls, so operators cannot explicitly distinguish a trailer from a tractor when maintaining each asset. Add Tractor / Truck, Trailer, Other equipment and Unclassified to company equipment creation and editing, and show/search the type in company lists. Repairs and invoices retain their existing asset-specific vehicle_id links.
 
