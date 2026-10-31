@@ -1,3 +1,4 @@
+import { chooseSelectOption } from '@/test-utils/selectOption'
 import { cloneElement } from 'react'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -79,7 +80,7 @@ it('allows a legacy program with unknown intervals to be renamed without invente
 })
 
 it('does not offer manager rebaseline or service attestation to a receptionist', async () => {
-  mocks.auth.user.role = 'receptionist'; const item = program('program-1', { capabilities: { can_edit: true, can_plan: true, can_record_evidence: false, can_archive: true } }); mocks.get.mockImplementation(async (url: string) => ({ data: url === '/services/typeahead' ? [] : page([item]) })); const user = userEvent.setup(); setup(); await screen.findByText('Oil service'); await user.click(screen.getByText('Edit')); expect(screen.queryByRole('option', { name: 'Rebaseline' })).not.toBeInTheDocument(); await user.selectOptions(screen.getByLabelText('Targets'), 'replace'); expect(screen.queryByRole('option', { name: 'Actual service' })).not.toBeInTheDocument(); expect(mocks.post).not.toHaveBeenCalled()
+  mocks.auth.user.role = 'receptionist'; const item = program('program-1', { capabilities: { can_edit: true, can_plan: true, can_record_evidence: false, can_archive: true } }); mocks.get.mockImplementation(async (url: string) => ({ data: url === '/services/typeahead' ? [] : page([item]) })); const user = userEvent.setup(); setup(); await screen.findByText('Oil service'); await user.click(screen.getByText('Edit')); await user.click(screen.getByLabelText('Targets')); expect(screen.queryByRole('option', { name: 'Rebaseline' })).not.toBeInTheDocument(); await user.keyboard('{Escape}'); await chooseSelectOption(screen.getByLabelText('Targets'), 'replace', user); await user.click(screen.getByLabelText('Starting point')); expect(screen.queryByRole('option', { name: 'Actual service' })).not.toBeInTheDocument(); await user.keyboard('{Escape}'); expect(mocks.post).not.toHaveBeenCalled()
 })
 
 

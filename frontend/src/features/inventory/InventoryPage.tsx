@@ -1,3 +1,4 @@
+import PlatformSelect from '@/components/PlatformSelect'
 import { pricingError, pricingMoney } from '@/features/parts-pricing/contract'
 import PartPolicySummary from '@/features/parts-pricing/PartPolicySummary'
 import PartsPricingSettings from '@/features/parts-pricing/PartsPricingSettings'
@@ -1764,7 +1765,7 @@ function LegacyInventoryPage() {
           </label>
           <label className="text-sm text-gray-700 space-y-1">
             <span>Unit</span>
-            <select
+            <PlatformSelect
               value={manageForm.unit_type}
               onChange={(e) => handleManageChange('unit_type', e.target.value)}
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
@@ -1773,7 +1774,7 @@ function LegacyInventoryPage() {
               <option value="gallon">Gallon</option>
               <option value="quart">Quart</option>
               <option value="liter">Liter</option>
-            </select>
+            </PlatformSelect>
           </label>
         </div>
 
@@ -2047,7 +2048,7 @@ function LegacyInventoryPage() {
           </label>
           <label className="text-sm text-gray-700 space-y-1">
             <span>Unit</span>
-            <select
+            <PlatformSelect
               value={addForm.unit_type}
               onChange={(e) => handleAddFormChange('unit_type', e.target.value)}
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
@@ -2056,7 +2057,7 @@ function LegacyInventoryPage() {
               <option value="gallon">Gallon</option>
               <option value="quart">Quart</option>
               <option value="liter">Liter</option>
-            </select>
+            </PlatformSelect>
           </label>
         </div>
 

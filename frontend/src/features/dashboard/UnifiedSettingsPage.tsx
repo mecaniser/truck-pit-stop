@@ -1,3 +1,4 @@
+import PlatformSelect from '@/components/PlatformSelect'
 import { useState, useEffect, useId, useRef } from 'react'
 import { LoadingLine } from '@/components/ui'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -2944,7 +2945,7 @@ function FleetSection() {
 
             <div>
               <label className={industrialStyles.label}>Default Operating Authority</label>
-              <select
+              <PlatformSelect
                 value={defaultFleetAuthorityCustomerId}
                 onChange={(e) => setDefaultFleetAuthorityCustomerId(e.target.value)}
                 className={`${industrialStyles.input} max-w-md`}
@@ -2955,7 +2956,7 @@ function FleetSection() {
                     {company.company_name}{company.is_internal_fleet ? ' (internal)' : ''}
                   </option>
                 ))}
-              </select>
+              </PlatformSelect>
               <p className="mt-1 text-xs text-zinc-500">New or relinked trucks with no authority preselect this company. A truck’s explicit authority always wins.</p>
             </div>
 
@@ -3172,7 +3173,7 @@ function WorkforceSection() {
         <div className="space-y-6">
           <div>
             <label className={industrialStyles.label}>Timezone</label>
-            <select
+            <PlatformSelect
               value={timezone}
               onChange={(e) => { setTimezone(e.target.value); setIsEditing(true) }}
               className={`${industrialStyles.input} cursor-pointer`}
@@ -3182,7 +3183,7 @@ function WorkforceSection() {
                   {tz}
                 </option>
               ))}
-            </select>
+            </PlatformSelect>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

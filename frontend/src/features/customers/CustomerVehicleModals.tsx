@@ -6,6 +6,7 @@ import { AlertTriangle, Combine, Search, Truck, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 import api from '@/lib/api'
+import BaseSelect from '@/components/BaseSelect'
 
 import { useTheme } from '@/contexts/ThemeContext'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
@@ -908,19 +909,22 @@ const {
             </div>
             <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
               <label className="block text-sm font-semibold text-gray-900" htmlFor="operating-authority">Operating authority / Fleet Board</label>
-              <select
-                id="operating-authority"
-                value={operatingAuthorityCustomerId}
-                onChange={(event) => setOperatingAuthorityCustomerId(event.target.value)}
-                className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500"
-              >
-                <option value="">Select operating authority…</option>
-                {fleetCompanies.map((company) => (
-                  <option key={company.id} value={company.id}>
-                    {company.company_name}{company.fleet_enabled ? ' · Fleet Board' : ''}{company.is_internal_fleet ? ' (internal)' : ''}
-                  </option>
-                ))}
-              </select>
+              <div className="mt-2">
+                <BaseSelect
+                  id="operating-authority"
+                  value={operatingAuthorityCustomerId}
+                  onChange={setOperatingAuthorityCustomerId}
+                  heightClass="h-11"
+                  optionHeightClass="min-h-11"
+                  options={[
+                    { value: '', label: 'Select operating authority…' },
+                    ...fleetCompanies.map((company) => ({
+                      value: company.id,
+                      label: `${company.company_name}${company.fleet_enabled ? ' · Fleet Board' : ''}${company.is_internal_fleet ? ' (internal)' : ''}`,
+                    })),
+                  ]}
+                />
+              </div>
               <p className="mt-2 text-xs text-gray-500">Choose the authority this truck runs under. This records only the truck’s authority; the customer’s “Add this customer to Fleet Board” checkbox is the only control that places trucks on Fleet Board. Owner/lessor and invoice recipient stay independent.</p>
             </div>
             <p className="mt-2 text-xs text-gray-500">Assigning a replacement owner, authority, or payer safely closes the previous period. Completed work orders and the truck’s full service history remain unchanged.</p>
@@ -954,14 +958,20 @@ const {
       {!editingVehicle && renderVehicleModeTabs()}
       <div>
         <label htmlFor="equipment-type" className="block text-sm font-medium text-gray-700 mb-1">Equipment type</label>
-        <select id="equipment-type" value={vehicleFormData.equipment_type}
-          onChange={(e) => setVehicleFormData(prev => ({ ...prev, equipment_type: e.target.value as EquipmentType }))}
-          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg">
-          <option value="tractor">Tractor / Truck</option>
-          <option value="trailer">Trailer</option>
-          <option value="other">Other equipment</option>
-          <option value="unknown">Unclassified</option>
-        </select>
+        <BaseSelect
+          id="equipment-type"
+          value={vehicleFormData.equipment_type}
+          onChange={(value) => setVehicleFormData(prev => ({ ...prev, equipment_type: value as EquipmentType }))}
+          searchable={false}
+          heightClass="h-11"
+          optionHeightClass="min-h-11"
+          options={[
+            { value: 'tractor', label: 'Tractor / Truck' },
+            { value: 'trailer', label: 'Trailer' },
+            { value: 'other', label: 'Other equipment' },
+            { value: 'unknown', label: 'Unclassified' },
+          ]}
+        />
       </div>
       {/* Make & Model */}
       <div className="grid grid-cols-2 gap-4">

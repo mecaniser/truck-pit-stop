@@ -3,9 +3,12 @@ import { Spinner } from '@/components/ui'
 import { createPortal } from 'react-dom'
 import { ChevronDown } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
+import { accentRampFor } from '../contexts/appearanceTokens'
+import { DEFAULT_APPEARANCE } from '../types/presentation'
 
 export interface BaseSelectOption {
   value: string
+  disabled?: boolean
   label: string
   subLabel?: string
   /** Extra text to match against when searching, without displaying it directly
@@ -19,6 +22,16 @@ export interface BaseSelectOption {
 }
 
 interface BaseSelectProps {
+  /** Associates the field with a visible label in both closed and open states. */
+  id?: string
+  triggerClassName?: string
+  autoFocus?: boolean
+  selectOnly?: boolean
+  ariaLabel?: string
+  ariaLabelledBy?: string
+  ariaDescribedBy?: string
+  ariaInvalid?: React.AriaAttributes['aria-invalid']
+  ariaRequired?: boolean
   options: BaseSelectOption[]
   value: string
   onChange: (val: string) => void
@@ -50,6 +63,15 @@ interface BaseSelectProps {
 }
 
 export default function BaseSelect({
+  id,
+  triggerClassName = '',
+  autoFocus = false,
+  selectOnly = false,
+  ariaLabel,
+  ariaLabelledBy,
+  ariaDescribedBy,
+  ariaInvalid,
+  ariaRequired,
   options,
   value,
   onChange,
@@ -67,18 +89,23 @@ export default function BaseSelect({
   loading = false,
 }: BaseSelectProps) {
   const dark = variant === 'dark'
-  const { accentColors } = useTheme()
+  const theme = useTheme(true)
+  const accentColors = theme?.accent
+    ? accentRampFor(theme.accent, dark ? (theme.mode === 'high_contrast' ? 'high_contrast' : 'dark') : 'light')
+    : theme?.accentColors ?? accentRampFor(DEFAULT_APPEARANCE.accent, dark ? 'dark' : 'light')
   const selectId = useId()
   const [isOpen, setIsOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const restoreFocusRef = useRef(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   // The floating list renders in a portal with fixed positioning anchored to the
   // trigger, so an ancestor with overflow:auto (e.g. the fleet modal) can't clip
   // it or grow a scrollbar. null = closed/unmeasured.
-  const [menuPos, setMenuPos] = useState<{ left: number; width: number; top?: number; bottom?: number } | null>(null)
+  const [menuPos, setMenuPos] = useState<{ left: number; width: number; top?: number; bottom?: number; zIndex: number; maxHeight: number } | null>(null)
 
   const computePosition = () => {
     const el = containerRef.current
@@ -87,9 +114,16 @@ export default function BaseSelect({
     const estimatedMenuHeight = 256 // matches max-h below
     const spaceBelow = window.innerHeight - rect.bottom
     const openUp = spaceBelow < estimatedMenuHeight && rect.top > spaceBelow
+    let zIndex = 100
+    for (let ancestor: HTMLElement | null = el; ancestor; ancestor = ancestor.parentElement) {
+      const layer = Number.parseInt(getComputedStyle(ancestor).zIndex, 10)
+      if (Number.isFinite(layer)) zIndex = Math.max(zIndex, layer + 1)
+    }
     setMenuPos({
-      left: rect.left,
-      width: rect.width,
+      zIndex,
+      maxHeight: Math.max(0, Math.min(256, (openUp ? rect.top : spaceBelow) - 8)),
+      left: Math.max(8, Math.min(rect.left, window.innerWidth - Math.min(rect.width, window.innerWidth - 16) - 8)),
+      width: Math.min(rect.width, window.innerWidth - 16),
       top: openUp ? undefined : rect.bottom + 4,
       bottom: openUp ? window.innerHeight - rect.top + 4 : undefined,
     })
@@ -130,10 +164,20 @@ export default function BaseSelect({
   const activeItem = menuItems[activeIndex]
   const activeOptionId = isOpen && activeItem ? `${listboxId}-option-${activeIndex}` : undefined
 
+  const enabledIndex = (start: number, direction: 1 | -1): number => {
+    for (let index = start; index >= 0 && index < menuItems.length; index += direction) {
+      const item = menuItems[index]
+      if (item.type === 'add_new' || !item.option.disabled) return index
+    }
+    return -1
+  }
+
   const openMenu = (preferredIndex?: number) => {
     if (disabled) return
     const selectedIndex = menuItems.findIndex((item) => item.value === value)
-    setActiveIndex(preferredIndex ?? (selectedIndex >= 0 ? selectedIndex : 0))
+    const start = preferredIndex ?? (selectedIndex >= 0 ? selectedIndex : 0)
+    const next = enabledIndex(start, 1)
+    setActiveIndex(next >= 0 ? next : enabledIndex(start, -1))
     setIsOpen(true)
   }
 
@@ -164,9 +208,20 @@ export default function BaseSelect({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, loading, query, visible.length])
 
+  useLayoutEffect(() => {
+    if (!isOpen && restoreFocusRef.current) {
+      restoreFocusRef.current = false
+      triggerRef.current?.focus()
+    }
+  }, [isOpen])
+
+  useEffect(() => {
+    if (disabled && isOpen) { setIsOpen(false); setQuery(''); onQueryChange?.('') }
+  }, [disabled, isOpen, onQueryChange])
+
   // Focus input when dropdown opens
   useEffect(() => {
-    if (isOpen && searchable && inputRef.current) {
+    if (isOpen && inputRef.current) {
       inputRef.current.focus()
     }
   }, [isOpen, searchable])
@@ -199,6 +254,8 @@ export default function BaseSelect({
   }, [])
 
   const handleSelect = (val: string) => {
+    if (disabled || options.find(option => option.value === val)?.disabled) return
+    if (!(val === 'add_new' && allowAddNew)) restoreFocusRef.current = true
     if (allowAddNew && val === 'add_new') {
       if (onAddNew) {
         onAddNew()
@@ -221,23 +278,31 @@ export default function BaseSelect({
         openMenu(0)
         return
       }
-      setActiveIndex((current) => Math.min(current + 1, Math.max(menuItems.length - 1, 0)))
+      setActiveIndex(current => { const next = enabledIndex(current + 1, 1); return next >= 0 ? next : current })
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       if (!isOpen) {
         openMenu(Math.max(menuItems.length - 1, 0))
         return
       }
-      setActiveIndex((current) => Math.max(current - 1, 0))
+      setActiveIndex(current => { const next = enabledIndex(current - 1, -1); return next >= 0 ? next : current })
     } else if (e.key === 'Home' && isOpen) {
       e.preventDefault()
-      setActiveIndex(0)
+      setActiveIndex(enabledIndex(0, 1))
     } else if (e.key === 'End' && isOpen) {
       e.preventDefault()
-      setActiveIndex(Math.max(menuItems.length - 1, 0))
-    } else if (e.key === 'Escape') {
+      setActiveIndex(enabledIndex(menuItems.length - 1, -1))
+    } else if (e.key === 'Escape' && isOpen) {
+      e.preventDefault()
+      e.stopPropagation()
+      restoreFocusRef.current = true
       setIsOpen(false)
       updateQuery('')
+    } else if (e.key === 'Tab' && isOpen) {
+      window.requestAnimationFrame(() => { setIsOpen(false); updateQuery('') })
+    } else if (!searchable && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && e.key !== ' ') {
+      const index = menuItems.findIndex(item => item.type === 'option' && !item.option.disabled && item.label.toLocaleLowerCase().startsWith(e.key.toLocaleLowerCase()))
+      if (index >= 0) { e.preventDefault(); if (isOpen) setActiveIndex(index); else openMenu(index) }
     } else if (e.key === 'Enter' && isOpen) {
       e.preventDefault()
       if (activeItem) {
@@ -247,25 +312,35 @@ export default function BaseSelect({
   }
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative min-w-0">
       {/* Closed state: show button */}
       {!isOpen ? (
         <button
+          ref={triggerRef}
+          id={id}
           type="button"
+          value={value}
+          role={selectOnly ? 'combobox' : undefined}
+          autoFocus={autoFocus}
+          aria-label={ariaLabel}
+          aria-labelledby={ariaLabelledBy}
+          aria-describedby={ariaDescribedBy}
+          aria-invalid={ariaInvalid}
+          aria-required={ariaRequired}
           onClick={() => openMenu()}
           onKeyDown={handleKeyDown}
           disabled={disabled}
           aria-haspopup="listbox"
           aria-expanded={isOpen}
           aria-controls={isOpen ? listboxId : undefined}
-          className={`w-full ${heightClass} px-4 border rounded-lg text-left focus:outline-none focus:ring-2 transition-colors flex items-center justify-between ${
+          className={`w-full min-w-0 ${heightClass} px-4 border rounded-lg text-left focus:outline-none focus:ring-2 transition-colors flex items-center justify-between ${
             dark
               ? 'border-white/20 bg-white/10 text-white'
               : 'border-gray-300 bg-white text-gray-900'
-          } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+          } ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${triggerClassName}`}
           style={{ ['--tw-ring-color' as string]: accentColors[500] }}
         >
-          <span className={`block truncate ${!selected && (dark ? 'text-gray-500' : 'text-gray-400')}`}>
+          <span className={`block w-0 min-w-0 flex-1 truncate ${!selected && (dark ? 'text-gray-500' : 'text-gray-400')}`}>
             {selected ? selected.label : placeholder}
           </span>
           <ChevronDown className={`w-4 h-4 shrink-0 ${dark ? 'text-gray-400' : 'text-gray-400'}`} />
@@ -274,22 +349,30 @@ export default function BaseSelect({
         /* Open state: show search input */
         <div className="relative">
           <input
+            id={id}
             ref={inputRef}
+            disabled={disabled}
             type="text"
             role="combobox"
+            aria-label={ariaLabel}
+            aria-labelledby={ariaLabelledBy}
+            aria-describedby={ariaDescribedBy}
+            aria-invalid={ariaInvalid}
+            aria-required={ariaRequired}
             aria-expanded={isOpen}
             aria-controls={listboxId}
             aria-activedescendant={activeOptionId}
-            aria-autocomplete="list"
-            value={query}
+            aria-autocomplete={selectOnly ? 'none' : 'list'}
+            readOnly={!searchable}
+            value={searchable ? query : selected?.label ?? placeholder}
             onChange={(e) => updateQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={selected ? selected.label : placeholder}
-            className={`w-full ${heightClass} px-4 ${loading ? 'pr-9' : ''} border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
+            className={`w-full min-w-0 ${heightClass} px-4 ${loading ? 'pr-9' : ''} border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
               dark
-                ? 'border-white/40 bg-white/10 text-white placeholder:text-gray-500'
-                : 'bg-white text-gray-900'
-            }`}
+                ? 'border-white/40 bg-white/10 text-white placeholder:text-gray-400'
+                : 'bg-white text-gray-900 placeholder:text-gray-500'
+            } ${triggerClassName}`}
             style={{ borderColor: accentColors[500], ['--tw-ring-color' as string]: accentColors[500] }}
           />
           {loading && (
@@ -309,6 +392,8 @@ export default function BaseSelect({
           role="listbox"
           style={{
             position: 'fixed',
+            zIndex: menuPos.zIndex,
+            maxHeight: menuPos.maxHeight,
             left: menuPos.left,
             width: menuPos.width,
             top: menuPos.top,
@@ -328,6 +413,9 @@ export default function BaseSelect({
               type="button"
               id={`${listboxId}-option-${index}`}
               role="option"
+              value={opt.value}
+              disabled={disabled || opt.disabled}
+              aria-disabled={opt.disabled || undefined}
               aria-selected={opt.value === value}
               data-base-select-index={index}
               onMouseDown={(e) => {
@@ -337,7 +425,7 @@ export default function BaseSelect({
               }}
               onMouseEnter={() => setActiveIndex(index)}
               className={`w-full ${optionHeightClass} text-left px-4 py-2 text-sm transition-colors ${
-                dark
+                opt.disabled ? 'opacity-50 cursor-not-allowed' : dark
                   ? opt.value === value
                     ? 'text-white'
                     : `text-gray-200 ${active ? 'bg-white/10' : 'hover:bg-white/10'}`
@@ -345,10 +433,10 @@ export default function BaseSelect({
                     ? 'text-gray-900'
                     : `text-gray-900 ${active ? 'bg-gray-50' : 'hover:bg-gray-50'}`
               }`}
-              style={opt.value === value ? { backgroundColor: `${accentColors[500]}1a`, color: accentColors[400] } : undefined}
+              style={opt.value === value ? { backgroundColor: `${accentColors[500]}1a`, color: dark ? accentColors[400] : undefined } : undefined}
             >
               <div className="flex flex-col">
-                <span className="font-medium">{opt.label}</span>
+                <span className="font-medium whitespace-normal break-words">{opt.label}</span>
                 {(opt.subLabel || opt.flag) && (
                   <span className={`text-xs ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
                     {opt.subLabel}

@@ -1,3 +1,4 @@
+import PlatformSelect from '@/components/PlatformSelect'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -133,10 +134,10 @@ function SettlementResolutionItem({
         <fieldset disabled={busy} className={`mt-3 min-w-0 rounded-xl border p-3 ${dark ? 'border-amber-800/60 bg-black/20' : 'border-amber-200 bg-white/70'}`}>
           {audience === 'staff' && (
             <label className={`block text-xs font-bold ${dark ? 'text-amber-100' : 'text-amber-950'}`}>Consent channel
-              <select value={consentChannel} onChange={event => setConsentChannel(event.target.value as 'in_person' | 'phone')} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm ${dark ? 'border-amber-800 bg-[#161b27] text-white' : 'border-amber-300 bg-white'}`}>
+              <PlatformSelect value={consentChannel} onChange={event => setConsentChannel(event.target.value as 'in_person' | 'phone')} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm ${dark ? 'border-amber-800 bg-[#161b27] text-white' : 'border-amber-300 bg-white'}`}>
                 <option value="in_person">In person</option>
                 <option value="phone">Phone</option>
-              </select>
+              </PlatformSelect>
             </label>
           )}
           <label className={`${audience === 'staff' ? 'mt-2 ' : ''}block text-xs font-bold ${dark ? 'text-amber-100' : 'text-amber-950'}`}>Customer consent note

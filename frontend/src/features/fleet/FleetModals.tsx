@@ -1,3 +1,4 @@
+import PlatformSelect from '@/components/PlatformSelect'
 import { usePricingCommand } from '@/features/parts-pricing/usePricingCommand'
 import { PricingCancelled, pricingError } from '@/features/parts-pricing/contract'
 import { forwardRef, useEffect, useId, useImperativeHandle, useState, useRef } from 'react'
@@ -845,14 +846,14 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
         )}
         {createWO && (
           <Field label="Invoice this visit to">
-            <select value={billToCustomerId} onChange={(event) => setBillToCustomerId(event.target.value)}>
+            <PlatformSelect value={billToCustomerId} onChange={(event) => setBillToCustomerId(event.target.value)}>
               <option value="" disabled>{billToLoading ? 'Loading connected companies…' : 'Select invoice recipient…'}</option>
               {billToOptions.map((relationship) => (
                 <option key={relationship.customer_id} value={relationship.customer_id}>
                   {relationship.customer_company_name || 'Company'} — {BILL_TO_RELATIONSHIP_LABEL[relationship.relationship_type]}
                 </option>
               ))}
-            </select>
+            </PlatformSelect>
           </Field>
         )}
 

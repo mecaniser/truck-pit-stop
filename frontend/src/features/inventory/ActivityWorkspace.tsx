@@ -1,3 +1,4 @@
+import PlatformSelect from '@/components/PlatformSelect'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, ArrowRight, ChevronDown, Download, ExternalLink, Search, SlidersHorizontal } from 'lucide-react'
@@ -289,12 +290,12 @@ export default function ActivityWorkspace({ inventoryId, compact = false }: { in
     <form className="db-activity__filters" aria-label="Filter activity" onSubmit={(event) => { event.preventDefault(); apply() }}>
       <div className="db-activity__filter-primary">
         <label className="is-search"><Search aria-hidden="true" /><span className="sr-only">Search Activity</span><input type="search" value={draft.search} minLength={2} maxLength={200} onChange={(event) => setDraft((current) => ({ ...current, search: event.target.value }))} placeholder={compact ? 'Search activity' : 'Search parts, people, reasons, or sources'} /></label>
-        <label className="db-activity__category"><span className="sr-only">Category</span><select aria-label="Category" value={draft.category} onChange={(event) => setDraft((current) => ({ ...current, category: event.target.value as ActivityFilters['category'] }))}>{CATEGORIES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+        <label className="db-activity__category"><span className="sr-only">Category</span><PlatformSelect aria-label="Category" value={draft.category} onChange={(event) => setDraft((current) => ({ ...current, category: event.target.value as ActivityFilters['category'] }))}>{CATEGORIES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</PlatformSelect></label>
         {!compact && <details ref={advancedRef} className="db-activity__advanced">
           <summary><SlidersHorizontal aria-hidden="true" /><span>Advanced</span>{advancedFilterCount > 0 && <strong aria-label={`${advancedFilterCount} advanced filters selected`}>{advancedFilterCount}</strong>}<ChevronDown aria-hidden="true" /></summary>
           <div className="db-activity__advanced-fields">
             <label><span>Event types</span><input aria-label="Event types" aria-describedby={eventTypeHelpId} value={draft.eventType} onChange={(event) => setDraft((current) => ({ ...current, eventType: event.target.value }))} placeholder="Example: stock.adjusted" /><small id={eventTypeHelpId}>Separate multiple event types with commas.</small></label>
-            <label><span>Source</span><select value={draft.sourceType} onChange={(event) => setDraft((current) => ({ ...current, sourceType: event.target.value }))}>{SOURCE_TYPES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+            <label><span>Source</span><PlatformSelect value={draft.sourceType} onChange={(event) => setDraft((current) => ({ ...current, sourceType: event.target.value }))}>{SOURCE_TYPES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</PlatformSelect></label>
             <label><span>Actor reference</span><input value={draft.actorId} onChange={(event) => setDraft((current) => ({ ...current, actorId: event.target.value }))} placeholder="Optional UUID" /></label>
             <label><span>Source reference</span><input value={draft.sourceId} onChange={(event) => setDraft((current) => ({ ...current, sourceId: event.target.value }))} placeholder="Optional UUID" /></label>
             <label><span>From</span><input type="datetime-local" value={draft.from} onChange={(event) => setDraft((current) => ({ ...current, from: event.target.value }))} /></label>

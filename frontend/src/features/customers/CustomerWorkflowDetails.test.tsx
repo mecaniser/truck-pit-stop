@@ -7,6 +7,7 @@ import CustomerVehicleDetail from './CustomerVehicleDetail'
 import type { Customer, Vehicle } from '@/types'
 const api = vi.hoisted(() => ({ get: vi.fn() }))
 vi.mock('@/lib/api', () => ({ default: api }))
+vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ accentColors: { 400: '#b45309', 500: '#d97706', 600: '#b45309' } }) }))
 const customer = { id: 'c1', company_name: 'Northline', first_name: 'Nora', last_name: 'North' } as Customer
 const vehicle = { id: 'v1', customer_id: 'c1', make: 'Freightliner', model: 'Cascadia', unit_number: 'C-001', vin: '1FUJGLDR4DLAA0001' } as Vehicle
 const order = { id: 'o1', order_number: 'RO-1', customer_id: 'c1', vehicle_id: 'v1', status: 'completed', total_cost: '145', created_at: '2026-10-12', description: 'Replace fan belt' }
@@ -69,7 +70,7 @@ it('searches all truck history on the server and resets pagination without touch
   show(<CustomerVehicleDetail customer={customer} vehicle={vehicle} onOpenOrder={vi.fn()}/>, '/?queue=on_floor&search=directory&historyFor=c1%3Av1&historyPage=2')
   await screen.findByRole('button', {name:'Open repair order RO-1'})
   expect(screen.getByRole('searchbox', { name: 'Search this truck’s repair history' })).toBeEnabled()
-  expect(screen.getByRole('combobox', { name: 'Repair history status' })).toBeEnabled()
+  expect(screen.getByLabelText('Repair history status')).toBeEnabled()
   expect(api.get).toHaveBeenLastCalledWith('/repair-orders', expect.objectContaining({params:expect.objectContaining({skip:50})}))
   fireEvent.change(screen.getByRole('searchbox'), {target:{value:'  fan belt  '}})
   expect(screen.queryByRole('button', {name:'Open repair order RO-1'})).not.toBeInTheDocument()
@@ -79,7 +80,8 @@ it('searches all truck history on the server and resets pagination without touch
   expect(params.get('queue')).toBe('on_floor')
   expect(params.get('search')).toBe('directory')
   expect(params.has('historyPage')).toBe(false)
-  fireEvent.change(screen.getByRole('combobox', {name:'Repair history status'}), {target:{value:'completed'}})
+  fireEvent.click(screen.getByLabelText('Repair history status'))
+  fireEvent.mouseDown(screen.getByRole('option', {name:'Completed',exact:true}))
   await waitFor(()=>expect(api.get).toHaveBeenLastCalledWith('/repair-orders',expect.objectContaining({params:expect.objectContaining({search:'fan belt',status:'completed',skip:0})})))
   fireEvent.click(await screen.findByRole('button',{name:'Next history page'}))
   await waitFor(()=>expect(api.get).toHaveBeenLastCalledWith('/repair-orders',expect.objectContaining({params:expect.objectContaining({search:'fan belt',status:'completed',skip:25})})))
@@ -89,14 +91,14 @@ it('restores filter/page state from the URL and clears to the full first page', 
   api.get.mockResolvedValue({data:{items:[],total:0,has_more:false}})
   show(<CustomerVehicleDetail customer={customer} vehicle={vehicle} onOpenOrder={vi.fn()}/>, '/?historyFor=c1%3Av1&historySearch=belts&historyStatus=paid&historyPage=1')
   expect(screen.getByRole('searchbox')).toHaveValue('belts')
-  expect(screen.getByRole('combobox')).toHaveValue('paid')
+  expect(screen.getByLabelText('Repair history status')).toHaveTextContent('Paid')
   expect(await screen.findByRole('button', { name: 'First history page' })).toBeVisible()
   expect(api.get).toHaveBeenLastCalledWith('/repair-orders',expect.objectContaining({params:{vehicle_id:'v1',paginated:true,skip:25,limit:25,search:'belts',status:'paid'}}))
   fireEvent.click(screen.getByRole('button',{name:'Clear filters'}))
   expect(await screen.findByText('No repair orders for this vehicle yet.')).toBeVisible()
   expect(api.get).toHaveBeenLastCalledWith('/repair-orders',expect.objectContaining({params:{vehicle_id:'v1',paginated:true,skip:0,limit:25}}))
   expect(screen.getByRole('searchbox')).toHaveValue('')
-  expect(screen.getByRole('combobox')).toHaveValue('')
+  expect(screen.getByLabelText('Repair history status')).toHaveTextContent('All statuses')
 })
 
 it('retries with the current filters and never labels failure as no matches', async () => {

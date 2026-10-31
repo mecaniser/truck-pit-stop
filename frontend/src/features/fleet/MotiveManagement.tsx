@@ -1,3 +1,4 @@
+import PlatformSelect from '@/components/PlatformSelect'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
@@ -38,10 +39,10 @@ export function MotiveGrants({ companyId }: { companyId: string }) {
     {grants.isPending && <p role="status">Loading administrators…</p>}
     {!grants.isError && active.map((person) => <div className="motive-actions" key={person.user_id}><span>{person.name || person.email}</span><button className="dbtn dbtn-ghost" disabled={change.isPending} onClick={() => change.mutate({ userId: person.user_id, revoke: true })}>Revoke {person.name || person.email}</button></div>)}
     <label htmlFor={`motive-admin-${companyId}`}>Linked customer</label>
-    <select id={`motive-admin-${companyId}`} value={selection} onChange={(e) => setSelection(e.target.value)} disabled={change.isPending || candidates.isError || grants.isError}>
+    <PlatformSelect id={`motive-admin-${companyId}`} value={selection} onChange={(e) => setSelection(e.target.value)} disabled={change.isPending || candidates.isError || grants.isError}>
       <option value="">Choose a customer</option>
       {people.filter((p) => !active.some((a) => a.user_id === p.user_id)).map((person) => <option key={person.user_id} value={person.user_id}>{person.name ? `${person.name} · ${person.email}` : person.email}</option>)}
-    </select>
+    </PlatformSelect>
     <button className="dbtn dbtn-ghost" disabled={!selection || change.isPending || candidates.isError || grants.isError} onClick={() => change.mutate({ userId: selection, revoke: false })}>Grant administrator access</button>
     {notice && <p role="status">{notice}</p>}
   </section>
