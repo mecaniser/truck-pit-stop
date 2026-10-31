@@ -7389,3 +7389,5 @@ html.customer-portal-active {
  .db-parts-workbench__source-editor > div:not(.db-parts-workbench__source-actions) > label:last-child { grid-column:1 / -1; }
 }
 .db-parts-workbench__inspector-panel .db-parts-workbench__section-head > button { padding:.3rem .4rem; font-size:.75rem; }
+.db-parts-workbench__supplier-relationship dd { min-inline-size:0; overflow-wrap:anywhere; }
+.db-parts-workbench__supplier-name,.db-parts-workbench__source-name { overflow-wrap:anywhere; }
