@@ -1,0 +1,338 @@
+[
+  {
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "mode": "light",
+    "equipment": {
+      "left": 488,
+      "right": 952,
+      "top": 257,
+      "bottom": 441,
+      "width": 1440,
+      "height": 1000,
+      "scroll": 464,
+      "client": 464,
+      "onTop": true
+    },
+    "gallery": {
+      "left": 20,
+      "right": 580,
+      "top": 149,
+      "bottom": 333,
+      "width": 1440,
+      "height": 1000,
+      "scroll": 560,
+      "client": 560,
+      "onTop": true
+    },
+    "long": {
+      "left": 20,
+      "right": 580,
+      "top": 381,
+      "bottom": 545,
+      "width": 1440,
+      "height": 1000,
+      "scroll": 560,
+      "client": 560,
+      "onTop": true
+    },
+    "modal": {
+      "left": 500,
+      "right": 940,
+      "top": 520,
+      "bottom": 704,
+      "width": 1440,
+      "height": 1000,
+      "scroll": 440,
+      "client": 440,
+      "onTop": true
+    },
+    "keyboard": true,
+    "cancelPreservesStoredValue": true,
+    "requiredValidation": true,
+    "inheritedDisabled": true,
+    "pageErrors": []
+  },
+  {
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "mode": "dark",
+    "equipment": {
+      "left": 488,
+      "right": 952,
+      "top": 257,
+      "bottom": 441,
+      "width": 1440,
+      "height": 1000,
+      "scroll": 464,
+      "client": 464,
+      "onTop": true
+    },
+    "gallery": {
+      "left": 20,
+      "right": 580,
+      "top": 149,
+      "bottom": 335,
+      "width": 1440,
+      "height": 1000,
+      "scroll": 558,
+      "client": 558,
+      "onTop": true
+    },
+    "long": {
+      "left": 20,
+      "right": 580,
+      "top": 381,
+      "bottom": 547,
+      "width": 1440,
+      "height": 1000,
+      "scroll": 558,
+      "client": 558,
+      "onTop": true
+    },
+    "modal": {
+      "left": 500,
+      "right": 940,
+      "top": 520,
+      "bottom": 704,
+      "width": 1440,
+      "height": 1000,
+      "scroll": 440,
+      "client": 440,
+      "onTop": true
+    },
+    "keyboard": true,
+    "cancelPreservesStoredValue": true,
+    "requiredValidation": true,
+    "inheritedDisabled": true,
+    "pageErrors": []
+  },
+  {
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "mode": "high_contrast",
+    "equipment": {
+      "left": 488,
+      "right": 952,
+      "top": 257,
+      "bottom": 441,
+      "width": 1440,
+      "height": 1000,
+      "scroll": 464,
+      "client": 464,
+      "onTop": true
+    },
+    "gallery": {
+      "left": 20,
+      "right": 580,
+      "top": 149,
+      "bottom": 333,
+      "width": 1440,
+      "height": 1000,
+      "scroll": 560,
+      "client": 560,
+      "onTop": true
+    },
+    "long": {
+      "left": 20,
+      "right": 580,
+      "top": 381,
+      "bottom": 545,
+      "width": 1440,
+      "height": 1000,
+      "scroll": 560,
+      "client": 560,
+      "onTop": true
+    },
+    "modal": {
+      "left": 500,
+      "right": 940,
+      "top": 520,
+      "bottom": 704,
+      "width": 1440,
+      "height": 1000,
+      "scroll": 440,
+      "client": 440,
+      "onTop": true
+    },
+    "keyboard": true,
+    "cancelPreservesStoredValue": true,
+    "requiredValidation": true,
+    "inheritedDisabled": true,
+    "pageErrors": []
+  },
+  {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "mode": "light",
+    "equipment": {
+      "left": 40,
+      "right": 350,
+      "top": 219.203125,
+      "bottom": 403.203125,
+      "width": 390,
+      "height": 844,
+      "scroll": 310,
+      "client": 310,
+      "onTop": true
+    },
+    "gallery": {
+      "left": 20,
+      "right": 370,
+      "top": 149,
+      "bottom": 333,
+      "width": 390,
+      "height": 844,
+      "scroll": 350,
+      "client": 350,
+      "onTop": true
+    },
+    "long": {
+      "left": 20,
+      "right": 370,
+      "top": 381,
+      "bottom": 565,
+      "width": 390,
+      "height": 844,
+      "scroll": 350,
+      "client": 350,
+      "onTop": true
+    },
+    "modal": {
+      "left": 36,
+      "right": 354,
+      "top": 442,
+      "bottom": 626,
+      "width": 390,
+      "height": 844,
+      "scroll": 318,
+      "client": 318,
+      "onTop": true
+    },
+    "keyboard": true,
+    "cancelPreservesStoredValue": true,
+    "requiredValidation": true,
+    "inheritedDisabled": true,
+    "pageErrors": []
+  },
+  {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "mode": "dark",
+    "equipment": {
+      "left": 40,
+      "right": 350,
+      "top": 219.203125,
+      "bottom": 403.203125,
+      "width": 390,
+      "height": 844,
+      "scroll": 310,
+      "client": 310,
+      "onTop": true
+    },
+    "gallery": {
+      "left": 20,
+      "right": 370,
+      "top": 149,
+      "bottom": 335,
+      "width": 390,
+      "height": 844,
+      "scroll": 348,
+      "client": 348,
+      "onTop": true
+    },
+    "long": {
+      "left": 20,
+      "right": 370,
+      "top": 381,
+      "bottom": 567,
+      "width": 390,
+      "height": 844,
+      "scroll": 348,
+      "client": 348,
+      "onTop": true
+    },
+    "modal": {
+      "left": 36,
+      "right": 354,
+      "top": 442,
+      "bottom": 626,
+      "width": 390,
+      "height": 844,
+      "scroll": 318,
+      "client": 318,
+      "onTop": true
+    },
+    "keyboard": true,
+    "cancelPreservesStoredValue": true,
+    "requiredValidation": true,
+    "inheritedDisabled": true,
+    "pageErrors": []
+  },
+  {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "mode": "high_contrast",
+    "equipment": {
+      "left": 40,
+      "right": 350,
+      "top": 219.203125,
+      "bottom": 403.203125,
+      "width": 390,
+      "height": 844,
+      "scroll": 310,
+      "client": 310,
+      "onTop": true
+    },
+    "gallery": {
+      "left": 20,
+      "right": 370,
+      "top": 149,
+      "bottom": 333,
+      "width": 390,
+      "height": 844,
+      "scroll": 350,
+      "client": 350,
+      "onTop": true
+    },
+    "long": {
+      "left": 20,
+      "right": 370,
+      "top": 381,
+      "bottom": 565,
+      "width": 390,
+      "height": 844,
+      "scroll": 350,
+      "client": 350,
+      "onTop": true
+    },
+    "modal": {
+      "left": 36,
+      "right": 354,
+      "top": 442,
+      "bottom": 626,
+      "width": 390,
+      "height": 844,
+      "scroll": 318,
+      "client": 318,
+      "onTop": true
+    },
+    "keyboard": true,
+    "cancelPreservesStoredValue": true,
+    "requiredValidation": true,
+    "inheritedDisabled": true,
+    "pageErrors": []
+  }
+]

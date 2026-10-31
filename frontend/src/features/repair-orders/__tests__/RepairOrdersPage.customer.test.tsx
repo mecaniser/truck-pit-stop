@@ -1,3 +1,4 @@
+import { chooseSelectOption } from '@/test-utils/selectOption'
 import type { ReactNode } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -517,9 +518,9 @@ it('keeps history-filter focus after order cancellation and restores return focu
   fireEvent.change(search, {target:{value:'RO'}})
   const status = screen.getByRole('combobox', {name:'Repair history status'})
   status.focus()
-  fireEvent.change(status, {target:{value:'in_progress'}})
+  await chooseSelectOption(status, 'in_progress')
   await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)) })
-  expect(status).toHaveFocus()
+  expect(screen.getByRole('combobox', { name: 'Repair history status' })).toHaveFocus()
   expect(screen.getByTestId('location')).toHaveTextContent('filter=active')
   expect(screen.getByRole('button',{name:'Edit vehicle'})).toBeVisible()
   await cancelOrder()
@@ -546,7 +547,7 @@ it('reloads the truck chosen after cancellation with its own history filters', a
   fireEvent.click(await screen.findByRole('button', { name: 'Back to Northline Logistics' }))
   fireEvent.click(await screen.findByRole('button', { name: /Open .*Unit C-002/ }))
   fireEvent.change(await screen.findByRole('searchbox', { name: 'Search this truck’s repair history' }), { target: { value: 'brake' } })
-  fireEvent.change(screen.getByRole('combobox', { name: 'Repair history status' }), { target: { value: 'completed' } })
+  await chooseSelectOption(screen.getByRole('combobox', { name: 'Repair history status' }), 'completed')
   expect(screen.getByTestId('location')).toHaveTextContent('vehicle=vehicle-2')
   const restoredRoute = `/dashboard/customers${screen.getByTestId('location').textContent}`
   cleanup()

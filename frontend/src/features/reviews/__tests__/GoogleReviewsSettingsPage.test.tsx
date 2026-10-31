@@ -1,3 +1,4 @@
+import { chooseSelectOption } from '@/test-utils/selectOption'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -106,8 +107,10 @@ describe('GoogleReviewsSettingsPage reply model (DB-086)', () => {
     show()
     const picker = await screen.findByRole('combobox', { name: /Reply model/ })
     await waitFor(() => expect(picker).toHaveValue('claude-opus-4-8'))
+    await userEvent.click(picker)
     expect(screen.getByRole('option', { name: 'Claude Sonnet 5 (faster, lower cost)' })).toBeInTheDocument()
-    await userEvent.selectOptions(picker, 'claude-sonnet-5')
+    await userEvent.keyboard('{Escape}')
+    await chooseSelectOption(picker, 'claude-sonnet-5', userEvent)
     await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
     expect(mocks.put).toHaveBeenCalledWith('/google-reviews/settings', expect.objectContaining({ reply_model: 'claude-sonnet-5' }))
   })

@@ -1,3 +1,4 @@
+import PlatformSelect from '@/components/PlatformSelect'
 import { usePricingCommand } from '@/features/parts-pricing/usePricingCommand'
 import { useMaintenanceFinalization } from '@/features/maintenance/useMaintenanceFinalization'
 import { useMaintenanceRemoval } from '@/features/maintenance/useMaintenanceRemoval'
@@ -3355,7 +3356,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
         {/* Filters — below search on all sizes */}
         {/* < sm: compact select */}
-        <select
+        <PlatformSelect
           className="sm:hidden mt-3 h-10 px-3 rounded-lg text-sm font-medium bg-white/20 text-white w-full border-0 outline-none"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
@@ -3365,7 +3366,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
               {option.label}
             </option>
           ))}
-        </select>
+        </PlatformSelect>
 
         {/* sm+: single-row horizontal scroll pills */}
         <div className="hidden sm:flex mt-3 overflow-x-auto gap-2 scrollbar-hide pb-0.5">
@@ -6107,7 +6108,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                         className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-500"
                       />
                       <div className="grid grid-cols-2 gap-2">
-                        <select
+                        <PlatformSelect
                           value={recServiceForm.priority}
                           onChange={(e) => setRecServiceForm(p => ({ ...p, priority: e.target.value as RecommendedServicePriority }))}
                           className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
@@ -6115,7 +6116,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                           <option value="urgent">Urgent</option>
                           <option value="soon">Soon</option>
                           <option value="monitor">Monitor</option>
-                        </select>
+                        </PlatformSelect>
                         <input
                           type="number"
                           value={recServiceForm.estimated_cost}
@@ -6517,7 +6518,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 {isFleetPayment && (
                   <label className="block">
                     <span className="mb-1.5 block text-sm font-semibold text-gray-800">Provider</span>
-                    <select
+                    <PlatformSelect
                       value={manualPaymentProvider}
                       onChange={(event) => setManualPaymentProvider(event.target.value)}
                       className="h-11 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
@@ -6526,7 +6527,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       {FLEET_PAYMENT_PROVIDERS.map((provider) => (
                         <option key={provider.value} value={provider.value}>{provider.label}</option>
                       ))}
-                    </select>
+                    </PlatformSelect>
                   </label>
                 )}
 

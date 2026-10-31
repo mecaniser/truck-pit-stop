@@ -1,3 +1,4 @@
+import PlatformSelect from '@/components/PlatformSelect'
 import { pricingError, pricingMoney } from '@/features/parts-pricing/contract'
 import PartPolicySummary from '@/features/parts-pricing/PartPolicySummary'
 /* eslint-disable react-refresh/only-export-components -- Session-scoped purchase preparation is shared with Purchasing. */
@@ -1865,7 +1866,7 @@ function SupplierSources({ part, manage, onChanged }: { part: PartDetail; manage
       onSubmit={(event) => { event.preventDefault(); void save() }}
     >
       <h4>{editing === 'new' ? 'Add supplier source' : `Edit ${editing.supplier_name || 'supplier source'}`}</h4>
-      {editing === 'new' && <label>Supplier<select ref={newSupplierFieldRef} disabled={saving || suppliersQuery.isLoading} value={supplierId} onChange={(event) => setSupplierId(event.target.value)}><option value="">Choose supplier</option>{(suppliersQuery.data?.items || []).filter((supplier) => !part.supplier_sources.some((source) => source.supplier_id === supplier.id)).map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></label>}
+      {editing === 'new' && <label>Supplier<PlatformSelect ref={newSupplierFieldRef} disabled={saving || suppliersQuery.isLoading} value={supplierId} onChange={(event) => setSupplierId(event.target.value)}><option value="">Choose supplier</option>{(suppliersQuery.data?.items || []).filter((supplier) => !part.supplier_sources.some((source) => source.supplier_id === supplier.id)).map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</PlatformSelect></label>}
       <label>Supplier part number<input ref={supplierPartNumberFieldRef} disabled={saving} value={supplierPartNumber} maxLength={150} onChange={(event) => setSupplierPartNumber(event.target.value)} /></label>
       <div><label>Minimum order<input disabled={saving} type="number" min={1} max={999} step={1} value={minimum} onChange={(event) => setMinimum(event.target.value)} /></label><label>Pack size<input disabled={saving} type="number" min={1} max={999} step={1} value={pack} onChange={(event) => setPack(event.target.value)} /></label><label>Lead time (days)<input disabled={saving} type="number" min={0} max={365} step={1} value={leadTime} onChange={(event) => setLeadTime(event.target.value)} /></label></div>
       <label className="db-parts-workbench__source-check"><input disabled={saving} type="checkbox" checked={preferred} onChange={(event) => setPreferred(event.target.checked)} />Use as preferred source for this part</label>

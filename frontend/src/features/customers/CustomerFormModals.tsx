@@ -7,6 +7,7 @@ import { AlertTriangle, Search, Truck, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 import api from '@/lib/api'
+import BaseSelect from '@/components/BaseSelect'
 import { pricingError } from '@/features/parts-pricing/contract'
 import { Spinner } from '@/components/ui'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
@@ -695,19 +696,22 @@ const renderCustomerForm = (onCancel: () => void) => (
       <div className="space-y-4">
         {/* Country first - affects other fields */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="customer-billing-country" className="block text-sm font-medium text-gray-700 mb-1">
             Country
           </label>
-          <select
-            name="billing_country"
+          <BaseSelect
+            id="customer-billing-country"
             value={formData.billing_country}
-            onChange={handleInputChange}
-            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-          >
-            <option value="USA">🇺🇸 United States</option>
-            <option value="Canada">🇨🇦 Canada</option>
-            <option value="Mexico">🇲🇽 Mexico</option>
-          </select>
+            onChange={(value) => setFormData(prev => ({ ...prev, billing_country: value, billing_state: '' }))}
+            searchable={false}
+            heightClass="h-11"
+            optionHeightClass="min-h-11"
+            options={[
+              { value: 'USA', label: '🇺🇸 United States' },
+              { value: 'Canada', label: '🇨🇦 Canada' },
+              { value: 'Mexico', label: '🇲🇽 Mexico' },
+            ]}
+          />
         </div>
 
         <div>
@@ -803,21 +807,20 @@ const renderCustomerForm = (onCancel: () => void) => (
             />
           </div>
           <div className="col-span-2 sm:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="customer-billing-state" className="block text-sm font-medium text-gray-700 mb-1">
               {getRegionLabel()}
             </label>
-            <select
-              name="billing_state"
+            <BaseSelect
+              id="customer-billing-state"
               value={formData.billing_state}
-              onChange={handleInputChange}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-            >
-              {getRegions().map((region) => (
-                <option key={region.code} value={region.code}>
-                  {region.code ? `${region.code} - ${region.name}` : region.name}
-                </option>
-              ))}
-            </select>
+              onChange={(value) => setFormData(prev => ({ ...prev, billing_state: value }))}
+              heightClass="h-11"
+              optionHeightClass="min-h-11"
+              options={getRegions().map((region) => ({
+                value: region.code,
+                label: region.code ? `${region.code} - ${region.name}` : region.name,
+              }))}
+            />
           </div>
         </div>
       </div>

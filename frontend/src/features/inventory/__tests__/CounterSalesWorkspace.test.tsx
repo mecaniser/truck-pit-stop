@@ -1,3 +1,4 @@
+import { chooseSelectOption } from '@/test-utils/selectOption'
 import { quote } from '@/features/parts-pricing/__tests__/fixtures'
 import type { ResolveRequest } from '@/features/parts-pricing/contract'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -218,7 +219,7 @@ describe('DB-045 bounded manual Parts sales workspace', () => {
     installApi()
     const user = userEvent.setup()
     renderWorkspace('/dashboard/garage/inventory/sales?sale=sale-1')
-    await user.selectOptions(await screen.findByLabelText('Tender'), 'external_terminal')
+    await chooseSelectOption(await screen.findByLabelText('Tender'), 'external_terminal', user)
     await user.type(screen.getByLabelText('Reference'), 'TERM-44')
     await user.click(screen.getByRole('button', { name: /Complete sale/ }))
     await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/parts-operations/counter-sales/sale-1/checkout', {

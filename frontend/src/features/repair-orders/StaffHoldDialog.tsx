@@ -1,3 +1,4 @@
+import PlatformSelect from '@/components/PlatformSelect'
 import { useState } from 'react'
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -68,12 +69,12 @@ export default function StaffHoldDialog({ order, onClose, onUpdated }: {
             </> : <>
               <p className="text-sm text-gray-600">Stops all active timers on this order. Assignments and completed work stay in place.</p>
               <label className="block text-sm font-medium">Hold reason
-                <select autoFocus value={reason} disabled={mutation.isPending} onChange={event => setReason(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm">
+                <PlatformSelect autoFocus value={reason} disabled={mutation.isPending} onChange={event => setReason(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm">
                   <option value="waiting_for_parts">Waiting for parts</option>
                   <option value="waiting_for_customer_approval">Waiting for customer approval</option>
                   <option value="need_more_info">More information needed</option>
                   <option value="custom">Other reason</option>
-                </select>
+                </PlatformSelect>
               </label>
               {reason === 'custom' && <label className="block text-sm font-medium">Other hold reason
                 <textarea value={customReason} disabled={mutation.isPending} required maxLength={100} rows={3} onChange={event => setCustomReason(event.target.value)} className="mt-1 w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-base" />
