@@ -7502,3 +7502,5 @@ html.customer-portal-active {
 .db-presentation-new .db-staff-main:has(.db-parts-workbench) { background:var(--surface-overlay); }
 .db-presentation-new :is(.db-parts-workbench__body,.db-parts-workbench__ledger-workspace,.db-parts-workbench__ledger,.db-parts-workbench__rows,.db-parts-workbench__table-head,.db-parts-workbench__load-more) { background:var(--surface-overlay); }
 .db-presentation-new .db-parts-workbench__row { outline:1px solid var(--workspace-border); outline-offset:-1px; }
+/* Supplier search meets its scroll container edge; contain focus paint. */
+.db-presentation-new .db-suppliers-workspace .db-search-add-bar__field:focus-within { outline-offset:-2px; }
