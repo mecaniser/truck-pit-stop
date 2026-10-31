@@ -1,3 +1,5 @@
+> **DB-042 Search focus clipping / IN PROGRESS (2026-10-31), Frontend & UX:** User finds search outline clipped at parent edge. Keep the 2px focus ring inside the search component (offset -2px); preserve keyboard indication and layout. Reproduce and verify desktop/narrow focus in PR #726 before release.
+
 > **DB-042 Row borders / IN PROGRESS (2026-10-31), Frontend & UX:** Final user acceptance: white surrounding page and full list, gray selected-part inspector, thin rounded border on every list item. Use inset outline with no geometry shift; retain selected/hover/keyboard states. Final QA/CI pending on updated PR #726.
 
 > **DB-042 Final surface clarification / IN PROGRESS (2026-10-31), Frontend & UX:** Only selected-part inspector stays gray. Surrounding page AND list/header/gaps/gutters/footer white; preserve selected beige and hover/focus. Supersedes gray-list interpretation; PR #726 held for final QA and exact-head CI.
