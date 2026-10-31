@@ -19,7 +19,7 @@ contract change; no customer mutations or email sends during verification.
 ## Evidence
 
 - Backend: initial review/line-snapshot/shop-profile suites 25/25. Export/review/reminder-race suites 29/29, plus final actual authenticated+guest response integration test 1/1. All use fictional isolated data.
-- Frontend: shared invitation, real customer receipt page and settings suites 44/44; TypeScript and Vite production build pass. Raw ESLint reports 12 existing settings violations; baseline-aware changed-source lint recorded on candidate commit.
+- Frontend: shared invitation, real customer receipt page and settings suites 44/44; TypeScript and Vite production build pass. Raw ESLint reports 12 existing settings violations; baseline-aware changed-source lint passes across8 changed files.
 - Independent fresh agent `invoice_review_gate`: offline QA/security GO after finding/fixing fleet-export omission and reminder body placement. Independently reproduced export 9/9, earlier backend25/frontend11. No remaining P0–P2 finding.
 - Migration: sole head194; independent populated SQLite add/remove check preserves row, nullable/no default. Full PostgreSQL chain and deployed migration not verified locally.
 - Actual guest and customer portal components bundled with fictional axios adapter (no backend/provider requests): desktop1280 and phone390 have correct hyperlink, noopener/noreferrer, no horizontal overflow; missing setting omits invitation. Screenshots under local `output/playwright/`. Shop Profile input checked at both widths; unit test saves/clears.
@@ -35,6 +35,11 @@ services preserved. Test dependencies linked; no secrets copied. Frontend5173
 not started. Standalone fictional component preview used127.0.0.1:4179 only,
 with no database/API access. This is synthetic browser evidence, not configured
 full-stack or production acceptance.
+
+The fictional preview server and browser session were stopped after checks.
+Draft PR: https://github.com/mecaniser/truck-pit-stop/pull/717.
+Credential-in-URL test fixtures were rewritten after a pre-push scanner false positive;
+normal guarded push then passed. Final focused fixtures backend18/frontend7 pass.
 
 ## Remaining release gates
 
