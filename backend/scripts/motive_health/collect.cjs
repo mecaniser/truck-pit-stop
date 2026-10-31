@@ -5,6 +5,59 @@ const fs=require('node:fs');
 const {readVehicleVin}=require('../motive_sync/collect_trips.cjs');
 const ORIGIN='https://app.gomotive.com', COMPANY='77 CARGO LLC', COMPANY_ID='KT8934277';
 const SCOPE='Current fault codes';
+const {readReviewedPageIdentity,summarySnapshot}=require('../motive_sync/vehicle_identity.cjs');
+function parseVitals(fields) {
+ const value=(label,max,unit)=>{
+  const matches=fields.filter(f=>String(f.label).trim().toLowerCase()===label);
+  if(matches.length!==1)return null;
+  const raw=String(matches[0].value).trim();
+  const pattern=unit==='mi'?/^(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?\s*(mi|km)$/i:/^(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?(?:\s*(?:h|hrs?|hours?))?$/i;
+  const match=raw.match(pattern);if(!match)return null;
+  let number=Number((match[1]+(match[2]||'')).replaceAll(',',''));
+  if(unit==='mi'&&match[3].toLowerCase()==='km')number/=1.609344;
+  return Number.isFinite(number)&&number>=0&&number<=max?number:null;
+ };
+ return {odometer_miles:value('odometer',100000000,'mi'),engine_hours:value('engine hours',10000000,'h')};
+}
+function liveVitals(snapshot,identity,vin) {
+ const {assertLiveProvider}=require('../motive_sync/collect.cjs');
+ try{assertLiveProvider(snapshot.url,identity.href.split('/').pop());}catch{throw new Error('vehicle_source_changed');}
+ const vins=snapshot.fields.filter(f=>f.label.trim().toUpperCase()==='VIN');
+ if(vins.length!==1||vins[0].value.trim()!==vin)throw new Error('vehicle_identity_changed');
+ return parseVitals(snapshot.fields);
+}
+function liveVitalsSnapshot() {
+ const visible=el=>el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden';
+ const tables=Array.from(document.querySelectorAll('table.detail-table')).filter(visible).filter(table=>Array.from(table.querySelectorAll('tr')).some(row=>row.querySelector('td')?.textContent.trim().toUpperCase()==='VIN'));
+ const fields=tables.length===1?Array.from(tables[0].querySelectorAll('tr')).filter(visible).flatMap(row=>{
+  const cells=row.querySelectorAll(':scope > td');
+  return cells.length===2?[{label:cells[0].textContent.trim(),value:cells[1].textContent.trim()}]:[];
+ }):[];
+ return {url:location.href,fields};
+}
+async function readVitals(context,identity,vin) {
+ const page=await context.newPage();page.setDefaultTimeout(15000);
+ let summary={odometer_miles:null,engine_hours:null,source_read_at:new Date().toISOString()};
+ try {
+  await page.goto(ORIGIN+'/en-US/'+identity.href,{waitUntil:'domcontentloaded',timeout:45000});
+  const before=await readReviewedPageIdentity(page,identity);
+  if(before.vin!==vin)throw new Error('vehicle_identity_changed');
+  const fields=(await page.evaluate(summarySnapshot)).fields;
+  const after=await readReviewedPageIdentity(page,identity);
+  if(after.vin!==vin)throw new Error('vehicle_identity_changed');
+  summary={...parseVitals(fields),source_read_at:new Date().toISOString()};
+  // Live > Other details has engine hours; the vehicle summary omits this field.
+  await page.getByRole('link',{name:'Live',exact:true}).filter({visible:true}).first().click();
+  await page.getByText(vin,{exact:true}).first().waitFor();
+  await page.locator('table.detail-table').filter({visible:true}).first().waitFor();
+  const values=liveVitals(await page.evaluate(liveVitalsSnapshot),identity,vin);
+  return {...values,source_read_at:new Date().toISOString()};
+ }catch(error){
+  if(['vehicle_identity_changed','vin_changed','vehicle_source_changed','ambiguous_vin'].includes(error.message))throw error;
+  if(new URL(page.url()).origin!==ORIGIN)throw new Error('session_lost');
+  return summary;
+ }finally{await page.close();}
+}
 const HEADERS=['vehicle or asset','availability','defects','fault codes','next service','',''];
 function parseCount(text) {
  if(!/^\d+$/.test(text.trim()))throw new Error('count_unavailable');
@@ -165,8 +218,9 @@ async function collect(output) {
   const vins=new Set();
   for(const identity of directory.rows) {
    const vin=await readVehicleVin(context,identity);if(vin&&vins.has(vin))throw new Error('duplicate_vin');if(vin)vins.add(vin);
+   const vitals=vin?await readVitals(context,identity,vin):null;
    const observation=vin?await tasks.run('health_vehicle',[identity.href,vin],async()=>({...(await vehicleCodes(context,identity)),source_read_at:new Date().toISOString()}),{cacheable:row=>row.state==='captured'}):{state:'unavailable',count_before:null,count_after:null,explicit_empty:false,codes:[],reason:'vin_unavailable'};
-   result.vehicles.push({provider_vehicle_id:identity.href.split('/').pop(),unit:identity.unit,vin,source_read_at:new Date().toISOString(),source_scope:SCOPE,...observation});save(output,result);
+   result.vehicles.push({provider_vehicle_id:identity.href.split('/').pop(),unit:identity.unit,vin,source_read_at:new Date().toISOString(),source_scope:SCOPE,...observation,vitals});save(output,result);
    console.log(JSON.stringify({stage:'health_progress',attempted:result.vehicles.length,total:directory.count}));
   }
   tasks.assertFresh();phase('health_directory_after');
@@ -183,4 +237,4 @@ function safeReason(error) {
  return known.includes(error?.message)?error.message:error?.name==='TimeoutError'?'ui_timeout':'health_data_unavailable';
 }
 if(require.main===module){if(!process.argv[2]){console.error('Output file required');process.exitCode=1;}else collect(process.argv[2]).then(r=>console.log(JSON.stringify({stage:'health_collection_complete',complete:r.complete,vehicles:r.vehicles.length}))).catch(error=>{failed(process.argv[2],error);console.error(JSON.stringify({stage:'health_collection_failed',reason:safeReason(error),import_permitted:false}));process.exitCode=1;});}
-module.exports={collect,parseCount,parseCard,validateCounts,validateInventory,vehicleCodes,safeReason};
+module.exports={parseVitals,liveVitals,liveVitalsSnapshot,readVitals,collect,parseCount,parseCard,validateCounts,validateInventory,vehicleCodes,safeReason};

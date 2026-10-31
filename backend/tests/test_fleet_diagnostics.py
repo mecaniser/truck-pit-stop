@@ -477,3 +477,117 @@ async def test_current_vin_and_membership_read_bounds_hide_old_capture(
     with pytest.raises(HTTPException) as exc:
         await service.read(db_session, actor.tenant_id, vehicle.id)
     assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("faults_available", [True, False])
+async def test_health_vitals_receipt_atomic_recovery_and_projection(
+    _db_engine, db_session, monkeypatch, tmp_path, faults_available
+):
+    from app.db.models.fleet_telemetry import FleetTelemetrySnapshot
+    from app.services import fleet_telemetry
+    from tests.test_db036_fleet_telemetry import board
+
+    actor, truck, member = await prepared(db_session, monkeypatch)
+    member.effective_from = now() - timedelta(days=1)
+    original_mileage = truck.mileage
+    await db_session.commit()
+    source = document()
+    source["vehicles"][0]["vitals"] = {
+        "source_read_at": source["vehicles"][0]["source_read_at"],
+        "odometer_miles": 692224.14,
+        "engine_hours": 0,
+    }
+    if not faults_available:
+        source["vehicles"][0].update(
+            state="unavailable", codes=[], explicit_empty=False, reason="ui_timeout"
+        )
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    args = (
+        factory,
+        source,
+        actor.tenant_id,
+        actor.id,
+        "77 CARGO LLC",
+        "KT8934277",
+        tmp_path / "vitals.json",
+    )
+    dry = await run(*args)
+    assert dry["committed"] is False
+    async with factory() as db:
+        assert (
+            await db.execute(select(func.count()).select_from(FleetTelemetrySnapshot))
+        ).scalar_one() == 0
+    first = await run(*args, commit=True)
+    assert first["stage"] == "verified"
+    repeated = await run(*args, commit=True, recovery=True)
+    assert repeated["rows"][0]["capture_id"] == first["rows"][0]["capture_id"]
+    async with factory() as db:
+        saved = (await db.execute(select(FleetTelemetrySnapshot))).scalar_one()
+        assert saved.observed_at is None and saved.engine_hours == 0
+        assert saved.odometer_miles == 692224.14
+        projected = board(truck)
+        await fleet_telemetry.attach(db, [projected], actor.tenant_id)
+        assert projected.telemetry.engine_hours.value == 0
+        assert projected.telemetry.odometer.value == 692224.14
+    await db_session.refresh(truck)
+    assert truck.mileage == original_mileage
+
+
+@pytest.mark.parametrize("value", [True, -1, float("nan"), float("inf"), "100"])
+def test_health_vitals_reject_invalid_numeric_values(value):
+    from scripts.motive_health.import_health import validate
+
+    source = document()
+    source["vehicles"][0]["vitals"] = {
+        "source_read_at": source["vehicles"][0]["source_read_at"],
+        "odometer_miles": value,
+    }
+    with pytest.raises(ValueError):
+        validate(source, "77 CARGO LLC", "KT8934277")
+
+
+@pytest.mark.asyncio
+async def test_vitals_cannot_cross_fleet_or_membership_time(
+    _db_engine, db_session, monkeypatch, tmp_path
+):
+    from app.db.models.fleet_telemetry import FleetTelemetrySnapshot
+
+    actor, _, member = await prepared(db_session, monkeypatch)
+    member.effective_from = now() - timedelta(days=1)
+    await db_session.commit()
+    source = document()
+    source["vehicles"][0]["vitals"] = {
+        "source_read_at": source["vehicles"][0]["source_read_at"],
+        "odometer_miles": 10,
+    }
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    receipt = await run(
+        factory,
+        source,
+        actor.tenant_id,
+        actor.id,
+        "77 CARGO LLC",
+        "KT8934277",
+        tmp_path / "foreign.json",
+        commit=True,
+        expected_customer_id=uuid4(),
+    )
+    assert all(row["status"] == "excluded" for row in receipt["rows"])
+    member.effective_from = now() - timedelta(seconds=10)
+    await db_session.commit()
+    with pytest.raises(ValueError, match="outside current membership"):
+        await run(
+            factory,
+            source,
+            actor.tenant_id,
+            actor.id,
+            "77 CARGO LLC",
+            "KT8934277",
+            tmp_path / "old.json",
+            commit=True,
+        )
+    async with factory() as db:
+        assert (
+            await db.execute(select(func.count()).select_from(FleetTelemetrySnapshot))
+        ).scalar_one() == 0
