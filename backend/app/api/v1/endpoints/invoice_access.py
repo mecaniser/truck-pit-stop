@@ -1198,8 +1198,9 @@ async def create_portal_from_invoice_link(
 async def download_invoice_pdf_by_token(
     token: str,
     db: AsyncSession = Depends(get_db),
+    print_view: bool = False,
 ):
-    """Public PDF download via invoice access token (no login required)."""
+    """The same authorized invoice PDF, downloaded or opened for printing."""
     from app.api.v1.endpoints.invoices import _load_line_items, _build_invoice_pdf_bytes
 
     payload = await get_invoice_access_payload(token)
@@ -1229,5 +1230,9 @@ async def download_invoice_pdf_by_token(
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f'{"inline" if print_view else "attachment"}; filename="{filename}"',
+            "Cache-Control": "private, no-store",
+            "Referrer-Policy": "no-referrer",
+        },
     )

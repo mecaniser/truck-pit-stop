@@ -602,13 +602,16 @@ export default function InvoiceAccessPage() {
               <Download className="w-4 h-4" />
               Download PDF
             </a>
-            <button
-              onClick={() => window.print()}
+            <a
+              href={`/api/v1/invoice-access/pdf/${token}?print_view=true`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open invoice PDF for printing"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100"
             >
               <Printer className="w-4 h-4" />
               Print
-            </button>
+            </a>
             <button
               onClick={() => {
                 const url = window.location.href
