@@ -27,3 +27,14 @@ Product authorized fixing only the slide cancellation and explicitly excluded In
 ## Painted visibility correction
 
 User screenshots revealed a genuine stacking defect missed by prior geometry/computed-color checks. Screenshot pixel probes before correction returned navy(9,22,38) at the marker center for Shop Work, Orders and Customers, despite their correct computed category colors. My Shop's translucent row allowed its marker through. The shared marker now has z-index1, above positioned navigation rows, while remaining pointer-transparent. Pixel probes now match each category RGB in all four expanded and all four compact selections. Motion/rapid retarget/keyboard/reduced-motion checks also pass. Earlier blanket QA-pass claims are superseded by this painted-pixel acceptance. Inventory remains excluded; no deployment.
+
+
+## Production release — accepted
+
+User accepted the local result and authorized production. Candidate8df4b21e passed all7 checks after integrating current main PR709. PR710 normally merged as `98f5bfa328d03f355571fc5d022a58a1876cad90` at2026-10-31 00:10:50 UTC (Oct30 Eastern). Railway Web `2421e6b3-ab2d-4c9f-94af-1b38130215a2` SUCCESS; public `/build-version` matches merge SHA, built_at2026-10-31T00:13:11.714Z.
+
+Actual existing signed-in production session reloaded the released build. All four primary categories were selected and screenshot pixels sampled at marker centers: each is visibly distinct from the selected-row background; marker/glyph computed RGB match and marker stacking is1. Browser screenshot encoding/color conversion alters raw RGB compared with CSS values, so production acceptance asserts painted foreground versus background plus computed color equality, not an unsupported exact screenshot-to-CSS RGB claim. Local native Chromium lossless pixel checks separately match category RGB exactly.
+
+Live production pointer navigation recorded23 distinct marker positions, confirming visible slide motion. Compact state retains marker stacking1; expanded state restored. Only route navigation and browser-local rail preference controls were exercised. No provider, financial or customer record mutation. Inventory remains excluded.
+
+Production capture: `/Users/sergio_m1_promax/.codex/visualizations/2026/10/30/01a18e7d-68d0-7420-a357-f190993f8409/production-category-marker.png`. Release gate complete.

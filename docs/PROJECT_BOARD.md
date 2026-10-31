@@ -2856,3 +2856,9 @@ DB-147 painted-marker QA correction: user screenshots exposed the shared marker 
 
 
 DB-147 category marker / SHIPPING (2026-10-30), Frontend & UX: Product accepted the painted-visibility and slide correction and authorized production. Candidate integrates current main including PR708. Local pixel checks confirm all four category colors actually paint in expanded/compact states; motion, rapid retarget and accessibility checks pass. Inventory API warning remains explicitly out of scope. Protected PR and production acceptance pending.
+
+
+DB-147 category marker / MERGED, DEPLOYING: PR710 passed all7 checks on8df4b21e and normally merged98f5bfa328d03f355571fc5d022a58a1876cad90. Automatic Web2421e6b3-ab2d-4c9f-94af-1b38130215a2 building. Awaiting exact public build and signed-in painted visibility/motion acceptance. Frontend & UX accountable; Inventory remains excluded.
+
+
+DB-147 category-colored sliding marker / DONE (2026-10-30), Frontend & UX: PR710 passed all7 checks on8df4b21e after integrating PR709 and normally merged98f5bfa328d03f355571fc5d022a58a1876cad90. Web2421e6b3-ab2d-4c9f-94af-1b38130215a2 SUCCESS and public build matches. Signed-in production checks confirm all4 category markers actually paint above selected rows, match glyph computed colors, and live motion has23 distinct sampled positions. Compact state verified; original expanded preference restored. Inventory excluded and unchanged.
