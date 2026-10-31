@@ -86,4 +86,3 @@ already shown to the user remains separate, not represented as a live screenshot
 DB-149 product acceptance is complete: merged, deployed, configured and verified.
 This focused documentation receipt follows on its own branch/PR; it introduces no
 product behavior or production mutation. No remaining product blocker.
-
