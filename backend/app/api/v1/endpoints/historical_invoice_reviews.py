@@ -99,7 +99,8 @@ async def record_evidence(invoice_id: UUID, body: EvidenceRequest, response: Res
             and body.source_content_type != "application/pdf"):
         raise HTTPException(status_code=422, detail="Original invoice or receipt must be PDF")
     # Store the actual source bytes, compute the hash server-side, and require a
-    # different staff reviewer to inspect them before any owner approval.
+    # reviewed source inspection before any owner approval. Owner self-review
+    # requires explicit opt-in and is recorded distinctly from independent review.
     evidence = HistoricalInvoiceEvidence(
         tenant_id=tenant_id, invoice_id=invoice.id, repair_order_id=invoice.repair_order_id,
         source_type=body.source_type, source_reference=body.source_reference.strip(),
@@ -145,6 +146,8 @@ class CorrespondenceIdentityProof(BaseModel):
 
 
 class VerifyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    owner_self_review: bool = False
     identity_proof: CorrespondenceIdentityProof | None = None
     source_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     observed_invoice_number: str = Field(min_length=1, max_length=50)
@@ -168,7 +171,19 @@ async def verify_evidence(invoice_id: UUID, evidence_id: UUID, body: VerifyReque
         raise HTTPException(status_code=404, detail="Evidence not found")
     if evidence.verified_at is not None:
         raise HTTPException(status_code=409, detail="Evidence already verified")
-    if evidence.recorded_by_user_id == user.id:
+    self_review = evidence.recorded_by_user_id == user.id
+    if body.owner_self_review:
+        # Lock the current identity, rather than trusting an earlier auth snapshot
+        # while a concurrent role/tenant/deactivation edit commits.
+        reviewer = (await db.execute(select(User).where(User.id == user.id)
+            .with_for_update(read=True).execution_options(populate_existing=True))).scalar_one_or_none()
+        if (not reviewer or reviewer.role != UserRole.GARAGE_OWNER
+                or reviewer.tenant_id != tenant_id or not reviewer.is_active
+                or reviewer.deleted_at is not None):
+            raise HTTPException(status_code=403, detail="Active shop owner required for self-review")
+        if not self_review:
+            raise HTTPException(status_code=422, detail="Owner self-review requires your own uploaded evidence")
+    elif self_review:
         raise HTTPException(status_code=403, detail="Another staff member must verify source evidence")
     if (body.source_sha256 != evidence.source_sha256
             or hashlib.sha256(evidence.source_document).hexdigest() != evidence.source_sha256
@@ -212,10 +227,12 @@ async def verify_evidence(invoice_id: UUID, evidence_id: UUID, body: VerifyReque
     evidence.verified_target_customer_id = target.id
     evidence.verified_target_legal_name = observed_name
     evidence.verification_note = body.verification_note.strip()
+    evidence.verification_mode = "owner_self_review" if body.owner_self_review else "independent"
     await db.commit()
     response.headers["Cache-Control"] = "no-store"
     return {"evidence_id": evidence.id, "verified_at": evidence.verified_at,
             "verified_by_user_id": evidence.verified_by_user_id,
+            "verification_mode": evidence.verification_mode,
             "verified_target_customer_id": evidence.verified_target_customer_id}
 
 
@@ -270,6 +287,7 @@ async def decide(invoice_id: UUID, body: DecisionRequest, response: Response,
             raise HTTPException(status_code=409, detail="Idempotency key reused for another decision")
         response.headers["Cache-Control"] = "no-store"
         return {"invoice_id": invoice_id, "version": prior.version,
+                "evidence_verification_mode": prior.evidence_verification_mode,
                 "target_customer_id": prior.new_customer_id, "decision_id": prior.id}
     mapping = (await db.execute(select(HistoricalInvoiceMapping).where(
         HistoricalInvoiceMapping.tenant_id == tenant_id,
@@ -293,7 +311,12 @@ async def decide(invoice_id: UUID, body: DecisionRequest, response: Response,
         if not evidence:
             raise HTTPException(status_code=422, detail="Evidence does not belong to invoice")
         if evidence.verified_at is None:
-            raise HTTPException(status_code=422, detail="Source evidence requires independent verification")
+            raise HTTPException(status_code=422, detail="Source evidence requires verification")
+        if (evidence.verified_by_user_id is None
+                or evidence.verification_mode not in (None, "independent", "owner_self_review")
+                or (evidence.verified_by_user_id == evidence.recorded_by_user_id)
+                != (evidence.verification_mode == "owner_self_review")):
+            raise HTTPException(status_code=409, detail="Evidence review audit is inconsistent; fresh review required")
         target = (await db.execute(select(Customer).where(
             Customer.id == body.target_customer_id,
         ).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
@@ -345,6 +368,7 @@ async def decide(invoice_id: UUID, body: DecisionRequest, response: Response,
         tenant_id=tenant_id, invoice_id=invoice_id, evidence_id=evidence.id if evidence else mapping.evidence_id,
         evidence_sha256=evidence.source_sha256 if evidence else None,
         evidence_identity_proof_sha256=evidence.identity_proof_sha256 if evidence else None,
+        evidence_verification_mode=evidence.verification_mode if evidence else None,
         original_bill_to_name=evidence.original_bill_to_name if evidence else None,
         actor_user_id=user.id, old_customer_id=old_target, new_customer_id=new_target,
         action=body.action, reason=body.reason.strip(), version=mapping.version,
@@ -360,4 +384,5 @@ async def decide(invoice_id: UUID, body: DecisionRequest, response: Response,
     await db.commit()
     response.headers["Cache-Control"] = "no-store"
     return {"invoice_id": invoice_id, "version": mapping.version,
+            "evidence_verification_mode": decision.evidence_verification_mode,
             "target_customer_id": new_target, "decision_id": decision.id}
