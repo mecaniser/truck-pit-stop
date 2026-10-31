@@ -135,6 +135,22 @@ describe('DB-045 inventory Activity workspace', () => {
     expect(screen.getByText('$19.95')).toBeInTheDocument()
   })
 
+  it('keeps compact part activity focused on records while preserving filter controls', async () => {
+    apiMocks.get.mockResolvedValue({ data: { items: [event], next_cursor: null } })
+    const user = userEvent.setup()
+    renderUi(<ActivityWorkspace inventoryId="part-1" compact />)
+    expect(await screen.findByRole('heading', { name: 'Stock adjusted' })).toBeInTheDocument()
+    expect(screen.queryByText('A searchable record of catalog, stock, repair, purchasing, returns, and recorded part sales.')).not.toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Search activity')).toHaveAccessibleName('Search Activity')
+    await user.type(screen.getByRole('searchbox'), 'Shelf')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Category' }), 'stock')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    await waitFor(() => expect(apiMocks.get).toHaveBeenLastCalledWith('/parts-operations/activity-events', { params: expect.objectContaining({ inventory_id: 'part-1', search: 'Shelf', category: 'stock', limit: 20 }) }))
+    await user.click(screen.getByRole('button', { name: 'Reset' }))
+    expect(screen.getByRole('searchbox')).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeEnabled()
+  })
+
   it('renders authoritative part lifecycle aggregates without inventing reconstructed history', async () => {
     apiMocks.get.mockResolvedValue({ data: {
       inventory_id: 'part-1',

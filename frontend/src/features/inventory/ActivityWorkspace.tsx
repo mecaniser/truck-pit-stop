@@ -283,12 +283,12 @@ export default function ActivityWorkspace({ inventoryId, compact = false }: { in
   }
   return <section className={`db-activity${compact ? ' is-compact' : ' db-operating-surface__scroller'}`} aria-labelledby={inventoryId ? `part-activity-${inventoryId}` : 'inventory-activity-title'}>
     <div className="db-activity__heading">
-      <div><h2 id={inventoryId ? `part-activity-${inventoryId}` : 'inventory-activity-title'}>{inventoryId ? 'Part activity' : 'Inventory activity'}</h2><p>A searchable record of catalog, stock, repair, purchasing, returns, and recorded part sales.</p></div>
+      <div><h2 id={inventoryId ? `part-activity-${inventoryId}` : 'inventory-activity-title'}>{inventoryId ? 'Part activity' : 'Inventory activity'}</h2>{!compact && <p>A searchable record of catalog, stock, repair, purchasing, returns, and recorded part sales.</p>}</div>
       <button type="button" disabled={exporting} onClick={() => void exportCsv()}><Download aria-hidden="true" />{exporting ? 'Preparing…' : 'Export CSV'}</button>
     </div>
     <form className="db-activity__filters" aria-label="Filter activity" onSubmit={(event) => { event.preventDefault(); apply() }}>
       <div className="db-activity__filter-primary">
-        <label className="is-search"><Search aria-hidden="true" /><span className="sr-only">Search Activity</span><input type="search" value={draft.search} minLength={2} maxLength={200} onChange={(event) => setDraft((current) => ({ ...current, search: event.target.value }))} placeholder="Search parts, people, reasons, or sources" /></label>
+        <label className="is-search"><Search aria-hidden="true" /><span className="sr-only">Search Activity</span><input type="search" value={draft.search} minLength={2} maxLength={200} onChange={(event) => setDraft((current) => ({ ...current, search: event.target.value }))} placeholder={compact ? 'Search activity' : 'Search parts, people, reasons, or sources'} /></label>
         <label className="db-activity__category"><span className="sr-only">Category</span><select aria-label="Category" value={draft.category} onChange={(event) => setDraft((current) => ({ ...current, category: event.target.value as ActivityFilters['category'] }))}>{CATEGORIES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
         {!compact && <details ref={advancedRef} className="db-activity__advanced">
           <summary><SlidersHorizontal aria-hidden="true" /><span>Advanced</span>{advancedFilterCount > 0 && <strong aria-label={`${advancedFilterCount} advanced filters selected`}>{advancedFilterCount}</strong>}<ChevronDown aria-hidden="true" /></summary>
