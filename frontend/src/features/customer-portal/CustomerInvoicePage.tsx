@@ -1,3 +1,6 @@
+import { currentInvoicePaymentSummary } from '@/lib/invoicePaymentPresentation'
+import InvoicePaymentSummary from '@/components/InvoicePaymentSummary'
+import { invoicePaymentLabels } from '@/lib/invoicePaymentLabels'
 import InvoiceReviewLink from '@/components/InvoiceReviewLink'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
@@ -309,8 +312,9 @@ export default function CustomerInvoicePage() {
 
   const backDestination = paymentState?.paymentOrigin || 'History'
   const splitSettlement = settlementQuery.data?.feature_enabled === false ? null : settlementQuery.data
+  const paymentSummary = currentInvoicePaymentSummary(invoice.payment_summary, splitSettlement)
   const settlementFailure = settlementQuery.error && !isSettlementUnavailable(settlementQuery.error)
-  const isPaid = splitSettlement?.state === 'paid' || invoice.status === 'paid'
+  const isPaid = paymentSummary ? paymentSummary.state === 'paid' : splitSettlement?.state === 'paid' || invoice.status === 'paid'
   const cashReceipt = isPaid ? invoice.cash_receipt : null
   const isPending = splitSettlement
     ? isPositiveMoney(splitSettlement.active_pending_principal)
@@ -368,16 +372,16 @@ export default function CustomerInvoicePage() {
             <span aria-hidden="true">·</span>
             <span className="text-[#d9a521]">{invoice.vehicle_info}</span>
             <span className="rounded-full border border-violet-400/35 bg-violet-400/10 px-2.5 py-0.5 text-[11px] font-bold text-[#a78bfa]">
-              {isPaid ? 'paid' : 'invoiced'}
+              {paymentSummary ? invoicePaymentLabels[paymentSummary.state] : isPaid ? 'paid' : 'invoiced'}
             </span>
           </p>
-          {(splitSettlement || cashReceipt) && (
-            <p className="mt-2.5 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#8b92a5]">{cashReceipt ? 'Total paid' : 'Invoice outstanding'}</p>
+          {(splitSettlement || cashReceipt || paymentSummary) && (
+            <p className="mt-2.5 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#8b92a5]">{paymentSummary?.state === 'cancelled' ? 'Invoice status' : cashReceipt ? 'Total paid in cash' : 'Balance due'}</p>
           )}
           <h1 id="payment-total" className={`${splitSettlement ? 'mt-1' : 'mt-2.5'} whitespace-nowrap text-[38px] font-extrabold leading-none tracking-[-0.02em] tabular-nums sm:text-[46px]`}>
-            {money(cashReceipt?.amount ?? splitSettlement?.outstanding_balance ?? pricing.selectedTotal)}
+            {paymentSummary?.state === 'cancelled' ? 'Cancelled' : paymentSummary?.balance_due === null ? 'Unavailable' : money(cashReceipt?.amount ?? splitSettlement?.outstanding_balance ?? paymentSummary?.balance_due ?? (isPaid ? '0' : pricing.selectedTotal))}
           </h1>
-          {!cashReceipt && <p className={`mt-1 min-h-5 text-[13px] font-bold ${selectedMethod === 'zelle' ? 'text-[#2dd4bf]' : 'text-[#8b92a5]'}`}>
+          {!cashReceipt && !isPaid && <p className={`mt-1 min-h-5 text-[13px] font-bold ${selectedMethod === 'zelle' ? 'text-[#2dd4bf]' : 'text-[#8b92a5]'}`}>
             {splitSettlement
               ? selectedMethod === 'zelle'
                 ? 'No card fee with Zelle'
@@ -388,11 +392,15 @@ export default function CustomerInvoicePage() {
           </p>}
         </section>
 
-        {isPaid ? (
+        <InvoicePaymentSummary summary={paymentSummary} dark />
+
+        {paymentSummary && ['cancelled', 'unknown'].includes(paymentSummary.state) ? (
+          <p className="my-4 text-center text-sm">{paymentSummary.state === 'cancelled' ? 'This invoice is cancelled.' : 'Contact the shop to confirm your current balance before paying.'}</p>
+        ) : isPaid ? (
           <section className="mt-4 rounded-[14px] border border-[#2dd4bf]/35 bg-[#2dd4bf]/10 p-5 text-center">
             <p className="text-lg font-extrabold text-[#5eead4]">Paid</p>
             <p className="mt-1 text-sm text-[#c9cdd8]">
-              {money(cashReceipt?.amount ?? invoice.payment?.amount ?? invoice.total_amount)}
+              {cashReceipt ? money(cashReceipt.amount) : paymentSummary ? 'Invoice settled' : money(invoice.payment?.amount ?? invoice.total_amount)}
               {invoice.paid_at ? ` · ${format(new Date(invoice.paid_at), 'MMM d, yyyy')}` : ''}
               {cashReceipt ? ' · Cash' : invoice.payment?.method ? ` · ${invoice.payment.method}` : ''}
             </p>
@@ -637,7 +645,7 @@ export default function CustomerInvoicePage() {
 
         <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[11px] text-[#5c6375]">
           <Lock className="h-3 w-3" />
-          {cashReceipt ? 'Cash payment recorded · Receipt available to download' : 'Secure payment · Receipt emailed instantly'}
+          {paymentSummary?.state === 'cancelled' ? 'Cancelled invoice · No payment requested' : paymentSummary?.state === 'unknown' ? 'Contact the shop to confirm payment details' : cashReceipt ? 'Cash payment recorded · Receipt available to download' : 'Secure payment · Receipt emailed instantly'}
         </p>
       </div>
     </div>

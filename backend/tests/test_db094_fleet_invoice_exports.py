@@ -270,6 +270,8 @@ async def test_customer_invoice_responses_use_invoice_shop_review_url(client, db
     owner, customer, invoice, vehicle = await _seed(db_session, f"review-response-{uuid4().hex}")
     tenant = await db_session.get(Tenant, invoice.tenant_id)
     tenant.review_url = "https://example.com/own-shop-review"
+    from app.db.models.payment import Payment, PaymentMethod, PaymentStatus
+    db_session.add(Payment(tenant_id=tenant.id,invoice_id=invoice.id,payment_number=f"summary-{uuid4().hex}",amount=Decimal("40"),method=PaymentMethod.CHECK,status=PaymentStatus.COMPLETED))
     await db_session.commit()
     token = create_access_token({"sub": str(owner.id)})
     response = await client.get(f"/api/v1/invoices/{invoice.id}", headers={"Authorization": f"Bearer {token}"})
@@ -282,7 +284,33 @@ async def test_customer_invoice_responses_use_invoice_shop_review_url(client, db
     guest = await client.post("/api/v1/invoice-access/resolve", json={"token": "fictional-test-token"})
     assert guest.status_code == 200, guest.text
     assert guest.json()["review_url"] == tenant.review_url
+    assert guest.json()["payment_summary"] == response.json()["payment_summary"]
+    assert guest.json()["payment_summary"]["state"] == "partially_paid"
+    assert guest.json()["payment_summary"]["balance_due"] == "60.00"
     invoice.is_internal = True
     await db_session.commit()
     response = await client.get(f"/api/v1/invoices/{invoice.id}", headers={"Authorization": f"Bearer {token}"})
     assert response.json()["review_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_guest_print_opens_same_invoice_pdf_with_existing_token_guards(client, db_session, monkeypatch):
+    from unittest.mock import AsyncMock
+    from app.api.v1.endpoints import invoice_access
+    owner, customer, invoice, vehicle = await _seed(db_session, f"print-view-{uuid4().hex}")
+    payload = {"invoice_id": str(invoice.id), "tenant_id": str(invoice.tenant_id), "customer_id": str(customer.id)}
+    monkeypatch.setattr(invoice_access, "get_invoice_access_payload", AsyncMock(return_value=payload))
+    base = "/api/v1/invoice-access/pdf/fictional-print-token"
+    download = await client.get(base)
+    printed = await client.get(base + "?print_view=true")
+    assert download.status_code == printed.status_code == 200
+    assert download.headers["content-disposition"].startswith("attachment;")
+    assert printed.headers["content-disposition"].startswith("inline;")
+    assert printed.headers["content-type"] == "application/pdf"
+    assert printed.content.startswith(b"%PDF-")
+    assert {part.strip() for part in printed.headers["cache-control"].split(",")} == {"private", "no-store"}
+    payload["tenant_id"] = str(uuid4())
+    assert (await client.get(base + "?print_view=true")).status_code == 400
+    monkeypatch.setattr(invoice_access, "get_invoice_access_payload", AsyncMock(return_value=None))
+    monkeypatch.setattr(invoice_access, "is_invoice_access_token_consumed", AsyncMock(return_value=False))
+    assert (await client.get(base + "?print_view=true")).status_code == 400

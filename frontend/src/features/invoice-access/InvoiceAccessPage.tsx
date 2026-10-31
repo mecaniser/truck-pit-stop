@@ -1,3 +1,7 @@
+import { currentInvoicePaymentSummary } from '@/lib/invoicePaymentPresentation'
+import InvoicePaymentSummary from '@/components/InvoicePaymentSummary'
+import { invoicePaymentLabels } from '@/lib/invoicePaymentLabels'
+import type { InvoicePaymentPresentation } from '@/types'
 import InvoiceReviewLink from '@/components/InvoiceReviewLink'
 import { useState } from 'react'
 import type { CashReceiptSummary } from '../../types'
@@ -27,6 +31,7 @@ import {
 } from '@/features/payments'
 
 interface InvoiceAccessResolve {
+  payment_summary?: InvoicePaymentPresentation | null
   cash_receipt?: CashReceiptSummary | null
   invoice_id: string
   invoice_number: string
@@ -287,10 +292,11 @@ export default function InvoiceAccessPage() {
   const settlementQuery = useInvoiceSettlement(settlementAccess)
   const allocationQuery = useInvoiceAllocations(settlementAccess, Boolean(settlementQuery.data))
   const splitSettlement = settlementQuery.data?.feature_enabled === false ? null : settlementQuery.data
+  const paymentSummary = currentInvoicePaymentSummary(invoice?.payment_summary, splitSettlement)
   const settlementFailure = settlementQuery.error && !isSettlementUnavailable(settlementQuery.error)
 
   const paidInThisSession = paymentResult !== null
-  const isPaid = !!invoice && (splitSettlement?.state === 'paid' || invoice.is_paid || paidInThisSession)
+  const isPaid = !!invoice && (paymentSummary ? paymentSummary.state === 'paid' : splitSettlement?.state === 'paid' || invoice.is_paid || paidInThisSession)
   const cashReceipt = isPaid ? invoice?.cash_receipt : null
   const paidAt = cashReceipt?.paid_at ?? paymentResult?.paidAt ?? invoice?.paid_at ?? null
   const portalTokenForCreate = paidInThisSession
@@ -596,13 +602,16 @@ export default function InvoiceAccessPage() {
               <Download className="w-4 h-4" />
               Download PDF
             </a>
-            <button
-              onClick={() => window.print()}
+            <a
+              href={`/api/v1/invoice-access/pdf/${token}?print_view=true`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open invoice PDF for printing"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100"
             >
               <Printer className="w-4 h-4" />
               Print
-            </button>
+            </a>
             <button
               onClick={() => {
                 const url = window.location.href
@@ -631,11 +640,13 @@ export default function InvoiceAccessPage() {
 
           <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 mb-6">
             <div className="flex items-center justify-between">
-              <span className="text-gray-700 font-medium">Amount Due</span>
-              <span className="text-3xl font-bold text-gray-900">{formatMoney(isPaid ? '0' : splitSettlement?.outstanding_balance ?? invoice.amount_due)}</span>
+              <span className="text-gray-700 font-medium">{paymentSummary?.state === 'cancelled' ? 'Invoice status' : 'Balance due'}</span>
+              <span className="text-3xl font-bold text-gray-900">{paymentSummary?.state === 'cancelled' ? 'Cancelled' : paymentSummary?.balance_due === null ? 'Unavailable' : formatMoney(isPaid ? '0' : splitSettlement?.outstanding_balance ?? paymentSummary?.balance_due ?? invoice.amount_due)}</span>
             </div>
-            <p className="text-xs text-gray-500 mt-2">Status: {invoice.status.replace('_', ' ')}</p>
+            <p className="text-xs text-gray-500 mt-2">Status: {paymentSummary ? invoicePaymentLabels[paymentSummary.state] : invoice.status.replace('_', ' ')}</p>
           </div>
+
+          <InvoicePaymentSummary summary={paymentSummary} />
 
           <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
             <h3 className="text-sm font-semibold text-gray-900 mb-3">{cashReceipt ? 'Cash Receipt Breakdown' : 'Invoice Breakdown'}</h3>
@@ -669,7 +680,9 @@ export default function InvoiceAccessPage() {
             </div>
           </div>
 
-          {isPaid ? (
+          {paymentSummary && ['cancelled', 'unknown'].includes(paymentSummary.state) ? (
+          <p className="my-4 text-center text-sm">{paymentSummary.state === 'cancelled' ? 'This invoice is cancelled.' : 'Contact the shop to confirm your current balance before paying.'}</p>
+        ) : isPaid ? (
             <section className="space-y-6">
               <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-green-800">
                 <p className="font-semibold">Payment received.</p>
