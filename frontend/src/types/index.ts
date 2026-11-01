@@ -93,6 +93,8 @@ export interface Customer {
   quickbooks_customer_id?: string | null
   // Computed at query time (not stored columns), populated by the list/detail endpoints.
   balance?: string
+  /** Historical ETS remainder, unverified and excluded from balance due. */
+  legacy_ets_balance?: string
   vehicle_count?: number
   single_vehicle_license_plate?: string | null
   // Which field(s) satisfied the current search term (e.g. ["phone"]).
@@ -190,6 +192,8 @@ export interface Vehicle {
   notes: string | null
   /** Positive is due from this customer; negative is an account credit. */
   balance?: string
+  /** Historical ETS remainder, unverified and excluded from balance due. */
+  legacy_ets_balance?: string
   /** Active ownership/authority roles relative to the customer profile being viewed. */
   customer_relationship_types?: Array<'owner' | 'operator'>
   owner_customer_id?: string | null

@@ -108,10 +108,11 @@ class CustomerResponse(CustomerBase):
     quickbooks_customer_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
-    # Outstanding AR: sum(invoice.total_amount) - sum(payments.amount) across all
-    # of this customer's invoices. Computed at query time, not a stored column —
-    # populated by the endpoint, defaults to 0 if not explicitly set.
+    # Current native principal balance; paid invoices and historical ETS rows
+    # contribute zero. Computed live, without changing financial source rows.
     balance: Decimal = Decimal("0.00")
+    # Historical recorded remainder only; never included in current balance.
+    legacy_ets_balance: Decimal = Decimal("0.00")
     # Vehicle count + single plate, computed at query time (not stored). Plate is
     # only meaningful to show directly when there's exactly one vehicle — with
     # multiple vehicles it's ambiguous which plate to surface, so it's left None

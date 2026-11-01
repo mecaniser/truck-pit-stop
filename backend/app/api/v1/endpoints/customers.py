@@ -58,6 +58,7 @@ logger = get_logger(__name__)
 
 from app.schemas.customer import CustomerTaxExemptionRead, CustomerTaxExemptionWrite
 from app.services import customer_tax_exemption
+from app.services.customer_balance import customer_balance_totals, vehicle_balance_totals, customer_balance_sort
 
 
 @router.get("/{customer_id}/tax-exemption", response_model=CustomerTaxExemptionRead)
@@ -88,86 +89,13 @@ def require_role(*allowed_roles: UserRole):
 
 
 async def get_customer_balances(db: AsyncSession, customer_ids: list) -> dict:
-    """Outstanding AR per customer: sum(invoice.total_amount) - sum(payments.amount),
-    across all of a customer's invoices. Two aggregate queries (not N+1) so this
-    scales to the full customer list, not just a single detail view."""
-    if not customer_ids:
-        return {}
-
-    invoiced_result = await db.execute(
-        select(RepairOrder.customer_id, func.coalesce(func.sum(Invoice.total_amount), 0))
-        .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
-        .where(
-            RepairOrder.customer_id.in_(customer_ids),
-            Invoice.status != InvoiceStatus.CANCELLED,
-        )
-        .group_by(RepairOrder.customer_id)
-    )
-    invoiced_by_customer = dict(invoiced_result.all())
-
-    paid_result = await db.execute(
-        select(RepairOrder.customer_id, func.coalesce(func.sum(Payment.amount), 0))
-        .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
-        .join(Payment, Payment.invoice_id == Invoice.id)
-        .where(
-            RepairOrder.customer_id.in_(customer_ids),
-            Invoice.status != InvoiceStatus.CANCELLED,
-            Payment.status == PaymentStatus.COMPLETED,
-        )
-        .group_by(RepairOrder.customer_id)
-    )
-    paid_by_customer = dict(paid_result.all())
-
-    return {
-        cid: invoiced_by_customer.get(cid, 0) - paid_by_customer.get(cid, 0)
-        for cid in customer_ids
-    }
+    balances, _ = await customer_balance_totals(db, customer_ids)
+    return {cid: balances.get(cid, Decimal("0.00")) for cid in customer_ids}
 
 
-async def get_customer_vehicle_balances(
-    db: AsyncSession,
-    customer_id: UUID,
-    vehicle_ids: list[UUID],
-) -> dict[UUID, Decimal]:
-    """Net AR by truck for one customer.
-
-    The customer constraint matters when a truck changes ownership: service
-    history stays with the VIN, while an old owner's invoices must not appear
-    as the new owner's balance.
-    """
-    if not vehicle_ids:
-        return {}
-
-    invoiced_result = await db.execute(
-        select(RepairOrder.vehicle_id, func.coalesce(func.sum(Invoice.total_amount), 0))
-        .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
-        .where(
-            RepairOrder.customer_id == customer_id,
-            RepairOrder.vehicle_id.in_(vehicle_ids),
-            Invoice.status != InvoiceStatus.CANCELLED,
-        )
-        .group_by(RepairOrder.vehicle_id)
-    )
-    invoiced_by_vehicle = dict(invoiced_result.all())
-
-    paid_result = await db.execute(
-        select(RepairOrder.vehicle_id, func.coalesce(func.sum(Payment.amount), 0))
-        .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
-        .join(Payment, Payment.invoice_id == Invoice.id)
-        .where(
-            RepairOrder.customer_id == customer_id,
-            RepairOrder.vehicle_id.in_(vehicle_ids),
-            Invoice.status != InvoiceStatus.CANCELLED,
-            Payment.status == PaymentStatus.COMPLETED,
-        )
-        .group_by(RepairOrder.vehicle_id)
-    )
-    paid_by_vehicle = dict(paid_result.all())
-
-    return {
-        vehicle_id: invoiced_by_vehicle.get(vehicle_id, 0) - paid_by_vehicle.get(vehicle_id, 0)
-        for vehicle_id in vehicle_ids
-    }
+async def get_customer_vehicle_balances(db: AsyncSession, customer_id: UUID, vehicle_ids: list[UUID]) -> dict:
+    balances, _ = await vehicle_balance_totals(db, customer_id, vehicle_ids)
+    return {vid: balances.get(vid, Decimal("0.00")) for vid in vehicle_ids}
 
 
 async def get_customer_vehicle_info(db: AsyncSession, customer_ids: list) -> dict:
@@ -210,9 +138,11 @@ def _customer_response_with_balance(
     balances: dict,
     vehicle_info: Optional[dict] = None,
     search: Optional[str] = None,
+    legacy_balances: Optional[dict] = None,
 ) -> CustomerResponse:
     response = CustomerResponse.model_validate(customer)
-    response.balance = balances.get(customer.id, 0)
+    response.balance = balances.get(customer.id, Decimal("0.00"))
+    response.legacy_ets_balance = (legacy_balances or {}).get(customer.id, Decimal("0.00"))
     if vehicle_info:
         info = vehicle_info.get(customer.id, {})
         response.vehicle_count = info.get("count", 0)
@@ -228,20 +158,17 @@ def _customer_response_with_read_model(
     fallback_balances: dict,
     fallback_vehicle_info: dict,
     search: Optional[str] = None,
+    legacy_balances: Optional[dict] = None,
 ) -> CustomerResponse:
-    """Use the operational projection, falling back only during migration.
-
-    The fallback keeps old or manually restored databases functional until the
-    migration has populated their projection rows. Normal production list reads
-    never execute the historical aggregate queries below.
-    """
+    """Use live financial totals and projected nonfinancial vehicle metadata."""
     if read_model is None:
         return _customer_response_with_balance(
-            customer, fallback_balances, fallback_vehicle_info, search
+            customer, fallback_balances, fallback_vehicle_info, search, legacy_balances
         )
 
     response = CustomerResponse.model_validate(customer)
-    response.balance = read_model.invoice_total - read_model.payment_total
+    response.balance = fallback_balances.get(customer.id, Decimal("0.00"))
+    response.legacy_ets_balance = (legacy_balances or {}).get(customer.id, Decimal("0.00"))
     response.vehicle_count = read_model.vehicle_count
     response.single_vehicle_license_plate = read_model.single_vehicle_license_plate
     if search:
@@ -422,33 +349,7 @@ def _vehicle_count_subquery():
 
 
 def _balance_subquery():
-    """Outstanding AR as a scalar subquery, for ORDER BY balance.
-    invoiced - paid across the customer's repair orders."""
-    invoiced = (
-        select(func.coalesce(func.sum(Invoice.total_amount), 0))
-        .select_from(RepairOrder)
-        .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
-        .where(
-            RepairOrder.customer_id == Customer.id,
-            Invoice.status != InvoiceStatus.CANCELLED,
-        )
-        .correlate(Customer)
-        .scalar_subquery()
-    )
-    paid = (
-        select(func.coalesce(func.sum(Payment.amount), 0))
-        .select_from(RepairOrder)
-        .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
-        .join(Payment, Payment.invoice_id == Invoice.id)
-        .where(
-            RepairOrder.customer_id == Customer.id,
-            Invoice.status != InvoiceStatus.CANCELLED,
-            Payment.status == PaymentStatus.COMPLETED,
-        )
-        .correlate(Customer)
-        .scalar_subquery()
-    )
-    return invoiced - paid
+    return customer_balance_sort()
 
 
 def _customer_order_by(sort: Optional[str], order: str, use_read_model: bool = False):
@@ -456,11 +357,6 @@ def _customer_order_by(sort: Optional[str], order: str, use_read_model: bool = F
     direction = desc if order == "desc" else asc
     field = sort if sort in CUSTOMER_SORT_FIELDS else "name"
     if field == "balance":
-        if use_read_model:
-            return [
-                direction(CustomerReadModel.invoice_total - CustomerReadModel.payment_total),
-                asc(Customer.id),
-            ]
         return [direction(_balance_subquery()), asc(Customer.id)]
     if field == "vehicle_count":
         if use_read_model:
@@ -494,9 +390,9 @@ async def list_customers(
         )
         customer = result.scalar_one_or_none()
         cust_ids = [customer.id] if customer else []
-        balances = await get_customer_balances(db, cust_ids)
+        balances, legacy_balances = await customer_balance_totals(db, cust_ids)
         vehicle_info = await get_customer_vehicle_info(db, cust_ids)
-        customers = [_customer_response_with_balance(customer, balances, vehicle_info)] if customer else []
+        customers = [_customer_response_with_balance(customer, balances, vehicle_info, legacy_balances=legacy_balances)] if customer else []
         total = len(customers)
         response_items = customers[skip : skip + limit] if paginated else customers
         return paginated_or_list(response_items, total, skip, limit, paginated)
@@ -537,9 +433,9 @@ async def list_customers(
     missing_projection_ids = [
         customer.id for customer, read_model in customer_rows if read_model is None
     ]
-    # This should only run for a database awaiting projection backfill, never
-    # for normally migrated tenant data.
-    fallback_balances = await get_customer_balances(db, missing_projection_ids)
+    # Legacy read-model totals mix ETS and optional fees; recompute finances for
+    # the bounded page while retaining projected vehicle metadata.
+    fallback_balances, legacy_balances = await customer_balance_totals(db, [customer.id for customer, _ in customer_rows])
     fallback_vehicle_info = await get_customer_vehicle_info(db, missing_projection_ids)
     items = [
         _customer_response_with_read_model(
@@ -548,6 +444,7 @@ async def list_customers(
             fallback_balances,
             fallback_vehicle_info,
             search,
+            legacy_balances,
         )
         for customer, read_model in customer_rows
     ]
@@ -673,9 +570,9 @@ async def get_customer(
             detail="Access denied",
         )
 
-    balances = await get_customer_balances(db, [customer.id])
+    balances, legacy_balances = await customer_balance_totals(db, [customer.id])
     vehicle_info = await get_customer_vehicle_info(db, [customer.id])
-    return _customer_response_with_balance(customer, balances, vehicle_info)
+    return _customer_response_with_balance(customer, balances, vehicle_info, legacy_balances=legacy_balances)
 
 
 @router.put("/{customer_id}", response_model=CustomerResponse)
@@ -734,9 +631,9 @@ async def update_customer(
     await db.commit()
     await db.refresh(customer)
 
-    balances = await get_customer_balances(db, [customer.id])
+    balances, legacy_balances = await customer_balance_totals(db, [customer.id])
     vehicle_info = await get_customer_vehicle_info(db, [customer.id])
-    return _customer_response_with_balance(customer, balances, vehicle_info)
+    return _customer_response_with_balance(customer, balances, vehicle_info, legacy_balances=legacy_balances)
 
 
 @router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1139,7 +1036,7 @@ async def list_customer_vehicles(
     )
     result = await db.execute(query)
     vehicles = result.scalars().all()
-    balances = await get_customer_vehicle_balances(db, customer_id, [vehicle.id for vehicle in vehicles])
+    balances, legacy_balances = await vehicle_balance_totals(db, customer_id, [vehicle.id for vehicle in vehicles])
 
     relationship_rows = []
     if vehicles:
@@ -1174,7 +1071,8 @@ async def list_customer_vehicles(
     items = []
     for vehicle in vehicles:
         item = VehicleResponse.model_validate(vehicle)
-        item.balance = balances.get(vehicle.id, 0)
+        item.balance = balances.get(vehicle.id, Decimal("0.00"))
+        item.legacy_ets_balance = legacy_balances.get(vehicle.id, Decimal("0.00"))
         roles = roles_by_vehicle.get(vehicle.id, {})
         item.customer_relationship_types = [
             role for role in ("owner", "operator")
