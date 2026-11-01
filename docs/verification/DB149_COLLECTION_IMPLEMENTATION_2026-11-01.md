@@ -41,3 +41,9 @@ Before activation, ordinary code rollback with zero handoffs can leave schema197
 ## Final integration delta
 
 Frontend56 focused tests across8 files and TypeScript pass. Tax UI/CSV warnings and explicit gross/net/unapplied/profit scope were independently reviewed. Reviewer returned unqualified partial chart/average wording; the owner corrected shared series/tooltip, average and insight labels and added rendered assertions. Final delta checks and exact PR head remain recorded at release, not inferred from these earlier passes. The final268.44 fictional PDF was rendered and visually inspected with original October19 due and October20 service dates. No production writes or provider calls occurred.
+
+## PR review checkpoint
+
+Draft PR750: https://github.com/mecaniser/truck-pit-stop/pull/750. Current-main1c9c5cb9 integrated inc6864b11; board-only conflict preserved both histories. Independent merge delta GO:186 backend and64 frontend regression tests pass; migration197 unchanged and prior actual PostgreSQL gate remains applicable. Independent final reporting delta20/20 tests GO. Final build (shared controls, TypeScript, Vite) and baseline-aware lint across18 changed frontend files pass atc6864b11. Required GitHub Quality gates run41357782091 is in progress, not passing evidence yet.
+
+No source or customer mutation has occurred. Current review output remains fictional/not issued. Live customer sign-in, bounded fresh evidence, source ownership cutover and actual invoice-specific readiness are distinct outstanding acceptance steps; never submit a payment to prove a control works.
