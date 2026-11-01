@@ -70,3 +70,13 @@ Current main through `4645ea6a` was integrated without conflicts as `48b39c98a57
 Only the task Vite process was gracefully restarted: PID84934 on5215, same implementation frontend cwd; validated branch/SHA stamp now `codex/shop-work-overview@48b39c9`. API container8041 still mounts the same implementation backend and reads local `truckpitstop_db151`, schema196. Direct/proxied readiness passed. Signed-in browser rechecked the quiet shop: Active0, Closeout2, five operational actions, expected delivery and correct new stamp. Local runtime is **aligned and browser-verified**. Later documentation-only receipt commits do not change served application code.
 
 ![Integrated overview](assets/db151/overview-integrated.png)
+
+## CI regression correction
+
+First PR run41342437127 on `aee27512` passed protected backend/frontend checks, Playwright smoke and full backend (4448passed/415skipped). The full frontend informational suite found one failing warm-History deleted-order test among2059 tests, plus unhandled errors during unauthenticated teardown. These were real consequences of adding scoped workspace caches: deletion still evicted only the old exact key, and the identity-keyed wrapper could remount a selected record after logout.
+
+Correction: delete evicts the workspace prefix across authorization scopes; the repair workspace does not mount without an actor or while logout is in progress. Regression assertions verify cache removal, deleted reopen, and no selected-record reads after logout starts. The cancellation fixture now supplies a signed-in actor and the existing required pricing preview; the create/attribution assertion is preserved. Owner focused rerun31/31 passed without unhandled errors; independent expanded review and a fresh PR run follow.
+
+Actual signed-in browser regression passed in the isolated busy QA tenant: open History for draft1068, soft-delete through the existing action, return to Overview (Active3→2/actions7→6), immediately reopen exact1068 via Deleted filter (Deleted/Restore controls, no active editor), restore it, then return to Overview (Active3/actions7 and the estimate action restored). No invoice, payment or provider mutation.
+
+![Restored QA repair appears on Overview](assets/db151/overview-after-restore.png)

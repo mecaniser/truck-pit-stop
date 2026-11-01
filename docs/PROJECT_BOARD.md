@@ -3048,3 +3048,9 @@ DB-151 local implementation / IN REVIEW (2026-11-01), Frontend & UX accountable:
 
 
 DB-151 / DRAFT PR PUBLISHED: [PR736](https://github.com/mecaniser/truck-pit-stop/pull/736), `codex/shop-work-overview`; current main integrated without conflicts. Local read-model76 tests, independent frontend239 tests, TypeScript/build, changed-source lint23files and signed-in runtime acceptance pass. Independent Security/QA GO. Protected CI pending; Frontend & UX accountable. No merge/deploy and not Done.
+
+
+DB-151 CI gate / RETURNED TO FRONTEND (2026-11-01): PR736 head `aee27512` passed protected Backend/Frontend/Migration checks, Playwright smoke and full backend. Full frontend informational suite reported2058pass/1failure in deleted-RO warm-History reopening, with unhandled test errors. Owner investigating cache-scope regression before handoff; prior local pass is not a full-CI completion claim. No merge/deploy.
+
+
+DB-151 CI correction / RECHECKING: scoped RO workspace eviction and missing-actor/logout guard fix the full-suite regression. Owner31affected tests pass; actual local warm-History soft-delete/immediate-reopen/restore passes and Overview counts/actions refresh3→2→3 correctly. Cancellation test now uses authenticated pricing-preview prerequisites. Fresh independent expanded RO review and CI required; no merge/deploy.

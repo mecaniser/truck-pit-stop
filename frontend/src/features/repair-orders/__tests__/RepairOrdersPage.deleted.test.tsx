@@ -57,7 +57,7 @@ beforeEach(() => {
   api.delete.mockImplementation(async () => { deleted = true; return { status: 204 } })
   api.post.mockImplementation(async () => { deleted = false; return { data: { order: current(), stock_shortages: [] } } })
 })
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); useAuthStore.setState({ user: null }) })
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); useAuthStore.setState({ user: null, logoutInProgress: false }) })
 
 describe('deleted repair-order workspace', () => {
   it('shows a direct Restore action and requests no unavailable panels on a fresh deleted link', async () => {
@@ -82,6 +82,7 @@ describe('deleted repair-order workspace', () => {
     await waitFor(() => expect(screen.queryByRole('region', { name: '#QA116', exact: true })).not.toBeInTheDocument())
     // A disabled observer may recreate an empty cache entry; no scoped data may survive.
     expect(client.getQueriesData({ queryKey: ['repair-order-detail', order.id] }).filter(([, data]) => data !== undefined)).toEqual([])
+    expect(client.getQueriesData({ queryKey: ['repair-order-workspace', order.id] }).filter(([, data]) => data !== undefined)).toEqual([])
     api.get.mockClear()
     await user.click(screen.getByRole('button', { name: 'Deleted', exact: true }))
     await user.click(await screen.findByRole('button', { name: 'Open repair order QA116', exact: true }))
@@ -117,5 +118,17 @@ describe('deleted repair-order workspace', () => {
     expect(await screen.findByRole('region', { name: 'Deleted repair order' })).toBeVisible()
     expect(within(screen.getByRole('region', { name: '#QA116', exact: true })).queryByRole('button', { name: 'Restore order' })).not.toBeInTheDocument()
     expect(api.get.mock.calls.filter(([url]) => activeOnly(url))).toEqual([])
+  })
+
+  it('unmounts a selected workspace as logout starts without starting unauthenticated reads', async () => {
+    mount()
+    expect(await screen.findByRole('region', { name: 'Deleted repair order' })).toBeVisible()
+    api.get.mockClear()
+    await act(async () => { useAuthStore.setState(state => ({ logoutInProgress: true, authSessionEpoch: state.authSessionEpoch + 1 })) })
+    expect(screen.queryByRole('region', { name: 'Deleted repair order' })).not.toBeInTheDocument()
+    expect(api.get).not.toHaveBeenCalled()
+    await act(async () => { useAuthStore.setState({ user: null, isAuthenticated: false }) })
+    expect(screen.queryByRole('region', { name: 'Deleted repair order' })).not.toBeInTheDocument()
+    expect(api.get).not.toHaveBeenCalled()
   })
 })

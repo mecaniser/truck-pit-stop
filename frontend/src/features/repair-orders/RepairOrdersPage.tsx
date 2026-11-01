@@ -320,7 +320,10 @@ function RepairOrderLaborBreakdown({
 }
 
 export default function RepairOrdersPage(props: { workbenchScope?: WorkbenchScope }) {
+  const actor = useAuthStore(state => state.user)
+  const logoutInProgress = useAuthStore(state => state.logoutInProgress)
   const queryScope = useAuthStore(state => shopWorkQueryScope(state.user, state.authSessionEpoch))
+  if (!actor || logoutInProgress) return null
   return <RepairOrdersWorkspace key={queryScope} {...props} queryScope={queryScope} />
 }
 
@@ -1742,7 +1745,7 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
       // A previous History visit must not win over the freshly deleted ledger
       // row when it is reopened. Cancelled requests are already aborted above.
       queryClient.removeQueries({ queryKey: ['repair-order-detail', orderId] })
-      queryClient.removeQueries({ queryKey: ['repair-order-workspace', orderId], exact: true })
+      queryClient.removeQueries({ queryKey: ['repair-order-workspace', orderId] })
       toast.success(orderNumber ? `Repair order ${orderNumber} deleted` : 'Repair order deleted')
       // Let the card play its fade+collapse exit before the refetch drops it.
       window.setTimeout(() => {

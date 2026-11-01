@@ -1,7 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router-dom'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useAuthStore } from '@/stores/authStore'
+import { garageOwnerSession } from '@/test-fixtures/db035/staffSession'
 
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -75,10 +77,14 @@ function LocationProbe() {
 }
 
 describe('RepairOrdersPage request cancellation', () => {
+  beforeEach(() => {
+    useAuthStore.setState({ user: garageOwnerSession, isAuthenticated: true, logoutInProgress: false })
+  })
   afterEach(() => {
     apiMocks.get.mockReset()
     apiMocks.post.mockReset()
     themeState.presentationVariant = 'legacy'
+    useAuthStore.setState({ user: null, isAuthenticated: false })
   })
 
   it('switches only the Repair Orders presentation while preserving the same page API', async () => {
@@ -591,7 +597,8 @@ describe('RepairOrdersPage request cancellation', () => {
   })
 
   it('creates a repair order without asking staff for campaign IDs or clearing machine attribution', async () => {
-    apiMocks.get.mockImplementation((url: string) => {
+    apiMocks.get.mockImplementation((url: string, config?: { params?: { vehicle_id?: string } }) => {
+      if (url === '/customers/customer-1/pricing-preview') return Promise.resolve({ data: { schema_version: 1, customer_id: 'customer-1', vehicle_id: config?.params?.vehicle_id ?? null, expected_pricing_policy: 'test-policy', policy_kind: 'external', projection: 'shop', labor: { source: 'shop', rate: '100.00' }, parts: { source: 'shop', mode: 'catalog' } } })
       if (url === '/repair-orders') return Promise.resolve({ data: { items: [], total: 0, has_more: false } })
       if (url === '/customers/typeahead') return Promise.resolve({ data: [{
         id: 'customer-1', first_name: 'Elis', last_name: 'Logistics', company_name: 'ELIS LOGISTICS LLC',
@@ -615,6 +622,7 @@ describe('RepairOrdersPage request cancellation', () => {
     fireEvent.click(screen.getByRole('button', { name: /choose a customer/i }))
     fireEvent.mouseDown(await screen.findByText('ELIS LOGISTICS LLC'))
     fireEvent.click(await screen.findByRole('button', { name: /select freightliner cascadia · unit 204/i }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create Repair Order' })).toBeEnabled())
     fireEvent.click(screen.getByRole('button', { name: 'Create Repair Order' }))
 
     await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/repair-orders', expect.any(Object)))
