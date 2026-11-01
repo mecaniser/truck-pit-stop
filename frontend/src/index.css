@@ -2825,18 +2825,50 @@ html::-webkit-scrollbar-thumb:hover {
   box-shadow: none;
 }
 
-/* Plain secondary navigation; one shared marker follows the selected route. */
+/* Transparent secondary tabs; compact machined icons echo the main rail. */
 .db-my-shop-nav-marker { display: none; }
 .db-presentation-new .db-my-shop-navigation { position: relative; }
 .db-presentation-new .db-my-shop-nav-glyph {
   display: grid;
   place-items: center;
-  flex: 0 0 16px;
-  width: 16px;
-  height: 16px;
-  color: inherit;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--shop-icon-color);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--shell-field-raised) 76%, white), var(--shell-field-raised));
+  box-shadow: 0 2px 3px rgb(0 0 0 / .2), inset 0 1px rgb(255 255 255 / .2);
 }
-.db-presentation-new .db-my-shop-nav-glyph > svg { stroke-width: 1.7; }
+.db-presentation-new .db-my-shop-nav-glyph > svg { width: 17px; height: 17px; stroke-width: 1.7; }
+.db-my-shop-nav-item[data-shop-section='inventory'] { --shop-icon-color: #dfc8a0; }
+.db-my-shop-nav-item[data-shop-section='purchasing'] { --shop-icon-color: #88c9ff; }
+.db-my-shop-nav-item[data-shop-section='services'] { --shop-icon-color: #9cdbbf; }
+.db-my-shop-nav-item[data-shop-section='labor-book-time'] { --shop-icon-color: #ffac77; }
+.db-my-shop-nav-item[data-shop-section='mechanics'] { --shop-icon-color: #c3b2ff; }
+.db-my-shop-nav-item[data-shop-section='analytics'] { --shop-icon-color: #85d5df; }
+.db-presentation-new .db-my-shop-nav-item[aria-current='page'] .db-my-shop-nav-glyph {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--shop-icon-color) 20%, var(--shell-field-raised)), var(--shell-field-raised));
+}
+.db-presentation-new .db-my-shop-nav-cluster-secondary .db-my-shop-nav-glyph {
+  flex-basis: 24px;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
+.db-presentation-new .db-my-shop-nav-cluster-secondary .db-my-shop-nav-glyph > svg { width: 16px; height: 16px; }
+.db-presentation-new[data-appearance-mode='high_contrast'] .db-my-shop-nav-glyph {
+  color: var(--workspace-text);
+  border: 1px solid var(--workspace-border);
+  box-shadow: none;
+}
+@media (forced-colors: active) {
+  .db-presentation-new .db-my-shop-nav-glyph {
+    color: ButtonText;
+    background: Canvas;
+    border: 1px solid ButtonText;
+    box-shadow: none;
+  }
+}
 .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item[aria-current='page'] {
   color: var(--workspace-text) !important;
 }

@@ -36,6 +36,7 @@ function GarageLinks({ sections }: { sections: GarageSection[] }) {
       key={section.to}
       to={section.to}
       aria-label={section.label}
+      data-shop-section={section.to}
       className={({ isActive }) =>
         `db-my-shop-nav-item flex min-h-11 items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-medium transition-[color,background-color,border-color] duration-150 sm:text-sm ${
           isActive
