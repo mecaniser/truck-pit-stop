@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { useEffect, useRef, useState, type Ref } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
@@ -72,7 +73,7 @@ function VehicleRecord({ customer, vehicle, onOpenOrder, onCreateOrder, createOr
     return mechanic ? `${mechanic.first_name} ${mechanic.last_name}` : null
   }
   return <div className="db-customer-record db-customer-vehicle-record">
-    <VehicleHistoryExport vehicle={vehicle}>{onCreateOrder && <button ref={createOrderButtonRef} type="button" onClick={onCreateOrder}><Plus aria-hidden="true" />New repair order</button>}</VehicleHistoryExport>
+    <VehicleHistoryExport vehicle={vehicle}>{onCreateOrder && <ControlButton ref={createOrderButtonRef} type="button" onClick={onCreateOrder}><Plus aria-hidden="true" />New repair order</ControlButton>}</VehicleHistoryExport>
     <dl className="db-customer-record__facts">
       <div><dt>Customer</dt><dd>{customerDisplayName(customer)}</dd></div>
       <div><dt>Unit</dt><dd>{vehicle.unit_number || '—'}</dd></div>
@@ -94,7 +95,7 @@ function VehicleRecord({ customer, vehicle, onOpenOrder, onCreateOrder, createOr
         <label className="db-vehicle-history-filters__search">
           <Search aria-hidden="true" />
           <span className="sr-only">Search this truck’s repair history</span>
-          <input type="search" value={search} maxLength={200} placeholder="Order number or work requested" onChange={event => updateFilters({ search: event.target.value })} />
+          <ControlInput type="search" value={search} maxLength={200} placeholder="Order number or work requested" onChange={event => updateFilters({ search: event.target.value })} />
         </label>
         <label>
           <span className="sr-only">Repair history status</span>
@@ -103,19 +104,19 @@ function VehicleRecord({ customer, vehicle, onOpenOrder, onCreateOrder, createOr
             {historyStatuses.map(value => <option key={value} value={value}>{statusLabel(value)}</option>)}
           </PlatformSelect>
         </label>
-        {filtered && <button type="button" onClick={() => updateFilters({ search: '', status: '' })}>Clear filters</button>}
+        {filtered && <ControlButton type="button" onClick={() => updateFilters({ search: '', status: '' })}>Clear filters</ControlButton>}
       </div>
-      {searchPending || history.isLoading ? <p role="status">Loading repair history…</p> : history.isError || !history.data ? <div role="alert">Could not load repair history. <button type="button" onClick={() => void history.refetch()}>Retry repair history</button></div> : <>
-        {history.data.items.length === 0 ? <p role="status">{page > 0 ? <>This history page is no longer available. <button type="button" onClick={() => updateFilters({ page: 0 })}>First history page</button></> : filtered ? 'No repair orders match these filters for this truck.' : 'No repair orders for this vehicle yet.'}</p> : <ul className="db-customer-vehicle-history">{history.data.items.map(order => <li key={order.id}>
-          <button type="button" aria-label={`Open repair order ${order.order_number}`} onClick={() => onOpenOrder(order)}>
+      {searchPending || history.isLoading ? <p role="status">Loading repair history…</p> : history.isError || !history.data ? <div role="alert">Could not load repair history. <ControlButton type="button" onClick={() => void history.refetch()}>Retry repair history</ControlButton></div> : <>
+        {history.data.items.length === 0 ? <p role="status">{page > 0 ? <>This history page is no longer available. <ControlButton type="button" onClick={() => updateFilters({ page: 0 })}>First history page</ControlButton></> : filtered ? 'No repair orders match these filters for this truck.' : 'No repair orders for this vehicle yet.'}</p> : <ul className="db-customer-vehicle-history">{history.data.items.map(order => <li key={order.id}>
+          <ControlButton type="button" aria-label={`Open repair order ${order.order_number}`} onClick={() => onOpenOrder(order)}>
             <span><strong>{order.order_number}</strong><span className="db-customer-vehicle-history__description">{order.description || 'No description'}</span><small>{new Date(order.created_at).toLocaleDateString()} · {order.status.replace(/_/g, ' ')}{order.assigned_mechanic_id && mechanicName(order.assigned_mechanic_id) && ` · ${mechanicName(order.assigned_mechanic_id)}`}</small></span>
             <span>${Number(order.total_cost).toFixed(2)}</span><ChevronRight aria-hidden="true" />
-          </button>
+          </ControlButton>
         </li>)}</ul>}
         {(page > 0 || history.data.has_more) && <nav aria-label="Vehicle history pages" className="db-customer-vehicle-history__pages">
-          <button type="button" disabled={page === 0 || history.isFetching} aria-label="Previous history page" onClick={() => updateFilters({ page: page - 1 })}>Previous</button>
+          <ControlButton type="button" disabled={page === 0 || history.isFetching} aria-label="Previous history page" onClick={() => updateFilters({ page: page - 1 })}>Previous</ControlButton>
           <span>Page {page + 1} of {Math.max(1, Math.ceil(history.data.total / 25))}</span>
-          <button type="button" disabled={!history.data.has_more || history.isFetching} aria-label="Next history page" onClick={() => updateFilters({ page: page + 1 })}>Next</button>
+          <ControlButton type="button" disabled={!history.data.has_more || history.isFetching} aria-label="Next history page" onClick={() => updateFilters({ page: page + 1 })}>Next</ControlButton>
         </nav>}
       </>}
     </section>

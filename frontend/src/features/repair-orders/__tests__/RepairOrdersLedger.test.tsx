@@ -119,6 +119,21 @@ const renderLedger = (overrides: Partial<React.ComponentProps<typeof RepairOrder
 }
 
 describe('DB-035 Stage 4 Repair Orders presentation', () => {
+  it('explains every billing warning in expanded Details without opening the workspace', async () => {
+    const { props } = renderLedger({ rows: [{ ...rows[0], importedBilling: {
+      source: 'easy_truck_shop_import', evidence_basis: 'ets_source_snapshot', reconciliation_status: 'not_checked',
+      invoice_id: 'qa-invoice', total_amount: '100.00', recorded_completed_amount: '0.00', recorded_remaining_amount: '100.00',
+      payment_status: 'unpaid', review_required: true, review_reasons: ['shared_job_identity_conflict', 'imported_financial_rows_differ'],
+    } }] })
+    expect(screen.queryByRole('region', { name: 'Why billing needs attention' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Show details for RO-1017' }))
+    const reasons = screen.getByRole('region', { name: 'Why billing needs attention' })
+    expect(reasons).toHaveTextContent('Related operations have different customer or vehicle identities. Shared billing needs review.')
+    expect(reasons).toHaveTextContent('ETS source amounts differ from the imported financial records.')
+    expect(reasons).toHaveTextContent('This invoice has an unpaid balance of $100.00.')
+    expect(props.onOpenOrder).not.toHaveBeenCalled()
+  })
+
   it.each([
     ['paid', '0.00', 'Paid in ETS', '$0.00'],
     ['partially_paid', '434.41', 'Partially paid in ETS', '$434.41'],
@@ -352,7 +367,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
   })
 
   it('aligns the selected-record header and filter controls to shared dimensions', () => {
-    expect(LEDGER_CSS).toContain('--db-repair-orders-control-height: 44px')
+    expect(LEDGER_CSS).toContain('--db-repair-orders-control-height: var(--control-height)')
     expect(LEDGER_CSS).toContain('--db-repair-orders-side-control-width: 184px')
     expect(LEDGER_CSS).toContain('.db-presentation-new .db-repair-orders-new__search { height: var(--db-repair-orders-control-height); align-self: stretch; padding: 0; }')
     expect(LEDGER_CSS).toContain('.db-repair-orders-new__status-select { position: relative; display: none; min-width: 0; height: var(--db-repair-orders-control-height); }')

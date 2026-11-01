@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { ReactNode, useEffect, useId, useLayoutEffect, useRef } from 'react'
 import { useDirtyOnInput } from '../lib/staleBuild'
 import { ArrowLeft, ChevronLeft, ChevronRight, X } from 'lucide-react'
@@ -423,15 +424,15 @@ export default function SlidePanel({
           <div className="slide-panel-header px-5 py-4 border-b border-gray-200 flex items-center justify-between">
             <div className="flex min-w-0 items-center gap-3">
               {onBack && (
-                <button
+                <ControlButton
                   type="button"
                   onClick={onBack}
-                  className="db-slide-panel-workspace__back inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-gray-100 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                  className="db-slide-panel-workspace__back inline-flex  items-center gap-2 rounded-lg px-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-gray-100 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                   aria-label={backLabel || 'Back'}
                 >
                   <ArrowLeft className="h-4 w-4" />
                   <span>{backLabel || 'Back'}</span>
-                </button>
+                </ControlButton>
               )}
               <div className="min-w-0">
               {subtitle && <p className="text-xs uppercase text-gray-500 font-semibold">{subtitle}</p>}
@@ -448,19 +449,19 @@ export default function SlidePanel({
             <div className="flex items-center gap-1">
               {(onPrev !== undefined || onNext !== undefined) && (
                 <div className="flex items-center gap-0.5 mr-1">
-                  <button onClick={onPrev} disabled={prevDisabled} className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" aria-label="Previous">
+                  <ControlButton controlKind="icon" onClick={onPrev} disabled={prevDisabled} className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" aria-label="Previous">
                     <ChevronLeft className="w-4 h-4" />
-                  </button>
+                  </ControlButton>
                   {navigationLabel && <span className="text-xs text-gray-400 tabular-nums px-1 min-w-[3rem] text-center select-none">{navigationLabel}</span>}
-                  <button onClick={onNext} disabled={nextDisabled} className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" aria-label="Next">
+                  <ControlButton controlKind="icon" onClick={onNext} disabled={nextDisabled} className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" aria-label="Next">
                     <ChevronRight className="w-4 h-4" />
-                  </button>
+                  </ControlButton>
                 </div>
               )}
               {!hideClose && (
-                <button onClick={onClose} className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 text-gray-500 hover:text-gray-700 rounded-full hover:bg-gray-100" aria-label="Close">
+                <ControlButton controlKind="icon" onClick={onClose} className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 text-gray-500 hover:text-gray-700 rounded-full hover:bg-gray-100" aria-label="Close">
                   <X className="w-5 h-5" />
-                </button>
+                </ControlButton>
               )}
             </div>
           </div>
@@ -478,9 +479,9 @@ export default function SlidePanel({
                 </div>
                 {headerExtra && <div className="mt-4">{headerExtra}</div>}
               </div>
-              <button onClick={onClose} className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 hover:bg-white/20 rounded-lg transition-colors" aria-label="Close">
+              <ControlButton controlKind="icon" onClick={onClose} className="inline-flex  min-w-11 items-center justify-center p-2 hover:bg-white/20 rounded-lg transition-colors" aria-label="Close">
                 <X className="w-6 h-6" />
-              </button>
+              </ControlButton>
             </div>
           </div>
         ))}
@@ -519,12 +520,12 @@ export default function SlidePanel({
           {!hideHeader && <div className="slide-panel-header px-6 py-5 border-b border-zinc-800/50 flex items-center justify-between bg-zinc-900/95">
             <div className="flex items-center gap-3 min-w-0">
               {onBack && (
-                <button
+                <ControlButton
                   onClick={onBack}
                   className="p-2 -ml-2 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 rounded-xl transition-colors"
                 >
                   <ArrowLeft className="w-5 h-5" />
-                </button>
+                </ControlButton>
               )}
               {headerIcon && (
                 <div className="p-2.5 bg-[var(--accent-500)]/10 rounded-xl border border-[var(--accent-500)]/30 flex-shrink-0">
@@ -539,36 +540,36 @@ export default function SlidePanel({
             <div className="flex items-center gap-1 flex-shrink-0">
               {(onPrev !== undefined || onNext !== undefined) && (
                 <div className="flex items-center gap-0.5 mr-1">
-                  <button
+                  <ControlButton controlKind="icon"
                     onClick={onPrev}
                     disabled={prevDisabled}
                     className="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                     aria-label="Previous"
                   >
                     <ChevronLeft className="w-4 h-4" />
-                  </button>
+                  </ControlButton>
                   {navigationLabel && (
                     <span className="text-xs text-zinc-500 tabular-nums px-1 min-w-[3rem] text-center select-none">
                       {navigationLabel}
                     </span>
                   )}
-                  <button
+                  <ControlButton controlKind="icon"
                     onClick={onNext}
                     disabled={nextDisabled}
                     className="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                     aria-label="Next"
                   >
                     <ChevronRight className="w-4 h-4" />
-                  </button>
+                  </ControlButton>
                 </div>
               )}
-              <button
+              <ControlButton controlKind="icon"
                 onClick={onClose}
-                className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 rounded-xl transition-colors"
+                className="inline-flex  min-w-11 items-center justify-center p-2 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 rounded-xl transition-colors"
                 aria-label="Close"
               >
                 <X className="w-5 h-5" />
-              </button>
+              </ControlButton>
             </div>
           </div>}
 
@@ -626,36 +627,36 @@ export default function SlidePanel({
             <div className="flex items-center gap-1">
               {(onPrev !== undefined || onNext !== undefined) && (
                 <div className="flex items-center gap-0.5 mr-1">
-                  <button
+                  <ControlButton controlKind="icon"
                     onClick={onPrev}
                     disabled={prevDisabled}
                     className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                     aria-label="Previous"
                   >
                     <ChevronLeft className="w-4 h-4" />
-                  </button>
+                  </ControlButton>
                   {navigationLabel && (
                     <span className="text-xs text-gray-400 tabular-nums px-1 min-w-[3rem] text-center select-none">
                       {navigationLabel}
                     </span>
                   )}
-                  <button
+                  <ControlButton controlKind="icon"
                     onClick={onNext}
                     disabled={nextDisabled}
                     className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                     aria-label="Next"
                   >
                     <ChevronRight className="w-4 h-4" />
-                  </button>
+                  </ControlButton>
                 </div>
               )}
-              <button
+              <ControlButton controlKind="icon"
                 onClick={onClose}
                 className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 text-gray-500 hover:text-gray-700 rounded-full hover:bg-gray-100"
                 aria-label="Close"
               >
                 <X className="w-5 h-5" />
-              </button>
+              </ControlButton>
             </div>
           </div>
         ) : (
@@ -663,13 +664,13 @@ export default function SlidePanel({
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0">
                 {onBack && (
-                  <button
+                  <ControlButton
                     onClick={onBack}
                     className="flex items-center gap-1 text-sm text-white/70 hover:text-white mb-2 transition-colors"
                   >
                     <ArrowLeft className="w-4 h-4" />
                     {backLabel || 'Back'}
-                  </button>
+                  </ControlButton>
                 )}
                 <div className="flex items-center gap-3">
                   {headerIcon}
@@ -688,36 +689,36 @@ export default function SlidePanel({
               <div className="flex items-center gap-1 flex-shrink-0 ml-2">
                 {(onPrev !== undefined || onNext !== undefined) && (
                   <div className="flex items-center gap-0.5 mr-1">
-                    <button
+                    <ControlButton controlKind="icon"
                       onClick={onPrev}
                       disabled={prevDisabled}
                       className="p-1.5 hover:bg-white/20 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                       aria-label="Previous"
                     >
                       <ChevronLeft className="w-5 h-5" />
-                    </button>
+                    </ControlButton>
                     {navigationLabel && (
                       <span className="text-xs text-white/70 tabular-nums px-1 min-w-[3rem] text-center select-none">
                         {navigationLabel}
                       </span>
                     )}
-                    <button
+                    <ControlButton controlKind="icon"
                       onClick={onNext}
                       disabled={nextDisabled}
                       className="p-1.5 hover:bg-white/20 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                       aria-label="Next"
                     >
                       <ChevronRight className="w-5 h-5" />
-                    </button>
+                    </ControlButton>
                   </div>
                 )}
-                <button
+                <ControlButton controlKind="icon"
                   onClick={onClose}
-                  className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 hover:bg-white/20 rounded-lg transition-colors"
+                  className="inline-flex  min-w-11 items-center justify-center p-2 hover:bg-white/20 rounded-lg transition-colors"
                   aria-label="Close"
                 >
                   <X className="w-6 h-6" />
-                </button>
+                </ControlButton>
               </div>
             </div>
           </div>

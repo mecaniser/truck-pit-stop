@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 type Props = {
   subject: string
   onRetry?: () => void
@@ -9,9 +10,9 @@ export default function CustomerLoadError({ subject, onRetry, isRetrying = false
   return (
     <div className="db-customer-load-error" role="alert" aria-busy={isRetrying}>
       <span>Could not load {subject}.</span>
-      {onRetry && <button type="button" disabled={isRetrying} onClick={onRetry}>
+      {onRetry && <ControlButton type="button" disabled={isRetrying} onClick={onRetry}>
         {isRetrying ? 'Retrying…' : `Retry ${subject}`}
-      </button>}
+      </ControlButton>}
     </div>
   )
 }

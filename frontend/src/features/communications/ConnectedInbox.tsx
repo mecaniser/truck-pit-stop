@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { restoredConversation } from "./inboxSelection";
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "../../lib/api";
@@ -345,18 +346,18 @@ function InboxContent({ embedded, onUnreadCountChange }: InboxProps) {
           {error || "No conversations yet. Incoming SMS conversations will appear here."}
         </p>
         {!loading && bootstrap && (
-          <button className="subtle-button" onClick={() => setShowSetup(true)}>
+          <ControlButton className="subtle-button" onClick={() => setShowSetup(true)}>
             Settings
-          </button>
+          </ControlButton>
         )}
         {showSetup && bootstrap && (
           <MessageSettings channels={bootstrap.channels} deliveryMode={bootstrap.delivery_mode}
             onClose={() => setShowSetup(false)} />
         )}
         {!loading && (
-          <button className="primary-button" onClick={() => void initialize()}>
+          <ControlButton className="primary-button" onClick={() => void initialize()}>
             Refresh inbox
-          </button>
+          </ControlButton>
         )}
       </main>
     );
@@ -446,7 +447,7 @@ function InboxLogin({ onLogin }: { onLogin: () => Promise<void> }) {
       >
         <label>
           Email
-          <input
+          <ControlInput
             type="email"
             autoComplete="username"
             value={email}
@@ -456,7 +457,7 @@ function InboxLogin({ onLogin }: { onLogin: () => Promise<void> }) {
         </label>
         <label>
           Password
-          <input
+          <ControlInput
             type="password"
             autoComplete="current-password"
             value={password}
@@ -465,9 +466,9 @@ function InboxLogin({ onLogin }: { onLogin: () => Promise<void> }) {
           />
         </label>
         {error && <p role="alert">{error}</p>}
-        <button className="primary-button" disabled={busy}>
+        <ControlButton className="primary-button" disabled={busy}>
           {busy ? "Signing in…" : "Sign in"}
-        </button>
+        </ControlButton>
       </form>
     </main>
   );

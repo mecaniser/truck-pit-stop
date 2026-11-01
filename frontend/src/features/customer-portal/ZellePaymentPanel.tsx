@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { ChevronDown, ChevronUp, Copy } from 'lucide-react'
 
 interface ZellePaymentPanelProps {
@@ -66,7 +67,7 @@ export default function ZellePaymentPanel({
 
   return (
     <div className="overflow-hidden rounded-xl border border-blue-300/25 bg-slate-950/40">
-      <button
+      <ControlButton controlKind="content"
         type="button"
         onClick={onToggleOpen}
         className="flex w-full items-center justify-between gap-3 border-b border-white/10 bg-blue-500/10 px-4 py-3 text-left hover:bg-blue-500/15"
@@ -88,7 +89,7 @@ export default function ZellePaymentPanel({
           </p>
         </div>
         {isOpen ? <ChevronUp className="h-4 w-4 shrink-0 text-blue-100" /> : <ChevronDown className="h-4 w-4 shrink-0 text-blue-100" />}
-      </button>
+      </ControlButton>
 
       {isOpen && (
         <div>
@@ -107,15 +108,15 @@ export default function ZellePaymentPanel({
                   <p className={`min-w-0 break-all text-sm ${row.key === 'amount' ? 'font-black text-white' : 'text-blue-50'}`}>
                     {row.value}
                   </p>
-                  <button
+                  <ControlButton controlKind="icon"
                     type="button"
                     aria-label={`Copy ${row.label}`}
                     onClick={() => onCopy(row.key === 'amount' ? zelleAmount : row.value, row.copyLabel)}
-                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-blue-100 hover:bg-blue-500/20 hover:text-white"
+                    className="inline-flex  w-8 shrink-0 items-center justify-center rounded-md text-blue-100 hover:bg-blue-500/20 hover:text-white"
                     title={`Copy ${row.label}`}
                   >
                     <Copy className="h-4 w-4" />
-                  </button>
+                  </ControlButton>
                 </div>
               ))}
             </div>
@@ -144,31 +145,31 @@ export default function ZellePaymentPanel({
                     <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-orange-100">Sent to the shop</p>
                     <p className="mt-1 text-xs text-orange-50/80">These details help staff match your bank transfer.</p>
                   </div>
-                  <button
+                  <ControlButton
                     type="button"
                     onClick={onToggleSenderEditing}
-                    className="shrink-0 rounded-md border border-orange-200/40 px-3 py-1.5 text-xs font-bold text-orange-50 hover:bg-orange-300/10"
+                    className="shrink-0 rounded-md border border-orange-200/40 px-3  text-xs font-bold text-orange-50 hover:bg-orange-300/10"
                   >
                     {isSenderEditing ? 'Done' : 'Edit'}
-                  </button>
+                  </ControlButton>
                 </div>
 
                 <div className="space-y-2">
-                  <input
+                  <ControlInput
                     type="email"
                     value={senderEmail}
                     onChange={event => onSenderEmailChange(event.target.value)}
                     placeholder="Your Zelle sender email"
                     disabled={!isSenderEditing}
-                    className="w-full rounded-md border border-orange-200/30 bg-slate-950/20 px-3 py-2 text-white placeholder-orange-100/45 disabled:cursor-not-allowed disabled:opacity-80"
+                    className="w-full rounded-md border border-orange-200/30 bg-slate-950/20 px-3  text-white placeholder-orange-100/45 disabled:cursor-not-allowed disabled:opacity-80"
                   />
-                  <input
+                  <ControlInput
                     type="tel"
                     value={senderPhone}
                     onChange={event => onSenderPhoneChange(event.target.value)}
                     placeholder="Your Zelle sender phone"
                     disabled={!isSenderEditing}
-                    className="w-full rounded-md border border-orange-200/30 bg-slate-950/20 px-3 py-2 text-white placeholder-orange-100/45 disabled:cursor-not-allowed disabled:opacity-80"
+                    className="w-full rounded-md border border-orange-200/30 bg-slate-950/20 px-3  text-white placeholder-orange-100/45 disabled:cursor-not-allowed disabled:opacity-80"
                   />
                   <textarea
                     value={senderNotes}
@@ -180,14 +181,14 @@ export default function ZellePaymentPanel({
                   />
                 </div>
 
-                <button
+                <ControlButton
                   type="button"
                   onClick={onSubmit}
                   disabled={isSubmitting}
-                  className="mt-3 w-full rounded-lg bg-blue-600 py-2.5 font-bold text-white hover:bg-blue-500 disabled:bg-gray-600"
+                  className="mt-3 w-full rounded-lg bg-blue-600  font-bold text-white hover:bg-blue-500 disabled:bg-gray-600"
                 >
                   {isSubmitting ? 'Submitting...' : 'I Sent Payment via Zelle'}
-                </button>
+                </ControlButton>
               </>
             )}
           </div>

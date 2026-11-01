@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useState, useCallback } from 'react'
 import { Spinner } from '@/components/ui'
 import { 
@@ -192,12 +193,12 @@ export default function PerformanceTab() {
     return (
       <GlassNoirCard className="border-red-500/30">
         <p className="text-red-400">{error}</p>
-        <button 
+        <ControlButton
           onClick={fetchData}
-          className="mt-4 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors"
+          className="mt-4 px-4  bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors"
         >
           Retry
-        </button>
+        </ControlButton>
       </GlassNoirCard>
     )
   }
@@ -233,13 +234,13 @@ export default function PerformanceTab() {
             />
             Auto-refresh (15s)
           </label>
-          <button
+          <ControlButton
             onClick={fetchData}
-            className="flex items-center gap-2 px-3 py-1.5 bg-gold-500/10 hover:bg-gold-500/20 text-gold-400 border border-gold-500/30 rounded-lg transition-colors text-sm"
+            className="flex items-center gap-2 px-3  bg-gold-500/10 hover:bg-gold-500/20 text-gold-400 border border-gold-500/30 rounded-lg transition-colors text-sm"
           >
             <RefreshCw className="w-4 h-4" />
             Refresh
-          </button>
+          </ControlButton>
         </div>
       </div>
 

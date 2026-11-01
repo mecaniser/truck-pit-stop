@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import type { ReactNode } from 'react'
 import { Popover, PopoverBackdrop, PopoverButton, PopoverPanel, Portal } from '@headlessui/react'
 import { useQuery } from '@tanstack/react-query'
@@ -25,14 +26,14 @@ export default function DriverRecord({ truck }: { truck: DriverTruck }) {
   const label = `Driver record for ${name}. ${description}${summary?.safety_band_label ? `, ${summary.safety_band_label}` : ''}${summary?.stale ? ', stale capture' : ''}`
   return <Popover as="span" className="driver-record" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
     {({ close }) => <>
-      <PopoverButton className="driver-record-trigger" aria-label={label} title={label}>
+      <PopoverButton data-db-control="action" className="driver-record-trigger" aria-label={label} title={label}>
         <SafetyDashes band={band} /><span className="driver-record-score">{score == null ? '—' : number(score)}</span>
         {summary?.stale && <Clock3 size={12} aria-hidden="true" />}
       </PopoverButton>
       {/* Consume dismissal clicks before they can reach the truck beneath the portal. */}
       <Portal><PopoverBackdrop className="driver-record-backdrop" onMouseDown={event => event.preventDefault()} onClick={event => { event.stopPropagation(); close() }} /></Portal>
       <PopoverPanel anchor={{ to: 'bottom start', gap: 8, padding: 12 }} portal focus className="driver-record-panel" role="dialog" aria-label={`Driver record for ${name}`}>
-        <header className="driver-record-heading"><div><small>Motive · Driver record</small><h2>{name}</h2></div><button type="button" className="driver-record-close" aria-label="Close driver record" onMouseDown={event => event.preventDefault()} onClick={event => { event.stopPropagation(); close() }}><X size={18} aria-hidden="true" /></button></header>
+        <header className="driver-record-heading"><div><small>Motive · Driver record</small><h2>{name}</h2></div><ControlButton controlKind="icon" type="button" className="driver-record-close" aria-label="Close driver record" onMouseDown={event => event.preventDefault()} onClick={event => { event.stopPropagation(); close() }}><X size={18} aria-hidden="true" /></ControlButton></header>
         <DriverRecordContent truck={truck} />
       </PopoverPanel>
     </>}
@@ -51,7 +52,7 @@ function DriverRecordContent({ truck }: { truck: DriverTruck }) {
     },
   })
   if (query.isLoading || query.isFetching) return <p className="driver-record-message" role="status">Loading driver record…</p>
-  if (query.isError) return <div className="driver-record-message" role="alert"><p>Driver record could not be loaded.</p><button type="button" className="driver-record-retry" onClick={() => void query.refetch()} disabled={query.isFetching}><RotateCcw size={14} aria-hidden="true" />Try again</button></div>
+  if (query.isError) return <div className="driver-record-message" role="alert"><p>Driver record could not be loaded.</p><ControlButton type="button" className="driver-record-retry" onClick={() => void query.refetch()} disabled={query.isFetching}><RotateCcw size={14} aria-hidden="true" />Try again</ControlButton></div>
   const data = query.data
   const unavailableCopy: Partial<Record<NonNullable<DriverRecordResponse['unavailable_reason']>, string>> = {
     no_capture: 'No Motive driver record has been captured for this truck.',

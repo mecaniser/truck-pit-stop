@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { usePricingCommand } from '@/features/parts-pricing/usePricingCommand'
 import { maintenanceError } from '@/features/maintenance/api'
 import MaintenanceSection from '@/features/maintenance/MaintenanceSection'
@@ -124,10 +125,10 @@ function QueryFailure({ title, detail, onRetry, retrying = false, compact = fals
         <strong>{title}</strong>
         <span>{detail}</span>
       </div>
-      <button type="button" className="query-retry" onClick={onRetry} disabled={retrying}>
+      <ControlButton type="button" className="query-retry" onClick={onRetry} disabled={retrying}>
         {retrying ? <Spinner size="xs" /> : <RotateCcw size={14} />}
         {retrying ? 'Retrying…' : 'Try again'}
-      </button>
+      </ControlButton>
     </div>
   )
 }
@@ -567,7 +568,7 @@ export default function TruckDetail({
           <div>
             <div className="dhead-unit-row">
               <div style={{ position: 'relative' }}>
-                <button
+                <ControlButton controlKind="action"
                   ref={statusTriggerRef}
                   type="button"
                   className="dbadge"
@@ -581,7 +582,7 @@ export default function TruckDetail({
                 >
                   <i className={truckMotion(t, now) === 'moving' ? 'is-moving' : ''} />{meta.label}
                   <ChevronDown size={12} style={{ marginLeft: 5, opacity: 0.7 }} />
-                </button>
+                </ControlButton>
                 {statusMenuOpen && (
                   <>
                     <div aria-hidden="true" onClick={() => closeStatusMenu()} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
@@ -603,7 +604,7 @@ export default function TruckDetail({
                       {STATUS_OPTIONS.map((opt) => {
                         const current = (t.status_override || 'auto') === opt.value
                         return (
-                          <button
+                          <ControlButton controlKind="content"
                             key={opt.value}
                             type="button"
                             role="menuitemradio"
@@ -616,7 +617,7 @@ export default function TruckDetail({
                             <span style={{ width: 8, height: 8, borderRadius: 99, background: opt.dot, flexShrink: 0 }} />
                             {opt.label}
                             {current && <Check size={14} style={{ marginLeft: 'auto', color: 'var(--yellow)' }} />}
-                          </button>
+                          </ControlButton>
                         )
                       })}
                     </div>
@@ -632,7 +633,7 @@ export default function TruckDetail({
                   <i />Next: {suppressedOverride.label}
                 </span>
               )}
-              <button
+              <ControlButton
                 className="dbtn dbtn-ghost dhead-details"
                 onClick={() => setDetailsOpen(true)}
                 title="Truck details"
@@ -640,9 +641,9 @@ export default function TruckDetail({
                 disabled={!data}
               >
                 <Info size={14} /> <span className="dbtn-label">Truck details</span>
-              </button>
+              </ControlButton>
               <TruckTelemetryLocation truck={t} />
-              {onViewTrips && <button type="button" className="dbtn dbtn-ghost dhead-trips" onClick={() => onViewTrips(t.id)}><Route size={15} /> View trips</button>}
+              {onViewTrips && <ControlButton type="button" className="dbtn dbtn-ghost dhead-trips" onClick={() => onViewTrips(t.id)}><Route size={15} /> View trips</ControlButton>}
               <TruckDiagnostics key={truckId} truckId={truckId} telemetry={t.telemetry} />
             </div>
             <div className="dhead-sub">
@@ -699,36 +700,36 @@ export default function TruckDetail({
                 <p>{nextAction.reason}</p>
               </div>
             </div>
-            <button className="next-action-button" onClick={nextAction.onClick}>
+            <ControlButton className="next-action-button" onClick={nextAction.onClick}>
               {nextAction.label}<ArrowRight size={18} />
-            </button>
+            </ControlButton>
           </section>
 
           <section className="yard-tools" aria-label="Yard tools">
             <div className="yard-tool-actions">
-              <button className="yard-tool" onClick={() => scheduledInspection
+              <ControlButton className="yard-tool" onClick={() => scheduledInspection
                 ? inspectionsRef.current?.open(scheduledInspection.id)
                 : inspectionsRef.current?.start()}>
                 <ClipboardCheck size={17} />
                 <span>{scheduledInspection ? 'Open scheduled inspection' : 'Start inspection'}</span>
-              </button>
-              <button className="yard-tool" onClick={() => primaryWorkOrder
+              </ControlButton>
+              <ControlButton className="yard-tool" onClick={() => primaryWorkOrder
                 ? setRoPanelId(primaryWorkOrder.repair_order_id)
                 : createRepairOrder.mutate()}>
                 <Wrench size={17} />
                 <span>{primaryWorkOrder ? 'Continue repair order' : 'Create repair order'}</span>
-              </button>
-              <button className="yard-tool" onClick={() => setLogging(true)}>
+              </ControlButton>
+              <ControlButton className="yard-tool" onClick={() => setLogging(true)}>
                 <AlertTriangle size={17} />
                 <span>Report road incident</span>
-              </button>
-              <button
+              </ControlButton>
+              <ControlButton
                 className={'yard-tool yard-tool-pm' + (pmNeedsAttention ? ' is-attention' : '')}
                 onClick={() => setSchedulePMOpen(true)}
               >
                 <Calendar size={17} />
                 <span>{t.pm_due_date ? 'Review scheduled PM' : 'Schedule PM'}</span>
-              </button>
+              </ControlButton>
             </div>
             <div
               className="yard-tools-help"
@@ -737,7 +738,7 @@ export default function TruckDetail({
                 if (!event.currentTarget.contains(event.relatedTarget)) setYardToolsHelpOpen(false)
               }}
             >
-              <button
+              <ControlButton controlKind="icon"
                 type="button"
                 className="yard-tools-help-button"
                 aria-label="About yard tools"
@@ -746,7 +747,7 @@ export default function TruckDetail({
                 onClick={() => setYardToolsHelpOpen((open) => !open)}
               >
                 <Info size={17} />
-              </button>
+              </ControlButton>
               <div id={yardToolsHelpId} className="yard-tools-tooltip" role="tooltip">
                 <strong>Yard tools</strong>
                 <span>Inspect the truck, create or continue repair work, or report a road incident while you are at the unit.</span>
@@ -765,14 +766,14 @@ export default function TruckDetail({
           {data.open_work_orders.length > 0 && <Section title="Open repair orders" icon={<ClipboardList size={17} />} count={data.open_work_orders.length} className="dsec-operation dsec-work-orders">
               <div className="list-rows">
                 {data.open_work_orders.map((wo) => (
-                  <button key={wo.repair_order_id} className="lrow lrow-action" onClick={() => setRoPanelId(wo.repair_order_id)}>
+                  <ControlButton key={wo.repair_order_id} className="lrow lrow-action" onClick={() => setRoPanelId(wo.repair_order_id)}>
                     <span className="lrow-mono">{wo.id}</span>
                     <span className="lrow-tx">{wo.summary || 'No complaint recorded'}</span>
                     <span className="lrow-r">
                       <span className="lrow-action-label">{wo.status === 'Draft' ? 'Continue draft' : `Open ${wo.status.toLowerCase()}`}</span>
                       <ArrowRight size={16} />
                     </span>
-                  </button>
+                  </ControlButton>
                 ))}
               </div>
           </Section>}
@@ -825,7 +826,7 @@ export default function TruckDetail({
                               <a href={photo.image_url} target="_blank" rel="noreferrer" title="Open photo">
                                 <img src={photo.image_url} alt="Incident" style={{ width: 54, height: 54, objectFit: 'cover', borderRadius: 9, border: '1px solid var(--line)' }} />
                               </a>
-                              <button
+                              <ControlButton controlKind="action"
                                 type="button"
                                 className="icon-hit-pad"
                                 aria-label="Remove incident photo"
@@ -848,7 +849,7 @@ export default function TruckDetail({
                                 }}
                               >
                                 {deleteIncidentPhoto.isPending ? <Spinner size="xs" /> : <Trash2 size={12} />}
-                              </button>
+                              </ControlButton>
                             </div>
                           ))}
                           {hiddenPhotoCount > 0 && <span className="dsec-count">+{hiddenPhotoCount}</span>}
@@ -866,7 +867,7 @@ export default function TruckDetail({
                           </span>
                         )}
                         <div style={{ position: 'relative', marginLeft: 'auto' }}>
-                          <button
+                          <ControlButton controlKind="icon"
                             className="dbtn dbtn-ghost inc-menu-btn"
                             onClick={() => {
                               setArmedVoidIncidentId(null)
@@ -877,12 +878,12 @@ export default function TruckDetail({
                             title="Actions"
                           >
                             <MoreHorizontal size={19} />
-                          </button>
+                          </ControlButton>
                           {incidentMenuOpenId === inc.id && (
                             <>
                               <div onClick={() => { setIncidentMenuOpenId(null); setArmedVoidIncidentId(null) }} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
                               <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 41, minWidth: 190, padding: 6, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.45)' }}>
-                                <button
+                                <ControlButton
                                   style={incidentMenuItemStyle}
                                   onClick={() => {
                                     setEditingIncident(inc)
@@ -890,7 +891,7 @@ export default function TruckDetail({
                                   }}
                                 >
                                   <Pencil size={13} /> Edit
-                                </button>
+                                </ControlButton>
                                 <label style={{ ...incidentMenuItemStyle, cursor: pendingIncidentUploadCount > 0 ? 'not-allowed' : 'pointer' }}>
                                   {pendingIncidentUploadCount > 0 ? <Spinner size="xs" /> : <Camera size={13} />} Upload photo
                                   <input
@@ -917,7 +918,7 @@ export default function TruckDetail({
                                   />
                                 </label>
                                 {!inc.repair_order_id && (
-                                  <button
+                                  <ControlButton
                                     style={incidentMenuItemStyle}
                                     onClick={() => {
                                       repairFromIncident.mutate(inc.id)
@@ -926,10 +927,10 @@ export default function TruckDetail({
                                     disabled={repairFromIncident.isPending}
                                   >
                                     <Wrench size={13} /> Create repair
-                                  </button>
+                                  </ControlButton>
                                 )}
                                 {!inc.repair_order_id && (
-                                  <button
+                                  <ControlButton
                                     style={incidentMenuItemStyle}
                                     onClick={() => {
                                       setAssigningIncident(inc)
@@ -937,10 +938,10 @@ export default function TruckDetail({
                                     }}
                                   >
                                     <ClipboardList size={13} /> Assign to repair order
-                                  </button>
+                                  </ControlButton>
                                 )}
                                 {inc.status !== 'resolved' && (
-                                  <button
+                                  <ControlButton
                                     style={incidentMenuItemStyle}
                                     onClick={() => {
                                       setResolvingIncident(inc)
@@ -948,7 +949,7 @@ export default function TruckDetail({
                                     }}
                                   >
                                     <CheckCircle2 size={13} /> Resolve
-                                  </button>
+                                  </ControlButton>
                                 )}
                                 {!inc.repair_order_id && (
                                   armedVoidIncidentId === inc.id ? (
@@ -957,25 +958,25 @@ export default function TruckDetail({
                                         Void this incident? The record is kept in history.
                                       </div>
                                       <div style={{ display: 'flex', gap: 6 }}>
-                                        <button className="dbtn dbtn-ghost" style={{ height: 30, flex: 1, fontSize: 12, whiteSpace: 'nowrap' }}
+                                        <ControlButton className="dbtn dbtn-ghost" style={{ height: 30, flex: 1, fontSize: 12, whiteSpace: 'nowrap' }}
                                           disabled={voidIncident.isPending} onClick={() => setArmedVoidIncidentId(null)}>
                                           Cancel
-                                        </button>
-                                        <button className="dbtn dbtn-ghost" style={{ height: 30, flex: 1, fontSize: 12, color: 'var(--red)', whiteSpace: 'nowrap' }}
+                                        </ControlButton>
+                                        <ControlButton controlKind="action" className="dbtn dbtn-ghost" style={{ height: 30, flex: 1, fontSize: 12, color: 'var(--red)', whiteSpace: 'nowrap' }}
                                           aria-label="Void incident"
                                           disabled={voidIncident.isPending}
                                           onClick={() => voidIncident.mutate(inc.id, { onSuccess: () => { setArmedVoidIncidentId(null); setIncidentMenuOpenId(null) } })}>
                                           {voidIncident.isPending ? <Spinner size="xs" /> : <Ban size={12} />} Void
-                                        </button>
+                                        </ControlButton>
                                       </div>
                                     </div>
                                   ) : (
-                                    <button
+                                    <ControlButton
                                       style={{ ...incidentMenuItemStyle, color: 'var(--red)' }}
                                       onClick={() => setArmedVoidIncidentId(inc.id)}
                                     >
                                       <Ban size={13} /> Void
-                                    </button>
+                                    </ControlButton>
                                   )
                                 )}
                               </div>
@@ -1003,7 +1004,7 @@ export default function TruckDetail({
 
           {settledIncidents.length > 0 && (
             <div className="dsec-operation" style={{ marginTop: 10 }}>
-              <button
+              <ControlButton controlKind="action"
                 onClick={() => setResolvedIncidentsOpen((open) => !open)}
                 aria-expanded={resolvedIncidentsOpen}
                 style={{
@@ -1026,7 +1027,7 @@ export default function TruckDetail({
                     transition: 'transform .15s ease',
                   }}
                 />
-              </button>
+              </ControlButton>
               {resolvedIncidentsOpen && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
                   {settledIncidents.map((inc) => (
@@ -1074,12 +1075,12 @@ export default function TruckDetail({
             </div>
             <div className="record-disclosures">
               <div className={'record-disclosure' + (historyOpen ? ' is-open' : '')}>
-                <button className="record-disclosure-trigger" onClick={() => setHistoryOpen((open) => !open)} aria-expanded={historyOpen}>
+                <ControlButton controlKind="action" className="record-disclosure-trigger" onClick={() => setHistoryOpen((open) => !open)} aria-expanded={historyOpen}>
                   <span className="record-disclosure-icon"><History size={17} /></span>
                   <span className="record-disclosure-copy"><b>Service history</b><small>Completed maintenance and repair timeline</small></span>
                   {historyQuery.data?.length != null && <span className="record-disclosure-count">{historyQuery.data.length}</span>}
                   <ChevronDown size={17} />
-                </button>
+                </ControlButton>
                 {historyOpen && (
                   <div className="record-disclosure-content">
                     {historyQuery.isLoading ? <div className="empty-note" role="status"><Spinner size="xs" /> Loading service history...</div>
@@ -1097,9 +1098,9 @@ export default function TruckDetail({
                                 <span className="tl-meta-actions">
                                   {h.cost != null && <span className="tl-cost">{money(h.cost)}</span>}
                                   {looksLikePreventiveMaintenance(h) && (
-                                    <button type="button" className="tl-pm-action" onClick={() => setRecognizingPm(h)}>
+                                    <ControlButton type="button" className="tl-pm-action" onClick={() => setRecognizingPm(h)}>
                                       <CheckCircle2 size={13} /> Recognize as PM
-                                    </button>
+                                    </ControlButton>
                                   )}
                                 </span>
                               </div>
@@ -1111,12 +1112,12 @@ export default function TruckDetail({
                 )}
               </div>
               <div className={'record-disclosure' + (partsOpen ? ' is-open' : '')}>
-                <button className="record-disclosure-trigger" onClick={() => setPartsOpen((open) => !open)} aria-expanded={partsOpen}>
+                <ControlButton controlKind="action" className="record-disclosure-trigger" onClick={() => setPartsOpen((open) => !open)} aria-expanded={partsOpen}>
                   <span className="record-disclosure-icon"><Box size={17} /></span>
                   <span className="record-disclosure-copy"><b>Parts & warranty</b><small>Installed parts and active coverage</small></span>
                   {partsQuery.data?.length != null && <span className="record-disclosure-count">{partsQuery.data.length}</span>}
                   <ChevronDown size={17} />
-                </button>
+                </ControlButton>
                 {partsOpen && (
                   <div className="record-disclosure-content">
                     {partsQuery.isLoading ? <div className="empty-note" role="status"><Spinner size="xs" /> Loading parts and warranty...</div>
@@ -1147,7 +1148,7 @@ export default function TruckDetail({
                   </span>
                   <span className="loc-mph"> · {truckMotion(t, now) === 'unknown' ? 'motion unknown' : truckMotion(t, now)}</span>
                 </div>
-                <button
+                <ControlButton controlKind="action"
                   type="button"
                   className="map-disclosure-toggle"
                   aria-expanded={locationOpen}
@@ -1155,7 +1156,7 @@ export default function TruckDetail({
                 >
                   {locationOpen ? 'Hide map' : 'Show map'}
                   <ChevronDown size={16} aria-hidden="true" />
-                </button>
+                </ControlButton>
               </div>
             }
           >
@@ -1165,7 +1166,7 @@ export default function TruckDetail({
           </Section>
         </div>
         {!detailOverlayOpen && (
-          <button
+          <ControlButton
             type="button"
             className={`next-action-dock next-action-dock--${nextAction.tone}`}
             onClick={nextAction.onClick}
@@ -1177,7 +1178,7 @@ export default function TruckDetail({
               <strong>{nextAction.label}</strong>
             </span>
             <ArrowRight size={20} aria-hidden="true" />
-          </button>
+          </ControlButton>
         )}
       </>
       ) : truckQuery.isError ? (
@@ -1309,10 +1310,10 @@ function RecognizePMModal({ entry, truck, onClose, onDone }: {
       tone="maintenance"
       footer={(
         <div className="fleet-sidekick-actions">
-          <button type="button" className="dbtn dbtn-ghost" disabled={recognize.isPending} onClick={onClose}>Cancel</button>
-          <button type="button" className="dbtn dbtn-yellow" disabled={invalid || recognize.isPending} onClick={() => recognize.mutate()}>
+          <ControlButton type="button" className="dbtn dbtn-ghost" disabled={recognize.isPending} onClick={onClose}>Cancel</ControlButton>
+          <ControlButton type="button" className="dbtn dbtn-yellow" disabled={invalid || recognize.isPending} onClick={() => recognize.mutate()}>
             {recognize.isPending ? <Spinner size="xs" /> : <CheckCircle2 size={15} />} Record PM completion
-          </button>
+          </ControlButton>
         </div>
       )}
     >
@@ -1330,7 +1331,7 @@ function RecognizePMModal({ entry, truck, onClose, onDone }: {
         />
         <label>
           <span>Odometer at service</span>
-          <input inputMode="numeric" value={odometer} onChange={(event) => setOdometer(event.target.value.replace(/[^0-9]/g, ''))} placeholder="Enter service mileage" />
+          <ControlInput inputMode="numeric" value={odometer} onChange={(event) => setOdometer(event.target.value.replace(/[^0-9]/g, ''))} placeholder="Enter service mileage" />
         </label>
       </div>
 
@@ -1463,7 +1464,7 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
     <section className="fleet-reference-section">
       <div className="fleet-reference-heading">
         <h3 className="dmap-side-h">Driver &amp; crew</h3>
-        <button className="dbtn dbtn-ghost" onClick={onChangeDriver}>{driver || truck.driver_name ? 'Change driver' : 'Assign driver'}</button>
+        <ControlButton className="dbtn dbtn-ghost" onClick={onChangeDriver}>{driver || truck.driver_name ? 'Change driver' : 'Assign driver'}</ControlButton>
       </div>
       <div className="person person-driver fleet-driver-profile-row">
         <div className="avatar">{initials(driver ? displayName : currentDriverName(truck))}</div>
@@ -1479,7 +1480,7 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
             {portalState && <span className={`driver-portal-badge is-${portalState.portal_access_status}`}>{portalStatusCopy[portalState.portal_access_status]}</span>}
           </div>
           {!capability?.available ? (
-            <div className="driver-portal-gate"><span>{invitationUnavailableCopy(capabilities.data)}</span>{capability?.reauth_path && <button type="button" className="dbtn dbtn-ghost" onClick={() => startWorkOSLogin('/fleet', capability.reauth_path)}>Continue with WorkOS</button>}</div>
+            <div className="driver-portal-gate"><span>{invitationUnavailableCopy(capabilities.data)}</span>{capability?.reauth_path && <ControlButton type="button" className="dbtn dbtn-ghost" onClick={() => startWorkOSLogin('/fleet', capability.reauth_path)}>Continue with WorkOS</ControlButton>}</div>
           ) : portal.isLoading ? <div className="driver-portal-loading"><Spinner size="xs" /> Checking portal access…</div> : (
             <>
               {portalState?.portal_access_status === 'active' && <div className="driver-portal-active"><CheckCircle2 size={16} /><span>This driver can sign in and use the Driver Portal.</span></div>}
@@ -1490,14 +1491,14 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
                     <strong>This email is already used by another account.</strong>
                     <span>Driver Portal access is paused. Cancel this invitation before using a driver-controlled email.</span>
                     {portalState.can_cancel_review && portalState.invitation_id && !reviewCancelOpen && (
-                      <button type="button" className="dbtn dbtn-danger" onClick={() => setReviewCancelOpen(true)}>Cancel invitation</button>
+                      <ControlButton type="button" className="dbtn dbtn-danger" onClick={() => setReviewCancelOpen(true)}>Cancel invitation</ControlButton>
                     )}
                     {portalState.can_cancel_review && portalState.invitation_id && reviewCancelOpen && (
                       <div className="driver-portal-review-confirm">
                         <p>This removes the accepted Driver Portal membership. The driver profile and truck history stay unchanged.</p>
                         <div>
-                          <button type="button" className="dbtn dbtn-ghost" disabled={mutatePortal.isPending} onClick={() => setReviewCancelOpen(false)}>Keep invitation</button>
-                          <button type="button" className="dbtn dbtn-danger" disabled={mutatePortal.isPending} onClick={() => mutatePortal.mutate({ action: 'cancel_review', invitationId: portalState.invitation_id! })}>{mutatePortal.isPending ? <Spinner size="xs" /> : null} Remove portal access</button>
+                          <ControlButton type="button" className="dbtn dbtn-ghost" disabled={mutatePortal.isPending} onClick={() => setReviewCancelOpen(false)}>Keep invitation</ControlButton>
+                          <ControlButton type="button" className="dbtn dbtn-danger" disabled={mutatePortal.isPending} onClick={() => mutatePortal.mutate({ action: 'cancel_review', invitationId: portalState.invitation_id! })}>{mutatePortal.isPending ? <Spinner size="xs" /> : null} Remove portal access</ControlButton>
                         </div>
                       </div>
                     )}
@@ -1513,12 +1514,12 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
                   </div>
                 </div>
               )}
-              {portalState?.can_invite && !inviteOpen && <button type="button" className="dbtn dbtn-ghost" onClick={() => setInviteOpen(true)}>Invite to Driver Portal</button>}
-              {inviteOpen && <div className="driver-portal-invite"><label><span>Invitation email</span><input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="driver@company.com" autoFocus /></label><div><button type="button" className="dbtn dbtn-ghost" onClick={() => setInviteOpen(false)}>Cancel</button><button type="button" className="dbtn dbtn-yellow" disabled={!inviteEmail.trim() || mutatePortal.isPending} onClick={() => mutatePortal.mutate({ action: 'invite' })}>{mutatePortal.isPending ? <Spinner size="xs" /> : null} Send invitation</button></div></div>}
-              {portalState?.can_resend && portalState.invitation_id && <button type="button" className="dbtn dbtn-ghost" disabled={mutatePortal.isPending} onClick={() => mutatePortal.mutate({ action: 'resend', invitationId: portalState.invitation_id! })}>Resend invitation</button>}
-              {portalState?.can_revoke && portalState.invitation_id && <button type="button" className="dbtn dbtn-danger" disabled={mutatePortal.isPending} onClick={() => mutatePortal.mutate({ action: 'revoke', invitationId: portalState.invitation_id! })}>Revoke invitation</button>}
+              {portalState?.can_invite && !inviteOpen && <ControlButton type="button" className="dbtn dbtn-ghost" onClick={() => setInviteOpen(true)}>Invite to Driver Portal</ControlButton>}
+              {inviteOpen && <div className="driver-portal-invite"><label><span>Invitation email</span><ControlInput type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="driver@company.com" autoFocus /></label><div><ControlButton type="button" className="dbtn dbtn-ghost" onClick={() => setInviteOpen(false)}>Cancel</ControlButton><ControlButton type="button" className="dbtn dbtn-yellow" disabled={!inviteEmail.trim() || mutatePortal.isPending} onClick={() => mutatePortal.mutate({ action: 'invite' })}>{mutatePortal.isPending ? <Spinner size="xs" /> : null} Send invitation</ControlButton></div></div>}
+              {portalState?.can_resend && portalState.invitation_id && <ControlButton type="button" className="dbtn dbtn-ghost" disabled={mutatePortal.isPending} onClick={() => mutatePortal.mutate({ action: 'resend', invitationId: portalState.invitation_id! })}>Resend invitation</ControlButton>}
+              {portalState?.can_revoke && portalState.invitation_id && <ControlButton type="button" className="dbtn dbtn-danger" disabled={mutatePortal.isPending} onClick={() => mutatePortal.mutate({ action: 'revoke', invitationId: portalState.invitation_id! })}>Revoke invitation</ControlButton>}
               {driverPortalUrl && portalState && portalState.portal_access_status !== 'not_invited' && (
-                <button type="button" className="dbtn dbtn-ghost" onClick={copyDriverPortalLink}>Copy garage-specific sign-in link</button>
+                <ControlButton type="button" className="dbtn dbtn-ghost" onClick={copyDriverPortalLink}>Copy garage-specific sign-in link</ControlButton>
               )}
             </>
           )}
@@ -1546,9 +1547,9 @@ function TruckDetailsModal({ truck, detail, canMerge, canRemoveFromFleet, onChan
       <section className="fleet-reference-section">
         <div className="fleet-reference-heading">
           <h3 className="dmap-side-h">Identity</h3>
-          <button className="dbtn dbtn-ghost" onClick={onEdit}>
+          <ControlButton className="dbtn dbtn-ghost" onClick={onEdit}>
             <Pencil size={14} /> Edit truck
-          </button>
+          </ControlButton>
         </div>
         <div className="id-grid">
           <Stat label="VIN" value={truck.vin || '—'} mono />
@@ -1587,9 +1588,9 @@ function TruckDetailsModal({ truck, detail, canMerge, canRemoveFromFleet, onChan
             <strong>Record maintenance</strong>
             <span>Merge another record only when it represents this same physical truck.</span>
           </div>
-          <button type="button" className="dbtn dbtn-ghost" onClick={onMerge}>
+          <ControlButton type="button" className="dbtn dbtn-ghost" onClick={onMerge}>
             <Combine size={15} /> Merge duplicate
-          </button>
+          </ControlButton>
         </div>
       )}
       {canRemoveFromFleet && (truck.board_membership_customer_id || truck.fleet_customer_id) && (
@@ -1606,9 +1607,9 @@ function TruckDetailsModal({ truck, detail, canMerge, canRemoveFromFleet, onChan
               Merging fixes a records mistake and is reversible by merging back;
               this changes what a whole company sees on their board. Two actions
               that look identical read as equally safe, and these are not. */}
-          <button type="button" className="dbtn dbtn-danger" onClick={onRemoveFromFleet}>
+          <ControlButton type="button" className="dbtn dbtn-danger" onClick={onRemoveFromFleet}>
             <LogOut size={15} /> Remove from fleet
-          </button>
+          </ControlButton>
         </div>
       )}
     </SidekickPanel>
@@ -1756,7 +1757,7 @@ export function MergeTruckModal({ truck, onClose, onMerged }: {
               ) : candidatesQuery.isError ? (
                 <div className="merge-empty merge-error">
                   <span>Possible duplicates could not be loaded.</span>
-                  <button type="button" className="dbtn dbtn-ghost" onClick={() => candidatesQuery.refetch()}><RotateCcw size={14} /> Retry</button>
+                  <ControlButton type="button" className="dbtn dbtn-ghost" onClick={() => candidatesQuery.refetch()}><RotateCcw size={14} /> Retry</ControlButton>
                 </div>
               ) : !candidatesQuery.data?.length ? (
                 <div className="merge-empty">No safe VIN or unit-number matches were found. Add the missing identity information first, then try again.</div>
@@ -1766,7 +1767,7 @@ export function MergeTruckModal({ truck, onClose, onMerged }: {
                     const selected = duplicateId === candidate.id
                     const exactVin = Boolean(truck.vin && candidate.vin && truck.vin.trim().toUpperCase() === candidate.vin.trim().toUpperCase())
                     return (
-                      <button
+                      <ControlButton controlKind="action"
                         key={candidate.id}
                         type="button"
                         aria-pressed={selected}
@@ -1782,7 +1783,7 @@ export function MergeTruckModal({ truck, onClose, onMerged }: {
                           <small>{candidate.customer_name} · {[candidate.year, candidate.make, candidate.model].filter(Boolean).join(' ') || 'Truck details not recorded'}</small>
                           <small>{candidate.vin ? `VIN ${candidate.vin}` : 'VIN not recorded'} · {candidate.mileage == null ? 'Mileage not recorded' : `${candidate.mileage.toLocaleString()} mi`} · {candidate.repair_order_count} repair order{candidate.repair_order_count === 1 ? '' : 's'}</small>
                         </span>
-                      </button>
+                      </ControlButton>
                     )
                   })}
                 </div>
@@ -1794,7 +1795,7 @@ export function MergeTruckModal({ truck, onClose, onMerged }: {
               {duplicateId && previewQuery.isError && (
                 <div className="merge-empty merge-error">
                   <span>The comparison could not be built. The selected records have not changed.</span>
-                  <button type="button" className="dbtn dbtn-ghost" onClick={() => previewQuery.refetch()}><RotateCcw size={14} /> Retry</button>
+                  <ControlButton type="button" className="dbtn dbtn-ghost" onClick={() => previewQuery.refetch()}><RotateCcw size={14} /> Retry</ControlButton>
                 </div>
               )}
             </>
@@ -1830,7 +1831,7 @@ export function MergeTruckModal({ truck, onClose, onMerged }: {
                 </div>
               )}
 
-              <button
+              <ControlButton
                 type="button"
                 role="checkbox"
                 aria-checked={confirmed}
@@ -1840,7 +1841,7 @@ export function MergeTruckModal({ truck, onClose, onMerged }: {
               >
                 <span className="merge-confirm-box" aria-hidden="true">{confirmed && <Check size={15} />}</span>
                 <span>I verified {mergeRecordLabel(recommended)} and {mergeRecordLabel(archived)} are the same physical truck with {identityLabel} <strong>{preview.match_value}</strong>.</span>
-              </button>
+              </ControlButton>
 
               {merge.isError && (
                 <div className="merge-empty merge-error" role="alert">
@@ -1856,19 +1857,19 @@ export function MergeTruckModal({ truck, onClose, onMerged }: {
 
         <div className="merge-actions">
           {stage === 'review' ? (
-            <button type="button" className="dbtn dbtn-ghost" onClick={returnToSelection} disabled={merge.isPending}><ArrowLeft size={15} /> Back</button>
+            <ControlButton type="button" className="dbtn dbtn-ghost" onClick={returnToSelection} disabled={merge.isPending}><ArrowLeft size={15} /> Back</ControlButton>
           ) : (
-            <button type="button" className="dbtn dbtn-ghost" onClick={onClose}>Cancel</button>
+            <ControlButton type="button" className="dbtn dbtn-ghost" onClick={onClose}>Cancel</ControlButton>
           )}
-          {stage === 'review' && <button type="button" className="dbtn dbtn-ghost merge-cancel" onClick={onClose} disabled={merge.isPending}>Cancel</button>}
+          {stage === 'review' && <ControlButton type="button" className="dbtn dbtn-ghost merge-cancel" onClick={onClose} disabled={merge.isPending}>Cancel</ControlButton>}
           {stage === 'select' ? (
-            <button type="button" className="dbtn dbtn-yellow" onClick={reviewSelection} disabled={!selectedCandidate || !preview || previewQuery.isLoading || previewQuery.isError}>
+            <ControlButton type="button" className="dbtn dbtn-yellow" onClick={reviewSelection} disabled={!selectedCandidate || !preview || previewQuery.isLoading || previewQuery.isError}>
               {previewQuery.isLoading ? <Spinner size="xs" /> : <ArrowRight size={15} />} Review merge
-            </button>
+            </ControlButton>
           ) : (
-            <button type="button" className="dbtn dbtn-danger" onClick={() => merge.mutate()} disabled={!preview || !confirmed || merge.isPending}>
+            <ControlButton type="button" className="dbtn dbtn-danger" onClick={() => merge.mutate()} disabled={!preview || !confirmed || merge.isPending}>
               {merge.isPending ? <Spinner size="xs" /> : <Combine size={15} />} {merge.isPending ? 'Merging records…' : `Merge into ${recommended ? mergeRecordLabel(recommended) : 'recommended truck'}`}
-            </button>
+            </ControlButton>
           )}
         </div>
       </div>

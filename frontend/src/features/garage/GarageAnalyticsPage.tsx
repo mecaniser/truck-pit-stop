@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { Spinner } from '@/components/ui'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -231,14 +232,14 @@ function LoadingBlock() {
 
 function ExportButton({ onClick }: { onClick: () => void }) {
   return (
-    <button
+    <ControlButton
       type="button"
       onClick={onClick}
-      className="db-analytics-quiet-action flex items-center gap-2 h-10 px-4 rounded-lg bg-white/10 text-white text-sm font-medium hover:bg-white/15 transition-colors"
+      className="db-analytics-quiet-action flex items-center gap-2  px-4 rounded-lg bg-white/10 text-white text-sm font-medium hover:bg-white/15 transition-colors"
     >
       <Download className="w-4 h-4" />
       Export
-    </button>
+    </ControlButton>
   )
 }
 
@@ -1200,17 +1201,17 @@ export default function GarageAnalyticsPage() {
 
       <div className="db-analytics-tabs mb-4 flex-shrink-0 flex gap-1 overflow-x-auto scrollbar-hide border-b border-white/10">
         {TABS.filter(tab => tab.id !== 'job-contribution' || costOwner).map((tab) => (
-          <button
+          <ControlButton
             key={tab.id}
             type="button"
             onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${
+            className={`px-4  text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${
               activeTab === tab.id ? 'text-white' : 'text-white/50 hover:text-white/80 border-transparent'
             }`}
             style={activeTab === tab.id ? { borderColor: accentColors[500] } : undefined}
           >
             {tab.label}
-          </button>
+          </ControlButton>
         ))}
       </div>
 

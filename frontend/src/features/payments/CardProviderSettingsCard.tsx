@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, CreditCard } from 'lucide-react'
@@ -76,12 +77,12 @@ export default function CardProviderSettingsCard({ requestVerification, children
         </span>
       </div>
 
-      {children && providers.some(provider => provider.ready && provider.id !== data.selected_provider) && canConfigure && <button type="button" onClick={() => { setChoosingProvider(!choosingProvider); setPendingProvider(null) }} className="min-h-11 text-sm font-semibold text-[var(--accent-400)]">{choosingProvider ? 'Cancel processor change' : 'Change card processor'}</button>}
+      {children && providers.some(provider => provider.ready && provider.id !== data.selected_provider) && canConfigure && <ControlButton type="button" onClick={() => { setChoosingProvider(!choosingProvider); setPendingProvider(null) }} className=" text-sm font-semibold text-[var(--accent-400)]">{choosingProvider ? 'Cancel processor change' : 'Change card processor'}</ControlButton>}
       {(!children || choosingProvider) && <div className={`mt-4 grid gap-3 ${providers.length > 1 ? 'sm:grid-cols-2' : ''}`} role="radiogroup" aria-label="Invoice card provider">
         {providers.map(provider => {
           const active = provider.id === data.selected_provider && provider.ready && data.feature_enabled && data.accounting_ready
           const pending = provider.id === pendingProvider && provider.id !== data.selected_provider
-          return <button
+          return <ControlButton controlKind="content"
             key={provider.id}
             type="button"
             role="radio"
@@ -93,7 +94,7 @@ export default function CardProviderSettingsCard({ requestVerification, children
           >
             <span className="flex items-center justify-between gap-2"><span className="font-bold">{provider.name}</span>{active ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> : !provider.ready ? <AlertTriangle className="h-4 w-4" aria-hidden="true" /> : null}</span>
             <span className="mt-1 block text-xs">{active ? 'Active for invoice payments' : pending ? 'Selected — save to activate' : provider.id === data.selected_provider ? `Selected · ${!data.feature_enabled ? 'Partial payments disabled' : !data.accounting_ready ? 'Accounting setup required' : STATUS_LABELS[provider.status]}` : 'Ready to use'}</span>
-          </button>
+          </ControlButton>
         })}
       </div>}
       {children && providers.some(provider => provider.id === data.selected_provider && !provider.ready) && <p role="status" className="text-sm text-amber-300">The selected card processor needs attention. Check its connection below.</p>}
@@ -107,10 +108,10 @@ export default function CardProviderSettingsCard({ requestVerification, children
 
       {pendingProvider && pendingProvider !== data.selected_provider && (
         <div className="mt-4 flex flex-wrap items-center justify-end gap-3 border-t border-zinc-800 pt-4">
-          <button type="button" onClick={() => setPendingProvider(null)} className="min-h-[44px] px-3 text-sm font-bold text-zinc-400 hover:text-white">Cancel</button>
-          <button type="button" disabled={updateMutation.isPending || (pendingProvider === 'stripe_connect' ? data.stripe_connect.status !== 'ready' : data.quickbooks_payments.status !== 'ready')} onClick={() => requestVerification((grantToken) => updateMutation.mutate({ provider: pendingProvider, grantToken }))} className="min-h-[44px] rounded-xl bg-[#b9472f] px-4 text-sm font-extrabold text-white hover:brightness-110 disabled:opacity-50">
+          <ControlButton type="button" onClick={() => setPendingProvider(null)} className=" px-3 text-sm font-bold text-zinc-400 hover:text-white">Cancel</ControlButton>
+          <ControlButton type="button" disabled={updateMutation.isPending || (pendingProvider === 'stripe_connect' ? data.stripe_connect.status !== 'ready' : data.quickbooks_payments.status !== 'ready')} onClick={() => requestVerification((grantToken) => updateMutation.mutate({ provider: pendingProvider, grantToken }))} className=" rounded-xl bg-[#b9472f] px-4 text-sm font-extrabold text-white hover:brightness-110 disabled:opacity-50">
             {updateMutation.isPending ? 'Saving…' : `Use ${pendingProvider === 'stripe_connect' ? 'Stripe' : 'QuickBooks'} for new attempts`}
-          </button>
+          </ControlButton>
         </div>
       )}
       {children}

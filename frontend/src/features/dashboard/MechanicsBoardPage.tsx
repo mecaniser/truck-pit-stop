@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -294,26 +295,26 @@ export default function MechanicsBoardPage() {
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       {m.active_session?.session_type === 'misc' ? (
-                        <button
+                        <ControlButton
                           onClick={(event) => {
                             event.stopPropagation()
                             setStopTarget({ mechanicId: m.mechanic_id, mechanicName: m.mechanic_name })
                           }}
-                          className="px-3 py-1.5 text-xs rounded-lg bg-red-950/80 hover:bg-red-900 text-red-400 font-semibold border border-red-800/50 hover:border-red-600 transition-all duration-200"
+                          className="px-3  text-xs rounded-lg bg-red-950/80 hover:bg-red-900 text-red-400 font-semibold border border-red-800/50 hover:border-red-600 transition-all duration-200"
                         >
                           Stop Misc
-                        </button>
+                        </ControlButton>
                       ) : null}
                       {(m.suggested_next_action === 'continue_ro' || m.suggested_next_action === 'stop_misc_pick_ro' || m.suggested_next_action === 'start_assigned_ro') ? (
-                        <button
+                        <ControlButton
                           onClick={(event) => {
                             event.stopPropagation()
                             navigate(mechanicDetailPath)
                           }}
-                          className="px-3 py-1.5 text-xs rounded-lg bg-[var(--accent-600)] hover:bg-[var(--accent-500)] text-white font-semibold border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)] transition-all duration-200"
+                          className="px-3  text-xs rounded-lg bg-[var(--accent-600)] hover:bg-[var(--accent-500)] text-white font-semibold border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)] transition-all duration-200"
                         >
                           Go to Detail
-                        </button>
+                        </ControlButton>
                       ) : null}
                     </div>
                   </div>
@@ -410,27 +411,27 @@ export default function MechanicsBoardPage() {
               placeholder="Manager reason (required)"
             />
             <div className="flex justify-end gap-3 pt-4 border-t border-zinc-800/50">
-              <button
+              <ControlButton
                 ref={cancelStopButtonRef}
                 onClick={() => {
                   setStopTarget(null)
                   setStopReason('')
                 }}
-                className="px-4 py-2.5 text-sm rounded-xl bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 font-semibold border border-zinc-600/50 hover:border-zinc-500 transition-all duration-200"
+                className="px-4  text-sm rounded-xl bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 font-semibold border border-zinc-600/50 hover:border-zinc-500 transition-all duration-200"
               >
                 Cancel
-              </button>
-              <button
+              </ControlButton>
+              <ControlButton
                 ref={confirmStopButtonRef}
                 onClick={() => {
                   if (!stopTarget || !stopReason.trim()) return
                   stopMiscMutation.mutate({ mechanicId: stopTarget.mechanicId, managerReason: stopReason.trim() })
                 }}
                 disabled={!stopReason.trim() || stopMiscMutation.isPending}
-                className="px-4 py-2.5 text-sm rounded-xl bg-red-950/80 hover:bg-red-900 text-red-400 font-semibold border border-red-800/50 hover:border-red-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4  text-sm rounded-xl bg-red-950/80 hover:bg-red-900 text-red-400 font-semibold border border-red-800/50 hover:border-red-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {stopMiscMutation.isPending ? 'Stopping...' : 'Stop Misc'}
-              </button>
+              </ControlButton>
             </div>
           </Card>
         </div>

@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown } from 'lucide-react'
@@ -117,13 +118,13 @@ function ImportForm({ actor, epoch }: { actor: Actor; epoch: number }) {
     <p className="coordinate-import-note">Exact VIN only. Unknown observation time stays unknown. Source data and receipts remain in this browser until downloaded or cleared.</p>
     <label htmlFor="coordinate-source">Source observation JSON</label>
     <textarea id="coordinate-source" spellCheck={false} value={text} disabled={busy || !!checkpoint || blocked} onChange={e => { setText(e.target.value); setPreview(null) }} />
-    <div className="coordinate-import-example"><button type="button" className="coordinate-import-example-toggle" aria-expanded={exampleOpen} aria-controls="coordinate-example" onClick={() => setExampleOpen(!exampleOpen)}>Synthetic format example <ChevronDown size={16} style={{ transform: exampleOpen ? 'rotate(180deg)' : undefined }} /></button>{exampleOpen && <pre id="coordinate-example">{JSON.stringify(exampleObservation, null, 2)}</pre>}</div>
+    <div className="coordinate-import-example"><ControlButton controlKind="action" type="button" className="coordinate-import-example-toggle" aria-expanded={exampleOpen} aria-controls="coordinate-example" onClick={() => setExampleOpen(!exampleOpen)}>Synthetic format example <ChevronDown size={16} style={{ transform: exampleOpen ? 'rotate(180deg)' : undefined }} /></ControlButton>{exampleOpen && <pre id="coordinate-example">{JSON.stringify(exampleObservation, null, 2)}</pre>}</div>
     {(preview || checkpoint) && <dl><dt>VIN</dt><dd>{(checkpoint || preview)!.source.vin}</dd><dt>Coordinates</dt><dd>{(checkpoint || preview)!.source.lat}, {(checkpoint || preview)!.source.lng}</dd><dt>Observed</dt><dd>{(checkpoint || preview)!.source.observed_at || 'Unknown'}</dd><dt>Request</dt><dd>{(checkpoint || preview)!.payload.client_request_id}</dd></dl>}
     {checkpoint?.receipt && <dl aria-label="Saved receipt"><dt>Receipt</dt><dd>{checkpoint.receipt.id}</dd><dt>Captured</dt><dd>{checkpoint.receipt.captured_at}</dd><dt>HTTP status</dt><dd>{checkpoint.response_status ?? 'Unavailable'}</dd></dl>}
     <div className="coordinate-import-actions">
-      {!checkpoint && <button className="dbtn" disabled={busy || blocked || !text} onClick={validate}>Validate</button>}
-      {(preview || checkpoint) && <button className="dbtn" disabled={busy || blocked} onClick={commit}>{checkpoint?.receipt ? 'Verify fleet board' : checkpoint ? 'Retry same request' : 'Import observation'}</button>}
-      {checkpoint?.receipt && <><button className="dbtn" onClick={download}>Download receipt</button><button className="dbtn" disabled={busy || !projected} onClick={next}>Next observation</button></>}
+      {!checkpoint && <ControlButton className="dbtn" disabled={busy || blocked || !text} onClick={validate}>Validate</ControlButton>}
+      {(preview || checkpoint) && <ControlButton className="dbtn" disabled={busy || blocked} onClick={commit}>{checkpoint?.receipt ? 'Verify fleet board' : checkpoint ? 'Retry same request' : 'Import observation'}</ControlButton>}
+      {checkpoint?.receipt && <><ControlButton className="dbtn" onClick={download}>Download receipt</ControlButton><ControlButton className="dbtn" disabled={busy || !projected} onClick={next}>Next observation</ControlButton></>}
     </div>
     <p role="status" aria-live="polite">{busy ? 'Working… ' : ''}{message}</p>
   </main>

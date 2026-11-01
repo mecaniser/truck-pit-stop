@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -78,7 +79,7 @@ const secondCustomer = {
 function LocationProbe() {
   const location = useLocation()
   const navigate = useNavigate()
-  return <><output data-testid="customers-location">{location.search}</output><button onClick={() => navigate('/dashboard/customers?selected=missing-customer')}>Test missing customer navigation</button></>
+  return <><output data-testid="customers-location">{location.search}</output><ControlButton onClick={() => navigate('/dashboard/customers?selected=missing-customer')}>Test missing customer navigation</ControlButton></>
 }
 
 function renderPage(initialEntry = '/dashboard/customers?view=list') {

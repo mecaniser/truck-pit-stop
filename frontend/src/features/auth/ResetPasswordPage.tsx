@@ -1,3 +1,4 @@
+import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import { useState } from 'react'
 import { Spinner } from '@/components/ui'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
@@ -85,7 +86,7 @@ export default function ResetPasswordPage() {
               </svg>
               <span className="text-sm">Invalid or missing reset token</span>
             </div>
-            <Link
+            <Link data-db-control="action"
               to="/forgot-password"
               className="flex w-full justify-center rounded-xl border border-transparent px-4 py-3 text-sm font-semibold text-white transition-all hover:shadow-[0_0_24px_var(--accent-500)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-500)] focus:ring-offset-2 focus:ring-offset-zinc-950"
               style={{ background: 'linear-gradient(135deg, var(--accent-500) 0%, var(--accent-600) 100%)' }}
@@ -103,7 +104,7 @@ export default function ResetPasswordPage() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(6,182,212,0.22),transparent_36%),radial-gradient(circle_at_85%_15%,rgba(79,70,229,0.2),transparent_34%),radial-gradient(circle_at_70%_80%,rgba(14,116,144,0.16),transparent_44%)]" />
 
       <div className="relative mx-auto flex min-h-screen w-full max-w-md flex-col items-center justify-center px-4 py-8">
-        <Link
+        <Link data-db-control="action"
           to="/login"
           className="mb-6 inline-flex items-center gap-2 self-start rounded-full border border-zinc-700/80 bg-zinc-900/70 px-4 py-2 text-sm font-medium text-zinc-200 backdrop-blur transition-colors hover:border-zinc-500 hover:text-[var(--accent-400)]"
         >
@@ -136,7 +137,7 @@ export default function ResetPasswordPage() {
                   New Password
                 </label>
                 <div className="relative">
-                  <input
+                  <ControlInput
                     {...register('newPassword')}
                     type="password"
                     id="newPassword"
@@ -162,7 +163,7 @@ export default function ResetPasswordPage() {
                   Confirm Password
                 </label>
                 <div className="relative">
-                  <input
+                  <ControlInput
                     {...register('confirmPassword')}
                     type="password"
                     id="confirmPassword"
@@ -185,10 +186,10 @@ export default function ResetPasswordPage() {
             </div>
 
             <div className="pt-2">
-              <button
+              <ControlButton
                 type="submit"
                 disabled={isLoading}
-                className="flex w-full justify-center rounded-xl border border-transparent px-4 py-3 text-sm font-semibold text-white transition-all disabled:cursor-not-allowed disabled:opacity-50 hover:shadow-[0_0_24px_var(--accent-500)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-500)] focus:ring-offset-2 focus:ring-offset-zinc-950"
+                className="flex w-full justify-center rounded-xl border border-transparent px-4  text-sm font-semibold text-white transition-all disabled:cursor-not-allowed disabled:opacity-50 hover:shadow-[0_0_24px_var(--accent-500)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-500)] focus:ring-offset-2 focus:ring-offset-zinc-950"
                 style={{ background: 'linear-gradient(135deg, var(--accent-500) 0%, var(--accent-600) 100%)' }}
               >
                 {isLoading ? (
@@ -199,7 +200,7 @@ export default function ResetPasswordPage() {
                 ) : (
                   'Reset Password'
                 )}
-              </button>
+              </ControlButton>
             </div>
           </form>
         </div>

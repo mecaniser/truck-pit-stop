@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { Info } from 'lucide-react'
 import { useId } from 'react'
 
@@ -12,7 +13,7 @@ export default function SectionInfoTooltip({ text, className = '', tooltipClassN
 
   return (
     <span className={`relative inline-flex items-center group ${className}`}>
-      <button
+      <ControlButton controlKind="icon"
         type="button"
         aria-describedby={tooltipId}
         aria-label="Section info"
@@ -20,7 +21,7 @@ export default function SectionInfoTooltip({ text, className = '', tooltipClassN
         className="inline-flex items-center justify-center w-4 h-4 rounded-full text-gray-400 hover:text-gray-200 cursor-help focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
       >
         <Info className="w-3.5 h-3.5" />
-      </button>
+      </ControlButton>
       <span
         id={tooltipId}
         role="tooltip"

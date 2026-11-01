@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { Bell, Check, LayoutGrid, Palette, RotateCcw, Save, Type, X } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -130,7 +131,7 @@ export default function AppearanceSettingsPanel() {
                 { id: 'legacy', label: 'Classic' },
                 { id: 'new', label: 'Modern' },
               ] as const).map(option => (
-                <button
+                <ControlButton controlKind="action"
                   key={option.id}
                   type="button"
                   aria-pressed={presentationVariant === option.id}
@@ -139,7 +140,7 @@ export default function AppearanceSettingsPanel() {
                   onClick={() => void setPresentationVariant(option.id)}
                 >
                   {option.label}
-                </button>
+                </ControlButton>
               ))}
             </div>
             {presentationSource === 'global_force_legacy' && (
@@ -157,10 +158,10 @@ export default function AppearanceSettingsPanel() {
           <p>Sets selection, focus and secondary actions. The primary action on each screen keeps the Truck Pit Stop copper.</p>
           <div className="db-appearance-grid db-appearance-grid--accent">
             {ACCENT_OPTIONS.map(option => (
-              <button key={option.id} type="button" aria-pressed={accent === option.id} className={choice(accent === option.id)} onClick={() => setAccent(option.id)}>
+              <ControlButton controlKind="action" key={option.id} type="button" aria-pressed={accent === option.id} className={choice(accent === option.id)} onClick={() => setAccent(option.id)}>
                 <span className="db-appearance-swatch" style={{ backgroundColor: accentRamps[option.id][500], '--db-appearance-swatch-foreground': accentRamps[option.id].swatchForeground } as CSSProperties}>{accent === option.id && <Check aria-hidden="true" />}</span>
                 <span>{option.label}</span>
-              </button>
+              </ControlButton>
             ))}
           </div>
         </fieldset>
@@ -170,16 +171,16 @@ export default function AppearanceSettingsPanel() {
           <p>Choose the reading character and base size. Editable controls remain touch-safe.</p>
           <div className="db-appearance-grid db-appearance-grid--type">
             {FONT_FAMILY_OPTIONS.map(option => (
-              <button key={option.id} type="button" aria-pressed={fontFamily === option.id} className={choice(fontFamily === option.id)} style={{ fontFamily: option.stack }} onClick={() => setFontFamily(option.id)}>
+              <ControlButton controlKind="action" key={option.id} type="button" aria-pressed={fontFamily === option.id} className={choice(fontFamily === option.id)} style={{ fontFamily: option.stack }} onClick={() => setFontFamily(option.id)}>
                 <strong>{option.label}</strong><span>Aa Bb Cc 123</span>
-              </button>
+              </ControlButton>
             ))}
           </div>
           <div className="db-appearance-segment" aria-label="Font size">
             {['compact', 'default', 'large'].map(size => (
-              <button key={size} type="button" aria-pressed={fontSize === size} className={fontSize === size ? 'is-selected' : ''} onClick={() => setFontSize(size as typeof fontSize)}>
+              <ControlButton controlKind="action" key={size} type="button" aria-pressed={fontSize === size} className={fontSize === size ? 'is-selected' : ''} onClick={() => setFontSize(size as typeof fontSize)}>
                 {size === 'compact' ? 'Small' : size === 'large' ? 'Large' : 'Default'}
-              </button>
+              </ControlButton>
             ))}
           </div>
         </fieldset>
@@ -189,9 +190,9 @@ export default function AppearanceSettingsPanel() {
           <p>Density changes information rhythm, never browser zoom or minimum target size.</p>
           <div className="db-appearance-grid db-appearance-grid--density">
             {DENSITY_OPTIONS.map(option => (
-              <button key={option.id} type="button" aria-pressed={density === option.id} className={choice(density === option.id)} onClick={() => setDensity(option.id)}>
+              <ControlButton controlKind="action" key={option.id} type="button" aria-pressed={density === option.id} className={choice(density === option.id)} onClick={() => setDensity(option.id)}>
                 <strong>{option.label}</strong><span>{option.description}</span>
-              </button>
+              </ControlButton>
             ))}
           </div>
         </fieldset>
@@ -201,10 +202,10 @@ export default function AppearanceSettingsPanel() {
           <p>Choose a curated operating environment with verified contrast.</p>
           <div className="db-appearance-grid db-appearance-grid--mode">
             {MODE_OPTIONS.map(option => (
-              <button key={option.id} type="button" aria-pressed={mode === option.id} className={choice(mode === option.id)} onClick={() => setMode(option.id)}>
+              <ControlButton controlKind="action" key={option.id} type="button" aria-pressed={mode === option.id} className={choice(mode === option.id)} onClick={() => setMode(option.id)}>
                 <span className={`db-mode-sample db-mode-sample--${option.id}`} aria-hidden="true"><i /><i /></span>
                 <strong>{option.label}</strong><span>{option.description}</span>
-              </button>
+              </ControlButton>
             ))}
           </div>
         </fieldset>
@@ -214,9 +215,9 @@ export default function AppearanceSettingsPanel() {
           <p>Preview placement without saving. Alerts avoid active modal and footer actions.</p>
           <div className="db-appearance-grid db-appearance-grid--notifications">
             {NOTIFICATION_POSITION_OPTIONS.map(option => (
-              <button key={option.id} type="button" aria-pressed={notificationPosition === option.id} className={choice(notificationPosition === option.id)} onClick={() => previewNotification(option.id)}>
+              <ControlButton controlKind="action" key={option.id} type="button" aria-pressed={notificationPosition === option.id} className={choice(notificationPosition === option.id)} onClick={() => previewNotification(option.id)}>
                 <strong>{option.label}</strong><span>{option.description}</span>
-              </button>
+              </ControlButton>
             ))}
           </div>
         </fieldset>
@@ -224,12 +225,12 @@ export default function AppearanceSettingsPanel() {
 
       <footer className="db-appearance-actions">
         <div>
-          <button type="button" className="db-button db-button--quiet" onClick={previewDefaults}><RotateCcw aria-hidden="true" /> Preview defaults</button>
-          <button ref={resetTriggerRef} type="button" className="db-button db-button--quiet" onClick={() => { previewDefaults(); setConfirmReset(true) }}>Reset saved appearance</button>
+          <ControlButton type="button" className="db-button db-button--quiet" onClick={previewDefaults}><RotateCcw aria-hidden="true" /> Preview defaults</ControlButton>
+          <ControlButton ref={resetTriggerRef} type="button" className="db-button db-button--quiet" onClick={() => { previewDefaults(); setConfirmReset(true) }}>Reset saved appearance</ControlButton>
         </div>
         <div>
-          <button type="button" className="db-button db-button--quiet" disabled={!hasUnappliedChanges || saveStatus === 'saving'} onClick={cancelPreview}><X aria-hidden="true" /> Cancel</button>
-          <button type="button" className="db-button db-button--primary" disabled={!hasUnappliedChanges || saveStatus === 'saving' || saveStatus === 'conflict'} onClick={() => void applyAppearance()}><Save aria-hidden="true" /> {saveStatus === 'saving' ? 'Applying…' : 'Apply appearance'}</button>
+          <ControlButton type="button" className="db-button db-button--quiet" disabled={!hasUnappliedChanges || saveStatus === 'saving'} onClick={cancelPreview}><X aria-hidden="true" /> Cancel</ControlButton>
+          <ControlButton type="button" className="db-button db-button--primary" disabled={!hasUnappliedChanges || saveStatus === 'saving' || saveStatus === 'conflict'} onClick={() => void applyAppearance()}><Save aria-hidden="true" /> {saveStatus === 'saving' ? 'Applying…' : 'Apply appearance'}</ControlButton>
         </div>
       </footer>
 
@@ -239,8 +240,8 @@ export default function AppearanceSettingsPanel() {
             <h2 id="reset-appearance-title">Reset saved appearance?</h2>
             <p>This restores the defaults chosen for your shop. It does not change which product presentation your account receives.</p>
             <div>
-              <button ref={keepCurrentRef} type="button" className="db-button db-button--quiet" onClick={closeReset}>Keep current</button>
-              <button ref={confirmResetRef} type="button" className="db-button db-button--primary" onClick={() => void confirmResetAppearance()}>Reset appearance</button>
+              <ControlButton ref={keepCurrentRef} type="button" className="db-button db-button--quiet" onClick={closeReset}>Keep current</ControlButton>
+              <ControlButton ref={confirmResetRef} type="button" className="db-button db-button--primary" onClick={() => void confirmResetAppearance()}>Reset appearance</ControlButton>
             </div>
           </div>
         </div>

@@ -1,3 +1,4 @@
+import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import { Plus } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 
@@ -31,12 +32,12 @@ export default function SearchAddBar({
   return (
     <div className={`db-search-add-bar flex items-center gap-2 sm:gap-3 flex-nowrap ${className}`}>
       <div className={`db-search-add-bar__field relative flex-1 min-w-0 ${inputWidthClass}`}>
-        <input
+        <ControlInput
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className="w-full pl-10 pr-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-inset"
+          className="w-full pl-10 pr-3  rounded-lg bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-inset"
           style={{ ['--tw-ring-color' as string]: accentColors[500] }}
         />
         <svg
@@ -50,17 +51,17 @@ export default function SearchAddBar({
       </div>
       {showAddButton && (
         <div className="flex items-center gap-2 sm:gap-3 justify-end sm:ml-auto shrink-0">
-          <button
+          <ControlButton
             type="button"
             onClick={onAdd}
             disabled={addDisabled}
-            className="db-search-add-bar__primary-action inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors disabled:opacity-70"
+            className="db-search-add-bar__primary-action inline-flex items-center gap-2 px-4  rounded-lg text-sm font-semibold text-white transition-colors disabled:opacity-70"
             style={{ backgroundColor: accentColors[600] }}
           >
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">{addLabel}</span>
             <span className="sm:hidden">{addLabelMobile}</span>
-          </button>
+          </ControlButton>
         </div>
       )}
     </div>

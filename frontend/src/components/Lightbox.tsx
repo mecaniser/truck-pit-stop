@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect } from 'react'
 import { X } from 'lucide-react'
 
@@ -23,14 +24,14 @@ export default function Lightbox({ src, alt = '', onClose }: LightboxProps) {
       className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-6"
       onClick={onClose}
     >
-      <button
+      <ControlButton controlKind="icon"
         type="button"
         onClick={onClose}
         aria-label="Close"
         className="absolute top-4 right-4 p-2 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-colors"
       >
         <X className="w-6 h-6" />
-      </button>
+      </ControlButton>
       <img
         src={src}
         alt={alt}

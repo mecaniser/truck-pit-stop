@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useEffect, useRef, useState } from 'react'
 import { Spinner } from '@/components/ui'
 import { Building2, CheckCircle, XCircle, User, Phone, Mail, MapPin, Calendar, MessageSquare, X, Power } from 'lucide-react'
@@ -422,13 +423,13 @@ export default function GaragesPage() {
                         <div className="text-gray-300">{formatSMSPhoneNumber(garage.sms_phone_number)}</div>
                       )}
                       {garage.sms_phone_sid && (
-                        <button
+                        <ControlButton
                           type="button"
                           onClick={() => setSmsDetailsOpenByGarageId(prev => ({ ...prev, [garage.id]: !prev[garage.id] }))}
                           className="mt-1 text-[11px] text-gold-400 hover:text-gold-300"
                         >
                           {smsDetailsOpenByGarageId[garage.id] ? 'Hide details' : 'Show details'}
-                        </button>
+                        </ControlButton>
                       )}
                       {garage.sms_phone_sid && smsDetailsOpenByGarageId[garage.id] && (
                         <div className="text-[11px] text-gray-500 font-mono break-all mt-1">
@@ -479,7 +480,7 @@ export default function GaragesPage() {
                   Manage Team
                 </GlassNoirButton>
                 <GlassNoirButton variant="ghost" size="sm" onClick={() => setRegistrationGarage(garage)}>Repair texting registration</GlassNoirButton>
-                <a
+                <a data-db-control="action"
                   href={`/dashboard/garages/${garage.id}/analytics`}
                   className="px-3 sm:px-4 py-2 bg-gold-500 hover:bg-gold-400 text-black rounded-lg text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap"
                 >
@@ -562,7 +563,7 @@ export default function GaragesPage() {
                 </h2>
                 <p className="mt-1 text-sm text-gray-400">{activationModalGarage.name}</p>
               </div>
-              <button
+              <ControlButton controlKind="icon"
                 type="button"
                 aria-label="Close"
                 onClick={closeActivationModal}
@@ -570,7 +571,7 @@ export default function GaragesPage() {
                 className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
               >
                 <X className="h-5 w-5" />
-              </button>
+              </ControlButton>
             </div>
             <div className="px-6 py-5">
               {activationModalGarage.is_active ? (
@@ -627,42 +628,42 @@ export default function GaragesPage() {
                 </h2>
                 <p className="text-sm text-gray-400">{smsModalGarage.name}</p>
               </div>
-              <button
+              <ControlButton
                 type="button"
                 onClick={() => closeSMSProvisionModal()}
                 disabled={smsProvisioning}
                 className="p-2 rounded-lg hover:bg-gold-500/10 text-gray-400 hover:text-gold-400 transition-colors disabled:opacity-50"
               >
                 <X className="w-5 h-5" />
-              </button>
+              </ControlButton>
             </div>
 
             <form onSubmit={handleProvisionSMSNumber} className="px-6 py-5 space-y-4">
               <div className="flex items-center gap-2 rounded-lg border border-gold-500/20 bg-black/30 p-2">
-                <button
+                <ControlButton
                   type="button"
                   onClick={() => {
                     setSmsModalMode('provision')
                     setSmsProvisionError(null)
                   }}
-                  className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+                  className={`px-3  text-xs rounded-md transition-colors ${
                     smsModalMode === 'provision' ? 'bg-gold-500 text-black font-semibold' : 'text-gray-300 hover:bg-white/10'
                   }`}
                 >
                   Provision New
-                </button>
-                <button
+                </ControlButton>
+                <ControlButton
                   type="button"
                   onClick={() => {
                     setSmsModalMode('attach')
                     setSmsProvisionError(null)
                   }}
-                  className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+                  className={`px-3  text-xs rounded-md transition-colors ${
                     smsModalMode === 'attach' ? 'bg-gold-500 text-black font-semibold' : 'text-gray-300 hover:bg-white/10'
                   }`}
                 >
                   Attach Existing
-                </button>
+                </ControlButton>
               </div>
 
               {smsModalGarage.sms_phone_number && (
@@ -701,7 +702,7 @@ export default function GaragesPage() {
                   <label htmlFor="areaCode" className="block text-sm text-gray-300 mb-1">
                     Area Code (optional)
                   </label>
-                  <input
+                  <ControlInput
                     ref={areaCodeInputRef}
                     id="areaCode"
                     type="text"
@@ -714,7 +715,7 @@ export default function GaragesPage() {
                       if (smsProvisionError) setSmsProvisionError(null)
                     }}
                     placeholder="e.g. 305"
-                    className="w-full px-3 py-2 bg-black/40 border border-gold-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-gold-500"
+                    className="w-full px-3  bg-black/40 border border-gold-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-gold-500"
                   />
                   <p className="text-xs text-gray-500 mt-1">Applies to US numbers only. Leave blank for any available US number.</p>
                 </div>
@@ -724,7 +725,7 @@ export default function GaragesPage() {
                     <label htmlFor="attachPhoneSid" className="block text-sm text-gray-300 mb-1">
                       Twilio Phone SID
                     </label>
-                    <input
+                    <ControlInput
                       id="attachPhoneSid"
                       type="text"
                       value={attachPhoneSid}
@@ -733,7 +734,7 @@ export default function GaragesPage() {
                         if (smsProvisionError) setSmsProvisionError(null)
                       }}
                       placeholder="PNxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                      className="w-full px-3 py-2 bg-black/40 border border-gold-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-gold-500 font-mono text-xs"
+                      className="w-full px-3  bg-black/40 border border-gold-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-gold-500 font-mono text-xs"
                     />
                   </div>
                   <label className="flex items-start gap-2 text-sm text-gray-300 cursor-pointer">
