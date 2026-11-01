@@ -250,3 +250,25 @@ async def test_conflicted_collection_retains_known_balance_with_receivable_hold(
     transaction=next(r for r in snapshot['transactions'] if r['kind']=='invoice')
     assert transaction['remaining_principal']=='300.00'
     assert transaction['source_owner']=='review_required'
+
+@pytest.mark.asyncio
+async def test_overview_customer_vehicle_and_sort_count_debt_once(db_session,monkeypatch):
+    from app.services.customer_balance import customer_balance_totals,vehicle_balance_totals,customer_balance_sort
+    from app.db.models.customer import Customer
+    from app.db.models.invoice_settlement import InvoiceSettlement
+    t,a,c,original,p,b=await context(db_session,monkeypatch)
+    original.source='easy_truck_shop_import'
+    row=await svc.prepare(db_session,t.id,a,b,'prepare')
+    p['summary'].observed_at=datetime.now(timezone.utc)+timedelta(seconds=1)
+    row,_=await svc.activate(db_session,row,a,SourceVersionRequest(expected_version=1,expected_source_capture_sha256='a'*64,expected_source_revision='b'*64),'activate')
+    settlement=await db_session.scalar(select(InvoiceSettlement).where(InvoiceSettlement.invoice_id==row.native_invoice_id))
+    settlement.confirmed_principal=Decimal('300')
+    row.state='source_conflict'
+    native,legacy=await customer_balance_totals(db_session,[c.id])
+    assert native[c.id]==Decimal('300') and legacy[c.id]==0
+    vehicle_id=original.repair_order.vehicle_id
+    vehicle_native,vehicle_legacy=await vehicle_balance_totals(db_session,c.id,[vehicle_id])
+    assert vehicle_native[vehicle_id]==Decimal('300') and vehicle_legacy[vehicle_id]==0
+    # Operational outstanding balance stays known under a collection hold.
+    amount=await db_session.scalar(select(customer_balance_sort()).select_from(Customer).where(Customer.id==c.id))
+    assert Decimal(str(amount))==Decimal('300')

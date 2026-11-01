@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from sqlalchemy import and_, case, func, or_, select
 
+from app.services.source_debt_handoff import source_history_alias_clause
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.invoice_settlement import InvoiceSettlement
@@ -65,7 +66,7 @@ def balance_query(group_column):
         RepairOrder
     ).join(Invoice, and_(Invoice.repair_order_id == RepairOrder.id, Invoice.tenant_id == RepairOrder.tenant_id)).join(
         Customer, and_(Customer.id == billed_customer_key(), Customer.tenant_id == RepairOrder.tenant_id)
-    ).where(Invoice.status != InvoiceStatus.CANCELLED, Invoice.deleted_at.is_(None), Invoice.voided_at.is_(None))
+    ).where(source_history_alias_clause(), Invoice.status != InvoiceStatus.CANCELLED, Invoice.deleted_at.is_(None), Invoice.voided_at.is_(None))
 
 
 async def customer_balance_totals(db, customer_ids):
@@ -92,5 +93,5 @@ def customer_balance_sort():
     native, _ = balance_expressions()
     return select(func.coalesce(func.sum(native), 0)).select_from(RepairOrder).join(
         Invoice, and_(Invoice.repair_order_id == RepairOrder.id, Invoice.tenant_id == RepairOrder.tenant_id)
-    ).where(billed_customer_key() == Customer.id, RepairOrder.tenant_id == Customer.tenant_id,
+    ).where(source_history_alias_clause(), billed_customer_key() == Customer.id, RepairOrder.tenant_id == Customer.tenant_id,
             Invoice.status != InvoiceStatus.CANCELLED, Invoice.deleted_at.is_(None), Invoice.voided_at.is_(None)).correlate(Customer).scalar_subquery()
