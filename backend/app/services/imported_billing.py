@@ -285,14 +285,20 @@ async def _load_billing_batch(db, orders, tenant_id):
         key = _job_key(candidate)
         if candidate.tenant_id == tenant_id and key in keys:
             groups.setdefault(key, []).append(candidate)
-    eligible, holds = {}, {}
+    eligible, holds, identity_conflicts = {}, {}, set()
     for order in valid:
         key = _job_key(order)
         members = groups.get(key, [])
         reason = _group_hold(members) if members else "source_identity_unavailable"
         if not any(member.id == order.id for member in members):
             reason = "source_identity_unavailable"
-        if reason:
+        if reason == "shared_job_identity_conflict":
+            # A sibling identity mismatch forbids sharing, but must not erase
+            # the valid invoice already owned by a directly linked order.
+            # Inspect the entire group's invoices before preserving that owner.
+            identity_conflicts.add(key)
+            eligible[key] = members
+        elif reason:
             holds[key] = reason
         else:
             eligible[key] = members
@@ -310,10 +316,13 @@ async def _load_billing_batch(db, orders, tenant_id):
             holds[key] = reason
             continue
         owner = next(member for member in members if member.id == invoice.repair_order_id)
+        if owner.customer_id is None or owner.vehicle_id is None:
+            holds[key] = "source_identity_unavailable"
+            continue
         if getattr(invoice, "billed_customer_id", None) not in (None, owner.customer_id):
             holds[key] = "invoice_customer_identity_mismatch"
             continue
-        canonical[key] = (rows, invoice, owner, len(members) > 1)
+        canonical[key] = (rows, invoice, owner, len(members) > 1 and key not in identity_conflicts)
     invoice_ids = [value[1].id for value in canonical.values()]
     payments = list((await db.scalars(select(Payment).where(
         Payment.tenant_id == tenant_id, Payment.invoice_id.in_(invoice_ids)))).all()) if invoice_ids else []
@@ -329,11 +338,18 @@ async def _load_billing_batch(db, orders, tenant_id):
         summary.invoice_repair_order_id = owner.id
         summary.invoice_repair_order_number = owner.order_number
         summary.shared_invoice = shared
+        if key in identity_conflicts:
+            summary.review_required = True
+            summary.review_reasons.append("shared_job_identity_conflict")
         summaries[key] = summary
     for order in valid:
         key = _job_key(order)
-        results[order.id] = (ImportedBillingResponse(review_reasons=[holds[key]]) if key in holds
-                             else summaries[key].model_copy(deep=True))
+        if key in holds:
+            results[order.id] = ImportedBillingResponse(review_reasons=[holds[key]])
+        elif key in identity_conflicts and order.id != summaries[key].invoice_repair_order_id:
+            results[order.id] = ImportedBillingResponse(review_reasons=["shared_job_identity_conflict"])
+        else:
+            results[order.id] = summaries[key].model_copy(deep=True)
     return results
 
 
