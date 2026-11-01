@@ -2,6 +2,7 @@ import { ControlButton } from '@/components/ui/Controls'
 import './repairOrderSchedule.css'
 import './repairOrderControls.css'
 import './importedBilling.css'
+import { importedBillingWarnings } from './importedBillingWarnings'
 import { importedMoney, importedPaymentLabel, importedBillingSeverity, type ImportedBilling } from './importedBilling'
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { Check, ChevronDown, ChevronRight, Plus, TriangleAlert } from 'lucide-react'
@@ -476,6 +477,10 @@ export default function RepairOrdersLedger({
                     >
                     <section id={briefId} className="db-repair-orders-ledger__brief" aria-label={`Order brief for ${row.orderNumber}`}>
                       <div className="db-repair-orders-ledger__brief-content">
+                        {billingSeverity?.tone === 'warning' && <section className="db-imported-billing-review" aria-label="Why billing needs attention">
+                          <h3><TriangleAlert className="h-4 w-4" aria-hidden="true" />Billing needs attention</h3>
+                          <ul>{importedBillingWarnings(row.importedBilling).map(reason => <li key={reason}>{reason}</li>)}</ul>
+                        </section>}
                         {!requestOnRow && (
                           <section className="db-repair-orders-ledger__work-request" aria-labelledby={workRequestId}>
                             <h3 id={workRequestId}>Work requested</h3>
