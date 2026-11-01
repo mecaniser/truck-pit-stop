@@ -1,3 +1,4 @@
+import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
 import { useQuery } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
@@ -57,32 +58,32 @@ export default function WipAgingPanel({ filters, onFiltersChange, onOpenRecord }
       <div className="db-wip__toolbar">
         <label className="db-shop-work-new__search">
           <span className="sr-only">Search active work</span><Search aria-hidden="true" />
-          <input type="search" maxLength={200} value={filters.search} onChange={event => update({ search: event.target.value })} placeholder="Order, customer, truck, or technician" />
+          <ControlInput type="search" maxLength={200} value={filters.search} onChange={event => update({ search: event.target.value })} placeholder="Order, customer, truck, or technician" />
         </label>
         <Popover className="db-wip__popover">
           {({ close }) => <>
-          <PopoverButton className="db-wip__filter-trigger"><SlidersHorizontal aria-hidden="true" />Filters{hasFilterOptions && <span className="db-wip__filter-dot" aria-label="Filters applied" />}</PopoverButton>
+          <PopoverButton data-db-control="action" className="db-wip__filter-trigger"><SlidersHorizontal aria-hidden="true" />Filters{hasFilterOptions && <span className="db-wip__filter-dot" aria-label="Filters applied" />}</PopoverButton>
           <PopoverPanel className="db-wip__popover-panel" role="dialog" aria-label="Active work filters">
             <div className="db-wip__filters">
-              <button type="button" aria-pressed={filters.overdue_only} onClick={() => update({ overdue_only: !filters.overdue_only })}>Promise overdue <span>{count(data?.summary.overdue_jobs)}</span></button>
+              <ControlButton controlKind="action" type="button" aria-pressed={filters.overdue_only} onClick={() => update({ overdue_only: !filters.overdue_only })}>Promise overdue <span>{count(data?.summary.overdue_jobs)}</span></ControlButton>
               <div className="db-wip__filter-field"><span>Wait timing</span><ShopWorkSelect label="Wait timing" value={filters.timing} onChange={timing => update({ timing })} options={[
                 { value: 'all', label: 'All timing' }, { value: 'known', label: 'Known' }, { value: 'unknown', label: 'Unknown' },
               ]} /></div>
               <div className="db-wip__filter-field"><span>Sort</span><ShopWorkSelect label="Sort" value={filters.sort} onChange={sort => update({ sort })} options={[
                 { value: 'priority', label: 'Needs attention first' }, { value: 'oldest_wait', label: 'Longest wait' }, { value: 'oldest_order', label: 'Oldest order' },
               ]} /></div>
-              {hasFilterOptions && <button type="button" className="db-work-control" onClick={() => { update({ overdue_only: false, timing: 'all', sort: 'priority' }); close() }}><X aria-hidden="true" />Reset filters</button>}
+              {hasFilterOptions && <ControlButton type="button" className="db-work-control" onClick={() => { update({ overdue_only: false, timing: 'all', sort: 'priority' }); close() }}><X aria-hidden="true" />Reset filters</ControlButton>}
             </div>
           </PopoverPanel>
           </>}
         </Popover>
       </div>
       {showCategories && <><div className="db-wip__facets" aria-label="Active work categories">
-        <button type="button" aria-pressed={filters.category === 'all'} onClick={() => update({ category: 'all' })}>All active <span>{count(data?.summary.total_jobs)}</span></button>
+        <ControlButton type="button" aria-pressed={filters.category === 'all'} onClick={() => update({ category: 'all' })}>All active <span>{count(data?.summary.total_jobs)}</span></ControlButton>
         {WIP_CATEGORIES.map(category => (
-          <button type="button" key={category} aria-pressed={filters.category === category} onClick={() => update({ category })}>
+          <ControlButton controlKind="action" type="button" key={category} aria-pressed={filters.category === category} onClick={() => update({ category })}>
             {WIP_LABELS[category]} <span>{count(data?.summary.category_counts[category])}</span>
-          </button>
+          </ControlButton>
         ))}
       </div>
       <div className="db-wip__mobile-category"><ShopWorkSelect label="Active work category" value={filters.category} onChange={category => update({ category })} options={[
@@ -92,30 +93,30 @@ export default function WipAgingPanel({ filters, onFiltersChange, onOpenRecord }
       <div className="db-wip__result-meta">
         <span role="status">{query.isLoading || searchPending ? 'Loading active work…' : query.isError ? 'Active work unavailable' : `${data?.filtered_total ?? 0} matching jobs${data?.scope === 'assigned' ? ' · assigned to you' : ''}`}</span>
         <div className="db-wip__timing-summary">
-          {!query.isError && data && (data.summary.unknown_wait_jobs > 0 || filters.timing === 'unknown') && <button type="button" className="db-wip__unknown" aria-pressed={filters.timing === 'unknown'} aria-label={`${data.summary.unknown_wait_jobs} unknown across ${data.filters.search ? 'matching' : 'all'} active jobs; filter unknown wait timing`} onClick={() => update({ timing: filters.timing === 'unknown' ? 'all' : 'unknown' })}>Unknown {data.summary.unknown_wait_jobs}</button>}
-          <Popover className="db-wip__popover"><PopoverButton className="db-wip__info" aria-label="About work timing"><Info aria-hidden="true" /></PopoverButton><PopoverPanel focus className="db-wip__popover-panel db-wip__timing-help" role="dialog" aria-label="Work timing explained">
+          {!query.isError && data && (data.summary.unknown_wait_jobs > 0 || filters.timing === 'unknown') && <ControlButton type="button" className="db-wip__unknown" aria-pressed={filters.timing === 'unknown'} aria-label={`${data.summary.unknown_wait_jobs} unknown across ${data.filters.search ? 'matching' : 'all'} active jobs; filter unknown wait timing`} onClick={() => update({ timing: filters.timing === 'unknown' ? 'all' : 'unknown' })}>Unknown {data.summary.unknown_wait_jobs}</ControlButton>}
+          <Popover className="db-wip__popover"><PopoverButton data-db-control="icon" className="db-wip__info" aria-label="About work timing"><Info aria-hidden="true" /></PopoverButton><PopoverPanel focus className="db-wip__popover-panel db-wip__timing-help" role="dialog" aria-label="Work timing explained">
             <strong>Work timing</strong><p>Elapsed time includes nights and weekends. Order age is not time in the shop.</p><p>Unknown means a reliable wait start is missing. Counts cover {data?.filters.search ? 'all jobs matching your search' : 'all active jobs'}, before category and timing filters.</p>
           </PopoverPanel></Popover>
         </div>
       </div>
-      {query.isError ? <div className="db-work-state" role="alert"><CircleAlert aria-hidden="true" /><div><strong>{statusText}</strong><button type="button" className="db-work-control" onClick={() => query.refetch()} disabled={busy}>Retry active work</button></div></div>
+      {query.isError ? <div className="db-work-state" role="alert"><CircleAlert aria-hidden="true" /><div><strong>{statusText}</strong><ControlButton type="button" className="db-work-control" onClick={() => query.refetch()} disabled={busy}>Retry active work</ControlButton></div></div>
         : !data || searchPending ? <div className="db-action-ledger__empty">Loading active work…</div>
           : <div className="db-operating-surface__scroller db-wip__scroller">
             <div className="db-wip__rows">
-              {data.items.length === 0 ? <div className="db-work-state" role="status"><ClipboardList aria-hidden="true" /><div><strong>{hasFilters ? 'No jobs match these filters' : 'No active jobs in this view'}</strong><p>{hasFilters ? 'Clear the search and filters to see available active work.' : 'Overview shows other shop tasks. Completed work and payment follow-up stay in Closeout.'}</p>{hasFilters && <button type="button" className="db-work-control" onClick={() => onFiltersChange({ ...DEFAULT_WIP_FILTERS })}>Clear search and filters</button>}</div></div>
+              {data.items.length === 0 ? <div className="db-work-state" role="status"><ClipboardList aria-hidden="true" /><div><strong>{hasFilters ? 'No jobs match these filters' : 'No active jobs in this view'}</strong><p>{hasFilters ? 'Clear the search and filters to see available active work.' : 'Overview shows other shop tasks. Completed work and payment follow-up stay in Closeout.'}</p>{hasFilters && <ControlButton type="button" className="db-work-control" onClick={() => onFiltersChange({ ...DEFAULT_WIP_FILTERS })}>Clear search and filters</ControlButton>}</div></div>
                 : data.items.map(order => (
-                  <button type="button" className="db-wip__row" key={order.id} onClick={() => onOpenRecord(order.id, order.action_lane)} aria-label={`Open ${order.order_number} in Shop Work`} data-overdue={order.is_overdue || undefined}>
+                  <ControlButton controlKind="content" type="button" className="db-wip__row" key={order.id} onClick={() => onOpenRecord(order.id, order.action_lane)} aria-label={`Open ${order.order_number} in Shop Work`} data-overdue={order.is_overdue || undefined}>
                     <span className="db-wip__identity"><strong>{order.customer_name}</strong><span>{[order.vehicle_info, order.vehicle_unit_number ? `Unit ${order.vehicle_unit_number}` : null].filter(Boolean).join(' · ')}</span><small>{order.order_number}</small></span>
                     <span className="db-wip__wait"><strong>{WIP_REASONS[order.reason]}</strong>{order.current_wait.state !== 'not_applicable' && <span>Wait <b>{clockLabel(order.current_wait)}</b></span>}{order.hold_reason && order.reason === 'other_hold' && <small>{order.hold_reason}</small>}</span>
                     <span className="db-wip__evidence"><span>{order.technician_names.length ? order.technician_names.join(', ') : order.assignment === 'unassigned' ? 'Unassigned' : 'Assignment unknown'}</span><span>Order age <b>{clockLabel(order.order_age)}</b></span>{order.promised_finish_at && <span className="db-wip__promise">{order.is_overdue && order.overdue_seconds != null ? `Promise overdue · ${order.overdue_seconds < 60 ? '<1m' : shortDuration(order.overdue_seconds * 1000)}` : `Promised ${promiseLabel(order.promised_finish_at, data.timezone)}`}</span>}</span>
                     <ChevronRight className="db-wip__open" aria-hidden="true" />
-                  </button>
+                  </ControlButton>
                 ))}
             </div>
             {(data.has_more || data.offset > 0) && <div className="db-wip__pagination">
               <span>{data.items.length ? `${data.offset + 1}–${data.offset + data.items.length} of ${data.filtered_total}` : `0 of ${data.filtered_total} jobs`}</span>
-              <button type="button" aria-label="Previous active jobs" disabled={busy || data.offset === 0} onClick={() => onFiltersChange({ ...filters, offset: Math.max(0, data.offset - data.limit) })}><ChevronLeft aria-hidden="true" /> Previous</button>
-              <button type="button" aria-label="Next active jobs" disabled={busy || !data.has_more} onClick={() => onFiltersChange({ ...filters, offset: data.offset + data.limit })}>Next <ChevronRight aria-hidden="true" /></button>
+              <ControlButton type="button" aria-label="Previous active jobs" disabled={busy || data.offset === 0} onClick={() => onFiltersChange({ ...filters, offset: Math.max(0, data.offset - data.limit) })}><ChevronLeft aria-hidden="true" /> Previous</ControlButton>
+              <ControlButton type="button" aria-label="Next active jobs" disabled={busy || !data.has_more} onClick={() => onFiltersChange({ ...filters, offset: data.offset + data.limit })}>Next <ChevronRight aria-hidden="true" /></ControlButton>
             </div>}
           </div>}
     </section>

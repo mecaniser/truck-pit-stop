@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { Link } from 'react-router-dom'
 import { Boxes, Clock, X, XCircle } from 'lucide-react'
 
@@ -74,14 +75,14 @@ export default function AlertsBanner({
             <Icon className="w-4 h-4" />
             <span>{label}</span>
           </Link>
-          <button
+          <ControlButton controlKind="icon"
             type="button"
             aria-label={`Dismiss ${label}`}
             onClick={() => onDismiss(key)}
             className="ml-1 rounded p-0.5 text-current opacity-60 hover:opacity-100 transition-opacity"
           >
             <X className="w-3.5 h-3.5" />
-          </button>
+          </ControlButton>
         </div>
       ))}
     </div>

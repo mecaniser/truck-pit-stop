@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { createContext, useContext, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import { useQueries } from '@tanstack/react-query'
@@ -13,10 +14,10 @@ const SearchContext = createContext<(() => void) | null>(null)
 export function ShopSearchButton({ mobile = false }: { mobile?: boolean }) {
   const open = useContext(SearchContext)
   if (!open) return null
-  return <button type="button" onClick={open} aria-label="Search shop" aria-keyshortcuts="Control+k Meta+k" title="Search shop (Ctrl/⌘ K)" className={`db-shop-search-trigger ${mobile ? 'db-shop-search-trigger--mobile' : 'db-staff-nav__utility'}`}>
+  return <ControlButton type="button" onClick={open} aria-label="Search shop" aria-keyshortcuts="Control+k Meta+k" title="Search shop (Ctrl/⌘ K)" className={`db-shop-search-trigger ${mobile ? 'db-shop-search-trigger--mobile' : 'db-staff-nav__utility'}`}>
     <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
     <span className={mobile ? '' : 'db-staff-nav__utility-label'}>Search</span>
-  </button>
+  </ControlButton>
 }
 
 export function ShopSearchProvider({ children }: { children: ReactNode }) {
@@ -73,11 +74,11 @@ function ShopSearchDialog({ session, role, onClose }: { session: string; role: s
       <DialogPanel ref={panelRef} className="db-shop-search-panel" onKeyDown={moveFocus}>
         <header className="db-shop-search-header">
           <DialogTitle>Search shop</DialogTitle>
-          <button type="button" onClick={onClose} aria-label="Close search" className="db-shop-search-close"><X className="h-5 w-5" aria-hidden="true" /></button>
+          <ControlButton controlKind="icon" type="button" onClick={onClose} aria-label="Close search" className="db-shop-search-close"><X className="h-5 w-5" aria-hidden="true" /></ControlButton>
         </header>
         <div className="db-shop-search-field">
           <Search className="h-5 w-5 shrink-0" aria-hidden="true" />
-          <input ref={inputRef} aria-label="Search shop records" aria-describedby="shop-search-hint" value={input} maxLength={100} onChange={event => setInput(event.target.value)} autoComplete="off" spellCheck={false} placeholder="Name, unit, VIN, RO number or part" />
+          <ControlInput ref={inputRef} aria-label="Search shop records" aria-describedby="shop-search-hint" value={input} maxLength={100} onChange={event => setInput(event.target.value)} autoComplete="off" spellCheck={false} placeholder="Name, unit, VIN, RO number or part" />
         </div>
         <p id="shop-search-hint" className="db-shop-search-hint">{role === 'mechanic' ? 'Customers, vehicles and repair orders' : 'Customers, vehicles, repair orders and inventory'}</p>
         <div className="db-shop-search-results">
@@ -110,7 +111,7 @@ function SearchResults({ session, role, query, onChoose }: { session: string; ro
       const result = results[index]
       return <section key={source.id} aria-labelledby={`shop-search-${source.id}`} className="db-shop-search-group">
         <h3 id={`shop-search-${source.id}`}>{source.label}</h3>
-        {result.isError ? <div className="db-shop-search-error"><span>{source.label} unavailable.</span><button type="button" onClick={() => void result.refetch()}>Retry {source.label.toLowerCase()}</button></div>
+        {result.isError ? <div className="db-shop-search-error"><span>{source.label} unavailable.</span><ControlButton type="button" onClick={() => void result.refetch()}>Retry {source.label.toLowerCase()}</ControlButton></div>
           : result.isPending ? <p className="db-shop-search-group-note">Searching…</p>
           : result.data?.length ? <>
             <ul>{result.data.map(item => <li key={item.id}><Link to={item.href} onClick={onChoose} data-shop-result className="db-shop-search-result">

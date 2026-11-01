@@ -1,4 +1,5 @@
 import { shopWorkReturnUrl, shopWorkDestinationUrl, shopWorkQueryScope } from '@/features/dashboard/shopWorkNavigation'
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { pricingError, pricingMoney } from '@/features/parts-pricing/contract'
 import PartPolicySummary from '@/features/parts-pricing/PartPolicySummary'
@@ -308,17 +309,17 @@ function SellingPriceField({ cost, value, disabled, onChange }: {
       <div className="db-parts-workbench__price-head">
         <span id="selling-price-label">Selling price</span>
         <div className="db-parts-workbench__price-modes" role="group" aria-label="Selling price entry method">
-          <button type="button" disabled={disabled} aria-pressed={mode === 'price'} onClick={() => switchMode('price')}>Price</button>
-          <button type="button" disabled={disabled} aria-pressed={mode === 'markup'} onClick={() => switchMode('markup')}>Markup</button>
+          <ControlButton controlKind="action" type="button" disabled={disabled} aria-pressed={mode === 'price'} onClick={() => switchMode('price')}>Price</ControlButton>
+          <ControlButton controlKind="action" type="button" disabled={disabled} aria-pressed={mode === 'markup'} onClick={() => switchMode('markup')}>Markup</ControlButton>
         </div>
       </div>
       {mode === 'price' ? (
         <span className="db-parts-workbench__price-input"><span aria-hidden="true">$</span>
-          <input inputMode="decimal" disabled={disabled} aria-labelledby="selling-price-label" value={value} onChange={(event) => onChange(event.target.value)} />
+          <ControlInput inputMode="decimal" disabled={disabled} aria-labelledby="selling-price-label" value={value} onChange={(event) => onChange(event.target.value)} />
         </span>
       ) : (
         <span className="db-parts-workbench__price-input">
-          <input inputMode="decimal" required disabled={disabled || !costValid} aria-label="Markup percent" aria-invalid={Boolean(markupError)} ref={(input) => input?.setCustomValidity(markupError || '')} value={pct}
+          <ControlInput inputMode="decimal" required disabled={disabled || !costValid} aria-label="Markup percent" aria-invalid={Boolean(markupError)} ref={(input) => input?.setCustomValidity(markupError || '')} value={pct}
             onChange={(event) => { setPct(event.target.value); applyPct(event.target.value, costNum) }} />
           <span aria-hidden="true">%</span>
         </span>
@@ -434,12 +435,12 @@ function PartPhoto({ part, logoUrl, companyName, detail = false }: { part: Pick<
     {src ? <img src={src} alt={accessible ? imageLabel : ''} onError={fail} loading={accessible ? 'eager' : 'lazy'} /> : <Package aria-hidden="true" />}
   </span>
   return <>
-    <button type="button" className={`db-parts-workbench__photo-trigger${detail ? ' is-detail' : ''}`} aria-label={`Expand image for ${part.name}`} aria-haspopup="dialog" onClick={() => setExpanded(true)}>{photo(detail)}</button>
+    <ControlButton controlKind="content" type="button" className={`db-parts-workbench__photo-trigger${detail ? ' is-detail' : ''}`} aria-label={`Expand image for ${part.name}`} aria-haspopup="dialog" onClick={() => setExpanded(true)}>{photo(detail)}</ControlButton>
     <Dialog open={expanded} onClose={() => setExpanded(false)} className="db-part-photo-preview">
       <DialogBackdrop className="db-part-photo-preview__backdrop" />
       <div className="db-part-photo-preview__positioner">
         <DialogPanel className="db-part-photo-preview__panel">
-          <div className="db-part-photo-preview__header"><DialogTitle>{part.name} image</DialogTitle><button type="button" aria-label="Close image preview" onClick={() => setExpanded(false)}><X aria-hidden="true" /></button></div>
+          <div className="db-part-photo-preview__header"><DialogTitle>{part.name} image</DialogTitle><ControlButton controlKind="icon" type="button" aria-label="Close image preview" onClick={() => setExpanded(false)}><X aria-hidden="true" /></ControlButton></div>
           <div className="db-part-photo-preview__image">{photo(true)}</div>
           {source !== 'part' && <p>{source === 'company' ? 'Shop logo placeholder' : 'No part photo available'}</p>}
         </DialogPanel>
@@ -828,22 +829,22 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
     <header className="db-parts-workbench__header">
       <div><h1 id="parts-workbench-title">Parts</h1><p className="db-parts-workbench__technical-line"><span className="db-parts-workbench__stat">{allPartsCount ?? firstPartsPage?.total ?? '—'} TRACKED /</span> <span className="db-parts-workbench__stat"><em>{needsReorderCount} NEEDS REORDER</em> /</span> <span className="db-parts-workbench__stat">{summary.open_purchase_order_count} OPEN PURCHASE ORDERS{summary.total_stock_value == null ? '' : ' /'}</span>{summary.total_stock_value == null ? null : <> <span className="db-parts-workbench__stat">{formatMoney(money(summary.total_stock_value))} STOCK VALUE</span></>}{syncFreshness == null ? null : <> <span className="db-parts-workbench__stat db-parts-workbench__stat--sync" data-testid="parts-sync-freshness" data-stale={syncFreshness.stale ? 'true' : undefined} title={syncFreshness.title}>/ {syncFreshness.label}</span></>}</p></div>
       <div className="db-parts-workbench__summary" aria-label="Parts summary">
-        {counterSalesEnabled && <button className="db-parts-workbench__sales-link" type="button" onClick={() => navigate('/dashboard/garage/inventory/sales')}>Parts sales<ArrowRight aria-hidden="true" /></button>}
-        {manage && <button className="db-parts-workbench__add-part" type="button" onClick={() => setAddPartOpen(true)}><Plus aria-hidden="true" />Add Part</button>}
+        {counterSalesEnabled && <ControlButton className="db-parts-workbench__sales-link" type="button" onClick={() => navigate('/dashboard/garage/inventory/sales')}>Parts sales<ArrowRight aria-hidden="true" /></ControlButton>}
+        {manage && <ControlButton className="db-parts-workbench__add-part" type="button" onClick={() => setAddPartOpen(true)}><Plus aria-hidden="true" />Add Part</ControlButton>}
         {/* Catalogue maintenance, carried over from the previous inventory page.
             Kept behind a menu because these act on the whole catalogue, and the
             destructive one keeps its explicit confirmation. */}
         {manage && <details className="db-parts-workbench__maintenance" ref={maintenanceMenu}>
           <summary aria-label="Catalogue maintenance" title="Catalogue maintenance"><Settings2 aria-hidden="true" /></summary>
           <div role="group" aria-label="Catalogue maintenance actions">
-            <button type="button" onClick={() => { if (maintenanceMenu.current) { maintenanceMenu.current.open = false; maintenanceMenu.current.querySelector('summary')?.focus() } setPricingSettingsOpen(true) }}>Parts pricing</button>
-            <button type="button" disabled={Boolean(maintenanceBusy)} onClick={() => runMaintenance('preload', '/inventory/preload', 'Sample parts added.')}>{maintenanceBusy === 'preload' ? 'Adding…' : 'Add sample parts'}</button>
-            <button type="button" disabled={Boolean(maintenanceBusy)} onClick={() => runMaintenance('regenerate', '/inventory/library/regenerate', 'Part library regenerated.')}>{maintenanceBusy === 'regenerate' ? 'Regenerating…' : 'Regenerate part library'}</button>
-            {!confirmClear && <button type="button" className="is-danger" disabled={Boolean(maintenanceBusy)} onClick={() => setConfirmClear(true)}>Clear all parts…</button>}
+            <ControlButton type="button" onClick={() => { if (maintenanceMenu.current) { maintenanceMenu.current.open = false; maintenanceMenu.current.querySelector('summary')?.focus() } setPricingSettingsOpen(true) }}>Parts pricing</ControlButton>
+            <ControlButton type="button" disabled={Boolean(maintenanceBusy)} onClick={() => runMaintenance('preload', '/inventory/preload', 'Sample parts added.')}>{maintenanceBusy === 'preload' ? 'Adding…' : 'Add sample parts'}</ControlButton>
+            <ControlButton type="button" disabled={Boolean(maintenanceBusy)} onClick={() => runMaintenance('regenerate', '/inventory/library/regenerate', 'Part library regenerated.')}>{maintenanceBusy === 'regenerate' ? 'Regenerating…' : 'Regenerate part library'}</ControlButton>
+            {!confirmClear && <ControlButton type="button" className="is-danger" disabled={Boolean(maintenanceBusy)} onClick={() => setConfirmClear(true)}>Clear all parts…</ControlButton>}
             {confirmClear && <span className="db-parts-workbench__maintenance-confirm">
               <strong>Clear all parts?</strong>
-              <button type="button" className="is-danger" disabled={Boolean(maintenanceBusy)} onClick={async () => { await runMaintenance('clear', '/inventory/clear', 'Catalogue cleared.'); setConfirmClear(false) }}>{maintenanceBusy === 'clear' ? 'Clearing…' : 'Yes, clear all'}</button>
-              <button type="button" disabled={Boolean(maintenanceBusy)} onClick={() => setConfirmClear(false)}>Cancel</button>
+              <ControlButton type="button" className="is-danger" disabled={Boolean(maintenanceBusy)} onClick={async () => { await runMaintenance('clear', '/inventory/clear', 'Catalogue cleared.'); setConfirmClear(false) }}>{maintenanceBusy === 'clear' ? 'Clearing…' : 'Yes, clear all'}</ControlButton>
+              <ControlButton type="button" disabled={Boolean(maintenanceBusy)} onClick={() => setConfirmClear(false)}>Cancel</ControlButton>
             </span>}
           </div>
         </details>}
@@ -851,28 +852,28 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
     </header>
 
     <nav className="db-parts-workbench__views" aria-label="Parts and inventory views">
-      <button type="button" aria-current={workspaceView === 'parts' ? 'page' : undefined} onClick={() => selectView('parts')}><Boxes aria-hidden="true" />All parts <span className="db-parts-workbench__view-count">{allPartsCount ?? '—'}</span></button>
-      <button type="button" aria-current={workspaceView === 'reorder' ? 'page' : undefined} onClick={() => selectView('reorder')}><ShoppingCart aria-hidden="true" />Needs reorder <span className="db-parts-workbench__view-count">{needsReorderCount}</span></button>
-      <button type="button" aria-current={workspaceView === 'activity' ? 'page' : undefined} onClick={() => selectView('activity')}><History aria-hidden="true" />Activity</button>
+      <ControlButton type="button" aria-current={workspaceView === 'parts' ? 'page' : undefined} onClick={() => selectView('parts')}><Boxes aria-hidden="true" />All parts <span className="db-parts-workbench__view-count">{allPartsCount ?? '—'}</span></ControlButton>
+      <ControlButton type="button" aria-current={workspaceView === 'reorder' ? 'page' : undefined} onClick={() => selectView('reorder')}><ShoppingCart aria-hidden="true" />Needs reorder <span className="db-parts-workbench__view-count">{needsReorderCount}</span></ControlButton>
+      <ControlButton type="button" aria-current={workspaceView === 'activity' ? 'page' : undefined} onClick={() => selectView('activity')}><History aria-hidden="true" />Activity</ControlButton>
     </nav>
 
-    {notice && <div className="db-parts-workbench__notice" role="status"><span>{notice}</span><button type="button" onClick={() => setNotice(null)}>Dismiss</button></div>}
-    {error && <div className="db-parts-workbench__error" role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)}>Dismiss</button></div>}
+    {notice && <div className="db-parts-workbench__notice" role="status"><span>{notice}</span><ControlButton type="button" onClick={() => setNotice(null)}>Dismiss</ControlButton></div>}
+    {error && <div className="db-parts-workbench__error" role="alert"><span>{error}</span><ControlButton type="button" onClick={() => setError(null)}>Dismiss</ControlButton></div>}
 
     {/* Ledger controls sit outside the bordered body, matching the
         Customers, Repair Orders, and Shop Work surfaces. */}
     {workspaceView !== 'activity' &&
     <div className="db-parts-workbench__toolbar">
-      <label className="db-parts-workbench__search"><Search aria-hidden="true" /><span className="sr-only">Search parts</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search part, SKU, supplier, source number, or bin" /></label>
+      <label className="db-parts-workbench__search"><Search aria-hidden="true" /><span className="sr-only">Search parts</span><ControlInput type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search part, SKU, supplier, source number, or bin" /></label>
       <div className="db-parts-workbench__filters" role="group" aria-label="Stock filter">
-        <button type="button" aria-pressed={stockFilter === 'all'} onClick={() => { setStockFilter('all'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }}>All</button>
-        <button type="button" aria-pressed={stockFilter === 'below_min'} onClick={() => { setStockFilter('below_min'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }}>Needs reorder</button>
-        <button type="button" aria-pressed={stockFilter === 'out_of_stock'} onClick={() => { setStockFilter('out_of_stock'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }}>Out of stock</button>
+        <ControlButton controlKind="action" type="button" aria-pressed={stockFilter === 'all'} onClick={() => { setStockFilter('all'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }}>All</ControlButton>
+        <ControlButton controlKind="action" type="button" aria-pressed={stockFilter === 'below_min'} onClick={() => { setStockFilter('below_min'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }}>Needs reorder</ControlButton>
+        <ControlButton controlKind="action" type="button" aria-pressed={stockFilter === 'out_of_stock'} onClick={() => { setStockFilter('out_of_stock'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }}>Out of stock</ControlButton>
       </div>
-      <button className="db-parts-workbench__archive-link" type="button" onClick={() => { setCatalogView(catalogView === 'active' ? 'archived' : 'active'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }} disabled={workspaceView === 'reorder'}><Archive aria-hidden="true" />{catalogView === 'active' ? 'Archived parts' : 'Back to active parts'}</button>
+      <ControlButton className="db-parts-workbench__archive-link" type="button" onClick={() => { setCatalogView(catalogView === 'active' ? 'archived' : 'active'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }} disabled={workspaceView === 'reorder'}><Archive aria-hidden="true" />{catalogView === 'active' ? 'Archived parts' : 'Back to active parts'}</ControlButton>
       <div className="db-parts-workbench__density" role="group" aria-label="Ledger density">
-        <button type="button" aria-pressed={density === 'comfortable'} onClick={() => chooseDensity('comfortable')}>Comfortable</button>
-        <button type="button" aria-pressed={density === 'compact'} onClick={() => chooseDensity('compact')}>Compact</button>
+        <ControlButton controlKind="action" type="button" aria-pressed={density === 'comfortable'} onClick={() => chooseDensity('comfortable')}>Comfortable</ControlButton>
+        <ControlButton controlKind="action" type="button" aria-pressed={density === 'compact'} onClick={() => chooseDensity('compact')}>Compact</ControlButton>
       </div>
 
     </div>}
@@ -889,13 +890,13 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
             }}>
               {PART_SORT_FIELDS.map((field) => <option key={field.value} value={field.value}>{field.label}</option>)}
             </PlatformSelect>
-            <button type="button" className="db-parts-workbench__sort-direction" aria-label={`Sort direction: ${sortDirectionLabel}`} disabled={sort === 'catalog'} onClick={() => chooseSort(sort, direction === 'asc' ? 'desc' : 'asc')}>
+            <ControlButton controlKind="action" type="button" className="db-parts-workbench__sort-direction" aria-label={`Sort direction: ${sortDirectionLabel}`} disabled={sort === 'catalog'} onClick={() => chooseSort(sort, direction === 'asc' ? 'desc' : 'asc')}>
               {direction === 'asc' ? <ArrowUp aria-hidden="true" /> : <ArrowDown aria-hidden="true" />}<span>{sortDirectionLabel}</span>
-            </button>
+            </ControlButton>
           </div>
           {manage && checkedParts.size > 0 && <div className="db-parts-workbench__bulk" role="region" aria-label="Selected parts actions">
             <strong>{checkedParts.size} {checkedParts.size === 1 ? 'part' : 'parts'} selected</strong>
-            <div><button type="button" onClick={clearChecked}>Clear selection</button><button type="button" onClick={prepareChecked}>Add to purchase list<ArrowRight aria-hidden="true" /></button></div>
+            <div><ControlButton type="button" onClick={clearChecked}>Clear selection</ControlButton><ControlButton type="button" onClick={prepareChecked}>Add to purchase list<ArrowRight aria-hidden="true" /></ControlButton></div>
           </div>}
           <PartLedger page={partsPage} loading={partsQuery.isLoading} loadingMore={partsQuery.isFetchingNextPage} failed={partsQuery.isError && !partsQuery.data} manage={manage} salesEnabled={counterSalesEnabled} selectedId={selectedId} checkedIds={new Set(checkedParts.keys())} density={density} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onCheck={toggleChecked} onSelect={selectPart} onSell={(id) => navigate(`/dashboard/garage/inventory/sales?new=1&part=${encodeURIComponent(id)}`)} onRetry={() => void partsQuery.refetch()} onLoadMore={() => void partsQuery.fetchNextPage()} />
         </div>
@@ -929,7 +930,7 @@ function PartLedger({ page, loading, loadingMore, failed, manage, salesEnabled, 
     return () => { document.removeEventListener('keydown', keydown); document.removeEventListener('pointerdown', pointerdown) }
   }, [openActions])
   if (loading) return <div className="db-parts-workbench__state" role="status">Loading parts…</div>
-  if (failed) return <div className="db-parts-workbench__state" role="alert">Parts could not be loaded.<button type="button" onClick={onRetry}>Retry</button></div>
+  if (failed) return <div className="db-parts-workbench__state" role="alert">Parts could not be loaded.<ControlButton type="button" onClick={onRetry}>Retry</ControlButton></div>
   if (!page?.items.length) return <div className="db-parts-workbench__state"><strong>No parts match this view.</strong><span>Change the search or catalog filter to see more.</span></div>
   return <div className={`db-parts-workbench__ledger is-${density}${manage ? '' : ' is-read-only'}`} role="table" aria-label={`${page.total} matching parts`}>
     <div className="sr-only" role="row">
@@ -947,12 +948,12 @@ function PartLedger({ page, loading, loadingMore, failed, manage, salesEnabled, 
         }}>
           {manage && <span role="cell" className="db-parts-workbench__check" onClick={(event) => event.stopPropagation()}>{eligible && <label><input type="checkbox" aria-label={`Select ${part.name} for purchase preparation`} checked={checkedIds.has(part.id)} onClick={(event) => event.stopPropagation()} onChange={(event) => onCheck(part, event.target.checked)} /></label>}</span>}
           <span role="cell" className="db-parts-workbench__part-cell">
-            <button type="button" className="db-parts-workbench__row-select" aria-current={selected ? 'true' : undefined} aria-controls="selected-part-inspector" onClick={() => onSelect(part.id)}>
+            <ControlButton controlKind="content" type="button" className="db-parts-workbench__row-select" aria-current={selected ? 'true' : undefined} aria-controls="selected-part-inspector" onClick={() => onSelect(part.id)}>
               <span className="db-parts-workbench__identity"><span className="db-parts-workbench__photo-spacer" aria-hidden="true" /><span><strong>{part.name}</strong><small>{part.sku}</small></span></span>
               <ChevronRight className="db-parts-workbench__row-cue" aria-hidden="true" />
-            </button>
+            </ControlButton>
             <PartPhoto part={part} logoUrl={logoUrl} companyName={companyName} />
-            {salesEnabled && eligible && <span className="db-parts-workbench__row-actions" data-row-actions={part.id} onClick={(event) => event.stopPropagation()}><button type="button" aria-label={`More actions for ${part.name}`} aria-haspopup="menu" aria-expanded={openActions === part.id} onClick={() => setOpenActions((current) => current === part.id ? null : part.id)}><EllipsisVertical aria-hidden="true" /></button>{openActions === part.id && <span role="menu" aria-label={`Actions for ${part.name}`}><button type="button" role="menuitem" onClick={() => { setOpenActions(null); onSell(part.id) }}>Sell part</button></span>}</span>}
+            {salesEnabled && eligible && <span className="db-parts-workbench__row-actions" data-row-actions={part.id} onClick={(event) => event.stopPropagation()}><ControlButton controlKind="icon" type="button" aria-label={`More actions for ${part.name}`} aria-haspopup="menu" aria-expanded={openActions === part.id} onClick={() => setOpenActions((current) => current === part.id ? null : part.id)}><EllipsisVertical aria-hidden="true" /></ControlButton>{openActions === part.id && <span role="menu" aria-label={`Actions for ${part.name}`}><ControlButton controlKind="content" type="button" role="menuitem" onClick={() => { setOpenActions(null); onSell(part.id) }}>Sell part</ControlButton></span>}</span>}
           </span>
           <div className="db-parts-workbench__row-facts" role="presentation">
             <strong role="cell" data-label="Available" className="is-available"><span>Available</span> {part.available_to_sell_packages ?? part.available_packages}</strong>
@@ -965,7 +966,7 @@ function PartLedger({ page, loading, loadingMore, failed, manage, salesEnabled, 
         </div>
       })}
     </div>
-    <div className="db-parts-workbench__load-more"><span aria-live="polite">Showing {page.items.length} of {page.total}</span>{page.has_more && <button type="button" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? 'Loading 50 more…' : 'Load 50 more'}</button>}</div>
+    <div className="db-parts-workbench__load-more"><span aria-live="polite">Showing {page.items.length} of {page.total}</span>{page.has_more && <ControlButton type="button" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? 'Loading 50 more…' : 'Load 50 more'}</ControlButton>}</div>
   </div>
 }
 
@@ -1073,23 +1074,23 @@ function AddPartDrawer({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
       <fieldset>
         <legend>Part details</legend>
         <div className="db-parts-workbench__add-fields">
-          <label className="is-wide"><span className="db-parts-workbench__field-label">Category <span aria-hidden="true">*</span></span><input autoFocus required disabled={saving} value={form.category} onChange={(event) => update('category', event.target.value)} placeholder="Brakes" list="part-category-suggestions" />
+          <label className="is-wide"><span className="db-parts-workbench__field-label">Category <span aria-hidden="true">*</span></span><ControlInput autoFocus required disabled={saving} value={form.category} onChange={(event) => update('category', event.target.value)} placeholder="Brakes" list="part-category-suggestions" />
             <datalist id="part-category-suggestions">{categorySuggestions.data?.map((suggestion) => <option key={suggestion.text} value={suggestion.text} />)}</datalist>
             <small>Choose an existing category or enter a new one before naming the part.</small>
           </label>
-          <label><span className="db-parts-workbench__field-label">Part name <span aria-hidden="true">*</span></span><input required disabled={saving || !form.category.trim()} value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Brake pads – rear" /></label>
-          <label><span className="db-parts-workbench__field-label">SKU <span aria-hidden="true">*</span></span><input required disabled={saving || !form.category.trim()} value={effectiveSku} onChange={(event) => { setSkuMode('manual'); update('sku', event.target.value) }} placeholder="Choose a category and name" />
+          <label><span className="db-parts-workbench__field-label">Part name <span aria-hidden="true">*</span></span><ControlInput required disabled={saving || !form.category.trim()} value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Brake pads – rear" /></label>
+          <label><span className="db-parts-workbench__field-label">SKU <span aria-hidden="true">*</span></span><ControlInput required disabled={saving || !form.category.trim()} value={effectiveSku} onChange={(event) => { setSkuMode('manual'); update('sku', event.target.value) }} placeholder="Choose a category and name" />
             {skuMode === 'automatic' && form.name.trim() && !skuSuggestion && <small>Generating SKU…</small>}
-            {skuMode === 'manual' && skuSuggestion && <button type="button" className="db-parts-workbench__sku-suggestion" disabled={saving} onClick={() => { setSkuMode('automatic'); update('sku', '') }}>Use generated: <span>{skuSuggestion}</span></button>}
+            {skuMode === 'manual' && skuSuggestion && <ControlButton type="button" className="db-parts-workbench__sku-suggestion" disabled={saving} onClick={() => { setSkuMode('automatic'); update('sku', '') }}>Use generated: <span>{skuSuggestion}</span></ControlButton>}
           </label>
           <label className="is-wide">Description<textarea disabled={saving} rows={3} value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Optional catalog description" /></label>
-          <label>Unit<input disabled={saving} value={form.unitType} onChange={(event) => update('unitType', event.target.value)} placeholder="each" /></label>
+          <label>Unit<ControlInput disabled={saving} value={form.unitType} onChange={(event) => update('unitType', event.target.value)} placeholder="each" /></label>
         </div>
       </fieldset>
       <fieldset>
         <legend>Stock</legend>
         <div className="db-parts-workbench__add-fields">
-          <label className="is-wide">Bin location<input disabled={saving} value={form.location} onChange={(event) => update('location', event.target.value)} placeholder="A-12" /></label>
+          <label className="is-wide">Bin location<ControlInput disabled={saving} value={form.location} onChange={(event) => update('location', event.target.value)} placeholder="A-12" /></label>
           <label>On-hand quantity<QuantityStepper disabled={saving} value={Number(form.stockQuantity) || 0} min={0} step={1} unitLabel="units" ariaLabel="On-hand quantity" align="start" size="lg" className="db-parts-workbench__add-stepper" onChange={(next) => update('stockQuantity', String(next))} /></label>
           <label>Reorder level<QuantityStepper disabled={saving} value={Number(form.reorderLevel) || 0} min={0} step={1} unitLabel="units" ariaLabel="Reorder level" align="start" size="lg" className="db-parts-workbench__add-stepper" onChange={(next) => update('reorderLevel', String(next))} /></label>
         </div>
@@ -1105,8 +1106,8 @@ function AddPartDrawer({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
       <fieldset>
         <legend>Supplier</legend>
         <div className="db-parts-workbench__add-fields">
-          <label>Supplier name<input disabled={saving} value={form.supplierName} onChange={(event) => update('supplierName', event.target.value)} placeholder="Optional" /></label>
-          <label>Supplier contact<input disabled={saving} value={form.supplierContact} onChange={(event) => update('supplierContact', event.target.value)} placeholder="Optional contact or terms note" /></label>
+          <label>Supplier name<ControlInput disabled={saving} value={form.supplierName} onChange={(event) => update('supplierName', event.target.value)} placeholder="Optional" /></label>
+          <label>Supplier contact<ControlInput disabled={saving} value={form.supplierContact} onChange={(event) => update('supplierContact', event.target.value)} placeholder="Optional contact or terms note" /></label>
         </div>
       </fieldset>
       {formError && <p className="is-wide" role="alert">{formError}</p>}
@@ -1355,7 +1356,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     } catch { /* Parent keeps the exact server recovery message. */ } finally { setSaving(false) }
   }
   if (loading) return <aside className="db-parts-workbench__inspector" role="status">Loading part details…</aside>
-  if (failed) return <aside className="db-parts-workbench__inspector" role="alert">Part details could not be loaded.<button type="button" onClick={onRetry}>Retry</button></aside>
+  if (failed) return <aside className="db-parts-workbench__inspector" role="alert">Part details could not be loaded.<ControlButton type="button" onClick={onRetry}>Retry</ControlButton></aside>
   if (!part) return <aside className="db-parts-workbench__inspector"><p>Select a part to see stock, supplier, repair, and purchase history.</p></aside>
   const stockState = part.is_archived ? 'Archived' : part.available_packages < part.needed_for_open_repairs ? 'Short for open repairs' : part.available_packages <= part.reorder_level ? 'Needs reorder' : 'In stock'
   const stockStateClass = part.is_archived ? 'is-archived' : part.available_packages < part.needed_for_open_repairs ? 'is-danger' : part.available_packages <= part.reorder_level ? 'is-warning' : ''
@@ -1410,7 +1411,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
               }}
               onSubmit={(event) => { event.preventDefault(); void save() }}
             >
-              <button
+              <ControlButton
                 className="db-parts-workbench__edit-cancel"
                 type="button"
                 disabled={saving}
@@ -1420,7 +1421,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
               >
                 <X aria-hidden="true" />
                 <span id={cancelTooltipId} className="db-parts-workbench__fact-tooltip" role="tooltip">{cancelLabel}</span>
-              </button>
+              </ControlButton>
               <div className="db-parts-workbench__edit-quantity">
                 <QuantityStepper
                   autoFocus
@@ -1438,18 +1439,18 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
               </div>
               {kind === 'available' && <label className="db-parts-workbench__edit-reason">Adjustment reason<textarea disabled={saving} rows={2} value={reason} onChange={(event) => { setReason(event.target.value); setLocalError(null) }} placeholder="Cycle count, damage, return to shelf…" /></label>}
               {localError && <p role="alert">{localError}</p>}
-              <button className="db-parts-workbench__edit-save" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+              <ControlButton className="db-parts-workbench__edit-save" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</ControlButton>
             </form>
           : <>
               <span>{currentValue}</span>
-              {showTrigger && manage && !part.is_archived && !edit && <button
+              {showTrigger && manage && !part.is_archived && !edit && <ControlButton
                 ref={triggerRef}
                 className="db-parts-workbench__fact-edit"
                 type="button"
                 aria-label={editLabel}
                 aria-describedby={tooltipId}
                 onClick={(event) => open(kind, origin, event)}
-              ><Pencil aria-hidden="true" /><span id={tooltipId} className="db-parts-workbench__fact-tooltip" role="tooltip">{editLabel}</span></button>}
+              ><Pencil aria-hidden="true" /><span id={tooltipId} className="db-parts-workbench__fact-tooltip" role="tooltip">{editLabel}</span></ControlButton>}
             </>}
       </dd>
     </div>
@@ -1472,12 +1473,12 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
       <div className="db-parts-workbench__selected-label-row">
         <p className="db-parts-workbench__selected-label">Selected part</p>
         <div className="db-parts-workbench__selected-controls">
-          {manage && !part.is_archived && !edit && !identityOpen && <button ref={identityTrigger} className="db-parts-workbench__identity-trigger db-parts-workbench__icon-action db-parts-workbench__icon-action--icon-only" type="button" aria-label="Edit details" aria-expanded="false" aria-controls="selected-part-identity-editor" onClick={openIdentity}><Pencil aria-hidden="true" /></button>}
-          <button className={`db-parts-workbench__mobile-back db-parts-workbench__icon-action db-parts-workbench__icon-action--icon-only${identityOpen ? ' is-editing' : ''}`} type="button" disabled={identityOpen && (identitySaving || photoSaving)} onClick={identityOpen ? closeIdentity : onBack} aria-label={identityOpen ? 'Cancel editing' : 'Back to parts'}>
+          {manage && !part.is_archived && !edit && !identityOpen && <ControlButton controlKind="icon" ref={identityTrigger} className="db-parts-workbench__identity-trigger db-parts-workbench__icon-action db-parts-workbench__icon-action--icon-only" type="button" aria-label="Edit details" aria-expanded="false" aria-controls="selected-part-identity-editor" onClick={openIdentity}><Pencil aria-hidden="true" /></ControlButton>}
+          <ControlButton className={`db-parts-workbench__mobile-back db-parts-workbench__icon-action db-parts-workbench__icon-action--icon-only${identityOpen ? ' is-editing' : ''}`} type="button" disabled={identityOpen && (identitySaving || photoSaving)} onClick={identityOpen ? closeIdentity : onBack} aria-label={identityOpen ? 'Cancel editing' : 'Back to parts'}>
             <ArrowLeft className="db-parts-workbench__mobile-back-arrow" aria-hidden="true" />
             <span className="db-parts-workbench__mobile-back-label">Back to parts</span>
             <X className="db-parts-workbench__mobile-back-close" aria-hidden="true" />
-          </button>
+          </ControlButton>
         </div>
       </div>
       <div className="db-parts-workbench__selected-part">
@@ -1486,46 +1487,46 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
       </div>
       {identityOpen && <div id="selected-part-identity-editor" className="db-parts-workbench__identity-editor" aria-busy={identitySaving || photoSaving}>
         {(identityQuery.isPending || (identityQuery.isFetching && !identityForm)) && <p role="status">Loading editable part details…</p>}
-        {identityQuery.isError && <div className="db-parts-workbench__identity-recovery" role="alert"><span>Editable part details could not be loaded.</span><button type="button" onClick={() => void identityQuery.refetch()}>Retry</button></div>}
+        {identityQuery.isError && <div className="db-parts-workbench__identity-recovery" role="alert"><span>Editable part details could not be loaded.</span><ControlButton type="button" onClick={() => void identityQuery.refetch()}>Retry</ControlButton></div>}
         {identityForm && <>
           <div className="db-parts-workbench__photo-editor" role="group" aria-label="Part photo">
             <div className="db-parts-workbench__photo-editor-copy"><strong>Photo</strong><span>Changes save immediately · JPEG, PNG, WebP, HEIC/HEIF · max 10 MB</span></div>
             <div className="db-parts-workbench__photo-editor-actions">
-              <button className="db-parts-workbench__icon-action db-parts-workbench__icon-action--icon-only" type="button" disabled={photoSaving || identitySaving} aria-label={photoAction === 'upload' ? 'Uploading photo' : part.image_url ? 'Replace photo' : 'Add photo'} onClick={() => photoInput.current?.click()}><Camera aria-hidden="true" /></button>
-              {part.image_url && !confirmPhotoRemove && <button className="db-parts-workbench__icon-action db-parts-workbench__icon-action--icon-only" type="button" disabled={photoSaving || identitySaving} aria-label={photoAction === 'remove' ? 'Removing photo' : 'Remove photo'} onClick={() => setConfirmPhotoRemove(true)}><Trash2 aria-hidden="true" /></button>}
-              {part.image_url && confirmPhotoRemove && <span className="db-parts-workbench__photo-confirm" role="group" aria-label="Confirm photo removal"><strong>Remove this photo?</strong><button type="button" disabled={photoSaving || identitySaving} onClick={() => { setConfirmPhotoRemove(false); void removePhoto() }}>Remove photo</button><button type="button" disabled={photoSaving || identitySaving} onClick={() => setConfirmPhotoRemove(false)}>Keep photo</button></span>}
+              <ControlButton controlKind="icon" className="db-parts-workbench__icon-action db-parts-workbench__icon-action--icon-only" type="button" disabled={photoSaving || identitySaving} aria-label={photoAction === 'upload' ? 'Uploading photo' : part.image_url ? 'Replace photo' : 'Add photo'} onClick={() => photoInput.current?.click()}><Camera aria-hidden="true" /></ControlButton>
+              {part.image_url && !confirmPhotoRemove && <ControlButton controlKind="icon" className="db-parts-workbench__icon-action db-parts-workbench__icon-action--icon-only" type="button" disabled={photoSaving || identitySaving} aria-label={photoAction === 'remove' ? 'Removing photo' : 'Remove photo'} onClick={() => setConfirmPhotoRemove(true)}><Trash2 aria-hidden="true" /></ControlButton>}
+              {part.image_url && confirmPhotoRemove && <span className="db-parts-workbench__photo-confirm" role="group" aria-label="Confirm photo removal"><strong>Remove this photo?</strong><ControlButton type="button" disabled={photoSaving || identitySaving} onClick={() => { setConfirmPhotoRemove(false); void removePhoto() }}>Remove photo</ControlButton><ControlButton type="button" disabled={photoSaving || identitySaving} onClick={() => setConfirmPhotoRemove(false)}>Keep photo</ControlButton></span>}
             </div>
             <input ref={photoInput} hidden tabIndex={-1} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={(event) => { const file = event.target.files?.[0]; if (file) void choosePhoto(file); event.target.value = '' }} />
             {photoError && <p className="db-parts-workbench__photo-error" role="alert">{photoError}</p>}
           </div>
           <form aria-label="Edit part details" onKeyDown={(event) => { if (event.key === 'Escape' && !identitySaving && !photoSaving) { event.preventDefault(); event.stopPropagation(); closeIdentity() } }} onSubmit={(event) => { event.preventDefault(); void saveIdentity() }}>
             <div className="db-parts-workbench__identity-fields">
-              <label>Part name<input autoFocus required maxLength={255} disabled={identitySaving || photoSaving} value={identityForm.name} onChange={(event) => updateIdentity('name', event.target.value)} /></label>
-              <label>SKU<input required maxLength={100} disabled={identitySaving || photoSaving} value={identityForm.sku} onChange={(event) => updateIdentity('sku', event.target.value)} /></label>
-              <label>Category<input maxLength={100} disabled={identitySaving || photoSaving} value={identityForm.category} onChange={(event) => updateIdentity('category', event.target.value)} placeholder="Brakes, electrical, fluids…" /></label>
-              <label>Bin location<input maxLength={100} disabled={identitySaving || photoSaving} value={identityForm.location} onChange={(event) => updateIdentity('location', event.target.value)} placeholder="A-12" /></label>
-              <label>Unit label<input maxLength={20} disabled={identitySaving || photoSaving} value={identityForm.unitType} onChange={(event) => updateIdentity('unitType', event.target.value)} placeholder="each" /></label>
+              <label>Part name<ControlInput autoFocus required maxLength={255} disabled={identitySaving || photoSaving} value={identityForm.name} onChange={(event) => updateIdentity('name', event.target.value)} /></label>
+              <label>SKU<ControlInput required maxLength={100} disabled={identitySaving || photoSaving} value={identityForm.sku} onChange={(event) => updateIdentity('sku', event.target.value)} /></label>
+              <label>Category<ControlInput maxLength={100} disabled={identitySaving || photoSaving} value={identityForm.category} onChange={(event) => updateIdentity('category', event.target.value)} placeholder="Brakes, electrical, fluids…" /></label>
+              <label>Bin location<ControlInput maxLength={100} disabled={identitySaving || photoSaving} value={identityForm.location} onChange={(event) => updateIdentity('location', event.target.value)} placeholder="A-12" /></label>
+              <label>Unit label<ControlInput maxLength={20} disabled={identitySaving || photoSaving} value={identityForm.unitType} onChange={(event) => updateIdentity('unitType', event.target.value)} placeholder="each" /></label>
               <label>Description<textarea maxLength={5000} disabled={identitySaving || photoSaving} rows={2} value={identityForm.description} onChange={(event) => updateIdentity('description', event.target.value)} placeholder="Catalog details or identifying notes" /></label>
             </div>
             <fieldset className="db-parts-workbench__identity-group">
-              <legend><span>Pricing</span><button type="button" disabled={identitySaving || photoSaving} onClick={() => setPricingPolicyOpen(true)}>Part pricing policy</button></legend>
+              <legend><span>Pricing</span><ControlButton type="button" disabled={identitySaving || photoSaving} onClick={() => setPricingPolicyOpen(true)}>Part pricing policy</ControlButton></legend>
               <div className="db-parts-workbench__identity-fields">
-                <label>Cost per unit<span className="db-parts-workbench__price-input"><span aria-hidden="true">$</span><input inputMode="decimal" disabled={identitySaving || photoSaving} value={identityForm.cost} onChange={(event) => updateIdentity('cost', event.target.value)} /></span></label>
-                <label>Core charge<span className="db-parts-workbench__price-input"><span aria-hidden="true">$</span><input inputMode="decimal" disabled={identitySaving || photoSaving} value={identityForm.coreCharge} onChange={(event) => updateIdentity('coreCharge', event.target.value)} /></span></label>
+                <label>Cost per unit<span className="db-parts-workbench__price-input"><span aria-hidden="true">$</span><ControlInput inputMode="decimal" disabled={identitySaving || photoSaving} value={identityForm.cost} onChange={(event) => updateIdentity('cost', event.target.value)} /></span></label>
+                <label>Core charge<span className="db-parts-workbench__price-input"><span aria-hidden="true">$</span><ControlInput inputMode="decimal" disabled={identitySaving || photoSaving} value={identityForm.coreCharge} onChange={(event) => updateIdentity('coreCharge', event.target.value)} /></span></label>
                 <SellingPriceField cost={identityForm.cost} value={identityForm.sellingPrice} disabled={identitySaving || photoSaving} onChange={(next) => updateIdentity('sellingPrice', next)} />
               </div>
             </fieldset>
             <fieldset className="db-parts-workbench__identity-group">
               <legend>Supplier</legend>
               <div className="db-parts-workbench__identity-fields db-parts-workbench__supplier-fields">
-                <label>Supplier name<input maxLength={255} disabled={identitySaving || photoSaving} value={identityForm.supplierName} onChange={(event) => updateIdentity('supplierName', event.target.value)} /></label>
-                <label>On order<input inputMode="numeric" disabled={identitySaving || photoSaving} value={identityForm.onOrderQuantity} onChange={(event) => updateIdentity('onOrderQuantity', event.target.value)} /></label>
-                <label>Supplier contact<input maxLength={255} disabled={identitySaving || photoSaving} value={identityForm.supplierContact} onChange={(event) => updateIdentity('supplierContact', event.target.value)} /></label>
+                <label>Supplier name<ControlInput maxLength={255} disabled={identitySaving || photoSaving} value={identityForm.supplierName} onChange={(event) => updateIdentity('supplierName', event.target.value)} /></label>
+                <label>On order<ControlInput inputMode="numeric" disabled={identitySaving || photoSaving} value={identityForm.onOrderQuantity} onChange={(event) => updateIdentity('onOrderQuantity', event.target.value)} /></label>
+                <label>Supplier contact<ControlInput maxLength={255} disabled={identitySaving || photoSaving} value={identityForm.supplierContact} onChange={(event) => updateIdentity('supplierContact', event.target.value)} /></label>
               </div>
             </fieldset>
-            {identityFresh && <div className="db-parts-workbench__identity-recovery"><span>Saved prices changed · Cost {pricingMoney(String(identityFresh.cost))} · Catalog {pricingMoney(String(identityFresh.selling_price))}. Your draft is kept.</span><button type="button" onClick={() => { setIdentityOriginal(identityFresh); setIdentityFresh(null); setIdentityError(null) }}>Keep my draft</button></div>}
+            {identityFresh && <div className="db-parts-workbench__identity-recovery"><span>Saved prices changed · Cost {pricingMoney(String(identityFresh.cost))} · Catalog {pricingMoney(String(identityFresh.selling_price))}. Your draft is kept.</span><ControlButton type="button" onClick={() => { setIdentityOriginal(identityFresh); setIdentityFresh(null); setIdentityError(null) }}>Keep my draft</ControlButton></div>}
             {(identityValidation || identityError) && <p className="db-parts-workbench__identity-error" role="alert">{identityValidation || identityError}</p>}
-            <div className="db-parts-workbench__identity-actions"><button type="submit" disabled={identitySaving || photoSaving || Boolean(identityFresh) || Boolean(identityValidation) || !identityDirty}>{identitySaving ? 'Saving…' : 'Save details'}</button></div>
+            <div className="db-parts-workbench__identity-actions"><ControlButton type="submit" disabled={identitySaving || photoSaving || Boolean(identityFresh) || Boolean(identityValidation) || !identityDirty}>{identitySaving ? 'Saving…' : 'Save details'}</ControlButton></div>
           </form>
         </>}
       </div>}
@@ -1533,7 +1534,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     </div>
     {part.is_archived && <p className="db-parts-workbench__archive" role="status">Archived part. Activity stays available, but stock and purchasing actions are locked.</p>}
     <div className="db-parts-workbench__inspector-tabs" role="tablist" aria-label="Selected part details" onKeyDown={handleInspectorKeys}>
-      {INSPECTOR_VIEWS.map((view, index) => <button key={view.id} ref={(node) => { inspectorTabs.current[index] = node }} id={`part-inspector-${view.id}-tab`} type="button" role="tab" aria-selected={inspectorView === view.id} aria-controls={`part-inspector-${view.id}-panel`} tabIndex={inspectorView === view.id ? 0 : -1} onClick={() => selectInspectorView(view.id)}>{view.label}</button>)}
+      {INSPECTOR_VIEWS.map((view, index) => <ControlButton controlKind="content" key={view.id} ref={(node) => { inspectorTabs.current[index] = node }} id={`part-inspector-${view.id}-tab`} type="button" role="tab" aria-selected={inspectorView === view.id} aria-controls={`part-inspector-${view.id}-panel`} tabIndex={inspectorView === view.id ? 0 : -1} onClick={() => selectInspectorView(view.id)}>{view.label}</ControlButton>)}
     </div>
     <div className={`db-parts-workbench__inspector-panel is-${inspectorView}`} id={`part-inspector-${inspectorView}-panel`} role="tabpanel" aria-labelledby={`part-inspector-${inspectorView}-tab`}>
       {inspectorView === 'overview' && <>
@@ -1542,16 +1543,16 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
             <strong>Placeholder part</strong>
             <span>Added ad-hoc to finish a job, so it carries no stock, price or location. Promoting keeps every repair order already attached to it.</span>
           </div>
-          {manage && !part.is_archived && <button type="button" disabled={promoting} onClick={async () => {
+          {manage && !part.is_archived && <ControlButton type="button" disabled={promoting} onClick={async () => {
             setPromoting(true)
             try { await onAdjust(part, { is_placeholder: false }) } finally { setPromoting(false) }
-          }}>{promoting ? 'Promoting…' : 'Make this a stocked part'}</button>}
+          }}>{promoting ? 'Promoting…' : 'Make this a stocked part'}</ControlButton>}
         </section>}
         <section className="db-parts-workbench__section"><h3>At a glance</h3><dl className="db-parts-workbench__facts is-overview"><div><dt>Physical on hand</dt><dd>{physicalOnHand}</dd></div><div><dt>Held for checkout</dt><dd>{heldForCheckout}</dd></div><div><dt>Available to sell</dt><dd>{availableToSell}</dd></div><div><dt>Needed for open repairs</dt><dd>{part.needed_for_open_repairs}</dd></div><div><dt>Reorder at</dt><dd>{part.reorder_level}</dd></div><div><dt>Incoming</dt><dd>{part.incoming_packages}</dd></div><div><dt>Unit cost</dt><dd>{formatMoney(money(part.average_unit_cost))}</dd></div><div><dt>Stock value</dt><dd>{formatStockValue(part)}</dd></div><div><dt>Selling price</dt><dd>{part.selling_price == null ? '—' : formatMoney(money(part.selling_price))}{manage && <PartPolicySummary inventoryId={part.id} />}</dd></div><div><dt>Remarks</dt><dd>{remark}</dd></div></dl></section>
         <section className="db-parts-workbench__section db-parts-workbench__supplier-section">
           <div className="db-parts-workbench__supplier-section-head">
             <h3>Supplied by</h3>
-            {part.preferred_source && manage && !part.is_archived && <button type="button" aria-label="Change preferred supplier" onClick={() => selectInspectorView('ordering', true)}>Change</button>}
+            {part.preferred_source && manage && !part.is_archived && <ControlButton type="button" aria-label="Change preferred supplier" onClick={() => selectInspectorView('ordering', true)}>Change</ControlButton>}
           </div>
           {part.preferred_source ? <div className="db-parts-workbench__supplier-relationship">
             <div className="db-parts-workbench__supplier-identity">
@@ -1574,13 +1575,13 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
             </dl>
           </div> : <div className="db-parts-workbench__supplier-unlinked"><i aria-hidden="true" /><span><strong>No supplier linked</strong><small>Add this part to the purchase list to keep it visible as blocked, or use Ordering to link a source.</small></span></div>}
         </section>
-        <section className="db-parts-workbench__section"><h3>Why this part is needed</h3>{part.repair_sources.length ? part.repair_sources.slice(0, 3).map((source) => <button className="db-parts-workbench__linked-row" type="button" key={source.repair_order_id} onClick={() => onOpenRepair(source.repair_order_id)}><span><strong>{source.order_number}</strong><small>{source.unit_number ? `Unit ${source.unit_number} · ` : ''}{source.vehicle_display || 'Vehicle not set'}</small></span><strong>{source.packages} units needed</strong><ArrowRight aria-hidden="true" /></button>) : <p className="db-parts-workbench__muted">No open repair is waiting on this part.</p>}</section>
+        <section className="db-parts-workbench__section"><h3>Why this part is needed</h3>{part.repair_sources.length ? part.repair_sources.slice(0, 3).map((source) => <ControlButton className="db-parts-workbench__linked-row" type="button" key={source.repair_order_id} onClick={() => onOpenRepair(source.repair_order_id)}><span><strong>{source.order_number}</strong><small>{source.unit_number ? `Unit ${source.unit_number} · ` : ''}{source.vehicle_display || 'Vehicle not set'}</small></span><strong>{source.packages} units needed</strong><ArrowRight aria-hidden="true" /></ControlButton>) : <p className="db-parts-workbench__muted">No open repair is waiting on this part.</p>}</section>
         <section className="db-parts-workbench__section"><h3>Recent movement</h3>{part.recent_movements.length ? part.recent_movements.slice(0, 3).map((movement) => <div className="db-parts-workbench__movement-row" key={movement.id}><span><strong>{movementLabel(movement.movement_type)}</strong><small>{new Date(movement.occurred_at).toLocaleString()}</small></span><strong>{movement.quantity_delta > 0 ? '+' : ''}{movement.quantity_delta} · {movement.balance_after} available</strong></div>) : <p className="db-parts-workbench__muted">No inventory changes have been recorded for this part.</p>}</section>
       </>}
       {inspectorView === 'stock' && <section className="db-parts-workbench__section">
         <div className="db-parts-workbench__section-head">
           <h3>Stock</h3>
-          {manage && !part.is_archived && !edit && <button ref={availableTrigger} className="db-parts-workbench__stock-action" type="button" aria-label="Adjust on-hand quantity" onClick={(event) => open('available', 'available-shortcut', event)}><Boxes aria-hidden="true" />Adjust stock</button>}
+          {manage && !part.is_archived && !edit && <ControlButton controlKind="action" ref={availableTrigger} className="db-parts-workbench__stock-action" type="button" aria-label="Adjust on-hand quantity" onClick={(event) => open('available', 'available-shortcut', event)}><Boxes aria-hidden="true" />Adjust stock</ControlButton>}
         </div>
         <dl className={`db-parts-workbench__facts${edit ? ' has-editor' : ''}`}>
         {stockFacts}
@@ -1595,19 +1596,19 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
       }}>
         <label htmlFor="part-receive-qty">Receive stock</label>
         <div>
-          <input id="part-receive-qty" inputMode="numeric" disabled={receiving} value={receiveQty} placeholder="0" onChange={(event) => { setReceiveQty(event.target.value); setReceiveError(null) }} />
-          <button type="submit" disabled={receiving || !receiveQty.trim()}>{receiving ? 'Receiving…' : 'Receive'}</button>
+          <ControlInput id="part-receive-qty" inputMode="numeric" disabled={receiving} value={receiveQty} placeholder="0" onChange={(event) => { setReceiveQty(event.target.value); setReceiveError(null) }} />
+          <ControlButton type="submit" disabled={receiving || !receiveQty.trim()}>{receiving ? 'Receiving…' : 'Receive'}</ControlButton>
         </div>
         <small>Adds to on-hand stock and draws down what is on order.</small>
         {receiveError && <p role="alert">{receiveError}</p>}
       </form>}
       </section>}
       {inspectorView === 'ordering' && <section className="db-parts-workbench__section">
-        <div className="db-parts-workbench__section-head"><h3>Ordering</h3><button type="button" onClick={onPurchasing}>{prepared ? 'View purchase list' : 'Open Purchasing'}<ArrowRight aria-hidden="true" /></button></div>
+        <div className="db-parts-workbench__section-head"><h3>Ordering</h3><ControlButton type="button" onClick={onPurchasing}>{prepared ? 'View purchase list' : 'Open Purchasing'}<ArrowRight aria-hidden="true" /></ControlButton></div>
         <dl className="db-parts-workbench__facts"><div><dt>Recommended order</dt><dd>{part.recommended_order_packages}</dd></div><div><dt>Average unit cost</dt><dd>${part.average_unit_cost}</dd></div></dl>
         {manage && isManuallySelectable(part) && <div className={`db-parts-workbench__ordering-action${purchaseActionable ? ' is-actionable' : ''}${prepared ? ' is-prepared' : ''}`}>
           <span><strong>{prepared ? 'Prepared for purchasing' : purchaseActionable ? 'Replenishment recommended' : 'Stock is covered'}</strong><small>{prepared ? 'This part is staged for review in Purchasing.' : purchaseActionable ? `${part.recommended_order_packages} ${part.unit_type || 'units'} recommended. Add it to stage the quantity for review in Purchasing.` : 'No replenishment is recommended. Add it only to stage a manual review in Purchasing.'}</small></span>
-          {!prepared && <button className={purchaseActionable ? 'db-parts-workbench__action-primary' : 'db-parts-workbench__action-secondary'} type="button" onClick={() => onPrepare(part)}>Add to purchase list</button>}
+          {!prepared && <ControlButton className={purchaseActionable ? 'db-parts-workbench__action-primary' : 'db-parts-workbench__action-secondary'} type="button" onClick={() => onPrepare(part)}>Add to purchase list</ControlButton>}
         </div>}
         <SupplierSources part={part} manage={manage && !part.is_archived} onChanged={onRetry} />
         <div className="db-parts-workbench__purchase-activity">
@@ -1615,11 +1616,11 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
           <div className="db-parts-workbench__purchase-activity-list">
             <section aria-labelledby={`open-purchase-orders-${part.id}`}>
               <div className="db-parts-workbench__purchase-activity-title"><h5 id={`open-purchase-orders-${part.id}`}>Open purchase orders</h5>{!part.incoming_sources.length && <strong>None</strong>}</div>
-              {part.incoming_sources.map((source) => <button className="db-parts-workbench__linked-row" type="button" key={source.purchase_order_id} onClick={() => onOpenPurchaseOrder(source.purchase_order_id)}><span><strong>{source.po_number}</strong><small>{source.expected_at ? `Expected ${formatDate(source.expected_at)}` : 'Delivery date not set'}</small></span><strong>{source.packages} units incoming</strong><ArrowRight aria-hidden="true" /></button>)}
+              {part.incoming_sources.map((source) => <ControlButton className="db-parts-workbench__linked-row" type="button" key={source.purchase_order_id} onClick={() => onOpenPurchaseOrder(source.purchase_order_id)}><span><strong>{source.po_number}</strong><small>{source.expected_at ? `Expected ${formatDate(source.expected_at)}` : 'Delivery date not set'}</small></span><strong>{source.packages} units incoming</strong><ArrowRight aria-hidden="true" /></ControlButton>)}
             </section>
             <section aria-labelledby={`recent-receipts-${part.id}`}>
               <div className="db-parts-workbench__purchase-activity-title"><h5 id={`recent-receipts-${part.id}`}>Recent receipts</h5>{!part.recent_receipts.length && <strong>None</strong>}</div>
-              {part.recent_receipts.map((receipt) => <button className="db-parts-workbench__linked-row" type="button" key={receipt.receipt_id} onClick={() => onOpenPurchaseOrder(receipt.purchase_order_id)}><span><strong>{receipt.receipt_number}</strong><small>{receipt.po_number} · Received {formatDate(receipt.received_at)}</small></span><strong>{receipt.quantity} at ${receipt.unit_cost}</strong><ArrowRight aria-hidden="true" /></button>)}
+              {part.recent_receipts.map((receipt) => <ControlButton className="db-parts-workbench__linked-row" type="button" key={receipt.receipt_id} onClick={() => onOpenPurchaseOrder(receipt.purchase_order_id)}><span><strong>{receipt.receipt_number}</strong><small>{receipt.po_number} · Received {formatDate(receipt.received_at)}</small></span><strong>{receipt.quantity} at ${receipt.unit_cost}</strong><ArrowRight aria-hidden="true" /></ControlButton>)}
             </section>
           </div>
         </div>
@@ -1765,7 +1766,7 @@ function SupplierSources({ part, manage, onChanged }: { part: PartDetail; manage
   return <div className="db-parts-workbench__supplier-sources">
     <div className="db-parts-workbench__sources-heading">
       <h4>Supplier sources</h4>
-      {manage && !editing && <button ref={addTriggerRef} type="button" onClick={(event) => open('new', event)}>Add supplier source</button>}
+      {manage && !editing && <ControlButton ref={addTriggerRef} type="button" onClick={(event) => open('new', event)}>Add supplier source</ControlButton>}
     </div>
     {part.supplier_sources.length ? <div className="db-parts-workbench__sources-list">{part.supplier_sources.map((source) => {
       const supplierName = source.supplier_name || 'Supplier'
@@ -1782,7 +1783,7 @@ function SupplierSources({ part, manage, onChanged }: { part: PartDetail; manage
       </>
       return <article className="db-parts-workbench__source-row" key={source.source_id} aria-labelledby={sourceNameId}>
         {content}
-        {manage && !editing && <button
+        {manage && !editing && <ControlButton
           ref={(node) => {
             if (node) sourceTriggerRefs.current.set(source.source_id, node)
             else sourceTriggerRefs.current.delete(source.source_id)
@@ -1793,7 +1794,7 @@ function SupplierSources({ part, manage, onChanged }: { part: PartDetail; manage
           onClick={(event) => open(source, event)}
         >
           <span>Edit source</span><Pencil aria-hidden="true" />
-        </button>}
+        </ControlButton>}
       </article>
     })}</div> : <p className="db-parts-workbench__muted">No supplier source is set. Add one here before preparing this part for purchase.</p>}
 
@@ -1807,15 +1808,15 @@ function SupplierSources({ part, manage, onChanged }: { part: PartDetail; manage
     >
       <h4>{editing === 'new' ? 'Add supplier source' : `Edit ${editing.supplier_name || 'supplier source'}`}</h4>
       {editing === 'new' && <label>Supplier<PlatformSelect ref={newSupplierFieldRef} disabled={saving || suppliersQuery.isLoading} value={supplierId} onChange={(event) => setSupplierId(event.target.value)}><option value="">Choose supplier</option>{(suppliersQuery.data?.items || []).filter((supplier) => !part.supplier_sources.some((source) => source.supplier_id === supplier.id)).map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</PlatformSelect></label>}
-      <label>Supplier part number<input ref={supplierPartNumberFieldRef} disabled={saving} value={supplierPartNumber} maxLength={150} onChange={(event) => setSupplierPartNumber(event.target.value)} /></label>
-      <div><label>Minimum order<input disabled={saving} type="number" min={1} max={999} step={1} value={minimum} onChange={(event) => setMinimum(event.target.value)} /></label><label>Pack size<input disabled={saving} type="number" min={1} max={999} step={1} value={pack} onChange={(event) => setPack(event.target.value)} /></label><label>Lead time (days)<input disabled={saving} type="number" min={0} max={365} step={1} value={leadTime} onChange={(event) => setLeadTime(event.target.value)} /></label></div>
+      <label>Supplier part number<ControlInput ref={supplierPartNumberFieldRef} disabled={saving} value={supplierPartNumber} maxLength={150} onChange={(event) => setSupplierPartNumber(event.target.value)} /></label>
+      <div><label>Minimum order<ControlInput disabled={saving} type="number" min={1} max={999} step={1} value={minimum} onChange={(event) => setMinimum(event.target.value)} /></label><label>Pack size<ControlInput disabled={saving} type="number" min={1} max={999} step={1} value={pack} onChange={(event) => setPack(event.target.value)} /></label><label>Lead time (days)<ControlInput disabled={saving} type="number" min={0} max={365} step={1} value={leadTime} onChange={(event) => setLeadTime(event.target.value)} /></label></div>
       <label className="db-parts-workbench__source-check"><input disabled={saving} type="checkbox" checked={preferred} onChange={(event) => setPreferred(event.target.checked)} />Use as preferred source for this part</label>
       {localError && <p role="alert">{localError}</p>}
       <div className="db-parts-workbench__source-actions">
-        {editing !== 'new' && (confirmDelete ? <><button type="button" disabled={saving} onClick={() => void remove()}>Confirm remove</button><button type="button" disabled={saving} onClick={() => setConfirmDelete(false)}>Keep source</button></> : <button type="button" disabled={saving} onClick={() => setConfirmDelete(true)}>Remove source</button>)}
+        {editing !== 'new' && (confirmDelete ? <><ControlButton type="button" disabled={saving} onClick={() => void remove()}>Confirm remove</ControlButton><ControlButton type="button" disabled={saving} onClick={() => setConfirmDelete(false)}>Keep source</ControlButton></> : <ControlButton type="button" disabled={saving} onClick={() => setConfirmDelete(true)}>Remove source</ControlButton>)}
         <span />
-        <button type="button" disabled={saving} onClick={close}>Cancel</button>
-        <button type="submit" disabled={saving || (editing === 'new' && suppliersQuery.isLoading)}>{saving ? 'Saving…' : 'Save source'}</button>
+        <ControlButton type="button" disabled={saving} onClick={close}>Cancel</ControlButton>
+        <ControlButton type="submit" disabled={saving || (editing === 'new' && suppliersQuery.isLoading)}>{saving ? 'Saving…' : 'Save source'}</ControlButton>
       </div>
     </form>}
   </div>

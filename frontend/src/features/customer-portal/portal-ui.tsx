@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import type { ReactNode } from 'react'
 import { format } from 'date-fns'
 
@@ -117,7 +118,7 @@ export function Pill({
   onClick?: () => void
 }) {
   return (
-    <button
+    <ControlButton controlKind="content"
       type="button"
       onClick={onClick}
       className={`min-h-[44px] min-w-[44px] shrink-0 rounded-full border px-3.5 text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8b7cf7] ${
@@ -127,7 +128,7 @@ export function Pill({
       }`}
     >
       {children}
-    </button>
+    </ControlButton>
   )
 }
 

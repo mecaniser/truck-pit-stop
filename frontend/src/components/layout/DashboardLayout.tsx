@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import InboxLoading from "@/features/communications/InboxLoading"
 import { useWorkspaceViewport } from '@/hooks/useWorkspaceViewport'
 import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
@@ -518,7 +519,7 @@ export default function DashboardLayout() {
                     />
                   </Link>
                   {showStaffRailToggle && staffRailCanExpand && (
-                    <button
+                    <ControlButton controlKind="content"
                       type="button"
                       className="db-staff-nav__rail-toggle"
                       onClick={toggleStaffRail}
@@ -532,7 +533,7 @@ export default function DashboardLayout() {
                       ) : (
                         <ChevronsRight className="h-4 w-4" aria-hidden="true" />
                       )}
-                    </button>
+                    </ControlButton>
                   )}
                 </div>
               </div>
@@ -665,13 +666,13 @@ export default function DashboardLayout() {
                   </Link>
                 )
               })}
-              <button
+              <ControlButton controlKind="action"
                 type="button"
                 onClick={() => setMobileNavPage('secondary')}
                 tabIndex={mobileNavPage === 'primary' ? 0 : -1}
                 aria-expanded={mobileNavPage === 'secondary'}
                 aria-controls="mobile-secondary-navigation"
-                className={`flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 ${
+                className={`flex  min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 ${
                   isMobileMoreActive
                     ? isSuperAdmin ? 'text-gold-400' : ''
                     : isSuperAdmin ? 'text-gray-500 hover:text-gold-400' : 'text-gray-500 hover:text-white'
@@ -680,7 +681,7 @@ export default function DashboardLayout() {
               >
                 <MoreHorizontal className="h-5 w-5" />
                 <span className="text-[10px] font-medium">More</span>
-              </button>
+              </ControlButton>
             </div>
 
             <div
@@ -688,7 +689,7 @@ export default function DashboardLayout() {
               className="flex w-1/2 shrink-0 justify-around px-2"
               aria-hidden={mobileNavPage !== 'secondary'}
             >
-              <button
+              <ControlButton controlKind="content"
                 type="button"
                 onClick={() => setMobileNavPage('primary')}
                 tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
@@ -699,7 +700,7 @@ export default function DashboardLayout() {
               >
                 <ChevronLeft className="h-5 w-5" />
                 <span className="text-[10px] font-medium">Back</span>
-              </button>
+              </ControlButton>
               {mobileOverflowLinks.map(link => {
                 const Icon = link.icon
                 const isLinkActive = isActive(link.to, link.exact)

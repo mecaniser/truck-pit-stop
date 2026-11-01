@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useRef, type RefObject } from "react";
 import { MessageSquare, X } from "lucide-react";
 
@@ -29,7 +30,7 @@ export default function MessageSettings({ channels, deliveryMode, onClose, opene
           if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
         }}>
         <header><div><h2>Messages settings</h2><p>View your shop’s messaging channels.</p></div>
-          <button className="icon-button" aria-label="Close settings" onClick={onClose}><X size={20} /></button>
+          <ControlButton controlKind="icon" className="icon-button" aria-label="Close settings" onClick={onClose}><X size={20} /></ControlButton>
         </header>
         <div>
           {(["sms", "whatsapp", "telegram"] as const).map(channel => (

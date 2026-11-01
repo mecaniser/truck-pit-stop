@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useRef, useState } from 'react'
 import api from '@/lib/api'
 
@@ -48,10 +49,10 @@ export default function OriginatingCallPicker({ customerId, value, onChange, dis
   return <div className="space-y-2">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <span className="text-sm font-medium text-gray-700">Originating call <span className="font-normal text-gray-500">(optional)</span></span>
-      <button type="button" onClick={() => load(includeOtherCallers)} disabled={loading || disabled}
-        className="min-h-11 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-50">
+      <ControlButton type="button" onClick={() => load(includeOtherCallers)} disabled={loading || disabled}
+        className=" whitespace-nowrap rounded-lg px-3  text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-50">
         {loading ? 'Loading calls…' : options ? 'Refresh calls' : 'Link originating call'}
-      </button>
+      </ControlButton>
     </div>
     {unavailable && <p role="status" className="text-sm text-gray-500">Calls are unavailable right now. You can still create this repair order.</p>}
     {options && !unavailable && <fieldset disabled={disabled} className="space-y-2">
@@ -72,10 +73,10 @@ export default function OriginatingCallPicker({ customerId, value, onChange, dis
     </fieldset>}
     {options && !includeOtherCallers && !unavailable && <div>
       <p className="text-xs text-gray-500">Driver used a different number?</p>
-      <button type="button" disabled={loading || disabled} onClick={() => load(true)}
-        className="min-h-11 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-50">
+      <ControlButton type="button" disabled={loading || disabled} onClick={() => load(true)}
+        className=" whitespace-nowrap rounded-lg px-3  text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-50">
         Show other recent calls
-      </button>
+      </ControlButton>
     </div>}
   </div>
 }

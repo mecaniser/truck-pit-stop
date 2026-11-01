@@ -1,3 +1,4 @@
+import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import { useState, useEffect } from 'react'
 import { Minus, Plus } from 'lucide-react'
 
@@ -70,7 +71,7 @@ export default function CurrencyInput({
       <span className={`absolute ${symbolSuffix ? 'right-3' : 'left-3'} top-1/2 -translate-y-1/2 text-gray-400 text-sm`}>
         {symbol}
       </span>
-      <input
+      <ControlInput
         type="number"
         step="0.01"
         min="0"
@@ -79,7 +80,7 @@ export default function CurrencyInput({
         onBlur={handleBlur}
         disabled={disabled}
         required={required}
-        className={`w-full rounded-lg border border-gray-200 ${symbolSuffix ? 'pl-3 pr-8' : 'pl-7 pr-3'} py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
+        className={`w-full rounded-lg border border-gray-200 ${symbolSuffix ? 'pl-3 pr-8' : 'pl-7 pr-3'}  text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
         placeholder={placeholder}
       />
     </div>
@@ -91,15 +92,15 @@ export default function CurrencyInput({
   const stepBtn = 'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border bg-white shadow-sm disabled:opacity-50'
   return (
     <div className="flex items-stretch gap-1.5">
-      <button type="button" disabled={disabled} onClick={() => nudge(-step)} aria-label="Decrease amount"
+      <ControlButton controlKind="icon" type="button" disabled={disabled} onClick={() => nudge(-step)} aria-label="Decrease amount"
         className={`db-currency-stepper__decrease ${stepBtn} border-red-200`}>
         <Minus className="h-3.5 w-3.5" />
-      </button>
+      </ControlButton>
       {input}
-      <button type="button" disabled={disabled} onClick={() => nudge(step)} aria-label="Increase amount"
+      <ControlButton controlKind="icon" type="button" disabled={disabled} onClick={() => nudge(step)} aria-label="Increase amount"
         className={`db-currency-stepper__increase ${stepBtn} border-emerald-200`}>
         <Plus className="h-3.5 w-3.5" />
-      </button>
+      </ControlButton>
     </div>
   )
 }

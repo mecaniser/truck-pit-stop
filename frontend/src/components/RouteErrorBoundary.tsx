@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { isStaleChunkError, markStaleDeployHandled } from '../lib/staleDeploy'
@@ -41,13 +42,13 @@ export default class RouteErrorBoundary extends Component<{ children: ReactNode 
               ? 'Reload to finish updating. Anything you have typed but not saved will be lost.'
               : 'This page could not be displayed. Reloading may help; if it keeps happening, tell us what you were doing.'}
           </p>
-          <button
+          <ControlButton
             type="button"
-            className="mt-4 flex min-h-11 items-center gap-2 rounded-lg border border-slate-700 px-3 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+            className="mt-4 flex  items-center gap-2 rounded-lg border border-slate-700 px-3 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
             onClick={() => window.location.reload()}
           >
             <RefreshCw size={16} aria-hidden="true" />Reload now
-          </button>
+          </ControlButton>
         </div>
       </div>
     )

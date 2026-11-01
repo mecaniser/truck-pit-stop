@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { sessionEndMessage } from '../../lib/sessionRecovery'
 import { useEffect, useMemo, useState } from 'react'
 import { Spinner } from '@/components/ui'
@@ -216,7 +217,7 @@ export default function LoginPage() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(6,182,212,0.22),transparent_36%),radial-gradient(circle_at_85%_15%,rgba(79,70,229,0.2),transparent_34%),radial-gradient(circle_at_70%_80%,rgba(14,116,144,0.16),transparent_44%)]" />
 
       <div className="relative mx-auto flex min-h-screen w-full max-w-6xl flex-col justify-center px-4 py-8 sm:py-10">
-        <Link
+        <Link data-db-control="action"
           to="/"
           className="mb-5 inline-flex items-center gap-2 self-start rounded-full border border-zinc-700/80 bg-zinc-900/70 px-4 py-2 text-sm font-medium text-zinc-200 backdrop-blur transition-colors hover:border-zinc-500 hover:text-[var(--accent-400)] lg:absolute lg:left-4 lg:top-6 lg:mb-0"
         >
@@ -286,7 +287,7 @@ export default function LoginPage() {
               </div>
               <div className="space-y-2">
                 {shops.map((shop) => (
-                  <button
+                  <ControlButton controlKind="content"
                     key={shop.id}
                     type="button"
                     onClick={() => onSelectShop(shop.id)}
@@ -297,19 +298,19 @@ export default function LoginPage() {
                       <img src={shop.logo_url} alt={shop.name} className="h-8 w-8 rounded object-contain bg-white p-0.5" />
                     )}
                     <span className="font-medium text-zinc-100">{shop.name}</span>
-                  </button>
+                  </ControlButton>
                 ))}
               </div>
               {error && (
                 <p className="text-sm text-red-400 bg-red-900/20 border border-red-700/50 rounded-xl px-4 py-3">{error}</p>
               )}
-              <button
+              <ControlButton
                 type="button"
                 onClick={() => { setShopSelectToken(null); setShops([]); setError(null) }}
                 className="text-sm text-zinc-400 hover:text-zinc-200"
               >
                 ← Back to login
-              </button>
+              </ControlButton>
             </div>
           ) : (
           <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
@@ -353,7 +354,7 @@ export default function LoginPage() {
                 Email Address
               </label>
               <div className="relative">
-                <input
+                <ControlInput
                   {...register('email')}
                   type="email"
                   id="email"
@@ -385,7 +386,7 @@ export default function LoginPage() {
                 Password
               </label>
               <div className="relative">
-                <input
+                <ControlInput
                   {...register('password')}
                   type={showPassword ? 'text' : 'password'}
                   id="password"
@@ -393,7 +394,7 @@ export default function LoginPage() {
                   className={getInputClasses('password')}
                 />
                 <div className="absolute inset-y-0 right-0 flex items-center pr-3 gap-2">
-                  <button
+                  <ControlButton controlKind="action"
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="text-zinc-400 hover:text-zinc-100 focus:outline-none"
@@ -409,7 +410,7 @@ export default function LoginPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                       </svg>
                     )}
-                  </button>
+                  </ControlButton>
                   {errors.password && (
                     <svg className="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
@@ -447,10 +448,10 @@ export default function LoginPage() {
           </div>
 
           <div className="pt-2">
-            <button
+            <ControlButton
               type="submit"
               disabled={isLoading}
-              className="flex w-full justify-center rounded-xl border border-transparent px-4 py-3 text-sm font-semibold text-white transition-all disabled:cursor-not-allowed disabled:opacity-50 hover:shadow-[0_0_24px_var(--accent-500)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-500)] focus:ring-offset-2 focus:ring-offset-zinc-950"
+              className="flex w-full justify-center rounded-xl border border-transparent px-4  text-sm font-semibold text-white transition-all disabled:cursor-not-allowed disabled:opacity-50 hover:shadow-[0_0_24px_var(--accent-500)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-500)] focus:ring-offset-2 focus:ring-offset-zinc-950"
               style={{ background: 'linear-gradient(135deg, var(--accent-500) 0%, var(--accent-600) 100%)' }}
             >
               {isLoading ? (
@@ -461,7 +462,7 @@ export default function LoginPage() {
               ) : (
                 'Sign in'
               )}
-            </button>
+            </ControlButton>
           </div>
 
           <div className="flex items-center gap-3" aria-hidden="true">
@@ -470,20 +471,20 @@ export default function LoginPage() {
             <span className="h-px flex-1 bg-zinc-800" />
           </div>
 
-          <button
+          <ControlButton
             type="button"
             onClick={() => {
               setLastLoginMethod('workos')
               startWorkOSLogin(organizationReturnTo, null, organizationTenantId)
             }}
-            className={`flex w-full justify-center rounded-xl border px-4 py-3 text-sm font-semibold text-zinc-100 transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-500)] focus:ring-offset-2 focus:ring-offset-zinc-950 ${
+            className={`flex w-full justify-center rounded-xl border px-4  text-sm font-semibold text-zinc-100 transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-500)] focus:ring-offset-2 focus:ring-offset-zinc-950 ${
               lastMethod === 'workos'
                 ? 'border-[var(--accent-500)] bg-zinc-900 hover:bg-zinc-800'
                 : 'border-zinc-700 bg-zinc-900 hover:border-zinc-500 hover:bg-zinc-800'
             }`}
           >
             Continue with organization sign-in
-          </button>
+          </ControlButton>
           {lastMethod === 'workos' && (
             <p className="-mt-2 text-center text-xs text-[var(--accent-400)]">You used organization sign-in last time.</p>
           )}

@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { useEffect, useRef, useState } from 'react'
 import { Spinner } from '@/components/ui'
@@ -260,14 +261,14 @@ export default function GarageTeamModal({ garageId, garageName, onClose }: Garag
             </h2>
             <p className="text-sm text-gray-400">{garageName}</p>
           </div>
-          <button
+          <ControlButton controlKind="icon"
             type="button"
             onClick={onClose}
             className="p-2 rounded-lg hover:bg-gold-500/10 text-gray-400 hover:text-gold-400 transition-colors"
             aria-label="Close"
           >
             <X className="w-5 h-5" />
-          </button>
+          </ControlButton>
         </div>
 
         {/* Body */}
@@ -375,11 +376,11 @@ export default function GarageTeamModal({ garageId, garageName, onClose }: Garag
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-gray-300 mb-1">First name</label>
-                  <input className={inputClass} value={form.first_name} onChange={(e) => updateField('first_name', e.target.value)} />
+                  <ControlInput className={inputClass} value={form.first_name} onChange={(e) => updateField('first_name', e.target.value)} />
                 </div>
                 <div>
                   <label className="block text-sm text-gray-300 mb-1">Last name</label>
-                  <input className={inputClass} value={form.last_name} onChange={(e) => updateField('last_name', e.target.value)} />
+                  <ControlInput className={inputClass} value={form.last_name} onChange={(e) => updateField('last_name', e.target.value)} />
                 </div>
               </div>
 
@@ -387,7 +388,7 @@ export default function GarageTeamModal({ garageId, garageName, onClose }: Garag
                 <label className="block text-sm text-gray-300 mb-1">
                   <span className="inline-flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> Email</span>
                 </label>
-                <input className={inputClass} type="email" value={form.email} onChange={(e) => updateField('email', e.target.value)} />
+                <ControlInput className={inputClass} type="email" value={form.email} onChange={(e) => updateField('email', e.target.value)} />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -395,7 +396,7 @@ export default function GarageTeamModal({ garageId, garageName, onClose }: Garag
                   <label className="block text-sm text-gray-300 mb-1">
                     <span className="inline-flex items-center gap-1.5"><Phone className="w-3.5 h-3.5" /> Phone (optional)</span>
                   </label>
-                  <input className={inputClass} value={form.phone} onChange={(e) => updateField('phone', e.target.value)} placeholder="(704) 555-0123" />
+                  <ControlInput className={inputClass} value={form.phone} onChange={(e) => updateField('phone', e.target.value)} placeholder="(704) 555-0123" />
                 </div>
                 <div>
                   <label className="block text-sm text-gray-300 mb-1">
@@ -442,25 +443,25 @@ export default function GarageTeamModal({ garageId, garageName, onClose }: Garag
                   {mode.kind === 'create' ? 'Password' : 'Reset password'}
                 </label>
                 <div className="relative">
-                  <input
+                  <ControlInput
                     className={`${inputClass} pr-10`}
                     type={showPassword ? 'text' : 'password'}
                     value={form.password}
                     onChange={(e) => updateField('password', e.target.value)}
                     placeholder={mode.kind === 'edit' ? 'Leave blank to keep current password' : ''}
                   />
-                  <button
+                  <ControlButton controlKind="action"
                     type="button"
                     onClick={() => setShowPassword((s) => !s)}
                     className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gold-400"
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
+                  </ControlButton>
                 </div>
-                <button type="button" onClick={suggestPassword} className="mt-1.5 text-xs text-gold-400 hover:text-gold-300">
+                <ControlButton type="button" onClick={suggestPassword} className="mt-1.5 text-xs text-gold-400 hover:text-gold-300">
                   Suggest a password
-                </button>
+                </ControlButton>
               </div>
 
               {formError && (

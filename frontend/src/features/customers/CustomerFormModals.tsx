@@ -1,3 +1,4 @@
+import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import React, { useCallback, useRef, useState } from 'react'
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react'
 import type { AxiosError } from 'axios'
@@ -596,12 +597,12 @@ const renderCustomerForm = (onCancel: () => void) => (
         <label className="block text-sm font-medium text-gray-700 mb-1">
           First Name <span className="text-red-500">*</span>
         </label>
-        <input
+        <ControlInput
           type="text"
           name="first_name"
           value={formData.first_name}
           onChange={handleInputChange}
-          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+          className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
           placeholder="John"
           required
         />
@@ -610,12 +611,12 @@ const renderCustomerForm = (onCancel: () => void) => (
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Last Name <span className="text-red-500">*</span>
         </label>
-        <input
+        <ControlInput
           type="text"
           name="last_name"
           value={formData.last_name}
           onChange={handleInputChange}
-          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+          className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
           placeholder="Doe"
           required
         />
@@ -628,13 +629,13 @@ const renderCustomerForm = (onCancel: () => void) => (
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Company Name <span className="text-red-500">*</span>
         </label>
-        <input
+        <ControlInput
           type="text"
           name="company_name"
           value={formData.company_name}
           onChange={handleInputChange}
           required
-          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+          className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
           placeholder="Acme Logistics"
         />
       </div>
@@ -642,12 +643,12 @@ const renderCustomerForm = (onCancel: () => void) => (
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Email <span className="text-red-500">*</span>
         </label>
-        <input
+        <ControlInput
           type="email"
           name="email"
           value={formData.email}
           onChange={handleInputChange}
-          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+          className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
           placeholder="john@example.com"
           required
         />
@@ -656,34 +657,34 @@ const renderCustomerForm = (onCancel: () => void) => (
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Phone
         </label>
-        <input
+        <ControlInput
           type="tel"
           name="phone"
           value={formData.phone}
           onChange={handleInputChange}
-          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+          className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
           placeholder="(555) 123-4567"
         />
       </div>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">US DOT #</label>
-        <input
+        <ControlInput
           type="text"
           name="usdot_number"
           value={formData.usdot_number}
           onChange={handleInputChange}
-          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+          className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
           placeholder="3155331"
         />
       </div>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">MC #</label>
-        <input
+        <ControlInput
           type="text"
           name="mc_number"
           value={formData.mc_number}
           onChange={handleInputChange}
-          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+          className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
           placeholder="107385"
         />
       </div>
@@ -757,12 +758,12 @@ const renderCustomerForm = (onCancel: () => void) => (
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Address Line 2
           </label>
-          <input
+          <ControlInput
             type="text"
             name="billing_address_line2"
             value={formData.billing_address_line2}
             onChange={handleInputChange}
-            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
             placeholder="Suite 100, Building A"
           />
         </div>
@@ -777,12 +778,12 @@ const renderCustomerForm = (onCancel: () => void) => (
               )}
             </label>
             <div className="relative">
-              <input
+              <ControlInput
                 type="text"
                 name="billing_zip"
                 value={formData.billing_zip}
                 onChange={handleZipChange}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                 placeholder={formData.billing_country === 'USA' ? '53202' : formData.billing_country === 'Canada' ? 'A1A 1A1' : '01000'}
                 maxLength={formData.billing_country === 'Canada' ? 7 : 5}
               />
@@ -797,12 +798,12 @@ const renderCustomerForm = (onCancel: () => void) => (
             <label className="block text-sm font-medium text-gray-700 mb-1">
               City
             </label>
-            <input
+            <ControlInput
               type="text"
               name="billing_city"
               value={formData.billing_city}
               onChange={handleInputChange}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+              className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
               placeholder="Milwaukee"
             />
           </div>
@@ -861,14 +862,14 @@ const renderCustomerForm = (onCancel: () => void) => (
           </label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-            <input
+            <ControlInput
               type="number"
               name="auto_approval_threshold"
               value={formData.auto_approval_threshold}
               onChange={handleInputChange}
               step="0.01"
               min="0"
-              className="w-full pl-7 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+              className="w-full pl-7 pr-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
               placeholder="Leave empty to disable"
             />
           </div>
@@ -919,20 +920,20 @@ const renderCustomerForm = (onCancel: () => void) => (
                 VIN
               </label>
               <div className="flex gap-2">
-                <input
+                <ControlInput
                   type="text"
                   name="vehicle_vin"
                   value={formData.vehicle_vin}
                   onChange={handleInputChange}
-                  className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors uppercase"
+                  className="flex-1 px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors uppercase"
                   placeholder="Enter VIN to auto-fill"
                   maxLength={17}
                 />
-                <button
+                <ControlButton
                   type="button"
                   onClick={() => decodeVin(formData.vehicle_vin)}
                   disabled={isDecodingVin || formData.vehicle_vin.length < 11}
-                  className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 font-medium rounded-lg transition-colors flex items-center gap-2"
+                  className="px-4  bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 font-medium rounded-lg transition-colors flex items-center gap-2"
                 >
                   {isDecodingVin ? (
                     <Spinner size="xs" />
@@ -940,7 +941,7 @@ const renderCustomerForm = (onCancel: () => void) => (
                     <Search className="w-4 h-4" />
                   )}
                   Decode
-                </button>
+                </ControlButton>
               </div>
               <p className="text-xs text-gray-500 mt-1">Enter or paste a full VIN to auto-fill make, model, and year.</p>
             </div>
@@ -951,12 +952,12 @@ const renderCustomerForm = (onCancel: () => void) => (
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Make <span className="text-red-500">*</span>
                 </label>
-                <input
+                <ControlInput
                   type="text"
                   name="vehicle_make"
                   value={formData.vehicle_make}
                   onChange={handleInputChange}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                  className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                   placeholder="Freightliner"
                   required={!formData.no_vehicle}
                 />
@@ -965,12 +966,12 @@ const renderCustomerForm = (onCancel: () => void) => (
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Model <span className="text-red-500">*</span>
                 </label>
-                <input
+                <ControlInput
                   type="text"
                   name="vehicle_model"
                   value={formData.vehicle_model}
                   onChange={handleInputChange}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                  className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                   placeholder="Cascadia"
                   required={!formData.no_vehicle}
                 />
@@ -983,12 +984,12 @@ const renderCustomerForm = (onCancel: () => void) => (
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Year
                 </label>
-                <input
+                <ControlInput
                   type="number"
                   name="vehicle_year"
                   value={formData.vehicle_year}
                   onChange={handleInputChange}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                  className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                   placeholder="2024"
                   min="1900"
                   max="2100"
@@ -998,12 +999,12 @@ const renderCustomerForm = (onCancel: () => void) => (
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Unit Number
                 </label>
-                <input
+                <ControlInput
                   type="text"
                   name="vehicle_unit_number"
                   value={formData.vehicle_unit_number}
                   onChange={handleInputChange}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                  className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                   placeholder="T-001"
                 />
               </div>
@@ -1015,12 +1016,12 @@ const renderCustomerForm = (onCancel: () => void) => (
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   License Plate
                 </label>
-                <input
+                <ControlInput
                   type="text"
                   name="vehicle_license_plate"
                   value={formData.vehicle_license_plate}
                   onChange={handleInputChange}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors uppercase"
+                  className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors uppercase"
                   placeholder="ABC-1234"
                 />
               </div>
@@ -1028,12 +1029,12 @@ const renderCustomerForm = (onCancel: () => void) => (
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Color
                 </label>
-                <input
+                <ControlInput
                   type="text"
                   name="vehicle_color"
                   value={formData.vehicle_color}
                   onChange={handleInputChange}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                  className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                   placeholder="White"
                 />
               </div>
@@ -1044,12 +1045,12 @@ const renderCustomerForm = (onCancel: () => void) => (
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Mileage
               </label>
-              <input
+              <ControlInput
                 type="number"
                 name="vehicle_mileage"
                 value={formData.vehicle_mileage}
                 onChange={handleInputChange}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                 placeholder="150000"
                 min="0"
               />
@@ -1068,14 +1069,14 @@ const renderCustomerForm = (onCancel: () => void) => (
           </label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-            <input
+            <ControlInput
               type="number"
               name="auto_approval_threshold"
               value={formData.auto_approval_threshold}
               onChange={handleInputChange}
               step="0.01"
               min="0"
-              className="w-full pl-7 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+              className="w-full pl-7 pr-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
               placeholder="Leave empty to disable"
             />
           </div>
@@ -1102,24 +1103,24 @@ const renderCustomerForm = (onCancel: () => void) => (
     </div>
     {/* Actions */}
     <div className="db-customer-form__actions flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
-      <button
+      <ControlButton
         type="button"
         onClick={onCancel}
-        className="px-5 py-2.5 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+        className="px-5  text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
       >
         Cancel
-      </button>
-      <button
+      </ControlButton>
+      <ControlButton
         type="submit"
         disabled={createMutation.isPending || updateMutation.isPending}
-        className="px-5 py-2.5 disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+        className="px-5  disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
         style={{ backgroundColor: accentColors[500] }}
       >
         {(createMutation.isPending || updateMutation.isPending) && (
           <Spinner size="xs" className="border-white/40 border-t-white" />
         )}
         {editingCustomer ? 'Save Changes' : 'Add Customer'}
-      </button>
+      </ControlButton>
     </div>
   </form>
 )
@@ -1158,13 +1159,13 @@ const renderCustomerForm = (onCancel: () => void) => (
                   <DialogTitle as="h2" className="text-xl font-bold text-gray-900">
                     {editingCustomer ? 'Edit Customer' : 'Add New Customer'}
                   </DialogTitle>
-                <button
+                <ControlButton controlKind="icon"
                   onClick={closeModal}
                   aria-label="Close customer editor"
                   className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                 >
                   <X className="w-5 h-5 text-gray-500" />
-                </button>
+                </ControlButton>
               </div>
               </div>
 
@@ -1201,22 +1202,22 @@ const renderCustomerForm = (onCancel: () => void) => (
               </p>
 
               <div className="flex items-center justify-end gap-3">
-                <button
+                <ControlButton
                   onClick={() => setDeleteConfirmCustomer(null)}
-                  className="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+                  className="px-4  text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
                 >
                   Cancel
-                </button>
-                <button
+                </ControlButton>
+                <ControlButton
                   onClick={confirmDelete}
                   disabled={deleteMutation.isPending}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                  className="px-4  bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
                 >
                   {deleteMutation.isPending && (
                     <Spinner size="xs" className="border-white/40 border-t-white" />
                   )}
                   Delete Customer
-                </button>
+                </ControlButton>
               </div>
             </div>
           </div>
@@ -1241,15 +1242,15 @@ const renderCustomerForm = (onCancel: () => void) => (
                       Combine another record into {customerDisplayName(selectedCustomer)}
                     </p>
                   </div>
-                  <button
+                  <ControlButton controlKind="icon"
                     type="button"
                     aria-label="Close merge dialog"
                     onClick={closeMergeModal}
                     disabled={mergeMutation.isPending}
-                    className="flex min-h-11 min-w-11 shrink-0 items-center justify-center p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                    className="flex  min-w-11 shrink-0 items-center justify-center p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
                   >
                     <X aria-hidden="true" className="w-5 h-5 text-gray-500" />
-                  </button>
+                  </ControlButton>
                 </div>
               </div>
 
@@ -1262,14 +1263,14 @@ const renderCustomerForm = (onCancel: () => void) => (
                       from the duplicate (vehicles, repair orders, contacts) will move here, and
                       the duplicate will be deleted. This cannot be undone.
                     </p>
-                    <input
+                    <ControlInput
                       type="text"
                       autoFocus
                       aria-label="Search duplicate customers"
                       placeholder="Search by name, email, or phone..."
                       value={mergeSearchQuery}
                       onChange={(e) => setMergeSearchQuery(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                      className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                     />
                     <div className="max-h-72 overflow-y-auto divide-y divide-gray-100 border border-gray-100 rounded-xl">
                       {(() => {
@@ -1284,14 +1285,14 @@ const renderCustomerForm = (onCancel: () => void) => (
                           return <p className="text-sm text-gray-400 text-center py-6">No matches found</p>
                         }
                         return candidates.map((c) => (
-                          <button
+                          <ControlButton controlKind="content"
                             key={c.id}
                             onClick={() => setMergeTargetCustomer(c)}
                             className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors"
                           >
                             <p className="text-sm font-medium text-gray-900">{customerDisplayName(c)}</p>
                             <p className="text-xs text-gray-500">{c.email} {c.phone && `· ${formatUSPhone(c.phone)}`}</p>
-                          </button>
+                          </ControlButton>
                         ))
                       })()}
                     </div>
@@ -1319,23 +1320,23 @@ const renderCustomerForm = (onCancel: () => void) => (
                       record will be permanently deleted. This cannot be undone.
                     </p>
                     <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
-                      <button
+                      <ControlButton
                         onClick={() => setMergeTargetCustomer(null)}
                         disabled={mergeMutation.isPending}
-                        className="min-h-11 whitespace-nowrap px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                        className=" whitespace-nowrap px-4  text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
                       >
                         Back
-                      </button>
-                      <button
+                      </ControlButton>
+                      <ControlButton
                         onClick={() => mergeMutation.mutate({ winnerId: selectedCustomer.id, loserId: mergeTargetCustomer.id })}
                         disabled={mergeMutation.isPending}
-                        className="min-h-11 whitespace-nowrap px-5 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                        className=" whitespace-nowrap px-5  bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
                       >
                         {mergeMutation.isPending && (
                           <Spinner size="xs" className="border-white/40 border-t-white" />
                         )}
                         Merge Customers
-                      </button>
+                      </ControlButton>
                     </div>
                   </>
                 )}

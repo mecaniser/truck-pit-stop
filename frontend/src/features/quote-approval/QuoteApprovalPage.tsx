@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useState } from 'react'
 import { Spinner } from '@/components/ui'
 import { useParams, Link, useNavigate } from 'react-router-dom'
@@ -209,7 +210,7 @@ export default function QuoteApprovalPage() {
           <p className="text-gray-400 mb-6">
             This link may have expired or the quote has already been processed.
           </p>
-          <Link
+          <Link data-db-control="action"
             to="/login"
             className="inline-block px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors"
           >
@@ -302,31 +303,31 @@ export default function QuoteApprovalPage() {
           </p>
           {data.has_portal_account ? (
             <div className="space-y-3">
-              <button
+              <ControlButton
                 onClick={() => openPortalFromApprovedState()}
                 disabled={portalActionPending}
-                className="w-full px-6 py-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+                className="w-full px-6  bg-amber-500 hover:bg-amber-600 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors"
               >
                 {portalActionPending ? 'Opening...' : 'Open My Portal'}
-              </button>
-              <button
+              </ControlButton>
+              <ControlButton
                 type="button"
                 onClick={() => navigate('/')}
-                className="w-full py-2 text-sm text-gray-400 hover:text-gray-200 transition-colors"
+                className="w-full  text-sm text-gray-400 hover:text-gray-200 transition-colors"
               >
                 Exit
-              </button>
+              </ControlButton>
             </div>
           ) : (
             <div className="space-y-3 text-left">
               <label className="block text-sm text-gray-300">
                 Create your portal password to track this repair and future invoices.
               </label>
-              <input
+              <ControlInput
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className={`w-full px-4 py-3 border rounded-lg bg-white text-gray-900 placeholder-gray-500 ${
+                className={`w-full px-4  border rounded-lg bg-white text-gray-900 placeholder-gray-500 ${
                   passwordValidationError ? 'border-red-400' : 'border-gray-300'
                 }`}
                 placeholder="8+ chars, upper/lower/digit/special"
@@ -338,20 +339,20 @@ export default function QuoteApprovalPage() {
                   Must include uppercase, lowercase, number, and special character.
                 </p>
               )}
-              <button
+              <ControlButton
                 onClick={() => openPortalFromApprovedState(password)}
                 disabled={!password || !!passwordValidationError || portalActionPending}
-                className="w-full px-6 py-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+                className="w-full px-6  bg-amber-500 hover:bg-amber-600 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors"
               >
                 {portalActionPending ? 'Creating...' : 'Create Portal Account'}
-              </button>
-              <button
+              </ControlButton>
+              <ControlButton
                 type="button"
                 onClick={() => navigate('/')}
-                className="w-full py-2 text-sm text-gray-400 hover:text-gray-200 transition-colors text-center"
+                className="w-full  text-sm text-gray-400 hover:text-gray-200 transition-colors text-center"
               >
                 Exit
-              </button>
+              </ControlButton>
             </div>
           )}
           {hasContact && (
@@ -404,7 +405,7 @@ export default function QuoteApprovalPage() {
               : 'The shop will review your feedback and can prepare a new revision.'}
           </p>
           <div className="flex flex-col gap-3">
-            <Link
+            <Link data-db-control="action"
               to="/portal"
               className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors text-center"
             >
@@ -640,34 +641,34 @@ export default function QuoteApprovalPage() {
                   />
                 </div>
                 <div className="flex gap-3">
-                  <button
+                  <ControlButton
                     onClick={() => setShowDeclineForm(false)}
-                    className="flex-1 px-4 py-3 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors"
+                    className="flex-1 px-4  bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors"
                   >
                     Cancel
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton
                     onClick={() => declineMutation.mutate(declineNotes)}
                     disabled={declineMutation.isPending}
-                    className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+                    className="flex-1 px-4  bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors"
                   >
                     {declineMutation.isPending ? 'Submitting...' : 'Confirm Decline'}
-                  </button>
+                  </ControlButton>
                 </div>
               </div>
             ) : (
               <div className="flex gap-3">
-                <button
+                <ControlButton
                   onClick={() => setShowDeclineForm(true)}
-                  className="flex-1 px-4 py-3 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 px-4  bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
                 >
                   <XCircle className="w-5 h-5" />
                   Decline
-                </button>
-                <button
+                </ControlButton>
+                <ControlButton
                   onClick={() => approveMutation.mutate()}
                   disabled={approveMutation.isPending}
-                  className="flex-1 px-4 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 px-4  bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
                 >
                   {approveMutation.isPending ? (
                     <>
@@ -680,7 +681,7 @@ export default function QuoteApprovalPage() {
                       {isAdditionalWork ? 'Authorize Additional Work' : 'Authorize Estimate'}
                     </>
                   )}
-                </button>
+                </ControlButton>
               </div>
             )}
           </div>

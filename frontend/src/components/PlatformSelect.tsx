@@ -83,7 +83,7 @@ const PlatformSelect = forwardRef<HTMLSelectElement, PlatformSelectProps>(
         }
       }}>
       <BaseSelect id={fieldId} options={options} value={selectedValue} onChange={change}
-        disabled={effectiveDisabled} searchable={false} variant={variant} heightClass="h-11" optionHeightClass="min-h-11"
+        disabled={effectiveDisabled} searchable={false} variant={variant} optionHeightClass="min-h-11"
         triggerClassName={className} autoFocus={autoFocus} selectOnly
         ariaLabel={ariaLabel ?? label} ariaLabelledBy={ariaLabelledBy}
         ariaDescribedBy={[props['aria-describedby'], invalid ? `${fieldId}-error` : undefined].filter(Boolean).join(' ') || undefined}

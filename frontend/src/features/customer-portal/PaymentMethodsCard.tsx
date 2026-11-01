@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useState, useEffect } from 'react'
 import { Spinner } from '@/components/ui'
 import type { Stripe } from '@stripe/stripe-js'
@@ -85,21 +86,21 @@ function AddCardForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel:
       )}
 
       <div className="flex gap-3">
-        <button
+        <ControlButton
           type="submit"
           disabled={!stripe || processing}
-          className="flex-1 rounded-xl bg-violet-600 px-4 py-2.5 font-medium text-white transition-colors hover:bg-violet-500 disabled:bg-gray-600"
+          className="flex-1 rounded-xl bg-violet-600 px-4  font-medium text-white transition-colors hover:bg-violet-500 disabled:bg-gray-600"
         >
           {processing ? 'Adding...' : 'Add Card'}
-        </button>
-        <button
+        </ControlButton>
+        <ControlButton
           type="button"
           onClick={onCancel}
           disabled={processing}
-          className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors"
+          className="px-4  bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors"
         >
           Cancel
-        </button>
+        </ControlButton>
       </div>
     </form>
   )
@@ -180,15 +181,15 @@ function PaymentMethodsList() {
               </div>
               <div className="flex items-center gap-2">
                 {!method.is_default && (
-                  <button
+                  <ControlButton
                     onClick={() => setDefaultMutation.mutate(method.id)}
                     disabled={setDefaultMutation.isPending}
                     className="text-xs text-gray-400 hover:text-white transition-colors"
                   >
                     Set default
-                  </button>
+                  </ControlButton>
                 )}
-                <button
+                <ControlButton controlKind="icon"
                   onClick={() => {
                     if (confirm('Remove this card?')) {
                       deleteMutation.mutate(method.id)
@@ -201,7 +202,7 @@ function PaymentMethodsList() {
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
-                </button>
+                </ControlButton>
               </div>
             </div>
           ))}
@@ -215,16 +216,16 @@ function PaymentMethodsList() {
           <AddCardForm onSuccess={handleAddSuccess} onCancel={() => setShowAddForm(false)} />
         </Elements>
       ) : (
-        <button
+        <ControlButton
           onClick={() => setShowAddForm(true)}
           disabled={!stripePromise}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#30384b] py-2.5 text-gray-400 transition-colors hover:border-violet-400/60 hover:text-violet-300"
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#30384b]  text-gray-400 transition-colors hover:border-violet-400/60 hover:text-violet-300"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
           Add Payment Method
-        </button>
+        </ControlButton>
       )}
     </div>
   )

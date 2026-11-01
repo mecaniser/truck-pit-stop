@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useMemo, useState } from 'react'
 import { Popover, PopoverButton, PopoverGroup, PopoverPanel } from '@headlessui/react'
 import DatePicker from '@/components/DatePicker'
@@ -136,18 +137,18 @@ export default function RecentActivityFeed({
         <PopoverGroup className="db-work-activity__controls">
           {!!data?.warnings.length && <Popover className="db-work-popover">
             {({ close }) => <>
-              <PopoverButton className="db-work-control db-work-control--warning"><CircleAlert aria-hidden="true" />Activity incomplete</PopoverButton>
+              <PopoverButton data-db-control="action" className="db-work-control db-work-control--warning"><CircleAlert aria-hidden="true" />Activity incomplete</PopoverButton>
               <PopoverPanel focus className="db-work-popover__panel" role="dialog" aria-label="Activity coverage">
-                <div className="db-work-popover__heading"><strong>Activity coverage</strong><button type="button" className="db-work-icon-button" aria-label="Close activity coverage" onClick={() => close()}><X aria-hidden="true" /></button></div>
+                <div className="db-work-popover__heading"><strong>Activity coverage</strong><ControlButton controlKind="icon" type="button" className="db-work-icon-button" aria-label="Close activity coverage" onClick={() => close()}><X aria-hidden="true" /></ControlButton></div>
                 {data.warnings.map(warning => <p key={warning}>{warning}</p>)}
               </PopoverPanel>
             </>}
           </Popover>}
           <Popover className="db-work-popover">
             {({ close }) => <>
-              <PopoverButton className="db-work-control" aria-label={filterCount ? `Activity filters, ${filterCount} applied` : 'Activity filters'}><SlidersHorizontal aria-hidden="true" />Filters{filterCount > 0 && <span>{filterCount}</span>}</PopoverButton>
+              <PopoverButton data-db-control="action" className="db-work-control" aria-label={filterCount ? `Activity filters, ${filterCount} applied` : 'Activity filters'}><SlidersHorizontal aria-hidden="true" />Filters{filterCount > 0 && <span>{filterCount}</span>}</PopoverButton>
               <PopoverPanel className="db-work-popover__panel" role="dialog" aria-label="Activity filters">
-                <div className="db-work-popover__heading"><strong>Filter activity</strong><button type="button" className="db-work-icon-button" aria-label="Close activity filters" onClick={() => close()}><X aria-hidden="true" /></button></div>
+                <div className="db-work-popover__heading"><strong>Filter activity</strong><ControlButton controlKind="icon" type="button" className="db-work-icon-button" aria-label="Close activity filters" onClick={() => close()}><X aria-hidden="true" /></ControlButton></div>
                 <div className="db-work-activity__filters">
                   <div><span>Staff</span><ShopWorkSelect label="Activity staff" value={actorFilter} onChange={setActorFilter} options={[
                     { value: '', label: 'All staff' }, ...(data?.available_actors || []).map(actor => ({ value: actor.id, label: actor.name })),
@@ -157,14 +158,14 @@ export default function RecentActivityFeed({
                   ]} /></div>
                   <DatePicker label="From date" value={dateFrom} onChange={setDateFrom} max={dateTo || undefined} showDayDetails={false} />
                   <DatePicker label="To date" value={dateTo} onChange={setDateTo} min={dateFrom || undefined} showDayDetails={false} />
-                  {hasActiveFilters && <button type="button" className="db-work-control" onClick={() => { clearFilters(); close() }}><X aria-hidden="true" />Clear filters</button>}
+                  {hasActiveFilters && <ControlButton type="button" className="db-work-control" onClick={() => { clearFilters(); close() }}><X aria-hidden="true" />Clear filters</ControlButton>}
                 </div>
               </PopoverPanel>
             </>}
           </Popover>
         </PopoverGroup>
       </header>
-      {isError ? <div className="db-work-state" role="alert"><CircleAlert aria-hidden="true" /><div><strong>{isForbidden ? 'Activity is unavailable for this account' : 'Activity could not be loaded'}</strong><p>{isForbidden ? 'Your available work remains in the other Shop Work views.' : 'Try again to check recent changes.'}</p>{!isForbidden && <button type="button" className="db-work-control" onClick={() => { void refetch() }} disabled={isFetching}><RefreshCw aria-hidden="true" />Retry activity</button>}</div></div>
+      {isError ? <div className="db-work-state" role="alert"><CircleAlert aria-hidden="true" /><div><strong>{isForbidden ? 'Activity is unavailable for this account' : 'Activity could not be loaded'}</strong><p>{isForbidden ? 'Your available work remains in the other Shop Work views.' : 'Try again to check recent changes.'}</p>{!isForbidden && <ControlButton type="button" className="db-work-control" onClick={() => { void refetch() }} disabled={isFetching}><RefreshCw aria-hidden="true" />Retry activity</ControlButton>}</div></div>
         : isLoading ? <div className="db-work-state" role="status"><span aria-hidden="true"><Spinner size="sm" /></span><strong>Loading activity…</strong></div>
           : dayGroups.length === 0 ? <div className="db-work-state" role="status"><History aria-hidden="true" /><div><strong>{hasActiveFilters ? 'No activity matches these filters' : 'No recent activity'}</strong><p>{hasActiveFilters ? 'Change the filters to check another staff member or date.' : 'Repair, quote, invoice, and payment updates will appear here.'}</p></div></div>
             : <>
@@ -172,18 +173,18 @@ export default function RecentActivityFeed({
                 <h3>{day.label}</h3>
                 <ol>{day.events.map(event => {
                   const Icon = EVENT_ICON[event.event_type] || ClipboardList
-                  return <li key={event.id}><button type="button" className="db-work-activity__event" disabled={!event.order_id} onClick={() => event.order_id && navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(event.order_id)}`)}>
+                  return <li key={event.id}><ControlButton controlKind="content" type="button" className="db-work-activity__event" disabled={!event.order_id} onClick={() => event.order_id && navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(event.order_id)}`)}>
                     <Icon className="db-work-activity__event-icon" aria-hidden="true" data-outcome={['invoice_paid', 'payment_recorded', 'ro_completed'].includes(event.event_type) ? 'complete' : ['ro_cancelled', 'ro_deleted'].includes(event.event_type) ? 'removed' : undefined} />
                     <span className="db-work-activity__identity"><strong>{event.label}</strong><span>{[event.order_number, event.actor_name || 'System'].filter(Boolean).join(' · ')}</span></span>
                     <time dateTime={event.occurred_at} title={format(new Date(event.occurred_at), 'MMM d, yyyy h:mm a')}>{formatDistanceToNow(new Date(event.occurred_at), { addSuffix: true })}</time>
                     {event.order_id && <ChevronRight className="db-work-activity__open" aria-hidden="true" />}
-                  </button></li>
+                  </ControlButton></li>
                 })}</ol>
               </section>)}</div>
               {(hasMore || olderItems.length > 0) && <footer className="db-work-activity__footer">
                 {loadMoreError && <p role="alert">Older activity could not be loaded. The events above are still available.</p>}
-                {hasMore && <button type="button" className="db-work-control" disabled={loadingMore} onClick={() => { void loadMore() }}>{loadingMore ? 'Loading…' : loadMoreError ? 'Retry older activity' : 'Load older activity'}</button>}
-                {olderItems.length > 0 && <button type="button" className="db-work-control" onClick={showLess}>Show recent only</button>}
+                {hasMore && <ControlButton type="button" className="db-work-control" disabled={loadingMore} onClick={() => { void loadMore() }}>{loadingMore ? 'Loading…' : loadMoreError ? 'Retry older activity' : 'Load older activity'}</ControlButton>}
+                {olderItems.length > 0 && <ControlButton type="button" className="db-work-control" onClick={showLess}>Show recent only</ControlButton>}
               </footer>}
             </>}
     </section>

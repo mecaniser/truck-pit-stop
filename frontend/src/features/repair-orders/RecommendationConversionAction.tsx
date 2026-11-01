@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useEffect, useId, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation } from 'react-router-dom'
@@ -29,7 +30,7 @@ export function ConversionLink({ conversion, contextOrderId, onOpenOperation }: 
   const labels = { active: 'Added to', operation_removed: 'Operation removed from', target_cancelled: 'Order cancelled:', target_deleted: 'Order deleted:', superseded: 'Replaced work on' }
   return <span className="inline-flex min-w-0 flex-wrap items-center gap-x-1 text-xs text-slate-600">
     <span>{labels[conversion.state]}</span>
-    {conversion.target_order.available ? <Link
+    {conversion.target_order.available ? <Link data-db-control="action"
       className="inline-flex items-center gap-1 whitespace-nowrap rounded px-1 py-1 font-medium text-orange-700 underline underline-offset-2"
       to={recommendationLink(location.pathname, location.search, conversion.target_order.id, { operation: conversion.labor_id })}
       aria-label={`Open linked operation on ${conversion.target_order.order_number}`}
@@ -110,13 +111,13 @@ export default function RecommendationConversionAction({ recommendationId, descr
   return <div className="db-recommendation-conversion w-full min-w-0">
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
       <ConversionLink conversion={effective} contextOrderId={contextOrderId} onOpenOperation={onOpenOperation} />
-      {mayAdd && !open && <button ref={trigger} type="button" onClick={() => {
+      {mayAdd && !open && <ControlButton controlKind="action" ref={trigger} type="button" onClick={() => {
         if (!submission.current && !hours && !rateEdited) setRate(hourlyRate == null ? '' : hourlyRate.toFixed(2))
         setOpen(true)
-      }} className="inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-xs font-semibold text-orange-700 hover:bg-orange-50"
+      }} className="inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2  text-xs font-semibold text-orange-700 hover:bg-orange-50"
         aria-label={`${effective ? 'Add again' : 'Add to this order'}: ${description}`}>
         <Plus className="h-3.5 w-3.5" />{effective ? 'Add again' : 'Add to this order'}
-      </button>}
+      </ControlButton>}
     </div>
     {open && mayAdd && <form ref={form} className="mt-1 rounded-lg border border-orange-200 bg-orange-50/40 p-2" aria-label={`Add recommendation: ${description}`}
       onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}
@@ -132,19 +133,19 @@ export default function RecommendationConversionAction({ recommendationId, descr
       {effective?.can_replace && <p className="db-recommendation-replacement-warning mb-2 text-xs">This creates a replacement operation. The previous link stays in the work history.</p>}
       <div className="flex flex-wrap items-end gap-2">
         <label className="min-w-0 flex-1 basis-24 text-xs font-medium text-gray-700">Hours
-          <input autoFocus type="text" inputMode="decimal" aria-describedby={helpId} placeholder="1.5 or 1:30"
+          <ControlInput autoFocus type="text" inputMode="decimal" aria-describedby={helpId} placeholder="1.5 or 1:30"
             value={hours} disabled={mutation.isPending || !!submission.current} onChange={(event) => { setHours(event.target.value); setError('') }}
-            className="mt-1 block h-8 w-full min-w-0 rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-900 disabled:opacity-60" />
+            className="mt-1 block  w-full min-w-0 rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-900 disabled:opacity-60" />
         </label>
         <label className="min-w-0 flex-1 basis-24 text-xs font-medium text-gray-700">Rate / hr
-          <input type="text" inputMode="decimal" value={rate} readOnly={rateReadOnly} disabled={mutation.isPending || !!submission.current}
+          <ControlInput type="text" inputMode="decimal" value={rate} readOnly={rateReadOnly} disabled={mutation.isPending || !!submission.current}
             onChange={(event) => { setRate(event.target.value); setRateEdited(true); setError('') }}
-            className="mt-1 block h-8 w-full min-w-0 rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-900 disabled:opacity-60" />
+            className="mt-1 block  w-full min-w-0 rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-900 disabled:opacity-60" />
         </label>
         <span className="py-1 text-sm font-semibold tabular-nums text-gray-900">Labor {parsedHours != null && validRate ? money(conversionTotal(parsedHours, parsedRate)) : '—'}</span>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={close} disabled={mutation.isPending} className="whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium text-gray-600">Cancel</button>
-          <button type="submit" disabled={mutation.isPending} className="whitespace-nowrap rounded-md bg-orange-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{mutation.isPending ? 'Adding…' : submission.current ? 'Retry safely' : effective ? 'Add replacement' : 'Add operation'}</button>
+          <ControlButton type="button" onClick={close} disabled={mutation.isPending} className="whitespace-nowrap rounded-md px-2  text-xs font-medium text-gray-600">Cancel</ControlButton>
+          <ControlButton type="submit" disabled={mutation.isPending} className="whitespace-nowrap rounded-md bg-orange-600 px-3  text-xs font-semibold text-white disabled:opacity-50">{mutation.isPending ? 'Adding…' : submission.current ? 'Retry safely' : effective ? 'Add replacement' : 'Add operation'}</ControlButton>
         </div>
       </div>
       <p id={helpId} className="mt-1 text-xs text-slate-600">Added work stays unresolved until it is completed and marked resolved.</p>

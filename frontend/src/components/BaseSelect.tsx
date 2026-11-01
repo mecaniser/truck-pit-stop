@@ -1,3 +1,4 @@
+import '@/components/ui/controls.css'
 import { useId, useMemo, useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { Spinner } from '@/components/ui'
 import { createPortal } from 'react-dom'
@@ -82,7 +83,7 @@ export default function BaseSelect({
   onAddNew,
   disabled = false,
   variant = 'light',
-  heightClass = 'h-[42px]',
+  heightClass = '',
   optionHeightClass = '',
   onQueryChange,
   hideSelectedOption = false,
@@ -316,6 +317,7 @@ export default function BaseSelect({
       {/* Closed state: show button */}
       {!isOpen ? (
         <button
+          data-db-control="select"
           ref={triggerRef}
           id={id}
           type="button"
@@ -350,6 +352,7 @@ export default function BaseSelect({
         <div className="relative">
           <input
             id={id}
+            data-db-control="field"
             ref={inputRef}
             disabled={disabled}
             type="text"

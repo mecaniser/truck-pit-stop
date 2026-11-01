@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { scheduleDeadline, scheduleRefreshInterval, type OrderScheduleSummary } from '../repair-orders/repairOrderSchedule'
 import '../repair-orders/repairOrderSchedule.css'
 import { useEffect, useState, useCallback, useRef } from 'react'
@@ -351,7 +352,7 @@ function OrderCard({
   })()
 
   return (
-    <button
+    <ControlButton controlKind="content"
       onClick={onClick}
       className={`w-full text-left rounded-lg p-3 2xl:p-2.5 hover:bg-white/10 transition-colors border group ${
         alert.level === 'red'
@@ -397,7 +398,7 @@ function OrderCard({
           <ChevronRight className="w-4 h-4 text-gray-500 group-hover:opacity-100 transition-colors" style={{ color: accentColor }} />
         </div>
       </div>
-    </button>
+    </ControlButton>
   )
 }
 
@@ -803,16 +804,16 @@ export default function DashboardHome() {
           <strong>Lightning Order</strong>
           <span>Walk-in or phone call</span>
         </div>
-        <button type="button" onClick={() => setShowQuickForm(false)} aria-label="Close Lightning Order">
+        <ControlButton controlKind="icon" type="button" onClick={() => setShowQuickForm(false)} aria-label="Close Lightning Order">
           <X aria-hidden="true" />
-        </button>
+        </ControlButton>
       </div>
       <div className="db-shop-work-new__quick-form-fields">
         <label>
           <span>Customer phone</span>
           <div className="db-shop-work-new__field">
             <Phone aria-hidden="true" />
-            <input
+            <ControlInput
               type="tel"
               value={quickPhone}
               onChange={(event) => {
@@ -856,7 +857,7 @@ export default function DashboardHome() {
           <span>Truck <em>optional</em></span>
           <div className="db-shop-work-new__field">
             <Truck aria-hidden="true" />
-            <input
+            <ControlInput
               type="text"
               value={quickTruck}
               onChange={(event) => setQuickTruck(event.target.value)}
@@ -864,10 +865,10 @@ export default function DashboardHome() {
             />
           </div>
         </label>
-        <button type="submit" disabled={quickSubmitting} className="db-shop-work-new__create-action">
+        <ControlButton type="submit" disabled={quickSubmitting} className="db-shop-work-new__create-action">
           {quickSubmitting ? <Spinner size="sm" /> : <Send aria-hidden="true" />}
           Create order
-        </button>
+        </ControlButton>
       </div>
     </form>
   ) : null
@@ -910,17 +911,17 @@ export default function DashboardHome() {
           <AlertTriangle aria-hidden="true" />
           <strong>{activeError}</strong>
           <span>The current queue could not be retrieved. Existing repair orders remain in Repair Orders.</span>
-          <button type="button" onClick={handleManualRefresh} disabled={activeRefreshing}>
+          <ControlButton type="button" onClick={handleManualRefresh} disabled={activeRefreshing}>
             <RefreshCw aria-hidden="true" className={activeRefreshing ? 'animate-spin' : ''} />
             {activeRefreshing ? 'Retrying…' : 'Try again'}
-          </button>
+          </ControlButton>
         </section>
       )
     }
     return (
       <div className="text-center py-12">
         <p className="text-red-400">{activeError}</p>
-        <button
+        <ControlButton
           onClick={handleManualRefresh}
           disabled={activeRefreshing}
           className="mt-4 inline-flex items-center gap-2 hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -928,7 +929,7 @@ export default function DashboardHome() {
         >
           <RefreshCw className={`w-3.5 h-3.5 ${activeRefreshing ? 'animate-spin' : ''}`} />
           {activeRefreshing ? 'Retrying…' : 'Try again'}
-        </button>
+        </ControlButton>
       </div>
     )
   }
@@ -1049,9 +1050,9 @@ export default function DashboardHome() {
               icon-only to save width; labels return at sm+. */}
           {isManager && (
             <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2.5 sm:gap-3 lg:flex-nowrap">
-              <button
+              <ControlButton
                 onClick={() => setShowQuickForm(!showQuickForm)}
-                className="flex h-12 min-w-12 items-center justify-center gap-2 rounded-xl px-3.5 font-semibold text-white transition-colors sm:px-4"
+                className="flex  min-w-12 items-center justify-center gap-2 rounded-xl px-3.5 font-semibold text-white transition-colors sm:px-4"
                 style={{
                   backgroundColor: showQuickForm ? accentColors[600] : accentColors[500],
                   boxShadow: `0 10px 15px -3px ${accentColors[500]}33`,
@@ -1060,15 +1061,15 @@ export default function DashboardHome() {
               >
                 <Zap className="h-5 w-5" />
                 <span className="hidden sm:inline">Lightning Order</span>
-              </button>
-              <button
+              </ControlButton>
+              <ControlButton
                 onClick={() => navigate('/dashboard/repair-orders?new=true')}
-                className="flex h-12 min-w-12 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3.5 font-semibold text-white transition-colors hover:bg-white/10 sm:px-4"
+                className="flex  min-w-12 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3.5 font-semibold text-white transition-colors hover:bg-white/10 sm:px-4"
                 aria-label="Full Order"
               >
                 <Plus className="h-5 w-5" />
                 <span className="hidden sm:inline">Full Order</span>
-              </button>
+              </ControlButton>
             </div>
           )}
         </div>
@@ -1099,20 +1100,20 @@ export default function DashboardHome() {
               <span className="text-sm font-semibold" style={{ color: accentColors[400] }}>Lightning Order</span>
               <span className="text-xs text-gray-500">— Walk-in / Phone call</span>
             </div>
-            <button
+            <ControlButton
               type="button"
               onClick={() => setShowQuickForm(false)}
               className="p-1 text-gray-500 hover:text-white rounded"
             >
               <X className="w-4 h-4" />
-            </button>
+            </ControlButton>
           </div>
           <div className="flex flex-col sm:flex-row sm:items-start gap-2">
             {/* Phone - Required */}
             <div className="flex-shrink-0 sm:w-40">
               <div className="relative">
                 <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                <input
+                <ControlInput
                   type="tel"
                   value={quickPhone}
                   onChange={(e) => {
@@ -1126,7 +1127,7 @@ export default function DashboardHome() {
                     }
                   }}
                   placeholder="(555) 123-4567"
-                  className={`w-full pl-9 pr-3 py-2 bg-white/5 border rounded-lg text-white text-base placeholder-gray-500 focus:outline-none focus:ring-1 ${
+                  className={`w-full pl-9 pr-3  bg-white/5 border rounded-lg text-white text-base placeholder-gray-500 focus:outline-none focus:ring-1 ${
                     quickTouched && quickErrors.phone
                       ? 'border-red-500 focus:border-red-500 focus:ring-red-500/30'
                       : 'border-white/10'
@@ -1180,19 +1181,19 @@ export default function DashboardHome() {
             <div className="flex-shrink-0 sm:w-48">
               <div className="relative">
                 <Truck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                <input
+                <ControlInput
                   type="text"
                   value={quickTruck}
                   onChange={(e) => setQuickTruck(e.target.value)}
                   placeholder="Truck (optional)"
-                  className="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-base placeholder-gray-500 focus:outline-none focus:ring-1"
+                  className="w-full pl-9 pr-3  bg-white/5 border border-white/10 rounded-lg text-white text-base placeholder-gray-500 focus:outline-none focus:ring-1"
                 />
               </div>
             </div>
-            <button
+            <ControlButton
               type="submit"
               disabled={quickSubmitting}
-              className="px-4 py-2 h-[38px] disabled:opacity-50 text-white font-semibold rounded-lg flex items-center gap-2 transition-colors shrink-0 self-end sm:self-start"
+              className="px-4   disabled:opacity-50 text-white font-semibold rounded-lg flex items-center gap-2 transition-colors shrink-0 self-end sm:self-start"
               style={{ backgroundColor: accentColors[500] }}
             >
               {quickSubmitting ? (
@@ -1201,7 +1202,7 @@ export default function DashboardHome() {
                 <Send className="w-4 h-4" />
               )}
               <span>Create</span>
-            </button>
+            </ControlButton>
           </div>
         </form>
       )}
@@ -1254,37 +1255,37 @@ export default function DashboardHome() {
             <div className="flex shrink-0 items-center gap-2">
               {canViewActivity && (
                 <div className="flex items-center gap-0.5 bg-white/5 rounded-md p-0.5">
-                  <button
+                  <ControlButton
                     onClick={() => setQueueView('queue')}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 text-xs 2xl:text-sm rounded transition-colors ${
+                    className={`flex items-center gap-1.5 px-2.5  text-xs 2xl:text-sm rounded transition-colors ${
                       queueView === 'queue' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'
                     }`}
                   >
                     <LayoutGrid className="w-3.5 h-3.5" />
                     <span>Queue</span>
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton
                     onClick={() => setQueueView('activity')}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 text-xs 2xl:text-sm rounded transition-colors ${
+                    className={`flex items-center gap-1.5 px-2.5  text-xs 2xl:text-sm rounded transition-colors ${
                       queueView === 'activity' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'
                     }`}
                   >
                     <History className="w-3.5 h-3.5" />
                     <span>Activity</span>
-                  </button>
+                  </ControlButton>
                 </div>
               )}
-              <button
+              <ControlButton
                 onClick={handleManualRefresh}
                 disabled={isRefreshing}
-                className="flex items-center justify-center gap-1 rounded-md bg-white/5 px-1.5 py-1 text-xs text-gray-400 transition-colors hover:bg-white/10 hover:text-white sm:gap-2 sm:px-2.5 2xl:text-sm"
+                className="flex items-center justify-center gap-1 rounded-md bg-white/5 px-1.5  text-xs text-gray-400 transition-colors hover:bg-white/10 hover:text-white sm:gap-2 sm:px-2.5 2xl:text-sm"
                 title="Refresh dashboard"
                 aria-label={isRefreshing ? 'Refreshing dashboard' : `Refresh dashboard, updated ${formatLastUpdated() || 'recently'}`}
               >
                 <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
                 <span className="hidden sm:inline">{formatLastUpdated() || 'Refresh'}</span>
                 <span className={`h-1.5 w-1.5 rounded-full ${error ? 'bg-red-500' : 'bg-green-500 animate-pulse'}`} />
-              </button>
+              </ControlButton>
             </div>
           </div>
 
@@ -1304,7 +1305,7 @@ export default function DashboardHome() {
                   </div>
                   <div className="flex items-center gap-1.5">
                     {needsActionCount >= 9 && (
-                      <button
+                      <ControlButton controlKind="icon"
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation()
@@ -1315,7 +1316,7 @@ export default function DashboardHome() {
                         aria-expanded={openLaneSearch === 0}
                       >
                         <Search className="h-4 w-4" />
-                      </button>
+                      </ControlButton>
                     )}
                     <span className="text-xs 2xl:text-sm font-medium text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">
                       {laneCountLabel(needsActionCount, stats?.orders_needing_action_has_more)}
@@ -1325,7 +1326,7 @@ export default function DashboardHome() {
                 {openLaneSearch === 0 && needsActionCount >= 9 && (
                   <div className="flex flex-shrink-0 items-center gap-2 border-b border-white/10 px-2.5 py-2">
                     <Search className="h-4 w-4 text-gray-500" />
-                    <input
+                    <ControlInput
                       autoFocus
                       value={laneSearchQueries[0]}
                       onChange={(event) => setLaneSearchQuery(0, event.target.value)}
@@ -1334,9 +1335,9 @@ export default function DashboardHome() {
                       aria-label="Search needs action orders"
                     />
                     <span className="text-xs text-gray-500">{needsActionOrders.length}/{laneCountLabel(needsActionCount, stats?.orders_needing_action_has_more)}</span>
-                    <button type="button" onClick={() => laneSearchQueries[0] ? setLaneSearchQuery(0, '') : setOpenLaneSearch(null)} className="rounded p-0.5 text-gray-400 hover:text-white" aria-label={laneSearchQueries[0] ? 'Clear search' : 'Close search'}>
+                    <ControlButton controlKind="icon" type="button" onClick={() => laneSearchQueries[0] ? setLaneSearchQuery(0, '') : setOpenLaneSearch(null)} className="rounded p-0.5 text-gray-400 hover:text-white" aria-label={laneSearchQueries[0] ? 'Clear search' : 'Close search'}>
                       <X className="h-4 w-4" />
-                    </button>
+                    </ControlButton>
                   </div>
                 )}
                 <div className={getLaneBodyClass(0)}>
@@ -1371,7 +1372,7 @@ export default function DashboardHome() {
                   </div>
                   <div className="flex items-center gap-1.5">
                     {onFloorCount >= 9 && (
-                      <button
+                      <ControlButton controlKind="icon"
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation()
@@ -1382,7 +1383,7 @@ export default function DashboardHome() {
                         aria-expanded={openLaneSearch === 1}
                       >
                         <Search className="h-4 w-4" />
-                      </button>
+                      </ControlButton>
                     )}
                     <span className="text-xs 2xl:text-sm font-medium px-2 py-0.5 rounded-full" style={{ color: accentColors[400], backgroundColor: `${accentColors[500]}1a` }}>
                       {laneCountLabel(onFloorCount, stats?.orders_on_floor_has_more)}
@@ -1392,7 +1393,7 @@ export default function DashboardHome() {
                 {openLaneSearch === 1 && onFloorCount >= 9 && (
                   <div className="flex flex-shrink-0 items-center gap-2 border-b border-white/10 px-2.5 py-2">
                     <Search className="h-4 w-4 text-gray-500" />
-                    <input
+                    <ControlInput
                       autoFocus
                       value={laneSearchQueries[1]}
                       onChange={(event) => setLaneSearchQuery(1, event.target.value)}
@@ -1401,9 +1402,9 @@ export default function DashboardHome() {
                       aria-label="Search on the floor orders"
                     />
                     <span className="text-xs text-gray-500">{onFloorOrders.length}/{laneCountLabel(onFloorCount, stats?.orders_on_floor_has_more)}</span>
-                    <button type="button" onClick={() => laneSearchQueries[1] ? setLaneSearchQuery(1, '') : setOpenLaneSearch(null)} className="rounded p-0.5 text-gray-400 hover:text-white" aria-label={laneSearchQueries[1] ? 'Clear search' : 'Close search'}>
+                    <ControlButton controlKind="icon" type="button" onClick={() => laneSearchQueries[1] ? setLaneSearchQuery(1, '') : setOpenLaneSearch(null)} className="rounded p-0.5 text-gray-400 hover:text-white" aria-label={laneSearchQueries[1] ? 'Clear search' : 'Close search'}>
                       <X className="h-4 w-4" />
-                    </button>
+                    </ControlButton>
                   </div>
                 )}
                 <div className={getLaneBodyClass(1)}>
@@ -1438,7 +1439,7 @@ export default function DashboardHome() {
                   </div>
                   <div className="flex items-center gap-1.5">
                     {readyToCloseCount >= 9 && (
-                      <button
+                      <ControlButton controlKind="icon"
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation()
@@ -1449,7 +1450,7 @@ export default function DashboardHome() {
                         aria-expanded={openLaneSearch === 2}
                       >
                         <Search className="h-4 w-4" />
-                      </button>
+                      </ControlButton>
                     )}
                     <span className="text-xs 2xl:text-sm font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
                       {laneCountLabel(readyToCloseCount, stats?.orders_ready_to_close_has_more)}
@@ -1459,7 +1460,7 @@ export default function DashboardHome() {
                 {openLaneSearch === 2 && readyToCloseCount >= 9 && (
                   <div className="flex flex-shrink-0 items-center gap-2 border-b border-white/10 px-2.5 py-2">
                     <Search className="h-4 w-4 text-gray-500" />
-                    <input
+                    <ControlInput
                       autoFocus
                       value={laneSearchQueries[2]}
                       onChange={(event) => setLaneSearchQuery(2, event.target.value)}
@@ -1468,9 +1469,9 @@ export default function DashboardHome() {
                       aria-label="Search ready to close orders"
                     />
                     <span className="text-xs text-gray-500">{readyToCloseOrders.length}/{laneCountLabel(readyToCloseCount, stats?.orders_ready_to_close_has_more)}</span>
-                    <button type="button" onClick={() => laneSearchQueries[2] ? setLaneSearchQuery(2, '') : setOpenLaneSearch(null)} className="rounded p-0.5 text-gray-400 hover:text-white" aria-label={laneSearchQueries[2] ? 'Clear search' : 'Close search'}>
+                    <ControlButton controlKind="icon" type="button" onClick={() => laneSearchQueries[2] ? setLaneSearchQuery(2, '') : setOpenLaneSearch(null)} className="rounded p-0.5 text-gray-400 hover:text-white" aria-label={laneSearchQueries[2] ? 'Clear search' : 'Close search'}>
                       <X className="h-4 w-4" />
-                    </button>
+                    </ControlButton>
                   </div>
                 )}
                 <div className={getLaneBodyClass(2)}>
@@ -1515,7 +1516,7 @@ export default function DashboardHome() {
             <div
               className="relative z-50 flex items-stretch bg-[#171c23] md:bg-transparent"
             >
-              <button
+              <ControlButton controlKind="action"
                 type="button"
                 onTouchStart={handleTeamCapacityTouchStart}
                 onTouchEnd={handleTeamCapacityTouchEnd}
@@ -1527,7 +1528,7 @@ export default function DashboardHome() {
                   setOpenStatusPanel(p => p === 'team' ? null : 'team')
                 }}
                 aria-expanded={openStatusPanel === 'team'}
-                className={`flex flex-1 touch-pan-y flex-row items-center justify-center gap-1 px-2 py-1.5 transition-colors md:flex-none md:flex-col md:items-start md:justify-start md:px-3.5 md:py-2 2xl:px-3 border-b-2 ${openStatusPanel === 'team' ? 'text-white border-b-current' : 'text-gray-300 border-b-transparent hover:text-white'}`}
+                className={`flex flex-1 touch-pan-y flex-row items-center justify-center gap-1 px-2  transition-colors md:flex-none md:flex-col md:items-start md:justify-start md:px-3.5  2xl:px-3 border-b-2 ${openStatusPanel === 'team' ? 'text-white border-b-current' : 'text-gray-300 border-b-transparent hover:text-white'}`}
                 style={openStatusPanel === 'team' ? { borderBottomColor: accentColors[500] } : undefined}
               >
                 <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] md:gap-2 md:text-sm md:tracking-[0.14em] 2xl:text-base">
@@ -1545,13 +1546,13 @@ export default function DashboardHome() {
                     </span>
                   ))}
                 </span>
-              </button>
+              </ControlButton>
               <div className="block w-px my-2 bg-white/10" />
-              <button
+              <ControlButton controlKind="action"
                 type="button"
                 onClick={() => setOpenStatusPanel(p => p === 'revenue' ? null : 'revenue')}
                 aria-expanded={openStatusPanel === 'revenue'}
-                className={`flex flex-1 flex-row items-center justify-center gap-1 px-2 py-1.5 transition-colors md:flex-none md:flex-col md:items-start md:justify-start md:px-3.5 md:py-2 2xl:px-3 border-b-2 ${openStatusPanel === 'revenue' ? 'text-white border-b-current' : 'text-gray-300 border-b-transparent hover:text-white'}`}
+                className={`flex flex-1 flex-row items-center justify-center gap-1 px-2  transition-colors md:flex-none md:flex-col md:items-start md:justify-start md:px-3.5  2xl:px-3 border-b-2 ${openStatusPanel === 'revenue' ? 'text-white border-b-current' : 'text-gray-300 border-b-transparent hover:text-white'}`}
                 style={openStatusPanel === 'revenue' ? { borderBottomColor: accentColors[500] } : undefined}
               >
                 <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] md:gap-2 md:text-sm md:tracking-[0.14em] 2xl:text-base">
@@ -1561,14 +1562,14 @@ export default function DashboardHome() {
                 <span className="hidden items-center text-[10px] text-gray-400 bg-white/5 border border-white/10 rounded-full px-1.5 py-0.5 md:inline-flex 2xl:text-sm md:px-2.5">
                   {stats?.revenue?.total_paid_orders || 0} paid orders
                 </span>
-              </button>
+              </ControlButton>
             </div>
 
             {/* Expanded content renders as an overlay drawer above the rail so it never
                 shrinks the Work Queue's flex-1 space. */}
             {openStatusPanel !== null && (
               <>
-                <button
+                <ControlButton controlKind="content"
                   type="button"
                   aria-label="Close panel"
                   onClick={() => setOpenStatusPanel(null)}
@@ -1582,13 +1583,13 @@ export default function DashboardHome() {
                           <span className={`${teamCapacityHeaderClass} font-semibold text-gray-300 uppercase tracking-[0.14em]`}>
                             Team Capacity
                           </span>
-                          <button
+                          <ControlButton
                             type="button"
                             onClick={() => navigate('/dashboard/mechanics')}
                             className={`hidden lg:inline-block ${teamCapacityHeaderClass} text-gray-500 hover:text-white transition-colors`}
                           >
                             View board
-                          </button>
+                          </ControlButton>
                           <SectionInfoTooltip text="Technician staffing capacity snapshot with active vs queued work, per-technician load, and click-through to detailed timer boards." />
                         </div>
                         <div className="hidden lg:ml-auto lg:flex lg:flex-wrap lg:items-center lg:justify-end lg:gap-2 lg:pl-4">
@@ -1630,7 +1631,7 @@ export default function DashboardHome() {
                               const queued = Math.max(m.assigned_count - m.in_progress_count, 0)
                               const status = getTeamCapacityStatus(teamStatusByMechanicId.get(m.mechanic_id))
                               return (
-                                <button
+                                <ControlButton controlKind="content"
                                   type="button"
                                   key={m.mechanic_id}
                                   onClick={() => navigate(`/dashboard/mechanics/${m.mechanic_id}`)}
@@ -1688,7 +1689,7 @@ export default function DashboardHome() {
                                       style={{ width: `${loadPct}%`, backgroundColor: accentColors[500] }}
                                     />
                                   </div>
-                                </button>
+                                </ControlButton>
                               )
                             })}
                             {teamMembers.length > 8 && (

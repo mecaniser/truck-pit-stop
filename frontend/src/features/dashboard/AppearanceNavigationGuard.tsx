@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import {
   useCallback,
   useEffect,
@@ -239,15 +240,15 @@ export function AppearanceNavigationGuardProvider({ children }: { children: Reac
               ))}
             </ul>
             <div className="db-appearance-leave__actions">
-              <button ref={keepEditingRef} type="button" className="db-button db-button--quiet" onClick={keepEditing}>
+              <ControlButton ref={keepEditingRef} type="button" className="db-button db-button--quiet" onClick={keepEditing}>
                 Keep editing
-              </button>
-              <button ref={discardRef} type="button" className="db-button db-button--secondary" disabled={continuing !== null} onClick={discardAndContinue}>
+              </ControlButton>
+              <ControlButton ref={discardRef} type="button" className="db-button db-button--secondary" disabled={continuing !== null} onClick={discardAndContinue}>
                 Discard &amp; continue
-              </button>
-              <button ref={applyRef} type="button" className="db-button db-button--primary" disabled={continuing !== null || saveStatus === 'conflict'} onClick={() => void applyAndContinue()}>
+              </ControlButton>
+              <ControlButton ref={applyRef} type="button" className="db-button db-button--primary" disabled={continuing !== null || saveStatus === 'conflict'} onClick={() => void applyAndContinue()}>
                 {continuing === 'apply' ? 'Applying…' : 'Apply & continue'}
-              </button>
+              </ControlButton>
             </div>
           </section>
         </div>

@@ -83,6 +83,17 @@ Actual signed-in browser regression passed in the isolated busy QA tenant: open 
 
 Second CI run41343482346 on `5b46bd39` passed protected checks/Playwright but exposed an overstrict new test assertion (2073pass/1failure): a workspace observer legitimately repopulated a fresh deleted snapshot after eviction. Independent source/log review confirmed it was not stale live data. The test invariant is refined to prove a warm live snapshot before delete and only deleted snapshots afterward, retaining immediate Restore UI and no active-panel requests. Application source is unchanged by this test refinement.
 
+
+## PR736 integration with shared controls and current main — 2026-11-01
+
+Conflict integration is isolated at task-3/dbn736-integration; the active implementation owner's worktree and unpublished Overview refinement remain untouched. Integrates main8021b355 (PR735 shared controls and PR740 simplified ETS footer), plus documentation-only5213d328 release receipt. Eight frontend conflicts preserve both Shop Work query scopes/record returns and main's shared control wrappers. New Overview and return buttons use ControlButton. The merged ETS tooltip also uses ControlButton with icon kind, preserving forwarded ref, pointer/focus/keyboard handlers and ARIA while passing the native-control guard.
+
+Shop Work backend endpoint/service/schema/tests, navigation helper and WebSocket code remain byte-identical to the original published93771ebb parent. No auth, financial, migration or tenant contract is changed by reconciliation.
+
+Local integration validation: production TypeScript/Vite build and shared-control guard pass; affected regression run passes39files/684tests across dashboard, record destinations, customers, inventory/purchasing, repair orders, imported footer and controls. A fresh independent reviewer returns no blocking findings and passes4files/67focusedtests (overlapping the broader run, not additive). No new signed-in browser acceptance is claimed for this merge-only reconciliation; original signed-in flows are recorded above and protected integration CI remains required. Changed-source lint and final exact-head CI pending at this checkpoint.
+
+Existing owner remains accountable for concurrent presentation refinements. Publish only using a fresh remote-head check and normal fast-forward push; preserve any newer owner commit. No PR approval, merge, deployment or production writes.
+
 ## Source-status UI correction — 2026-11-01
 
 User review rejected the native full-width source disclosure. The correction follows the Fast UI lane: existing read contract and authorization remain unchanged.
@@ -97,3 +108,43 @@ User review rejected the native full-width source disclosure. The correction fol
 This UI follow-up supersedes the source-disclosure visuals in earlier screenshots. PR736 stays draft; no merge/deploy. Previous CI evidence belongs to the prior head and is not evidence for this follow-up head.
 
 Follow-up `npm run build` (TypeScript + Vite) passed. Routine existing bundle-size/Browserslist warnings remain; no build failure.
+
+Remote owner published10de849b during reconciliation. It is preserved as a merge parent; the source-status popover, overflow deduplication, new tests and signed-in screenshots survive. Its native buttons are reconciled to shared ControlButton, with explicit shared geometry on the Headless UI trigger. Fresh affected checks and independent re-review required for this combined head.
+
+Combined owner-follow-up validation:5affectedfiles/85tests and a fresh TypeScript/Vite production build pass. Independent exact-head re-review of68b9b6af mechanically confirms owner10de849b Overview logic unchanged after reversing wrapper/geometry substitutions, with owner CSS/tests byte-identical;24independent tests pass. Counts overlap prior suites and are not additive. Final changed-source lint and protected CI checked separately below.
+
+Final changed-source lint passes across25files against main5213d328. Git diff check clean. Protected CI awaits publication of this combined head.
+
+
+All seven Quality gates jobs passed on published integrationaa180375, run41347288886: migration/scope, backend critical, frontend dependencies/checks, full backend, full frontend, Playwright smoke. During that run main advanced to72aaee69 (PR743 billing-warning explanations and the same tooltip wrapper). Its only code conflict is equivalent ControlButton prop ordering; resolved exactly to main. Both board histories retained, with main's current lead entry kept first to reduce future prepend collisions. PR743 warning helpers/tests/styles are preserved. Affected regression/build/lint and new exact-head CI required after this necessary main integration; previous green remains historical evidence.
+
+
+## Shop Work consistency sweep — 2026-11-01
+
+Frontend & UX owns this Fast UI follow-up. All four views, filters, empty/recovery states and Lightning Order were reviewed against the compact workspace design. Existing API, permission, financial and data contracts are unchanged.
+
+- Activity now uses chronological day groups and readable record rows instead of oversized date columns and actor regrouping. One named Filters control contains staff/type/date inputs; incomplete coverage uses an anchored status explanation. Loading, denied, unavailable, empty and older-page failures remain distinct. A failed older-page request preserves the visible records and one retry action.
+- Active work hides all-zero category controls, Unknown0 and inert pagination only when genuinely empty and unfiltered. Filtered empty states retain recovery; an empty later page retains Previous. Reset closes the filter panel and returns focus.
+- Closeout value stays in Closeout, missing value is an em dash, and single-lane rows do not repeat the lane label. Mixed-lane rows retain their labels. Overview lead spacing and retry states are consistent; incomplete empty coverage does not display a success check.
+- Lightning Order uses workspace appearance tokens for its form, fields and validation. No creation or financial workflow changed.
+- Activity selection is represented in the URL and restored after record navigation; freshness uses Activity's own query timestamp.
+
+### Integrated verification
+
+The draft PR advanced independently to `decaf8dd` during this sweep. Its current-main integration and shared controls were merged into this checkout, preserving all upstream work. Three component conflicts were reconciled by retaining the sweep behavior and applying shared ControlButton/ControlInput and headless-trigger geometry. New styles own color/emphasis; shared controls own size. The historical all-green run41348179512 belongs to `decaf8dd`, not this new sweep.
+
+Final integrated checks: **71 tests across five suites passed** (Overview13, Closeout ledger19, Active work16, Activity6, Dashboard presentation17), changed-source ESLint passed, shared-control guard passed, and TypeScript/Vite production build passed. Diff checks passed. Initial nested-popover focus and reset-focus failures were corrected before this final run. No backend change was introduced by this sweep.
+
+Actual API-backed Quiet QA browser acceptance covers all four views, exact repair selection and return paths, zero active jobs with remaining Overview tasks, filter selection/reset, both date inputs, error/validation styling, desktop/mobile and day/night. No order was created or invoice/payment state changed. Test appearance was restored to Night; viewport override reset. After integration, repeated nested selection/reset, exact1049 record/Back-to-Activity, empty Active, and390px calendar checks pass. Shared filter control measures34px desktop and44px mobile; mobile page/scroll widths are390px and calendar bounds are x54–374/y391.5–756, above mobile navigation. Transient Vite import errors occurred while merge-conflict markers were present; the resolved app subsequently rendered and navigated successfully, with no later error entries.
+
+Runtime receipt, November1 approximately16:05 America/New_York: same `codex/shop-work-overview` implementation worktree, sweep commit `5bf9297a` with reconciled integration changes pending merge commit during checks. Frontend5215/PID92275 serves this worktree's frontend; API8041 container `dieselbridge_api_db151` mounts its backend at `/app`. Database remains `postgres/truckpitstop_db151`; schema196 remains compatible. Frontend-proxied readiness passes with DB/Redis healthy. Startup badge still shows5b46bd3; process/source evidence and rendered shared controls corroborate the actual updated source. Local preview is **aligned and browser-verified**. Shared5173/8000 and production remain untouched.
+
+Updated actual-app screenshots (synthetic local records only):
+
+- [Desktop Activity](assets/db151/activity-refined.png)
+- [Mobile Activity](assets/db151/activity-mobile.png)
+- [Mobile calendar](assets/db151/activity-calendar-mobile.png)
+- [Empty Active work](assets/db151/active-empty-refined.png)
+- [Day Activity and Lightning Order, before shared-control integration](assets/db151/activity-lightning-day.png)
+
+PR736 remains draft and In Review. New sweep CI is pending. No merge/deployment or production acceptance; not Done.

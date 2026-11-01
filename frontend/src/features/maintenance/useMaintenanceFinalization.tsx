@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { emptyAttestation, toAttestation } from './attestation'
 import { useEffect, useRef, useState } from 'react'
 import api from '@/lib/api'
@@ -65,7 +66,7 @@ function FinalizationPanel({ pending, onCancel, onDone }: { pending: Pending; on
     <p>Unchecked programs keep their targets until actual service readings are recorded.</p>
     {order.programs.filter(program => order.links.some(link => link.state === 'active' && program.work?.work_link_id === link.work_link_id)).map(program => <label key={program.id} className="db-maintenance__check"><input type="checkbox" disabled={!order.can_record_evidence || saving || command.busy} checked={selected.includes(program.id)} onChange={event => { setSelected(current => event.target.checked ? [...current, program.id] : current.filter(id => id !== program.id)); setPreview(null) }} />{program.name}{program.mode === 'legacy' ? ` · ${(program.legacy_package ?? []).map(service => service.name).join(' + ')}` : ''}</label>)}
     {selected.length > 0 && <AttestationFields value={attestation} disabled={saving || command.busy} source={{ kind: 'repair_order', id: pending.orderId }} onChange={value => { setAttestation(value); setPreview(null) }} />}
-    <button type="button" disabled={saving || command.busy} onClick={() => void review()}>Review targets</button>{preview && <TargetReview preview={preview} names={Object.fromEntries(order.programs.map(program => [program.id, program.name]))} />}
-    {error && <PricingFeedback revision={error}>{error.message} <button type="button" disabled={saving || command.busy} onClick={() => void reload()}>Reload review</button></PricingFeedback>}
+    <ControlButton type="button" disabled={saving || command.busy} onClick={() => void review()}>Review targets</ControlButton>{preview && <TargetReview preview={preview} names={Object.fromEntries(order.programs.map(program => [program.id, program.name]))} />}
+    {error && <PricingFeedback revision={error}>{error.message} <ControlButton type="button" disabled={saving || command.busy} onClick={() => void reload()}>Reload review</ControlButton></PricingFeedback>}
   </SlidePanelForm>
 }

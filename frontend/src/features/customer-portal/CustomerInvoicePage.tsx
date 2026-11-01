@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { currentInvoicePaymentSummary } from '@/lib/invoicePaymentPresentation'
 import InvoicePaymentSummary from '@/components/InvoicePaymentSummary'
 import { invoicePaymentLabels } from '@/lib/invoicePaymentLabels'
@@ -116,14 +117,14 @@ function StripePaymentForm({
           {error}
         </p>
       )}
-      <button
+      <ControlButton
         type="submit"
         disabled={!stripe || isProcessing}
-        className="flex h-[50px] w-full items-center justify-center gap-2 rounded-xl bg-[#8b7cf7] text-sm font-extrabold text-[#0e1118] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex  w-full items-center justify-center gap-2 rounded-xl bg-[#8b7cf7] text-sm font-extrabold text-[#0e1118] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {isProcessing && <Spinner size="sm" className="border-black/30 border-t-black" />}
         {isProcessing ? 'Processing payment…' : `Pay ${money(amount)} by card`}
-      </button>
+      </ControlButton>
     </form>
   )
 }
@@ -167,7 +168,8 @@ export default function CustomerInvoicePage() {
     enabled: Boolean(invoiceId),
   })
 
-  const settlementAccess = invoice?.id
+  const isHistoricalInvoice = invoice?.source === 'easy_truck_shop_import'
+  const settlementAccess = invoice?.id && !isHistoricalInvoice
     ? { kind: 'authenticated' as const, invoiceId: invoice.id }
     : null
   const settlementQuery = useInvoiceSettlement(settlementAccess)
@@ -178,7 +180,7 @@ export default function CustomerInvoicePage() {
   const { data: repairOrder } = useQuery<RepairOrderDetail>({
     queryKey: ['repair-order-payment-detail', invoice?.repair_order_id],
     queryFn: async () => (await api.get(`/repair-orders/${invoice!.repair_order_id}/detail`)).data,
-    enabled: Boolean(invoice?.repair_order_id),
+    enabled: Boolean(invoice?.repair_order_id && !isHistoricalInvoice),
   })
 
   const { data: zelleInfo, isLoading: isZelleLoading } = useQuery<ZelleInfoResponse>({
@@ -186,13 +188,13 @@ export default function CustomerInvoicePage() {
     queryFn: async () => (await api.get(`/payments/zelle-info/${invoice!.id}`)).data,
     // DB-048 still needs the shop's read-only Zelle destination. Only the
     // legacy mutation/UI paths are gated off while the settlement flow is on.
-    enabled: Boolean(invoice && invoice.status !== 'paid'),
+    enabled: Boolean(invoice && !isHistoricalInvoice && invoice.status !== 'paid'),
   })
 
   const { data: quickBooksPayment, isLoading: isQuickBooksLoading } = useQuery<QuickBooksPaymentAvailability>({
     queryKey: ['quickbooks-payment-availability', invoice?.id],
     queryFn: async () => (await api.get(`/quickbooks/payments/availability/${invoice!.id}`)).data,
-    enabled: Boolean(invoice && invoice.status !== 'paid' && legacySettlementMode),
+    enabled: Boolean(invoice && !isHistoricalInvoice && invoice.status !== 'paid' && legacySettlementMode),
   })
 
   const createIntentMutation = useMutation({
@@ -311,7 +313,7 @@ export default function CustomerInvoicePage() {
   }
 
   const backDestination = paymentState?.paymentOrigin || 'History'
-  const splitSettlement = settlementQuery.data?.feature_enabled === false ? null : settlementQuery.data
+  const splitSettlement = isHistoricalInvoice || settlementQuery.data?.feature_enabled === false ? null : settlementQuery.data
   const paymentSummary = currentInvoicePaymentSummary(invoice.payment_summary, splitSettlement)
   const settlementFailure = settlementQuery.error && !isSettlementUnavailable(settlementQuery.error)
   const isPaid = paymentSummary ? paymentSummary.state === 'paid' : splitSettlement?.state === 'paid' || invoice.status === 'paid'
@@ -375,13 +377,13 @@ export default function CustomerInvoicePage() {
               {paymentSummary ? invoicePaymentLabels[paymentSummary.state] : isPaid ? 'paid' : 'invoiced'}
             </span>
           </p>
-          {(splitSettlement || cashReceipt || paymentSummary) && (
-            <p className="mt-2.5 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#8b92a5]">{paymentSummary?.state === 'cancelled' ? 'Invoice status' : cashReceipt ? 'Total paid in cash' : 'Balance due'}</p>
+          {(isHistoricalInvoice || splitSettlement || cashReceipt || paymentSummary) && (
+            <p className="mt-2.5 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#8b92a5]">{isHistoricalInvoice && !paymentSummary ? 'Invoice total (recorded)' : paymentSummary?.state === 'cancelled' ? 'Invoice status' : cashReceipt ? 'Total paid in cash' : 'Balance due'}</p>
           )}
           <h1 id="payment-total" className={`${splitSettlement ? 'mt-1' : 'mt-2.5'} whitespace-nowrap text-[38px] font-extrabold leading-none tracking-[-0.02em] tabular-nums sm:text-[46px]`}>
-            {paymentSummary?.state === 'cancelled' ? 'Cancelled' : paymentSummary?.balance_due === null ? 'Unavailable' : money(cashReceipt?.amount ?? splitSettlement?.outstanding_balance ?? paymentSummary?.balance_due ?? (isPaid ? '0' : pricing.selectedTotal))}
+            {isHistoricalInvoice && !paymentSummary ? money(invoice.total_amount) : paymentSummary?.state === 'cancelled' ? 'Cancelled' : paymentSummary?.balance_due === null ? 'Unavailable' : money(cashReceipt?.amount ?? splitSettlement?.outstanding_balance ?? paymentSummary?.balance_due ?? (isPaid ? '0' : pricing.selectedTotal))}
           </h1>
-          {!cashReceipt && !isPaid && <p className={`mt-1 min-h-5 text-[13px] font-bold ${selectedMethod === 'zelle' ? 'text-[#2dd4bf]' : 'text-[#8b92a5]'}`}>
+          {!isHistoricalInvoice && !cashReceipt && !isPaid && <p className={`mt-1 min-h-5 text-[13px] font-bold ${selectedMethod === 'zelle' ? 'text-[#2dd4bf]' : 'text-[#8b92a5]'}`}>
             {splitSettlement
               ? selectedMethod === 'zelle'
                 ? 'No card fee with Zelle'
@@ -394,7 +396,13 @@ export default function CustomerInvoicePage() {
 
         <InvoicePaymentSummary summary={paymentSummary} dark />
 
-        {paymentSummary && ['cancelled', 'unknown'].includes(paymentSummary.state) ? (
+        {isHistoricalInvoice ? (
+          <section className="mt-4 rounded-[14px] border border-[#232939] bg-[#161a26] p-5" aria-labelledby="historical-invoice-title">
+            <h2 id="historical-invoice-title" className="font-bold text-[#eceef4]">Historical invoice</h2>
+            <p className="mt-2 text-sm text-[#c9cdd8]">This imported invoice is read-only. Online payments are unavailable for this record.</p>
+            <p className="mt-2 text-sm text-[#9aa1b3]">You can review the available invoice details and download the PDF below. Contact the shop with any questions.</p>
+          </section>
+        ) : paymentSummary && ['cancelled', 'unknown'].includes(paymentSummary.state) ? (
           <p className="my-4 text-center text-sm">{paymentSummary.state === 'cancelled' ? 'This invoice is cancelled.' : 'Contact the shop to confirm your current balance before paying.'}</p>
         ) : isPaid ? (
           <section className="mt-4 rounded-[14px] border border-[#2dd4bf]/35 bg-[#2dd4bf]/10 p-5 text-center">
@@ -476,7 +484,7 @@ export default function CustomerInvoicePage() {
             {!isPending && methodCount > 1 && (
               <div role="radiogroup" aria-label="Payment method" className="mt-4 grid grid-cols-2 gap-2.5">
                 {zelleEnabled && (
-                  <button
+                  <ControlButton controlKind="content"
                     ref={element => { methodRefs.current[0] = element }}
                     type="button"
                     role="radio"
@@ -492,10 +500,10 @@ export default function CustomerInvoicePage() {
                   >
                     <span className="whitespace-nowrap text-sm font-extrabold">Zelle · {money(pricing.zelleTotal)}</span>
                     <span className="text-[10px] font-bold text-[#2dd4bf]">NO FEE</span>
-                  </button>
+                  </ControlButton>
                 )}
                 {cardEnabled && (
-                  <button
+                  <ControlButton controlKind="content"
                     ref={element => { methodRefs.current[zelleEnabled ? 1 : 0] = element }}
                     type="button"
                     role="radio"
@@ -511,17 +519,17 @@ export default function CustomerInvoicePage() {
                   >
                     <span className="whitespace-nowrap text-sm font-extrabold">Card · {money(pricing.cardTotal)}</span>
                     <span className="text-[10px] font-bold opacity-70">QUICKBOOKS</span>
-                  </button>
+                  </ControlButton>
                 )}
               </div>
             )}
 
             <div className="sticky bottom-2 z-20 mt-4 sm:static">
-              <button
+              <ControlButton
                 type="button"
                 onClick={isPending ? () => setShowZelleDetails(true) : startPayment}
                 disabled={createIntentMutation.isPending || submitZelleMutation.isPending || methodCount === 0}
-                className="flex h-[54px] w-full items-center justify-center gap-2 rounded-[13px] bg-[#8b7cf7] px-4 text-[15px] font-extrabold text-[#0e1118] shadow-[0_8px_30px_rgba(16,19,28,0.65)] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60 sm:shadow-none"
+                className="flex  w-full items-center justify-center gap-2 rounded-[13px] bg-[#8b7cf7] px-4 text-[15px] font-extrabold text-[#0e1118] shadow-[0_8px_30px_rgba(16,19,28,0.65)] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60 sm:shadow-none"
               >
                 {(createIntentMutation.isPending || submitZelleMutation.isPending) && (
                   <Spinner size="sm" className="border-black/30 border-t-black" />
@@ -531,7 +539,7 @@ export default function CustomerInvoicePage() {
                   : selectedMethod === 'zelle'
                     ? `Get Zelle details — ${money(pricing.zelleTotal)}`
                     : `Pay ${money(pricing.cardTotal)} by card`}
-              </button>
+              </ControlButton>
             </div>
 
             {showZelleDetails && selectedMethod === 'zelle' && (
@@ -555,10 +563,10 @@ export default function CustomerInvoicePage() {
                         <p className="mt-0.5 truncate text-sm font-bold tabular-nums">{display}</p>
                       </div>
                       {value && (
-                        <button type="button" onClick={() => copy(value, label)} className="inline-flex items-center gap-1 text-xs font-bold text-[#a78bfa] hover:text-[#c4b1ff]">
+                        <ControlButton type="button" onClick={() => copy(value, label)} className="inline-flex items-center gap-1 text-xs font-bold text-[#a78bfa] hover:text-[#c4b1ff]">
                           {copied === label ? <Check className="h-4 w-4 text-[#2dd4bf]" /> : <Copy className="h-4 w-4" />}
                           {copied === label ? 'Copied' : 'Copy'}
-                        </button>
+                        </ControlButton>
                       )}
                     </div>
                   ))}
@@ -570,14 +578,14 @@ export default function CustomerInvoicePage() {
                 )}
                 {!isPending && (
                   <div className="border-t border-[#1e2432] p-4">
-                    <button
+                    <ControlButton
                       type="button"
                       onClick={() => submitZelleMutation.mutate()}
                       disabled={submitZelleMutation.isPending}
-                      className="h-11 w-full rounded-xl border border-[#2dd4bf]/35 bg-[#2dd4bf]/10 text-sm font-extrabold text-[#5eead4] hover:bg-[#2dd4bf]/15 disabled:opacity-60"
+                      className=" w-full rounded-xl border border-[#2dd4bf]/35 bg-[#2dd4bf]/10 text-sm font-extrabold text-[#5eead4] hover:bg-[#2dd4bf]/15 disabled:opacity-60"
                     >
                       {submitZelleMutation.isPending ? 'Submitting…' : "I've sent it"}
-                    </button>
+                    </ControlButton>
                   </div>
                 )}
               </section>
@@ -622,14 +630,13 @@ export default function CustomerInvoicePage() {
           </div>
           {cashReceipt ? <CashReceiptBreakdown receipt={cashReceipt} /> : <div>
             {[
-              ['Labor / Services', labor],
-              ['Parts', parts],
+              ...(isHistoricalInvoice ? [['Subtotal', Number(invoice.subtotal)] as [string, number]] : [['Labor / Services', labor], ['Parts', parts]]),
               ['Shop Supplies', Number(invoice.shop_supplies_amount || 0)],
               ['Tax', Number(invoice.tax_amount || 0)],
               ...(Number(invoice.discount_amount || 0) > 0
                 ? [['Discount', -Number(invoice.discount_amount)] as [string, number]]
                 : []),
-              ...(selectedMethod === 'card' && pricing.cardFee > 0
+              ...((isHistoricalInvoice || selectedMethod === 'card') && pricing.cardFee > 0
                 ? [['Card Processing Fee', pricing.cardFee] as [string, number]]
                 : []),
             ].map(([label, amount], index, rows) => (
@@ -645,7 +652,7 @@ export default function CustomerInvoicePage() {
 
         <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[11px] text-[#5c6375]">
           <Lock className="h-3 w-3" />
-          {paymentSummary?.state === 'cancelled' ? 'Cancelled invoice · No payment requested' : paymentSummary?.state === 'unknown' ? 'Contact the shop to confirm payment details' : cashReceipt ? 'Cash payment recorded · Receipt available to download' : 'Secure payment · Receipt emailed instantly'}
+          {isHistoricalInvoice ? 'Historical invoice · Read-only record' : paymentSummary?.state === 'cancelled' ? 'Cancelled invoice · No payment requested' : paymentSummary?.state === 'unknown' ? 'Contact the shop to confirm payment details' : cashReceipt ? 'Cash payment recorded · Receipt available to download' : 'Secure payment · Receipt emailed instantly'}
         </p>
       </div>
     </div>

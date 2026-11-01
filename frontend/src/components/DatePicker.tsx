@@ -1,3 +1,4 @@
+import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import { useEffect, useId, useRef, useState } from 'react'
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import {
@@ -193,7 +194,7 @@ export default function DatePicker({
         ? null
         : <label className="db-datepicker__label" htmlFor={fieldId}>{label}</label>}
       <div className="db-datepicker__control">
-        <input
+        <ControlInput
           id={fieldId}
           className="db-datepicker__input"
           aria-label={compact ? label : undefined}
@@ -204,7 +205,7 @@ export default function DatePicker({
           autoComplete="off"
           onChange={(event) => onChange(event.target.value)}
         />
-        <button
+        <ControlButton controlKind="icon"
           type="button"
           ref={trigger}
           className="db-datepicker__trigger"
@@ -221,7 +222,7 @@ export default function DatePicker({
           }}
         >
           <CalendarDays size={16} aria-hidden="true" />
-        </button>
+        </ControlButton>
       </div>
       {hint ? <p className="db-datepicker__hint">{hint}</p> : null}
       {open && (
@@ -233,21 +234,21 @@ export default function DatePicker({
           aria-modal="false"
         >
           <div className="db-datepicker__nav">
-            <button
+            <ControlButton controlKind="icon"
               type="button"
               aria-label="Previous month"
               onClick={() => goToMonth(shiftMonth(month, -1))}
             >
               <ChevronLeft size={16} aria-hidden="true" />
-            </button>
+            </ControlButton>
             <h2>{monthLabel(month)}</h2>
-            <button
+            <ControlButton controlKind="icon"
               type="button"
               aria-label="Next month"
               onClick={() => goToMonth(shiftMonth(month, 1))}
             >
               <ChevronRight size={16} aria-hidden="true" />
-            </button>
+            </ControlButton>
           </div>
           <div className="db-datepicker__week" aria-hidden="true">
             {WEEKDAY_LABELS.map((day) => <span key={day}>{day}</span>)}
@@ -273,7 +274,7 @@ export default function DatePicker({
               }
               const bookedNames = parts.join(' · ')
               return (
-                <button
+                <ControlButton controlKind="action"
                   type="button"
                   key={day}
                   data-day={day}
@@ -326,7 +327,7 @@ export default function DatePicker({
                   {booked && (
                     <span className="db-datepicker__load" aria-hidden="true">{total}</span>
                   )}
-                </button>
+                </ControlButton>
               )
             })}
           </div>

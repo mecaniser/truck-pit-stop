@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useRef, useState } from 'react'
 import { Description, Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import { CircleSlash, X } from 'lucide-react'
@@ -34,7 +35,7 @@ export default function VoidOrderDialog({ orderNumber, invoiceNumber, pending, o
           <header className="flex shrink-0 items-center gap-3 px-5 pb-3 pt-4">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-700"><CircleSlash size={20} aria-hidden="true" /></span>
             <DialogTitle className="flex-1 text-lg font-semibold">Void entire order?</DialogTitle>
-            <button type="button" disabled={busy} onClick={dismiss} aria-label="Close void dialog" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-700 disabled:opacity-50"><X size={20} /></button>
+            <ControlButton controlKind="icon" type="button" disabled={busy} onClick={dismiss} aria-label="Close void dialog" className="inline-flex  w-11 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-700 disabled:opacity-50"><X size={20} /></ControlButton>
           </header>
           <form className="flex min-h-0 flex-col" onSubmit={async event => {
             event.preventDefault()
@@ -64,13 +65,13 @@ export default function VoidOrderDialog({ orderNumber, invoiceNumber, pending, o
                 <textarea data-autofocus required minLength={3} maxLength={1000} disabled={busy} rows={3} value={reason} onChange={event => setReason(event.target.value)} placeholder="Tell us why this order is being voided" className="mt-1.5 block w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-base font-normal text-slate-950 placeholder:text-slate-500 focus:border-slate-500 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-slate-500 disabled:opacity-60" />
               </label>
               <label className="block text-sm font-medium">Your password
-                <input required type="password" autoComplete="current-password" disabled={busy} value={password} onChange={event => setPassword(event.target.value)} className="mt-1.5 block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base font-normal text-slate-950 focus:border-slate-500 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-slate-500 disabled:opacity-60" />
+                <ControlInput required type="password" autoComplete="current-password" disabled={busy} value={password} onChange={event => setPassword(event.target.value)} className="mt-1.5 block  w-full rounded-lg border border-slate-300 bg-white px-3  text-base font-normal text-slate-950 focus:border-slate-500 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-slate-500 disabled:opacity-60" />
               </label>
               {error && <p role="alert" className="break-words text-sm text-red-700">{error}</p>}
             </div>
             <footer className="flex shrink-0 justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
-              <button type="button" disabled={busy} onClick={dismiss} className="min-h-11 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-700 disabled:opacity-50">Cancel</button>
-              <button type="submit" disabled={busy || reason.trim().length < 3 || reason.trim().length > 1000 || !password} className="min-h-11 whitespace-nowrap rounded-lg bg-red-700 px-4 text-sm font-semibold text-white hover:bg-red-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:opacity-50">{busy ? 'Voiding…' : 'Void entire order'}</button>
+              <ControlButton type="button" disabled={busy} onClick={dismiss} className=" whitespace-nowrap rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-700 disabled:opacity-50">Cancel</ControlButton>
+              <ControlButton type="submit" disabled={busy || reason.trim().length < 3 || reason.trim().length > 1000 || !password} className=" whitespace-nowrap rounded-lg bg-red-700 px-4 text-sm font-semibold text-white hover:bg-red-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:opacity-50">{busy ? 'Voiding…' : 'Void entire order'}</ControlButton>
             </footer>
           </form>
         </DialogPanel>
