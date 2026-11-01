@@ -110,3 +110,7 @@ This UI follow-up supersedes the source-disclosure visuals in earlier screenshot
 Follow-up `npm run build` (TypeScript + Vite) passed. Routine existing bundle-size/Browserslist warnings remain; no build failure.
 
 Remote owner published10de849b during reconciliation. It is preserved as a merge parent; the source-status popover, overflow deduplication, new tests and signed-in screenshots survive. Its native buttons are reconciled to shared ControlButton, with explicit shared geometry on the Headless UI trigger. Fresh affected checks and independent re-review required for this combined head.
+
+Combined owner-follow-up validation:5affectedfiles/85tests and a fresh TypeScript/Vite production build pass. Independent exact-head re-review of68b9b6af mechanically confirms owner10de849b Overview logic unchanged after reversing wrapper/geometry substitutions, with owner CSS/tests byte-identical;24independent tests pass. Counts overlap prior suites and are not additive. Final changed-source lint and protected CI checked separately below.
+
+Final changed-source lint passes across25files against main5213d328. Git diff check clean. Protected CI awaits publication of this combined head.
