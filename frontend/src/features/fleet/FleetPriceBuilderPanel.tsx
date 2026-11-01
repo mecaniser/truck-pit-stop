@@ -341,7 +341,7 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
                   </div>
                 </div>
 
-                <div className="wo-svc-search">
+                <div data-db-control-shell="field" className="wo-svc-search">
                   <Search size={16} aria-hidden="true" />
                   <ControlInput
                     value={term}
