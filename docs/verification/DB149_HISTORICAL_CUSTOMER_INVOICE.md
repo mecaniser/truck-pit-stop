@@ -22,3 +22,49 @@ No backend, auth, tenant, source-ownership, payment, financial record or archive
 Nov1 intended worktree `/Users/sergio_m1_promax/.codex/worktrees/invoice-review-link/truck-pit-stop`, branch above, base4645ea6a with task-local changes and pre-existing output/tmp preserved. Local full app alignment is **blocked**: approved backend/.env absent. Frontend5173 PID3456 belongs to my-shop-nav-stability worktree; Docker8000 PID3415 binds machined-sidebar backend. Existing services/settings preserved; default frontend proxy remains127.0.0.1:8000. No migration or database operation. Standalone4181 is only a fictional component preview, not an aligned full-stack application.
 
 Configured/signed-in runtime acceptance, protected CI, merge and deployment are not claimed here; parent coordinates release authority and live customer verification. This fix remains reviewable, not Done.
+
+## Authorized release — November 1, 2026
+
+Current user requested correction and live portal verification; release followed
+that authority without another permission request. PR737 confirmed already merged.
+Integrated main0b902552; only concurrent board prepends conflicted and both
+histories were preserved, no invoice source conflict. Post-integration19 focused
+tests, TypeScript and baseline-aware ESLint2files pass.
+
+All seven protected checks in41343268711 PASS at exact49736297. Backend gates
+are correctly scoped by CI for a frontend-only diff; no unrelated suites were
+rerun manually. PR738 normally squash-merged as
+`29f0b21f2952c489b3f1334671e8a80c380c1dbc` at14:52:29EST. Checked/merged
+tree`f2a57a5899870ce5fbb1a2ea2e567c1a7d3641d9` identical. Production
+Web deployment`de5c5bb5-a422-4ef5-ae49-b00ae555556e` started on exact merge.
+
+Signed-in customer acceptance remains pending: the parent-controlled Chrome
+profile is currently staff and redirects the requested portal invoice to the
+staff dashboard. User has been asked to complete normal customer sign-in in
+the identified Chrome group. No impersonation, account/role change or minted
+auth token is used. Actual-component fictional desktop/mobile acceptance is
+retained separately; it is not represented as authenticated live acceptance.
+
+### Deployment proof and remaining live gate
+
+Production Web`de5c5bb5-a422-4ef5-ae49-b00ae555556e` SUCCESS at exact merge
+`29f0b21f2952c489b3f1334671e8a80c380c1dbc`. Public `/build-version` matches.
+One read-only smoke of the requested `/portal/invoices/...` app route returned
+HTTP200 with the app bootstrap and served asset references. This proves delivery,
+not authentication or changed customer rendering. No worker inspection, extended
+canary, financial query/mutation, restored record, provider operation or send was
+performed for this Fast UI correction.
+
+Parent's latest browser inventory has no signed-in customer `/portal` tab across
+the three Chrome profiles. The identified handoff Chrome3 tab/group remains
+available for normal customer sign-in. A staff redirect is not customer acceptance.
+The item is RELEASED with live customer gate pending, not Done. After customer
+sign-in, the agent must verify the same authorized historical invoice's balance,
+PDF/review access, plain read-only guidance, and absence of the blocked payment
+requests/error UI. User is asked only to authenticate, not to perform regression
+testing. No impersonation or credential workaround is appropriate.
+
+Rollback baseline served at release intake`4645ea6a`; current integration also
+includes already-merged PR737. Incorrect native error handling or missing historical
+summary/PDF would fail acceptance; focused fixtures cover those cases. No live
+customer result is inferred while normal customer authentication is unavailable.
