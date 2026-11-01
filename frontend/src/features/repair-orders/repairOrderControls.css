@@ -2,7 +2,7 @@
    Keep the existing quick statuses on wide canvases; narrow queues put search
    on its own row and group the status selector with the deadline filter. */
 .db-presentation-new .db-repair-orders-controls {
-  --db-repair-orders-control-height: 44px;
+  --db-repair-orders-control-height: var(--control-height);
 }
 .db-presentation-new .db-repair-orders-controls .db-repair-orders-new__header {
   display: flex;
