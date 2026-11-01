@@ -3596,8 +3596,8 @@ html::-webkit-scrollbar-thumb:hover {
 .db-presentation-new .db-staff-search-field:focus-within { z-index: 2; box-shadow: 0 0 0 3px rgba(255, 122, 46, .26); }
 .db-presentation-new .db-staff-search-field:focus-within input { border-color: #ff7a2e !important; outline: 0; }
 .db-presentation-new .db-staff-search-field input:disabled { cursor: not-allowed; opacity: .6; }
-.db-presentation-new .db-repair-orders-new__search { height: var(--db-repair-orders-control-height); align-self: stretch; padding: 0; }
-.db-repair-orders-new__status-select { position: relative; display: none; min-width: 0; height: var(--db-repair-orders-control-height); }
+.db-presentation-new .db-repair-orders-new__search { height: auto; align-self: center; padding: 0; }
+.db-repair-orders-new__status-select { position: relative; display: none; min-width: 0; height: auto; }
 .db-repair-orders-new__status-select > button { width: 100%; height: var(--db-repair-orders-control-height); appearance: none; border: 1px solid #bec9d5 !important; border-radius: 10px; padding: 0 12px; background: #fff !important; color: #17283f !important; font-size: 14px; }
 .db-repair-orders-new__status-select > button { display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: start; cursor: pointer; }
 .db-repair-orders-new__status-select > button > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -6395,16 +6395,16 @@ html.customer-portal-active {
 .db-parts-workbench__summary .db-parts-workbench__add-part svg { inline-size:1rem; }
 .db-parts-workbench__views button > .db-parts-workbench__view-count { display:inline; min-inline-size:0; min-block-size:0; padding:0; border:0; border-radius:0; color:var(--text-secondary); font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace); font-size:.68rem; font-variant-numeric:tabular-nums; }
 .db-parts-workbench__views button[aria-current='page'] > .db-parts-workbench__view-count { color:currentColor; }
-.db-parts-workbench__toolbar { --parts-toolbar-control-height:2.875rem; position:relative; display:flex; flex:0 0 auto; flex-wrap:wrap; align-items:center; gap:.45rem; inline-size:100%; max-inline-size:100%; padding:.35rem 0 .55rem; border:0; background:transparent; }
+.db-parts-workbench__toolbar { --parts-toolbar-control-height:var(--control-height); position:relative; display:flex; flex:0 0 auto; flex-wrap:wrap; align-items:center; gap:.45rem; inline-size:100%; max-inline-size:100%; padding:.35rem 0 .55rem; border:0; background:transparent; }
 .db-parts-workbench__toolbar > * { min-inline-size:0; }
 .db-parts-workbench__filters,.db-parts-workbench__density { display:flex; align-items:center; gap:.2rem; min-inline-size:max-content; }
-.db-parts-workbench__filters,.db-parts-workbench__density { box-sizing:border-box; block-size:var(--parts-toolbar-control-height); min-block-size:var(--parts-toolbar-control-height); padding-inline:.2rem; border:1px solid color-mix(in srgb,var(--workspace-border) 72%,transparent); border-radius:.75rem; background:color-mix(in srgb,var(--surface-overlay) 72%,transparent); }
+.db-parts-workbench__filters,.db-parts-workbench__density { box-sizing:border-box; block-size:auto; min-block-size:var(--parts-toolbar-control-height); padding-inline:.2rem; border:1px solid color-mix(in srgb,var(--workspace-border) 72%,transparent); border-radius:.75rem; background:color-mix(in srgb,var(--surface-overlay) 72%,transparent); }
 .db-parts-workbench__filters button,.db-parts-workbench__density button,.db-parts-workbench__archive-link { min-block-size:44px; padding:.4rem .62rem; border:0; border-radius:.55rem; background:transparent; color:var(--text-secondary); font-size:.75rem; font-weight:750; }
 .db-parts-workbench__filters button[aria-pressed='true'],.db-parts-workbench__density button[aria-pressed='true'] { background:var(--surface-raised); color:var(--text-primary); }
 .db-parts-workbench__archive-link { display:inline-flex; align-items:center; gap:.35rem; border-color:transparent; }
 .db-parts-workbench__archive-link svg { inline-size:.95rem; }
 .db-parts-workbench__archive-link:disabled { opacity:.4; }
-.db-parts-workbench__toolbar .db-parts-workbench__search { box-sizing:border-box; flex:1 1 15rem; block-size:var(--parts-toolbar-control-height); min-block-size:var(--parts-toolbar-control-height); max-inline-size:21rem; }
+.db-parts-workbench__toolbar .db-parts-workbench__search { box-sizing:border-box; flex:1 1 15rem; block-size:auto; min-block-size:var(--parts-toolbar-control-height); max-inline-size:21rem; }
 .db-parts-workbench__density { margin-inline-start:auto; }
 .db-parts-workbench__bulk { display:flex; align-items:center; justify-content:space-between; gap:1rem; min-block-size:52px; padding:.45rem .65rem; border:1px solid var(--parts-selected-rule); border-radius:var(--parts-radius-panel); background:var(--surface-overlay); }
 .db-parts-workbench__bulk > strong { font-size:.82rem; }

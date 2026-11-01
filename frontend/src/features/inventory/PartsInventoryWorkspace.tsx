@@ -855,7 +855,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
         Customers, Repair Orders, and Shop Work surfaces. */}
     {workspaceView !== 'activity' &&
     <div className="db-parts-workbench__toolbar">
-      <label className="db-parts-workbench__search"><Search aria-hidden="true" /><span className="sr-only">Search parts</span><ControlInput type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search part, SKU, supplier, source number, or bin" /></label>
+      <label data-db-control-shell="field" className="db-parts-workbench__search"><Search aria-hidden="true" /><span className="sr-only">Search parts</span><ControlInput type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search part, SKU, supplier, source number, or bin" /></label>
       <div className="db-parts-workbench__filters" role="group" aria-label="Stock filter">
         <ControlButton controlKind="action" type="button" aria-pressed={stockFilter === 'all'} onClick={() => { setStockFilter('all'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }}>All</ControlButton>
         <ControlButton controlKind="action" type="button" aria-pressed={stockFilter === 'below_min'} onClick={() => { setStockFilter('below_min'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }}>Needs reorder</ControlButton>
