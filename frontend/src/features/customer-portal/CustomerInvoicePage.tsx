@@ -3,6 +3,7 @@ import { currentInvoicePaymentSummary } from '@/lib/invoicePaymentPresentation'
 import InvoicePaymentSummary from '@/components/InvoicePaymentSummary'
 import { invoicePaymentLabels } from '@/lib/invoicePaymentLabels'
 import InvoiceReviewLink from '@/components/InvoiceReviewLink'
+import SourceCollectionSummary from '@/features/source-collection/SourceCollectionSummary'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import type { Stripe } from '@stripe/stripe-js'
@@ -180,7 +181,7 @@ export default function CustomerInvoicePage() {
   const { data: repairOrder } = useQuery<RepairOrderDetail>({
     queryKey: ['repair-order-payment-detail', invoice?.repair_order_id],
     queryFn: async () => (await api.get(`/repair-orders/${invoice!.repair_order_id}/detail`)).data,
-    enabled: Boolean(invoice?.repair_order_id && !isHistoricalInvoice),
+    enabled: Boolean(invoice?.repair_order_id && !isHistoricalInvoice && !invoice.source_collection),
   })
 
   const { data: zelleInfo, isLoading: isZelleLoading } = useQuery<ZelleInfoResponse>({
@@ -194,7 +195,7 @@ export default function CustomerInvoicePage() {
   const { data: quickBooksPayment, isLoading: isQuickBooksLoading } = useQuery<QuickBooksPaymentAvailability>({
     queryKey: ['quickbooks-payment-availability', invoice?.id],
     queryFn: async () => (await api.get(`/quickbooks/payments/availability/${invoice!.id}`)).data,
-    enabled: Boolean(invoice && !isHistoricalInvoice && invoice.status !== 'paid' && legacySettlementMode),
+    enabled: Boolean(invoice && !isHistoricalInvoice && !invoice.source_collection && invoice.status !== 'paid' && legacySettlementMode),
   })
 
   const createIntentMutation = useMutation({
@@ -395,13 +396,24 @@ export default function CustomerInvoicePage() {
         </section>
 
         <InvoicePaymentSummary summary={paymentSummary} dark />
+        {invoice.source_collection && <SourceCollectionSummary summary={invoice.source_collection} dark />}
 
         {isHistoricalInvoice ? (
           <section className="mt-4 rounded-[14px] border border-[#232939] bg-[#161a26] p-5" aria-labelledby="historical-invoice-title">
             <h2 id="historical-invoice-title" className="font-bold text-[#eceef4]">Historical invoice</h2>
-            <p className="mt-2 text-sm text-[#c9cdd8]">This imported invoice is read-only. Online payments are unavailable for this record.</p>
-            <p className="mt-2 text-sm text-[#9aa1b3]">You can review the available invoice details and download the PDF below. Contact the shop with any questions.</p>
+            {invoice.source_collection?.is_source_history && invoice.source_collection.native_invoice_id ? <>
+              <p className="mt-2 text-sm text-[#c9cdd8]">This is the original ETS record. Collection is tracked on the linked DBN invoice.</p>
+              <a className="mt-3 inline-flex min-h-11 items-center font-semibold text-[#c4b1ff]" href={`/portal/invoices/${invoice.source_collection.native_invoice_id}`}>Open collection invoice</a>
+            </> : <>
+              <p className="mt-2 text-sm text-[#c9cdd8]">This imported invoice is read-only. Online payments are unavailable for this record.</p>
+              <p className="mt-2 text-sm text-[#9aa1b3]">You can review the available invoice details and download the PDF below. Contact the shop with any questions.</p>
+            </>}
           </section>
+        ) : !isPaid && invoice.source_collection && (invoice.source_collection.collection_enabled === false
+          || invoice.source_collection.state !== 'active'
+          || ['source_conflict', 'source_unavailable'].includes(invoice.source_collection.source_sync_state)
+          || legacySettlementMode) ? (
+          <p role="status" className="my-4 text-center text-sm">Contact the shop to confirm payment availability for this collection copy.</p>
         ) : paymentSummary && ['cancelled', 'unknown'].includes(paymentSummary.state) ? (
           <p className="my-4 text-center text-sm">{paymentSummary.state === 'cancelled' ? 'This invoice is cancelled.' : 'Contact the shop to confirm your current balance before paying.'}</p>
         ) : isPaid ? (

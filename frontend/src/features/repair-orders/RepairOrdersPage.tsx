@@ -55,6 +55,7 @@ import type { ViewMode } from '@/components/ViewToggle'
 import type { CustomerHistoryResponse } from '../customers/customerDetailFormat'
 import PriceBuilderPanel from './PriceBuilderPanel'
 import { ImportedBillingDetails } from './ImportedBillingDetails'
+import SourceCollectionPanel from '@/features/source-collection/SourceCollectionPanel'
 import { importedMoney, useImportedBilling } from './importedBilling'
 import RecommendedWorkPanel from './RecommendedWorkPanel'
 import VehicleIssuesPanel from '@/features/vehicle-issues/VehicleIssuesPanel'
@@ -5670,6 +5671,11 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
                     <p className="font-semibold text-slate-900">Invoice total {importedMoney(importedBilling?.total_amount)}</p>
                     <ImportedBillingDetails billing={importedBilling} failed={importedBillingQuery.isError} />
+                    {canVoidInvoices && importedBilling?.invoice_id && <SourceCollectionPanel
+                      key={`${currentUser?.tenant_id}:${currentUser?.id}:${currentUser?.role}:${authSessionEpoch}:${importedBilling.invoice_id}:${selectedOrder.customer_id}`}
+                      sourceInvoiceId={importedBilling.invoice_id}
+                      customerId={selectedOrder.customer_id}
+                    />}
                   </div>
                 )}
                 {!priceBuilderOwnsShell && (orderDetail ?? selectedOrder).status === 'completed' && !selectedOrder.is_internal && !importedEtsOrder && (

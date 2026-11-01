@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
 vi.mock('@/lib/api', () => ({ default: { get: mocks.get, post: mocks.post } }))
 import CustomerInvoicePage from '../CustomerInvoicePage'
 
-function renderInvoice(status: string, source: string | null = 'easy_truck_shop_import', state = status === 'sent' ? 'unpaid' : status, includeSummary = true) {
+function renderInvoice(status: string, source: string | null = 'easy_truck_shop_import', state = status === 'sent' ? 'unpaid' : status, includeSummary = true, collection?: Record<string, unknown>) {
   const summary: InvoicePaymentPresentation = {
     state: state as InvoicePaymentPresentation['state'],
     applied_amount: status === 'paid' ? '100.00' : '0.00',
@@ -18,7 +18,7 @@ function renderInvoice(status: string, source: string | null = 'easy_truck_shop_
   }
   mocks.get.mockImplementation(async (url: string) => {
     if (url === '/invoices/history-1') return { data: {
-      id: 'history-1', repair_order_id: 'archived-order', source, status,
+      source_collection: collection, id: 'history-1', repair_order_id: 'archived-order', source, status,
       invoice_number: 'HIST-1', order_number: 'RO-HIST-1', vehicle_info: 'Sample truck',
       subtotal: '100.00', total_amount: '100.00', shop_supplies_amount: '0.00',
       service_fee_amount: '0.00', tax_amount: '0.00', discount_amount: '0.00',
@@ -70,6 +70,22 @@ describe('historical customer invoices', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('$100.00')
     expect(screen.queryByText('Balance due')).not.toBeInTheDocument()
     expect(mocks.get.mock.calls.map(([url]) => url)).toEqual(['/invoices/history-1'])
+  })
+
+  it('shows a collection hold without querying archived work or falling back to legacy card collection', async () => {
+    renderInvoice('sent', 'ets_collection_handoff', 'unpaid', true, {
+      id: 'handoff-1', state: 'active', version: 1, source_invoice_number: '1687', source_service_number: '1821',
+      original_issued_total: '100.00', source_prior_allocated: '0.00', opening_principal: '100.00',
+      native_invoice_id: 'history-1', balance_due: '100.00', native_confirmed_principal: '0.00', native_pending_principal: '0.00',
+      source_observed_at: '2026-11-01T02:00:00Z', source_sync_state: 'source_unavailable',
+      accounting_state: 'external_reconciliation_pending', hold_reasons: ['source_stale'], collection_enabled: false,
+    })
+    await screen.findByRole('heading', { name: 'Collection copy of ETS invoice 1687' })
+    expect(screen.getByText('Contact the shop to confirm payment availability for this collection copy.')).toBeInTheDocument()
+    expect(screen.queryByRole('radiogroup', { name: 'Payment method' })).not.toBeInTheDocument()
+    expect(mocks.get.mock.calls.some(([url]) => url.includes('/repair-orders/'))).toBe(false)
+    expect(mocks.get.mock.calls.some(([url]) => url.includes('/quickbooks/'))).toBe(false)
+    expect(mocks.post).not.toHaveBeenCalled()
   })
 
   it.each([null, 'native'])('retains the payment-control error for non-imported source %s', async source => {
