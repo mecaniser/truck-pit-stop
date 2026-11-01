@@ -7505,9 +7505,9 @@ html.customer-portal-active {
 }
 @media (min-width: 960px) {
   .db-presentation-new .db-staff-main:has(.db-repair-orders-workspace--new) { padding: 12px 12px 0 !important; }
-  .db-presentation-new :is(.db-repair-orders-workspace--detail-open, .db-customers-workspace--detail-open) { column-gap: 0; }
+  .db-presentation-new :is(.db-repair-orders-workspace--detail-open, .db-customers-workspace--detail-open) { column-gap: 12px; }
   .db-presentation-new :is(.db-customer-detail-workspace, .db-repair-orders-workspace--detail-open > .db-slide-panel-workspace) {
-    border-radius: 0;
+    border-radius: 16px;
     box-shadow: none;
     border-inline: 0;
     border-inline-start: 1px solid var(--workspace-border);
