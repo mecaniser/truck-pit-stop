@@ -134,7 +134,7 @@ export default function ShopWorkOverview({ data, loading, failed, refreshing, on
   }
   const overdue = (item: ShopWorkItem) => item.due_kind === 'repair_promise' && !!item.due_at && Date.parse(item.due_at) < clock
   return <div className="db-overview db-operating-surface__scroller" aria-label="Shop Work overview" aria-busy={refreshing}>
-    {failed && <div className="db-overview__warning" role="alert"><CloudOff aria-hidden="true" /><div><strong>Refresh failed. Showing the last checked work.</strong><span>Last checked {checkedTime}. New or completed tasks may not be reflected.</span></div><ControlButton type="button" onClick={onRetry}>Retry</ControlButton></div>}
+    {failed && <div className="db-overview__warning" role="alert"><CloudOff aria-hidden="true" /><div><strong>Refresh failed. Showing the last checked work.</strong><span>Last checked {checkedTime}. New or completed tasks may not be reflected.</span></div><ControlButton type="button" className="db-work-control" onClick={onRetry} disabled={refreshing}>Retry</ControlButton></div>}
     <div className="db-overview__grid">
       <section aria-labelledby="overview-attention-title">
         <header className="db-overview__section-heading db-overview__attention-heading">
@@ -172,7 +172,7 @@ export default function ShopWorkOverview({ data, loading, failed, refreshing, on
               <ControlButton type="button" className="db-overview__link" aria-label={`${item.action_label}: ${item.title}`} onClick={() => onOpen(item.destination)}>{item.action_label}<ArrowUpRight aria-hidden="true" /></ControlButton>
             </article>
           })}</div>
-        </> : <div className="db-overview__empty" role="status"><CheckCircle2 aria-hidden="true" /><h3>{allChecked ? 'You’re caught up in your available workspaces' : 'No confirmed actions in the checked work'}</h3><p>{allChecked ? 'No action is due in the areas you can access. Upcoming commitments stay alongside.' : 'Review the flagged areas before treating the shop as clear.'}</p></div>}
+        </> : <div className="db-overview__empty" role="status">{allChecked ? <CheckCircle2 aria-hidden="true" /> : <CircleAlert aria-hidden="true" />}<h3>{allChecked ? 'You’re caught up in your available workspaces' : 'No confirmed actions in the checked work'}</h3><p>{allChecked ? 'No action is due in the areas you can access. Upcoming commitments stay alongside.' : 'Review the flagged areas before treating the shop as clear.'}</p></div>}
         {visibleCount < data.actions.length && <ControlButton type="button" className="db-overview__more" onClick={() => setVisibleCount(count => count + 6)}>Show next {Math.min(6, data.actions.length - visibleCount)} tasks</ControlButton>}
         {data.has_more_actions && actionOverflow.length > 0 && visibleCount >= data.actions.length && <div className="db-overview__overflow"><p>{data.actions_total == null ? 'Some areas need review in their workspace.' : 'More work is available in the owning workspaces.'}</p>{actionOverflow.map(s => <ControlButton type="button" key={s.id} onClick={() => onWorkspace(SOURCE[s.id].path)}>{SOURCE[s.id].label}<ArrowUpRight aria-hidden="true" /></ControlButton>)}</div>}
       </section>

@@ -124,3 +124,33 @@ All seven Quality gates jobs passed on published integrationaa180375, run4134728
 November1: User authorizes safe release through the curated queue; orchestrator explicitly directs741 first and requires confirmation that main is stable before736 merge. Latest mainaa549f2e (PR744 retired duplicate display) merges automatically with no conflicts. Existing ShopWork backend logic remains unchanged;70in-memory backend tests covering overview and retired display pass. No deployment configuration or migration changes in this advancement.
 
 The implementation owner is concurrently refining further ShopWork UI and has not published that sweep. It is not included or claimed verified here. Read-only production auth/me confirms the genuine active owner92059ce6… in TruckPitStop tenant828acd84…. No credentials extracted; the temporary preflight tab was closed. Published736 remainsdecaf8dd/draft with7/7CI success. This local main advancement is not a final release candidate until741/main confirmation, the owner handoff and exact-head checks. No ready/merge/deploy/approval or business writes.
+
+## Shop Work consistency sweep — 2026-11-01
+
+Frontend & UX owns this Fast UI follow-up. All four views, filters, empty/recovery states and Lightning Order were reviewed against the compact workspace design. Existing API, permission, financial and data contracts are unchanged.
+
+- Activity now uses chronological day groups and readable record rows instead of oversized date columns and actor regrouping. One named Filters control contains staff/type/date inputs; incomplete coverage uses an anchored status explanation. Loading, denied, unavailable, empty and older-page failures remain distinct. A failed older-page request preserves the visible records and one retry action.
+- Active work hides all-zero category controls, Unknown0 and inert pagination only when genuinely empty and unfiltered. Filtered empty states retain recovery; an empty later page retains Previous. Reset closes the filter panel and returns focus.
+- Closeout value stays in Closeout, missing value is an em dash, and single-lane rows do not repeat the lane label. Mixed-lane rows retain their labels. Overview lead spacing and retry states are consistent; incomplete empty coverage does not display a success check.
+- Lightning Order uses workspace appearance tokens for its form, fields and validation. No creation or financial workflow changed.
+- Activity selection is represented in the URL and restored after record navigation; freshness uses Activity's own query timestamp.
+
+### Integrated verification
+
+The draft PR advanced independently to `decaf8dd` during this sweep. Its current-main integration and shared controls were merged into this checkout, preserving all upstream work. Three component conflicts were reconciled by retaining the sweep behavior and applying shared ControlButton/ControlInput and headless-trigger geometry. New styles own color/emphasis; shared controls own size. The historical all-green run41348179512 belongs to `decaf8dd`, not this new sweep.
+
+Final integrated checks: **71 tests across five suites passed** (Overview13, Closeout ledger19, Active work16, Activity6, Dashboard presentation17), changed-source ESLint passed, shared-control guard passed, and TypeScript/Vite production build passed. Diff checks passed. Initial nested-popover focus and reset-focus failures were corrected before this final run. No backend change was introduced by this sweep.
+
+Actual API-backed Quiet QA browser acceptance covers all four views, exact repair selection and return paths, zero active jobs with remaining Overview tasks, filter selection/reset, both date inputs, error/validation styling, desktop/mobile and day/night. No order was created or invoice/payment state changed. Test appearance was restored to Night; viewport override reset. After integration, repeated nested selection/reset, exact1049 record/Back-to-Activity, empty Active, and390px calendar checks pass. Shared filter control measures34px desktop and44px mobile; mobile page/scroll widths are390px and calendar bounds are x54–374/y391.5–756, above mobile navigation. Transient Vite import errors occurred while merge-conflict markers were present; the resolved app subsequently rendered and navigated successfully, with no later error entries.
+
+Runtime receipt, November1 approximately16:05 America/New_York: same `codex/shop-work-overview` implementation worktree, sweep commit `5bf9297a` with reconciled integration changes pending merge commit during checks. Frontend5215/PID92275 serves this worktree's frontend; API8041 container `dieselbridge_api_db151` mounts its backend at `/app`. Database remains `postgres/truckpitstop_db151`; schema196 remains compatible. Frontend-proxied readiness passes with DB/Redis healthy. Startup badge still shows5b46bd3; process/source evidence and rendered shared controls corroborate the actual updated source. Local preview is **aligned and browser-verified**. Shared5173/8000 and production remain untouched.
+
+Updated actual-app screenshots (synthetic local records only):
+
+- [Desktop Activity](assets/db151/activity-refined.png)
+- [Mobile Activity](assets/db151/activity-mobile.png)
+- [Mobile calendar](assets/db151/activity-calendar-mobile.png)
+- [Empty Active work](assets/db151/active-empty-refined.png)
+- [Day Activity and Lightning Order, before shared-control integration](assets/db151/activity-lightning-day.png)
+
+PR736 remains draft and In Review. New sweep CI is pending. No merge/deployment or production acceptance; not Done.
