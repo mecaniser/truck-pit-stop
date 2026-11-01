@@ -38,6 +38,10 @@ async page => {
       }
     }
   }
+  await page.getByRole('heading', { name: 'Shared controls', exact: true }).click()
+  await page.getByRole('button', { name: 'Overdue', exact: true }).click()
+  const pointerShadow = await page.getByRole('button', { name: 'Overdue', exact: true }).evaluate(e => getComputedStyle(e).boxShadow)
+  if (pointerShadow !== 'none') throw new Error('Legacy pointer focus shadow remains')
   const disabled = page.getByRole('button', { name: 'Unavailable', exact: true })
   if (!await disabled.isDisabled()) throw new Error('Disabled control became interactive')
   await page.emulateMedia({ forcedColors: 'active' })

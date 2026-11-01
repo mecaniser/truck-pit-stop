@@ -58,6 +58,10 @@ body:has([data-db-touch-controls]), [data-db-touch-controls] { --control-height:
   outline-offset: -2px !important;
   box-shadow: none !important;
 }
+[data-db-control]:not([data-db-control='content']):focus:not(:focus-visible) {
+  outline: none !important;
+  box-shadow: none !important;
+}
 /* Proxy shells wrap a complete bordered control; field shells own the border
    and icon. Both grow with content instead of retaining an old fixed height. */
 [data-db-control-shell] {
