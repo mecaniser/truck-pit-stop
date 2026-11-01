@@ -49,3 +49,13 @@ Intended checkout `/Users/sergio_m1_promax/.codex/worktrees/team-contrast/truck-
 Initial candidate port8021 became occupied before startup; that failed candidate container was removed and this task uses8031. Shared dependency-cache interference was resolved with this task's separate Vite cache. The local WebSocket endpoint returned403 during an earlier legacy-login pass; HTTP reads and all rendered acceptance checks worked. Live push delivery is not claimed by this color-only change.
 
 http://127.0.0.1:5201/dashboard/garage/mechanics is **aligned and browser-verified**. Mock routes were removed after QA. Local acceptance is separate from protected CI, merge and deployment; no production release is claimed.
+
+## User-directed machined tile refinement — 2026-11-01
+
+The initial hover rectangle came from the new generic `[role="button"]` inset-shadow rule acting on the card's inner target. User requests its removal, removal of the priority stripe, and the sidebar icons' machined material on the tile itself.
+
+Removed the priority-border mapping and `border-l-4`, removed the generic inner-role hover shadow, and moved tile padding onto the click target so the full surface is interactive. The outer tile now follows the sidebar glyph's 145-degree lit face, inset upper highlight and shallow contact shadow, with light steel and dark navy treatments. Hover changes only the outer elevation. Status dots/text remain the attention cues. Keyboard focus is a 2px outline around the entire outer tile; Enter navigates successfully. High contrast and forced colors use a uniform 1px all-around boundary and no gradient/shadow; there is no dedicated left marker.
+
+Batched signed-in checks at1440px and390px in all three modes verify no inner hover outline/shadow, equal left/right edges, and readable text/graphics at both gradient endpoints (text minimum4.94:1; graphics3.31:1). Second confirmation fixes High contrast hover specificity and verifies forced-colors fallback. Browser screenshot review confirms the material and compact containment. Eight focused MechanicsPage/MyGarage tests, TypeScript/build and diff integrity pass. Prior broader contrast evidence remains applicable outside this tile; this section supersedes the earlier board screenshots' visual treatment.
+
+Latest images: [light desktop](db151-team-contrast/tile-light-1440.png), [dark compact](db151-team-contrast/tile-dark-390.png), [tile close-up](db151-team-contrast/tile-closeup.png). Runtime remains5201/PID38836 and matching8031 API, same branch/base58727bfa with served edits; proxied DB/Redis ready, existing fixture DB/schema and sandbox settings unchanged. No records mutated. PR732 updated; release still pending.

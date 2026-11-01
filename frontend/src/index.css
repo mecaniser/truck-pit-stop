@@ -2531,9 +2531,6 @@ html::-webkit-scrollbar-thumb:hover {
 .db-presentation-new .db-team-colors button[style*="color"]:not([style*="background"]) { color: var(--team-info) !important; }
 .db-presentation-new .db-team-colors [class*="text-[var(--accent-"] { color: var(--team-info) !important; }
 .db-presentation-new .db-team-colors button[class*="hover:opacity"]:hover { opacity: 1; }
-.db-presentation-new .db-team-colors .border-l-red-500 { border-left-color: var(--parts-status-danger) !important; }
-.db-presentation-new .db-team-colors .border-l-amber-400 { border-left-color: var(--parts-status-warning) !important; }
-.db-presentation-new .db-team-colors .border-l-emerald-500 { border-left-color: var(--parts-status-success) !important; }
 .db-presentation-new .db-team-colors .w-2\.5.bg-zinc-600 { background: var(--team-control) !important; }
 
 .db-presentation-new .db-team-colors :is(.h-2[class*="bg-zinc-"], .h-2[class*="bg-white/"]) { background: var(--team-track) !important; }
@@ -2541,7 +2538,7 @@ html::-webkit-scrollbar-thumb:hover {
 .db-presentation-new .db-team-colors :is(.animate-pulse) { animation: none; }
 .db-presentation-new .db-team-colors :is(button, [role="button"], input, select, textarea):focus-visible { outline: 2px solid var(--team-info); outline-offset: 2px; }
 @media (hover: hover) {
-.db-presentation-new .db-team-colors :is(button, [role="button"]):not(:disabled):hover { box-shadow: inset 0 0 0 1px var(--team-control); }
+.db-presentation-new .db-team-colors button:not(:disabled):hover { box-shadow: inset 0 0 0 1px var(--team-control); }
 }
 @media (forced-colors: active) {
 .db-presentation-new .db-team-colors :is(button, input, select, textarea, [role="button"]) { border-color: ButtonText !important; }
@@ -2549,6 +2546,55 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 .db-presentation-new .db-team-colors .db-datepicker__trigger[aria-expanded] { color: var(--team-info) !important; }
+
+/* The technician tile uses the sidebar glyph's machined material: a lit
+   upper edge and shallow contact shadow, rather than a priority stripe. */
+.db-presentation-new .db-team-colors .db-technician-tile {
+  --tile-face: var(--surface-raised);
+  --tile-highlight: #fff;
+  --tile-edge: rgb(255 255 255 / .9);
+  --tile-shadow: rgb(19 35 61 / .14);
+  border: 0 !important;
+  border-radius: 14px;
+  background: linear-gradient(145deg, var(--tile-highlight), var(--tile-face)) !important;
+  box-shadow: inset 0 1px 0 var(--tile-edge), inset 0 -1px 0 rgb(19 35 61 / .10), 0 3px 5px var(--tile-shadow);
+  transition: box-shadow 160ms ease-out;
+}
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-technician-tile {
+  --tile-highlight: #25364b;
+  --tile-edge: rgb(255 255 255 / .2);
+  --tile-shadow: rgb(0 0 0 / .28);
+}
+.db-presentation-new .db-team-colors .db-technician-tile__target {
+  border-radius: inherit;
+  outline: none !important;
+  box-shadow: none;
+}
+.db-presentation-new .db-team-colors .db-technician-tile:has(> .db-technician-tile__target:focus-visible) {
+  outline: 2px solid var(--team-info);
+  outline-offset: 3px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .db-presentation-new .db-team-colors .db-technician-tile:has(> .db-technician-tile__target:hover) {
+    box-shadow: inset 0 1px 0 var(--tile-edge), inset 0 -1px 0 rgb(19 35 61 / .10), 0 4px 7px var(--tile-shadow);
+  }
+}
+.db-presentation-new[data-appearance-mode='high_contrast'] .db-team-colors .db-technician-tile {
+  background: var(--surface-raised) !important;
+  border: 1px solid var(--workspace-border) !important;
+  box-shadow: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .db-presentation-new .db-team-colors .db-technician-tile { transition: none; }
+}
+@media (forced-colors: active) {
+  .db-presentation-new .db-team-colors .db-technician-tile {
+    background: Canvas !important;
+    border: 1px solid CanvasText !important;
+    box-shadow: none !important;
+  }
+  .db-presentation-new .db-team-colors .db-technician-tile:has(> .db-technician-tile__target:focus-visible) { outline-color: Highlight; }
+}
 
 /* A Team dialog must keep its footer above the compact navigation. */
 @media (max-width: 767px) {

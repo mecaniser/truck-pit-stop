@@ -78,11 +78,6 @@ interface TeamBoardResponse {
 const toHours = (minutes: number) => (minutes / 60).toFixed(1)
 
 const PRIORITY_ORDER: Record<AttentionPriority, number> = { red: 0, yellow: 1, green: 2 }
-const PRIORITY_BORDER: Record<AttentionPriority, string> = {
-  red: 'border-l-red-500',
-  yellow: 'border-l-amber-400',
-  green: 'border-l-emerald-500',
-}
 const PRIORITY_LED: Record<AttentionPriority, 'error' | 'warning' | 'active'> = {
   red: 'error',
   yellow: 'warning',
@@ -253,12 +248,12 @@ export default function MechanicsBoardPage() {
             return (
               <Card
                 key={m.mechanic_id}
-                hover
                 padding="none"
-                className={`p-4 cursor-pointer border-l-4 ${PRIORITY_BORDER[m.attention_priority]} animate-[fadeIn_0.3s_ease-out_forwards] opacity-0`}
+                className="db-technician-tile animate-[fadeIn_0.3s_ease-out_forwards] opacity-0"
                 style={staggeredReveal(index)}
               >
                 <div
+                  className="db-technician-tile__target p-4 cursor-pointer"
                   role="button"
                   tabIndex={0}
                   aria-label={`Open technician board for ${m.mechanic_name}`}
