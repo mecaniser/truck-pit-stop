@@ -24,3 +24,10 @@
   color: #475569;
   border: 1px solid #cbd5e1;
 }
+
+.db-imported-billing-review { grid-column: 1 / -1; width: 100%; min-width: 0; border-left: 3px solid #b45309; padding: 8px 12px; color: var(--db-ledger-text, #14243a); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.db-imported-billing-review h3 { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+.db-imported-billing-review h3 svg { color: #b45309; flex-shrink: 0; }
+.db-imported-billing-review ul { list-style: disc; padding-left: 18px; margin-top: 4px; }
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-imported-billing-review { border-color: #fbbf24; }
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-imported-billing-review h3 svg { color: #fbbf24; }
