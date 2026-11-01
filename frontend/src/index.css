@@ -2829,7 +2829,7 @@ html::-webkit-scrollbar-thumb:hover {
 
 .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item:focus-visible {
   outline: 2px solid var(--personal-accent-400);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -7401,13 +7401,14 @@ html.customer-portal-active {
 .db-parts-workbench__supplier-name,.db-parts-workbench__source-name { overflow-wrap:anywhere; }
 
 
-/* DB-150: one shared 12px gutter separates navigation from the working
-   surface. Page content adds no second inset or enclosing frame. */
-.db-presentation-new .db-staff-main:has(.db-parts-workbench, .db-customers-workspace, .db-repair-orders-workspace--new, .db-shop-work-new) {
+/* DB-150 / DB-043: the shared My Shop shell owns its 12px gutter,
+   including while a section loads or fails. Switching sections must not move
+   the breadcrumb or navigation. Page content adds no second inset. */
+.db-presentation-new .db-staff-main:has(.db-my-shop-workspace, .db-customers-workspace, .db-repair-orders-workspace--new, .db-shop-work-new) {
   padding-inline: 12px !important;
   padding-top: 12px !important;
 }
-.db-presentation-new .db-staff-main:has(.db-parts-workbench, .db-customers-workspace, .db-repair-orders-workspace--new, .db-shop-work-new) > .db-staff-content {
+.db-presentation-new .db-staff-main:has(.db-my-shop-workspace, .db-customers-workspace, .db-repair-orders-workspace--new, .db-shop-work-new) > .db-staff-content {
   padding-inline: 0;
 }
 .db-presentation-new .db-parts-workbench { padding: 0; }
@@ -7432,7 +7433,7 @@ html.customer-portal-active {
 }
 
 @media (min-width: 960px) {
-  .db-presentation-new .db-staff-main:has(.db-parts-workbench, .db-customers-workspace, .db-repair-orders-workspace--new, .db-shop-work-new) { padding-bottom: 0 !important; }
+  .db-presentation-new .db-staff-main:has(.db-my-shop-workspace, .db-customers-workspace, .db-repair-orders-workspace--new, .db-shop-work-new) { padding-bottom: 0 !important; }
 }
 
 
