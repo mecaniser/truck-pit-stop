@@ -7656,3 +7656,15 @@ html.customer-portal-active {
  .db-parts-workbench__sort-direction { min-inline-size:0; }
  .db-parts-workbench__sorting [role='combobox'] { padding-inline:10px; }
 }
+
+/* Inventory's independent inspector follows the same outer corners as the
+   order workspace; mobile keeps its page scroll and full-width detail flow. */
+.db-presentation-new .db-parts-workbench__inspector { border-radius:16px; }
+.db-parts-workbench__inspector > .db-parts-workbench__selected-action { border-start-start-radius:inherit; border-start-end-radius:inherit; }
+@container parts-workbench (min-width:40rem) {
+ .db-presentation-new .db-parts-workbench__inspector { overflow:auto; }
+}
+@container parts-workbench (min-width:80.01rem) {
+ .db-parts-workbench__body { grid-template-columns:minmax(0,3fr) minmax(28rem,2fr); column-gap:12px; }
+ .db-parts-workbench__ledger-workspace,.db-parts-workbench__ledger { border-inline-end:0; }
+}
