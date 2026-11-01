@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, cast, Date, or_, case, literal, String
 from pydantic import BaseModel, Field
@@ -50,6 +50,9 @@ from app.services.mechanic_time_service import (
 
 from app.schemas.wip_aging import WipAgingResponse, WipCategoryFilter, WipFilters, WipTiming, WipSort
 from app.services.wip_aging import read_wip_aging
+
+from app.schemas.shop_work_overview import ShopWorkOverview
+from app.services.shop_work_overview import read_shop_work_overview
 
 router = APIRouter()
 
@@ -531,6 +534,18 @@ async def _load_dashboard_action_queue(
         orders_ready_to_close=orders_ready_to_close[:ACTION_QUEUE_LANE_LIMIT],
         orders_ready_to_close_has_more=len(orders_ready_to_close) > ACTION_QUEUE_LANE_LIMIT,
     )
+
+
+@router.get("/shop-work-overview", response_model=ShopWorkOverview)
+async def get_shop_work_overview(
+    response: Response,
+    limit: int = Query(default=50, ge=1, le=100),
+    upcoming_limit: int = Query(default=20, ge=1, le=50),
+    current_user: User = Depends(get_current_active_user),
+):
+    response.headers["Cache-Control"] = "private, no-store"
+    return await read_shop_work_overview(current_user, native_predicate=_native_billing_work_predicate(),
+                                         limit=limit, upcoming_limit=upcoming_limit)
 
 
 @router.get("/wip-aging", response_model=WipAgingResponse)

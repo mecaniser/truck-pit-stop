@@ -69,7 +69,7 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
       <div className="proximity-map-controls">{homeAddress && <ControlButton controlKind="action" type="button" title={homeAddress} disabled={!home.point} onClick={() => { select(undefined); setHomeVisit(value => value + 1) }}><Home size={16} />Home</ControlButton>}<ControlButton type="button" onClick={() => setRecenter(value => value + 1)}><LocateFixed size={16} />Recenter</ControlButton></div>
       </div>
       <div className="proximity-search-toolbar">
-        <label className="proximity-search"><Search size={17} /><ControlInput ref={searchRef} type="search" aria-label="Find truck" placeholder="Find truck or driver" value={query} onChange={event => setQuery(event.target.value)} /></label>
+        <label data-db-control-shell="field" className="proximity-search"><Search size={17} /><ControlInput ref={searchRef} type="search" aria-label="Find truck" placeholder="Find truck or driver" value={query} onChange={event => setQuery(event.target.value)} /></label>
       </div>
     </header>
     <div className="proximity-workspace">

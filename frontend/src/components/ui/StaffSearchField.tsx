@@ -21,7 +21,7 @@ export default function StaffSearchField({
 }: StaffSearchFieldProps) {
   return (
     <div className={`db-staff-search-field-inset${className ? ` ${className}` : ''}`}>
-      <label className="db-staff-search-field">
+      <label data-db-control-shell="proxy" className="db-staff-search-field">
         <span className="sr-only">{accessibleLabel}</span>
         <Search aria-hidden="true" />
         <ControlInput

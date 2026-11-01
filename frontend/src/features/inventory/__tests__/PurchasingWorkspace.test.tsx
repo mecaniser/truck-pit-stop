@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
@@ -14,7 +14,7 @@ vi.mock('@/stores/authStore', () => {
   return { useAuthStore }
 })
 vi.mock('@/features/suppliers/SuppliersPage', () => ({ default: () => <div>Suppliers workspace</div> }))
-vi.mock('../PartsOperationsWorkspace', () => ({ default: () => <div>Purchase orders workspace</div> }))
+vi.mock('../PartsOperationsWorkspace', () => ({ default: (props: { initialPurchaseOrderId?: string; initialReturnId?: string; initialCoreId?: string; initialCustodyView?: string }) => <div>Purchase orders workspace<output data-testid="operation-props">{JSON.stringify(props)}</output></div> }))
 
 import PurchasingWorkspace from '../PurchasingWorkspace'
 import {
@@ -56,12 +56,14 @@ function storePreparation(lines: PurchasePreparationLine[]) {
   window.sessionStorage.setItem(purchasePreparationStorageKey(), JSON.stringify(lines))
 }
 
-function renderPurchasing() {
+function LocationProbe() { const location = useLocation(); const navigate = useNavigate(); return <><output data-testid="route">{location.pathname}{location.search}</output><button onClick={() => navigate(-1)}>Browser back</button></> }
+
+function renderPurchasing(entry = '/dashboard/garage/purchasing?view=orders') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/dashboard/garage/purchasing?view=orders']}>
-        <PurchasingWorkspace />
+      <MemoryRouter initialEntries={[entry]}>
+        <PurchasingWorkspace /><LocationProbe />
       </MemoryRouter>
     </QueryClientProvider>,
   )
@@ -176,5 +178,40 @@ describe('DB-038 Purchasing preparation handoff', () => {
     expect(await screen.findByText('Read-only access. Owners and admins can create draft purchase orders.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Create 1 draft order' })).toBeDisabled()
     expect(apiMocks.post).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('DB-151 Purchasing route context', () => {
+  afterEach(() => { apiMocks.get.mockReset(); window.sessionStorage.clear() })
+  it.each([
+    ['view=receiving&purchase_order=po-requested', 'initialPurchaseOrderId', 'po-requested'],
+    ['view=returns&return=return-requested', 'initialReturnId', 'return-requested'],
+    ['view=returns&core=core-requested', 'initialCoreId', 'core-requested'],
+  ])('passes exact selection through %s', async (query, prop, id) => {
+    apiMocks.get.mockResolvedValue({ data: { low_stock_count: 0, open_purchase_order_count: 0 } })
+    renderPurchasing(`/dashboard/garage/purchasing?${query}&shop_work=overview`)
+    const props = JSON.parse((await screen.findByTestId('operation-props')).textContent!)
+    expect(props[prop]).toBe(id)
+    if (prop === 'initialCoreId') expect(props.initialCustodyView).toBe('cores')
+    expect(screen.getByRole('button', { name: 'Back to Shop Work' })).toBeInTheDocument()
+  })
+  it('preserves exact PO and safe origin across area changes and browser back', async () => {
+    apiMocks.get.mockResolvedValue({ data: { low_stock_count: 0, open_purchase_order_count: 0 } })
+    renderPurchasing('/dashboard/garage/purchasing?view=orders&purchase_order=po-requested&shop_work=overview')
+    await userEvent.click(await screen.findByRole('button', { name: 'Receiving', exact: true }))
+    expect(screen.getByTestId('route')).toHaveTextContent('view=receiving&purchase_order=po-requested&shop_work=overview')
+    expect(JSON.parse(screen.getByTestId('operation-props').textContent!).initialPurchaseOrderId).toBe('po-requested')
+    await userEvent.click(screen.getByRole('button', { name: 'Browser back' }))
+    expect(screen.getByTestId('route')).toHaveTextContent('view=orders&purchase_order=po-requested&shop_work=overview')
+    await userEvent.click(screen.getByRole('button', { name: 'Back to Shop Work' }))
+    expect(screen.getByTestId('route')).toHaveTextContent('/dashboard?work_view=overview')
+  })
+  it('keeps a Shop Work exit available when the feature is unavailable', async () => {
+    apiMocks.get.mockRejectedValue({ response: { status: 404 } })
+    renderPurchasing('/dashboard/garage/purchasing?view=orders&shop_work=overview')
+    expect(await screen.findByText('Purchasing is not available for this shop right now.')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Back to Shop Work' }))
+    expect(screen.getByTestId('route')).toHaveTextContent('/dashboard?work_view=overview')
   })
 })

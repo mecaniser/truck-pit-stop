@@ -5,6 +5,7 @@ import { ArrowLeft, ClipboardCheck, PackageCheck, RotateCcw, Store, Truck } from
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import api from '@/lib/api'
+import { shopWorkReturnUrl, shopWorkQueryScope } from '@/features/dashboard/shopWorkNavigation'
 import QuantityStepper from '@/components/QuantityStepper'
 import { useAuthStore } from '@/stores/authStore'
 import SuppliersPage from '@/features/suppliers/SuppliersPage'
@@ -89,14 +90,25 @@ function batchIdempotencyKey(lines: PurchasePreparationLine[]) {
 }
 
 export default function PurchasingWorkspace() {
+  const queryScope = useAuthStore(state => shopWorkQueryScope(state.user, state.authSessionEpoch))
+  return <PurchasingWorkspaceContent key={queryScope} queryScope={queryScope} />
+}
+
+function PurchasingWorkspaceContent({ queryScope }: { queryScope: string }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const role = useAuthStore((state) => state.user?.role)
   const mayRead = role === 'garage_owner' || role === 'garage_admin' || role === 'receptionist'
   const view = purchasingView(searchParams.get('view'))
   const linkedPurchaseOrderId = searchParams.get('purchase_order')
+  const linkedReturnId = searchParams.get('return')
+  const linkedCoreId = searchParams.get('core')
+  const returnUrl = shopWorkReturnUrl(searchParams)
+  const returnAction = returnUrl && <ControlButton type="button" className="min-h-11 px-3 text-sm font-semibold underline" onClick={() => navigate(returnUrl)}>Back to Shop Work</ControlButton>
+  const inventoryUrl = `/dashboard/garage/inventory${returnUrl ? '?shop_work=overview' : ''}`
   const summaryQuery = useQuery<Summary>({
-    queryKey: ['parts-operations', 'summary'],
+    queryKey: ['parts-operations', 'summary', queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get('/parts-operations/summary')).data,
     enabled: mayRead,
     retry: false,
@@ -114,20 +126,37 @@ export default function PurchasingWorkspace() {
     }
   }, [])
 
-  if (!mayRead) return <div className="db-purchasing__gate" role="alert">Purchasing is available to shop owners, admins, and reception staff.</div>
-  if (summaryQuery.isPending) return <div className="db-purchasing__gate" role="status">Opening Purchasing…</div>
-  if (summaryQuery.isError) return <div className="db-purchasing__gate" role="alert"><span>Purchasing is not available for this shop right now.</span><ControlButton type="button" onClick={() => void summaryQuery.refetch()}>Retry</ControlButton></div>
+  if (!mayRead) return <div className="db-purchasing__gate" role="alert">Purchasing is available to shop owners, admins, and reception staff.{returnAction}</div>
+  if (summaryQuery.isPending) return <div className="db-purchasing__gate" role="status">Opening Purchasing…{returnAction}</div>
+  if (summaryQuery.isError) return <div className="db-purchasing__gate" role="alert"><span>Purchasing is not available for this shop right now.</span>{returnAction}<ControlButton type="button" onClick={() => void summaryQuery.refetch()}>Retry</ControlButton></div>
 
-  const selectView = (next: PurchasingView) => setSearchParams({ view: next }, { replace: true })
+  const selectView = (next: PurchasingView) => {
+    const params = new URLSearchParams(searchParams)
+    params.set('view', next)
+    setSearchParams(params)
+  }
+  const selectRecord = (kind: 'purchase_order' | 'return' | 'core', id: string) => {
+    const params = new URLSearchParams(searchParams)
+    params.set(kind, id)
+    if (kind !== 'purchase_order') params.set('custody', kind === 'core' ? 'cores' : 'returns')
+    setSearchParams(params, { replace: true })
+  }
+  const custodyView = searchParams.get('custody') === 'cores' ? 'cores' : searchParams.get('custody') === 'returns' ? 'returns' : linkedCoreId && !linkedReturnId ? 'cores' : 'returns'
+  const selectCustodyView = (next: 'returns' | 'cores') => {
+    const params = new URLSearchParams(searchParams)
+    params.set('custody', next)
+    setSearchParams(params)
+  }
   const summary = summaryQuery.data
 
   return <section className="db-purchasing" aria-labelledby="purchasing-title">
+    {returnAction}
     <header className="db-purchasing__header">
       <div>
         <h1 id="purchasing-title">Purchasing</h1>
         <p>Prepare supplier orders, receive deliveries, and close the loop on returns and cores.</p>
       </div>
-      <ControlButton type="button" onClick={() => navigate('/dashboard/garage/inventory')}>
+      <ControlButton type="button" onClick={() => navigate(inventoryUrl)}>
         <ArrowLeft aria-hidden="true" />Parts & inventory
       </ControlButton>
     </header>
@@ -147,8 +176,8 @@ export default function PurchasingWorkspace() {
 
     <div className="db-purchasing__content db-operating-surface__scroller">
       {view === 'orders' && <>
-        <PurchasePreparationTray onCreated={() => selectView('orders')} onOpenParts={() => navigate('/dashboard/garage/inventory')} />
-        <PartsOperationsWorkspace key={`purchasing-orders-${linkedPurchaseOrderId || 'default'}`} summary={summary} initialTab="purchase-orders" initialPurchaseOrderId={linkedPurchaseOrderId} visibleTabs={['purchase-orders']} embedded />
+        <PurchasePreparationTray onCreated={() => selectView('orders')} onOpenParts={() => navigate(inventoryUrl)} />
+        <PartsOperationsWorkspace key={`purchasing-orders-${linkedPurchaseOrderId || 'default'}`} summary={summary} initialTab="purchase-orders" initialPurchaseOrderId={linkedPurchaseOrderId} onRecordSelect={selectRecord} visibleTabs={['purchase-orders']} embedded />
       </>}
 
       {view === 'suppliers' && <>
@@ -158,12 +187,12 @@ export default function PurchasingWorkspace() {
 
       {view === 'receiving' && <>
         <WorkspaceIntroduction title="Receiving">Open a submitted purchase order, record the delivered quantity and cost, and let inventory update from the receipt.</WorkspaceIntroduction>
-        <PartsOperationsWorkspace key="purchasing-receiving" summary={summary} initialTab="purchase-orders" purchaseOrderMode="receiving" visibleTabs={['purchase-orders']} embedded />
+        <PartsOperationsWorkspace key={`purchasing-receiving-${linkedPurchaseOrderId || "default"}`} summary={summary} initialPurchaseOrderId={linkedPurchaseOrderId} onRecordSelect={selectRecord} initialTab="purchase-orders" purchaseOrderMode="receiving" visibleTabs={['purchase-orders']} embedded />
       </>}
 
       {view === 'returns' && <>
         <WorkspaceIntroduction title="Returns & cores">Track parts going back to suppliers and the refundable cores the shop still holds.</WorkspaceIntroduction>
-        <PartsOperationsWorkspace key="purchasing-returns" summary={summary} initialTab="returns-cores" visibleTabs={['returns-cores']} embedded />
+        <PartsOperationsWorkspace key={`purchasing-returns-${custodyView}-${linkedReturnId || "default"}-${linkedCoreId || "default"}`} summary={summary} initialReturnId={linkedReturnId} initialCoreId={linkedCoreId} initialCustodyView={custodyView} onCustodyViewChange={selectCustodyView} onRecordSelect={selectRecord} initialTab="returns-cores" visibleTabs={['returns-cores']} embedded />
       </>}
     </div>
   </section>

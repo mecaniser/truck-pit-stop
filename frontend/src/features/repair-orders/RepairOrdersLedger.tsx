@@ -218,7 +218,7 @@ export default function RepairOrdersLedger({
           <h1 id="repair-orders-title">{pageTitle}</h1>
           <p>{pageDescription}</p>
         </div>
-        <ControlButton type="button" className="db-repair-orders-new__create" aria-label="New repair order" onClick={onCreateOrder} disabled={isFetching && rows.length === 0}>
+        <ControlButton controlKind="icon" type="button" className="db-repair-orders-new__create" aria-label="New repair order" onClick={onCreateOrder} disabled={isFetching && rows.length === 0}>
           <Plus aria-hidden="true" />
           <span className="db-repair-orders-new__create-label">New repair order</span>
         </ControlButton>
@@ -240,7 +240,7 @@ export default function RepairOrdersLedger({
                   only after you open it. A listbox keeps the control on one line,
                   names the active status on its face, and is themed like the rest
                   of the surface. */}
-              <div className="db-repair-orders-new__status-select" ref={statusMenu}>
+              <div data-db-control-shell="proxy" className="db-repair-orders-new__status-select" ref={statusMenu}>
                 <ControlButton controlKind="action"
                   type="button"
                   aria-haspopup="listbox"
