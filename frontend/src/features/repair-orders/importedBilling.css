@@ -18,3 +18,9 @@
 
 .db-imported-billing-ledger-warning { display: inline-flex; margin-left: 5px; vertical-align: middle; color: #b45309; }
 .db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-imported-billing-ledger-warning { color: #fbbf24; }
+
+.db-imported-billing-tooltip {
+  background: #fff;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}

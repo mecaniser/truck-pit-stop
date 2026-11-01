@@ -5668,7 +5668,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 {/* Create Invoice Button for completed customer orders */}
                 {!priceBuilderOwnsShell && importedEtsOrder && (
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                    <p className="font-semibold text-slate-900">ETS invoice total {importedMoney(importedBilling?.total_amount)}</p>
+                    <p className="font-semibold text-slate-900">Invoice total {importedMoney(importedBilling?.total_amount)}</p>
                     <ImportedBillingDetails billing={importedBilling} failed={importedBillingQuery.isError} />
                   </div>
                 )}
