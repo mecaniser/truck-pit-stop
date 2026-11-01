@@ -2,20 +2,12 @@ import { useQuery } from '@tanstack/react-query'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
 
-export type ImportedBilling = {
-  source: 'easy_truck_shop_import'
-  evidence_basis: 'imported_records' | 'ets_source_snapshot'
-  reconciliation_status: 'not_checked'
-  invoice_id?: string | null
-  invoice_number?: string | null
-  total_amount?: string | null
-  recorded_completed_amount?: string | null
-  recorded_remaining_amount?: string | null
-  payment_status: 'paid' | 'partially_paid' | 'unpaid' | 'unverified'
-  observed_at?: string | null
-  review_required: boolean
-  review_reasons: string[]
-}
+import type { ImportedBilling } from '@/types'
+export type { ImportedBilling } from '@/types'
+
+export const importedPaymentLabel = (status: ImportedBilling['payment_status']) => ({
+  paid: 'Paid in ETS', partially_paid: 'Partially paid in ETS', unpaid: 'Unpaid in ETS', unverified: 'Payment unverified',
+})[status]
 
 export function useImportedBilling(orderId: string | undefined, enabled: boolean) {
   const user = useAuthStore(state => state.user)

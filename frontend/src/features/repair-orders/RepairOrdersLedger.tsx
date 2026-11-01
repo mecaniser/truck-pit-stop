@@ -1,5 +1,7 @@
 import './repairOrderSchedule.css'
 import './repairOrderControls.css'
+import './importedBilling.css'
+import { importedMoney, importedPaymentLabel, type ImportedBilling } from './importedBilling'
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { Check, ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import { StaffSearchField } from '@/components/ui'
@@ -12,6 +14,7 @@ export type RepairOrdersLedgerRow = {
   statusTone: 'neutral' | 'warning' | 'active' | 'success' | 'danger'
   description: string
   total: string
+  importedBilling?: ImportedBilling | null
   updated: string
   internal: boolean
   customerName?: string | null
@@ -434,6 +437,11 @@ export default function RepairOrdersLedger({
                         <strong>{row.total}</strong>
                         {!row.deadline && <small>{row.updated}</small>}
                       </span>
+                      {row.importedBilling && <span className="db-imported-billing-row" aria-label="ETS invoice payment status">
+                        <span>{importedPaymentLabel(row.importedBilling.payment_status)}</span>
+                        <span>Remaining <strong>{importedMoney(row.importedBilling.payment_status === 'unverified' ? null : row.importedBilling.recorded_remaining_amount)}</strong></span>
+                        {row.importedBilling.shared_invoice && <span>Shared ETS invoice</span>}
+                      </span>}
                       {row.deadline && <span className="db-order-schedule-deadline db-order-schedule-ledger-date" data-overdue={row.overdue || undefined} title={row.deadline}>{row.deadline}</span>}
                     </button>
                     {!isOpenInWorkspace && <button

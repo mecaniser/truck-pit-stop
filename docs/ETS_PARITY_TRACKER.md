@@ -1,3 +1,7 @@
+> **2026-11-01 DB-139 shared billing correction / Review:** local tests/browser acceptance and independent source/security pass; protected CI and release pending. Display-only shared invoice context; parent B4/importer remains held and8/30 unchanged. [Receipt](verification/DB139_SHARED_ETS_BILLING.md).
+
+> **2026-11-01 user-selected DB-139 correction:** Shared ETS invoice status for split operation rows in progress. Reader-only scope; importer held, financial/export records unchanged; parity completion count unchanged. See PROJECT_BOARD.
+
 > **C3 accepted — 2026-10-30:** PR698 / `18255c03` is merged, exact Web/Worker deployed and production Day/Night desktop/mobile accepted. All 26,315 fixed source rows unchanged; no production C3 or financial QA writes. [Final receipt](verification/DB146_TRUCK_ISSUES.md). Progress **8/30**; **R3 next**. Earlier handoff entries below are historical. Importer held; Shop Work redesign separate.
 
 > **C3 release — 2026-10-30:** PR698 merged18255c03 after all7 exact-head checks passed; automatic deployment/production acceptance pending. Progress7/30 until acceptance.

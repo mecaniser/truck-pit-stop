@@ -3170,6 +3170,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       total: order.source === 'easy_truck_shop_import'
         ? importedMoney(order.imported_invoice_total_amount)
         : `$${(partsTotal + laborTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+      importedBilling: order.source === 'easy_truck_shop_import' ? order.imported_billing : null,
       updated: format(new Date(order.updated_at), 'MMM d, h:mm a'),
       internal: Boolean(order.is_internal),
       customerName: order.customer_company_name
