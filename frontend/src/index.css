@@ -2596,6 +2596,28 @@ html::-webkit-scrollbar-thumb:hover {
   .db-presentation-new .db-team-colors .db-technician-tile:has(> .db-technician-tile__target:focus-visible) { outline-color: Highlight; }
 }
 
+/* Give section elevation room inside the detail scroller; nested facts stay flat. */
+.db-presentation-new .db-technician-detail {
+  min-width: 0;
+  padding-inline: 12px;
+  padding-bottom: 12px;
+}
+.db-presentation-new .db-technician-detail :is(.shadow-xl, .shadow-lg) {
+  box-shadow: none;
+}
+.db-presentation-new .db-technician-detail .db-technician-detail__section {
+  box-shadow: 0 2px 4px rgb(19 35 61 / .10);
+}
+.db-presentation-new[data-appearance-mode='dark'] .db-technician-detail .db-technician-detail__section {
+  box-shadow: 0 2px 4px rgb(0 0 0 / .22);
+}
+.db-presentation-new[data-appearance-mode='high_contrast'] .db-technician-detail .db-technician-detail__section {
+  box-shadow: none;
+}
+@media (forced-colors: active) {
+  .db-presentation-new .db-technician-detail .db-technician-detail__section { box-shadow: none; }
+}
+
 /* A Team dialog must keep its footer above the compact navigation. */
 @media (max-width: 767px) {
   .db-staff-shell:has(.db-team-colors [role="dialog"]) .db-mobile-nav { display: none !important; }

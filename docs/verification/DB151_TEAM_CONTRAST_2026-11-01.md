@@ -59,3 +59,12 @@ Removed the priority-border mapping and `border-l-4`, removed the generic inner-
 Batched signed-in checks at1440px and390px in all three modes verify no inner hover outline/shadow, equal left/right edges, and readable text/graphics at both gradient endpoints (text minimum4.94:1; graphics3.31:1). Second confirmation fixes High contrast hover specificity and verifies forced-colors fallback. Browser screenshot review confirms the material and compact containment. Eight focused MechanicsPage/MyGarage tests, TypeScript/build and diff integrity pass. Prior broader contrast evidence remains applicable outside this tile; this section supersedes the earlier board screenshots' visual treatment.
 
 Latest images: [light desktop](db151-team-contrast/tile-light-1440.png), [dark compact](db151-team-contrast/tile-dark-390.png), [tile close-up](db151-team-contrast/tile-closeup.png). Runtime remains5201/PID38836 and matching8031 API, same branch/base58727bfa with served edits; proxied DB/Redis ready, existing fixture DB/schema and sandbox settings unchanged. No records mutated. PR732 updated; release still pending.
+
+
+## Detail section gutters and elevation — 2026-11-01
+
+User reported broad overlapping shadows and detail cards touching the scroller edges. Added12px internal side/bottom clearance to this detail route only. Daily Summary,7-Day Trend,Work Sessions and Admin Controls now use shallow2px-offset/4px-blur elevation; nested fact/session/trend cards are flat. Existing16px section spacing remains. High contrast uses no section shadow.
+
+Signed-in geometry at1440px and390px confirms every section has exactly12px left/right clearance,16px vertical gaps, and no page horizontal overflow. All three modes pass rendered text checks (minimum4.94:1). Batched screenshot review confirms the heavy floating bands are gone. Eight focused tests, TypeScript/Vite build, changed-source lint and diff integrity pass. Same aligned5201/8031 runtime, source checkout and local DB; no restart or data mutation. PR732 remains pending release.
+
+[Desktop spacing](db151-team-contrast/detail-spacing-light-1440.png) · [Mobile spacing](db151-team-contrast/detail-spacing-light-390.png).
