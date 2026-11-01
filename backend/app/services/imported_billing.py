@@ -1,11 +1,12 @@
 """Write-free ETS observations, separate from native collectible balances."""
 import json
+from collections import Counter
 import re
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
-from sqlalchemy import bindparam, or_, select, text, union_all
+from sqlalchemy import String, bindparam, cast, literal, or_, select, text, union_all
 
 from app.core.config import settings
 from app.db.models.invoice import Invoice
@@ -76,6 +77,16 @@ def _empty_markers(row, names):
     return all(getattr(row, name, None) in (None, "", Decimal("0")) for name in names)
 
 
+
+def _copy_precedes_canonical(copy, canonical):
+    try:
+        return (copy.created_at is not None and copy.deleted_at is not None
+                and canonical.created_at is not None
+                and copy.created_at <= copy.deleted_at < canonical.created_at)
+    except TypeError:
+        return False
+
+
 def _retired_display_candidate(invoices, members):
     """Prove cleanup identity before fetching its financial/source evidence."""
     if _group_hold(members):
@@ -88,17 +99,22 @@ def _retired_display_candidate(invoices, members):
     owner = member_map.get(canonical.repair_order_id)
     if (owner is None or canonical.tenant_id != owner.tenant_id
             or canonical.billed_customer_id not in (None, owner.customer_id)
-            or _money(canonical.total_amount) is None):
+            or _money(canonical.total_amount) in (None, Decimal("0"))):
         return None
     copies = [i for i in invoices if i.id != canonical.id]
     if not copies:
         return None
     for copy in copies:
         sibling = member_map.get(copy.repair_order_id)
-        if (sibling is None or sibling.id == owner.id or copy.tenant_id != owner.tenant_id
+        exact_name = sibling is not None and copy.invoice_number == canonical.invoice_number + "-" + sibling.order_number
+        fallback_name = sibling is not None and copy.invoice_number == (
+            "ETSINV-" + _job_key(owner).split("-")[1] + "-" + sibling.order_number)
+        same_owner_proven = (sibling is not None and sibling.id == owner.id and exact_name
+            and _copy_precedes_canonical(copy, canonical))
+        if (sibling is None or (sibling.id == owner.id and not same_owner_proven) or copy.tenant_id != owner.tenant_id
                 or copy.deleted_at is None or copy.updated_at != copy.deleted_at
                 or _value(copy.status) != "cancelled" or copy.void_reason != _LEGACY_VOID_REASON
-                or copy.invoice_number != canonical.invoice_number + "-" + sibling.order_number
+                or not (exact_name or fallback_name)
                 or copy.total_amount != canonical.total_amount
                 or copy.billed_customer_id != canonical.billed_customer_id
                 or copy.is_internal
@@ -132,10 +148,84 @@ async def _retired_reference_ids(db, tenant_id, invoice_ids):
     return set((await db.execute(union_all(*queries))).scalars().all())
 
 
+
+_RECONCILED_PAYMENT_SUFFIX = " [retired: no matching payment in Easy Truck Shop]"
+
+
+def _is_reconciler_retired(payment):
+    parsed = _money(payment.amount)
+    return (payment.source == SOURCE and _value(payment.status) == "failed"
+        and _value(payment.method) == "other" and payment.deleted_at is not None
+        and payment.updated_at == payment.deleted_at and parsed is not None and parsed > 0
+        and (payment.notes or "").endswith(_RECONCILED_PAYMENT_SUFFIX)
+        and _empty_markers(payment, _RETIRED_PAYMENT_MARKERS))
+
+
+async def _reconciled_payment_reference_ids(db, tenant_id, payment_ids):
+    if not payment_ids:
+        return set()
+    tables = Invoice.metadata.tables
+    attempt, accounting, ledger = (tables[name] for name in
+        ("invoice_payment_attempts", "payment_accounting_links", "invoice_payment_ledger_events"))
+    queries = [select(attempt.c.payment_id).where(attempt.c.tenant_id == tenant_id,
+        attempt.c.payment_id.in_(payment_ids)),
+        select(accounting.c.financial_object_id).where(accounting.c.tenant_id == tenant_id,
+        accounting.c.financial_object_id.in_(payment_ids))]
+    # Legacy ledger evidence can contain a payment UUID without a foreign-key column.
+    for payment_id in payment_ids:
+        queries.append(select(literal(payment_id, type_=Payment.id.type)).select_from(ledger).where(
+            ledger.c.tenant_id == tenant_id, or_(
+                ledger.c.idempotency_key.contains(str(payment_id)),
+                cast(ledger.c.evidence_snapshot, String).contains(str(payment_id)),
+                cast(ledger.c.money_snapshot, String).contains(str(payment_id)))))
+    return set((await db.execute(union_all(*queries))).scalars().all())
+
+
+async def _fallback_conflicts(db, tenant_id, canonical, retired_candidates):
+    roots = {}
+    for key in retired_candidates:
+        rows, invoice, owner, _ = canonical[key]
+        base = "ETSINV-" + key.split("-")[1]
+        if any(row.id != invoice.id and row.invoice_number.startswith(base + "-")
+               and not row.invoice_number.startswith(invoice.invoice_number + "-") for row in rows):
+            roots[key] = base
+    if not roots:
+        return set()
+    predicates = [condition for base in set(roots.values()) for condition in
+                  (Invoice.invoice_number == base, Invoice.invoice_number.like(base + "-%"))]
+    live = (await db.execute(select(Invoice.id, Invoice.invoice_number).where(
+        Invoice.tenant_id == tenant_id, Invoice.deleted_at.is_(None),
+        Invoice.status != "cancelled", or_(*predicates)))).all()
+    return {key for key, base in roots.items() if any(
+        row.id != canonical[key][1].id and (row.invoice_number == base or row.invoice_number.startswith(base + "-"))
+        for row in live)}
+
+
+def _canonical_display_payments(invoice, payments, envelope, owner, shop, shop_error, blocked):
+    retired = [p for p in payments if _is_reconciler_retired(p)]
+    if not retired or shop_error or any(p.id in blocked for p in retired):
+        return payments
+    if any(p.tenant_id != invoice.tenant_id or p.invoice_id != invoice.id for p in payments):
+        return payments
+    try:
+        observed = _source_summary(invoice, envelope, owner, shop, allow_paid_unapplied=True)
+        if observed.payment_status == "unverified":
+            return payments
+        retained = [p for p in payments if p not in retired]
+        if any(p.source != SOURCE or p.deleted_at is not None or _value(p.status) != "completed"
+               or _money(p.amount) is None or _money(p.amount) <= 0 for p in retained):
+            return payments
+        facts = latest_source_evidence(envelope)
+        if Counter(_money(p.amount) for p in retained) != Counter(amount(line["amount"]) for line in facts["payment_lines"]):
+            return payments
+        return retained
+    except (ETSCompletionHold, AttributeError, TypeError, ValueError, InvalidOperation, KeyError):
+        return payments
+
+
 def _retired_display_verified(rows, canonical, summary, payments, blocked, evidence):
     if (summary.evidence_basis != "ets_source_snapshot"
-            or summary.payment_status not in {"paid", "partially_paid", "unpaid"}
-            or summary.total_amount != canonical.total_amount):
+            or summary.payment_status not in {"paid", "partially_paid", "unpaid"}):
         return False
     for copy in rows:
         if copy.id == canonical.id:
@@ -153,7 +243,7 @@ def _retired_display_verified(rows, canonical, summary, payments, blocked, evide
     return True
 
 
-def _source_summary(invoice, envelope, order, shop_id):
+def _source_summary(invoice, envelope, order, shop_id, *, allow_paid_unapplied=False):
     """Observe source arithmetic without promoting it to settlement authority."""
     if not shop_id or not order:
         raise ETSCompletionHold("source_identity_unavailable")
@@ -215,16 +305,18 @@ def _source_summary(invoice, envelope, order, shop_id):
         p = line.get("payment") or {}
         allocated, payment_total = amount(line.get("amount")), amount(p.get("total"))
         payment_id = identifier(p.get("id"))
+        unapplied = amount(p.get("unapplied_amount"))
         if (str(p.get("status")) != "20" or str(p.get("type")) not in {"0", "10"}
                 or str(p.get("provider")) not in {"0", "1"} or p.get("canceled") is not False
-                or amount(p.get("credit_total")) != 0 or amount(p.get("unapplied_amount")) != 0
+                or amount(p.get("credit_total")) != 0
+                or (unapplied != 0 and not (allow_paid_unapplied and balance == 0))
                 or allocated <= 0 or payment_total <= 0):
             raise ETSCompletionHold("unsupported_payment_state")
         if payment_id in payment_totals:
             raise ETSCompletionHold("duplicate_payment_identity")
         payment_totals[payment_id] = payment_total
         payment_allocations[payment_id] = payment_allocations.get(payment_id, Decimal("0")) + allocated
-        if payment_allocations[payment_id] > payment_total:
+        if payment_allocations[payment_id] + unapplied > payment_total:
             raise ETSCompletionHold("payment_overallocated")
         paid += allocated
     if paid != total - balance:
@@ -241,7 +333,7 @@ def _source_summary(invoice, envelope, order, shop_id):
     return response
 
 
-def summarize_imported_billing(invoices, payments, source_evidence=None, *, order=None, shop_id=None, shop_error=None):
+def summarize_imported_billing(invoices, payments, source_evidence=None, *, order=None, shop_id=None, shop_error=None, display_retired_context=False):
     invoice, reason = supported_invoice(invoices)
     if reason:
         return ImportedBillingResponse(review_reasons=[reason])
@@ -281,7 +373,8 @@ def summarize_imported_billing(invoices, payments, source_evidence=None, *, orde
         try:
             if shop_error:
                 raise ETSCompletionHold(shop_error)
-            observed = _source_summary(invoice, source_evidence, order, shop_id)
+            observed = _source_summary(invoice, source_evidence, order, shop_id,
+                allow_paid_unapplied=display_retired_context)
             if (observed.total_amount != response.total_amount
                     or observed.recorded_completed_amount != response.recorded_completed_amount
                     or observed.payment_status != response.payment_status):
@@ -447,12 +540,21 @@ async def _load_billing_batch(db, orders, tenant_id):
     blocked_retired = await _retired_reference_ids(db, tenant_id, retired_ids)
     evidence = await _source_evidence(db, tenant_id, payment_invoice_ids)
     shop, shop_error = trusted_shop_binding(tenant_id)
+    blocked_fallbacks = await _fallback_conflicts(db, tenant_id, canonical, retired_candidates)
+    reconciled_ids = [p.id for key in retired_candidates for p in by_invoice.get(canonical[key][1].id, [])
+                      if _is_reconciler_retired(p)]
+    blocked_reconciled = await _reconciled_payment_reference_ids(db, tenant_id, reconciled_ids)
     summaries = {}
     for key, (rows, invoice, owner, shared) in canonical.items():
-        summary = summarize_imported_billing([invoice] if key in retired_candidates else rows, by_invoice.get(invoice.id, []), evidence.get(invoice.id),
-            order=owner, shop_id=shop, shop_error=shop_error)
-        if key in retired_candidates and not _retired_display_verified(
-                rows, invoice, summary, by_invoice, blocked_retired, evidence):
+        canonical_payments = by_invoice.get(invoice.id, [])
+        if key in retired_candidates:
+            canonical_payments = _canonical_display_payments(invoice, canonical_payments,
+                evidence.get(invoice.id), owner, shop, shop_error, blocked_reconciled)
+        summary = summarize_imported_billing([invoice] if key in retired_candidates else rows,
+            canonical_payments, evidence.get(invoice.id), order=owner, shop_id=shop,
+            shop_error=shop_error, display_retired_context=key in retired_candidates)
+        if key in retired_candidates and (key in blocked_fallbacks or not _retired_display_verified(
+                rows, invoice, summary, by_invoice, blocked_retired, evidence)):
             holds[key] = "deleted_invoice_evidence"
             continue
         summary.invoice_repair_order_id = owner.id
