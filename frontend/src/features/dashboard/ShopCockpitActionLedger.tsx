@@ -11,6 +11,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { elapsedSince, shortDuration } from '@/lib/elapsed'
+import './shopWorkPolish.css'
 
 export type ActionQueueLane = 'needs_action' | 'on_floor' | 'ready_to_close' | 'closed_today'
 type ActionQueueFilter = 'all' | ActionQueueLane
@@ -295,14 +296,14 @@ export default function ShopCockpitActionLedger({
             {!activeWork && <h2>{queueView === 'activity' ? 'Activity' : 'Action Ledger'}</h2>}
           </div>
           <div className="db-action-ledger__caption-summary" aria-live="polite">
-            {!showingActive && !showingOverview && (!activeWork || laneFilter !== 'needs_action') && <span className="db-action-ledger__caption-value">
+            {queueView === 'queue' && !showingActive && !showingOverview && (!activeWork || laneFilter !== 'needs_action') && <span className="db-action-ledger__caption-value">
               <span>{activeWork ? 'Closeout work value' : searchQuery.trim() ? 'Matching work value' : 'Work value'}</span>
               <strong>
                 {valueSummaryLoading
                   ? 'Calculating…'
                   : valueSummaryError
                     ? 'Unavailable'
-                    : currency(valueSummary?.order_value ?? '0.00')}
+                    : valueSummary ? currency(valueSummary.order_value) : '—'}
               </strong>
             </span>}
             <span className="db-action-ledger__caption-meta">{lastUpdatedLabel || 'Updated recently'}</span>
@@ -356,12 +357,12 @@ export default function ShopCockpitActionLedger({
           {/* The scroller wraps the card so the scrollbar sits outside the
               border; the caption above stays pinned. */}
           <div className="db-operating-surface__scroller">
-          <section className="db-action-ledger db-operating-surface__card" aria-label="Server-backed work queue">
+          <section className="db-action-ledger db-operating-surface__card" aria-label="Work queue">
             <div className="db-action-ledger__rows">
               {visibleRows.length === 0 ? (
                 <div className="db-action-ledger__empty" role="status">
                   <strong>{activeWork ? 'No closeout matches this view' : totalCount === 0 ? 'No work is waiting' : 'No work matches this view'}</strong>
-                  <span>{totalCount === 0 ? 'New repair orders will appear in their canonical queue.' : 'Choose another queue or clear the search.'}</span>
+                  <span>{totalCount === 0 ? 'Completed work and payment follow-up will appear here.' : 'Choose another queue or clear the search.'}</span>
                 </div>
               ) : visibleRows.map(({ order, lane }) => {
                 return (
@@ -371,10 +372,11 @@ export default function ShopCockpitActionLedger({
                     className="db-action-ledger__row"
                     aria-label={`Open ${order.order_number} in Repair Orders`}
                     onClick={() => onOpenRecord(order.id, lane)}
+                    data-single-lane={laneFilter !== 'all' || undefined}
                     data-order-id={order.id}
                     data-lane={lane}
                   >
-                    <span className={`db-action-ledger__lane db-action-ledger__lane--${lane}`}>{activeWork && lane === 'needs_action' ? 'Payment review' : LANE_LABEL[lane]}</span>
+                    {laneFilter === 'all' && <span className={`db-action-ledger__lane db-action-ledger__lane--${lane}`}>{activeWork && lane === 'needs_action' ? 'Payment review' : LANE_LABEL[lane]}</span>}
                     <span className="db-action-ledger__identity">
                       <strong>{order.customer_name}</strong>
                       <span>{[order.vehicle_info, order.vehicle_unit_number ? `Unit ${order.vehicle_unit_number}` : null].filter(Boolean).join(' · ')}</span>

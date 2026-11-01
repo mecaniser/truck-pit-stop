@@ -426,7 +426,7 @@ export default function DashboardHome() {
   const [laneSearchQueries, setLaneSearchQueries] = useState<Record<0 | 1 | 2, string>>({ 0: '', 1: '', 2: '' })
   const teamCapacityTouchStartY = useRef<number | null>(null)
   const teamCapacityDidSwipe = useRef(false)
-  const [queueView, setQueueView] = useState<'queue' | 'activity'>('queue')
+  const [queueView, setQueueView] = useState<'queue' | 'activity'>(() => new URLSearchParams(location.search).get('work_view') === 'activity' ? 'activity' : 'queue')
   const [workView, setWorkView] = useState<'overview' | 'active' | 'closeout'>(() => {
     const params = new URLSearchParams(location.search)
     const view = params.get('work_view')
@@ -440,6 +440,7 @@ export default function DashboardHome() {
   const requestedShopWorkView = new URLSearchParams(location.search).get('work_view') || (location.state as { shopWorkView?: string } | null)?.shopWorkView
   useEffect(() => {
     if (selectedShopWorkRecord) return
+    setQueueView(requestedShopWorkView === 'activity' ? 'activity' : 'queue')
     if (requestedShopWorkView === 'overview' || requestedShopWorkView === 'active' || requestedShopWorkView === 'closeout') {
       setWorkView(requestedShopWorkView)
     } else if (['ready_to_close', 'closed_today'].includes(returnedShopWorkQueue || requestedShopWorkQueue || '')) {
@@ -982,7 +983,9 @@ export default function DashboardHome() {
         queueView={queueView}
         activityCount={activityCount}
         isRefreshing={activeRefreshing || overviewQuery.isFetching}
-        lastUpdatedLabel={workView === 'overview'
+        lastUpdatedLabel={queueView === 'activity'
+          ? activityQuery.dataUpdatedAt ? `Updated ${formatLastUpdated(new Date(activityQuery.dataUpdatedAt))}` : 'Not checked yet'
+          : workView === 'overview'
           ? overviewQuery.data?.as_of ? `Checked ${formatLastUpdated(new Date(overviewQuery.data.as_of))}` : 'Not checked yet'
           : activeLastUpdated ? `Updated ${formatLastUpdated(activeLastUpdated)}` : 'Updated recently'}
         quickOrderExpanded={showQuickForm}
@@ -1000,7 +1003,15 @@ export default function DashboardHome() {
             className="db-shop-work-new__activity-feed"
           />
         )}
-        onQueueViewChange={setQueueView}
+        onQueueViewChange={view => {
+          setQueueView(view)
+          if (view === 'activity') {
+            const params = new URLSearchParams(location.search)
+            params.set('work_view', 'activity')
+            params.delete('queue')
+            navigate(`/dashboard?${params}`, { replace: true })
+          }
+        }}
         onToggleQuickOrder={() => setShowQuickForm((current) => !current)}
         onFullOrder={() => navigate('/dashboard/repair-orders?new=true')}
         onRefresh={handleManualRefresh}

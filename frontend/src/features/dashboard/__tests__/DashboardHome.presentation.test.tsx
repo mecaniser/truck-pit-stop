@@ -178,6 +178,15 @@ describe('DashboardHome DB-035 presentation boundary', () => {
     }
   })
 
+  it('restores Activity from its URL and keeps its selection in navigation', () => {
+    testState.locationSearch = '?work_view=activity'
+    render(<DashboardHome />)
+    expect(screen.getByText('Activity surface')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Activity 9+', exact: true }))
+    expect(testState.navigate).toHaveBeenCalledWith('/dashboard?work_view=activity', { replace: true })
+    expect(screen.queryByText('Closeout work value')).not.toBeInTheDocument()
+  })
+
   it('shows capped Activity count before opening the feed and refreshes it with Shop Work', () => {
     render(<DashboardHome />)
     expect(screen.getByRole('button', { name: 'Activity 9+', exact: true })).toBeInTheDocument()

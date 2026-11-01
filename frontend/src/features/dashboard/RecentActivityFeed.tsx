@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Popover, PopoverButton, PopoverGroup, PopoverPanel } from '@headlessui/react'
 import DatePicker from '@/components/DatePicker'
 import { Spinner } from '@/components/ui'
 import { useNavigate } from 'react-router-dom'
 import { formatDistanceToNow, isToday, isYesterday, format } from 'date-fns'
 import {
-  FileText, FilePlus, CheckCircle2, CreditCard, OctagonX, Trash2, ClipboardList, AlertTriangle,
+  FileText, FilePlus, CheckCircle2, CreditCard, OctagonX, Trash2, ClipboardList, CircleAlert, SlidersHorizontal, X, ChevronRight, History, RefreshCw,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { useActivityFeed, type ActivityEvent, type ActivityFeedResponse } from './activityFeedQuery'
 import ShopWorkSelect from './ShopWorkSelect'
+import './shopWorkPolish.css'
 
 type ApiErrorLike = {
   response?: {
@@ -25,17 +27,6 @@ const EVENT_ICON: Record<string, typeof FileText> = {
   invoice_created: FilePlus,
   invoice_paid: CreditCard,
   payment_recorded: CreditCard,
-}
-
-const EVENT_COLOR: Record<string, string> = {
-  ro_created: 'text-blue-400',
-  ro_cancelled: 'text-red-400',
-  ro_deleted: 'text-red-400',
-  ro_completed: 'text-emerald-400',
-  quote_sent: 'text-amber-400',
-  invoice_created: 'text-indigo-400',
-  invoice_paid: 'text-emerald-400',
-  payment_recorded: 'text-emerald-400',
 }
 
 const EVENT_TYPE_OPTIONS = [
@@ -55,43 +46,15 @@ const dayLabel = (d: Date): string => {
   return format(d, 'MMM d, yyyy')
 }
 
-type DayGroup = {
-  dateKey: string
-  label: string
-  actorGroups: Array<{ actorName: string | null; events: ActivityEvent[] }>
-}
-
-function groupByDayAndActor(items: ActivityEvent[]): DayGroup[] {
-  const dayMap = new Map<string, { label: string; events: ActivityEvent[] }>()
+function groupByDay(items: ActivityEvent[]) {
+  const days = new Map<string, { dateKey: string; label: string; events: ActivityEvent[] }>()
   for (const event of items) {
-    const d = new Date(event.occurred_at)
-    const dateKey = format(d, 'yyyy-MM-dd')
-    if (!dayMap.has(dateKey)) {
-      dayMap.set(dateKey, { label: dayLabel(d), events: [] })
-    }
-    dayMap.get(dateKey)!.events.push(event)
+    const date = new Date(event.occurred_at)
+    const dateKey = format(date, 'yyyy-MM-dd')
+    if (!days.has(dateKey)) days.set(dateKey, { dateKey, label: dayLabel(date), events: [] })
+    days.get(dateKey)!.events.push(event)
   }
-
-  return Array.from(dayMap.entries()).map(([dateKey, { label, events }]) => {
-    const actorOrder: string[] = []
-    const actorMap = new Map<string, ActivityEvent[]>()
-    for (const event of events) {
-      const key = event.actor_name || ''
-      if (!actorMap.has(key)) {
-        actorOrder.push(key)
-        actorMap.set(key, [])
-      }
-      actorMap.get(key)!.push(event)
-    }
-    return {
-      dateKey,
-      label,
-      actorGroups: actorOrder.map((key) => ({
-        actorName: key || null,
-        events: actorMap.get(key)!,
-      })),
-    }
-  })
+  return Array.from(days.values())
 }
 
 export default function RecentActivityFeed({
@@ -104,6 +67,7 @@ export default function RecentActivityFeed({
   const [cursor, setCursor] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [loadMoreError, setLoadMoreError] = useState(false)
 
   const [actorFilter, setActorFilter] = useState('')
   const [eventTypeFilter, setEventTypeFilter] = useState('')
@@ -117,10 +81,11 @@ export default function RecentActivityFeed({
     date_to: dateTo || undefined,
   }
 
-  const { data, isLoading, isError, error } = useActivityFeed(filterParams)
+  const { data, isLoading, isError, error, refetch, isFetching } = useActivityFeed(filterParams)
 
   useEffect(() => {
     setOlderItems([])
+    setLoadMoreError(false)
     setCursor(data?.next_cursor ?? null)
     setHasMore(data?.has_more ?? false)
   }, [data])
@@ -129,12 +94,15 @@ export default function RecentActivityFeed({
     if (!cursor) return
     try {
       setLoadingMore(true)
+      setLoadMoreError(false)
       const { data: page } = await api.get<ActivityFeedResponse>('/activity', {
         params: { limit: 20, cursor, ...filterParams },
       })
       setOlderItems((prev) => [...prev, ...page.items])
       setCursor(page.next_cursor)
       setHasMore(page.has_more)
+    } catch {
+      setLoadMoreError(true)
     } finally {
       setLoadingMore(false)
     }
@@ -142,6 +110,7 @@ export default function RecentActivityFeed({
 
   const showLess = () => {
     setOlderItems([])
+    setLoadMoreError(false)
     setCursor(data?.next_cursor ?? null)
     setHasMore(data?.has_more ?? false)
   }
@@ -149,126 +118,74 @@ export default function RecentActivityFeed({
   const isForbidden = isError && (error as ApiErrorLike)?.response?.status === 403
 
   const items = useMemo(() => [...(data?.items || []), ...olderItems], [data, olderItems])
-  const dayGroups = useMemo(() => groupByDayAndActor(items), [items])
+  const dayGroups = useMemo(() => groupByDay(items), [items])
   const hasActiveFilters = !!(actorFilter || eventTypeFilter || dateFrom || dateTo)
 
-  if (isForbidden) return null
+  const clearFilters = () => { setActorFilter(''); setEventTypeFilter(''); setDateFrom(''); setDateTo('') }
+  const filterCount = [actorFilter, eventTypeFilter, dateFrom, dateTo].filter(Boolean).length
+  const filterDescription = [
+    actorFilter && (data?.available_actors.find(actor => actor.id === actorFilter)?.name || 'Selected staff'),
+    eventTypeFilter && EVENT_TYPE_OPTIONS.find(type => type.value === eventTypeFilter)?.label,
+    dateFrom && `From ${dateFrom}`, dateTo && `To ${dateTo}`,
+  ].filter(Boolean).join(' · ')
 
   return (
-    <div className={className ?? 'bg-gray-800/50 border border-gray-700/50 rounded-lg p-6'}>
-      {data && data.warnings.length > 0 && (
-        <div className="mb-4 space-y-2 flex-shrink-0">
-          {data.warnings.map((warning) => (
-            <div
-              key={warning}
-              className="flex items-center gap-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg"
-            >
-              <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0" />
-              <p className="text-sm text-yellow-200">{warning}</p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="flex flex-wrap gap-2 mb-4 flex-shrink-0">
-        <ShopWorkSelect label="Activity staff" value={actorFilter} onChange={setActorFilter} options={[
-          { value: '', label: 'All staff' }, ...(data?.available_actors || []).map(actor => ({ value: actor.id, label: actor.name })),
-        ]} />
-        <ShopWorkSelect label="Activity type" value={eventTypeFilter} onChange={setEventTypeFilter} options={[
-          { value: '', label: 'All activity' }, ...EVENT_TYPE_OPTIONS,
-        ]} />
-        <DatePicker compact label="Activity from date" value={dateFrom} onChange={setDateFrom} />
-        <DatePicker compact label="Activity to date" value={dateTo} onChange={setDateTo} min={dateFrom || undefined} />
-        {hasActiveFilters && (
-          <button
-            type="button"
-            onClick={() => { setActorFilter(''); setEventTypeFilter(''); setDateFrom(''); setDateTo('') }}
-            className="text-sm text-gray-400 hover:text-white px-2"
-          >
-            Clear
-          </button>
-        )}
-      </div>
-
-      {isLoading ? (
-        <div className="flex items-center justify-center py-8 text-gray-400">
-          <Spinner size="sm" />
-        </div>
-      ) : dayGroups.length === 0 ? (
-        <p className="text-sm text-gray-500 text-center py-8">No activity matches these filters.</p>
-      ) : (
-        <div className="flex flex-col flex-1 min-h-0">
-          <div
-            className="grid gap-4 flex-1 min-h-0 items-stretch"
-            style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}
-          >
-            {dayGroups.map((day) => (
-              <div key={day.dateKey} className="flex flex-col min-h-0">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2 flex-shrink-0">{day.label}</h3>
-                <div className="flex-1 min-h-0 space-y-3 overflow-y-auto scrollbar-dark pr-1">
-                  {day.actorGroups.map((actorGroup, idx) => (
-                    <div key={`${day.dateKey}-${actorGroup.actorName || 'system'}-${idx}`}>
-                      <p className="text-xs text-gray-500 mb-1 px-1">
-                        {actorGroup.actorName || 'System'}
-                        <span className="text-gray-600"> · {actorGroup.events.length} action{actorGroup.events.length === 1 ? '' : 's'}</span>
-                      </p>
-                      <div className="space-y-1">
-                        {actorGroup.events.map((event) => {
-                          const Icon = EVENT_ICON[event.event_type] || ClipboardList
-                          const color = EVENT_COLOR[event.event_type] || 'text-gray-400'
-                          return (
-                            <button
-                              key={event.id}
-                              type="button"
-                              disabled={!event.order_id}
-                              onClick={() => event.order_id && navigate(`/dashboard/repair-orders?selected=${event.order_id}`)}
-                              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-gray-700/30 disabled:hover:bg-transparent disabled:cursor-default transition-colors"
-                            >
-                              <Icon className={`w-4 h-4 flex-shrink-0 ${color}`} />
-                              <div className="min-w-0 flex-1">
-                                <p className="text-sm text-gray-200 truncate">
-                                  {event.label}
-                                  {event.order_number ? <span className="text-gray-400"> · {event.order_number}</span> : null}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  {formatDistanceToNow(new Date(event.occurred_at), { addSuffix: true })}
-                                </p>
-                              </div>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  ))}
+    <section className={`db-work-activity ${className || ''}`} aria-label="Shop activity" aria-busy={isFetching}>
+      <header className="db-work-activity__header">
+        <div><h2>Recent activity</h2>{hasActiveFilters && <p>{filterDescription}</p>}</div>
+        <PopoverGroup className="db-work-activity__controls">
+          {!!data?.warnings.length && <Popover className="db-work-popover">
+            {({ close }) => <>
+              <PopoverButton className="db-work-control db-work-control--warning"><CircleAlert aria-hidden="true" />Activity incomplete</PopoverButton>
+              <PopoverPanel focus className="db-work-popover__panel" role="dialog" aria-label="Activity coverage">
+                <div className="db-work-popover__heading"><strong>Activity coverage</strong><button type="button" className="db-work-icon-button" aria-label="Close activity coverage" onClick={() => close()}><X aria-hidden="true" /></button></div>
+                {data.warnings.map(warning => <p key={warning}>{warning}</p>)}
+              </PopoverPanel>
+            </>}
+          </Popover>}
+          <Popover className="db-work-popover">
+            {({ close }) => <>
+              <PopoverButton className="db-work-control" aria-label={filterCount ? `Activity filters, ${filterCount} applied` : 'Activity filters'}><SlidersHorizontal aria-hidden="true" />Filters{filterCount > 0 && <span>{filterCount}</span>}</PopoverButton>
+              <PopoverPanel className="db-work-popover__panel" role="dialog" aria-label="Activity filters">
+                <div className="db-work-popover__heading"><strong>Filter activity</strong><button type="button" className="db-work-icon-button" aria-label="Close activity filters" onClick={() => close()}><X aria-hidden="true" /></button></div>
+                <div className="db-work-activity__filters">
+                  <div><span>Staff</span><ShopWorkSelect label="Activity staff" value={actorFilter} onChange={setActorFilter} options={[
+                    { value: '', label: 'All staff' }, ...(data?.available_actors || []).map(actor => ({ value: actor.id, label: actor.name })),
+                  ]} /></div>
+                  <div><span>Activity</span><ShopWorkSelect label="Activity type" value={eventTypeFilter} onChange={setEventTypeFilter} options={[
+                    { value: '', label: 'All activity' }, ...EVENT_TYPE_OPTIONS,
+                  ]} /></div>
+                  <DatePicker label="From date" value={dateFrom} onChange={setDateFrom} max={dateTo || undefined} showDayDetails={false} />
+                  <DatePicker label="To date" value={dateTo} onChange={setDateTo} min={dateFrom || undefined} showDayDetails={false} />
+                  {hasActiveFilters && <button type="button" className="db-work-control" onClick={() => { clearFilters(); close() }}><X aria-hidden="true" />Clear filters</button>}
                 </div>
-              </div>
-            ))}
-          </div>
-          {(hasMore || olderItems.length > 0) && (
-            <div className="flex items-center justify-center gap-3 mt-3 flex-shrink-0">
-              {hasMore && (
-                <button
-                  type="button"
-                  disabled={loadingMore}
-                  onClick={loadMore}
-                  className="py-2 text-sm text-gray-400 hover:text-white transition-colors disabled:opacity-50"
-                >
-                  {loadingMore ? 'Loading…' : 'Load more'}
-                </button>
-              )}
-              {olderItems.length > 0 && (
-                <button
-                  type="button"
-                  onClick={showLess}
-                  className="py-2 text-sm text-gray-400 hover:text-white transition-colors"
-                >
-                  Show less
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+              </PopoverPanel>
+            </>}
+          </Popover>
+        </PopoverGroup>
+      </header>
+      {isError ? <div className="db-work-state" role="alert"><CircleAlert aria-hidden="true" /><div><strong>{isForbidden ? 'Activity is unavailable for this account' : 'Activity could not be loaded'}</strong><p>{isForbidden ? 'Your available work remains in the other Shop Work views.' : 'Try again to check recent changes.'}</p>{!isForbidden && <button type="button" className="db-work-control" onClick={() => { void refetch() }} disabled={isFetching}><RefreshCw aria-hidden="true" />Retry activity</button>}</div></div>
+        : isLoading ? <div className="db-work-state" role="status"><span aria-hidden="true"><Spinner size="sm" /></span><strong>Loading activity…</strong></div>
+          : dayGroups.length === 0 ? <div className="db-work-state" role="status"><History aria-hidden="true" /><div><strong>{hasActiveFilters ? 'No activity matches these filters' : 'No recent activity'}</strong><p>{hasActiveFilters ? 'Change the filters to check another staff member or date.' : 'Repair, quote, invoice, and payment updates will appear here.'}</p></div></div>
+            : <>
+              <div className="db-work-activity__days">{dayGroups.map(day => <section key={day.dateKey} aria-label={day.label}>
+                <h3>{day.label}</h3>
+                <ol>{day.events.map(event => {
+                  const Icon = EVENT_ICON[event.event_type] || ClipboardList
+                  return <li key={event.id}><button type="button" className="db-work-activity__event" disabled={!event.order_id} onClick={() => event.order_id && navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(event.order_id)}`)}>
+                    <Icon className="db-work-activity__event-icon" aria-hidden="true" data-outcome={['invoice_paid', 'payment_recorded', 'ro_completed'].includes(event.event_type) ? 'complete' : ['ro_cancelled', 'ro_deleted'].includes(event.event_type) ? 'removed' : undefined} />
+                    <span className="db-work-activity__identity"><strong>{event.label}</strong><span>{[event.order_number, event.actor_name || 'System'].filter(Boolean).join(' · ')}</span></span>
+                    <time dateTime={event.occurred_at} title={format(new Date(event.occurred_at), 'MMM d, yyyy h:mm a')}>{formatDistanceToNow(new Date(event.occurred_at), { addSuffix: true })}</time>
+                    {event.order_id && <ChevronRight className="db-work-activity__open" aria-hidden="true" />}
+                  </button></li>
+                })}</ol>
+              </section>)}</div>
+              {(hasMore || olderItems.length > 0) && <footer className="db-work-activity__footer">
+                {loadMoreError && <p role="alert">Older activity could not be loaded. The events above are still available.</p>}
+                {hasMore && <button type="button" className="db-work-control" disabled={loadingMore} onClick={() => { void loadMore() }}>{loadingMore ? 'Loading…' : loadMoreError ? 'Retry older activity' : 'Load older activity'}</button>}
+                {olderItems.length > 0 && <button type="button" className="db-work-control" onClick={showLess}>Show recent only</button>}
+              </footer>}
+            </>}
+    </section>
   )
 }
