@@ -10,6 +10,10 @@ import StaffSearchField from '../src/components/ui/StaffSearchField'
 import QuantityStepper from '../src/components/QuantityStepper'
 import DatePicker from '../src/components/DatePicker'
 import '../src/index.css'
+import '../src/features/repair-orders/repairOrderControls.css'
+import '../src/features/global-search/ShopSearch.css'
+import '../src/features/fleet/fleet.css'
+import '../src/features/fleet/proximity.css'
 import '../src/features/vehicle-issues/vehicleIssues.css'
 
 function Catalog() {
@@ -30,6 +34,13 @@ function Catalog() {
             <ControlButton controlKind="icon" type="button" aria-label="Refresh truck issues" onClick={() => setMessage('Refreshed. No open truck issues.')}><RotateCcw /></ControlButton>
             <ControlButton type="button" onClick={() => setMessage('Add issue selected.')}><Plus />Add issue</ControlButton>
           </ControlGroup></header><p role="status">{message}</p>
+        </section>
+        <section aria-label="Compound control regression" className="db-repair-orders-controls" style={{ display: 'grid', gap: 12, marginTop: 24 }}>
+          <div className="db-repair-orders-new__filters">
+            <div data-db-control-shell="proxy" className="db-repair-orders-new__status-select" style={{ display: 'block' }}><ControlButton type="button" aria-label="Legacy status trigger">All statuses</ControlButton></div>
+            <ControlButton type="button">Overdue</ControlButton>
+          </div>
+          {['db-parts-workbench__search', 'db-parts-operations__search', 'db-shop-search-field', 'db-labor-book-time__search', 'fld-search', 'proximity-search', 'driver-profile-search', 'wo-svc-search'].map(name => <label key={name} data-db-control-shell="field" className={name} style={{ display: 'flex', alignItems: 'center', border: '1px solid currentColor' }}><Plus aria-hidden="true" size={16} /><ControlInput aria-label={name} placeholder="Search" style={{ width: '100%', minWidth: 0 }} /></label>)}
         </section>
         <section style={{ marginTop: 28, display: 'grid', gap: 16 }} aria-label="Field controls">
           <h2>Fields and menus</h2>

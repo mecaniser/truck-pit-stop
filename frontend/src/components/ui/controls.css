@@ -50,9 +50,45 @@ body:has([data-db-touch-controls]), [data-db-touch-controls] { --control-height:
   height: var(--control-icon-size) !important;
   flex-shrink: 0;
 }
-[data-db-control]:focus-visible {
-  outline: 2px solid var(--personal-accent-600, #0369a1);
-  outline-offset: 2px;
+/* One ring on the painted boundary, inset so scroll containers cannot clip it.
+   Important rules in this layer beat legacy page rings and Tailwind shadows. */
+[data-db-control]:not([data-db-control='content']):focus-visible,
+[data-db-control-shell]:has(> [data-db-control]:focus-visible) {
+  outline: 2px solid var(--control-focus-color, var(--workspace-text, currentColor)) !important;
+  outline-offset: -2px !important;
+  box-shadow: none !important;
+}
+/* Proxy shells wrap a complete bordered control; field shells own the border
+   and icon. Both grow with content instead of retaining an old fixed height. */
+[data-db-control-shell] {
+  box-sizing: border-box;
+  height: auto !important;
+  block-size: auto !important;
+  min-height: var(--control-height) !important;
+  min-block-size: var(--control-height) !important;
+  border-radius: var(--control-radius) !important;
+  align-self: center !important;
+  padding-block: 0 !important;
+}
+[data-db-control-shell]:focus-within {
+  outline: none !important;
+  box-shadow: none !important;
+}
+[data-db-control-shell='proxy'] > [data-db-control] { display: block; }
+[data-db-control-shell='proxy'] > [data-db-control='select'],
+[data-db-control-shell='proxy'] > [data-db-control='action'] { display: flex; }
+[data-db-control-shell='field'] > [data-db-control='field'] {
+  min-height: calc(var(--control-height) - 2px) !important;
+  min-block-size: calc(var(--control-height) - 2px) !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+[data-db-control-shell] > [data-db-control]:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+@media (forced-colors: active) {
+  [data-db-control], [data-db-control-shell] { --control-focus-color: Highlight; }
 }
 [data-db-control]:disabled { cursor: not-allowed; }
 /* iOS must not zoom text entry; preserve larger user-selected type. */

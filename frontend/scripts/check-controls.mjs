@@ -32,5 +32,19 @@ function walk(dir) {
   }
 }
 walk(root)
+// Toolbar aliases must resolve to the shared token. A second stylesheet once
+// restored 44px wrappers around 34px controls and escaped component-only checks.
+function checkStyles(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const file = path.join(dir, entry.name)
+    if (entry.isDirectory()) { checkStyles(file); continue }
+    if (!file.endsWith('.css')) continue
+    const source = fs.readFileSync(file, 'utf8')
+    for (const match of source.matchAll(/(--[\w-]+control-height)\s*:\s*([^;}]+)/g)) {
+      if (!match[2].trim().startsWith('var(--control-height)')) failures.push(`${path.relative(root, file)}: ${match[1]} must use var(--control-height)`)
+    }
+  }
+}
+checkStyles(root)
 if (failures.length) { console.error(failures.join('\n')); process.exitCode = 1 }
 else console.log('Shared controls check passed:', totals)
