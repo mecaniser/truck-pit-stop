@@ -1,4 +1,5 @@
 from app.schemas.maintenance import MaintenanceResult
+from app.schemas.imported_billing import ImportedBillingResponse
 from pydantic import AnyHttpUrl, BaseModel, Field, TypeAdapter, field_validator, model_serializer
 from typing import Literal, Optional, List
 from datetime import datetime
@@ -403,6 +404,7 @@ class RepairOrderResponse(RepairOrderBase):
     order_number: str
     source: Optional[str] = None
     imported_invoice_total_amount: Optional[Decimal] = None
+    imported_billing: Optional[ImportedBillingResponse] = None
     status: RepairOrderStatus
     assigned_mechanic_id: Optional[UUID]
     total_parts_cost: Decimal

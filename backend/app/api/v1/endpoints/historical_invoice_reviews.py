@@ -9,7 +9,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +22,8 @@ from app.db.models.historical_invoice_export import (
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.repair_order import RepairOrder
 from app.db.models.user import User, UserRole
+
+from app.services import historical_invoice_proof as identity_proof
 
 router = APIRouter()
 
@@ -38,16 +40,17 @@ def _staff(user: User) -> UUID:
     return user.tenant_id
 
 
-async def _eligible_invoice(db: AsyncSession, tenant_id: UUID, invoice_id: UUID) -> Invoice:
+async def _eligible_invoice(db: AsyncSession, tenant_id: UUID, invoice_id: UUID, *, removing_grant=False) -> Invoice:
     row = (await db.execute(select(Invoice, RepairOrder).join(
         RepairOrder, Invoice.repair_order_id == RepairOrder.id,
     ).where(Invoice.id == invoice_id, Invoice.tenant_id == tenant_id,
-            RepairOrder.tenant_id == tenant_id))).one_or_none()
+            RepairOrder.tenant_id == tenant_id).with_for_update().execution_options(populate_existing=True))).one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="Invoice not found")
     invoice, order = row
-    if invoice.source == "easy_truck_shop_import" or order.source == "easy_truck_shop_import":
-        raise HTTPException(status_code=409, detail="Imported ETS invoices are read-only")
+    if removing_grant:
+        return invoice
+    await identity_proof.context(db, invoice)
     if (invoice.deleted_at is not None or invoice.is_internal
             or invoice.status == InvoiceStatus.DRAFT):
         raise HTTPException(status_code=422, detail="Invoice is not eligible for historical export")
@@ -96,7 +99,8 @@ async def record_evidence(invoice_id: UUID, body: EvidenceRequest, response: Res
             and body.source_content_type != "application/pdf"):
         raise HTTPException(status_code=422, detail="Original invoice or receipt must be PDF")
     # Store the actual source bytes, compute the hash server-side, and require a
-    # different staff reviewer to inspect them before any owner approval.
+    # reviewed source inspection before any owner approval. Owner self-review
+    # requires explicit opt-in and is recorded distinctly from independent review.
     evidence = HistoricalInvoiceEvidence(
         tenant_id=tenant_id, invoice_id=invoice.id, repair_order_id=invoice.repair_order_id,
         source_type=body.source_type, source_reference=body.source_reference.strip(),
@@ -131,7 +135,20 @@ async def evidence_document(invoice_id: UUID, evidence_id: UUID,
                     headers={"Cache-Control": "no-store", "Content-Disposition": "attachment"})
 
 
+class CorrespondenceIdentityProof(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["sent_notification"]
+    notification_id: UUID
+    observed_invoice_id: UUID
+    observed_repair_order_id: UUID
+    observed_recipient_email: str = Field(min_length=3, max_length=255, pattern=r"^[^\s@<>]+@[^\s@<>]+$")
+    original_correspondence_attested: bool = False
+
+
 class VerifyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    owner_self_review: bool = False
+    identity_proof: CorrespondenceIdentityProof | None = None
     source_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     observed_invoice_number: str = Field(min_length=1, max_length=50)
     observed_bill_to_name: str = Field(min_length=2, max_length=255)
@@ -149,18 +166,30 @@ async def verify_evidence(invoice_id: UUID, evidence_id: UUID, body: VerifyReque
         HistoricalInvoiceEvidence.id == evidence_id,
         HistoricalInvoiceEvidence.invoice_id == invoice_id,
         HistoricalInvoiceEvidence.tenant_id == tenant_id,
-    ).with_for_update())).scalar_one_or_none()
+    ).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
     if not evidence:
         raise HTTPException(status_code=404, detail="Evidence not found")
     if evidence.verified_at is not None:
         raise HTTPException(status_code=409, detail="Evidence already verified")
-    if evidence.recorded_by_user_id == user.id:
+    self_review = evidence.recorded_by_user_id == user.id
+    if body.owner_self_review:
+        # Lock the current identity, rather than trusting an earlier auth snapshot
+        # while a concurrent role/tenant/deactivation edit commits.
+        reviewer = (await db.execute(select(User).where(User.id == user.id)
+            .with_for_update(read=True).execution_options(populate_existing=True))).scalar_one_or_none()
+        if (not reviewer or reviewer.role != UserRole.GARAGE_OWNER
+                or reviewer.tenant_id != tenant_id or not reviewer.is_active
+                or reviewer.deleted_at is not None):
+            raise HTTPException(status_code=403, detail="Active shop owner required for self-review")
+        if not self_review:
+            raise HTTPException(status_code=422, detail="Owner self-review requires your own uploaded evidence")
+    elif self_review:
         raise HTTPException(status_code=403, detail="Another staff member must verify source evidence")
     if (body.source_sha256 != evidence.source_sha256
-            or body.observed_invoice_number.strip() != invoice.invoice_number
+            or hashlib.sha256(evidence.source_document).hexdigest() != evidence.source_sha256
             or body.observed_bill_to_name.strip().casefold() != evidence.original_bill_to_name.casefold()):
         raise HTTPException(status_code=422, detail="Source identity does not match invoice or evidence")
-    target = await db.get(Customer, body.target_customer_id)
+    target = (await db.execute(select(Customer).where(Customer.id == body.target_customer_id).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
     if not target or target.tenant_id != tenant_id or target.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Target customer not found")
     target_names = {f"{target.first_name} {target.last_name}".strip().casefold()}
@@ -168,29 +197,42 @@ async def verify_evidence(invoice_id: UUID, evidence_id: UUID, body: VerifyReque
         target_names.add(target.company_name.strip().casefold())
     if evidence.original_bill_to_name.casefold() not in target_names:
         raise HTTPException(status_code=422, detail="Target legal name differs from source")
-    # A name is not a unique legal identity. Hold ambiguous shops until a
-    # separately verified identity/lineage proof can distinguish the accounts.
-    customers = (await db.execute(select(Customer).where(
-        Customer.tenant_id == tenant_id, Customer.deleted_at.is_(None),
-    ))).scalars().all()
-    observed_name = evidence.original_bill_to_name.casefold()
-    for other in customers:
-        if other.id == target.id:
-            continue
-        other_names = {f"{other.first_name} {other.last_name}".strip().casefold()}
-        if other.company_name:
-            other_names.add(other.company_name.strip().casefold())
-        if observed_name in other_names:
-            raise HTTPException(status_code=422, detail="Ambiguous bill-to name needs additional identity proof")
+    current_context = await identity_proof.context(db, invoice)
+    if body.identity_proof is None:
+        if current_context["replacement"]:
+            raise HTTPException(status_code=422, detail="Native imported-order replacement needs correspondence identity proof")
+        if body.observed_invoice_number.strip() != invoice.invoice_number:
+            raise HTTPException(status_code=422, detail="Source identity does not match invoice or evidence")
+        customers = (await db.execute(select(Customer).where(
+            Customer.tenant_id == tenant_id, Customer.deleted_at.is_(None),
+        ))).scalars().all()
+        observed_name = evidence.original_bill_to_name.casefold()
+        for other in customers:
+            if other.id == target.id:
+                continue
+            other_names = {f"{other.first_name} {other.last_name}".strip().casefold()}
+            if other.company_name:
+                other_names.add(other.company_name.strip().casefold())
+            if observed_name in other_names:
+                raise HTTPException(status_code=422, detail="Ambiguous bill-to name needs additional identity proof")
+        proof_value = None
+    else:
+        proof_value = await identity_proof.prove(db, invoice, evidence, target,
+            body.identity_proof, body.observed_invoice_number.strip(), user.id)
+        observed_name = evidence.original_bill_to_name.casefold()
+    evidence.identity_proof = identity_proof.canonical(proof_value) if proof_value else None
+    evidence.identity_proof_sha256 = identity_proof.digest(proof_value) if proof_value else None
     evidence.verified_at = datetime.now(timezone.utc)
     evidence.verified_by_user_id = user.id
     evidence.verified_target_customer_id = target.id
     evidence.verified_target_legal_name = observed_name
     evidence.verification_note = body.verification_note.strip()
+    evidence.verification_mode = "owner_self_review" if body.owner_self_review else "independent"
     await db.commit()
     response.headers["Cache-Control"] = "no-store"
     return {"evidence_id": evidence.id, "verified_at": evidence.verified_at,
             "verified_by_user_id": evidence.verified_by_user_id,
+            "verification_mode": evidence.verification_mode,
             "verified_target_customer_id": evidence.verified_target_customer_id}
 
 
@@ -230,7 +272,7 @@ async def decide(invoice_id: UUID, body: DecisionRequest, response: Response,
                  db: AsyncSession = Depends(get_db),
                  user: User = Depends(get_current_active_user)):
     tenant_id = _owner(user)
-    invoice = await _eligible_invoice(db, tenant_id, invoice_id)
+    invoice = await _eligible_invoice(db, tenant_id, invoice_id, removing_grant=body.action == "revoke")
     fingerprint = hashlib.sha256(json.dumps(body.model_dump(mode="json"),
                                             sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     # Invoice lock serializes first approval, before a mapping row exists.
@@ -245,11 +287,12 @@ async def decide(invoice_id: UUID, body: DecisionRequest, response: Response,
             raise HTTPException(status_code=409, detail="Idempotency key reused for another decision")
         response.headers["Cache-Control"] = "no-store"
         return {"invoice_id": invoice_id, "version": prior.version,
+                "evidence_verification_mode": prior.evidence_verification_mode,
                 "target_customer_id": prior.new_customer_id, "decision_id": prior.id}
     mapping = (await db.execute(select(HistoricalInvoiceMapping).where(
         HistoricalInvoiceMapping.tenant_id == tenant_id,
         HistoricalInvoiceMapping.invoice_id == invoice_id,
-    ).with_for_update())).scalar_one_or_none()
+    ).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
     version = mapping.version if mapping else 0
     if body.expected_version != version:
         raise HTTPException(status_code=409, detail="Historical mapping version changed")
@@ -268,10 +311,15 @@ async def decide(invoice_id: UUID, body: DecisionRequest, response: Response,
         if not evidence:
             raise HTTPException(status_code=422, detail="Evidence does not belong to invoice")
         if evidence.verified_at is None:
-            raise HTTPException(status_code=422, detail="Source evidence requires independent verification")
+            raise HTTPException(status_code=422, detail="Source evidence requires verification")
+        if (evidence.verified_by_user_id is None
+                or evidence.verification_mode not in (None, "independent", "owner_self_review")
+                or (evidence.verified_by_user_id == evidence.recorded_by_user_id)
+                != (evidence.verification_mode == "owner_self_review")):
+            raise HTTPException(status_code=409, detail="Evidence review audit is inconsistent; fresh review required")
         target = (await db.execute(select(Customer).where(
             Customer.id == body.target_customer_id,
-        ).with_for_update())).scalar_one_or_none()
+        ).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
         if not target or target.tenant_id != tenant_id or target.deleted_at is not None:
             raise HTTPException(status_code=404, detail="Target customer not found")
         if evidence.verified_target_customer_id != body.target_customer_id:
@@ -281,17 +329,22 @@ async def decide(invoice_id: UUID, body: DecisionRequest, response: Response,
             current_names.add(target.company_name.strip().casefold())
         if evidence.verified_target_legal_name not in current_names:
             raise HTTPException(status_code=409, detail="Target identity changed since verification")
-        candidates = (await db.execute(select(Customer).where(
-            Customer.tenant_id == tenant_id, Customer.deleted_at.is_(None),
-        ))).scalars().all()
-        for other in candidates:
-            if other.id == target.id:
-                continue
-            other_names = {f"{other.first_name} {other.last_name}".strip().casefold()}
-            if other.company_name:
-                other_names.add(other.company_name.strip().casefold())
-            if evidence.verified_target_legal_name in other_names:
-                raise HTTPException(status_code=409, detail="Bill-to name became ambiguous after verification")
+        if evidence.identity_proof is not None:
+            await identity_proof.revalidate(db, invoice, evidence, target)
+        else:
+            if (await identity_proof.context(db, invoice))["replacement"]:
+                raise HTTPException(status_code=422, detail="Native replacement requires fresh correspondence review")
+            candidates = (await db.execute(select(Customer).where(
+                Customer.tenant_id == tenant_id, Customer.deleted_at.is_(None),
+            ))).scalars().all()
+            for other in candidates:
+                if other.id == target.id:
+                    continue
+                other_names = {f"{other.first_name} {other.last_name}".strip().casefold()}
+                if other.company_name:
+                    other_names.add(other.company_name.strip().casefold())
+                if evidence.verified_target_legal_name in other_names:
+                    raise HTTPException(status_code=409, detail="Bill-to name became ambiguous after verification")
     elif body.action == "revoke" and old_target is None:
         raise HTTPException(status_code=409, detail="No active mapping to revoke")
     elif body.action == "reject" and old_target is not None:
@@ -314,6 +367,8 @@ async def decide(invoice_id: UUID, body: DecisionRequest, response: Response,
     decision = HistoricalInvoiceDecision(
         tenant_id=tenant_id, invoice_id=invoice_id, evidence_id=evidence.id if evidence else mapping.evidence_id,
         evidence_sha256=evidence.source_sha256 if evidence else None,
+        evidence_identity_proof_sha256=evidence.identity_proof_sha256 if evidence else None,
+        evidence_verification_mode=evidence.verification_mode if evidence else None,
         original_bill_to_name=evidence.original_bill_to_name if evidence else None,
         actor_user_id=user.id, old_customer_id=old_target, new_customer_id=new_target,
         action=body.action, reason=body.reason.strip(), version=mapping.version,
@@ -329,4 +384,5 @@ async def decide(invoice_id: UUID, body: DecisionRequest, response: Response,
     await db.commit()
     response.headers["Cache-Control"] = "no-store"
     return {"invoice_id": invoice_id, "version": mapping.version,
+            "evidence_verification_mode": decision.evidence_verification_mode,
             "target_customer_id": new_target, "decision_id": decision.id}

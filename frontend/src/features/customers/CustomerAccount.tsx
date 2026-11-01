@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Download, ExternalLink, RefreshCw } from 'lucide-react'
@@ -190,7 +191,7 @@ export default function CustomerAccount({ customerId }: { customerId: string }) 
   }
 
   if (query.isPending) return <div className="db-customer-account" role="status">Loading account…</div>
-  if (query.isError || !query.data) return <div className="db-customer-account" role="alert">Account unavailable. <button type="button" onClick={() => void query.refetch()}>Retry account</button></div>
+  if (query.isError || !query.data) return <div className="db-customer-account" role="alert">Account unavailable. <ControlButton type="button" onClick={() => void query.refetch()}>Retry account</ControlButton></div>
   const account = query.data
   const buckets = [
     ['Current', account.native.current], ['1–30 days', account.native.days_1_30],
@@ -201,8 +202,8 @@ export default function CustomerAccount({ customerId }: { customerId: string }) 
     <div className="db-customer-account__head">
       <div><h3>Customer account</h3><p>As of {localDate(account.as_of_date)} · USD</p></div>
       <div className="db-customer-account__actions">
-        <button type="button" onClick={() => void query.refetch()} aria-label="Refresh account" disabled={query.isFetching}><RefreshCw aria-hidden="true" /> Refresh</button>
-        <button type="button" onClick={() => void download()} disabled={downloading}><Download aria-hidden="true" />{downloading ? 'Preparing…' : 'Download statement'}</button>
+        <ControlButton controlKind="action" type="button" onClick={() => void query.refetch()} aria-label="Refresh account" disabled={query.isFetching}><RefreshCw aria-hidden="true" /> Refresh</ControlButton>
+        <ControlButton type="button" onClick={() => void download()} disabled={downloading}><Download aria-hidden="true" />{downloading ? 'Preparing…' : 'Download statement'}</ControlButton>
       </div>
     </div>
     {downloadError && <p role="alert">Statement unavailable. Try the download again.</p>}
@@ -231,9 +232,9 @@ export default function CustomerAccount({ customerId }: { customerId: string }) 
       <h4>Activity</h4>
       {!account.transactions.length ? <p>No account activity in this view.</p> : <ul>{account.transactions.map(row => <Activity key={`${row.source_owner}:${row.kind}:${row.id}`} row={row} />)}</ul>}
       {(cursors.length > 1 || account.next_cursor) && <div className="db-customer-account__pages">
-        <button type="button" disabled={cursors.length === 1} onClick={() => setCursors(previous => previous.slice(0, -1))}>Newer</button>
+        <ControlButton type="button" disabled={cursors.length === 1} onClick={() => setCursors(previous => previous.slice(0, -1))}>Newer</ControlButton>
         <span>Page {cursors.length}</span>
-        <button type="button" disabled={!account.next_cursor} onClick={() => account.next_cursor && setCursors(previous => [...previous, account.next_cursor])}>Older</button>
+        <ControlButton type="button" disabled={!account.next_cursor} onClick={() => account.next_cursor && setCursors(previous => [...previous, account.next_cursor])}>Older</ControlButton>
       </div>}
     </section>
   </section>

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -80,17 +80,42 @@ describe('imported repair-order billing page', () => {
     }
   })
 
+  it('passes shared invoice context to every related ledger row without showing an additive total', async () => {
+    const shared = { ...sourceBilling, shared_invoice: true, payment_status: 'partially_paid', recorded_completed_amount: '100.00', recorded_remaining_amount: '434.41', invoice_repair_order_id: order.id, invoice_repair_order_number: order.order_number }
+    const getDefault = api.get.getMockImplementation()!
+    api.get.mockImplementation(async (url: string, ...args: unknown[]) => {
+      if (url === '/repair-orders') return { data: { items: [
+        { ...order, imported_billing: shared },
+        { ...order, id: 'ets-sibling', order_number: 'ETS-7001-8002-2', imported_billing: shared },
+      ], total: 2, has_more: false } }
+      if (url.startsWith('/repair-orders/value-summary')) return { data: { order_count: 2, order_value: '1068.82', has_imported_orders: true } }
+      return getDefault(url, ...args)
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><MemoryRouter><RepairOrdersPage /></MemoryRouter></QueryClientProvider>)
+    for (const number of ['ETS-7001-8002', 'ETS-7001-8002-2']) {
+      const row = await screen.findByRole('article', { name: `Repair order ${number}` })
+      expect(within(row).getByText('Partially paid in ETS')).toBeVisible()
+      expect(within(row).getByText('$434.41')).toBeVisible()
+      expect(within(row).getByText('Shared ETS invoice')).toBeVisible()
+    }
+    expect(screen.queryByText('$1,068.82')).not.toBeInTheDocument()
+    expect(screen.queryByText('Filtered order value')).not.toBeInTheDocument()
+    expect(api.post).not.toHaveBeenCalled()
+    expect(api.patch).not.toHaveBeenCalled()
+  })
+
   it('keeps legacy detail prices and editing controls absent after History loads full detail', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     const { container } = render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/?selected=ets-order']}><RepairOrdersPage /></MemoryRouter></QueryClientProvider>)
     const user = userEvent.setup()
-    expect(await screen.findByText('Paid in ETS')).toBeVisible()
+    expect(await screen.findByText('Paid in full')).toBeVisible()
     await user.click(await screen.findByRole('button', { name: 'Repair order history', exact: true }))
     await waitFor(() => expect(api.get).toHaveBeenCalledWith('/repair-orders/ets-order/detail', expect.anything()))
     await waitFor(() => expect(client.getQueriesData({ queryKey: ['repair-order-detail', order.id] }).some(([, value]) => (value as typeof detail | undefined)?.labor_items?.length === 1)).toBe(true))
 
     expect(container.querySelector('.db-workspace-footer')).toHaveTextContent('$534.41')
-    expect(screen.getByText('Paid in ETS')).toBeVisible()
+    expect(screen.getByText('Paid in full')).toBeVisible()
     expect(screen.queryByText('ETS source snapshot · QuickBooks not checked')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'ETS billing details' }))
     expect(screen.getByText('ETS source snapshot · QuickBooks not checked')).toBeVisible()

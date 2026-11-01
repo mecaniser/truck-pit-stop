@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useState, useEffect } from 'react'
 import { Spinner } from '@/components/ui'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -176,30 +177,30 @@ function ProfileSection() {
             <label className="text-xs text-gray-400">Phone</label>
             <p className="text-white">{customer.phone ? formatUSPhone(customer.phone) : 'Not set'}</p>
           </div>
-          <button
+          <ControlButton
             onClick={() => setIsEditing(true)}
-            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors"
+            className="px-4  bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors"
           >
             Edit Profile
-          </button>
+          </ControlButton>
         </div>
       ) : (
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-400 mb-1">First Name</label>
-              <input {...register('first_name')} className={inputClasses(!!errors.first_name)} />
+              <ControlInput {...register('first_name')} className={inputClasses(!!errors.first_name)} />
               {errors.first_name && <p className="mt-1 text-xs text-red-400">{errors.first_name.message}</p>}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-400 mb-1">Last Name</label>
-              <input {...register('last_name')} className={inputClasses(!!errors.last_name)} />
+              <ControlInput {...register('last_name')} className={inputClasses(!!errors.last_name)} />
               {errors.last_name && <p className="mt-1 text-xs text-red-400">{errors.last_name.message}</p>}
             </div>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-400 mb-1">Email</label>
-            <input {...register('email')} type="email" className={inputClasses(!!errors.email)} />
+            <ControlInput {...register('email')} type="email" className={inputClasses(!!errors.email)} />
             {errors.email && <p className="mt-1 text-xs text-red-400">{errors.email.message}</p>}
             {currentEmailValue !== originalEmail && (
               <p className="mt-1 text-xs text-blue-400">📧 You'll receive a verification link at the new email</p>
@@ -207,7 +208,7 @@ function ProfileSection() {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-400 mb-1">Phone</label>
-            <input 
+            <ControlInput
               {...register('phone')} 
               className={inputClasses(!!errors.phone)} 
               placeholder="(555) 123-4567"
@@ -220,38 +221,38 @@ function ProfileSection() {
             <div>
               <label className="block text-xs font-medium text-amber-400 mb-1">Password (required for email change)</label>
               <div className="relative">
-                <input
+                <ControlInput
                   {...register('password')}
                   type={showPassword ? 'text' : 'password'}
                   className={inputClasses(false)}
                   placeholder="Enter your password"
                 />
-                <button
+                <ControlButton
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white text-sm"
                 >
                   {showPassword ? 'Hide' : 'Show'}
-                </button>
+                </ControlButton>
               </div>
             </div>
           )}
 
           <div className="flex gap-3">
-            <button
+            <ControlButton
               type="button"
               onClick={() => { setIsEditing(false); reset() }}
-              className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors"
+              className="px-4  bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors"
             >
               Cancel
-            </button>
-            <button
+            </ControlButton>
+            <ControlButton
               type="submit"
               disabled={!isDirty || updateMutation.isPending}
-              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors"
+              className="px-4  bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors"
             >
               {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
-            </button>
+            </ControlButton>
           </div>
         </form>
       )}
@@ -307,44 +308,44 @@ function SecuritySection() {
       </div>
 
       {!showForm ? (
-        <button
+        <ControlButton
           onClick={() => setShowForm(true)}
-          className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-500"
+          className="rounded-xl bg-violet-600 px-4  text-sm font-medium text-white transition-colors hover:bg-violet-500"
         >
           Change Password
-        </button>
+        </ControlButton>
       ) : (
         <form onSubmit={handleSubmit((data) => mutation.mutate(data))} className="space-y-4 max-w-md">
           <div>
             <label className="block text-xs font-medium text-gray-400 mb-1">Current Password</label>
-            <input {...register('current_password')} type="password" className={inputClasses(!!errors.current_password)} />
+            <ControlInput {...register('current_password')} type="password" className={inputClasses(!!errors.current_password)} />
             {errors.current_password && <p className="mt-1 text-xs text-red-400">{errors.current_password.message}</p>}
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-400 mb-1">New Password</label>
-            <input {...register('new_password')} type="password" className={inputClasses(!!errors.new_password)} />
+            <ControlInput {...register('new_password')} type="password" className={inputClasses(!!errors.new_password)} />
             {errors.new_password && <p className="mt-1 text-xs text-red-400">{errors.new_password.message}</p>}
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-400 mb-1">Confirm New Password</label>
-            <input {...register('confirm_password')} type="password" className={inputClasses(!!errors.confirm_password)} />
+            <ControlInput {...register('confirm_password')} type="password" className={inputClasses(!!errors.confirm_password)} />
             {errors.confirm_password && <p className="mt-1 text-xs text-red-400">{errors.confirm_password.message}</p>}
           </div>
           <div className="flex gap-3">
-            <button
+            <ControlButton
               type="button"
               onClick={() => { setShowForm(false); reset() }}
-              className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors"
+              className="px-4  bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors"
             >
               Cancel
-            </button>
-            <button
+            </ControlButton>
+            <ControlButton
               type="submit"
               disabled={mutation.isPending}
-              className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:bg-gray-600"
+              className="rounded-xl bg-violet-600 px-4  text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:bg-gray-600"
             >
               {mutation.isPending ? 'Changing...' : 'Change Password'}
-            </button>
+            </ControlButton>
           </div>
         </form>
       )}
@@ -352,13 +353,13 @@ function SecuritySection() {
       <div className="border-t border-white/10 pt-6">
         <h3 className="text-lg font-semibold text-white mb-2">Sign Out</h3>
         <p className="text-sm text-gray-400 mb-4">End your session on this device.</p>
-        <button
+        <ControlButton
           onClick={() => { logout(); navigate('/login') }}
-          className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-400 text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+          className="px-4  bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-400 text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
         >
           <LogOut className="w-4 h-4" />
           Sign Out
-        </button>
+        </ControlButton>
       </div>
     </div>
   )
@@ -374,13 +375,13 @@ function AppearanceSection() {
           <h3 className="text-lg font-semibold text-white mb-2">Appearance</h3>
           <p className="text-sm text-gray-400">Customize your portal theme and typography.</p>
         </div>
-        <button
+        <ControlButton
           onClick={resetToDefaults}
-          className="px-3 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors flex items-center gap-2"
+          className="px-3  text-sm text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors flex items-center gap-2"
         >
           <RotateCcw className="w-4 h-4" />
           Reset
-        </button>
+        </ControlButton>
       </div>
 
       {/* Live Preview Card */}
@@ -401,18 +402,18 @@ function AppearanceSection() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <button 
-            className="px-4 py-2 rounded-lg text-white text-sm font-medium transition-colors"
+          <ControlButton
+            className="px-4  rounded-lg text-white text-sm font-medium transition-colors"
             style={{ backgroundColor: accentColors[500] }}
           >
             Primary Button
-          </button>
-          <button 
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-colors border"
+          </ControlButton>
+          <ControlButton
+            className="px-4  rounded-lg text-sm font-medium transition-colors border"
             style={{ borderColor: accentColors[500], color: accentColors[500] }}
           >
             Secondary Button
-          </button>
+          </ControlButton>
           <span 
             className="px-3 py-1.5 rounded-full text-xs font-medium"
             style={{ backgroundColor: accentColors[500] + '20', color: accentColors[400] }}
@@ -427,7 +428,7 @@ function AppearanceSection() {
         <label className="block text-sm font-medium text-gray-300 mb-4">Accent Color</label>
         <div className="grid grid-cols-5 gap-4">
           {ACCENT_OPTIONS.map((option) => (
-            <button
+            <ControlButton controlKind="content"
               key={option.id}
               onClick={() => setAccent(option.id)}
               className="group flex flex-col items-center gap-2"
@@ -449,7 +450,7 @@ function AppearanceSection() {
               }`}>
                 {option.label}
               </span>
-            </button>
+            </ControlButton>
           ))}
         </div>
       </div>
@@ -462,7 +463,7 @@ function AppearanceSection() {
         </label>
         <div className="grid grid-cols-3 gap-3">
           {FONT_FAMILY_OPTIONS.map((option) => (
-            <button
+            <ControlButton controlKind="content"
               key={option.id}
               onClick={() => setFontFamily(option.id)}
               className={`p-4 rounded-lg border text-left transition-all ${
@@ -476,7 +477,7 @@ function AppearanceSection() {
                 {option.label}
               </span>
               <span className="block text-xs text-gray-500 mt-1">Aa Bb Cc 123</span>
-            </button>
+            </ControlButton>
           ))}
         </div>
       </div>
@@ -486,10 +487,10 @@ function AppearanceSection() {
         <label className="block text-sm font-medium text-gray-300 mb-4">Font Size</label>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {FONT_SIZE_OPTIONS.map((option) => (
-            <button
+            <ControlButton
               key={option.id}
               onClick={() => setFontSize(option.id)}
-              className={`py-2.5 sm:py-3 px-2 sm:px-4 rounded-lg border text-center transition-all ${
+              className={`  px-2 sm:px-4 rounded-lg border text-center transition-all ${
                 fontSize === option.id
                   ? 'border-white/40 bg-white/10'
                   : 'border-white/10 hover:border-white/20 hover:bg-white/5'
@@ -501,7 +502,7 @@ function AppearanceSection() {
               <span className="hidden sm:block text-xs text-gray-500 mt-1">
                 {option.previewPx}px
               </span>
-            </button>
+            </ControlButton>
           ))}
         </div>
       </div>
@@ -621,10 +622,10 @@ function ShopsSection() {
               </div>
 
               {!isCurrent && shops.length > 1 && (
-                <button
+                <ControlButton
                   onClick={() => handleSwitch(shop.id)}
                   disabled={!!switching}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg border border-white/20 text-gray-300 hover:text-white hover:border-white/40 hover:bg-white/10 transition-colors disabled:opacity-50 flex-shrink-0"
+                  className="flex items-center gap-2 px-3  text-sm font-medium rounded-lg border border-white/20 text-gray-300 hover:text-white hover:border-white/40 hover:bg-white/10 transition-colors disabled:opacity-50 flex-shrink-0"
                 >
                   {isSwitching ? (
                     <Spinner size="xs" className="border-white/40 border-t-white" />
@@ -632,7 +633,7 @@ function ShopsSection() {
                     <ArrowRightLeft className="w-3.5 h-3.5" />
                   )}
                   {isSwitching ? 'Switching…' : 'Switch'}
-                </button>
+                </ControlButton>
               )}
             </div>
           )
@@ -659,12 +660,12 @@ function PreferenceToggle({
   onChange: () => void
 }) {
   return (
-    <button type="button" onClick={onChange} className="flex w-full items-center justify-between gap-4 py-2 text-left">
+    <ControlButton controlKind="content" type="button" onClick={onChange} className="flex w-full items-center justify-between gap-4 py-2 text-left">
       <span className="text-[13px] text-[#c9cdd8]">{label}</span>
       <span className={`relative h-[22px] w-10 rounded-full border ${checked ? 'border-[#8b7cf7] bg-[#8b7cf7]' : 'border-[#343b52] bg-[#272d3d]'}`}>
         <span className={`absolute top-[2px] h-4 w-4 rounded-full bg-white transition-transform ${checked ? 'translate-x-[19px]' : 'translate-x-[2px]'}`} />
       </span>
-    </button>
+    </ControlButton>
   )
 }
 
@@ -742,7 +743,7 @@ function ContactDetailsSection() {
           ].map(field => (
             <label key={field.name} className="block text-xs font-bold text-[#8b92a5]">
               {field.label}
-              <input
+              <ControlInput
                 {...register(field.name)}
                 type={field.type}
                 className="mt-1.5 h-11 w-full rounded-[10px] border border-[#272d3d] bg-[#12161f] px-3 text-base text-[#eceef4] outline-none focus:border-[#8b7cf7] focus:ring-2 focus:ring-[#8b7cf7]/30"
@@ -752,46 +753,46 @@ function ContactDetailsSection() {
           ))}
           <label className="block text-xs font-bold text-[#8b92a5] sm:col-span-2">
             Email
-            <input
+            <ControlInput
               {...register('email')}
               type="email"
               autoComplete="email"
-              className="mt-1.5 h-11 w-full rounded-[10px] border border-[#272d3d] bg-[#12161f] px-3 text-base text-[#eceef4] outline-none focus:border-[#8b7cf7] focus:ring-2 focus:ring-[#8b7cf7]/30"
+              className="mt-1.5  w-full rounded-[10px] border border-[#272d3d] bg-[#12161f] px-3 text-base text-[#eceef4] outline-none focus:border-[#8b7cf7] focus:ring-2 focus:ring-[#8b7cf7]/30"
             />
             {errors.email && <span className="mt-1 block text-[11px] text-[#ff8b8d]">{errors.email.message}</span>}
           </label>
           <label className="block text-xs font-bold text-[#8b92a5] sm:col-span-2">
             Phone
-            <input
+            <ControlInput
               {...register('phone')}
               type="tel"
               inputMode="tel"
               autoComplete="tel"
               onChange={event => setValue('phone', formatUSPhone(event.target.value), { shouldDirty: true, shouldValidate: true })}
-              className="mt-1.5 h-11 w-full rounded-[10px] border border-[#272d3d] bg-[#12161f] px-3 text-base text-[#eceef4] outline-none focus:border-[#8b7cf7] focus:ring-2 focus:ring-[#8b7cf7]/30"
+              className="mt-1.5  w-full rounded-[10px] border border-[#272d3d] bg-[#12161f] px-3 text-base text-[#eceef4] outline-none focus:border-[#8b7cf7] focus:ring-2 focus:ring-[#8b7cf7]/30"
             />
             {errors.phone && <span className="mt-1 block text-[11px] text-[#ff8b8d]">{errors.phone.message}</span>}
           </label>
           {emailChanging && (
             <label className="block text-xs font-bold text-[#f0b959] sm:col-span-2">
               Current password required to change email
-              <input
+              <ControlInput
                 {...register('password')}
                 type="password"
                 autoComplete="current-password"
-                className="mt-1.5 h-11 w-full rounded-[10px] border border-[#f0b959]/40 bg-[#12161f] px-3 text-base text-[#eceef4] outline-none focus:ring-2 focus:ring-[#f0b959]/25"
+                className="mt-1.5  w-full rounded-[10px] border border-[#f0b959]/40 bg-[#12161f] px-3 text-base text-[#eceef4] outline-none focus:ring-2 focus:ring-[#f0b959]/25"
               />
             </label>
           )}
         </div>
         <div className="flex flex-col gap-2 border-t border-[#1e2432] bg-[#12161f] p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-          <button
+          <ControlButton
             type="submit"
             disabled={!isDirty || updateMutation.isPending}
-            className="h-[42px] rounded-[11px] bg-[#8b7cf7] px-5 text-sm font-extrabold text-[#0e1118] disabled:opacity-50"
+            className=" rounded-[11px] bg-[#8b7cf7] px-5 text-sm font-extrabold text-[#0e1118] disabled:opacity-50"
           >
             {updateMutation.isPending ? 'Saving…' : 'Save changes'}
-          </button>
+          </ControlButton>
           <span className="text-[11px] text-[#5c6375]">Last updated {format(new Date(customer.updated_at), 'MMM d, yyyy')}</span>
         </div>
       </form>
@@ -813,11 +814,11 @@ function ContactDetailsSection() {
           <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#8b92a5]">Default payment</span>
           <div className="mt-3 grid grid-cols-2 gap-2">
             {(['zelle', 'card'] as const).map(method => (
-              <button
+              <ControlButton
                 key={method}
                 type="button"
                 onClick={() => updatePreferences({ ...preferences, defaultPaymentMethod: method })}
-                className={`h-10 rounded-[10px] border text-xs font-extrabold uppercase ${
+                className={` rounded-[10px] border text-xs font-extrabold uppercase ${
                   preferences.defaultPaymentMethod === method
                     ? method === 'zelle'
                       ? 'border-[#2dd4bf]/40 bg-[#2dd4bf]/10 text-[#2dd4bf]'
@@ -826,7 +827,7 @@ function ContactDetailsSection() {
                 }`}
               >
                 {method}
-              </button>
+              </ControlButton>
             ))}
           </div>
           <p className="mt-3 text-[11px] text-[#8b92a5]">Zelle has no processing fee.</p>
@@ -926,17 +927,17 @@ export default function ProfileSettingsPage() {
       <div className="-mx-4 overflow-x-auto border-b border-[#1e2432] px-4 sm:mx-0 sm:px-0">
         <nav className="flex min-w-max gap-5" aria-label="Account sections">
           {SECTIONS.map(section => (
-            <button
+            <ControlButton
               key={section.id}
               type="button"
               onClick={() => selectSection(section.id)}
-              className={`relative h-[38px] text-xs font-bold ${
+              className={`relative  text-xs font-bold ${
                 activeSection === section.id ? 'text-[#c9bfff]' : 'text-[#8b92a5] hover:text-[#c9cdd8]'
               }`}
             >
               {section.label}
               {activeSection === section.id && <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-[#8b7cf7]" />}
-            </button>
+            </ControlButton>
           ))}
         </nav>
       </div>

@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Label, Listbox, ListboxButton, ListboxOption, ListboxOptions } from '@headlessui/react'
@@ -75,10 +76,10 @@ function StripeAttemptForm({
     <form onSubmit={submit} className="space-y-4" aria-label="Secure card payment">
       <PaymentElement />
       {error && <p role="alert" className={`rounded-xl border p-3 text-sm ${tone === 'dark' ? 'border-red-500/30 bg-red-500/10 text-red-200' : 'border-red-200 bg-red-50 text-red-700'}`}>{error}</p>}
-      <button type="submit" disabled={!stripe || busy} className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent-600,#b9472f)] px-4 text-sm font-extrabold text-white hover:brightness-110 disabled:opacity-50">
+      <ControlButton type="submit" disabled={!stripe || busy} className="flex  w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent-600,#b9472f)] px-4 text-sm font-extrabold text-white hover:brightness-110 disabled:opacity-50">
         {busy && <Spinner size="sm" />}
         {busy ? 'Confirming…' : `Pay ${formatMoney(attempt.provider_charge_amount)} with card`}
-      </button>
+      </ControlButton>
       <p className={`text-xs ${tone === 'dark' ? 'text-[#99a4b7]' : 'text-slate-500'}`}>
         {formatMoney(attempt.principal_amount)} applies to the invoice
         {attempt.card_fee_amount !== '0.00' ? ` · ${formatMoney(combinedCardProcessingFee(attempt.card_fee_amount, attempt.card_fee_tax_amount))} card fee` : ''}.
@@ -363,16 +364,16 @@ function InvoicePaymentPanel({
       <div className={`rounded-2xl border p-4 text-sm ${panel}`} role="status">
         <p className="font-bold">Card submitted to Stripe Connect</p>
         <p className={`mt-1 ${quiet}`}>We are waiting for signed provider confirmation. Do not submit another payment while this attempt is reconciling.</p>
-        <button
+        <ControlButton
           type="button"
           onClick={() => {
             queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
             queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
           }}
-          className="mt-3 min-h-[44px] rounded-xl border border-current px-3 text-xs font-extrabold"
+          className="mt-3  rounded-xl border border-current px-3 text-xs font-extrabold"
         >
           Refresh settlement
-        </button>
+        </ControlButton>
       </div>
     )
   }
@@ -385,7 +386,7 @@ function InvoicePaymentPanel({
             <p className={`text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>QuickBooks Payments</p>
             <h2 className="mt-1 font-extrabold">Complete secure card payment</h2>
           </div>
-          <button type="button" onClick={() => setAttempt(null)} className={`min-h-[44px] px-2 text-sm font-bold ${quiet}`}>Back</button>
+          <ControlButton type="button" onClick={() => setAttempt(null)} className={` px-2 text-sm font-bold ${quiet}`}>Back</ControlButton>
         </div>
         <QuickBooksPaymentPanel
           tokenUrl={attempt.provider_token_url}
@@ -410,7 +411,7 @@ function InvoicePaymentPanel({
             <p className={`text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>{providerLabel}</p>
             <h2 className="mt-1 font-extrabold">Complete secure card payment</h2>
           </div>
-          <button type="button" onClick={() => { setAttempt(null); setStripe(null) }} className={`min-h-[44px] px-2 text-sm font-bold ${quiet}`}>Back</button>
+          <ControlButton type="button" onClick={() => { setAttempt(null); setStripe(null) }} className={` px-2 text-sm font-bold ${quiet}`}>Back</ControlButton>
         </div>
         <Elements stripe={stripe} options={stripeOptions}>
           <StripeAttemptForm
@@ -443,7 +444,7 @@ function InvoicePaymentPanel({
           <span className={`mb-1.5 block text-xs font-bold ${quiet}`}>Amount actually received</span>
           <div className="relative">
             <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-bold ${quiet}`}>$</span>
-            <input
+            <ControlInput
               type="text"
               inputMode="decimal"
               autoComplete="off"
@@ -453,17 +454,17 @@ function InvoicePaymentPanel({
               onChange={event => setReceivedAmount(event.target.value)}
               onBlur={() => { const normalized = normalizeMoney(receivedAmount); if (normalized) setReceivedAmount(normalized) }}
               aria-invalid={!receivedAmountValid}
-              className={`h-11 w-full rounded-xl border pl-8 pr-3 text-sm font-extrabold tabular-nums outline-none focus:ring-2 focus:ring-[var(--accent-500,#d25d43)] ${input}`}
+              className={` w-full rounded-xl border pl-8 pr-3 text-sm font-extrabold tabular-nums outline-none focus:ring-2 focus:ring-[var(--accent-500,#d25d43)] ${input}`}
             />
           </div>
         </label>
         <p className={`mt-2 text-xs ${quiet}`}>{attempt.rail === 'fleet_payment' ? 'Confirm the verified instrument amount. This records receipt; it does not redeem a code or confirm bank clearance.' : 'Confirm only after independently verifying the external payment. If the received amount is higher than the current balance, the excess stays unapplied and enters refund-first resolution.'}</p>
         {!attempt.attempt_version && <p role="alert" className="mt-3 text-sm text-red-500">Confirmation version is missing. Refresh this invoice before confirming.</p>}
         <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <button type="button" onClick={() => setAttempt(null)} disabled={confirmMutation.isPending} className={`min-h-[44px] px-3 text-sm font-bold ${quiet}`}>Back</button>
-          <button type="button" onClick={() => confirmMutation.mutate()} disabled={!attempt.attempt_version || !receivedAmountValid || confirmMutation.isPending} className="min-h-[44px] rounded-xl bg-[var(--accent-600,#b9472f)] px-4 text-sm font-extrabold text-white disabled:opacity-50">
+          <ControlButton type="button" onClick={() => setAttempt(null)} disabled={confirmMutation.isPending} className={` px-3 text-sm font-bold ${quiet}`}>Back</ControlButton>
+          <ControlButton type="button" onClick={() => confirmMutation.mutate()} disabled={!attempt.attempt_version || !receivedAmountValid || confirmMutation.isPending} className=" rounded-xl bg-[var(--accent-600,#b9472f)] px-4 text-sm font-extrabold text-white disabled:opacity-50">
             {confirmMutation.isPending ? 'Confirming…' : `Confirm ${label} received`}
-          </button>
+          </ControlButton>
         </div>
       </section>
     )
@@ -489,9 +490,9 @@ function InvoicePaymentPanel({
           ].map(([label, display, value]) => (
             <div key={label} className="flex min-h-[52px] items-center justify-between gap-3 px-3 py-2">
               <div className="min-w-0"><p className={`text-[11px] ${quiet}`}>{label}</p><p className="truncate font-bold tabular-nums">{display}</p></div>
-              <button type="button" onClick={() => copy(value, label)} className="flex min-h-[44px] items-center gap-1 text-xs font-bold text-sky-500">
+              <ControlButton type="button" onClick={() => copy(value, label)} className="flex  items-center gap-1 text-xs font-bold text-sky-500">
                 {copied === label ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}{copied === label ? 'Copied' : 'Copy'}
-              </button>
+              </ControlButton>
             </div>
           ))}
         </div>
@@ -500,13 +501,13 @@ function InvoicePaymentPanel({
           The invoice changes only after the shop confirms receipt.
         </p>
         {isPositiveMoney(summary.allocatable_balance) && (
-          <button
+          <ControlButton
             type="button"
             onClick={() => setAttempt(null)}
-            className="mt-4 flex min-h-[48px] w-full items-center justify-center rounded-xl border border-current px-4 text-sm font-extrabold"
+            className="mt-4 flex  w-full items-center justify-center rounded-xl border border-current px-4 text-sm font-extrabold"
           >
             Make another payment · {formatMoney(summary.allocatable_balance)} available
-          </button>
+          </ControlButton>
         )}
       </section>
     )
@@ -526,19 +527,19 @@ function InvoicePaymentPanel({
       <div className={`rounded-2xl border p-4 text-sm ${panel}`} role="status">
         <p className="font-bold">{title}</p>
         <p className={`mt-1 ${quiet}`}>{explanation}</p>
-        <button type="button" onClick={() => {
+        <ControlButton type="button" onClick={() => {
           void queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
           void queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
-        }} className="mt-3 min-h-11 rounded-xl border border-current px-3 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-500,#d25d43)]">Refresh payment status</button>
+        }} className="mt-3  rounded-xl border border-current px-3 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-500,#d25d43)]">Refresh payment status</ControlButton>
       </div>
     )
   }
 
-  const moreTenders = audience === 'staff' && <button type="button" onClick={() => setExpandedTenders(!expandedTenders)}
+  const moreTenders = audience === 'staff' && <ControlButton controlKind="action" type="button" onClick={() => setExpandedTenders(!expandedTenders)}
     aria-label="More payment methods" aria-expanded={expandedTenders} aria-controls={`payment-tenders-${summary.invoice_id}`}
-    className={`flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 ${quiet}`}>
+    className={`flex  items-center gap-2 rounded-lg px-2 text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 ${quiet}`}>
     <MoreHorizontal className="h-4 w-4" />{expandedTenders ? 'Less' : 'More'}
-  </button>
+  </ControlButton>
 
   return (
     <section className={`rounded-2xl border p-4 ${panel}`} aria-labelledby={`settlement-payment-${summary.invoice_id}`}>
@@ -557,7 +558,7 @@ function InvoicePaymentPanel({
             const Icon = meta.icon
             const selected = item === 'cash' ? cashSelected : !cashSelected && rail === item
             return (
-              <button key={item} ref={node => { railRefs.current[index] = node }} type="button" role="radio"
+              <ControlButton controlKind="content" key={item} ref={node => { railRefs.current[index] = node }} type="button" role="radio"
                 aria-checked={selected} disabled={tenderDisabled(item)}
                 title={audience === 'staff' ? item === 'fleet_payment' ? `${meta.label} · ${meta.detail}` : meta.detail : undefined}
                 aria-label={audience === 'staff' && item === 'fleet_payment' ? meta.label : undefined}
@@ -579,22 +580,22 @@ function InvoicePaymentPanel({
                 className={`flex min-h-11 items-center gap-2 rounded-xl border px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-500,#d25d43)] disabled:cursor-not-allowed disabled:opacity-50 ${selected ? dark ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-emerald-700 bg-emerald-50' : input}`}>
                 <Icon className="h-4 w-4 shrink-0" />
                 <span className="min-w-0"><span className="block text-sm font-extrabold">{item === 'card' ? providerLabel : audience === 'staff' && item === 'fleet_payment' ? 'EFS codes' : meta.label}</span>{audience !== 'staff' && <span className={`block text-[11px] ${quiet}`}>{meta.detail}</span>}</span>
-              </button>
+              </ControlButton>
             )
           })}
         </div>
       </div>
       {audience === 'staff' && <div className={`mt-3 flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-sm ${dark ? 'border-[#2a3245]' : 'border-slate-200'}`}>
         {moreTenders}
-        {!cashSelected && noncashAvailable && <button type="button" disabled={createMutation.isPending} onClick={() => { setAmount(editingAmount ? null : currentAmount); setEditingAmount(!editingAmount) }} className="ml-auto min-h-11 rounded-lg px-2 font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">
+        {!cashSelected && noncashAvailable && <ControlButton type="button" disabled={createMutation.isPending} onClick={() => { setAmount(editingAmount ? null : currentAmount); setEditingAmount(!editingAmount) }} className="ml-auto  rounded-lg px-2 font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">
           {editingAmount ? 'Pay full balance' : 'Pay partial amount'}
-        </button>}
+        </ControlButton>}
       </div>}
       {!cashSelected && noncashAvailable && (audience !== 'staff' || editingAmount) && <label className="mt-3 block">
         <span className={`mb-1.5 block text-xs font-bold ${quiet}`}>Amount applied to invoice</span>
         <div className="relative">
           <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-bold ${quiet}`}>$</span>
-          <input
+          <ControlInput
             type="text"
             inputMode="decimal"
             autoComplete="off"
@@ -604,7 +605,7 @@ function InvoicePaymentPanel({
             aria-invalid={currentAmount.length > 0 && !amountValid}
             aria-label="Amount applied to invoice"
             aria-describedby={`settlement-amount-help-${summary.invoice_id}`}
-            className={`h-12 w-full rounded-xl border pl-8 pr-3 text-lg font-extrabold tabular-nums outline-none focus:ring-2 focus:ring-[var(--accent-500,#d25d43)] ${input}`}
+            className={` w-full rounded-xl border pl-8 pr-3 text-lg font-extrabold tabular-nums outline-none focus:ring-2 focus:ring-[var(--accent-500,#d25d43)] ${input}`}
           />
         </div>
         <span id={`settlement-amount-help-${summary.invoice_id}`} className={`mt-1 block min-h-4 text-xs ${currentAmount.length > 0 && !amountValid ? 'text-red-500' : quiet}`}>
@@ -625,7 +626,7 @@ function InvoicePaymentPanel({
           setNote('')
         }}>
           <Label>Fleet provider</Label>
-          <ListboxButton className={`mt-1 flex h-11 w-full items-center justify-between gap-2 rounded-xl border px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-500,#0891b2)] disabled:cursor-not-allowed disabled:opacity-50 ${input}`}>
+          <ListboxButton data-db-control="select" className={`mt-1 flex h-11 w-full items-center justify-between gap-2 rounded-xl border px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-500,#0891b2)] disabled:cursor-not-allowed disabled:opacity-50 ${input}`}>
             <span>{fleetProvider === 'EFS' ? 'EFS / MoneyCode' : fleetProvider === 'Other' ? 'Other provider' : fleetProvider}</span><ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0" />
           </ListboxButton>
           <ListboxOptions anchor="bottom start" modal={false} className={`z-[10010] w-[var(--button-width)] max-w-[calc(100vw-2rem)] rounded-xl border p-1 shadow-lg outline-none [--anchor-gap:4px] [--anchor-padding:16px] ${dark ? 'border-[#2a3245] bg-[#161d2b] text-slate-100' : 'border-slate-200 bg-white text-slate-900'}`}>
@@ -634,14 +635,14 @@ function InvoicePaymentPanel({
             </ListboxOption>)}
           </ListboxOptions>
         </Listbox></div>
-        {fleetProvider === 'Other' && <label className="block text-xs font-bold">Provider name<input maxLength={100} required value={fleetProviderName} onChange={event => setFleetProviderName(event.target.value)} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm ${input}`} /></label>}
-        <label className="block text-xs font-bold">Approval reference (optional)<input maxLength={255} value={authorization} onChange={event => setAuthorization(event.target.value)} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm ${input}`} /></label>
+        {fleetProvider === 'Other' && <label className="block text-xs font-bold">Provider name<ControlInput maxLength={100} required value={fleetProviderName} onChange={event => setFleetProviderName(event.target.value)} className={`mt-1  w-full rounded-xl border px-3 text-sm ${input}`} /></label>}
+        <label className="block text-xs font-bold">Approval reference (optional)<ControlInput maxLength={255} value={authorization} onChange={event => setAuthorization(event.target.value)} className={`mt-1  w-full rounded-xl border px-3 text-sm ${input}`} /></label>
       </div>}
 
       {!cashSelected && noncashAvailable && audience === 'staff' && rail && rail !== 'card' && (
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="block"><span className={`mb-1 block text-xs font-bold ${quiet}`}>{rail === 'check' ? 'Check number' : rail === 'ach' ? 'Bank trace' : rail === 'fleet_payment' ? 'Instrument / code reference' : 'Zelle transaction reference'}</span><input maxLength={255} value={reference} onChange={event => setReference(event.target.value)} required className={`h-11 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
-          <label className="block"><span className={`mb-1 block text-xs font-bold ${quiet}`}>Verification note <span className="font-normal">(optional)</span></span><input value={note} onChange={event => setNote(event.target.value)} className={`h-11 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
+          <label className="block"><span className={`mb-1 block text-xs font-bold ${quiet}`}>{rail === 'check' ? 'Check number' : rail === 'ach' ? 'Bank trace' : rail === 'fleet_payment' ? 'Instrument / code reference' : 'Zelle transaction reference'}</span><ControlInput maxLength={255} value={reference} onChange={event => setReference(event.target.value)} required className={` w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
+          <label className="block"><span className={`mb-1 block text-xs font-bold ${quiet}`}>Verification note <span className="font-normal">(optional)</span></span><ControlInput value={note} onChange={event => setNote(event.target.value)} className={` w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
         </div>
       )}
 
@@ -673,26 +674,26 @@ function InvoicePaymentPanel({
         </dl>}
         {chargeControls?.details}
         <p role="status" className="sr-only">{canQuote && !quoteReady ? 'Calculating payment total…' : ''}</p>
-        {quoteEnabled && quoteQuery.error && <div role="alert" className="mt-3 text-sm text-red-700"><p>{paymentApiError(quoteQuery.error, 'Payment total could not be verified. Retry before continuing.').message}</p><button type="button" onClick={() => { void quoteQuery.refetch(); void queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] }) }} className="min-h-11 font-semibold underline">Retry payment total</button></div>}
+        {quoteEnabled && quoteQuery.error && <div role="alert" className="mt-3 text-sm text-red-700"><p>{paymentApiError(quoteQuery.error, 'Payment total could not be verified. Retry before continuing.').message}</p><ControlButton type="button" onClick={() => { void quoteQuery.refetch(); void queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] }) }} className=" font-semibold underline">Retry payment total</ControlButton></div>}
       </section>}
       {submissionBlockedReason && <p role="status" className="sr-only">{submissionBlockedReason}</p>}
       {cashSelected && <fieldset disabled={submissionBlocked} className="min-w-0 border-0 p-0">{cash?.confirmation}</fieldset>}
 
       {!cashSelected && rail === 'zelle' && audience !== 'staff' && (
         <div className="mt-3 grid gap-3">
-          <label className="block"><span className={`mb-1 block text-xs font-bold ${quiet}`}>Sender email or phone <span className="font-normal">(optional)</span></span><input value={senderEmail || senderPhone} onChange={event => { const value = event.target.value; value.includes('@') ? (setSenderEmail(value), setSenderPhone('')) : (setSenderPhone(value), setSenderEmail('')) }} className={`h-11 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
-          <button type="button" aria-expanded={showTransferDetails} onClick={() => setShowTransferDetails(!showTransferDetails)} className={`min-h-11 justify-self-start rounded-lg text-sm font-semibold underline underline-offset-4 focus-visible:ring-2 ${quiet}`}>{showTransferDetails ? 'Hide transfer details' : 'Add transfer details (optional)'}</button>
+          <label className="block"><span className={`mb-1 block text-xs font-bold ${quiet}`}>Sender email or phone <span className="font-normal">(optional)</span></span><ControlInput value={senderEmail || senderPhone} onChange={event => { const value = event.target.value; value.includes('@') ? (setSenderEmail(value), setSenderPhone('')) : (setSenderPhone(value), setSenderEmail('')) }} className={` w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
+          <ControlButton controlKind="action" type="button" aria-expanded={showTransferDetails} onClick={() => setShowTransferDetails(!showTransferDetails)} className={` justify-self-start rounded-lg text-sm font-semibold underline underline-offset-4 focus-visible:ring-2 ${quiet}`}>{showTransferDetails ? 'Hide transfer details' : 'Add transfer details (optional)'}</ControlButton>
           {showTransferDetails && <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block text-xs font-bold">Zelle transaction reference (optional)<input maxLength={255} value={reference} onChange={event => setReference(event.target.value)} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
-            <label className="block text-xs font-bold">Note to shop (optional)<input maxLength={1000} value={note} onChange={event => setNote(event.target.value)} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
+            <label className="block text-xs font-bold">Zelle transaction reference (optional)<ControlInput maxLength={255} value={reference} onChange={event => setReference(event.target.value)} className={`mt-1  w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
+            <label className="block text-xs font-bold">Note to shop (optional)<ControlInput maxLength={1000} value={note} onChange={event => setNote(event.target.value)} className={`mt-1  w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
           </div>}
         </div>
       )}
 
-      {!cashSelected && noncashAvailable && <><button type="button" onClick={() => createMutation.mutate()} disabled={!canSubmit || createMutation.isPending} className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent-600,#b9472f)] px-4 text-sm font-extrabold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
+      {!cashSelected && noncashAvailable && <><ControlButton type="button" onClick={() => createMutation.mutate()} disabled={!canSubmit || createMutation.isPending} className="mt-4 flex  w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent-600,#b9472f)] px-4 text-sm font-extrabold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
         {createMutation.isPending && <Spinner size="sm" />}
         {createMutation.isPending ? 'Preparing…' : rail === 'card' ? `Continue to ${providerLabel}` : audience === 'staff' ? `Record ${rail ? RAIL_META[rail].label : 'payment'}` : 'Reserve Zelle amount'}
-      </button>
+      </ControlButton>
       <p className={`mt-2 text-center text-[11px] ${quiet}`}>Applied after {rail === 'card' ? 'provider' : 'shop'} confirmation.</p>
       </>}
       </fieldset>

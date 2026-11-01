@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { WalletCards } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -95,14 +96,14 @@ export default function SettlementCreditPanel({
                 <p className={`text-sm font-bold ${primary}`}>{formatMoney(credit.remaining_amount)} available</p>
                 <p className={`text-xs ${secondary}`}>Consent recorded {new Date(credit.issued_at).toLocaleDateString()}</p>
               </div>
-              <button
+              <ControlButton
                 type="button"
                 disabled={applyMutation.isPending || (moneyToCents(amount) ?? 0n) === 0n}
                 onClick={() => applyMutation.mutate({ creditId: credit.credit_id, amount })}
-                className="min-h-[44px] rounded-xl bg-emerald-800 px-3 text-xs font-extrabold text-white hover:bg-emerald-900 disabled:opacity-50"
+                className=" rounded-xl bg-emerald-800 px-3 text-xs font-extrabold text-white hover:bg-emerald-900 disabled:opacity-50"
               >
                 {applyMutation.isPending ? 'Applying…' : `Apply ${formatMoney(amount)}`}
-              </button>
+              </ControlButton>
             </li>
           )
         })}

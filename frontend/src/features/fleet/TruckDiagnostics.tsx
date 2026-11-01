@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useId, useState } from 'react'
 import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
 import { useQuery } from '@tanstack/react-query'
@@ -33,9 +34,9 @@ function checkedTime(value: string) {
 
 export default function TruckDiagnostics({ truckId, telemetry }: { truckId: string; telemetry?: FleetTelemetry | null }) {
   return <Popover className="truck-health">
-    <PopoverButton className="dbtn dbtn-ghost dhead-health"><Activity size={15} aria-hidden="true" /> View health</PopoverButton>
+    <PopoverButton data-db-control="action" className="dbtn dbtn-ghost dhead-health"><Activity size={15} aria-hidden="true" /> View health</PopoverButton>
     <PopoverPanel className="truck-health-panel" focus>
-      <div className="truck-health-header"><div className="truck-health-heading"><h2>Truck health</h2><PopoverButton className="truck-health-close" aria-label="Close truck health"><X size={18} aria-hidden="true" /></PopoverButton></div>
+      <div className="truck-health-header"><div className="truck-health-heading"><h2>Truck health</h2><PopoverButton data-db-control="icon" className="truck-health-close" aria-label="Close truck health"><X size={18} aria-hidden="true" /></PopoverButton></div>
       <HealthVitals telemetry={telemetry} /></div><TruckDiagnosticsContent truckId={truckId} />
     </PopoverPanel>
   </Popover>
@@ -49,7 +50,7 @@ function TruckDiagnosticsContent({ truckId }: { truckId: string }) {
   const data = query.data
   return <div className="diagnostics-body">
       {query.isLoading ? <p role="status">Loading fault codes…</p>
-        : query.isError ? <div role="alert"><p>Fault codes could not be loaded.</p><button type="button" className="btn" onClick={() => void query.refetch()} disabled={query.isFetching}><RotateCcw size={14} />Try again</button></div>
+        : query.isError ? <div role="alert"><p>Fault codes could not be loaded.</p><ControlButton type="button" className="btn" onClick={() => void query.refetch()} disabled={query.isFetching}><RotateCcw size={14} />Try again</ControlButton></div>
         : !data?.last_checked_at ? <p>No verified dashboard check is available for this truck.</p>
         : <>
           <p className="diagnostics-meta">Motive · Dashboard checked <time dateTime={data.last_checked_at}>{checkedTime(data.last_checked_at)}</time></p>
@@ -87,10 +88,10 @@ function HealthVitals({ telemetry }: { telemetry?: FleetTelemetry | null }) {
       <div key={label}><dt>{label}</dt><dd>{reading ? `${reading.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${unit}` : 'Unavailable'}</dd></div>
     )}</dl>
     <div className="health-vitals-info" onPointerEnter={event => { if (event.pointerType === 'mouse') setOpen(true) }} onPointerLeave={() => { if (!pinned) setOpen(false) }}>
-      <button type="button" className="health-vitals-info-button" aria-label="Mileage and engine hours information" aria-expanded={open} aria-describedby={open ? id : undefined}
+      <ControlButton controlKind="icon" type="button" className="health-vitals-info-button" aria-label="Mileage and engine hours information" aria-expanded={open} aria-describedby={open ? id : undefined}
         onFocus={() => setOpen(true)} onBlur={() => { setOpen(false); setPinned(false) }}
         onClick={() => { setPinned(!pinned); setOpen(!pinned) }}
-        onKeyDown={event => { if (event.key === 'Escape' && open) { event.stopPropagation(); setOpen(false); setPinned(false) } }}><Info size={16} aria-hidden="true" /></button>
+        onKeyDown={event => { if (event.key === 'Escape' && open) { event.stopPropagation(); setOpen(false); setPinned(false) } }}><Info size={16} aria-hidden="true" /></ControlButton>
       {open && <div role="tooltip" id={id} className="health-vitals-tooltip">{descriptions.map(({ label, caption }) => <p key={label}><strong>{label}</strong><span>{caption}</span></p>)}</div>}
     </div>
   </div>

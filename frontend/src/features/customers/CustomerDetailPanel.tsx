@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import React, { useEffect, useState, type ReactNode } from 'react'
 import type { ViewMode } from '@/components/ViewToggle'
 import type { LucideIcon } from 'lucide-react'
@@ -24,6 +25,11 @@ import CustomerLoadError from './CustomerLoadError'
 import CustomerBusinessSettings from './CustomerBusinessSettings'
 import CustomerAccount from './CustomerAccount'
 import './customer-workspace.css'
+
+function EtsHistoryBalance({ value }: { value?: string }) {
+  if (value == null || numericBalance(value) === 0) return null
+  return <span className="db-customer-ets-balance">ETS history {numericBalance(value) < 0 ? 'credit ' : ''}{balanceAmountLabel(value)} · unverified</span>
+}
 
 /**
  * A customer's record: summary, contacts, notes, trucks, and service history.
@@ -156,53 +162,54 @@ export default function CustomerDetailPanel({
           {selectedCustomer.email && <a href={`mailto:${selectedCustomer.email}`}><Mail aria-hidden="true" /><span>{selectedCustomer.email}</span></a>}
           {!selectedCustomer.phone && !selectedCustomer.email && <span className="text-gray-500">No company contact details</span>}
         </div>
-        <div className="db-customer-record__balance" aria-label="Listed balance, mixed sources">
-          <span>{numericBalance(selectedCustomer.balance) < 0 ? 'Listed credit' : 'Listed balance'} · mixed sources</span>
+        <div className="db-customer-record__balance" aria-label="Customer balance due">
+          <span>{numericBalance(selectedCustomer.balance) < 0 ? 'Credit' : 'Balance due'} · DieselBridge</span>
           <strong className={balanceLabelClass(selectedCustomer.balance)}>{selectedCustomer.balance != null ? balanceAmountLabel(selectedCustomer.balance) : '—'}</strong>
+          <EtsHistoryBalance value={selectedCustomer.legacy_ets_balance} />
         </div>
       </div>
-      {onCreateOrder && <div className="db-customer-record__work-actions"><button ref={createOrderButtonRef} type="button" onClick={onCreateOrder}><Plus aria-hidden="true" />New repair order</button></div>}
+      {onCreateOrder && <div className="db-customer-record__work-actions"><ControlButton ref={createOrderButtonRef} type="button" onClick={onCreateOrder}><Plus aria-hidden="true" />New repair order</ControlButton></div>}
       {/* Tabs */}
       <div className="db-customer-record__tabs" role="group" aria-label="Customer views">
-        <button
+        <ControlButton controlKind="action"
           type="button"
           onClick={() => { setAccountOpen(false); setDetailTab('overview') }}
           aria-pressed={!accountOpen && detailTab === 'overview'}
-          className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
+          className={`px-4  text-sm font-medium -mb-px border-b-2 transition-colors ${
             !accountOpen && detailTab === 'overview'
               ? 'border-amber-500 text-amber-700'
               : 'border-transparent text-gray-500 hover:text-gray-700'
           }`}
         >
           Overview
-        </button>
-        <button
+        </ControlButton>
+        <ControlButton controlKind="action"
           type="button"
           onClick={() => { setAccountOpen(false); setDetailTab('history') }}
           aria-pressed={!accountOpen && detailTab === 'history'}
-          className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
+          className={`px-4  text-sm font-medium -mb-px border-b-2 transition-colors ${
             !accountOpen && detailTab === 'history'
               ? 'border-amber-500 text-amber-700'
               : 'border-transparent text-gray-500 hover:text-gray-700'
           }`}
         >
           History
-        </button>
-        {canReadAccount && <button
+        </ControlButton>
+        {canReadAccount && <ControlButton controlKind="action"
           type="button"
           onClick={() => setAccountOpen(true)}
           aria-pressed={accountOpen}
-          className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
+          className={`px-4  text-sm font-medium -mb-px border-b-2 transition-colors ${
             accountOpen
               ? 'border-amber-500 text-amber-700'
               : 'border-transparent text-gray-500 hover:text-gray-700'
           }`}
-        >Account</button>}
+        >Account</ControlButton>}
       </div>
 
       {accountOpen && canReadAccount && <CustomerAccount key={selectedCustomer.id} customerId={selectedCustomer.id} />}
 
-      {!accountOpen && detailTab === 'history' && historyError ? <div role="alert">Could not load customer history. <button type="button" onClick={onRetryHistory}>Retry customer history</button></div> : !accountOpen && detailTab === 'history' ? (
+      {!accountOpen && detailTab === 'history' && historyError ? <div role="alert">Could not load customer history. <ControlButton type="button" onClick={onRetryHistory}>Retry customer history</ControlButton></div> : !accountOpen && detailTab === 'history' ? (
         <div className="db-customer-record__history">
           {/* Lifetime stats */}
           <div className="db-customer-history__stats grid grid-cols-3 gap-3">
@@ -261,10 +268,10 @@ export default function CustomerDetailPanel({
                             className={`hover:bg-gray-100/50 cursor-pointer ${isExpanded ? 'bg-amber-50/40' : ''}`}
                           >
                             <td className="px-3 py-2.5 text-gray-900 font-medium">
-                              <button type="button" className="db-customer-history__open" aria-expanded={isExpanded}
+                              <ControlButton controlKind="action" type="button" className="db-customer-history__open" aria-expanded={isExpanded}
                                 onClick={event => { event.stopPropagation(); setExpandedHistoryId(isExpanded ? null : ro.id) }}>
                                 <ChevronRight aria-hidden="true" className={isExpanded ? 'rotate-90' : ''} />{ro.order_number}
-                              </button>
+                              </ControlButton>
                               <div className="text-[11px] text-gray-500 font-normal ml-3">{dateFmt}</div>
                             </td>
                             <td data-label="Vehicle" className="px-3 py-2.5 text-gray-700">
@@ -337,13 +344,13 @@ export default function CustomerDetailPanel({
           </div>
           <div className="flex items-center justify-end gap-2">
             {isLoadingVehicles && <span className="text-xs text-gray-400">Loading...</span>}
-            <button
+            <ControlButton
               onClick={openAddVehicleModal}
-              className="flex min-h-11 items-center gap-1.5 rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white transition-[background-color,transform] duration-150 hover:bg-amber-600 active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
+              className="flex  items-center gap-1.5 rounded-lg bg-amber-500 px-4  text-sm font-semibold text-white transition-[background-color,transform] duration-150 hover:bg-amber-600 active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
             >
               <Plus className="h-4 w-4" />
               Add / Link
-            </button>
+            </ControlButton>
           </div>
         </div>
         {!vehiclesError && customerVehicles && customerVehicles.length > 0 && (
@@ -353,7 +360,7 @@ export default function CustomerDetailPanel({
                 <div className="relative min-w-0 flex-1">
                   <label className="sr-only" htmlFor="customer-truck-search">Search connected equipment</label>
                   <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
-                  <input
+                  <ControlInput
                     id="customer-truck-search"
                     type="search"
                     autoComplete="off"
@@ -361,17 +368,17 @@ export default function CustomerDetailPanel({
                     value={vehicleRelationshipSearch}
                     onChange={(event) => setVehicleRelationshipSearch(event.target.value)}
                     placeholder="Search unit, VIN, plate, make, model, owner..."
-                    className="min-h-11 w-full rounded-lg border border-gray-300 bg-white py-2.5 pl-10 pr-11 text-sm text-gray-900 outline-none transition placeholder:text-gray-500 focus:border-amber-500 focus:ring-2 focus:ring-amber-200 [&::-webkit-search-cancel-button]:hidden"
+                    className=" w-full rounded-lg border border-gray-300 bg-white  pl-10 pr-11 text-sm text-gray-900 outline-none transition placeholder:text-gray-500 focus:border-amber-500 focus:ring-2 focus:ring-amber-200 [&::-webkit-search-cancel-button]:hidden"
                   />
                   {vehicleRelationshipSearch && (
-                    <button
+                    <ControlButton controlKind="icon"
                       type="button"
                       onClick={() => setVehicleRelationshipSearch('')}
                       aria-label="Clear equipment search"
-                      className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                      className="absolute right-1 top-1/2 flex  w-9 -translate-y-1/2 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                     >
                       <X className="h-4 w-4" />
-                    </button>
+                    </ControlButton>
                   )}
                 </div>
               )}
@@ -382,19 +389,19 @@ export default function CustomerDetailPanel({
                     ['owned', 'Owned', ownedVehicles.length],
                     ['authority', 'Under authority', authorityVehicles.length],
                   ] as const).map(([value, label, count]) => (
-                    <button
+                    <ControlButton controlKind="action"
                       key={value}
                       type="button"
                       onClick={() => setVehicleRelationshipFilter(value)}
                       aria-pressed={vehicleRelationshipFilter === value}
-                      className={`min-h-11 rounded-full border px-3.5 py-2 text-sm font-semibold transition-[background-color,border-color,color,transform] duration-150 active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+                      className={` rounded-full border px-3.5  text-sm font-semibold transition-[background-color,border-color,color,transform] duration-150 active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
                         vehicleRelationshipFilter === value
                           ? 'border-slate-700 bg-slate-800 text-white'
                           : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-100'
                       }`}
                     >
                       {label} <span className={vehicleRelationshipFilter === value ? 'text-white/75' : 'text-gray-500'}>{count}</span>
-                    </button>
+                    </ControlButton>
                   ))}
                 </div>
               )}
@@ -425,16 +432,16 @@ export default function CustomerDetailPanel({
               <Search className="mx-auto h-7 w-7 text-gray-400" />
               <p className="mt-2 text-sm font-semibold text-gray-800">No connected equipment matches</p>
               <p className="mt-1 text-sm text-gray-500">Clear the search or relationship filter to see every asset.</p>
-              <button
+              <ControlButton
                 type="button"
                 onClick={() => {
                   setVehicleRelationshipSearch('')
                   setVehicleRelationshipFilter('all')
                 }}
-                className="mt-4 min-h-11 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-gray-200 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                className="mt-4  rounded-lg bg-white px-4  text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-gray-200 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
               >
                 Clear filters
-              </button>
+              </ControlButton>
             </div>
           ) : vehiclesViewMode === 'list' ? (
             <div className="db-customer-trucks">
@@ -446,7 +453,7 @@ export default function CustomerDetailPanel({
                   <ul>
                     {group.visibleVehicles.map(vehicle => (
                       <li key={vehicle.id}>
-                        <button type="button" className="db-customer-trucks__row" onClick={() => setSelectedVehicleInPanel(vehicle)}
+                        <ControlButton controlKind="content" type="button" className="db-customer-trucks__row" onClick={() => setSelectedVehicleInPanel(vehicle)}
                           aria-label={`Open ${vehicleDisplayLabel(vehicle)}${vehicle.unit_number ? ` · Unit ${vehicle.unit_number}` : ''}`}>
                           <div className="db-customer-trucks__identity">
                             <strong>{vehicle.unit_number && <span className="db-customer-trucks__unit">{vehicle.unit_number}</span>}{vehicleDisplayLabel(vehicle)}</strong>
@@ -458,11 +465,14 @@ export default function CustomerDetailPanel({
                               {vehicle.color && <span>{vehicle.color}</span>}
                             </span>
                           </div>
-                          <span className={`db-customer-trucks__balance ${balanceLabelClass(vehicle.balance)}`}>
-                            {vehicle.balance != null ? balanceLabel(vehicle.balance) : '—'}
+                          <span className="db-customer-trucks__balances">
+                            <span className={`db-customer-trucks__balance ${balanceLabelClass(vehicle.balance)}`}>
+                              {vehicle.balance != null ? balanceLabel(vehicle.balance) : '—'}
+                            </span>
+                            <EtsHistoryBalance value={vehicle.legacy_ets_balance} />
                           </span>
                           <ChevronRight aria-hidden="true" />
-                        </button>
+                        </ControlButton>
                       </li>
                     ))}
                   </ul>
@@ -507,7 +517,7 @@ export default function CustomerDetailPanel({
                     key={vehicle.id}
                     className="db-customer-truck-card group relative rounded-xl border border-gray-200 bg-white p-4 pr-24 transition-colors hover:border-gray-300 hover:bg-gray-50"
                   >
-                    <button type="button"
+                    <ControlButton controlKind="content" type="button"
                       onClick={() => setSelectedVehicleInPanel(vehicle)}
                       aria-label={`Open ${cardTitle}${vehicle.unit_number ? ` · Unit ${vehicle.unit_number}` : ''}`}
                       className="db-customer-truck-card__open"
@@ -549,41 +559,40 @@ export default function CustomerDetailPanel({
                           )}
                         </div>
                       </div>
-                      {vehicleBalance !== 0 && (
-                        <div className="mt-3 border-t border-gray-200 pt-2">
+                      <div className="mt-3 border-t border-gray-200 pt-2">
                           <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
                             vehicleBalance > 0
                               ? 'bg-amber-100 text-amber-800'
-                              : 'bg-emerald-100 text-emerald-800'
+                              : vehicleBalance < 0 ? 'bg-emerald-100 text-emerald-800' : 'text-gray-600'
                           }`}>
-                            {balanceLabel(vehicle.balance)}
+                            {vehicle.balance != null ? balanceLabel(vehicle.balance) : '—'}
                           </span>
-                        </div>
-                      )}
-                    </button>
+                          <EtsHistoryBalance value={vehicle.legacy_ets_balance} />
+                      </div>
+                    </ControlButton>
                     <div className="db-customer-truck-card__actions absolute right-2 top-2 flex items-center gap-1 opacity-100 xl:opacity-0 xl:transition-opacity xl:group-hover:opacity-100 xl:group-focus-within:opacity-100">
-                      <button
+                      <ControlButton controlKind="icon"
                         onClick={(e) => {
                           e.stopPropagation()
                           openEditVehicleModal(vehicle)
                         }}
                         aria-label={`Edit ${cardTitle}`}
-                        className="flex h-11 w-11 items-center justify-center rounded-lg bg-white text-blueNoir-800 shadow-sm ring-1 ring-gray-200 transition-colors hover:bg-amber-50 hover:text-amber-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                        className="flex  w-11 items-center justify-center rounded-lg bg-white text-blueNoir-800 shadow-sm ring-1 ring-gray-200 transition-colors hover:bg-amber-50 hover:text-amber-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                         title="Edit"
                       >
                         <Pencil className="h-4 w-4" />
-                      </button>
-                      <button
+                      </ControlButton>
+                      <ControlButton controlKind="icon"
                         onClick={(e) => {
                           e.stopPropagation()
                           handleDeleteVehicleClick(vehicle)
                         }}
                         aria-label={`Delete ${cardTitle}`}
-                        className="flex h-11 w-11 items-center justify-center rounded-lg bg-white text-blueNoir-800 shadow-sm ring-1 ring-gray-200 transition-colors hover:bg-red-50 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                        className="flex  w-11 items-center justify-center rounded-lg bg-white text-blueNoir-800 shadow-sm ring-1 ring-gray-200 transition-colors hover:bg-red-50 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
                         title="Delete"
                       >
                         <Trash2 className="h-4 w-4" />
-                      </button>
+                      </ControlButton>
                     </div>
                   </div>
                 )
@@ -597,13 +606,13 @@ export default function CustomerDetailPanel({
           <div className="bg-gray-50 rounded-xl p-6 text-center border border-gray-100">
             <Truck className="w-8 h-8 text-gray-300 mx-auto mb-2" />
             <p className="text-sm text-gray-500 mb-3">No vehicles on file</p>
-            <button
+            <ControlButton
               onClick={openAddVehicleModal}
-              className="px-4 py-2 text-sm font-medium text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors inline-flex items-center gap-1.5"
+              className="px-4  text-sm font-medium text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors inline-flex items-center gap-1.5"
             >
               <Plus className="w-4 h-4" />
               Add First Vehicle
-            </button>
+            </ControlButton>
           </div>
         )}
       </section>
@@ -616,13 +625,13 @@ export default function CustomerDetailPanel({
           <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Contacts</h3>
           <div className="flex items-center gap-2">
             {isLoadingContacts && <span className="text-xs text-gray-400">Loading...</span>}
-            <button
+            <ControlButton
               onClick={openAddContactModal}
-              className="px-3 py-1.5 text-xs font-medium text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors flex items-center gap-1"
+              className="px-3  text-xs font-medium text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors flex items-center gap-1"
             >
               <Plus className="w-3.5 h-3.5" />
               Add Contact
-            </button>
+            </ControlButton>
           </div>
         </div>
         {contactsError ? <CustomerLoadError subject="contacts" onRetry={onRetryContacts} isRetrying={isFetchingContacts} /> : isLoadingContacts ? <LoadingLine>Loading contacts…</LoadingLine> : (() => {
@@ -669,22 +678,22 @@ export default function CustomerDetailPanel({
                       </div>
                     </div>
                     <div className="db-customer-contact__actions flex items-center gap-1 flex-shrink-0">
-                      <button
+                      <ControlButton controlKind="icon"
                         onClick={() => openEditContactModal(contact)}
                         aria-label={`Edit ${name}`}
                         className="rounded p-1.5 text-blueNoir-800 transition-colors hover:bg-amber-50 hover:text-amber-700"
                         title="Edit"
                       >
                         <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button
+                      </ControlButton>
+                      <ControlButton controlKind="icon"
                         onClick={() => handleDeleteContactClick(contact)}
                         aria-label={`Delete ${name}`}
                         className="rounded p-1.5 text-blueNoir-800 transition-colors hover:bg-red-50 hover:text-red-700"
                         title="Delete"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      </ControlButton>
                     </div>
                   </div>
                 )

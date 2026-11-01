@@ -28,6 +28,9 @@ class HistoricalInvoiceEvidence(BaseModel):
     verified_target_customer_id = Column(UUID(as_uuid=True), nullable=True)
     verified_target_legal_name = Column(String(255), nullable=True)
     verification_note = Column(Text, nullable=True)
+    verification_mode = Column(String(32), nullable=True)
+    identity_proof = Column(Text, nullable=True)
+    identity_proof_sha256 = Column(String(64), nullable=True)
 
 
 class HistoricalInvoiceMapping(BaseModel):
@@ -50,6 +53,8 @@ class HistoricalInvoiceDecision(BaseModel):
     invoice_id = Column(UUID(as_uuid=True), ForeignKey("invoices.id"), nullable=False, index=True)
     evidence_id = Column(UUID(as_uuid=True), ForeignKey("historical_invoice_evidence.id"), nullable=True)
     evidence_sha256 = Column(String(64), nullable=True)
+    evidence_identity_proof_sha256 = Column(String(64), nullable=True)
+    evidence_verification_mode = Column(String(32), nullable=True)
     original_bill_to_name = Column(String(255), nullable=True)
     actor_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     old_customer_id = Column(UUID(as_uuid=True), nullable=True)

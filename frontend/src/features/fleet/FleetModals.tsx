@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { usePricingCommand } from '@/features/parts-pricing/usePricingCommand'
 import { PricingCancelled, pricingError } from '@/features/parts-pricing/contract'
@@ -165,7 +166,7 @@ export function Modal({ title, icon, onClose, children, width = 480, scrollable 
       >
         <div className="dsec-head">
           <div className="dsec-title">{icon}<h3 id={titleId}>{title}</h3></div>
-          <button type="button" className="person-call" aria-label={`Close ${title}`} onClick={requestClose} disabled={dismissDisabled}><X size={18} /></button>
+          <ControlButton controlKind="icon" type="button" className="person-call" aria-label={`Close ${title}`} onClick={requestClose} disabled={dismissDisabled}><X size={18} /></ControlButton>
         </div>
         {children}
       </div>
@@ -264,8 +265,8 @@ export function ConfirmModal({ title, message, confirmLabel = 'Delete', pending,
         </div>
       )}
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-        <button className="dbtn dbtn-ghost" onClick={onClose} disabled={pending}>Cancel</button>
-        <button
+        <ControlButton className="dbtn dbtn-ghost" onClick={onClose} disabled={pending}>Cancel</ControlButton>
+        <ControlButton
           onClick={() => onConfirm(reason.trim())}
           disabled={pending || missingReason}
           style={{
@@ -277,7 +278,7 @@ export function ConfirmModal({ title, message, confirmLabel = 'Delete', pending,
           }}
         >
           {pending ? <Spinner size="sm" /> : <Trash2 size={15} />} {confirmLabel}
-        </button>
+        </ControlButton>
       </div>
     </Modal>
   )
@@ -480,26 +481,26 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
       onClose={onClose} width="max-w-[560px]" tone="neutral"
       footer={(
         <div className="fleet-sidekick-actions">
-          <button type="button" className="dbtn dbtn-ghost" disabled={save.isPending} onClick={onClose}>Cancel</button>
-          <button className={yellowBtn} disabled={save.isPending} onClick={() => save.mutate()}>
+          <ControlButton type="button" className="dbtn dbtn-ghost" disabled={save.isPending} onClick={onClose}>Cancel</ControlButton>
+          <ControlButton className={yellowBtn} disabled={save.isPending} onClick={() => save.mutate()}>
             {save.isPending ? <Spinner size="sm" /> : <Pencil size={15} />} Save changes
-          </button>
+          </ControlButton>
         </div>
       )}
     >
       <div className="dmap-side-h" style={{ marginBottom: 8 }}>Identity</div>
       <div className="fleet-form-grid fleet-form-grid-2 fleet-form-grid-spaced">
-        <Field label="Unit #"><input value={f.unit_number} onChange={set('unit_number')} placeholder="TPS-109" /></Field>
-        <Field label="Plate"><input value={f.license_plate} onChange={set('license_plate')} placeholder="ABC-1234" /></Field>
-        <Field label="Make"><input value={f.make} onChange={set('make')} /></Field>
-        <Field label="Model"><input value={f.model} onChange={set('model')} /></Field>
-        <Field label="Year"><input value={f.year} onChange={set('year')} inputMode="numeric" /></Field>
+        <Field label="Unit #"><ControlInput value={f.unit_number} onChange={set('unit_number')} placeholder="TPS-109" /></Field>
+        <Field label="Plate"><ControlInput value={f.license_plate} onChange={set('license_plate')} placeholder="ABC-1234" /></Field>
+        <Field label="Make"><ControlInput value={f.make} onChange={set('make')} /></Field>
+        <Field label="Model"><ControlInput value={f.model} onChange={set('model')} /></Field>
+        <Field label="Year"><ControlInput value={f.year} onChange={set('year')} inputMode="numeric" /></Field>
         <Field label="VIN">
           <div style={{ display: 'flex', gap: 8 }}>
-            <input value={f.vin} onChange={handleVinChange} placeholder="17-character VIN" maxLength={17} style={{ minWidth: 0, flex: 1, textTransform: 'uppercase' }} />
-            <button className="dbtn dbtn-ghost" type="button" onClick={() => decodeVin(f.vin)} disabled={decodingVin || f.vin.trim().length < 11}>
+            <ControlInput value={f.vin} onChange={handleVinChange} placeholder="17-character VIN" maxLength={17} style={{ minWidth: 0, flex: 1, textTransform: 'uppercase' }} />
+            <ControlButton className="dbtn dbtn-ghost" type="button" onClick={() => decodeVin(f.vin)} disabled={decodingVin || f.vin.trim().length < 11}>
               {decodingVin ? <Spinner size="xs" /> : 'Decode'}
-            </button>
+            </ControlButton>
           </div>
           {vinConflict?.vehicle && (
             <div style={{ marginTop: 8, border: '1px solid rgba(239, 68, 68, .55)', borderRadius: 8, padding: '9px 10px', background: 'rgba(127, 29, 29, .18)', display: 'grid', gap: 3 }}>
@@ -513,12 +514,12 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
       </div>
       <div className="dmap-side-h" style={{ marginBottom: 8 }}>Operations & location</div>
       <div className="fleet-form-grid fleet-form-grid-2">
-        <Field label="Odometer (mi)"><input value={f.odometer} onChange={set('odometer')} inputMode="numeric" /></Field>
-        <Field label="PM interval (mi)"><input value={f.pm_interval_miles} onChange={set('pm_interval_miles')} inputMode="numeric" /></Field>
-        <Field label="Next PM at (mi)"><input value={f.next_pm_miles} onChange={set('next_pm_miles')} inputMode="numeric" placeholder="odometer + interval" /></Field>
+        <Field label="Odometer (mi)"><ControlInput value={f.odometer} onChange={set('odometer')} inputMode="numeric" /></Field>
+        <Field label="PM interval (mi)"><ControlInput value={f.pm_interval_miles} onChange={set('pm_interval_miles')} inputMode="numeric" /></Field>
+        <Field label="Next PM at (mi)"><ControlInput value={f.next_pm_miles} onChange={set('next_pm_miles')} inputMode="numeric" placeholder="odometer + interval" /></Field>
         <div />
-        <Field label="Driver name"><input value={f.driver_name} onChange={set('driver_name')} /></Field>
-        <Field label="Driver phone"><input value={f.driver_phone} onChange={(e) => setF((p) => ({ ...p, driver_phone: formatUSPhone(e.target.value) }))} placeholder="(704) 555-1234" /></Field>
+        <Field label="Driver name"><ControlInput value={f.driver_name} onChange={set('driver_name')} /></Field>
+        <Field label="Driver phone"><ControlInput value={f.driver_phone} onChange={(e) => setF((p) => ({ ...p, driver_phone: formatUSPhone(e.target.value) }))} placeholder="(704) 555-1234" /></Field>
         <Field label="Location" full>
           <MapboxAddressInput
             value={f.location_label}
@@ -548,29 +549,29 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
                 : 'External invoice recipient · standard customer pricing'}
             </span>
             {!editingBilling && (
-              <button type="button" className={ghostBtn} style={{ justifySelf: 'start', marginTop: 4, height: 32, padding: '0 10px', fontSize: 12 }} onClick={() => setEditingBilling(true)}>
+              <ControlButton type="button" className={ghostBtn} style={{ justifySelf: 'start', marginTop: 4, height: 32, padding: '0 10px', fontSize: 12 }} onClick={() => setEditingBilling(true)}>
                 <Pencil size={13} /> Edit billing details
-              </button>
+              </ControlButton>
             )}
           </div>
           {editingBilling && (
             <div style={{ marginTop: 10, padding: 12, background: 'var(--panel-2)', border: '1px solid var(--line)', borderRadius: 9 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 10 }}>
                 <p style={{ margin: 0, fontSize: 12, color: 'var(--muted-2)' }}>These edits update the same customer on the Main Dashboard.</p>
-                <button type="button" className={ghostBtn} style={{ height: 30, padding: '0 9px', fontSize: 12, flexShrink: 0 }} onClick={cancelBillingEdit}>Cancel</button>
+                <ControlButton type="button" className={ghostBtn} style={{ height: 30, padding: '0 9px', fontSize: 12, flexShrink: 0 }} onClick={cancelBillingEdit}>Cancel</ControlButton>
               </div>
               <div className="fleet-form-grid fleet-form-grid-2">
-                <Field label="Company name" full><input value={f.bill_to_company_name} onChange={set('bill_to_company_name')} /></Field>
-                <Field label="First name *"><input required value={f.bill_to_first_name} onChange={set('bill_to_first_name')} /></Field>
-                <Field label="Last name *"><input required value={f.bill_to_last_name} onChange={set('bill_to_last_name')} /></Field>
-                <Field label="Email *"><input required type="email" value={f.bill_to_email} onChange={set('bill_to_email')} /></Field>
-                <Field label="Phone"><input value={f.bill_to_phone} onChange={(e) => setF((prev) => ({ ...prev, bill_to_phone: formatUSPhone(e.target.value) }))} /></Field>
-                <Field label="Billing address line 1" full><input value={f.bill_to_billing_address_line1} onChange={set('bill_to_billing_address_line1')} /></Field>
-                <Field label="Billing address line 2" full><input value={f.bill_to_billing_address_line2} onChange={set('bill_to_billing_address_line2')} /></Field>
-                <Field label="City"><input value={f.bill_to_billing_city} onChange={set('bill_to_billing_city')} /></Field>
-                <Field label="State"><input value={f.bill_to_billing_state} onChange={set('bill_to_billing_state')} /></Field>
-                <Field label="ZIP"><input value={f.bill_to_billing_zip} onChange={set('bill_to_billing_zip')} /></Field>
-                <Field label="Country"><input value={f.bill_to_billing_country} onChange={set('bill_to_billing_country')} /></Field>
+                <Field label="Company name" full><ControlInput value={f.bill_to_company_name} onChange={set('bill_to_company_name')} /></Field>
+                <Field label="First name *"><ControlInput required value={f.bill_to_first_name} onChange={set('bill_to_first_name')} /></Field>
+                <Field label="Last name *"><ControlInput required value={f.bill_to_last_name} onChange={set('bill_to_last_name')} /></Field>
+                <Field label="Email *"><ControlInput required type="email" value={f.bill_to_email} onChange={set('bill_to_email')} /></Field>
+                <Field label="Phone"><ControlInput value={f.bill_to_phone} onChange={(e) => setF((prev) => ({ ...prev, bill_to_phone: formatUSPhone(e.target.value) }))} /></Field>
+                <Field label="Billing address line 1" full><ControlInput value={f.bill_to_billing_address_line1} onChange={set('bill_to_billing_address_line1')} /></Field>
+                <Field label="Billing address line 2" full><ControlInput value={f.bill_to_billing_address_line2} onChange={set('bill_to_billing_address_line2')} /></Field>
+                <Field label="City"><ControlInput value={f.bill_to_billing_city} onChange={set('bill_to_billing_city')} /></Field>
+                <Field label="State"><ControlInput value={f.bill_to_billing_state} onChange={set('bill_to_billing_state')} /></Field>
+                <Field label="ZIP"><ControlInput value={f.bill_to_billing_zip} onChange={set('bill_to_billing_zip')} /></Field>
+                <Field label="Country"><ControlInput value={f.bill_to_billing_country} onChange={set('bill_to_billing_country')} /></Field>
               </div>
             </div>
           )}
@@ -786,12 +787,12 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
     : `${rescheduling ? 'Reschedule' : 'Schedule'} PM`
   const footer = (
     <div className="fleet-sidekick-actions">
-      <button className={ghostBtn} disabled={save.isPending} onClick={onClose}>Cancel</button>
-      <button className={yellowBtn}
+      <ControlButton className={ghostBtn} disabled={save.isPending} onClick={onClose}>Cancel</ControlButton>
+      <ControlButton className={yellowBtn}
         disabled={save.isPending || (createWO && (billToLoading || !billToCustomerId || !accountPricing.ready))} onClick={() => save.mutate()}>
         {save.isPending ? <Spinner size="sm" /> : (createMode ? <ClipboardCheck size={15} /> : <Calendar size={15} />)}
         {createMode ? 'Create repair order' : (createWO ? `${rescheduling ? 'Reschedule' : 'Schedule'} + create repair order` : 'Save schedule')}
-      </button>
+      </ControlButton>
     </div>
   )
   return (
@@ -812,7 +813,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
         {!createMode && (
           <>
             <Field label="Next PM at odometer (mi)">
-              <input
+              <ControlInput
                 value={nextMiles}
                 onChange={(e) => {
                   setNextMiles(e.target.value)
@@ -866,7 +867,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
               activeServices.map((s) => {
                 const on = selected.includes(s.service_id)
                 return (
-                  <button
+                  <ControlButton controlKind="content"
                     type="button"
                     key={s.service_id}
                     role="radio"
@@ -877,7 +878,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
                     <span className="pm-svc-check pm-svc-radio">{on && <Check size={13} />}</span>
                     <span className="pm-svc-name">{s.name}</span>
                     {s.duration_minutes ? <span className="pm-svc-dur">{s.duration_minutes}m</span> : null}
-                  </button>
+                  </ControlButton>
                 )
               })
             )}
@@ -1018,8 +1019,8 @@ export function AssignDriverModal({ truck, driverPhone, onClose }: { truck: Boar
       onClose={onClose} width="max-w-[460px]" tone="neutral"
       footer={(
         <div className="fleet-sidekick-actions">
-          {current.data && <button type="button" className="dbtn dbtn-danger" disabled={busy} onClick={() => remove.mutate()}>Release driver</button>}
-          <button type="button" className="dbtn dbtn-ghost" disabled={busy} onClick={onClose}>Done</button>
+          {current.data && <ControlButton type="button" className="dbtn dbtn-danger" disabled={busy} onClick={() => remove.mutate()}>Release driver</ControlButton>}
+          <ControlButton type="button" className="dbtn dbtn-ghost" disabled={busy} onClick={onClose}>Done</ControlButton>
         </div>
       )}
     >
@@ -1028,7 +1029,7 @@ export function AssignDriverModal({ truck, driverPhone, onClose }: { truck: Boar
           <div className="driver-workos-gate">
             <ShieldCheck size={20} />
             <div><strong>Organization sign-in required</strong><span>Driver profiles and custody history are protected by your fleet permissions.</span></div>
-            <button type="button" className={yellowBtn} onClick={() => startWorkOSLogin('/fleet', capabilities.data?.driver_invitation_management.reauth_path)}>Continue with WorkOS</button>
+            <ControlButton type="button" className={yellowBtn} onClick={() => startWorkOSLogin('/fleet', capabilities.data?.driver_invitation_management.reauth_path)}>Continue with WorkOS</ControlButton>
           </div>
         ) : (
           <>
@@ -1040,40 +1041,40 @@ export function AssignDriverModal({ truck, driverPhone, onClose }: { truck: Boar
             )}
             <div className="driver-assignment-heading">
               <div><h3>{current.data ? 'Choose a replacement' : 'Choose a driver profile'}</h3><p>The selected profile begins a new custody period. Earlier assignments remain in history.</p></div>
-              <button type="button" className="dbtn dbtn-ghost" onClick={() => setCreating((value) => !value)}>{creating ? 'Choose existing' : 'New profile'}</button>
+              <ControlButton type="button" className="dbtn dbtn-ghost" onClick={() => setCreating((value) => !value)}>{creating ? 'Choose existing' : 'New profile'}</ControlButton>
             </div>
             {creating ? (
               <div className="driver-profile-form">
                 <div className="driver-profile-name-row">
-                  <Field label="First name"><input autoFocus value={draft.first_name} onChange={(e) => setDraft({ ...draft, first_name: e.target.value })} /></Field>
-                  <Field label="Last name"><input value={draft.last_name} onChange={(e) => setDraft({ ...draft, last_name: e.target.value })} /></Field>
+                  <Field label="First name"><ControlInput autoFocus value={draft.first_name} onChange={(e) => setDraft({ ...draft, first_name: e.target.value })} /></Field>
+                  <Field label="Last name"><ControlInput value={draft.last_name} onChange={(e) => setDraft({ ...draft, last_name: e.target.value })} /></Field>
                 </div>
-                <Field label="Email for Driver Portal"><input type="email" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} placeholder="driver@company.com" /></Field>
-                <Field label="Phone"><input value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: formatUSPhone(e.target.value) })} placeholder="(704) 555-0123" /></Field>
-                <Field label="Employee number (optional)"><input value={draft.employee_number} onChange={(e) => setDraft({ ...draft, employee_number: e.target.value })} /></Field>
+                <Field label="Email for Driver Portal"><ControlInput type="email" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} placeholder="driver@company.com" /></Field>
+                <Field label="Phone"><ControlInput value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: formatUSPhone(e.target.value) })} placeholder="(704) 555-0123" /></Field>
+                <Field label="Employee number (optional)"><ControlInput value={draft.employee_number} onChange={(e) => setDraft({ ...draft, employee_number: e.target.value })} /></Field>
                 <p className="driver-profile-note">Creating a profile does not create a login. You can review the profile, then send a secure Driver Portal invitation from Truck details.</p>
-                <button type="button" className={yellowBtn} disabled={busy || !draft.first_name.trim() || !draft.last_name.trim()} onClick={() => create.mutate()}>{busy ? <Spinner size="sm" /> : <UserRound size={15} />} Create and assign profile</button>
+                <ControlButton type="button" className={yellowBtn} disabled={busy || !draft.first_name.trim() || !draft.last_name.trim()} onClick={() => create.mutate()}>{busy ? <Spinner size="sm" /> : <UserRound size={15} />} Create and assign profile</ControlButton>
               </div>
             ) : (
               <>
-                <label className="driver-profile-search"><Search size={16} /><input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search drivers" aria-label="Search driver profiles" /></label>
+                <label className="driver-profile-search"><Search size={16} /><ControlInput type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search drivers" aria-label="Search driver profiles" /></label>
                 <div className="driver-profile-list">
                   {(drivers.isLoading || legacyContacts.isLoading) && <div className="driver-profile-empty"><Spinner size="sm" /> Loading drivers…</div>}
                   {(drivers.isError || legacyContacts.isError) && <div className="driver-profile-empty">Driver records could not be loaded. Close this panel and try again.</div>}
                   {!drivers.isLoading && !legacyContacts.isLoading && !drivers.isError && !legacyContacts.isError && filteredDrivers.map((driver) => {
                     const selected = current.data?.driver.id === driver.id
-                    return <button type="button" key={driver.id} className="driver-profile-option" disabled={busy || selected} onClick={() => assign.mutate(driver)}>
+                    return <ControlButton type="button" key={driver.id} className="driver-profile-option" disabled={busy || selected} onClick={() => assign.mutate(driver)}>
                       <span className="avatar avatar-sm">{`${driver.first_name[0] || ''}${driver.last_name[0] || ''}`}</span>
                       <span><strong>{driver.first_name} {driver.last_name}</strong><small>{driver.email || driver.phone || driver.employee_number || 'Profile ready'}</small></span>
                       <span className={selected ? 'driver-profile-state is-current' : 'driver-profile-state'}>{selected ? 'Current' : 'Assign'}</span>
-                    </button>
+                    </ControlButton>
                   })}
                   {!drivers.isLoading && !legacyContacts.isLoading && !drivers.isError && !legacyContacts.isError && filteredLegacyContacts.map((contact) => (
-                    <button type="button" key={`legacy:${contact.name}:${contact.phone || ''}`} className="driver-profile-option is-legacy" disabled={busy} onClick={() => chooseLegacyContact(contact)}>
+                    <ControlButton type="button" key={`legacy:${contact.name}:${contact.phone || ''}`} className="driver-profile-option is-legacy" disabled={busy} onClick={() => chooseLegacyContact(contact)}>
                       <span className="avatar avatar-sm">{contact.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('')}</span>
                       <span><strong>{contact.name}</strong><small>{contact.vehicle_count} {contact.vehicle_count === 1 ? 'truck' : 'trucks'}{contact.phone ? ` · ${formatUSPhone(contact.phone)}` : ''}</small></span>
                       <span className="driver-profile-state">Create profile</span>
-                    </button>
+                    </ControlButton>
                   ))}
                   {!drivers.isLoading && !legacyContacts.isLoading && !drivers.isError && !legacyContacts.isError && filteredDrivers.length === 0 && filteredLegacyContacts.length === 0 && <div className="driver-profile-empty">No matching drivers. Create a profile to preserve this driver’s custody and incident history.</div>}
                 </div>
@@ -1180,10 +1181,10 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
       onClose={onClose} width="max-w-[540px]" tone="safety"
       footer={(
         <div className="fleet-sidekick-actions">
-          <button type="button" className="dbtn dbtn-ghost" disabled={create.isPending} onClick={onClose}>Cancel</button>
-          <button className={yellowBtn} disabled={create.isPending} onClick={submit}>
+          <ControlButton type="button" className="dbtn dbtn-ghost" disabled={create.isPending} onClick={onClose}>Cancel</ControlButton>
+          <ControlButton className={yellowBtn} disabled={create.isPending} onClick={submit}>
             {create.isPending ? <Spinner size="sm" /> : <Plus size={15} />} Report incident
-          </button>
+          </ControlButton>
         </div>
       )}
     >
@@ -1191,13 +1192,13 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
         <span className="id-k" style={{ display: 'block', marginBottom: 6 }}>Severity</span>
         <div style={{ display: 'flex', gap: 8 }}>
           {SEVS.map((s) => (
-            <button key={s} onClick={() => setSeverity(s)}
+            <ControlButton key={s} onClick={() => setSeverity(s)}
               style={{
                 flex: 1, height: 44, borderRadius: 8, textTransform: 'capitalize', fontSize: 13, fontWeight: 600,
                 border: '1px solid ' + (severity === s ? sevTint[s] : 'var(--line)'),
                 background: severity === s ? `color-mix(in srgb, ${sevTint[s]} 16%, transparent)` : 'transparent',
                 color: severity === s ? sevTint[s] : 'var(--muted)',
-              }}>{s}</button>
+              }}>{s}</ControlButton>
           ))}
         </div>
       </div>
@@ -1244,7 +1245,7 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
                   </div>
                 ))}
               </div>
-              <button
+              <ControlButton
                 className={ghostBtn}
                 style={{ position: 'absolute', top: 8, right: 8, height: 30, padding: '0 10px' }}
                 onClick={() => {
@@ -1253,7 +1254,7 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
                 disabled={create.isPending}
               >
                 <X size={13} /> Remove
-              </button>
+              </ControlButton>
             </div>
           </div>
         ) : (
@@ -1328,10 +1329,10 @@ export function EditIncidentModal({ incident, truckId, onClose }: { incident: In
       onClose={onClose} width="max-w-[540px]" tone="safety"
       footer={(
         <div className="fleet-sidekick-actions">
-          <button type="button" className="dbtn dbtn-ghost" disabled={save.isPending} onClick={onClose}>Cancel</button>
-          <button className={yellowBtn} disabled={save.isPending} onClick={submit}>
+          <ControlButton type="button" className="dbtn dbtn-ghost" disabled={save.isPending} onClick={onClose}>Cancel</ControlButton>
+          <ControlButton className={yellowBtn} disabled={save.isPending} onClick={submit}>
             {save.isPending ? <Spinner size="sm" /> : <CheckCircle2 size={15} />} Save changes
-          </button>
+          </ControlButton>
         </div>
       )}
     >
@@ -1339,13 +1340,13 @@ export function EditIncidentModal({ incident, truckId, onClose }: { incident: In
         <span className="id-k" style={{ display: 'block', marginBottom: 6 }}>Severity</span>
         <div style={{ display: 'flex', gap: 8 }}>
           {SEVS.map((s) => (
-            <button key={s} onClick={() => setSeverity(s)}
+            <ControlButton key={s} onClick={() => setSeverity(s)}
               style={{
                 flex: 1, height: 44, borderRadius: 8, textTransform: 'capitalize', fontSize: 13, fontWeight: 600,
                 border: '1px solid ' + (severity === s ? sevTint[s] : 'var(--line)'),
                 background: severity === s ? `color-mix(in srgb, ${sevTint[s]} 16%, transparent)` : 'transparent',
                 color: severity === s ? sevTint[s] : 'var(--muted)',
-              }}>{s}</button>
+              }}>{s}</ControlButton>
           ))}
         </div>
       </div>
@@ -1428,16 +1429,16 @@ export function ResolveIncidentModal({
       tone="safety"
       footer={(
         <div className="fleet-sidekick-actions">
-          <button type="button" className="dbtn dbtn-ghost" disabled={resolve.isPending} onClick={onClose}>
+          <ControlButton type="button" className="dbtn dbtn-ghost" disabled={resolve.isPending} onClick={onClose}>
             Cancel
-          </button>
-          <button
+          </ControlButton>
+          <ControlButton
             className={yellowBtn}
             disabled={blank || resolve.isPending}
             onClick={() => { if (!blank) resolve.mutate() }}
           >
             {resolve.isPending ? <Spinner size="sm" /> : <CheckCircle2 size={15} />} Resolve incident
-          </button>
+          </ControlButton>
         </div>
       )}
     >
@@ -1518,9 +1519,9 @@ export function AssignIncidentRepairOrderModal({
       tone="safety"
       footer={(
         <div className="fleet-sidekick-actions">
-          <button type="button" className="dbtn dbtn-ghost" disabled={link.isPending} onClick={onClose}>
+          <ControlButton type="button" className="dbtn dbtn-ghost" disabled={link.isPending} onClick={onClose}>
             Cancel
-          </button>
+          </ControlButton>
         </div>
       )}
     >
@@ -1538,7 +1539,7 @@ export function AssignIncidentRepairOrderModal({
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {orders.map((ro) => (
-            <button
+            <ControlButton controlKind="content"
               key={ro.id}
               disabled={link.isPending}
               onClick={() => link.mutate(ro.id)}
@@ -1559,7 +1560,7 @@ export function AssignIncidentRepairOrderModal({
                   {ro.description}
                 </div>
               )}
-            </button>
+            </ControlButton>
           ))}
         </div>
       )}
@@ -1639,9 +1640,9 @@ export const InspectionsSection = forwardRef<InspectionsSectionHandle, {
       <div className="dsec-head">
         <div className="dsec-title"><ClipboardCheck size={17} /><h3>Weekly inspections</h3>
           {inspections != null && <span className="dsec-count">{visibleInspections.length}</span>}</div>
-        <button className={ghostBtn + ' dsec-action'} style={{ height: 34 }} onClick={() => start.mutate()} disabled={start.isPending} title="Start inspection">
+        <ControlButton className={ghostBtn + ' dsec-action'} style={{ height: 34 }} onClick={() => start.mutate()} disabled={start.isPending} title="Start inspection">
           {start.isPending ? <Spinner size="xs" /> : <Plus size={14} />} <span className="dbtn-label">Start inspection</span>
-        </button>
+        </ControlButton>
       </div>
       {inspectionsQuery.isLoading ? (
         <div className="empty-note" role="status"><Spinner size="xs" /> Loading inspection schedule…</div>
@@ -1652,10 +1653,10 @@ export const InspectionsSection = forwardRef<InspectionsSectionHandle, {
             <strong>Inspections could not be loaded</strong>
             <span>No inspection records were changed. Try loading this section again.</span>
           </div>
-          <button type="button" className="query-retry" onClick={() => { void inspectionsQuery.refetch() }} disabled={inspectionsQuery.isFetching}>
+          <ControlButton type="button" className="query-retry" onClick={() => { void inspectionsQuery.refetch() }} disabled={inspectionsQuery.isFetching}>
             {inspectionsQuery.isFetching ? <Spinner size="xs" /> : <RotateCcw size={14} />}
             {inspectionsQuery.isFetching ? 'Retrying…' : 'Try again'}
-          </button>
+          </ControlButton>
         </div>
       ) : !visibleInspections.length ? (
         <div className="empty-note"><ClipboardCheck size={16} /> No inspections recorded. Start one when you are ready to check this truck.</div>
@@ -1686,7 +1687,7 @@ export const InspectionsSection = forwardRef<InspectionsSectionHandle, {
                     </span>
                   )}
                   {isOwner && (
-                    <button
+                    <ControlButton controlKind="icon"
                       className="icon-hit"
                       onClick={(e) => { e.stopPropagation(); setConfirmDelete(i) }}
                       disabled={del.isPending}
@@ -1694,7 +1695,7 @@ export const InspectionsSection = forwardRef<InspectionsSectionHandle, {
                       style={{ background: 'none', border: 'none', color: 'var(--muted-2)', cursor: 'pointer', padding: 2, display: 'inline-flex' }}
                     >
                       <Trash2 size={14} />
-                    </button>
+                    </ControlButton>
                   )}
                 </span>
               </div>
@@ -1924,10 +1925,10 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
         <div className="ip-count">{doneCount}<span>/{total}</span></div>
       </div>
       <div className="ip-bulk">
-        <button className="ip-markall" onClick={markAllPass} disabled={bulk.isPending}>
+        <ControlButton className="ip-markall" onClick={markAllPass} disabled={bulk.isPending}>
           <Check size={14} strokeWidth={3} /> MARK ALL PASS
-        </button>
-        <button className="ip-reset" onClick={resetAll} disabled={bulk.isPending} title="Reset all" aria-label="Reset all inspection results"><RotateCcw size={16} /></button>
+        </ControlButton>
+        <ControlButton controlKind="icon" className="ip-reset" onClick={resetAll} disabled={bulk.isPending} title="Reset all" aria-label="Reset all inspection results"><RotateCcw size={16} /></ControlButton>
       </div>
     </div>
   ) : undefined
@@ -1941,11 +1942,11 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
               <Wrench size={15} /> Repair order created
             </span>
           ) : failCount > 0 ? (
-            <button className="ip-cta" onClick={() => createWO.mutate()} disabled={createWO.isPending}>
+            <ControlButton className="ip-cta" onClick={() => createWO.mutate()} disabled={createWO.isPending}>
               {createWO.isPending ? <Spinner size="sm" /> : <Wrench size={15} />} Create repair order · {failCount} item{failCount === 1 ? '' : 's'}
-            </button>
+            </ControlButton>
           ) : null}
-          <button className="ip-cta ip-cta-ghost" onClick={onClose}>Close</button>
+          <ControlButton className="ip-cta ip-cta-ghost" onClick={onClose}>Close</ControlButton>
         </div>
       ) : confirming ? (
         <>
@@ -1959,10 +1960,10 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="ip-cta ip-cta-ghost" style={{ flex: 1 }} disabled={complete.isPending} onClick={() => setConfirming(false)}>Back</button>
-            <button className="ip-cta" style={{ flex: 2 }} disabled={complete.isPending} onClick={() => complete.mutate()}>
+            <ControlButton className="ip-cta ip-cta-ghost" style={{ flex: 1 }} disabled={complete.isPending} onClick={() => setConfirming(false)}>Back</ControlButton>
+            <ControlButton className="ip-cta" style={{ flex: 2 }} disabled={complete.isPending} onClick={() => complete.mutate()}>
               {complete.isPending ? <Spinner size="sm" /> : <Check size={16} strokeWidth={3} />} Confirm &amp; submit
-            </button>
+            </ControlButton>
           </div>
         </>
       ) : (
@@ -1970,10 +1971,10 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
           <div className={'ip-status' + (showErrors && problems.length ? ' warn' : '')}>
             {showErrors && problems.length ? `Can't complete yet — ${problems.join(' · ')}.` : statusText}
           </div>
-          <button className="ip-cta" onClick={() => { void reviewAndComplete() }} disabled={patchItem.isPending || bulk.isPending || savingNotes}>
+          <ControlButton className="ip-cta" onClick={() => { void reviewAndComplete() }} disabled={patchItem.isPending || bulk.isPending || savingNotes}>
             {(patchItem.isPending || bulk.isPending || savingNotes) ? <Spinner size="sm" /> : <Check size={16} strokeWidth={3} />}
             {(patchItem.isPending || bulk.isPending || savingNotes) ? 'Saving inspection…' : 'Review & complete'}
-          </button>
+          </ControlButton>
         </>
       )}
     </div>
@@ -2001,10 +2002,10 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
               <strong>Inspection could not be loaded</strong>
               <span>No checklist results were changed. Check the connection and try again.</span>
             </div>
-            <button type="button" className="query-retry" onClick={() => { void inspectionQuery.refetch() }} disabled={inspectionQuery.isFetching}>
+            <ControlButton type="button" className="query-retry" onClick={() => { void inspectionQuery.refetch() }} disabled={inspectionQuery.isFetching}>
               {inspectionQuery.isFetching ? <Spinner size="xs" /> : <RotateCcw size={14} />}
               {inspectionQuery.isFetching ? 'Retrying…' : 'Try again'}
-            </button>
+            </ControlButton>
           </div>
         ) : !insp ? (
           <div className="empty-note">This inspection is no longer available.</div>
@@ -2031,7 +2032,7 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
                   </div>
                   <label className="ip-odo-field" htmlFor={`inspection-odometer-${inspectionId}`}>
                     <span className="ip-odo-k ip-odo-label">Current odometer</span>
-                    <input id={`inspection-odometer-${inspectionId}`} ref={odoRef} className={'ip-odo-input' + (odoError ? ' err' : '')}
+                    <ControlInput id={`inspection-odometer-${inspectionId}`} ref={odoRef} className={'ip-odo-input' + (odoError ? ' err' : '')}
                       value={odometer} inputMode="numeric" placeholder="Enter mileage"
                       aria-invalid={odoError || undefined}
                       onChange={(e) => setOdometer(e.target.value)} />
@@ -2053,7 +2054,7 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
                 const categoryPanelId = `inspection-${inspectionId}-${cat.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
                 return (
                   <div key={cat} className="ip-sec">
-                    <button
+                    <ControlButton controlKind="action"
                       type="button"
                       className={'ip-sec-head' + (complete ? ' done' : '')}
                       onClick={() => toggleSection(cat)}
@@ -2065,7 +2066,7 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
                         <span className="ip-sec-sum" style={{ color: sum.color }}>{sum.text}</span>
                         <ChevronDown className="ip-sec-chevron" size={16} aria-hidden="true" />
                       </span>
-                    </button>
+                    </ControlButton>
                     {!collapsedNow && (
                       <div className="ip-sec-body" id={categoryPanelId}>
                         {its.map((item) => {
@@ -2090,19 +2091,19 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
                               ) : (
                                 <>
                                   <div className={'ip-btns sel-' + item.result} role="group" aria-label={`${item.label} result`}>
-                                    <button type="button" className={'ip-choice pass' + (item.result === 'pass' ? ' is-on' : '')} onClick={() => setStatus(item, 'pass')} title="Pass" aria-pressed={item.result === 'pass'} disabled={patchItem.isPending || bulk.isPending}>
+                                    <ControlButton controlKind="action" type="button" className={'ip-choice pass' + (item.result === 'pass' ? ' is-on' : '')} onClick={() => setStatus(item, 'pass')} title="Pass" aria-pressed={item.result === 'pass'} disabled={patchItem.isPending || bulk.isPending}>
                                       <Check size={16} strokeWidth={3} /> <span className="ip-choice-tx">PASS</span>
-                                    </button>
-                                    <button type="button" className={'ip-choice fail' + (item.result === 'fail' ? ' is-on' : '')} onClick={() => setStatus(item, 'fail')} title="Fail" aria-pressed={item.result === 'fail'} disabled={patchItem.isPending || bulk.isPending}>
+                                    </ControlButton>
+                                    <ControlButton controlKind="action" type="button" className={'ip-choice fail' + (item.result === 'fail' ? ' is-on' : '')} onClick={() => setStatus(item, 'fail')} title="Fail" aria-pressed={item.result === 'fail'} disabled={patchItem.isPending || bulk.isPending}>
                                       <X size={18} /> <span className="ip-choice-tx">FAIL</span>
-                                    </button>
-                                    <button type="button" className={'ip-choice na' + (item.result === 'na' ? ' is-on' : '')} onClick={() => setStatus(item, 'na')} title="N/A" aria-pressed={item.result === 'na'} disabled={patchItem.isPending || bulk.isPending}>
+                                    </ControlButton>
+                                    <ControlButton controlKind="action" type="button" className={'ip-choice na' + (item.result === 'na' ? ' is-on' : '')} onClick={() => setStatus(item, 'na')} title="N/A" aria-pressed={item.result === 'na'} disabled={patchItem.isPending || bulk.isPending}>
                                       <Minus size={18} /> <span className="ip-choice-tx">N/A</span>
-                                    </button>
+                                    </ControlButton>
                                   </div>
                                   {item.result === 'fail' && (
                                     <div className="ip-flag">
-                                      <input value={noteVal}
+                                      <ControlInput value={noteVal}
                                         onChange={(e) => setNoteDrafts((d) => ({ ...d, [item.id]: e.target.value }))}
                                         onBlur={() => { if ((noteDrafts[item.id] ?? '') !== (item.note || '')) patchItem.mutate({ itemId: item.id, note: noteDrafts[item.id] ?? '' }) }}
                                         placeholder="What's wrong? (quick note)" />

@@ -1,3 +1,4 @@
+import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import { useState } from 'react'
 import { Spinner } from '@/components/ui'
 import { useNavigate } from 'react-router-dom'
@@ -144,7 +145,7 @@ export default function RegisterPage() {
               <label htmlFor="first_name" className="block text-sm font-medium text-gray-700 mb-1">
                 First Name <span className="text-red-500">*</span>
               </label>
-              <input
+              <ControlInput
                 {...register('first_name')}
                 type="text"
                 id="first_name"
@@ -164,7 +165,7 @@ export default function RegisterPage() {
               <label htmlFor="last_name" className="block text-sm font-medium text-gray-700 mb-1">
                 Last Name <span className="text-red-500">*</span>
               </label>
-              <input
+              <ControlInput
                 {...register('last_name')}
                 type="text"
                 id="last_name"
@@ -187,7 +188,7 @@ export default function RegisterPage() {
             <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
               Email Address <span className="text-red-500">*</span>
             </label>
-            <input
+            <ControlInput
               {...register('email')}
               type="email"
               id="email"
@@ -210,7 +211,7 @@ export default function RegisterPage() {
             <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
               Password <span className="text-red-500">*</span>
             </label>
-            <input
+            <ControlInput
               {...register('password')}
               type="password"
               id="password"
@@ -250,7 +251,7 @@ export default function RegisterPage() {
             <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
               Confirm Password <span className="text-red-500">*</span>
             </label>
-            <input
+            <ControlInput
               {...register('confirmPassword')}
               type="password"
               id="confirmPassword"
@@ -273,7 +274,7 @@ export default function RegisterPage() {
             <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
               Phone <span className="text-gray-400">(optional)</span>
             </label>
-            <input
+            <ControlInput
               {...register('phone', {
                 onChange: (e) => setValue('phone', formatUSPhone(e.target.value)),
               })}
@@ -297,7 +298,7 @@ export default function RegisterPage() {
             <label htmlFor="tenant_slug" className="block text-sm font-medium text-gray-700 mb-1">
               Shop Code <span className="text-gray-400">(optional)</span>
             </label>
-            <input
+            <ControlInput
               {...register('tenant_slug')}
               type="text"
               id="tenant_slug"
@@ -307,10 +308,10 @@ export default function RegisterPage() {
           </div>
 
           <div className="pt-2">
-            <button
+            <ControlButton
               type="submit"
               disabled={isLoading}
-              className="w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-white bg-amber-600 hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="w-full flex justify-center  px-4 border border-transparent text-sm font-semibold rounded-lg text-white bg-amber-600 hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {isLoading ? (
                 <span className="flex items-center gap-2">
@@ -320,7 +321,7 @@ export default function RegisterPage() {
               ) : (
                 'Create Account'
               )}
-            </button>
+            </ControlButton>
           </div>
 
           <div className="text-sm text-center">

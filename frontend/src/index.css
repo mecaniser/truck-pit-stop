@@ -460,7 +460,7 @@ html::-webkit-scrollbar-thumb:hover {
 
 .db-presentation-new .db-staff-main {
   height: calc(100vh - 64px);
-  padding: clamp(16px, 2vw, 30px) clamp(16px, 2.3vw, 40px);
+  padding: 16px;
   background: var(--workspace-canvas);
   color: var(--workspace-text);
   color-scheme: light;
@@ -490,7 +490,7 @@ html::-webkit-scrollbar-thumb:hover {
     padding-right: 0 !important;
   }
   .db-presentation-new .db-staff-content {
-    padding-right: clamp(16px, 2.3vw, 40px);
+    padding-right: 16px;
   }
 }
 
@@ -504,7 +504,7 @@ html::-webkit-scrollbar-thumb:hover {
 
 .db-presentation-new .db-staff-content h1 { font-size: clamp(1.7rem, 2.3vw, 2.35rem); }
 
-.db-presentation-new .db-staff-content :is(button, a, input, select, textarea)[class] {
+.db-presentation-new .db-staff-content :is(button, a, input, select, textarea)[class]:not([data-db-control]) {
   min-height: var(--density-control-min);
 }
 
@@ -2488,6 +2488,141 @@ html::-webkit-scrollbar-thumb:hover {
   }
 }
 
+/* DB-151: Team, time board and their dialogs share opaque, theme-aware
+   color pairs. Keep this scoped: legacy utility colors elsewhere are unchanged. */
+.db-presentation-new .db-team-colors {
+  --team-info: #175d94;
+  --team-control: #64748b;
+  --team-track: #d0d8e2;
+  color: var(--workspace-text);
+}
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-team-colors {
+  --team-info: #93c5fd;
+  --team-control: #94a3b8;
+  --team-track: #22354a;
+}
+.db-presentation-new .db-team-colors :is(.text-white, .text-zinc-50, .text-zinc-100, .text-zinc-200, .text-zinc-700, .text-zinc-800, .text-zinc-900, .text-gray-50, .text-gray-100, .text-gray-200, .text-gray-700, .text-gray-800, .text-gray-900, .text-slate-50, .text-slate-100, .text-slate-200, .text-slate-700, .text-slate-800, .text-slate-900) { color: var(--workspace-text) !important; }
+.db-presentation-new .db-team-colors :is(.text-zinc-300, .text-zinc-400, .text-zinc-500, .text-zinc-600, .text-gray-300, .text-gray-400, .text-gray-500, .text-gray-600, .text-slate-300, .text-slate-400, .text-slate-500, .text-slate-600) { color: var(--workspace-muted) !important; }
+.db-presentation-new .db-team-colors :is([class*="text-amber-"], [class*="text-orange-"]) { color: var(--parts-status-warning) !important; }
+.db-presentation-new .db-team-colors :is([class*="bg-amber-"], [class*="bg-orange-"]) { background-color: var(--surface-raised) !important; }
+.db-presentation-new .db-team-colors :is([class*="border-amber-"], [class*="border-orange-"]) { border-color: var(--parts-status-warning) !important; }
+.db-presentation-new .db-team-colors :is(.bg-amber-400, .bg-amber-500, .bg-amber-600, .bg-orange-400, .bg-orange-500, .bg-orange-600) { background-color: var(--parts-status-warning) !important; }
+.db-presentation-new .db-team-colors :is([class*="text-green-"], [class*="text-emerald-"]) { color: var(--parts-status-success) !important; }
+.db-presentation-new .db-team-colors :is([class*="bg-green-"], [class*="bg-emerald-"]) { background-color: var(--surface-raised) !important; }
+.db-presentation-new .db-team-colors :is([class*="border-green-"], [class*="border-emerald-"]) { border-color: var(--parts-status-success) !important; }
+.db-presentation-new .db-team-colors :is(.bg-green-400, .bg-green-500, .bg-green-600, .bg-emerald-400, .bg-emerald-500, .bg-emerald-600) { background-color: var(--parts-status-success) !important; }
+.db-presentation-new .db-team-colors :is([class*="text-red-"]) { color: var(--parts-status-danger) !important; }
+.db-presentation-new .db-team-colors :is([class*="bg-red-"]) { background-color: var(--surface-raised) !important; }
+.db-presentation-new .db-team-colors :is([class*="border-red-"]) { border-color: var(--parts-status-danger) !important; }
+.db-presentation-new .db-team-colors :is(.bg-red-400, .bg-red-500, .bg-red-600) { background-color: var(--parts-status-danger) !important; }
+.db-presentation-new .db-team-colors :is([class*="text-blue-"], [class*="text-sky-"]) { color: var(--team-info) !important; }
+.db-presentation-new .db-team-colors :is([class*="bg-blue-"], [class*="bg-sky-"]) { background-color: var(--surface-raised) !important; }
+.db-presentation-new .db-team-colors :is([class*="border-blue-"], [class*="border-sky-"]) { border-color: var(--team-info) !important; }
+.db-presentation-new .db-team-colors :is(.bg-blue-400, .bg-blue-500, .bg-blue-600, .bg-sky-400, .bg-sky-500, .bg-sky-600) { background-color: var(--team-info) !important; }
+.db-presentation-new .db-team-colors :is([class*="bg-zinc-"], [class*="bg-gray-"], .bg-white, [class*="bg-white/"]) { background-color: var(--surface-raised) !important; }
+.db-presentation-new .db-team-colors :is([class*="border-zinc-"], [class*="border-gray-"], [class*="border-white/"]) { border-color: var(--workspace-border) !important; }
+.db-presentation-new .db-team-colors :is(input:not([type="checkbox"]), select, textarea) { color: var(--workspace-text) !important; background: var(--surface-overlay) !important; border-color: var(--team-control) !important; }
+.db-presentation-new .db-team-colors :is(input, textarea)::placeholder { color: var(--workspace-muted) !important; opacity: 1; }
+.db-presentation-new .db-team-colors :is(button.bg-amber-500, button[class~="bg-[var(--accent-600)]"], button[style*="background"]) { background: color-mix(in srgb, var(--accent-600) 80%, #000) !important; color: #fff !important; }
+.db-presentation-new .db-team-colors :is(button.bg-amber-500:hover, button[class~="bg-[var(--accent-600)]"]:hover, button[style*="background"]:hover) { background: color-mix(in srgb, var(--accent-600) 80%, #000) !important; color: #fff !important; }
+.db-presentation-new .db-team-colors :is([role="switch"]) { border: 1px solid var(--team-control); }
+.db-presentation-new .db-team-colors :is([role="switch"] > span) { background: #fff !important; }
+.db-presentation-new .db-team-colors [role="switch"][aria-checked="false"] > span { background: var(--workspace-muted) !important; }
+.db-presentation-new .db-team-colors button[style*="color"]:not([style*="background"]) { color: var(--team-info) !important; }
+.db-presentation-new .db-team-colors [class*="text-[var(--accent-"] { color: var(--team-info) !important; }
+.db-presentation-new .db-team-colors button[class*="hover:opacity"]:hover { opacity: 1; }
+.db-presentation-new .db-team-colors .w-2\.5.bg-zinc-600 { background: var(--team-control) !important; }
+
+.db-presentation-new .db-team-colors :is(.h-2[class*="bg-zinc-"], .h-2[class*="bg-white/"]) { background: var(--team-track) !important; }
+.db-presentation-new .db-team-colors :is(.h-2 > div) { background: var(--team-control) !important; }
+.db-presentation-new .db-team-colors :is(.animate-pulse) { animation: none; }
+.db-presentation-new .db-team-colors :is(button, [role="button"], input, select, textarea):focus-visible { outline: 2px solid var(--team-info); outline-offset: 2px; }
+@media (hover: hover) {
+.db-presentation-new .db-team-colors button:not(:disabled):hover { box-shadow: inset 0 0 0 1px var(--team-control); }
+}
+@media (forced-colors: active) {
+.db-presentation-new .db-team-colors :is(button, input, select, textarea, [role="button"]) { border-color: ButtonText !important; }
+.db-presentation-new .db-team-colors :focus-visible { outline-color: Highlight !important; }
+}
+
+.db-presentation-new .db-team-colors .db-datepicker__trigger[aria-expanded] { color: var(--team-info) !important; }
+
+/* The technician tile uses the sidebar glyph's machined material: a lit
+   upper edge and shallow contact shadow, rather than a priority stripe. */
+.db-presentation-new .db-team-colors .db-technician-tile {
+  --tile-face: var(--surface-raised);
+  --tile-highlight: #fff;
+  --tile-edge: rgb(255 255 255 / .9);
+  --tile-shadow: rgb(19 35 61 / .14);
+  border: 0 !important;
+  border-radius: 14px;
+  background: linear-gradient(145deg, var(--tile-highlight), var(--tile-face)) !important;
+  box-shadow: inset 0 1px 0 var(--tile-edge), inset 0 -1px 0 rgb(19 35 61 / .10), 0 3px 5px var(--tile-shadow);
+  transition: box-shadow 160ms ease-out;
+}
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-technician-tile {
+  --tile-highlight: #25364b;
+  --tile-edge: rgb(255 255 255 / .2);
+  --tile-shadow: rgb(0 0 0 / .28);
+}
+.db-presentation-new .db-team-colors .db-technician-tile__target {
+  border-radius: inherit;
+  outline: none !important;
+  box-shadow: none;
+}
+.db-presentation-new .db-team-colors .db-technician-tile:has(> .db-technician-tile__target:focus-visible) {
+  outline: 2px solid var(--team-info);
+  outline-offset: 3px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .db-presentation-new .db-team-colors .db-technician-tile:has(> .db-technician-tile__target:hover) {
+    box-shadow: inset 0 1px 0 var(--tile-edge), inset 0 -1px 0 rgb(19 35 61 / .10), 0 4px 7px var(--tile-shadow);
+  }
+}
+.db-presentation-new[data-appearance-mode='high_contrast'] .db-team-colors .db-technician-tile {
+  background: var(--surface-raised) !important;
+  border: 1px solid var(--workspace-border) !important;
+  box-shadow: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .db-presentation-new .db-team-colors .db-technician-tile { transition: none; }
+}
+@media (forced-colors: active) {
+  .db-presentation-new .db-team-colors .db-technician-tile {
+    background: Canvas !important;
+    border: 1px solid CanvasText !important;
+    box-shadow: none !important;
+  }
+  .db-presentation-new .db-team-colors .db-technician-tile:has(> .db-technician-tile__target:focus-visible) { outline-color: Highlight; }
+}
+
+/* Give section elevation room inside the detail scroller; nested facts stay flat. */
+.db-presentation-new .db-technician-detail {
+  min-width: 0;
+  padding-inline: 12px;
+  padding-bottom: 12px;
+}
+.db-presentation-new .db-technician-detail :is(.shadow-xl, .shadow-lg) {
+  box-shadow: none;
+}
+.db-presentation-new .db-technician-detail .db-technician-detail__section {
+  box-shadow: 0 2px 4px rgb(19 35 61 / .10);
+}
+.db-presentation-new[data-appearance-mode='dark'] .db-technician-detail .db-technician-detail__section {
+  box-shadow: 0 2px 4px rgb(0 0 0 / .22);
+}
+.db-presentation-new[data-appearance-mode='high_contrast'] .db-technician-detail .db-technician-detail__section {
+  box-shadow: none;
+}
+@media (forced-colors: active) {
+  .db-presentation-new .db-technician-detail .db-technician-detail__section { box-shadow: none; }
+}
+
+/* A Team dialog must keep its footer above the compact navigation. */
+@media (max-width: 767px) {
+  .db-staff-shell:has(.db-team-colors [role="dialog"]) .db-mobile-nav { display: none !important; }
+}
+
 /* DB-081 Google Reviews inbox and settings were written night-only. In the
    staff shell their legacy utilities follow the selected appearance, and the
    status notices use the semantic status tokens so Day shop keeps contrast. */
@@ -2815,35 +2950,135 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item {
+  position: relative;
+  height: 44px;
+  padding-block: 8px;
+  border-radius: 10px;
   color: var(--workspace-muted) !important;
   border-color: transparent !important;
   background-color: transparent !important;
+  box-shadow: none;
 }
 
-.db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item[aria-current='page'] {
-  color: var(--personal-accent-foreground) !important;
-  border-color: color-mix(in srgb, var(--personal-accent-400) 62%, var(--workspace-border)) !important;
-  background-color: var(--personal-accent-600) !important;
-  box-shadow: 0 5px 12px -8px color-mix(in srgb, var(--personal-accent-900, var(--product-navy-900)) 68%, transparent) !important;
+/* Transparent secondary tabs and colored glyphs share one moving marker. */
+.db-my-shop-nav-marker { display: none; }
+.db-presentation-new .db-my-shop-navigation { position: relative; }
+.db-presentation-new .db-my-shop-nav-glyph {
+  display: grid;
+  place-items: center;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--shop-icon-color);
+  background: transparent;
+  box-shadow: none;
 }
+.db-presentation-new .db-my-shop-nav-glyph > svg { width: 17px; height: 17px; stroke-width: 1.7; }
+:is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='inventory'] { --shop-icon-color: #dfc8a0; }
+:is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='purchasing'] { --shop-icon-color: #88c9ff; }
+:is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='services'] { --shop-icon-color: #9cdbbf; }
+:is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='labor-book-time'] { --shop-icon-color: #ffac77; }
+:is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='mechanics'] { --shop-icon-color: #c3b2ff; }
+:is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='analytics'] { --shop-icon-color: #85d5df; }
+
+/* Keep the unbacked icon strokes legible on light surfaces. */
+.db-presentation-new[data-appearance-mode='light'] :is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='inventory'] { --shop-icon-color: #80602c; }
+.db-presentation-new[data-appearance-mode='light'] :is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='purchasing'] { --shop-icon-color: #24679a; }
+.db-presentation-new[data-appearance-mode='light'] :is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='services'] { --shop-icon-color: #287450; }
+.db-presentation-new[data-appearance-mode='light'] :is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='labor-book-time'] { --shop-icon-color: #a45425; }
+.db-presentation-new[data-appearance-mode='light'] :is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='mechanics'] { --shop-icon-color: #7354a2; }
+.db-presentation-new[data-appearance-mode='light'] :is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='analytics'] { --shop-icon-color: #237580; }
+.db-presentation-new .db-my-shop-nav-cluster-secondary .db-my-shop-nav-glyph {
+  flex-basis: 24px;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
+.db-presentation-new .db-my-shop-nav-cluster-secondary .db-my-shop-nav-glyph > svg { width: 16px; height: 16px; }
+.db-presentation-new[data-appearance-mode='high_contrast'] .db-my-shop-nav-glyph {
+  color: var(--workspace-text);
+  box-shadow: none;
+}
+@media (forced-colors: active) {
+  .db-presentation-new .db-my-shop-nav-glyph {
+    color: ButtonText;
+    background: transparent;
+    box-shadow: none;
+  }
+}
+.db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item[aria-current='page'] {
+  color: var(--workspace-text) !important;
+}
+.db-presentation-new .db-my-shop-nav-marker {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 2px;
+  background: var(--shop-icon-color);
+  pointer-events: none;
+  opacity: 0;
+}
+.db-presentation-new .db-my-shop-nav-marker[data-animate='true'] {
+  transition: transform 240ms cubic-bezier(.16, 1, .3, 1), width 240ms cubic-bezier(.16, 1, .3, 1);
+}
+.db-presentation-new[data-appearance-mode='high_contrast'] .db-my-shop-nav-marker { background: var(--workspace-text); }
+@media (prefers-reduced-motion: reduce) {
+  .db-presentation-new .db-my-shop-nav-marker[data-animate='true'] { transition: none; }
+}
+@media (forced-colors: active) {
+  .db-presentation-new .db-my-shop-nav-marker { background: Highlight; forced-color-adjust: none; }
+}
+
+/* Activation-only, purpose-specific strokes; no idle or hover loops. */
+@media (prefers-reduced-motion: no-preference) {
+  .db-presentation-new [data-shop-section='inventory'] .db-my-shop-nav-glyph[data-activated='true'] > svg {
+    animation: db-shop-stack 480ms cubic-bezier(.16, 1, .3, 1) both;
+  }
+  .db-presentation-new [data-shop-section='purchasing'] .db-my-shop-nav-glyph[data-activated='true'] > svg {
+    animation: db-shop-cart 480ms cubic-bezier(.16, 1, .3, 1) both;
+  }
+  .db-presentation-new [data-shop-section='services'] .db-my-shop-nav-glyph[data-activated='true'] > svg path:is(:nth-of-type(2), :nth-of-type(3)) {
+    stroke-dasharray: 6;
+    animation: db-shop-write 540ms ease-out both;
+  }
+  .db-presentation-new [data-shop-section='services'] .db-my-shop-nav-glyph[data-activated='true'] > svg path:nth-of-type(3) { animation-delay: 120ms; }
+  .db-presentation-new [data-shop-section='labor-book-time'] .db-my-shop-nav-glyph[data-activated='true'] > svg path {
+    transform-origin: 12px 12px;
+    animation: db-shop-clock 600ms cubic-bezier(.16, 1, .3, 1) both;
+  }
+  .db-presentation-new [data-shop-section='mechanics'] .db-my-shop-nav-glyph[data-activated='true'] > svg {
+    transform-origin: 50% 50%;
+    animation: db-shop-wrench 480ms ease-out both;
+  }
+  .db-presentation-new [data-shop-section='analytics'] .db-my-shop-nav-glyph[data-activated='true'] > svg path:not(:first-child) {
+    transform-origin: center bottom;
+    animation: db-shop-chart 480ms cubic-bezier(.16, 1, .3, 1) both;
+  }
+}
+@keyframes db-shop-stack { 0% { transform: translateY(-3px) scale(.9); } 65% { transform: translateY(1px) scale(1); } 100% { transform: none; } }
+@keyframes db-shop-cart { 0% { transform: translateX(-7px) rotate(-8deg); } 100% { transform: none; } }
+@keyframes db-shop-write { 0% { stroke-dashoffset: 6; } 100% { stroke-dashoffset: 0; } }
+@keyframes db-shop-clock { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes db-shop-wrench { 0%, 100% { transform: rotate(0deg); } 45% { transform: rotate(-24deg); } }
+@keyframes db-shop-chart { from { transform: scaleY(.35); } to { transform: scaleY(1); } }
 
 .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item:focus-visible {
   outline: 2px solid var(--personal-accent-400);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item:not([aria-current='page']):hover {
-    color: var(--personal-accent-500) !important;
-    border-color: color-mix(in srgb, var(--personal-accent-500) 34%, var(--border-subtle)) !important;
-    background-color: color-mix(in srgb, var(--personal-accent-500) 8%, var(--surface-raised)) !important;
+    color: var(--workspace-text) !important;
+
   }
 }
 
 @container my-shop (max-width: 41.999rem) {
   .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item {
-    border-color: var(--workspace-border) !important;
-    background-color: var(--surface-raised) !important;
+    justify-content: flex-start;
   }
 }
 
@@ -2992,7 +3227,7 @@ html::-webkit-scrollbar-thumb:hover {
   justify-content: center;
   flex-shrink: 0;
   min-width: 23px;
-  height: 23px;
+  height: 20px;
   padding: 0 3px;
   border-radius: 999px;
   background: transparent;
@@ -3288,7 +3523,7 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-new {
   --text-primary: #12233b;
   --text-secondary: #5b6d82;
-  --db-repair-orders-control-height: 44px;
+  --db-repair-orders-control-height: var(--control-height);
   --db-repair-orders-side-control-width: 184px;
   container-type: inline-size;
   min-width: 0;
@@ -4012,11 +4247,10 @@ html::-webkit-scrollbar-thumb:hover {
 /* Repair work owns the canvas; do not change spacing on unrelated staff routes. */
 .db-presentation-new .db-staff-main:has(.db-repair-orders-workspace--new) {
   padding: 10px !important;
-  margin-block: 6px;
-  margin-right: 6px;
+  margin: 0;
 }
 @media (min-width: 960px) {
-  .db-presentation-new .db-staff-main:has(.db-repair-orders-workspace--new) { height: calc(100dvh - 12px); }
+  .db-presentation-new .db-staff-main:has(.db-repair-orders-workspace--new) { height: var(--db-staff-main-block); padding: 16px !important; }
 }
 @media (max-width: 959px) {
   .db-presentation-new .db-staff-main:has(.db-repair-orders-workspace--new) { padding-bottom: calc(74px + env(safe-area-inset-bottom)) !important; }
@@ -4606,7 +4840,7 @@ html::-webkit-scrollbar-thumb:hover {
 @media (min-width: 960px) {
   .db-staff-shell {
     --db-shell-nav-block: 0px;
-    --db-shell-main-inset: 24px;
+    --db-shell-main-inset: 0px;
   }
 }
 
@@ -4624,7 +4858,7 @@ html::-webkit-scrollbar-thumb:hover {
     position: relative;
     height: 100dvh;
     min-height: 0;
-    border-right: 0 !important;
+    border-right: 1px solid var(--workspace-border) !important;
     border-bottom: 0 !important;
     box-shadow: none !important;
   }
@@ -4852,11 +5086,11 @@ html::-webkit-scrollbar-thumb:hover {
   .db-presentation-new .db-staff-main {
     grid-column: 2;
     grid-row: 1;
-    height: var(--db-staff-main-block); /* == calc(100dvh - 24px) at >=960 */
-    margin: 12px 12px 12px 0;
-    padding: clamp(20px, 2.2vw, 38px);
-    border: 1px solid var(--workspace-border);
-    border-radius: 18px;
+    height: var(--db-staff-main-block); /* Full viewport beside desktop navigation. */
+    margin: 0;
+    padding: 16px;
+    border: 0;
+    border-radius: 0;
     overflow: hidden;
   }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] {
@@ -5781,7 +6015,7 @@ html.customer-portal-active {
   }
 }
 .db-parts-workbench__search { display:flex; align-items:center; gap:.5rem; min-block-size:46px; padding-inline:.7rem; border:1px solid var(--workspace-border); border-radius:.75rem; background:var(--surface-overlay); }
-.db-parts-workbench__search:focus-within { outline:2px solid var(--accent-primary,var(--accent-400)); outline-offset:2px; }
+.db-parts-workbench__search:focus-within { outline:2px solid var(--accent-primary,var(--accent-400)); outline-offset:-2px; }
 .db-parts-workbench__search svg { flex:0 0 auto; inline-size:1.1rem; color:var(--text-secondary); }
 .db-parts-workbench .db-parts-workbench__search input { min-inline-size:0; inline-size:100%; min-block-size:44px; padding:0 !important; border:0 !important; outline:0 !important; background:transparent !important; box-shadow:none !important; color:var(--text-primary) !important; }
 .db-parts-workbench__body { display:grid; grid-template-columns:minmax(30rem,1fr) minmax(22rem,24rem); gap:0; min-block-size:0; overflow:hidden; border:1px solid var(--workspace-border); border-radius:var(--parts-radius-workspace); background:var(--surface-canvas); }
@@ -6172,18 +6406,6 @@ html.customer-portal-active {
 .db-parts-workbench__archive-link:disabled { opacity:.4; }
 .db-parts-workbench__toolbar .db-parts-workbench__search { box-sizing:border-box; flex:1 1 15rem; block-size:var(--parts-toolbar-control-height); min-block-size:var(--parts-toolbar-control-height); max-inline-size:21rem; }
 .db-parts-workbench__density { margin-inline-start:auto; }
-.db-parts-workbench__compact-sort-menu { position:relative; display:none; }
-.db-parts-workbench__compact-sort-menu > button { display:inline-flex; min-block-size:var(--parts-toolbar-control-height); align-items:center; justify-content:center; gap:.35rem; padding:.4rem .7rem; border:1px solid color-mix(in srgb,var(--workspace-border) 72%,transparent); border-radius:.75rem; background:transparent; color:var(--text-primary); font-size:.75rem; font-weight:750; cursor:pointer; }
-.db-parts-workbench__compact-sort-menu > button svg { inline-size:1rem; }
-.db-parts-workbench__compact-sort-menu > button[aria-expanded='true'] { border-color:var(--parts-technical-muted); background:var(--surface-overlay); }
-.db-parts-workbench__compact-sort-popover { position:absolute; z-index:8; inset-block-start:calc(100% + .35rem); inset-inline-end:0; display:grid; gap:.55rem; inline-size:min(19.5rem,calc(100vw - 2rem)); padding:.7rem; border:1px solid var(--workspace-border); border-radius:var(--parts-radius-panel); background:var(--surface-raised); box-shadow:0 .75rem 1.75rem color-mix(in srgb,#000 30%,transparent); }
-.db-parts-workbench__compact-sort-row { display:grid; grid-template-columns:4rem minmax(0,1fr); align-items:start; gap:.6rem; min-inline-size:0; }
-.db-parts-workbench__compact-sort-row > span { padding-block:.9rem; color:var(--text-secondary); font-size:.75rem; font-weight:750; }
-.db-parts-workbench__sort-controls { min-inline-size:0; }
-.db-parts-workbench__catalog-reset { inline-size:100%; min-block-size:44px; padding:.4rem .62rem; border:1px solid var(--workspace-border); border-radius:var(--parts-radius-control); background:var(--surface-canvas); color:var(--text-primary); font-size:.75rem; font-weight:750; text-align:left; }
-.db-parts-workbench__catalog-reset[aria-pressed='true'] { background:var(--surface-overlay); }
-.db-parts-workbench__catalog-reset.is-desktop { display:inline-flex; inline-size:auto; min-block-size:var(--parts-toolbar-control-height); align-items:center; border:0; border-radius:.75rem; background:transparent; color:var(--text-secondary); }
-.db-parts-workbench__compact-sort { display:none; }
 .db-parts-workbench__bulk { display:flex; align-items:center; justify-content:space-between; gap:1rem; min-block-size:52px; padding:.45rem .65rem; border:1px solid var(--parts-selected-rule); border-radius:var(--parts-radius-panel); background:var(--surface-overlay); }
 .db-parts-workbench__bulk > strong { font-size:.82rem; }
 .db-parts-workbench__bulk > div { display:flex; gap:.4rem; }
@@ -6416,7 +6638,7 @@ html.customer-portal-active {
   .db-parts-workbench__add-stepper input,.db-presentation-new .db-staff-content .db-parts-workbench__add-stepper input { border-inline-color:ButtonText !important; background:Field !important; color:FieldText !important; -webkit-text-fill-color:FieldText; }
   .db-parts-workbench__add-stepper:has(input:focus-visible) > span:first-child,.db-parts-workbench__add-stepper button:focus-visible { outline-color:Highlight; }
   .db-parts-workbench__table-head > .is-sortable > button:focus-visible { forced-color-adjust:auto; outline-color:Highlight; }
-  .db-parts-workbench__filters,.db-parts-workbench__density,.db-parts-workbench__compact-sort-menu > button { forced-color-adjust:auto; border-color:ButtonText; }
+  .db-parts-workbench__filters,.db-parts-workbench__density { forced-color-adjust:auto; border-color:ButtonText; }
   .db-parts-workbench__filters button[aria-pressed='true'],.db-parts-workbench__density button[aria-pressed='true'] { background:Highlight; color:HighlightText; }
 }
 @container parts-workbench (max-width:50rem) {
@@ -6458,12 +6680,6 @@ html.customer-portal-active {
   .db-parts-workbench__filters { display:grid; flex:1 1 100%; grid-template-columns:repeat(3,minmax(0,1fr)); min-inline-size:0; }
   .db-parts-workbench__archive-link { flex:1 1 auto; justify-content:flex-start; }
   .db-parts-workbench__density { margin-inline-start:0; }
-  .db-parts-workbench__catalog-reset.is-desktop { display:none; }
-  .db-parts-workbench__compact-sort-menu { display:block; margin-inline-start:auto; }
-  .db-parts-workbench__compact-sort-popover { inset-inline-end:0; inset-inline-start:auto; max-block-size:min(34rem,calc(100dvh - 7rem)); overflow-y:auto; overflow-x: hidden;}
-  .db-parts-workbench__compact-sort { display:grid; grid-template-columns:1fr; gap:2px; max-block-size:19rem; margin-block-start:.35rem; overflow-y:auto; overflow-x: hidden;}
-  .db-parts-workbench__compact-sort button { min-block-size:44px; padding:.45rem .55rem; border:0; border-radius:1px; background:transparent; color:var(--text-primary); font-size:.75rem; font-weight:700; text-align:left; }
-  .db-parts-workbench__compact-sort button[aria-checked='true'] { background:var(--surface-overlay); }
   .db-parts-workbench__bulk { align-items:stretch; flex-direction:column; }
   .db-parts-workbench__bulk > div { display:grid; grid-template-columns:1fr 1fr; }
   .db-parts-workbench__body:not(.is-mobile-detail) { display:block; min-block-size:16rem; }
@@ -7400,3 +7616,190 @@ html.customer-portal-active {
 .db-parts-workbench__inspector-panel .db-parts-workbench__section-head > button { padding:.3rem .4rem; font-size:.75rem; }
 .db-parts-workbench__supplier-relationship dd { min-inline-size:0; overflow-wrap:anywhere; }
 .db-parts-workbench__supplier-name,.db-parts-workbench__source-name { overflow-wrap:anywhere; }
+
+
+/* DB-150 / DB-043: the shared My Shop shell owns its 12px gutter,
+   including while a section loads or fails. Switching sections must not move
+   the breadcrumb or navigation. Page content adds no second inset. */
+.db-presentation-new .db-staff-main:has(.db-my-shop-workspace, .db-customers-workspace, .db-repair-orders-workspace--new, .db-shop-work-new) {
+  padding-inline: 12px !important;
+  padding-top: 12px !important;
+}
+.db-presentation-new .db-staff-main:has(.db-my-shop-workspace, .db-customers-workspace, .db-repair-orders-workspace--new, .db-shop-work-new) > .db-staff-content {
+  padding-inline: 0;
+}
+.db-presentation-new .db-parts-workbench { padding: 0; }
+.db-presentation-new :is(.db-parts-workbench__body, .db-customers-workspace__ledger .db-operating-surface__card, .db-repair-orders-ledger__card, .db-wip__rows, .db-shop-work-new > .db-operating-surface__scroller > .db-operating-surface__card, .db-customers-workspace__loading-ledger) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none;
+}
+.db-presentation-new :is(.db-customers-workspace, .db-shop-work-new, .db-repair-orders-workspace--new) .db-operating-surface__scroller {
+  padding-inline-end: 0;
+  scrollbar-gutter: auto;
+}
+@media (min-width: 960px) {
+  .db-presentation-new .db-staff-main:has(.db-repair-orders-workspace--new) { padding: 12px 12px 0 !important; }
+  .db-presentation-new :is(.db-repair-orders-workspace--detail-open, .db-customers-workspace--detail-open) { column-gap: 12px; }
+  .db-presentation-new :is(.db-customer-detail-workspace, .db-repair-orders-workspace--detail-open > .db-slide-panel-workspace) {
+    border-radius: 16px;
+    box-shadow: none;
+    border-inline: 0;
+    border-inline-start: 1px solid var(--workspace-border);
+  }
+}
+
+@media (min-width: 960px) {
+  .db-presentation-new .db-staff-main:has(.db-my-shop-workspace, .db-customers-workspace, .db-repair-orders-workspace--new, .db-shop-work-new) { padding-bottom: 0 !important; }
+}
+
+
+/* Parts keeps a soft list edge without restoring a frame around the workspace.
+   Row overflow stays visible so focus indicators and row actions remain usable. */
+.db-presentation-new .db-parts-workbench__ledger-workspace { border-radius: 12px; }
+.db-presentation-new .db-parts-workbench__row { border-radius: 10px; margin-block: 4px; }
+.db-presentation-new .db-parts-workbench__row:not(.is-selected):not(:hover) { background: var(--surface-overlay); }
+
+
+/* Match the Parts list softness across the remaining working lists. Keep
+   backgrounds on records so the small gaps reveal the unboxed page canvas. */
+.db-presentation-new :is(.db-customers-workspace__ledger .db-operating-surface__card, .db-customers-workspace__loading-ledger, .db-repair-orders-ledger__card, .db-wip__rows, .db-shop-work-new > .db-operating-surface__scroller > .db-operating-surface__card) {
+  border-radius: 12px !important;
+  background: transparent !important;
+}
+.db-presentation-new :is(.db-customer-navigator__record, .db-repair-orders-ledger__row-shell, .db-wip__row, .db-action-ledger__row) {
+  border-radius: 10px;
+  border-bottom: 0;
+  margin-block: 4px;
+}
+.db-presentation-new .db-customer-navigator__summary { border-radius: 10px; }
+
+/* Header actions occupy real space; the Edit pencil stays a fixed size. */
+.db-parts-workbench__selected-action { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start; gap:0 .5rem; }
+.db-parts-workbench__selected-action .db-parts-workbench__selected-label-row,
+.db-parts-workbench__selected-action.is-editing .db-parts-workbench__selected-label-row { position:static; grid-column:2; grid-row:1; }
+.db-parts-workbench__selected-action .db-parts-workbench__selected-part,
+.db-parts-workbench__selected-action.is-editing .db-parts-workbench__selected-part { grid-column:1; grid-row:1; padding-inline-end:0; }
+.db-parts-workbench__selected-action > :is(.db-parts-workbench__identity-editor,.db-parts-workbench__selected-permission) { grid-column:1 / -1; }
+.db-parts-workbench__selected-controls .db-parts-workbench__identity-trigger { inline-size:44px; padding-inline:0; }
+/* Compact desktop fields override the shared staff form's 16px text floor. */
+.db-parts-workbench__identity-editor { margin-block-start:.35rem; padding-block-start:.35rem; }
+.db-parts-workbench__identity-editor > form { gap:.3rem; margin-block-start:.35rem; }
+.db-parts-workbench__identity-editor .db-parts-workbench__identity-fields { gap:.3rem .5rem; }
+.db-parts-workbench__identity-editor .db-parts-workbench__identity-fields label { gap:.15rem; font-size:.7rem; }
+.db-parts-workbench__identity-editor .db-parts-workbench__identity-group { padding-block-start:.25rem; }
+.db-parts-workbench__identity-editor .db-parts-workbench__identity-group .db-parts-workbench__identity-fields { margin-block-start:.15rem; }
+.db-parts-workbench__identity-editor .db-parts-workbench__photo-editor { padding-block-end:.3rem; }
+.db-parts-workbench__identity-editor .db-parts-workbench__photo-editor-copy { display:flex; flex-wrap:wrap; align-items:baseline; gap:.15rem .4rem; }
+.db-parts-workbench__identity-editor .db-parts-workbench__photo-editor-copy > span { flex:1 1 220px; font-size:.65rem; line-height:1.3; }
+.db-parts-workbench__identity-editor .db-parts-workbench__price-field { grid-template-columns:minmax(0,1fr) auto; gap:.15rem .4rem; }
+.db-parts-workbench__identity-editor .db-parts-workbench__price-head { display:contents; }
+.db-parts-workbench__identity-editor .db-parts-workbench__price-head > span { grid-column:1 / -1; grid-row:1; font-size:.7rem; }
+.db-parts-workbench__identity-editor .db-parts-workbench__price-modes { grid-column:2; grid-row:2; align-self:center; }
+.db-parts-workbench__identity-editor .db-parts-workbench__price-field > .db-parts-workbench__price-input { grid-column:1; grid-row:2; }
+.db-parts-workbench__identity-editor .db-parts-workbench__price-field > small { grid-column:1 / -1; grid-row:3; }
+@media (pointer:fine) {
+ .db-presentation-new .db-staff-content .db-parts-workbench__identity-editor .db-parts-workbench__identity-fields :is(input,textarea) { min-block-size:30px; block-size:30px; padding:.2rem .4rem; font-size:max(13px,calc(var(--font-size-body,16px) * .8125)); line-height:1.25; font-weight:500; }
+ .db-presentation-new .db-staff-content .db-parts-workbench__identity-editor .db-parts-workbench__identity-fields textarea { block-size:40px; min-block-size:40px; }
+ .db-parts-workbench__identity-editor .db-parts-workbench__identity-fields.db-parts-workbench__supplier-fields { grid-template-columns:minmax(0,1fr) 5rem minmax(0,1fr); }
+ .db-parts-workbench__identity-editor .db-parts-workbench__price-modes button { min-block-size:24px; padding:.1rem .4rem; }
+ .db-parts-workbench__identity-editor .db-parts-workbench__identity-group legend button { min-block-size:24px; }
+ .db-parts-workbench__identity-editor .db-parts-workbench__identity-actions button { min-block-size:32px; padding:.25rem .6rem; font-size:.8rem; }
+}
+@media (max-width:560px) {
+ .db-parts-workbench__selected-controls .db-parts-workbench__identity-trigger { inline-size:44px; padding-inline:0; }
+ .db-parts-workbench__identity-editor .db-parts-workbench__identity-fields.db-parts-workbench__supplier-fields { grid-template-columns:repeat(2,minmax(0,1fr)); }
+ .db-parts-workbench__supplier-fields > label:last-child { grid-column:1 / -1; }
+}
+.db-presentation-new .db-staff-content .db-parts-workbench__identity-editor :is(input,textarea,button):focus-visible { outline-offset:0; box-shadow:none; }
+/* Sticky column labels cover inline photos (2) and row actions (4);
+   floating menus retain their existing layer (9). */
+.db-parts-workbench__table-head { z-index:5; }
+/* Keep the Parts page and ledger continuous; the selected-part inspector
+   retains its existing gray canvas and selected header treatment. */
+.db-presentation-new .db-staff-main:has(.db-parts-workbench) { background:var(--surface-overlay); }
+.db-presentation-new :is(.db-parts-workbench__body,.db-parts-workbench__ledger-workspace,.db-parts-workbench__ledger,.db-parts-workbench__rows,.db-parts-workbench__table-head,.db-parts-workbench__load-more) { background:var(--surface-overlay); }
+.db-presentation-new .db-parts-workbench__row { outline:1px solid var(--workspace-border); outline-offset:-1px; }
+/* Supplier search meets its scroll container edge; contain focus paint. */
+.db-presentation-new .db-suppliers-workspace .db-search-add-bar__field:focus-within { outline-offset:-2px; }
+
+/* Full-width names: facts wrap below the identity instead of reserving
+   mostly empty columns beside its name. */
+.db-parts-workbench .db-parts-workbench__row { display:grid; --parts-row-check-size:28px; grid-template-columns:var(--parts-row-check-size) minmax(0,1fr); grid-template-rows:auto auto; align-items:start; padding:3px 6px; gap:0 2px; overflow:visible; }
+.db-parts-workbench .db-parts-workbench__ledger.is-read-only .db-parts-workbench__row { grid-template-columns:minmax(0,1fr); }
+.db-parts-workbench .db-parts-workbench__check { grid-column:1; grid-row:1 / 3; align-self:center; min-block-size:44px; }
+.db-parts-workbench .db-parts-workbench__check label { inline-size:28px; block-size:44px; }
+.db-parts-workbench .db-parts-workbench__row > .db-parts-workbench__part-cell { grid-column:2; grid-row:1; position:static; border:0; }
+.db-parts-workbench .db-parts-workbench__ledger.is-read-only .db-parts-workbench__part-cell { grid-column:1; }
+.db-parts-workbench .db-parts-workbench__row-select { min-block-size:54px; padding-block:5px; }
+.db-parts-workbench .db-parts-workbench__identity strong { white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; }
+.db-parts-workbench .db-parts-workbench__identity small { white-space:normal; overflow-wrap:anywhere; }
+.db-parts-workbench .db-parts-workbench__photo-spacer { flex-basis:36px; inline-size:36px; block-size:36px; }
+.db-parts-workbench .db-parts-workbench__part-cell > .db-parts-workbench__photo-trigger .db-parts-workbench__photo { flex-basis:36px; inline-size:36px; block-size:36px; }
+.db-parts-workbench .db-parts-workbench__row-facts { grid-column:2; grid-row:2; display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 16px; min-inline-size:0; border:0; padding:0 12px 3px 58px; color:inherit; }
+.db-parts-workbench .db-parts-workbench__ledger.is-read-only .db-parts-workbench__row-facts { grid-column:1; }
+.db-parts-workbench__row-facts > [role='cell'] { min-inline-size:0; font-size:.75rem; white-space:normal; overflow-wrap:anywhere; }
+.db-parts-workbench__row-facts > strong { font-family:var(--font-mono,ui-monospace,monospace); font-variant-numeric:tabular-nums; }
+.db-parts-workbench__row-facts > strong > span { color:var(--text-secondary); font-family:var(--font-sans,inherit); font-weight:400; }
+.db-parts-workbench__row-facts .is-empty { display:none; }
+.db-parts-workbench .db-parts-workbench__ledger.is-compact .db-parts-workbench__row-facts { padding-inline-start:12px; }
+.db-parts-workbench .db-parts-workbench__ledger.is-compact .db-parts-workbench__row-select { min-block-size:44px; }
+@media (max-width:760px) {
+ .db-parts-workbench .db-parts-workbench__row-facts { padding-inline-start:58px; gap:4px 12px; }
+}
+@media (pointer:coarse) {
+ .db-parts-workbench .db-parts-workbench__row { --parts-row-check-size:44px; }
+ .db-parts-workbench .db-parts-workbench__check label { inline-size:44px; }
+ .db-parts-workbench .db-parts-workbench__part-cell > .db-parts-workbench__photo-trigger { inline-size:44px; block-size:44px; }
+ .db-parts-workbench__sort-bar > .is-sortable > button { min-block-size:44px; }
+}
+
+/* The whole record opens details; checkbox, photo and action buttons remain
+   independent. Keep one keyboard opening target and show its focus on the row. */
+.db-parts-workbench .db-parts-workbench__row { cursor:pointer; }
+.db-parts-workbench .db-parts-workbench__row-select::before { display:none; }
+.db-parts-workbench .db-parts-workbench__row-select:focus-visible { outline:none; }
+.db-parts-workbench .db-parts-workbench__row:has(.db-parts-workbench__row-select:focus-visible) { outline:2px solid var(--parts-oxide); outline-offset:-2px; }
+@media (hover:hover) and (pointer:fine) {
+ .db-parts-workbench .db-parts-workbench__row:not(.is-selected):hover { background:var(--surface-raised); }
+ .db-parts-workbench__row:hover .db-parts-workbench__row-cue { opacity:.8; transform:none; }
+}
+
+/* Center the image and checkbox against the complete record, not only its
+   name/SKU band. The text and fact lines share one stable left edge. */
+.db-parts-workbench .db-parts-workbench__part-cell > .db-parts-workbench__photo-trigger { inset-inline-start:calc(var(--parts-row-check-size) + 20px); inset-block-start:50%; }
+.db-parts-workbench .db-parts-workbench__ledger.is-read-only .db-parts-workbench__photo-trigger { inset-inline-start:18px; }
+
+/* The opening cue uses the same whole-record axis as checkbox and photo. */
+.db-parts-workbench .db-parts-workbench__row-select { position:static; padding-inline-end:36px; }
+.db-parts-workbench .db-parts-workbench__row-cue { position:absolute; inset-inline-end:12px; inset-block-start:50%; translate:0 -50%; transform:none; }
+.db-parts-workbench .db-parts-workbench__row-facts { padding-inline-end:36px; }
+.db-parts-workbench .db-parts-workbench__part-cell:has(.db-parts-workbench__row-actions) .db-parts-workbench__row-cue { inset-inline-end:56px; }
+.db-parts-workbench .db-parts-workbench__part-cell:has(.db-parts-workbench__row-actions) .db-parts-workbench__row-select,
+.db-parts-workbench .db-parts-workbench__row:has(.db-parts-workbench__row-actions) .db-parts-workbench__row-facts { padding-inline-end:80px; }
+
+/* Sorting is a list-level control, independent from the facts in each record. */
+.db-parts-workbench__sorting { display:flex; flex:0 0 auto; flex-wrap:wrap; align-items:center; gap:8px; padding:6px 12px 10px; border-block-end:1px solid var(--workspace-border); margin-block-end:4px; }
+.db-parts-workbench__sorting > label { color:var(--text-secondary); font-size:.75rem; font-weight:600; white-space:nowrap; }
+.db-parts-workbench__sorting > .platform-select-field { flex:0 1 190px; min-inline-size:0; }
+.db-parts-workbench__sort-direction { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-block-size:44px; min-inline-size:140px; padding:6px 10px; border:1px solid var(--workspace-border); border-radius:8px; background:var(--surface-overlay); color:var(--text-primary); font-size:.75rem; white-space:nowrap; }
+.db-parts-workbench__sort-direction svg { flex:0 0 16px; inline-size:16px; block-size:16px; }
+.db-parts-workbench__sort-direction:disabled { opacity:.5; cursor:default; }
+@media (max-width:760px) {
+ .db-parts-workbench__sorting { display:grid; grid-template-columns:minmax(0,1fr) auto; padding-inline:6px; }
+ .db-parts-workbench__sorting > label { grid-column:1 / -1; }
+ .db-parts-workbench__sort-direction { min-inline-size:0; }
+ .db-parts-workbench__sorting [role='combobox'] { padding-inline:10px; }
+}
+
+/* Inventory's independent inspector follows the same outer corners as the
+   order workspace; mobile keeps its page scroll and full-width detail flow. */
+.db-presentation-new .db-parts-workbench__inspector { border-radius:16px; }
+.db-parts-workbench__inspector > .db-parts-workbench__selected-action { border-start-start-radius:inherit; border-start-end-radius:inherit; }
+@container parts-workbench (min-width:40rem) {
+ .db-presentation-new .db-parts-workbench__inspector { overflow:auto; }
+}
+@container parts-workbench (min-width:80.01rem) {
+ .db-parts-workbench__body { grid-template-columns:minmax(0,3fr) minmax(28rem,2fr); column-gap:12px; }
+ .db-parts-workbench__ledger-workspace,.db-parts-workbench__ledger { border-inline-end:0; }
+}

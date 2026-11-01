@@ -77,7 +77,7 @@ function renderPage() {
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <MechanicsPage />
+        <div className="db-staff-shell"><MechanicsPage /></div>
       </MemoryRouter>
     </QueryClientProvider>
   )
@@ -134,4 +134,26 @@ describe('MechanicsPage technician editing', () => {
       }))
     })
   })
+
+  it('keeps the technician dialog outside the scrolling team surface and cancels without saving', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Edit' }))
+    const dialog = screen.getByRole('dialog', { name: 'Edit technician' })
+    expect(dialog.closest('.db-staff-shell')).not.toBeNull()
+    expect(dialog.closest('.db-team-workspace')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog', { name: 'Edit technician' })).not.toBeInTheDocument()
+    expect(apiMocks.put).not.toHaveBeenCalled()
+    expect(apiMocks.post).not.toHaveBeenCalled()
+  })
+
+  it('preserves the restricted-role Team view without exposing management actions', async () => {
+    useAuthStore.setState({ user: { ...useAuthStore.getState().user!, role: 'receptionist' } })
+    renderPage()
+    expect(await screen.findByText('Only shop admins can manage the team.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add team member' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
 })

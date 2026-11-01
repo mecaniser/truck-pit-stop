@@ -65,8 +65,8 @@ def test_invoice_holds(variant):
 
 
 class ReadOnlyDB:
-    def __init__(self,order=None,invoices=(),payments=()):
-        self.order,self.rows,self.statements=order,[invoices,payments],[]
+    def __init__(self,order=None,invoices=(),payments=(),candidates=None):
+        self.order,self.rows,self.statements=order,([candidates] if candidates is not None else [])+[invoices,payments],[]
         self.bind=NS(dialect=NS(name="sqlite"))
     async def scalar(self,statement):
         self.statements.append(statement)
@@ -79,12 +79,13 @@ class ReadOnlyDB:
 @pytest.mark.asyncio
 async def test_loader_read_only_tenant_scope():
     inv=invoice()
-    order=NS(id=uuid4(),tenant_id=inv.tenant_id)
-    db=ReadOnlyDB(invoices=[inv],payments=[payment(inv)])
+    order=NS(id=uuid4(),tenant_id=inv.tenant_id, source=SOURCE, deleted_at=None, order_number="ETS-7001-8002", customer_id=uuid4(), vehicle_id=uuid4())
+    inv.repair_order_id=order.id
+    db=ReadOnlyDB(invoices=[inv],payments=[payment(inv)],candidates=[order])
     assert (await load_imported_billing(db,order)).payment_status=="unverified"
     sql=[str(s.compile(dialect=postgresql.dialect(),compile_kwargs={"literal_binds":True})) for s in db.statements]
-    assert len(sql)==2 and all(str(order.tenant_id) in q and q.startswith("SELECT") for q in sql)
-    assert str(order.id) in sql[0] and str(inv.id) in sql[1]
+    assert len(sql)==3 and all(str(order.tenant_id) in q and q.startswith("SELECT") for q in sql)
+    assert str(order.id) in sql[1] and str(inv.id) in sql[2]
     assert all("deleted_at IS NULL" not in q for q in sql)
 
 
@@ -129,14 +130,15 @@ def test_newer_source_evidence_cannot_be_ignored(evidence):
 @pytest.mark.asyncio
 async def test_postgres_optional_evidence_read_is_scoped():
     inv=invoice()
-    order=NS(id=uuid4(),tenant_id=inv.tenant_id)
+    order=NS(id=uuid4(),tenant_id=inv.tenant_id, source=SOURCE, deleted_at=None, order_number="ETS-7001-8002", customer_id=uuid4(), vehicle_id=uuid4())
+    inv.repair_order_id=order.id
     class PostgresDB(ReadOnlyDB):
         async def execute(self,statement,parameters):
             self.statements.append(statement)
             assert parameters=={"tenant_id":order.tenant_id,"invoice_ids":[inv.id]}
             assert "to_jsonb(i)" in str(statement)
             return NS(all=lambda:[NS(id=inv.id,evidence={"observations":[]})])
-    db=PostgresDB(invoices=[inv],payments=[payment(inv)])
+    db=PostgresDB(invoices=[inv],payments=[payment(inv)],candidates=[order])
     db.bind=NS(dialect=NS(name="postgresql"))
     result=await load_imported_billing(db,order)
     assert result.payment_status=="unverified" and result.recorded_remaining_amount is None
@@ -245,13 +247,13 @@ def test_source_does_not_hide_financial_ownership_or_reversal_conflicts(change):
 @pytest.mark.asyncio
 async def test_list_totals_batched_not_n_plus_one():
     tenant=uuid4()
-    items=[NS(id=uuid4(),tenant_id=tenant,source=SOURCE,deleted_at=None,imported_invoice_total_amount=None) for _ in range(25)]
+    items=[NS(id=uuid4(),tenant_id=tenant,source=SOURCE,deleted_at=None,imported_invoice_total_amount=None, order_number=f"ETS-{7000+n}-8002", customer_id=uuid4(), vehicle_id=uuid4()) for n in range(25)]
     invoices=[invoice(tenant_id=tenant,repair_order_id=item.id) for item in items]
-    db=ReadOnlyDB(invoices=invoices)
+    db=ReadOnlyDB(invoices=invoices,candidates=items)
     actor=NS(tenant_id=tenant,role=UserRole.GARAGE_OWNER)
     await attach_imported_invoice_totals(db,items,actor)
-    assert len(db.statements)==1 and all(item.imported_invoice_total_amount==Decimal("534.41") for item in items)
-    sql=str(db.statements[0].compile(dialect=postgresql.dialect(),compile_kwargs={"literal_binds":True}))
+    assert len(db.statements)==3 and all(item.imported_invoice_total_amount==Decimal("534.41") for item in items)
+    sql=str(db.statements[1].compile(dialect=postgresql.dialect(),compile_kwargs={"literal_binds":True}))
     assert str(tenant) in sql and all(str(item.id) in sql for item in items)
 
 

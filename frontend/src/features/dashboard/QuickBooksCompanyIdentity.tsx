@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Copy } from 'lucide-react'
@@ -53,10 +54,10 @@ export default function QuickBooksCompanyIdentity({ open, connection }: { open: 
       </div>}
       <div className="flex flex-wrap items-center gap-x-3 text-xs text-[var(--text-secondary)]">
         <p className="min-w-0 break-all">Company ID: <span className="select-all tabular-nums">{connection.realm_id}</span></p>
-        <button type="button" aria-label="Copy QuickBooks company ID" className="inline-flex min-h-11 items-center gap-1.5 rounded px-2 hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent-500)]" onClick={async () => {
+        <ControlButton controlKind="action" type="button" aria-label="Copy QuickBooks company ID" className="inline-flex  items-center gap-1.5 rounded px-2 hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent-500)]" onClick={async () => {
           try { await navigator.clipboard.writeText(connection.realm_id!); setCopyStatus('Company ID copied') }
           catch { setCopyStatus('Unable to copy. Select the company ID to copy it manually.') }
-        }}><Copy className="h-3.5 w-3.5" aria-hidden="true" />Copy</button>
+        }}><Copy className="h-3.5 w-3.5" aria-hidden="true" />Copy</ControlButton>
         <span role="status">{copyStatus}</span>
       </div>
     </section>

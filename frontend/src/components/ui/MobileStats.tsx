@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useState, useRef, ReactNode } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 
@@ -60,7 +61,7 @@ export function SegmentedControl({ options, value, onChange, size = 'md' }: Segm
         const classes = isActive ? colorClasses[color].active : colorClasses[color].inactive
         
         return (
-          <button
+          <ControlButton
             key={option.id}
             onClick={() => onChange(option.id)}
             className={`flex items-center justify-center gap-2 ${padding} ${text} font-medium rounded-xl border transition-all whitespace-nowrap flex-shrink-0 min-w-[80px] ${classes}`}
@@ -71,7 +72,7 @@ export function SegmentedControl({ options, value, onChange, size = 'md' }: Segm
             {option.count !== undefined && (
               <span className={`font-semibold ${isActive ? '' : 'text-zinc-100'}`}>{option.count}</span>
             )}
-          </button>
+          </ControlButton>
         )
       })}
     </div>
@@ -164,7 +165,7 @@ export function CollapsibleStats({ title, summary, children, defaultExpanded = f
   return (
     <div className="bg-zinc-900/80 border border-zinc-700/50 rounded-2xl overflow-hidden backdrop-blur-sm">
       {/* Summary - always visible */}
-      <button
+      <ControlButton controlKind="content"
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center justify-between px-4 py-3 hover:bg-zinc-800/60 transition-colors"
       >
@@ -179,7 +180,7 @@ export function CollapsibleStats({ title, summary, children, defaultExpanded = f
             <ChevronRight className="w-4 h-4 text-zinc-400" />
           )}
         </div>
-      </button>
+      </ControlButton>
       
       {/* Expanded content */}
       {expanded && (

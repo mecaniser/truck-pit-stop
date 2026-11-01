@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, ClipboardCheck, PackageCheck, RotateCcw, Store, Truck } from 'lucide-react'
@@ -115,7 +116,7 @@ export default function PurchasingWorkspace() {
 
   if (!mayRead) return <div className="db-purchasing__gate" role="alert">Purchasing is available to shop owners, admins, and reception staff.</div>
   if (summaryQuery.isPending) return <div className="db-purchasing__gate" role="status">Opening Purchasing…</div>
-  if (summaryQuery.isError) return <div className="db-purchasing__gate" role="alert"><span>Purchasing is not available for this shop right now.</span><button type="button" onClick={() => void summaryQuery.refetch()}>Retry</button></div>
+  if (summaryQuery.isError) return <div className="db-purchasing__gate" role="alert"><span>Purchasing is not available for this shop right now.</span><ControlButton type="button" onClick={() => void summaryQuery.refetch()}>Retry</ControlButton></div>
 
   const selectView = (next: PurchasingView) => setSearchParams({ view: next }, { replace: true })
   const summary = summaryQuery.data
@@ -126,13 +127,13 @@ export default function PurchasingWorkspace() {
         <h1 id="purchasing-title">Purchasing</h1>
         <p>Prepare supplier orders, receive deliveries, and close the loop on returns and cores.</p>
       </div>
-      <button type="button" onClick={() => navigate('/dashboard/garage/inventory')}>
+      <ControlButton type="button" onClick={() => navigate('/dashboard/garage/inventory')}>
         <ArrowLeft aria-hidden="true" />Parts & inventory
-      </button>
+      </ControlButton>
     </header>
 
     <nav className="db-purchasing__tabs" aria-label="Purchasing areas">
-      {views.map(({ id, label, icon: Icon }) => <button
+      {views.map(({ id, label, icon: Icon }) => <ControlButton
         key={id}
         type="button"
         aria-current={view === id ? 'page' : undefined}
@@ -141,7 +142,7 @@ export default function PurchasingWorkspace() {
         <Icon aria-hidden="true" />
         <span>{label}</span>
         {id === 'orders' && preparationCount > 0 ? <strong aria-label={`${preparationCount} parts prepared`}>{preparationCount}</strong> : null}
-      </button>)}
+      </ControlButton>)}
     </nav>
 
     <div className="db-purchasing__content db-operating-surface__scroller">
@@ -308,7 +309,7 @@ function PurchasePreparationTray({ onCreated, onOpenParts }: { onCreated: () => 
                 {issue ? <small id={`purchase-line-issue-${line.inventoryId}`} role="alert">{issue}</small> : <small>Pack {pack} · min {minimum}</small>}
               </label>
               <span className="db-purchasing__line-cost"><small>Last unit cost</small><strong>${Number(line.unitCost || 0).toFixed(2)}</strong></span>
-              <button type="button" onClick={() => removeLine(line.inventoryId)} aria-label={`Remove ${line.name} from purchase preparation`}>Remove</button>
+              <ControlButton type="button" onClick={() => removeLine(line.inventoryId)} aria-label={`Remove ${line.name} from purchase preparation`}>Remove</ControlButton>
             </div>
           })}
         </div>
@@ -318,8 +319,8 @@ function PurchasePreparationTray({ onCreated, onOpenParts }: { onCreated: () => 
         <div className="db-purchasing__lines">{blockedLines.map((line) => <div key={line.inventoryId} className="db-purchasing__line is-blocked">
           <span className="db-purchasing__line-name"><strong>{line.name}</strong><small>{line.sku} · Assign a preferred supplier source in Parts</small></span>
           <span className="db-purchasing__line-blocked">Excluded from this batch</span>
-          <button type="button" onClick={onOpenParts}>Open Parts</button>
-          <button type="button" onClick={() => removeLine(line.inventoryId)} aria-label={`Remove ${line.name} from purchase preparation`}>Remove</button>
+          <ControlButton type="button" onClick={onOpenParts}>Open Parts</ControlButton>
+          <ControlButton type="button" onClick={() => removeLine(line.inventoryId)} aria-label={`Remove ${line.name} from purchase preparation`}>Remove</ControlButton>
         </div>)}</div>
       </section>}
     </div>}
@@ -328,9 +329,9 @@ function PurchasePreparationTray({ onCreated, onOpenParts }: { onCreated: () => 
       {!mayCreate && <p>Read-only access. Owners and admins can create draft purchase orders.</p>}
       {hasInvalidLine && <p>Correct the highlighted quantities before creating drafts.</p>}
       {blockedLines.length > 0 && <p>{blockedLines.length} {blockedLines.length === 1 ? 'part needs' : 'parts need'} a supplier and will remain excluded.</p>}
-      <button type="button" disabled={!mayCreate || !assignedLines.length || hasInvalidLine || submitting} onClick={() => void createDrafts()}>
+      <ControlButton type="button" disabled={!mayCreate || !assignedLines.length || hasInvalidLine || submitting} onClick={() => void createDrafts()}>
         {submitting ? 'Creating drafts…' : `Create ${groups.length} draft ${groups.length === 1 ? 'order' : 'orders'}`}
-      </button>
+      </ControlButton>
     </div>}
   </section>
 }

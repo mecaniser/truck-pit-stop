@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -111,7 +112,7 @@ function OpenStaffSettlementDialog({
             <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-slate-500">Invoice {invoiceNumber}</p>
             <h2 id="staff-settlement-heading" className="mt-1 text-lg font-extrabold text-slate-950">Record or review payment</h2>
           </div>
-          <button ref={closeRef} type="button" aria-label="Close invoice settlement" onClick={onClose} className="flex h-11 w-11 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b9472f]"><X className="h-5 w-5" /></button>
+          <ControlButton controlKind="icon" ref={closeRef} type="button" aria-label="Close invoice settlement" onClick={onClose} className="flex h-11 w-11 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b9472f]"><X className="h-5 w-5" /></ControlButton>
         </header>
 
         <div className="max-h-[calc(100vh-8rem)] space-y-4 overflow-y-auto p-4 sm:p-5">

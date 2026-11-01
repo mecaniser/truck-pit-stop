@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useState } from 'react'
 import { ChartColumn, ChartLine } from 'lucide-react'
 import BaseSelect from '@/components/BaseSelect'
@@ -29,20 +30,20 @@ export default function ActivityChart({ data, timezone, metric, selected, preset
     <div className="otr-panel-heading otr-chart-heading">
       <div className="otr-chart-title"><h3>{selected ? 'Truck activity' : 'Fleet activity'}</h3>
         {intervals.length > 1 ? <label className="otr-interval"><span className="sr-only">Activity grouping</span><BaseSelect value={interval} onChange={v => setInterval(v as ActivityInterval)} options={intervals.map(v => ({ value: v, label: `By ${v}` }))} searchable={false} variant="dark" heightClass="h-11" optionHeightClass="min-h-11" /></label> : <span className="otr-fixed-grouping">{data.start_date === data.end_date ? 'Day total' : 'By day'}</span>}
-        <div className="otr-chart-style" role="group" aria-label="Chart style"><button aria-label="Columns" title="Columns" aria-pressed={style === 'columns'} onClick={() => setStyle('columns')}><ChartColumn size={18} /></button><button aria-label="Line" title="Line" aria-pressed={style === 'line'} onClick={() => setStyle('line')}><ChartLine size={18} /></button></div>
+        <div className="otr-chart-style" role="group" aria-label="Chart style"><ControlButton controlKind="icon" aria-label="Columns" title="Columns" aria-pressed={style === 'columns'} onClick={() => setStyle('columns')}><ChartColumn size={18} /></ControlButton><ControlButton controlKind="icon" aria-label="Line" title="Line" aria-pressed={style === 'line'} onClick={() => setStyle('line')}><ChartLine size={18} /></ControlButton></div>
       </div>
       <p>{metric === 'miles' ? 'Distance' : 'Driving hours'} · trips by start date · {selected ? 'select a period for routes' : 'select a period to compare trucks'}</p>
     </div>
     {buckets.length === 0 && <p className="otr-chart-missing">No imported trips in this period</p>}
     <div className="otr-period-scroll"><div className={`otr-period-chart is-${style}`} style={{ minWidth: buckets.length * (interval === 'week' ? 108 : interval === 'day' ? 66 : 52) }}>
       {style === 'line' && <svg className="otr-trend" viewBox="0 0 1000 170" preserveAspectRatio="none" aria-hidden="true"><path d={path} fill="none" stroke="currentColor" strokeWidth="2" vectorEffect="non-scaling-stroke" /></svg>}
-      {buckets.map(b => <button key={b.start} disabled={!b.count} title={`${dateLabel(b.start)} – ${dateLabel(b.end)}: ${b.count ? `${value(b[metric])} · ${b.count} segments` : 'No imported trips'}`} aria-label={b.count ? `${dateLabel(b.start)}${b.start !== b.end ? ` – ${dateLabel(b.end)}` : ''}: ${number(b.miles)} miles, ${(b.seconds / 3600).toFixed(1)}h driving. ${selected ? 'View routes' : 'Compare trucks'}` : `${caption(b.start, b.end)}: No imported trips`} onClick={e => onOpen(b.start, b.end, e.currentTarget)}>
+      {buckets.map(b => <ControlButton key={b.start} disabled={!b.count} title={`${dateLabel(b.start)} – ${dateLabel(b.end)}: ${b.count ? `${value(b[metric])} · ${b.count} segments` : 'No imported trips'}`} aria-label={b.count ? `${dateLabel(b.start)}${b.start !== b.end ? ` – ${dateLabel(b.end)}` : ''}: ${number(b.miles)} miles, ${(b.seconds / 3600).toFixed(1)}h driving. ${selected ? 'View routes' : 'Compare trucks'}` : `${caption(b.start, b.end)}: No imported trips`} onClick={e => onOpen(b.start, b.end, e.currentTarget)}>
         <strong>{b.count ? compactValue(b[metric]) : '—'}</strong>
         <span className="otr-period-track">{b.count > 0 && (style === 'columns' ? <i style={{ height: `${b[metric] / max * 150}px` }} /> : <i className="otr-trend-dot" style={{ top: `${y(b[metric])}px` }} />)}</span>
         <span className="otr-period-label">{caption(b.start, b.end)}</span>
         {!selected && <small className="otr-reporting-count">{b.count ? `${new Set(b.trips.map(trip => trip.vehicle_id)).size} reporting` : 'No records'}</small>}
         {activityPeriodNote(b.start, b.end, interval, timezone) && <small className="otr-period-note">{activityPeriodNote(b.start, b.end, interval, timezone)}</small>}
-      </button>)}
+      </ControlButton>)}
     </div></div>
     {buckets.some(b => !b.count) && <p className="otr-chart-missing">— No imported trips</p>}
   </section>

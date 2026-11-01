@@ -5,11 +5,12 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
-from sqlalchemy import bindparam, select, text
+from sqlalchemy import bindparam, or_, select, text, union_all
 
 from app.core.config import settings
 from app.db.models.invoice import Invoice
 from app.db.models.payment import Payment
+from app.db.models.repair_order import RepairOrder
 from app.schemas.imported_billing import ImportedBillingResponse
 from app.services.ets_completed_outcome_source import ETSCompletionHold, amount, identifier, _time
 from app.services.ets_source_evidence import latest_source_evidence, _digest
@@ -43,6 +44,113 @@ def supported_invoice(invoices):
     if _money(active[0].total_amount) is None:
         return None, "invalid_invoice_total"
     return active[0], None
+
+
+
+# Only the staff display reader may recognize these historical cleanup artifacts.
+# Generic invoice selection and all accounting/outcome writers remain strict.
+_LEGACY_VOID_REASON = ("Duplicate created by the ETS invoice backfill: one ETS "
+                       "service invoice was attached to every repair order of that service.")
+_RETIRED_INVOICE_MARKERS = (
+    "quickbooks_invoice_id", "qbo_shop_activation_id", "quickbooks_sync_error",
+    "quickbooks_synced_at", "voided_by_user_id", "voided_at", "supersedes_invoice_id",
+    "created_by_user_id",
+)
+_RETIRED_PAYMENT_MARKERS = (
+    "invoice_payment_attempt_id", "payment_provider", "authorization_number", "receipt_url",
+    "recorded_by_user_id", "quickbooks_charge_id", "quickbooks_charge_status",
+    "quickbooks_idempotency_key", "quickbooks_payment_id", "quickbooks_reconciled_at",
+    "quickbooks_refund_id", "quickbooks_refund_receipt_id", "quickbooks_refunded_amount",
+    "quickbooks_sync_error", "stripe_charge_id", "stripe_connected_account_id",
+    "stripe_payment_intent_id", "stripe_platform_fee_amount", "stripe_platform_fee_percent",
+)
+_RETIRED_REFERENCE_TABLES = (
+    "fleet_invoice_scope_events", "historical_invoice_decisions", "historical_invoice_evidence",
+    "historical_invoice_mappings", "invoice_charge_adjustments", "invoice_payment_attempts",
+    "invoice_payment_ledger_events", "invoice_receivable_attestations", "invoice_settlements",
+    "payment_accounting_links", "payment_overpayments", "payment_refunds",
+)
+
+
+def _empty_markers(row, names):
+    return all(getattr(row, name, None) in (None, "", Decimal("0")) for name in names)
+
+
+def _retired_display_candidate(invoices, members):
+    """Prove cleanup identity before fetching its financial/source evidence."""
+    if _group_hold(members):
+        return None
+    active = [i for i in invoices if i.deleted_at is None and _value(i.status) != "cancelled"]
+    if len(active) != 1 or any(i.source != SOURCE for i in invoices):
+        return None
+    canonical = active[0]
+    member_map = {r.id: r for r in members}
+    owner = member_map.get(canonical.repair_order_id)
+    if (owner is None or canonical.tenant_id != owner.tenant_id
+            or canonical.billed_customer_id not in (None, owner.customer_id)
+            or _money(canonical.total_amount) is None):
+        return None
+    copies = [i for i in invoices if i.id != canonical.id]
+    if not copies:
+        return None
+    for copy in copies:
+        sibling = member_map.get(copy.repair_order_id)
+        if (sibling is None or sibling.id == owner.id or copy.tenant_id != owner.tenant_id
+                or copy.deleted_at is None or copy.updated_at != copy.deleted_at
+                or _value(copy.status) != "cancelled" or copy.void_reason != _LEGACY_VOID_REASON
+                or copy.invoice_number != canonical.invoice_number + "-" + sibling.order_number
+                or copy.total_amount != canonical.total_amount
+                or copy.billed_customer_id != canonical.billed_customer_id
+                or copy.is_internal
+                or copy.accounting_policy != "standard" or copy.quickbooks_sync_status not in (None, "pending")
+                or not _empty_markers(copy, _RETIRED_INVOICE_MARKERS)):
+            return None
+    return canonical
+
+
+async def _retired_reference_ids(db, tenant_id, invoice_ids):
+    """One batched tenant-scoped query; any native financial reference blocks."""
+    if not invoice_ids:
+        return set()
+    tables = Invoice.metadata.tables
+    queries = [select(Invoice.supersedes_invoice_id).where(
+        Invoice.tenant_id == tenant_id, Invoice.supersedes_invoice_id.in_(invoice_ids))]
+    for name in _RETIRED_REFERENCE_TABLES:
+        table = tables[name]
+        queries.append(select(table.c.invoice_id).where(
+            table.c.tenant_id == tenant_id, table.c.invoice_id.in_(invoice_ids)))
+        if "payment_id" in table.c:
+            queries.append(select(Payment.invoice_id).join(table, table.c.payment_id == Payment.id).where(
+                table.c.tenant_id == tenant_id, Payment.tenant_id == tenant_id,
+                Payment.invoice_id.in_(invoice_ids)))
+    accounting = tables["payment_accounting_links"]
+    queries.append(select(Payment.invoice_id).join(accounting,
+        accounting.c.financial_object_id == Payment.id).where(accounting.c.tenant_id == tenant_id,
+        Payment.tenant_id == tenant_id, Payment.invoice_id.in_(invoice_ids)))
+    queries.append(select(accounting.c.financial_object_id).where(accounting.c.tenant_id == tenant_id,
+        accounting.c.financial_object_id.in_(invoice_ids)))
+    return set((await db.execute(union_all(*queries))).scalars().all())
+
+
+def _retired_display_verified(rows, canonical, summary, payments, blocked, evidence):
+    if (summary.evidence_basis != "ets_source_snapshot"
+            or summary.payment_status not in {"paid", "partially_paid", "unpaid"}
+            or summary.total_amount != canonical.total_amount):
+        return False
+    for copy in rows:
+        if copy.id == canonical.id:
+            continue
+        if copy.id in blocked or evidence.get(copy.id):
+            return False
+        for payment in payments.get(copy.id, []):
+            amount = _money(payment.amount)
+            if (payment.tenant_id != copy.tenant_id or payment.invoice_id != copy.id
+                    or payment.source != SOURCE or _value(payment.status) != "failed"
+                    or payment.deleted_at != copy.deleted_at or payment.updated_at != copy.deleted_at
+                    or amount is None or amount <= 0
+                    or not _empty_markers(payment, _RETIRED_PAYMENT_MARKERS)):
+                return False
+    return True
 
 
 def _source_summary(invoice, envelope, order, shop_id):
@@ -239,35 +347,145 @@ async def _source_evidence(db, tenant_id, invoice_ids):
     return result
 
 
-async def load_imported_billing(db, order):
+def _job_key(order):
+    match = re.fullmatch(r"(ETS-[0-9]+-[0-9]+)(?:-[0-9]+)?", getattr(order, "order_number", "") or "")
+    return match.group(1) if match else None
+
+
+def _group_hold(members):
+    if any(row.source != SOURCE or row.deleted_at is not None for row in members):
+        return "shared_job_source_conflict"
+    identities = {(row.customer_id, row.vehicle_id) for row in members}
+    if len(identities) != 1 or any(customer is None or vehicle is None for customer, vehicle in identities):
+        return "shared_job_identity_conflict"
+    return None
+
+
+async def _load_billing_batch(db, orders, tenant_id):
+    """Resolve invoice context once per job, without changing financial ownership.
+
+    Candidate orders deliberately include deleted/native rows: a conflicting
+    apparent sibling must hold the group, not silently disappear from evidence.
+    Queries are bounded per page rather than repeated per operation.
+    """
+    results = {}
+    valid = []
+    for order in orders:
+        if (order.tenant_id != tenant_id or order.source != SOURCE
+                or order.deleted_at is not None or not _job_key(order)):
+            results[order.id] = ImportedBillingResponse(review_reasons=["source_identity_unavailable"])
+        else:
+            valid.append(order)
+    if not valid:
+        return results
+    keys = {_job_key(order) for order in valid}
+    predicates = [predicate for key in keys for predicate in
+                  (RepairOrder.order_number == key, RepairOrder.order_number.like(key + "-%"))]
+    candidates = list((await db.scalars(select(RepairOrder).where(
+        RepairOrder.tenant_id == tenant_id, or_(*predicates)).limit(2001))).all())
+    if len(candidates) > 2000:
+        results.update({order.id: ImportedBillingResponse(review_reasons=["shared_job_capacity_exceeded"])
+                        for order in valid})
+        return results
+    groups = {}
+    for candidate in candidates:
+        key = _job_key(candidate)
+        if candidate.tenant_id == tenant_id and key in keys:
+            groups.setdefault(key, []).append(candidate)
+    eligible, holds, identity_conflicts = {}, {}, set()
+    for order in valid:
+        key = _job_key(order)
+        members = groups.get(key, [])
+        reason = _group_hold(members) if members else "source_identity_unavailable"
+        if not any(member.id == order.id for member in members):
+            reason = "source_identity_unavailable"
+        if reason == "shared_job_identity_conflict":
+            # A sibling identity mismatch forbids sharing, but must not erase
+            # the valid invoice already owned by a directly linked order.
+            # Inspect the entire group's invoices before preserving that owner.
+            identity_conflicts.add(key)
+            eligible[key] = members
+        elif reason:
+            holds[key] = reason
+        else:
+            eligible[key] = members
+    ids = [member.id for members in eligible.values() for member in members]
     invoices = list((await db.scalars(select(Invoice).where(
-        Invoice.tenant_id == order.tenant_id, Invoice.repair_order_id == order.id))).all())
-    invoice, _ = supported_invoice(invoices)
-    payments, evidence = [], {}
-    if invoice is not None:
-        payments = list((await db.scalars(select(Payment).where(
-            Payment.tenant_id == order.tenant_id, Payment.invoice_id == invoice.id))).all())
-        evidence = await _source_evidence(db, order.tenant_id, [invoice.id])
-    shop, shop_error = trusted_shop_binding(order.tenant_id)
-    return summarize_imported_billing(invoices, payments, evidence.get(invoice.id) if invoice else None,
-        order=order, shop_id=shop, shop_error=shop_error)
+        Invoice.tenant_id == tenant_id, Invoice.repair_order_id.in_(ids)))).all()) if ids else []
+    by_order = {}
+    for invoice in invoices:
+        by_order.setdefault(invoice.repair_order_id, []).append(invoice)
+    canonical, retired_candidates = {}, set()
+    for key, members in eligible.items():
+        rows = [invoice for member in members for invoice in by_order.get(member.id, [])]
+        invoice, reason = supported_invoice(rows)
+        if reason == "deleted_invoice_evidence":
+            candidate = _retired_display_candidate(rows, members)
+            if candidate is not None:
+                invoice, reason = candidate, None
+                retired_candidates.add(key)
+        if reason:
+            holds[key] = reason
+            continue
+        owner = next(member for member in members if member.id == invoice.repair_order_id)
+        if owner.customer_id is None or owner.vehicle_id is None:
+            holds[key] = "source_identity_unavailable"
+            continue
+        if getattr(invoice, "billed_customer_id", None) not in (None, owner.customer_id):
+            holds[key] = "invoice_customer_identity_mismatch"
+            continue
+        canonical[key] = (rows, invoice, owner, len(members) > 1 and key not in identity_conflicts)
+    invoice_ids = [value[1].id for value in canonical.values()]
+    retired_ids = [row.id for key in retired_candidates for row in canonical[key][0]
+                   if row.id != canonical[key][1].id]
+    payment_invoice_ids = invoice_ids + retired_ids
+    payments = list((await db.scalars(select(Payment).where(
+        Payment.tenant_id == tenant_id, Payment.invoice_id.in_(payment_invoice_ids)))).all()) if payment_invoice_ids else []
+    by_invoice = {}
+    for payment in payments:
+        by_invoice.setdefault(payment.invoice_id, []).append(payment)
+    blocked_retired = await _retired_reference_ids(db, tenant_id, retired_ids)
+    evidence = await _source_evidence(db, tenant_id, payment_invoice_ids)
+    shop, shop_error = trusted_shop_binding(tenant_id)
+    summaries = {}
+    for key, (rows, invoice, owner, shared) in canonical.items():
+        summary = summarize_imported_billing([invoice] if key in retired_candidates else rows, by_invoice.get(invoice.id, []), evidence.get(invoice.id),
+            order=owner, shop_id=shop, shop_error=shop_error)
+        if key in retired_candidates and not _retired_display_verified(
+                rows, invoice, summary, by_invoice, blocked_retired, evidence):
+            holds[key] = "deleted_invoice_evidence"
+            continue
+        summary.invoice_repair_order_id = owner.id
+        summary.invoice_repair_order_number = owner.order_number
+        summary.shared_invoice = shared
+        if key in identity_conflicts:
+            summary.review_required = True
+            summary.review_reasons.append("shared_job_identity_conflict")
+        summaries[key] = summary
+    for order in valid:
+        key = _job_key(order)
+        if key in holds:
+            results[order.id] = ImportedBillingResponse(review_reasons=[holds[key]])
+        elif key in identity_conflicts and order.id != summaries[key].invoice_repair_order_id:
+            results[order.id] = ImportedBillingResponse(review_reasons=["shared_job_identity_conflict"])
+        else:
+            results[order.id] = summaries[key].model_copy(deep=True)
+    return results
+
+
+async def load_imported_billing(db, order):
+    return (await _load_billing_batch(db, [order], order.tenant_id))[order.id]
 
 
 async def attach_imported_invoice_totals(db, items, actor):
-    """One bounded invoice read per page; customers never gain a pricing field."""
+    """Staff-only, non-additive shared invoice context; no financial writes."""
     from app.services.parts_pricing import STAFF
     if actor.role not in STAFF:
         return
     imported = [item for item in items if item.source == SOURCE and item.tenant_id == actor.tenant_id and item.deleted_at is None]
-    if not imported: return
-    rows = list((await db.scalars(select(Invoice).where(Invoice.tenant_id == actor.tenant_id,
-        Invoice.repair_order_id.in_([item.id for item in imported])))).all())
-    evidence = await _source_evidence(db, actor.tenant_id, [row.id for row in rows])
-    grouped = {}
-    for row in rows: grouped.setdefault(row.repair_order_id, []).append(row)
-    shop, shop_error = trusted_shop_binding(actor.tenant_id)
+    if not imported:
+        return
+    summaries = await _load_billing_batch(db, imported, actor.tenant_id)
     for item in imported:
-        invoices = grouped.get(item.id, [])
-        invoice, _ = supported_invoice(invoices)
-        item.imported_invoice_total_amount = summarize_imported_billing(invoices, [],
-            evidence.get(invoice.id) if invoice else None, order=item, shop_id=shop, shop_error=shop_error).total_amount
+        item.imported_billing = summaries[item.id]
+        item.imported_invoice_total_amount = item.imported_billing.total_amount

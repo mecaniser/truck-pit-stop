@@ -1,3 +1,4 @@
+import '@/components/ui/controls.css'
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from '@headlessui/react'
 import { Check, ChevronDown } from 'lucide-react'
 import type { CSSProperties } from 'react'
@@ -15,7 +16,7 @@ export default function ShopWorkSelect<T extends string>({ label, value, options
   // Anchored menus portal outside the staff shell, so carry its theme tokens.
   const menuStyle = appearanceTokenRecord(appearance) as CSSProperties
   return <Listbox value={value} onChange={onChange}>
-    <ListboxButton aria-label={label} className="db-work-select">
+    <ListboxButton data-db-control="select" aria-label={label} className="db-work-select">
       <span>{options.find(option => option.value === value)?.label ?? 'Choose…'}</span>
       <ChevronDown size={16} aria-hidden="true" />
     </ListboxButton>

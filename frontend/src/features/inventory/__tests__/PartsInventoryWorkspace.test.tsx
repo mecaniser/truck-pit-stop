@@ -244,6 +244,11 @@ function renderWorkspace(summary: { needs_reorder_count?: number; low_stock_coun
   )
 }
 
+async function choosePartSort(user: ReturnType<typeof userEvent.setup>, label: string) {
+  await user.click(screen.getByRole('combobox', { name: 'Sort by' }))
+  await user.click(screen.getByRole('option', { name: label, exact: true }))
+}
+
 describe('DB-038 Parts & inventory workspace', () => {
   it('opens a search deep link outside the current catalog page without loading more pages', async () => {
     installApi()
@@ -280,6 +285,26 @@ describe('DB-038 Parts & inventory workspace', () => {
     brandingState.name = 'Truck Pit Stop Wisconsin'
     brandingState.logoUrl = 'https://images.example.test/shop-logo.png'
     window.sessionStorage.clear()
+  })
+
+  it('keeps a long part identity complete and its labeled facts attached through selection', async () => {
+    installApi()
+    const original = apiMocks.get.getMockImplementation()!
+    const longPart = { ...activePart, name: 'HOSE — CHARGE AIR COOLER, COLD SIDE, B2, ISB G — Freightliner Cascadia replacement assembly' }
+    apiMocks.get.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+      if (url === '/parts-operations/parts') return Promise.resolve({ data: page([longPart]) })
+      if (url === `/parts-operations/parts/${longPart.id}`) return Promise.resolve({ data: detail(longPart) })
+      return original(url, config)
+    })
+    renderWorkspace()
+    const user = userEvent.setup()
+    const open = await screen.findByRole('button', { name: `${longPart.name} ${longPart.sku}` })
+    const row = open.closest('[role="row"]') as HTMLElement
+    expect(within(row).getByRole('cell', { name: /Available/ })).toBeInTheDocument()
+    expect(within(row).getByRole('cell', { name: /Cost \$/ })).toBeInTheDocument()
+    expect(within(row).getByRole('cell', { name: /Value \$/ })).toBeInTheDocument()
+    await user.click(open)
+    expect(await screen.findByRole('heading', { name: longPart.name })).toBeInTheDocument()
   })
 
   it('appends explicit 50-row server pages and resets the loaded sequence when search changes', async () => {
@@ -409,6 +434,9 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(selectedSurfaces[1]).toHaveClass('db-parts-workbench__selected-action')
     // Edit now shares a controls group with the dismiss on the same label row.
     const editDetails = screen.getByRole('button', { name: 'Edit details' })
+    expect(editDetails).toHaveAttribute('aria-label', 'Edit details')
+    expect(editDetails.textContent).toBe('')
+    expect(editDetails).toHaveClass('db-parts-workbench__icon-action--icon-only')
     expect(editDetails.parentElement).toHaveClass('db-parts-workbench__selected-controls')
     expect(editDetails.closest('.db-parts-workbench__selected-label-row')).not.toBeNull()
     expect(screen.getByRole('tabpanel', { name: 'Overview' })).toHaveTextContent('At a glance')
@@ -1004,7 +1032,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(screen.getByText('1 part selected')).toBeInTheDocument()
     expect(screen.getByText('Showing 1 of 2')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Part / Description: sort ascending' }))
+    await choosePartSort(user, 'Part name')
     await waitFor(() => expect(screen.getAllByRole('checkbox', { name: /purchase preparation/ })).toHaveLength(1))
     expect(screen.getAllByRole('checkbox', { name: /purchase preparation/ }).every((control) => (control as HTMLInputElement).checked)).toBe(true)
     expect(screen.getByText('1 part selected')).toBeInTheDocument()
@@ -1014,7 +1042,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(screen.getAllByRole('checkbox', { name: /purchase preparation/ }).every((control) => (control as HTMLInputElement).checked)).toBe(true)
     expect(screen.getByText('2 parts selected')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Part / Description: sort descending' }))
+    await user.click(screen.getByRole('button', { name: 'Sort direction: A–Z' }))
     await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts', {
       params: expect.objectContaining({ attention: 'needs_reorder', sort: 'name', direction: 'desc', skip: 0 }),
     }))
@@ -1087,109 +1115,74 @@ describe('DB-038 Parts & inventory workspace', () => {
     })))
   })
 
-  it('uses semantic desktop headers for every server sort and keeps compact fallback and Catalog reset equivalent', async () => {
+  it('sorts every field in both directions through one dropdown without changing selection or filters', async () => {
     installApi()
     const user = userEvent.setup()
     renderWorkspace()
-
     await screen.findByRole('heading', { name: 'Alternator' })
-    const checkbox = screen.getByRole('checkbox', { name: 'Select Alternator for purchase preparation' })
-    await user.click(checkbox)
-    expect(checkbox).toBeChecked()
-
+    await user.click(screen.getByRole('checkbox', { name: 'Select Alternator for purchase preparation' }))
     await user.click(screen.getByRole('button', { name: 'Load 50 more' }))
     expect(await screen.findByText('Showing 2 of 51')).toBeInTheDocument()
-
+    expect(screen.getByRole('button', { name: 'Sort direction: Default order' })).toBeDisabled()
     const scenarios = [
-      { label: 'Part / Description', sort: 'name', first: 'asc', second: 'desc' },
-      { label: 'Available', sort: 'available', first: 'asc', second: 'desc' },
-      { label: 'Bin location', sort: 'location', first: 'asc', second: 'desc' },
-      { label: 'Unit cost', sort: 'cost', first: 'desc', second: 'asc' },
-      { label: 'Remarks', sort: 'reorder', first: 'desc', second: 'asc' },
+      { label: 'Part name', sort: 'name', first: 'asc' },
+      { label: 'Available', sort: 'available', first: 'asc' },
+      { label: 'Bin location', sort: 'location', first: 'asc' },
+      { label: 'Unit cost', sort: 'cost', first: 'desc' },
+      { label: 'Stock value', sort: 'value', first: 'desc' },
+      { label: 'Reorder urgency', sort: 'reorder', first: 'desc' },
     ] as const
-
-    expect(screen.getAllByRole('columnheader').filter((header) => header.hasAttribute('aria-sort'))).toHaveLength(0)
-    for (const [index, scenario] of scenarios.entries()) {
-      const header = screen.getByRole('columnheader', { name: scenario.label })
-      const firstAction = within(header).getByRole('button', { name: `${scenario.label}: sort ${scenario.first === 'asc' ? 'ascending' : 'descending'}` })
-      firstAction.focus()
-      if (index === 0) await user.keyboard('{Enter}')
-      else await user.click(firstAction)
+    for (const scenario of scenarios) {
+      await choosePartSort(user, scenario.label)
       await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts', {
-        params: expect.objectContaining({ sort: scenario.sort, direction: scenario.first, skip: 0 }),
+        params: expect.objectContaining({ view: 'active', sort: scenario.sort, direction: scenario.first, skip: 0 }),
       }))
-      const activeHeader = screen.getByRole('columnheader', { name: scenario.label })
-      expect(activeHeader).toHaveAttribute('aria-sort', scenario.first === 'asc' ? 'ascending' : 'descending')
-      expect(screen.getAllByRole('columnheader').filter((candidate) => candidate.hasAttribute('aria-sort'))).toEqual([activeHeader])
-      await waitFor(() => expect(within(screen.getByRole('columnheader', { name: scenario.label })).getByRole('button')).toHaveFocus())
+      expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveTextContent(scenario.label)
+      expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveFocus()
       expect(screen.getByText('Showing 1 of 51')).toBeInTheDocument()
-      expect(screen.queryByText('Brake shoe kit')).not.toBeInTheDocument()
-
-      const secondAction = within(screen.getByRole('columnheader', { name: scenario.label })).getByRole('button', { name: `${scenario.label}: sort ${scenario.second === 'asc' ? 'ascending' : 'descending'}` })
-      await user.click(secondAction)
+      await user.click(screen.getByRole('button', { name: /^Sort direction:/ }))
       await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts', {
-        params: expect.objectContaining({ sort: scenario.sort, direction: scenario.second, skip: 0 }),
+        params: expect.objectContaining({ sort: scenario.sort, direction: scenario.first === 'asc' ? 'desc' : 'asc', skip: 0 }),
       }))
-      expect(screen.getByRole('columnheader', { name: scenario.label })).toHaveAttribute('aria-sort', scenario.second === 'asc' ? 'ascending' : 'descending')
+      expect(screen.getByRole('button', { name: /^Sort direction:/ })).toHaveFocus()
+      const reversedLabel = screen.getByRole('button', { name: /^Sort direction:/ }).textContent
+      await choosePartSort(user, scenario.label)
+      expect(screen.getByRole('button', { name: /^Sort direction:/ })).toHaveTextContent(reversedLabel!)
       expect(screen.getByText('1 part selected')).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Alternator' })).toBeInTheDocument()
     }
-
-    expect(within(screen.getByRole('columnheader', { name: 'Preferred supplier' })).queryByRole('button')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Ledger options' })).not.toBeInTheDocument()
-    expect(screen.getByRole('group', { name: 'Ledger density' })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Reset to catalog order' }))
+    await choosePartSort(user, 'Catalog order')
     await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts', {
       params: expect.objectContaining({ sort: 'catalog', direction: 'asc', skip: 0 }),
     }))
-    expect(screen.getAllByRole('columnheader').filter((header) => header.hasAttribute('aria-sort'))).toHaveLength(0)
-    expect(screen.queryByRole('button', { name: 'Reset to catalog order' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sort direction: Default order' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Part / Description: sort ascending' })).not.toBeInTheDocument()
+    const select = screen.getByRole('combobox', { name: 'Sort by' })
+    select.focus()
+    await user.keyboard('{ArrowDown}{End}{Enter}')
+    expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveTextContent('Reorder urgency')
+    expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveFocus()
+    await user.keyboard('{ArrowDown}{Home}{Escape}')
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveTextContent('Reorder urgency')
+    expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveFocus()
+  })
 
-    const sortTrigger = screen.getByRole('button', { name: 'Sort parts' })
-    expect(sortTrigger).toHaveAttribute('aria-expanded', 'false')
-    expect(sortTrigger).toHaveAttribute('aria-controls', 'parts-compact-sort-popover')
-    await user.click(sortTrigger)
-    const catalogReset = screen.getByRole('button', { name: 'Catalog order' })
-    expect(catalogReset).toHaveFocus()
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
-    const compactRadios = screen.getAllByRole('radio')
-    expect(compactRadios).toHaveLength(12)
-    const compactTabStops = compactRadios.filter((radio) => radio.tabIndex === 0)
-    expect(compactTabStops).toHaveLength(1)
-    expect(compactTabStops[0]).toHaveAttribute('aria-checked', 'false')
-    compactTabStops[0].focus()
-    await user.keyboard('{ArrowDown}')
-    expect(compactRadios[1]).toHaveFocus()
-    await user.keyboard('{Home}')
-    expect(compactRadios[0]).toHaveFocus()
-    await user.keyboard(' ')
+  it('keeps search and stock filters when the sort field or direction changes', async () => {
+    installApi()
+    const user = userEvent.setup()
+    renderWorkspace()
+    await screen.findByRole('heading', { name: 'Alternator' })
+    await user.click(within(screen.getByRole('group', { name: 'Stock filter' })).getByRole('button', { name: 'Out of stock' }))
+    await user.type(screen.getByRole('searchbox', { name: 'Search parts' }), 'brake')
     await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts', {
-      params: expect.objectContaining({ sort: 'name', direction: 'asc', skip: 0 }),
+      params: expect.objectContaining({ search: 'brake', attention: 'out_of_stock' }),
     }))
-    expect(sortTrigger).toHaveFocus()
-
-    await user.click(sortTrigger)
-    await user.click(screen.getByRole('radio', { name: 'Unit cost high to low' }))
+    await choosePartSort(user, 'Unit cost')
+    await user.click(screen.getByRole('button', { name: 'Sort direction: Highest first' }))
     await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts', {
-      params: expect.objectContaining({ sort: 'cost', direction: 'desc', skip: 0 }),
+      params: expect.objectContaining({ search: 'brake', attention: 'out_of_stock', sort: 'cost', direction: 'asc', skip: 0 }),
     }))
-    expect(screen.queryByRole('dialog', { name: 'Sort parts' })).not.toBeInTheDocument()
-    expect(sortTrigger).toHaveFocus()
-
-    await user.click(sortTrigger)
-    await user.click(screen.getByRole('button', { name: 'Catalog order' }))
-    await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts', {
-      params: expect.objectContaining({ sort: 'catalog', direction: 'asc', skip: 0 }),
-    }))
-    expect(screen.getAllByRole('columnheader').filter((header) => header.hasAttribute('aria-sort'))).toHaveLength(0)
-
-    await user.click(sortTrigger)
-    await user.keyboard('{Escape}')
-    expect(screen.queryByRole('dialog', { name: 'Sort parts' })).not.toBeInTheDocument()
-    expect(sortTrigger).toHaveFocus()
-
-    await user.click(sortTrigger)
-    fireEvent.pointerDown(document.body)
-    expect(screen.queryByRole('dialog', { name: 'Sort parts' })).not.toBeInTheDocument()
   })
 
   it('preserves the selected inspector and checked purchase IDs when sorting moves the row beyond page one', async () => {
@@ -1213,7 +1206,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     await screen.findByRole('heading', { name: 'Brake shoe kit' })
     await user.click(screen.getByRole('checkbox', { name: 'Select Brake shoe kit for purchase preparation' }))
 
-    await user.click(screen.getByRole('button', { name: 'Part / Description: sort ascending' }))
+    await choosePartSort(user, 'Part name')
     await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts', {
       params: expect.objectContaining({ sort: 'name', direction: 'asc', skip: 0 }),
     }))
@@ -1221,7 +1214,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(screen.getByRole('heading', { name: 'Brake shoe kit' })).toBeInTheDocument()
     expect(screen.getByText('1 part selected')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Reset to catalog order' }))
+    await choosePartSort(user, 'Catalog order')
     expect(await screen.findByRole('checkbox', { name: 'Select Brake shoe kit for purchase preparation' })).toBeChecked()
     expect(screen.getByRole('heading', { name: 'Brake shoe kit' })).toBeInTheDocument()
   })
@@ -1263,8 +1256,8 @@ describe('DB-038 Parts & inventory workspace', () => {
 
     // Unit cost and stock value sit side by side, so both group the same way.
     const row = screen.getByRole('row', { selected: true })
-    expect(within(row).getByRole('cell', { name: '$1,800.00' })).toBeInTheDocument()
-    expect(within(row).getByRole('cell', { name: '$3,900.00' })).toBeInTheDocument()
+    expect(within(row).getByRole('cell', { name: 'Cost $1,800.00' })).toBeInTheDocument()
+    expect(within(row).getByRole('cell', { name: 'Value $3,900.00' })).toBeInTheDocument()
 
     const overview = screen.getByRole('tabpanel', { name: 'Overview' })
     expect(within(overview).getByText('$1,800.00')).toBeInTheDocument()
@@ -1480,6 +1473,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     await user.keyboard('{Enter}')
     const dialog = await screen.findByRole('dialog', { name: 'Brake shoe kit image' })
     expect(within(dialog).getByRole('img')).toHaveAccessibleName(/Brake shoe kit/)
+    await user.click(within(dialog).getByRole('img'))
     expect(screen.getByRole('heading', { name: 'Alternator', hidden: true })).toBeInTheDocument()
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
@@ -1523,7 +1517,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(apiMocks.post).not.toHaveBeenCalled()
   })
 
-  it('keeps the soft-hotspot cue decorative and the keyboard target on the part button', async () => {
+  it('keeps the row cue decorative and a single keyboard opening target on the part button', async () => {
     installApi()
     renderWorkspace()
     const partButton = await screen.findByRole('button', { name: 'Alternator ALT-42' })
@@ -1534,7 +1528,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(partButton.querySelectorAll('button, a, [tabindex]')).toHaveLength(0)
   })
 
-  it('opens parts with Enter and Space while other cells and purchase checkboxes do not select them', async () => {
+  it('opens parts from row facts or padding and with Enter or Space while purchase checkboxes stay separate', async () => {
     installApi()
     const user = userEvent.setup()
     renderWorkspace()
@@ -1542,8 +1536,12 @@ describe('DB-038 Parts & inventory workspace', () => {
     await user.click(screen.getByRole('button', { name: 'Load 50 more' }))
     const brakeButton = await screen.findByRole('button', { name: 'Brake shoe kit BRK-9' })
     const row = brakeButton.closest('[role="row"]')!
-    await user.click(within(row as HTMLElement).getByRole('cell', { name: '9', exact: true }))
-    expect(screen.getByRole('heading', { name: 'Alternator' })).toBeInTheDocument()
+    await user.click(within(row as HTMLElement).getByRole('cell', { name: 'Available 9', exact: true }))
+    expect(await screen.findByRole('heading', { name: 'Brake shoe kit' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Alternator ALT-42' }))
+    fireEvent.click(row)
+    expect(await screen.findByRole('heading', { name: 'Brake shoe kit' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Alternator ALT-42' }))
     const checkbox = screen.getByRole('checkbox', { name: 'Select Brake shoe kit for purchase preparation' })
     await user.click(checkbox)
     expect(screen.getByRole('heading', { name: 'Alternator' })).toBeInTheDocument()

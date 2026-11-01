@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -78,11 +79,6 @@ interface TeamBoardResponse {
 const toHours = (minutes: number) => (minutes / 60).toFixed(1)
 
 const PRIORITY_ORDER: Record<AttentionPriority, number> = { red: 0, yellow: 1, green: 2 }
-const PRIORITY_BORDER: Record<AttentionPriority, string> = {
-  red: 'border-l-red-500',
-  yellow: 'border-l-amber-400',
-  green: 'border-l-emerald-500',
-}
 const PRIORITY_LED: Record<AttentionPriority, 'error' | 'warning' | 'active'> = {
   red: 'error',
   yellow: 'warning',
@@ -112,7 +108,7 @@ const getMechanicStatusBadge = (mechanic: MechanicBoardItem) => {
   if (mechanic.attendance_active) {
     return { variant: 'default' as const, label: 'Clocked In', className: '' }
   }
-  return { variant: 'default' as const, label: 'Clocked Out', className: 'opacity-50' }
+  return { variant: 'default' as const, label: 'Clocked Out', className: '' }
 }
 
 function sortByAttention(mechanics: MechanicBoardItem[]): MechanicBoardItem[] {
@@ -180,7 +176,7 @@ export default function MechanicsBoardPage() {
 
   if (isError || !data) {
     return (
-      <Card className="p-6">
+      <Card className="db-team-colors p-6">
         <p className="text-red-400">Failed to load technicians board.</p>
       </Card>
     )
@@ -192,7 +188,7 @@ export default function MechanicsBoardPage() {
   const greenCount = sorted.filter((m) => m.attention_priority === 'green').length
 
   return (
-    <div className="space-y-4">
+    <div className="db-team-colors space-y-4">
       {/* Header */}
       <Header
         title="Technician Board"
@@ -253,12 +249,12 @@ export default function MechanicsBoardPage() {
             return (
               <Card
                 key={m.mechanic_id}
-                hover
                 padding="none"
-                className={`p-4 cursor-pointer border-l-4 ${PRIORITY_BORDER[m.attention_priority]} animate-[fadeIn_0.3s_ease-out_forwards] opacity-0`}
+                className="db-technician-tile animate-[fadeIn_0.3s_ease-out_forwards] opacity-0"
                 style={staggeredReveal(index)}
               >
                 <div
+                  className="db-technician-tile__target p-4 cursor-pointer"
                   role="button"
                   tabIndex={0}
                   aria-label={`Open technician board for ${m.mechanic_name}`}
@@ -299,26 +295,26 @@ export default function MechanicsBoardPage() {
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       {m.active_session?.session_type === 'misc' ? (
-                        <button
+                        <ControlButton
                           onClick={(event) => {
                             event.stopPropagation()
                             setStopTarget({ mechanicId: m.mechanic_id, mechanicName: m.mechanic_name })
                           }}
-                          className="px-3 py-1.5 text-xs rounded-lg bg-red-950/80 hover:bg-red-900 text-red-400 font-semibold border border-red-800/50 hover:border-red-600 transition-all duration-200"
+                          className="px-3  text-xs rounded-lg bg-red-950/80 hover:bg-red-900 text-red-400 font-semibold border border-red-800/50 hover:border-red-600 transition-all duration-200"
                         >
                           Stop Misc
-                        </button>
+                        </ControlButton>
                       ) : null}
                       {(m.suggested_next_action === 'continue_ro' || m.suggested_next_action === 'stop_misc_pick_ro' || m.suggested_next_action === 'start_assigned_ro') ? (
-                        <button
+                        <ControlButton
                           onClick={(event) => {
                             event.stopPropagation()
                             navigate(mechanicDetailPath)
                           }}
-                          className="px-3 py-1.5 text-xs rounded-lg bg-[var(--accent-600)] hover:bg-[var(--accent-500)] text-white font-semibold border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)] transition-all duration-200"
+                          className="px-3  text-xs rounded-lg bg-[var(--accent-600)] hover:bg-[var(--accent-500)] text-white font-semibold border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)] transition-all duration-200"
                         >
                           Go to Detail
-                        </button>
+                        </ControlButton>
                       ) : null}
                     </div>
                   </div>
@@ -415,27 +411,27 @@ export default function MechanicsBoardPage() {
               placeholder="Manager reason (required)"
             />
             <div className="flex justify-end gap-3 pt-4 border-t border-zinc-800/50">
-              <button
+              <ControlButton
                 ref={cancelStopButtonRef}
                 onClick={() => {
                   setStopTarget(null)
                   setStopReason('')
                 }}
-                className="px-4 py-2.5 text-sm rounded-xl bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 font-semibold border border-zinc-600/50 hover:border-zinc-500 transition-all duration-200"
+                className="px-4  text-sm rounded-xl bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 font-semibold border border-zinc-600/50 hover:border-zinc-500 transition-all duration-200"
               >
                 Cancel
-              </button>
-              <button
+              </ControlButton>
+              <ControlButton
                 ref={confirmStopButtonRef}
                 onClick={() => {
                   if (!stopTarget || !stopReason.trim()) return
                   stopMiscMutation.mutate({ mechanicId: stopTarget.mechanicId, managerReason: stopReason.trim() })
                 }}
                 disabled={!stopReason.trim() || stopMiscMutation.isPending}
-                className="px-4 py-2.5 text-sm rounded-xl bg-red-950/80 hover:bg-red-900 text-red-400 font-semibold border border-red-800/50 hover:border-red-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4  text-sm rounded-xl bg-red-950/80 hover:bg-red-900 text-red-400 font-semibold border border-red-800/50 hover:border-red-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {stopMiscMutation.isPending ? 'Stopping...' : 'Stop Misc'}
-              </button>
+              </ControlButton>
             </div>
           </Card>
         </div>

@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarDays, ChevronRight } from 'lucide-react'
@@ -131,7 +132,7 @@ export default function AppointmentsPage() {
                 <div className="shrink-0 text-right">
                   <p className="text-sm font-extrabold tabular-nums">{formatMoney(appointment.price)}</p>
                   {canCancel && (
-                    <button
+                    <ControlButton
                       type="button"
                       onClick={() => {
                         if (window.confirm('Cancel this appointment?')) cancelMutation.mutate(appointment.id)
@@ -140,7 +141,7 @@ export default function AppointmentsPage() {
                       className="mt-2 text-xs font-bold text-[#ff8b8d] hover:text-white disabled:opacity-50"
                     >
                       Cancel
-                    </button>
+                    </ControlButton>
                   )}
                 </div>
               </article>
@@ -158,7 +159,7 @@ export default function AppointmentsPage() {
                 <span className={`w-fit rounded-md border px-2 py-0.5 text-[10px] font-extrabold tracking-[0.05em] ${tagClass}`}>{tag}</span>
                 <h3 className="mt-2 text-sm font-extrabold">{service.name}</h3>
                 <p className="mt-1 text-xs text-[#8b92a5]">{formatMoney(service.computed_total_price)} · {service.duration_minutes} min</p>
-                <Link
+                <Link data-db-control="action"
                   to={`/portal/book/${service.id}`}
                   className="mt-4 flex h-[42px] items-center justify-center rounded-[10px] bg-[#8b7cf7] px-3 text-[13px] font-extrabold text-[#0e1118] md:h-[38px]"
                 >

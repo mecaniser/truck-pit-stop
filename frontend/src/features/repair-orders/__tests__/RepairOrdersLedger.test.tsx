@@ -119,6 +119,57 @@ const renderLedger = (overrides: Partial<React.ComponentProps<typeof RepairOrder
 }
 
 describe('DB-035 Stage 4 Repair Orders presentation', () => {
+  it('explains every billing warning in expanded Details without opening the workspace', async () => {
+    const { props } = renderLedger({ rows: [{ ...rows[0], importedBilling: {
+      source: 'easy_truck_shop_import', evidence_basis: 'ets_source_snapshot', reconciliation_status: 'not_checked',
+      invoice_id: 'qa-invoice', total_amount: '100.00', recorded_completed_amount: '0.00', recorded_remaining_amount: '100.00',
+      payment_status: 'unpaid', review_required: true, review_reasons: ['shared_job_identity_conflict', 'imported_financial_rows_differ'],
+    } }] })
+    expect(screen.queryByRole('region', { name: 'Why billing needs attention' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Show details for RO-1017' }))
+    const reasons = screen.getByRole('region', { name: 'Why billing needs attention' })
+    expect(reasons).toHaveTextContent('Related operations have different customer or vehicle identities. Shared billing needs review.')
+    expect(reasons).toHaveTextContent('ETS source amounts differ from the imported financial records.')
+    expect(reasons).toHaveTextContent('This invoice has an unpaid balance of $100.00.')
+    expect(props.onOpenOrder).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['paid', '0.00', 'Paid in ETS', '$0.00'],
+    ['partially_paid', '434.41', 'Partially paid in ETS', '$434.41'],
+    ['unpaid', '534.41', 'Unpaid in ETS', '$534.41'],
+  ] as const)('shows shared invoice %s status and remaining without changing work status', (status, remaining, label, formatted) => {
+    renderLedger({ rows: [{ ...rows[0], status: 'Completed', importedBilling: {
+      source: 'easy_truck_shop_import', evidence_basis: 'ets_source_snapshot', reconciliation_status: 'not_checked',
+      payment_status: status, recorded_remaining_amount: remaining, shared_invoice: true,
+      review_required: status === 'unverified', review_reasons: [],
+    } }] })
+    expect(within(screen.getByRole('article', { name: 'Repair order RO-1017' })).getByText('Completed')).toBeVisible()
+    expect(screen.getByText(label)).toBeVisible()
+    expect(within(screen.getByLabelText('ETS invoice payment status')).getByText(formatted)).toBeVisible()
+    expect(screen.getByText('Shared ETS invoice')).toBeVisible()
+  })
+
+  it('keeps unknown invoice total without duplicate unavailable labels and exposes an accessible warning', () => {
+    renderLedger({ rows: [{ ...rows[0], total: 'Unavailable', importedBilling: {
+      source: 'easy_truck_shop_import', evidence_basis: 'imported_records', reconciliation_status: 'not_checked',
+      payment_status: 'unverified', recorded_remaining_amount: null, shared_invoice: false,
+      review_required: true, review_reasons: [],
+    } }] })
+    const row = screen.getByRole('article', { name: 'Repair order RO-1017' })
+    expect(within(row).getAllByText('Unavailable')).toHaveLength(1)
+    expect(within(row).queryByText('Payment unverified')).not.toBeInTheDocument()
+    expect(within(row).queryByText('Remaining')).not.toBeInTheDocument()
+    expect(within(row).getByRole('img', { name: 'Review needed · Payment unverified' })).toBeVisible()
+    expect(within(row).getByRole('button', { name: 'Open repair order RO-1017' })).toBeVisible()
+  })
+
+  it('does not introduce ETS payment labels for native rows', () => {
+    renderLedger()
+    expect(screen.queryByLabelText('ETS invoice payment status')).not.toBeInTheDocument()
+    expect(screen.getByText('$4,280.50')).toBeVisible()
+  })
+
   it('can hide a mixed native/imported aggregate without hiding individual order amounts', () => {
     renderLedger({ hideValueSummary: true, valueSummary: { order_count: 63, order_value: '102345.67' } })
     expect(screen.queryByText('Filtered order value')).not.toBeInTheDocument()
@@ -316,7 +367,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
   })
 
   it('aligns the selected-record header and filter controls to shared dimensions', () => {
-    expect(LEDGER_CSS).toContain('--db-repair-orders-control-height: 44px')
+    expect(LEDGER_CSS).toContain('--db-repair-orders-control-height: var(--control-height)')
     expect(LEDGER_CSS).toContain('--db-repair-orders-side-control-width: 184px')
     expect(LEDGER_CSS).toContain('.db-presentation-new .db-repair-orders-new__search { height: var(--db-repair-orders-control-height); align-self: stretch; padding: 0; }')
     expect(LEDGER_CSS).toContain('.db-repair-orders-new__status-select { position: relative; display: none; min-width: 0; height: var(--db-repair-orders-control-height); }')

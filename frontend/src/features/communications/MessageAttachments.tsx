@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useRef, useState } from "react";
 import { Image as ImageIcon, X } from "lucide-react";
 import { getAuthenticatedSessionIdentity, useAuthStore } from "../../stores/authStore";
@@ -124,7 +125,7 @@ function AttachmentSession({ tenantId, message, session }: Props & { session: st
   return <>
     {body && <span className="attachment-caption">{body}</span>}
     <div className="message-attachments" aria-label="Message images">
-      {images.map((item) => <button key={item.index} className="attachment-thumbnail" type="button"
+      {images.map((item) => <ControlButton controlKind="content" key={item.index} className="attachment-thumbnail" type="button"
         aria-label={`Open received image ${item.index + 1}`}
         onClick={(event) => { trigger.current = event.currentTarget; setExpanded(item); }}>
         <img src={item.url} alt={`Received MMS image ${item.index + 1}`} referrerPolicy="no-referrer"
@@ -132,21 +133,21 @@ function AttachmentSession({ tenantId, message, session }: Props & { session: st
             URL.revokeObjectURL(item.url); urls.current.delete(item.url);
             setImages((items) => items.filter((image) => image.url !== item.url)); setStatus("error");
           }} />
-      </button>)}
+      </ControlButton>)}
       {status === "loading" && <span role="status" className="attachment-placeholder motion-reduce:animate-pulse">
         <ImageIcon size={28} strokeWidth={1.5} aria-hidden="true" />
         <span>Loading images…</span>
       </span>}
       {(status === "empty" || status === "error") && <div className="attachment-state" role="status">
         <span>{status === "empty" ? "Image no longer available." : "Image unavailable."}</span>
-        <button type="button" onClick={() => setAttempt((value) => value + 1)}>Retry</button>
+        <ControlButton type="button" onClick={() => setAttempt((value) => value + 1)}>Retry</ControlButton>
       </div>}
     </div>
     {expanded && <dialog ref={dialog} className="attachment-viewer" aria-label="Received image"
       onCancel={(event) => { event.preventDefault(); closeViewer(); }}
       onClick={(event) => { if (event.target === event.currentTarget) closeViewer(); }}>
       <div className="attachment-viewer-content">
-        <button ref={close} type="button" aria-label="Close image" className="attachment-close" onClick={closeViewer}><X size={20} /></button>
+        <ControlButton controlKind="icon" ref={close} type="button" aria-label="Close image" className="attachment-close" onClick={closeViewer}><X size={20} /></ControlButton>
         <img src={expanded.url} alt={`Received MMS image ${expanded.index + 1}, expanded`} referrerPolicy="no-referrer" />
       </div>
     </dialog>}

@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
@@ -16,13 +17,13 @@ export default function SessionRecoveryNotice() {
         <p className="text-sm font-semibold">Reconnecting your session</p>
         <p className="mt-1 text-sm leading-5">We’re having trouble renewing your session. We’ll retry automatically. Some actions may be unavailable until we reconnect.</p>
       </div>
-      <button type="button" disabled={retrying} className="flex min-h-11 items-center gap-2 rounded-lg border border-amber-700 px-3 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-800 disabled:opacity-60"
+      <ControlButton type="button" disabled={retrying} className="flex  items-center gap-2 rounded-lg border border-amber-700 px-3 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-800 disabled:opacity-60"
         onClick={async () => {
           setRetrying(true)
           try { await renewSessionNow() } finally { setRetrying(false) }
         }}>
         <RefreshCw size={16} aria-hidden="true" />{retrying ? 'Retrying…' : 'Retry now'}
-      </button>
+      </ControlButton>
     </aside>
   )
 }

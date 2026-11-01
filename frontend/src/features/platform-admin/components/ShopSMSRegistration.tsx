@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import SMSSetup from '../../communications/SMSSetup'
@@ -32,12 +33,12 @@ function RegistrationDialog({ tenantId, shopName, onClose }: {
           if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
         }}>
         <header><div><h2>{shopName}</h2><p>Platform administration · Repair texting</p></div>
-          <button className="icon-button" aria-label="Close registration" onClick={requestClose}><X size={20} /></button>
+          <ControlButton controlKind="icon" className="icon-button" aria-label="Close registration" onClick={requestClose}><X size={20} /></ControlButton>
         </header>
         {confirmClose && <div role="alert" className="sms-hold"><div>
           <p>Discard unsaved registration changes?</p>
-          <button className="subtle-button" onClick={() => setConfirmClose(false)}>Keep editing</button>
-          <button className="subtle-button" onClick={onClose}>Discard changes</button>
+          <ControlButton className="subtle-button" onClick={() => setConfirmClose(false)}>Keep editing</ControlButton>
+          <ControlButton className="subtle-button" onClick={onClose}>Discard changes</ControlButton>
         </div></div>}
         <SMSSetup tenantId={tenantId} shopName={shopName} onClose={requestClose} onDirtyChange={setDirty} />
       </section>

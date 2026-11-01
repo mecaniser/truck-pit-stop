@@ -1,3 +1,4 @@
+import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { usePricingCommand } from '@/features/parts-pricing/usePricingCommand'
 import { useMaintenanceFinalization } from '@/features/maintenance/useMaintenanceFinalization'
@@ -2383,25 +2384,25 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
               >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
-              <input
+              <ControlInput
                 type="text"
                 value={searchQuery}
                 readOnly
                 placeholder="Search by order # or description..."
                 disabled
-                className="w-full h-10 pl-10 pr-4 bg-white rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none disabled:opacity-60"
+                className="w-full  pl-10 pr-4 bg-white rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none disabled:opacity-60"
               />
             </div>
-            <button
+            <ControlButton
               type="button"
               disabled
-              className="inline-flex items-center gap-2 h-10 px-4 rounded-lg text-sm font-semibold text-white opacity-60 shrink-0"
+              className="inline-flex items-center gap-2  px-4 rounded-lg text-sm font-semibold text-white opacity-60 shrink-0"
               style={{ backgroundColor: accentColors[600] }}
             >
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline">Add Repair Order</span>
               <span className="sm:hidden">Add</span>
-            </button>
+            </ControlButton>
           </div>
         </div>
 
@@ -3170,6 +3171,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       total: order.source === 'easy_truck_shop_import'
         ? importedMoney(order.imported_invoice_total_amount)
         : `$${(partsTotal + laborTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+      importedBilling: order.source === 'easy_truck_shop_import' ? order.imported_billing : null,
       updated: format(new Date(order.updated_at), 'MMM d, h:mm a'),
       internal: Boolean(order.is_internal),
       customerName: order.customer_company_name
@@ -3250,7 +3252,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     : 'Review and update repair work from check-in through payment.'
   const activeValueQuery = isQueueWorkset ? dailyValueQuery : repairOrderValueQuery
   const recoveryInPriceBuilder = isDetailOpen && !!selectedOrder && !customerViewId && showPriceBuilder
-  const serviceRecoveryNotice = serviceRecovery ? <div role="status" aria-label="Unfinished service attachment" className="db-service-pricing-recovery"><span><strong>{serviceRecovery.order.order_number} created</strong> · {serviceRecovery.services.filter(service => service.status !== 'applied').map(service => `${service.name}${service.reason ? `: ${service.reason}` : ': pending'}`).join('; ')}</span><button type="button" disabled={servicePricing.busy} onClick={() => { openDetail(serviceRecovery.order); void applyPendingServices(serviceRecovery.order, serviceRecovery.services) }}>Retry remaining</button><button type="button" disabled={servicePricing.busy} onClick={() => { openDetail(serviceRecovery.order); setServiceRecovery(null) }}>Keep current work</button></div> : null
+  const serviceRecoveryNotice = serviceRecovery ? <div role="status" aria-label="Unfinished service attachment" className="db-service-pricing-recovery"><span><strong>{serviceRecovery.order.order_number} created</strong> · {serviceRecovery.services.filter(service => service.status !== 'applied').map(service => `${service.name}${service.reason ? `: ${service.reason}` : ': pending'}`).join('; ')}</span><ControlButton type="button" disabled={servicePricing.busy} onClick={() => { openDetail(serviceRecovery.order); void applyPendingServices(serviceRecovery.order, serviceRecovery.services) }}>Retry remaining</ControlButton><ControlButton type="button" disabled={servicePricing.busy} onClick={() => { openDetail(serviceRecovery.order); setServiceRecovery(null) }}>Keep current work</ControlButton></div> : null
   const pricingNotice = <>{servicePricing.dialog}{legacyPartPricing.dialog}{serviceRecoveryNotice}</>
   return (
     <div className={`db-repair-orders-workspace flex flex-col h-full ${presentationVariant === 'new' ? 'db-repair-orders-workspace--new' : ''} ${presentationVariant === 'new' && isDetailOpen && selectedOrder ? 'db-repair-orders-workspace--detail-open' : ''}`}>
@@ -3260,9 +3262,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       {voidedOrderNumber && (
         <div role="status" className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
           <span>Order {voidedOrderNumber} voided. The record is preserved.</span>
-          <button type="button" aria-label="Dismiss void confirmation" onClick={() => setVoidedOrderNumber(null)} className="rounded-lg p-2 hover:bg-emerald-100">
+          <ControlButton controlKind="icon" type="button" aria-label="Dismiss void confirmation" onClick={() => setVoidedOrderNumber(null)} className="rounded-lg p-2 hover:bg-emerald-100">
             <X className="h-4 w-4" />
-          </button>
+          </ControlButton>
         </div>
       )}
       {presentationVariant === 'new' ? (
@@ -3334,24 +3336,24 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
             >
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
-            <input
+            <ControlInput
               type="text"
               placeholder="Search by order # or description..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-10 pl-10 pr-4 bg-white rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="w-full  pl-10 pr-4 bg-white rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
             />
           </div>
-          <button
+          <ControlButton
             type="button"
             onClick={openModal}
-            className="inline-flex items-center gap-2 h-10 px-4 rounded-lg text-sm font-semibold text-white transition-colors shrink-0"
+            className="inline-flex items-center gap-2  px-4 rounded-lg text-sm font-semibold text-white transition-colors shrink-0"
             style={{ backgroundColor: accentColors[600] }}
           >
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">Add Repair Order</span>
             <span className="sm:hidden">Add</span>
-          </button>
+          </ControlButton>
         </div>
 
         {/* Filters — below search on all sizes */}
@@ -3371,10 +3373,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         {/* sm+: single-row horizontal scroll pills */}
         <div className="hidden sm:flex mt-3 overflow-x-auto gap-2 scrollbar-hide pb-0.5">
           {statusOptions.map((option) => (
-            <button
+            <ControlButton
               key={option.value}
               onClick={() => setStatusFilter(option.value)}
-              className={`h-9 px-3 rounded-lg text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
+              className={` px-3 rounded-lg text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
                 statusFilter === option.value
                   ? 'text-white'
                   : 'bg-white/20 text-white hover:bg-white/30 active:bg-white/40'
@@ -3382,7 +3384,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
               style={statusFilter === option.value ? { backgroundColor: accentColors[500] } : undefined}
             >
               {option.label}
-            </button>
+            </ControlButton>
           ))}
         </div>
 
@@ -3520,7 +3522,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                           ${displayTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button
+                          <ControlButton
                             onClick={(e) => {
                               e.stopPropagation()
                               openDetail(order)
@@ -3529,7 +3531,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                             style={{ color: accentColors[400] }}
                           >
                             View
-                          </button>
+                          </ControlButton>
                         </td>
                       </tr>
                     )
@@ -3597,16 +3599,16 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     </div>
 
                     <div className="pt-3 border-t border-amber-200/50">
-                      <button 
+                      <ControlButton
                         onClick={(e) => {
                           e.stopPropagation()
                           openDetail(order)
                         }}
-                        className="w-full py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors inline-flex items-center justify-center gap-1"
+                        className="w-full  text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors inline-flex items-center justify-center gap-1"
                       >
                         View Details
                         <ArrowRight className="w-4 h-4" />
-                      </button>
+                      </ControlButton>
                     </div>
                   </div>
                 )
@@ -3634,13 +3636,13 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
               Showing {loadedOrderCount} of {totalOrders} order{totalOrders !== 1 ? 's' : ''}
             </span>
             {hasNextPage && (
-              <button
+              <ControlButton
                 onClick={() => void fetchNextPage()}
                 disabled={isFetchingNextPage}
-                className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-3  rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {isFetchingNextPage ? 'Loading…' : 'Load more'}
-              </button>
+              </ControlButton>
             )}
           </div>
         )}
@@ -3677,17 +3679,17 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
               <div className="z-10 shrink-0 border-b border-gray-200 bg-white px-4 py-4 sm:rounded-t-2xl sm:px-6">
                 <div className="flex items-center justify-between">
                   <DialogTitle className="text-xl font-bold text-gray-900">New Repair Order</DialogTitle>
-                  <button
+                  <ControlButton controlKind="icon"
                     onClick={closeModal}
                     data-autofocus
                     aria-label="Close new repair order"
                     disabled={isSubmitting}
-                    className="min-h-11 min-w-11 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    className=" min-w-11 p-2 hover:bg-gray-100 rounded-lg transition-colors"
                   >
                     <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                     </svg>
-                  </button>
+                  </ControlButton>
                 </div>
               </div>
 
@@ -3701,15 +3703,15 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                   <div className="flex items-center justify-between gap-3">
                     <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Customer & Vehicle</h3>
                     {selectedCustomerId === 'add_new' && (
-                      <button
+                      <ControlButton controlKind="action"
                         type="button"
                         onClick={returnToCustomerSearch}
-                        className="inline-flex min-h-10 shrink-0 items-center gap-1 rounded-lg px-2.5 text-sm font-semibold text-amber-700 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        className="inline-flex  shrink-0 items-center gap-1 rounded-lg px-2.5 text-sm font-semibold text-amber-700 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-500"
                         aria-label="Back to customer search"
                       >
                         <ChevronLeft className="h-4 w-4" />
                         Back to search
-                      </button>
+                      </ControlButton>
                     )}
                   </div>
 
@@ -3746,7 +3748,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                               }}
                             />
                           </div>
-                          <button
+                          <ControlButton
                             type="button"
                             onClick={() => {
                               clearFormErrors('customer', 'vehicle', 'root')
@@ -3757,11 +3759,11 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                               setSelectedVehicleOption(null)
                               setShowNewVehicleForm(true)
                             }}
-                            className="inline-flex min-h-11 shrink-0 items-center gap-1 px-3 text-sm font-medium text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors"
+                            className="inline-flex  shrink-0 items-center gap-1 px-3 text-sm font-medium text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors"
                           >
                             <Plus className="w-4 h-4" />
                             Add
-                          </button>
+                          </ControlButton>
                         </div>
                         {fieldError(formErrors.customer)}
                       </div>
@@ -3773,15 +3775,15 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                           </div>
                           <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
                             <div className="relative flex-1">
-                              <input
+                              <ControlInput
                                 value={vehicleQuery}
                                 onChange={(event) => setVehicleQuery(event.target.value)}
                                 placeholder="Filter by unit, VIN, plate, make, or model"
-                                className="h-[42px] w-full rounded-lg border border-gray-300 bg-white px-4 pr-10 text-sm text-gray-900 placeholder:text-gray-400 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                className=" w-full rounded-lg border border-gray-300 bg-white px-4 pr-10 text-sm text-gray-900 placeholder:text-gray-400 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
                               />
                               {isFetchingVehicles && <Spinner size="sm" className="absolute right-3 top-1/2 -translate-y-1/2" />}
                             </div>
-                            <button
+                            <ControlButton
                               type="button"
                               onClick={() => {
                                 clearFormErrors('vehicle', 'vehicleMake', 'vehicleModel', 'root')
@@ -3789,11 +3791,11 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                 setSelectedVehicleOption(null)
                                 setShowNewVehicleForm(true)
                               }}
-                              className="inline-flex min-h-11 shrink-0 items-center gap-1 px-3 text-sm font-medium text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors"
+                              className="inline-flex  shrink-0 items-center gap-1 px-3 text-sm font-medium text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors"
                             >
                               <Plus className="w-4 h-4" />
                               Add
-                            </button>
+                            </ControlButton>
                           </div>
                           {isLoadingVehicles ? (
                             <div className="flex min-h-24 items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-sm text-gray-500">
@@ -3806,7 +3808,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                 const vehicleName = vehicleDisplayLabel(vehicle, { includeYear: false })
                                 const unitLabel = vehicle.unit_number ? `Unit ${vehicle.unit_number}` : 'Unit not assigned'
                                 return (
-                                  <button
+                                  <ControlButton controlKind="content"
                                     key={vehicle.id}
                                     type="button"
                                     aria-label={`Select ${vehicleName} · ${unitLabel}`}
@@ -3830,7 +3832,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                     <p className="mt-1 truncate text-xs font-medium uppercase tracking-wide text-slate-500">
                                       {unitLabel}
                                     </p>
-                                  </button>
+                                  </ControlButton>
                                 )
                               })}
                             </div>
@@ -3855,7 +3857,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                           />
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
-                            <input
+                            <ControlInput
                               name="model"
                               value={newVehicle.model}
                               onChange={(e) => {
@@ -3874,44 +3876,44 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">VIN</label>
                             <div className="flex gap-2">
-                              <input
+                              <ControlInput
                                 name="vin"
                                 value={newVehicle.vin}
                                 onChange={(e) => handleNewVehicleVinChange(e.target.value)}
-                                className={`min-w-0 flex-1 px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors uppercase ${formErrors.vehicleVin ? 'border-red-400' : 'border-gray-300'}`}
+                                className={`min-w-0 flex-1 px-4  border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors uppercase ${formErrors.vehicleVin ? 'border-red-400' : 'border-gray-300'}`}
                                 placeholder="1XPBDP9X8JD123456"
                                 maxLength={17}
                               />
-                              <button
+                              <ControlButton
                                 type="button"
                                 onClick={() => decodeNewVehicleVin(newVehicle.vin)}
                                 disabled={isDecodingNewVehicleVin || newVehicle.vin.trim().length < 11}
-                                className="inline-flex items-center gap-2 px-3 py-2.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 font-medium rounded-lg transition-colors"
+                                className="inline-flex items-center gap-2 px-3  bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 font-medium rounded-lg transition-colors"
                               >
                                 {isDecodingNewVehicleVin ? <Spinner size="xs" /> : <Search className="w-4 h-4" />}
                                 Decode
-                              </button>
+                              </ControlButton>
                             </div>
                             {fieldError(formErrors.vehicleVin)}
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Unit number</label>
-                            <input
+                            <ControlInput
                               name="unit_number"
                               value={newVehicle.unit_number}
                               onChange={(e) => setNewVehicle((prev) => ({ ...prev, unit_number: e.target.value }))}
-                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                              className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                               placeholder="369"
                             />
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Mileage</label>
-                            <input
+                            <ControlInput
                               type="number"
                               name="mileage"
                               value={newVehicle.mileage}
                               onChange={(e) => setNewVehicle((prev) => ({ ...prev, mileage: e.target.value }))}
-                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                              className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                               placeholder="450000"
                             />
                           </div>
@@ -3922,7 +3924,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
-                        <input
+                        <ControlInput
                           name="first_name"
                           value={newCustomer.first_name}
                           onChange={(e) => {
@@ -3936,7 +3938,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-                        <input
+                        <ControlInput
                           name="last_name"
                           value={newCustomer.last_name}
                           onChange={(e) => {
@@ -3950,17 +3952,17 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
-                        <input
+                        <ControlInput
                           name="company_name"
                           value={newCustomer.company_name}
                           onChange={(e) => setNewCustomer((prev) => ({ ...prev, company_name: e.target.value }))}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                          className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                           placeholder="Acme Logistics"
                         />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                        <input
+                        <ControlInput
                           type="email"
                           name="email"
                           value={newCustomer.email}
@@ -3975,11 +3977,11 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                        <input
+                        <ControlInput
                           name="phone"
                           value={newCustomer.phone}
                           onChange={(e) => setNewCustomer((prev) => ({ ...prev, phone: formatUSPhone(e.target.value) }))}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                          className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                           placeholder="(555) 123-4567"
                         />
                       </div>
@@ -3994,7 +3996,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       />
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
-                        <input
+                        <ControlInput
                           name="model"
                           value={newVehicle.model}
                           onChange={(e) => {
@@ -4013,44 +4015,44 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">VIN</label>
                         <div className="flex gap-2">
-                          <input
+                          <ControlInput
                             name="vin"
                             value={newVehicle.vin}
                             onChange={(e) => handleNewVehicleVinChange(e.target.value)}
-                            className={`min-w-0 flex-1 px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors uppercase ${formErrors.vehicleVin ? 'border-red-400' : 'border-gray-300'}`}
+                            className={`min-w-0 flex-1 px-4  border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors uppercase ${formErrors.vehicleVin ? 'border-red-400' : 'border-gray-300'}`}
                             placeholder="1XPBDP9X8JD123456"
                             maxLength={17}
                           />
-                          <button
+                          <ControlButton
                             type="button"
                             onClick={() => decodeNewVehicleVin(newVehicle.vin)}
                             disabled={isDecodingNewVehicleVin || newVehicle.vin.trim().length < 11}
-                            className="inline-flex items-center gap-2 px-3 py-2.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 font-medium rounded-lg transition-colors"
+                            className="inline-flex items-center gap-2 px-3  bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 font-medium rounded-lg transition-colors"
                           >
                             {isDecodingNewVehicleVin ? <Spinner size="xs" /> : <Search className="w-4 h-4" />}
                             Decode
-                          </button>
+                          </ControlButton>
                         </div>
                         {fieldError(formErrors.vehicleVin)}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Unit number</label>
-                        <input
+                        <ControlInput
                           name="unit_number"
                           value={newVehicle.unit_number}
                           onChange={(e) => setNewVehicle((prev) => ({ ...prev, unit_number: e.target.value }))}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                          className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                           placeholder="369"
                         />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Mileage</label>
-                        <input
+                        <ControlInput
                           type="number"
                           name="mileage"
                           value={newVehicle.mileage}
                           onChange={(e) => setNewVehicle((prev) => ({ ...prev, mileage: e.target.value }))}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                          className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                           placeholder="450000"
                         />
                       </div>
@@ -4080,11 +4082,11 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
                   <div className="space-y-3">
                     <div className="relative">
-                      <input
+                      <ControlInput
                         value={serviceSearch}
                         onChange={(event) => setServiceSearch(event.target.value)}
                         placeholder="Search services (e.g., oil change, brake, diagnostics)"
-                        className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors text-gray-900 placeholder-gray-400"
+                        className="w-full pl-10 pr-3  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors text-gray-900 placeholder-gray-400"
                       />
                       {isFetchingServices && <Spinner size="sm" className="absolute right-3 top-1/2 -translate-y-1/2" />}
                       <svg
@@ -4111,7 +4113,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                   : 'border-gray-200 bg-white hover:border-amber-300 text-gray-700'
                               }`}
                             >
-                              <button
+                              <ControlButton
                                 type="button"
                                 onClick={() => {
                                   if (active) {
@@ -4122,22 +4124,22 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                     setSelectedServiceOptions((prev) => [...prev.filter((item) => item.id !== svc.id), svc])
                                   }
                                 }}
-                                className="min-h-11 ps-2.5 pe-1.5 focus:outline-none sm:min-h-7"
+                                className=" ps-2.5 pe-1.5 focus:outline-none "
                               >
                                 {svc.name}
-                              </button>
+                              </ControlButton>
                               {active && (
-                                <button
+                                <ControlButton controlKind="icon"
                                   type="button"
                                   onClick={() => {
                                     setSelectedServiceIds((prev) => prev.filter((id) => id !== svc.id))
                                     setSelectedServiceOptions((prev) => prev.filter((item) => item.id !== svc.id))
                                   }}
-                                  className="inline-flex min-h-11 w-11 shrink-0 sm:min-h-7 sm:w-7 items-center justify-center self-stretch leading-none text-amber-700 hover:text-amber-900"
+                                  className="inline-flex  w-11 shrink-0  sm:w-7 items-center justify-center self-stretch leading-none text-amber-700 hover:text-amber-900"
                                   aria-label={`Remove ${svc.name}`}
                                 >
                                   <X aria-hidden="true" className="h-3 w-3" />
-                                </button>
+                                </ControlButton>
                               )}
                             </span>
                           )
@@ -4175,23 +4177,23 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       ) : (
                         <span className="shrink-0 text-xs text-gray-500">
                           Last on record: {lastKnownMileage.toLocaleString()}{' '}
-                          <button
+                          <ControlButton
                             type="button"
                             onClick={() => { setMileageIn(String(lastKnownMileage)); setMileageInCarried(true) }}
                             className="db-inline-text-action font-semibold text-amber-700 underline-offset-2 hover:underline"
                           >
                             Use this
-                          </button>
+                          </ControlButton>
                         </span>
                       )
                     )}
                   </div>
-                  <input
+                  <ControlInput
                     type="text"
                     inputMode="numeric"
                     value={mileageIn}
                     onChange={(e) => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) { setMileageIn(v); setMileageInCarried(false) } }}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                    className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                     placeholder="Odometer reading when the vehicle arrived"
                   />
                 </div>
@@ -4203,15 +4205,15 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 )}
 
                 <div className="flex flex-wrap items-center justify-end gap-3 pt-4 border-t border-gray-200">
-                  <button
+                  <ControlButton
                     type="button"
                     onClick={closeModal}
                     disabled={isSubmitting}
-                    className="min-h-11 px-5 py-2.5 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+                    className=" px-5  text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
                   >
                     Cancel
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton
                     type="submit"
                     disabled={
                       isSubmitting || !intakePricing.ready ||
@@ -4219,7 +4221,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       createCustomerMutation.isPending ||
                       createVehicleMutation.isPending
                     }
-                    className="min-h-11 whitespace-nowrap px-5 py-2.5 disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                    className=" whitespace-nowrap px-5  disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
                     style={{ backgroundColor: accentColors[500] }}
                   >
                     {(isSubmitting ||
@@ -4229,7 +4231,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       <Spinner size="xs" className="border-white/40 border-t-white" />
                     )}
                     Create Repair Order
-                  </button>
+                  </ControlButton>
                 </div>
               </form>
             </DialogPanel>
@@ -4277,7 +4279,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         footer={
           !customerViewId && !priceBuilderOwnsShell && selectedOrder && showDangerZone && (
             <div className="-mx-6 -my-4 space-y-2 bg-red-50 px-6 py-3">
-              <button
+              <ControlButton controlKind="content"
                 type="button"
                 onClick={() => setShowDangerActions((prev) => !prev)}
                 className="flex w-full items-center justify-between gap-4 text-left"
@@ -4293,7 +4295,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 <div className="p-1 text-red-700">
                   {showDangerActions ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                 </div>
-              </button>
+              </ControlButton>
               {showDangerActions && (
                 (orderDetail ?? selectedOrder).deleted_at ? (
                   <div className="flex flex-wrap gap-2 justify-end">
@@ -4306,15 +4308,15 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                           : `Deleted on ${when}. Restore to bring it back.`
                       })()}
                     </div>
-                    <button
+                    <ControlButton
                       type="button"
                       disabled={restoreRepairOrderMutation.isPending}
                       onClick={() => selectedOrder.id && restoreRepairOrderMutation.mutate(selectedOrder.id)}
-                      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      className="inline-flex items-center gap-2 px-4  text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                       <RotateCcw className="h-4 w-4" />
                       {restoreRepairOrderMutation.isPending ? 'Restoring...' : 'Restore order'}
-                    </button>
+                    </ControlButton>
                   </div>
                 ) : (
                 <div className="flex flex-wrap gap-2 justify-end">
@@ -4322,15 +4324,15 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     Delete removes this order from your active lists. Nothing is destroyed —
                     it can be restored later from the Deleted filter.
                   </div>
-                  <button
+                  <ControlButton
                     type="button"
                     disabled={deleteRepairOrderMutation.isPending}
                     onClick={() => setShowDeleteConfirm(true)}
-                    className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="inline-flex items-center gap-2 px-4  text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />
                     {deleteRepairOrderMutation.isPending ? 'Deleting...' : 'Delete'}
-                  </button>
+                  </ControlButton>
                 </div>
                 )
               )}
@@ -4377,9 +4379,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         {customerViewId && !customerViewRecord && (
           <section className="db-customer-embedded" aria-label="Customer workspace">
             <header className="db-customer-embedded__header">
-              <button type="button" onClick={closeCustomerView} className="db-inline-text-action inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold">
+              <ControlButton type="button" onClick={closeCustomerView} className="db-inline-text-action inline-flex items-center gap-1.5 rounded-lg px-2  text-sm font-semibold">
                 <ChevronLeft className="h-4 w-4" /><span className="db-customer-back-label">Back to {selectedOrder ? `#${selectedOrder.order_number}` : 'the repair order'}</span>
-              </button>
+              </ControlButton>
               <h2>Customer</h2>
             </header>
             <div className="db-customer-embedded__body db-customer-recovery">
@@ -4390,14 +4392,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         {customerViewId && customerViewRecord && (
           <section className="db-customer-embedded" aria-label={`${customerNameOf(customerViewRecord, 'Customer')} customer workspace`}>
             <header className="db-customer-embedded__header">
-              <button
+              <ControlButton
                 type="button"
                 onClick={customerViewVehicleId ? () => selectCustomerTruck(null) : closeCustomerView}
-                className="db-inline-text-action inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold text-orange-700 hover:bg-orange-50"
+                className="db-inline-text-action inline-flex items-center gap-1.5 rounded-lg px-2  text-sm font-semibold text-orange-700 hover:bg-orange-50"
               >
                 <ChevronLeft className="h-4 w-4" />
                 <span className="db-customer-back-label">Back to {customerViewVehicleId ? customerNameOf(customerViewRecord, 'Customer') : selectedOrder ? `#${selectedOrder.order_number}` : 'the repair order'}</span>
-              </button>
+              </ControlButton>
               <h2>
                 {customerViewVehicle ? vehicleDisplayLabel(customerViewVehicle) : customerViewVehicleId ? 'Vehicle history' : customerNameOf(customerViewRecord, 'Customer')}
               </h2>
@@ -4523,27 +4525,27 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                         <div className="flex items-center gap-0.5 overflow-x-auto pb-0.5 -mb-0.5">
                           {/* Step 1: Create/Update Quote Draft */}
                           {effectiveQuoteNeedsUpdate && hasQuote && isSent ? (
-                            <button
+                            <ControlButton
                               type="button"
                               onClick={() => quoteForOrder && updateQuoteMutation.mutate(quoteForOrder.id)}
                               disabled={updateQuoteMutation.isPending}
-                              className="shrink-0 px-2 py-1 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-xs font-medium rounded-md"
+                              className="shrink-0 px-2  bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-xs font-medium rounded-md"
                             >
                               {updateQuoteMutation.isPending ? 'Updating...' : 'Update'}
-                            </button>
+                            </ControlButton>
                           ) : (
                             <span className={`shrink-0 px-2 py-1 text-xs font-medium rounded-md ${workflowPillClass(hasQuote ? 'success' : 'action')}`}>
                               {hasQuote ? (
                                 <span className="flex items-center gap-0.5">✓ Draft Ready</span>
                               ) : (
-                                <button
+                                <ControlButton
                                   type="button"
                                   onClick={() => selectedOrder.id && createQuoteMutation.mutate(selectedOrder.id)}
                                   disabled={createQuoteMutation.isPending}
                                   className="bg-transparent"
                                 >
                                   {createQuoteMutation.isPending ? 'Creating...' : 'Create Draft'}
-                                </button>
+                                </ControlButton>
                               )}
                             </span>
                           )}
@@ -4552,18 +4554,18 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
                           {/* Step 2: Send to Customer */}
                           {canPublishCustomerAuthorization && hasQuote && !isApproved && (!isSent || effectiveQuoteNeedsUpdate) ? (
-                            <button
+                            <ControlButton
                               type="button"
                               onClick={() => handlePriceBuilderQuoteAction()}
                               disabled={sendQuoteMutation.isPending || updateQuoteMutation.isPending}
-                              className={`shrink-0 px-2 py-1 text-xs font-medium rounded-md ${
+                              className={`shrink-0 px-2  text-xs font-medium rounded-md ${
                                 isSent
                                   ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
                                   : 'bg-amber-500 hover:bg-amber-600 text-white'
                               }`}
                             >
                               {quoteActionPending ? 'Working...' : (isSent ? 'Prepare revision' : 'Review & publish')}
-                            </button>
+                            </ControlButton>
                           ) : (
                             <span className={`shrink-0 px-2 py-1 text-xs font-medium rounded-md ${workflowPillClass(isApproved ? 'success' : 'neutral')}`}>
                               {isApproved ? '✓ Sent' : isSent ? 'Awaiting approval' : canPublishCustomerAuthorization ? 'Publish' : 'Staff publication required'}
@@ -4617,7 +4619,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                         {/* Mechanic Assignment - shown inline when approved, and collapsed by default after override-start */}
                         {canAssignTechnicianInline && (
                           <div className="pt-3 border-t border-gray-200 space-y-3">
-                            <button
+                            <ControlButton controlKind="content"
                               type="button"
                               onClick={() => setAssignMechanicOpen((open) => !open)}
                               className="flex w-full items-center justify-between gap-2 text-left"
@@ -4625,7 +4627,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                             >
                               <span className="text-xs font-medium text-gray-500 uppercase">Assign technician</span>
                               <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${assignMechanicOpen ? 'rotate-180' : ''}`} />
-                            </button>
+                            </ControlButton>
                             {assignMechanicOpen && (
                               <>
                                 {technicianRoster.length > 0 && (
@@ -4639,7 +4641,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                       })
                                       .sort((a, b) => a.load - b.load)
                                       .map((m) => (
-                                        <button
+                                        <ControlButton controlKind="content"
                                           key={m.mechanic_id}
                                           type="button"
                                           onClick={() =>
@@ -4661,7 +4663,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                               style={{ width: `${m.load}%` }}
                                             />
                                           </div>
-                                        </button>
+                                        </ControlButton>
                                       ))}
                                   </div>
                                 )}
@@ -4672,14 +4674,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                         <p className="text-sm font-semibold text-amber-900">Start without assigning a technician</p>
                                         <p className="text-xs text-amber-700">Admin override for work assigned verbally or outside the mechanic portal.</p>
                                       </div>
-                                      <button
+                                      <ControlButton
                                         type="button"
                                         onClick={() => selectedOrder.id && overrideTechnicianAssignmentMutation.mutate(selectedOrder.id)}
                                         disabled={assignMechanicMutation.isPending || overrideTechnicianAssignmentMutation.isPending}
-                                        className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-amber-600 px-3 text-sm font-bold text-white hover:bg-amber-700 disabled:bg-gray-300"
+                                        className="inline-flex  items-center justify-center gap-2 rounded-lg bg-amber-600 px-3 text-sm font-bold text-white hover:bg-amber-700 disabled:bg-gray-300"
                                       >
                                         {overrideTechnicianAssignmentMutation.isPending ? 'Starting...' : 'Override & start'}
-                                      </button>
+                                      </ControlButton>
                                     </div>
                                   </div>
                                 )}
@@ -4692,7 +4694,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                         {hasMechanic && technicianRoster.length > 1 && !['pending_review', 'completed', 'invoiced', 'paid'].includes((orderDetail ?? selectedOrder).status) && (
                           <div className="pt-3 border-t border-gray-200">
                             {!showReassignMechanic ? (
-                              <button
+                              <ControlButton
                                 type="button"
                                 onClick={() => setShowReassignMechanic(true)}
                                 className="text-sm text-amber-600 hover:text-amber-700 font-medium flex items-center gap-1.5"
@@ -4701,18 +4703,18 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                                 </svg>
                                 Reassign Technician
-                              </button>
+                              </ControlButton>
                             ) : (
                               <div className="space-y-3">
                                 <div className="flex items-center justify-between">
                                   <p className="text-xs font-medium text-gray-500 uppercase">Select New Technician</p>
-                                  <button
+                                  <ControlButton
                                     type="button"
                                     onClick={() => setShowReassignMechanic(false)}
                                     className="text-xs text-gray-500 hover:text-gray-700"
                                   >
                                     Cancel
-                                  </button>
+                                  </ControlButton>
                                 </div>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                   {[...(mechanics || [])]
@@ -4725,7 +4727,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                     })
                                     .sort((a, b) => a.load - b.load)
                                     .map((m) => (
-                                      <button
+                                      <ControlButton controlKind="content"
                                         key={m.mechanic_id}
                                         type="button"
                                         onClick={() => {
@@ -4749,7 +4751,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                             style={{ width: `${m.load}%` }}
                                           />
                                         </div>
-                                      </button>
+                                      </ControlButton>
                                     ))}
                                 </div>
                               </div>
@@ -5122,14 +5124,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                 <div className="flex items-center gap-2">
                                   <span className="font-semibold">${parseFloat(svc.base_price || '0').toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                   {canEditServices && (
-                                    <button
+                                    <ControlButton controlKind="icon"
                                       type="button"
                                       onClick={() => handleRemoveService(svc.id)}
                                       className="p-1 text-red-600 hover:bg-red-50 rounded"
                                       aria-label="Remove service"
                                     >
                                       <Trash2 className="w-4 h-4" />
-                                    </button>
+                                    </ControlButton>
                                   )}
                                 </div>
                               </div>
@@ -5201,13 +5203,13 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     <>
                       {canEditLineItems && !hasPartsUsage && !showPartComposer && (
                         <div className="px-4 py-3 border-t border-gray-200">
-                          <button
+                          <ControlButton
                             type="button"
                             onClick={() => setShowPartComposer(true)}
                             className="text-sm font-medium text-amber-700 hover:text-amber-800"
                           >
                             + Add part
-                          </button>
+                          </ControlButton>
                         </div>
                       )}
 
@@ -5225,14 +5227,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                     <div className="flex items-center gap-2 shrink-0">
                                       <span className="font-semibold">${parseFloat(pu.total_price).toFixed(2)}</span>
                                       {canEditLineItems && (
-                                        <button
+                                        <ControlButton controlKind="icon"
                                           type="button"
                                           onClick={() => selectedOrder?.id && removePartMutation.mutate({ orderId: selectedOrder.id, partsUsageId: pu.id })}
                                           className="p-1 text-red-600 hover:bg-red-50 rounded"
                                           aria-label="Remove part"
                                         >
                                           <Trash2 className="w-4 h-4" />
-                                        </button>
+                                        </ControlButton>
                                       )}
                                     </div>
                                   </div>
@@ -5244,7 +5246,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                 {!hasPartsUsage && (
                                   <div className="flex items-center justify-between text-xs text-gray-500">
                                     <span>No parts added</span>
-                                    <button
+                                    <ControlButton
                                       type="button"
                                       onClick={() => {
                                         setShowPartComposer(false)
@@ -5254,7 +5256,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                       className="font-medium text-gray-600 hover:text-gray-800"
                                     >
                                       Hide
-                                    </button>
+                                    </ControlButton>
                                   </div>
                                 )}
                                 <div className="flex items-center gap-2">
@@ -5284,17 +5286,17 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                       align="start"
                                     />
                                   </div>
-                                  <button
+                                  <ControlButton
                                     type="button"
                                     disabled={!addPartInventoryId || addPartMutation.isPending}
                                     onClick={() => {
                                       if (!selectedOrder?.id || !addPartInventoryId) return
                                       addPartMutation.mutate({ orderId: selectedOrder.id, inventory_id: addPartInventoryId, quantity: addPartQuantity })
                                     }}
-                                    className="h-[42px] px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg shrink-0"
+                                    className=" px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg shrink-0"
                                   >
                                     Add
-                                  </button>
+                                  </ControlButton>
                                 </div>
                               </div>
                             )}
@@ -5322,14 +5324,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                       <div className="flex items-center gap-2">
                                         <span className="font-semibold">${parseFloat(li.total_cost).toFixed(2)}</span>
                                         {canEditLineItems && (
-                                          <button
+                                          <ControlButton controlKind="icon"
                                             type="button"
                                             onClick={() => selectedOrder?.id && removeLaborMutation.mutate({ orderId: selectedOrder.id, laborId: li.id })}
                                             className="p-1 text-red-600 hover:bg-red-50 rounded"
                                             aria-label="Remove labor"
                                           >
                                             <Trash2 className="w-4 h-4" />
-                                          </button>
+                                          </ControlButton>
                                         )}
                                       </div>
                                     </div>
@@ -5340,22 +5342,22 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                               )}
                               {canEditLineItems && (
                                 <div className="flex flex-col gap-2">
-                                  <input
+                                  <ControlInput
                                     type="text"
                                     placeholder="Description (optional)"
                                     value={addLaborDescription}
                                     onChange={(e) => setAddLaborDescription(e.target.value)}
-                                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                                    className="rounded-lg border border-gray-300 px-3  text-sm"
                                   />
                                   <div className="flex flex-wrap items-center gap-2">
-                                    <input
+                                    <ControlInput
                                       type="number"
                                       step={0.25}
                                       min={0}
                                       placeholder="Hours"
                                       value={addLaborHours}
                                       onChange={(e) => setAddLaborHours(e.target.value)}
-                                      className="rounded-lg border border-gray-300 px-3 py-2 text-sm w-24"
+                                      className="rounded-lg border border-gray-300 px-3  text-sm w-24"
                                     />
                                     <span className="text-gray-500 text-sm">×</span>
                                     <span className="inline-flex items-center gap-1 text-sm text-gray-500">
@@ -5370,7 +5372,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                         align="start"
                                       />
                                     </span>
-                                    <button
+                                    <ControlButton
                                       type="button"
                                       disabled={!addLaborHours || !addLaborRate || addLaborMutation.isPending}
                                       onClick={() => {
@@ -5390,10 +5392,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                         setAddLaborRate(taxFeeSettings?.labor_rate?.toString() || '100')
                                         setAddLaborRateEdited(false)
                                       }}
-                                      className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
+                                      className="px-3  bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
                                     >
                                       Add
-                                    </button>
+                                    </ControlButton>
                                   </div>
                                 </div>
                               )}
@@ -5451,7 +5453,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
                 {!priceBuilderOwnsShell && (
                 <div>
-                  <button
+                  <ControlButton controlKind="content"
                     type="button"
                     onClick={() => setCustomerSectionExpanded((prev) => !prev)}
                     className="w-full flex items-center justify-between text-left bg-gray-50 rounded-xl p-3 hover:bg-gray-100 transition-colors"
@@ -5467,7 +5469,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                         <ChevronDown className="w-5 h-5 text-gray-500 shrink-0" />
                       )}
                     </div>
-                  </button>
+                  </ControlButton>
                   {customerSectionExpanded && (
                     <div className="bg-gray-50 rounded-b-xl p-4 border-t border-gray-200 -mt-1 pt-4 space-y-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -5571,18 +5573,18 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
                     <div className="mb-3">
                       <label className="block text-sm font-medium text-orange-800 mb-1">Mileage Out</label>
-                      <input
+                      <ControlInput
                         type="text"
                         inputMode="numeric"
                         value={mileageOut}
                         onChange={(e) => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setMileageOut(v) }}
                         placeholder={selectedOrder.mileage_in != null ? `Odometer at return (in: ${selectedOrder.mileage_in.toLocaleString()} mi)` : 'Odometer reading at vehicle return'}
-                        className="w-full px-3 py-2 border border-orange-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400 text-sm"
+                        className="w-full px-3  border border-orange-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400 text-sm"
                       />
                     </div>
 
                     <div className="mb-3">
-                      <button
+                      <ControlButton
                         type="button"
                         onClick={() => setShowReviewNotes(!showReviewNotes)}
                         className="flex items-center gap-2 text-sm font-medium text-orange-800 hover:text-orange-900"
@@ -5596,7 +5598,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
                         Add Review Notes <span className="text-orange-500 font-normal">(optional)</span>
-                      </button>
+                      </ControlButton>
                       {showReviewNotes && (
                         <textarea
                           value={reviewNotes}
@@ -5608,7 +5610,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       )}
                     </div>
                     
-                    <button
+                    <ControlButton
                       type="button"
                       onClick={() => {
                         if (selectedOrder.id) {
@@ -5622,7 +5624,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                         }
                       }}
                       disabled={approveCompletionMutation.isPending}
-                      className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+                      className="w-full  bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
                     >
                       {approveCompletionMutation.isPending ? (
                         <Spinner size="sm" className="border-white/40 border-t-white" />
@@ -5632,7 +5634,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                         </svg>
                       )}
                       Approve Completion
-                    </button>
+                    </ControlButton>
                   </div>
                 )}
 
@@ -5666,7 +5668,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 {/* Create Invoice Button for completed customer orders */}
                 {!priceBuilderOwnsShell && importedEtsOrder && (
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                    <p className="font-semibold text-slate-900">ETS invoice total {importedMoney(importedBilling?.total_amount)}</p>
+                    <p className="font-semibold text-slate-900">Invoice total {importedMoney(importedBilling?.total_amount)}</p>
                     <ImportedBillingDetails billing={importedBilling} failed={importedBillingQuery.isError} />
                   </div>
                 )}
@@ -5684,7 +5686,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       </div>
                     </div>
                     <div className="mb-3 rounded-xl border border-indigo-200 bg-white/70">
-                      <button
+                      <ControlButton controlKind="content"
                         type="button"
                         onClick={() => setShowInvoiceCreateOptions((prev) => !prev)}
                         className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left"
@@ -5696,7 +5698,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                         <div className="p-1 text-indigo-600">
                           {showInvoiceCreateOptions ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                         </div>
-                      </button>
+                      </ControlButton>
                       {showInvoiceCreateOptions && (
                         <div className="border-t border-indigo-200 px-3 py-3">
                           <DatePicker
@@ -5709,14 +5711,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                         </div>
                       )}
                     </div>
-                    <button
+                    <ControlButton
                       type="button"
                       onClick={() => selectedOrder.id && createInvoiceMutation.mutate({ 
                         repairOrderId: selectedOrder.id,
                         dueDate: invoiceDueDate || undefined,
                       })}
                       disabled={createInvoiceMutation.isPending}
-                      className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+                      className="w-full  bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
                     >
                       {createInvoiceMutation.isPending ? (
                         <Spinner size="sm" className="border-white/40 border-t-white" />
@@ -5726,7 +5728,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                         </svg>
                       )}
                       Create Invoice
-                    </button>
+                    </ControlButton>
                   </div>
                 )}
 
@@ -5760,31 +5762,31 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                           Customer marked this invoice as paid via Zelle. Confirm receipt or clear pending status.
                         </p>
                         <div className="flex gap-2 mt-3">
-                          <button
+                          <ControlButton
                             type="button"
                             onClick={() => openZellePaymentModal('confirm_pending')}
-                            className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-md transition-colors"
+                            className="px-3  bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-md transition-colors"
                           >
                             Confirm Payment
-                          </button>
-                          <button
+                          </ControlButton>
+                          <ControlButton
                             type="button"
                             onClick={() => {
                               setSelectedPaymentMethod('')
                               setShowInvoicePaymentOptions(true)
                             }}
-                            className="px-3 py-1.5 bg-white hover:bg-gray-50 border border-yellow-300 text-yellow-900 text-xs font-medium rounded-md transition-colors"
+                            className="px-3  bg-white hover:bg-gray-50 border border-yellow-300 text-yellow-900 text-xs font-medium rounded-md transition-colors"
                           >
                             Use Another Method
-                          </button>
-                          <button
+                          </ControlButton>
+                          <ControlButton
                             type="button"
                             onClick={() => clearPendingZelleMutation.mutate({ invoiceId: invoiceForOrder.id })}
                             disabled={clearPendingZelleMutation.isPending}
-                            className="px-3 py-1.5 bg-yellow-100 hover:bg-yellow-200 text-yellow-900 text-xs font-medium rounded-md transition-colors disabled:opacity-60"
+                            className="px-3  bg-yellow-100 hover:bg-yellow-200 text-yellow-900 text-xs font-medium rounded-md transition-colors disabled:opacity-60"
                           >
                             {clearPendingZelleMutation.isPending ? 'Clearing...' : 'Dismiss Zelle Claim'}
-                          </button>
+                          </ControlButton>
                         </div>
                       </div>
                     )}
@@ -5792,42 +5794,42 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     {!showResendInvoice && !showInvoicePaymentOptions ? (
                       <div className="space-y-2">
                         <div className="flex gap-2">
-                          <button
+                          <ControlButton
                             type="button"
                             onClick={() => setShowResendInvoice(true)}
-                            className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                            className="flex-1  bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                             </svg>
                             Resend Invoice
-                          </button>
+                          </ControlButton>
                           {canVoidInvoices && !invoiceForOrder.pending_zelle_confirmation && (
-                            <button
+                            <ControlButton controlKind="action"
                               type="button"
                               onClick={() => {
                                 setVoidInvoiceReason('')
                                 setShowVoidInvoiceConfirm(true)
                               }}
                               disabled={voidInvoiceMutation.isPending}
-                              className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-medium rounded-lg transition-colors"
+                              className="inline-flex items-center gap-2 px-3  border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-medium rounded-lg transition-colors"
                               title="Preserve this invoice as voided and reopen the order for revision"
                             >
                               <RotateCcw className="w-4 h-4" />
                               Void &amp; revise
-                            </button>
+                            </ControlButton>
                           )}
                         </div>
-                        <button
+                        <ControlButton
                           type="button"
                           onClick={() => setShowInvoicePaymentOptions(true)}
-                          className="w-full py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                          className="w-full  bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                           </svg>
                           Record Payment
-                        </button>
+                        </ControlButton>
                       </div>
                     ) : showInvoicePaymentOptions ? (
                       <div className="space-y-3">
@@ -5845,7 +5847,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                             { value: 'ach', label: 'ACH / Bank Transfer', icon: '🏦' },
                             { value: 'fleet_payment', label: 'Fleet Check / Code', icon: '🚛' },
                           ].map((method) => (
-                            <button
+                            <ControlButton
                               key={method.value}
                               type="button"
                               onClick={() => {
@@ -5856,7 +5858,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                   )
                                 }
                               }}
-                              className={`py-2 px-3 rounded-lg border-2 transition-colors flex items-center justify-center gap-2 text-sm font-medium ${
+                              className={` px-3 rounded-lg border-2 transition-colors flex items-center justify-center gap-2 text-sm font-medium ${
                                 method.value === 'fleet_payment' ? 'col-span-2 ' : ''
                               }${
                                 selectedPaymentMethod === method.value
@@ -5866,21 +5868,21 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                             >
                               <span>{method.icon}</span>
                               {method.label}
-                            </button>
+                            </ControlButton>
                           ))}
                         </div>
                         <div className="flex gap-2 pt-2">
-                          <button
+                          <ControlButton
                             type="button"
                             onClick={() => {
                               setShowInvoicePaymentOptions(false)
                               setSelectedPaymentMethod('')
                             }}
-                            className="flex-1 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-colors"
+                            className="flex-1  bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-colors"
                           >
                             Cancel
-                          </button>
-                          <button
+                          </ControlButton>
+                          <ControlButton
                             type="button"
                             onClick={() => {
                               if (selectedPaymentMethod && invoiceForOrder) {
@@ -5895,7 +5897,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                               }
                             }}
                             disabled={!selectedPaymentMethod || selectedPaymentMethod === 'zelle' || recordManualPaymentMutation.isPending}
-                            className="flex-1 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                            className="flex-1  bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
                           >
                             {recordManualPaymentMutation.isPending ? (
                               <Spinner size="xs" className="border-white/40 border-t-white" />
@@ -5906,7 +5908,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                   ? 'Continue'
                                   : 'Confirm cash received'
                             )}
-                          </button>
+                          </ControlButton>
                         </div>
                       </div>
                     ) : (
@@ -5915,36 +5917,36 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                           <label className="block text-sm font-medium text-purple-800 mb-1">
                             Send to different email (optional)
                           </label>
-                          <input
+                          <ControlInput
                             type="email"
                             value={resendCustomEmail}
                             onChange={(e) => setResendCustomEmail(e.target.value)}
                             placeholder={customerLookup.get(selectedOrder.customer_id)?.email || 'customer@email.com'}
-                            className="w-full px-3 py-2 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                            className="w-full px-3  border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                           />
                           <p className="text-xs text-purple-600 mt-1">
                             Leave empty to send to customer's default email
                           </p>
                         </div>
                         <div className="flex gap-2">
-                          <button
+                          <ControlButton
                             type="button"
                             onClick={() => {
                               setShowResendInvoice(false)
                               setResendCustomEmail('')
                             }}
-                            className="flex-1 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-colors"
+                            className="flex-1  bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-colors"
                           >
                             Cancel
-                          </button>
-                          <button
+                          </ControlButton>
+                          <ControlButton
                             type="button"
                             onClick={() => resendInvoiceMutation.mutate({
                               invoiceId: invoiceForOrder.id,
                               customEmail: resendCustomEmail || undefined,
                             })}
                             disabled={resendInvoiceMutation.isPending}
-                            className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                            className="flex-1  bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
                           >
                             {resendInvoiceMutation.isPending ? (
                               <Spinner size="xs" className="border-white/40 border-t-white" />
@@ -5954,7 +5956,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                               </svg>
                             )}
                             Send
-                          </button>
+                          </ControlButton>
                         </div>
                       </div>
                     )}
@@ -5980,18 +5982,18 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
                     {!showResendInvoice ? (
                       <div className="space-y-2">
-                        <button
+                        <ControlButton
                           type="button"
                           onClick={() => setShowResendInvoice(true)}
-                          className="w-full py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                          className="w-full  bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
                         >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                         </svg>
                         Resend Invoice Copy
-                        </button>
+                        </ControlButton>
                         {invoiceForOrder.payment?.method === 'quickbooks' && canVoidInvoices && (
-                          <button
+                          <ControlButton
                             type="button"
                             disabled={refundQuickBooksMutation.isPending}
                             onClick={() => {
@@ -6015,10 +6017,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                 reason: reason.trim(),
                               })
                             }}
-                            className="w-full rounded-lg border border-red-300 bg-white py-2 font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+                            className="w-full rounded-lg border border-red-300 bg-white  font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
                           >
                             {refundQuickBooksMutation.isPending ? 'Submitting refund…' : 'Refund QuickBooks payment'}
-                          </button>
+                          </ControlButton>
                         )}
                       </div>
                     ) : (
@@ -6027,36 +6029,36 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                           <label className="block text-sm font-medium text-green-800 mb-1">
                             Send to different email (optional)
                           </label>
-                          <input
+                          <ControlInput
                             type="email"
                             value={resendCustomEmail}
                             onChange={(e) => setResendCustomEmail(e.target.value)}
                             placeholder={customerLookup.get(selectedOrder?.customer_id || '')?.email || 'customer@email.com'}
-                            className="w-full px-3 py-2 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                            className="w-full px-3  border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
                           />
                           <p className="text-xs text-green-700 mt-1">
                             Leave empty to send to customer's default email
                           </p>
                         </div>
                         <div className="flex gap-2">
-                          <button
+                          <ControlButton
                             type="button"
                             onClick={() => {
                               setShowResendInvoice(false)
                               setResendCustomEmail('')
                             }}
-                            className="flex-1 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-colors"
+                            className="flex-1  bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-colors"
                           >
                             Cancel
-                          </button>
-                          <button
+                          </ControlButton>
+                          <ControlButton
                             type="button"
                             onClick={() => resendInvoiceMutation.mutate({
                               invoiceId: invoiceForOrder.id,
                               customEmail: resendCustomEmail || undefined,
                             })}
                             disabled={resendInvoiceMutation.isPending}
-                            className="flex-1 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                            className="flex-1  bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
                           >
                             {resendInvoiceMutation.isPending ? (
                               <Spinner size="xs" className="border-white/40 border-t-white" />
@@ -6066,7 +6068,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                               </svg>
                             )}
                             Send
-                          </button>
+                          </ControlButton>
                         </div>
                       </div>
                     )}
@@ -6076,7 +6078,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 {/* Recommended / Deferred Services */}
                 {!priceBuilderOwnsShell && (
                 <div className="rounded-xl border border-gray-200 overflow-hidden">
-                  <button
+                  <ControlButton controlKind="content"
                     type="button"
                     onClick={() => setShowAddRecService((prev) => !prev)}
                     className="w-full flex items-center justify-between text-left bg-gray-50 p-3 hover:bg-gray-100 transition-colors"
@@ -6096,7 +6098,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       />
                     </span>
                     <Plus className="w-4 h-4 text-gray-400" />
-                  </button>
+                  </ControlButton>
 
                   {showAddRecService && (
                     <div className="p-3 border-t border-gray-200 bg-white space-y-2">
@@ -6117,23 +6119,23 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                           <option value="soon">Soon</option>
                           <option value="monitor">Monitor</option>
                         </PlatformSelect>
-                        <input
+                        <ControlInput
                           type="number"
                           value={recServiceForm.estimated_cost}
                           onChange={(e) => setRecServiceForm(p => ({ ...p, estimated_cost: e.target.value }))}
                           placeholder="Est. cost"
-                          className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                          className="px-3  border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
                         />
                       </div>
                       <div className="flex gap-2">
-                        <button
+                        <ControlButton
                           type="button"
                           onClick={() => { setShowAddRecService(false); setRecServiceForm({ description: '', priority: 'soon', estimated_cost: '', notes: '' }) }}
-                          className="flex-1 py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium"
+                          className="flex-1  text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium"
                         >
                           Cancel
-                        </button>
-                        <button
+                        </ControlButton>
+                        <ControlButton
                           type="button"
                           disabled={!recServiceForm.description.trim() || addRecServiceMutation.isPending}
                           onClick={() => addRecServiceMutation.mutate({
@@ -6142,10 +6144,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                             estimated_cost: recServiceForm.estimated_cost ? parseFloat(recServiceForm.estimated_cost) : undefined,
                             notes: recServiceForm.notes || undefined,
                           })}
-                          className="flex-1 py-2 text-sm text-white bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 rounded-lg font-medium"
+                          className="flex-1  text-sm text-white bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 rounded-lg font-medium"
                         >
                           Add
-                        </button>
+                        </ControlButton>
                       </div>
                     </div>
                   )}
@@ -6172,7 +6174,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                           </div>
                           {!svc.is_resolved && (
                             <div className="flex gap-1 shrink-0">
-                              <button
+                              <ControlButton controlKind="icon"
                                 type="button"
                                 onClick={() => resolveRecServiceMutation.mutate(svc.id)}
                                 disabled={resolveRecServiceMutation.isPending}
@@ -6182,8 +6184,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                 </svg>
-                              </button>
-                              <button
+                              </ControlButton>
+                              <ControlButton controlKind="icon"
                                 type="button"
                                 onClick={() => deleteRecServiceMutation.mutate(svc.id)}
                                 disabled={deleteRecServiceMutation.isPending}
@@ -6193,7 +6195,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                 </svg>
-                              </button>
+                              </ControlButton>
                             </div>
                           )}
                         </li>
@@ -6260,28 +6262,28 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                   </div>
                 )}
                 <div className="flex gap-3">
-                  <button
+                  <ControlButton
                     ref={keepEditingButtonRef}
                     type="button"
                     onClick={() => closeQuoteConfirmation()}
-                    className="flex-1 rounded-lg border border-gray-300 px-4 py-3 font-semibold text-gray-700 hover:bg-gray-50"
+                    className="flex-1 rounded-lg border border-gray-300 px-4  font-semibold text-gray-700 hover:bg-gray-50"
                   >
                     Keep editing
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton
                     type="button"
                     onClick={() => {
                       sendQuoteMutation.mutate(quoteToConfirm.id)
                     }}
                     disabled={sendQuoteMutation.isPending}
-                    className="flex-1 rounded-lg bg-emerald-600 px-4 py-3 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                    className="flex-1 rounded-lg bg-emerald-600 px-4  font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
                   >
                     {sendQuoteMutation.isPending
                       ? 'Sending…'
                       : quoteToConfirm.authorization_type === 'additional_work'
                         ? 'Send authorization'
                         : 'Send estimate'}
-                  </button>
+                  </ControlButton>
                 </div>
               </DialogPanel>
             )}
@@ -6334,14 +6336,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
               </p>
               
               <div className="flex gap-3 justify-end">
-                <button
+                <ControlButton
                   type="button"
                   onClick={() => setShowDeleteConfirm(false)}
-                  className="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+                  className="px-4  text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
                 >
                   Cancel
-                </button>
-                <button
+                </ControlButton>
+                <ControlButton
                   type="button"
                   disabled={deleteRepairOrderMutation.isPending}
                   onClick={() => {
@@ -6350,13 +6352,13 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       setShowDeleteConfirm(false)
                     }
                   }}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                  className="px-4  bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
                 >
                   {deleteRepairOrderMutation.isPending && (
                     <Spinner size="xs" className="border-white/40 border-t-white" />
                   )}
                   Delete order
-                </button>
+                </ControlButton>
               </div>
             </div>
           </div>
@@ -6367,7 +6369,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       {showInvoicePaymentOptions && priceBuilderOwnsShell && !importedEtsOrder && invoiceForOrder && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 p-4">
           <div className="relative w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
-            <button
+            <ControlButton controlKind="icon"
               type="button"
               aria-label="Close payment modal"
               onClick={() => {
@@ -6377,7 +6379,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
               className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700"
             >
               <X className="h-5 w-5" />
-            </button>
+            </ControlButton>
             <div className="mb-4 pr-10">
               <p className="text-lg font-semibold text-gray-900">Record payment</p>
               <p className="text-sm text-gray-500">
@@ -6398,12 +6400,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 { value: 'ach', label: 'ACH / Bank Transfer', compactLabel: 'Bank transfer' },
                 { value: 'fleet_payment', label: 'Fleet Check / Code' },
               ].map((method) => (
-                <button
+                <ControlButton
                   key={method.value}
                   type="button"
                   aria-label={method.label}
                   onClick={() => setSelectedPaymentMethod(method.value)}
-                  className={`db-payment-method whitespace-nowrap rounded-xl border px-3 py-3 text-sm font-semibold transition ${
+                  className={`db-payment-method whitespace-nowrap rounded-xl border px-3  text-sm font-semibold transition ${
                     method.value === 'fleet_payment' ? 'col-span-2 ' : ''
                   }${
                     selectedPaymentMethod === method.value
@@ -6412,11 +6414,11 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                   }`}
                 >
                   {method.compactLabel ? <><span className="db-payment-method__full">{method.label}</span><span className="db-payment-method__compact">{method.compactLabel}</span></> : method.label}
-                </button>
+                </ControlButton>
               ))}
             </div>
             <div className="mt-5">
-              <button
+              <ControlButton
                 type="button"
                 disabled={!selectedPaymentMethod || recordManualPaymentMutation.isPending}
                 onClick={() => {
@@ -6437,7 +6439,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     method: selectedPaymentMethod,
                   })
                 }}
-                className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-green-600 px-4 text-sm font-semibold text-white hover:bg-green-700 disabled:bg-gray-300"
+                className="inline-flex  w-full items-center justify-center rounded-xl bg-green-600 px-4 text-sm font-semibold text-white hover:bg-green-700 disabled:bg-gray-300"
               >
                 {recordManualPaymentMutation.isPending
                   ? 'Recording...'
@@ -6446,7 +6448,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     : EVIDENCE_PAYMENT_METHODS.includes(selectedPaymentMethod as EvidencePaymentMethod)
                       ? 'Continue'
                       : 'Confirm cash received'}
-              </button>
+              </ControlButton>
             </div>
           </div>
         </div>
@@ -6483,7 +6485,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         return (
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 p-4">
             <div className="relative max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
-              <button
+              <ControlButton controlKind="icon"
                 type="button"
                 aria-label="Close payment confirmation"
                 onClick={() => {
@@ -6493,7 +6495,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700"
               >
                 <X className="h-5 w-5" />
-              </button>
+              </ControlButton>
 
               <div className="mb-4 pr-10">
                 <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
@@ -6534,39 +6536,39 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 {isFleetPayment && manualPaymentProvider === 'Other' && (
                   <label className="block">
                     <span className="mb-1.5 block text-sm font-semibold text-gray-800">Provider name</span>
-                    <input
+                    <ControlInput
                       type="text"
                       value={manualPaymentCustomProvider}
                       onChange={(event) => setManualPaymentCustomProvider(event.target.value)}
                       maxLength={100}
                       placeholder="Enter fleet payment provider"
-                      className="h-11 w-full rounded-xl border border-gray-300 px-3 text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                      className=" w-full rounded-xl border border-gray-300 px-3 text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
                     />
                   </label>
                 )}
 
                 <label className="block">
                   <span className="mb-1.5 block text-sm font-semibold text-gray-800">{referenceLabel}</span>
-                  <input
+                  <ControlInput
                     type="text"
                     value={manualPaymentReference}
                     onChange={(event) => setManualPaymentReference(event.target.value)}
                     maxLength={255}
                     placeholder={method === 'ach' ? 'ACH trace, wire reference, or bank confirmation' : method === 'check' ? 'Enter check number' : 'Enter EFS, Comchek, or T-Chek code'}
-                    className="h-11 w-full rounded-xl border border-gray-300 px-3 text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                    className=" w-full rounded-xl border border-gray-300 px-3 text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
                   />
                 </label>
 
                 {isFleetPayment && (
                   <label className="block">
                     <span className="mb-1.5 block text-sm font-semibold text-gray-800">Authorization or approval number</span>
-                    <input
+                    <ControlInput
                       type="text"
                       value={manualPaymentAuthorization}
                       onChange={(event) => setManualPaymentAuthorization(event.target.value)}
                       maxLength={255}
                       placeholder="Enter provider authorization"
-                      className="h-11 w-full rounded-xl border border-gray-300 px-3 text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                      className=" w-full rounded-xl border border-gray-300 px-3 text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
                     />
                   </label>
                 )}
@@ -6585,18 +6587,18 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
               </div>
 
               <div className="mt-5 grid grid-cols-2 gap-3">
-                <button
+                <ControlButton
                   type="button"
                   onClick={() => {
                     resetManualPaymentConfirmation()
                     setSelectedPaymentMethod('')
                     setShowInvoicePaymentOptions(true)
                   }}
-                  className="inline-flex h-11 min-w-0 items-center justify-center whitespace-nowrap rounded-xl border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                  className="inline-flex  min-w-0 items-center justify-center whitespace-nowrap rounded-xl border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50"
                 >
                   Use another method
-                </button>
-                <button
+                </ControlButton>
+                <ControlButton
                   type="button"
                   disabled={!canConfirm || recordManualPaymentMutation.isPending}
                   onClick={() => {
@@ -6609,10 +6611,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       authorizationNumber: isFleetPayment ? manualPaymentAuthorization.trim() : undefined,
                     })
                   }}
-                  className="inline-flex h-11 min-w-0 items-center justify-center whitespace-nowrap rounded-xl bg-green-600 px-2 text-center text-xs font-semibold text-white hover:bg-green-700 disabled:bg-gray-300"
+                  className="inline-flex  min-w-0 items-center justify-center whitespace-nowrap rounded-xl bg-green-600 px-2 text-center text-xs font-semibold text-white hover:bg-green-700 disabled:bg-gray-300"
                 >
                   {recordManualPaymentMutation.isPending ? 'Recording…' : confirmationLabel}
-                </button>
+                </ControlButton>
               </div>
             </div>
           </div>
@@ -6675,14 +6677,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
               </label>
               
               <div className="flex gap-3 justify-end">
-                <button
+                <ControlButton
                   type="button"
                   onClick={() => setShowVoidInvoiceConfirm(false)}
-                  className="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+                  className="px-4  text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
                 >
                   Cancel
-                </button>
-                <button
+                </ControlButton>
+                <ControlButton
                   type="button"
                   disabled={voidInvoiceMutation.isPending || voidInvoiceReason.trim().length < 3}
                   onClick={() => {
@@ -6691,13 +6693,13 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       reason: voidInvoiceReason.trim(),
                     })
                   }}
-                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                  className="px-4  bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
                 >
                   {voidInvoiceMutation.isPending && (
                     <Spinner size="xs" className="border-white/40 border-t-white" />
                   )}
                   Void &amp; reopen
-                </button>
+                </ControlButton>
               </div>
             </div>
           </div>
@@ -6708,7 +6710,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       {showZelleQrModal && !importedEtsOrder && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
           <div className="relative bg-white rounded-xl shadow-xl max-w-sm w-full mx-4 overflow-hidden">
-              <button
+              <ControlButton controlKind="icon"
                 type="button"
                 aria-label="Close payment modal"
                 onClick={() => {
@@ -6719,7 +6721,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 className="absolute right-4 top-4 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700"
               >
                 <X className="h-5 w-5" />
-              </button>
+              </ControlButton>
               <div className="p-6">
               <div className="flex items-center gap-3 mb-4 pr-10">
                 <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
@@ -6782,7 +6784,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       Sender phone: {invoiceForOrder.zelle_pending_sender_phone}
                     </p>
                   )}
-                  <button
+                  <ControlButton controlKind="content"
                     type="button"
                     onClick={() => {
                       if (!invoiceForOrder) return
@@ -6793,7 +6795,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     className="pt-1 text-left text-xs font-semibold text-blue-800 underline underline-offset-2 hover:text-blue-950 disabled:opacity-50"
                   >
                     {clearPendingZelleMutation.isPending ? 'Dismissing claim…' : 'Payment not received? Dismiss claim'}
-                  </button>
+                  </ControlButton>
                 </div>
               )}
 
@@ -6809,13 +6811,13 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     <p className="text-sm text-green-800">
                       Amount due: <span className="font-bold">{formatMoney(zelleTotal)}</span>
                     </p>
-                    <button
+                    <ControlButton
                       type="button"
                       onClick={() => setShowAmountBreakdown((prev) => !prev)}
                       className="text-xs font-medium text-green-800 hover:text-green-900 underline"
                     >
                       {showAmountBreakdown ? 'Hide breakdown' : 'Show breakdown'}
-                    </button>
+                    </ControlButton>
                   </div>
                   {showAmountBreakdown && (
                     <div className="mt-3 pt-3 border-t border-green-200 space-y-1 text-xs text-green-900">
@@ -6874,19 +6876,19 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
                   {captureZelleSender && (
                     <div className="space-y-2">
-                      <input
+                      <ControlInput
                         type="email"
                         value={zelleSenderEmail}
                         onChange={(e) => setZelleSenderEmail(e.target.value)}
                         placeholder="Sender Zelle email (optional)"
-                        className="w-full px-3 py-2 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                        className="w-full px-3  border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
                       />
-                      <input
+                      <ControlInput
                         type="tel"
                         value={zelleSenderPhone}
                         onChange={(e) => setZelleSenderPhone(formatUSPhone(e.target.value))}
                         placeholder="Sender Zelle phone (optional)"
-                        className="w-full px-3 py-2 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                        className="w-full px-3  border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
                       />
                       <p className="text-xs text-amber-700">
                         Enter what you received from the bank notification to enrich walk-in customer records.
@@ -6938,7 +6940,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
               )}
 
               <div className="grid grid-cols-2 gap-3">
-                <button
+                <ControlButton
                   type="button"
                   onClick={() => {
                     setShowAmountBreakdown(false)
@@ -6946,11 +6948,11 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     setSelectedPaymentMethod('')
                     setShowInvoicePaymentOptions(true)
                   }}
-                  className="inline-flex h-11 min-w-0 items-center justify-center whitespace-nowrap rounded-lg border border-amber-300 bg-amber-50 px-3 text-sm font-semibold text-amber-900 transition-colors hover:bg-amber-100"
+                  className="inline-flex  min-w-0 items-center justify-center whitespace-nowrap rounded-lg border border-amber-300 bg-amber-50 px-3 text-sm font-semibold text-amber-900 transition-colors hover:bg-amber-100"
                 >
                   Use another method
-                </button>
-                <button
+                </ControlButton>
+                <ControlButton
                   type="button"
                   onClick={() => {
                     setShowZelleQrModal(false)
@@ -6965,14 +6967,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     }
                   }}
                   disabled={recordManualPaymentMutation.isPending}
-                  className="inline-flex h-11 min-w-0 items-center justify-center whitespace-nowrap rounded-lg bg-green-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-green-700 disabled:bg-gray-400"
+                  className="inline-flex  min-w-0 items-center justify-center whitespace-nowrap rounded-lg bg-green-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-green-700 disabled:bg-gray-400"
                 >
                   {recordManualPaymentMutation.isPending
                     ? 'Recording...'
                     : zelleModalMode === 'confirm_pending'
                       ? 'Confirm received'
                       : 'Payment received'}
-                </button>
+                </ControlButton>
               </div>
             </div>
           </div>

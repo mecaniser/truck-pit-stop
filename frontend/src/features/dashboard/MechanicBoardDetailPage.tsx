@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useMemo, useRef, useState } from 'react'
 import DatePicker from '@/components/DatePicker'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -317,7 +318,7 @@ export default function MechanicBoardDetailPage() {
 
   if (isError || !data) {
     return (
-      <Card className="p-6">
+      <Card className="db-team-colors p-6">
         <p className="text-red-400">Failed to load technician board detail.</p>
       </Card>
     )
@@ -363,14 +364,14 @@ export default function MechanicBoardDetailPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="db-team-colors db-technician-detail space-y-4">
       <div className="flex items-center gap-4">
-        <button 
+        <ControlButton
           onClick={() => navigate('/dashboard/mechanics')} 
           className="p-2.5 rounded-xl bg-zinc-800/60 hover:bg-zinc-700 text-zinc-300 border border-zinc-700/50 transition-all duration-200"
         >
           <ArrowLeft className="w-4 h-4" />
-        </button>
+        </ControlButton>
         <Header
           title={m.mechanic_name}
           subtitle={`${m.date} · ${m.timezone}`}
@@ -395,20 +396,20 @@ export default function MechanicBoardDetailPage() {
 
       {/* Tab bar */}
       <div className="flex gap-1 border-b border-zinc-700/50 pb-px">
-        <button
+        <ControlButton
           onClick={() => setActiveTab('overview')}
-          className={`px-4 py-2.5 text-sm font-semibold rounded-t-xl transition-all duration-200 ${
+          className={`px-4  text-sm font-semibold rounded-t-xl transition-all duration-200 ${
             activeTab === 'overview'
               ? 'bg-zinc-800/80 text-zinc-100 border border-zinc-700/50 border-b-transparent -mb-px'
               : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
           }`}
         >
           Overview
-        </button>
+        </ControlButton>
         {isToday ? (
-          <button
+          <ControlButton
             onClick={() => setActiveTab('controls')}
-            className={`px-4 py-2.5 text-sm font-semibold rounded-t-xl transition-all duration-200 flex items-center gap-2 ${
+            className={`px-4  text-sm font-semibold rounded-t-xl transition-all duration-200 flex items-center gap-2 ${
               activeTab === 'controls'
                 ? 'bg-zinc-800/80 text-zinc-100 border border-zinc-700/50 border-b-transparent -mb-px'
                 : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
@@ -416,14 +417,14 @@ export default function MechanicBoardDetailPage() {
           >
             <Settings className="w-3.5 h-3.5" />
             Admin Controls
-          </button>
+          </ControlButton>
         ) : null}
       </div>
 
       {/* ── OVERVIEW TAB ── */}
       {activeTab === 'overview' && (
         <>
-          <Card className="space-y-4">
+          <Card className="db-technician-detail__section space-y-4">
             <div className="flex items-center gap-2">
               <h2 className="text-zinc-100 font-semibold">Daily Summary</h2>
               <SectionInfoTooltip text="At-a-glance performance for this technician on the selected work day: scheduled shift, attendance, tracked hours, work mix, utilization, and efficiency." />
@@ -538,7 +539,7 @@ export default function MechanicBoardDetailPage() {
             ) : null}
           </Card>
 
-          <Card className="space-y-4">
+          <Card className="db-technician-detail__section space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <h2 className="text-zinc-100 font-semibold">7-Day Trend</h2>
@@ -583,7 +584,7 @@ export default function MechanicBoardDetailPage() {
               <>
                 <div className="space-y-2 md:hidden">
                   {trendRows.map((row, i) => (
-                    <button
+                    <ControlButton controlKind="content"
                       key={row.date}
                       type="button"
                       onClick={() => changeDate(row.date)}
@@ -607,12 +608,12 @@ export default function MechanicBoardDetailPage() {
                         Tracked {(row.tracked_minutes / 60).toFixed(1)}h · Efficiency {row.efficiency_percent == null ? 'n/a' : `${row.efficiency_percent.toFixed(1)}%`}
                       </div>
                     </Card>
-                    </button>
+                    </ControlButton>
                   ))}
                 </div>
                 <div className="hidden md:grid md:grid-cols-7 md:gap-3">
                   {trendRows.map((row, i) => (
-                    <button
+                    <ControlButton controlKind="content"
                       key={row.date}
                       type="button"
                       onClick={() => changeDate(row.date)}
@@ -636,7 +637,7 @@ export default function MechanicBoardDetailPage() {
                         {(row.tracked_minutes / 60).toFixed(1)}h · {row.efficiency_percent == null ? 'n/a' : `${row.efficiency_percent.toFixed(0)}%`}
                       </div>
                     </Card>
-                    </button>
+                    </ControlButton>
                   ))}
                 </div>
               </>
@@ -644,7 +645,7 @@ export default function MechanicBoardDetailPage() {
           </Card>
 
           {/* Selected-day sessions — active session prominent, history collapsed */}
-          <Card className="space-y-4">
+          <Card className="db-technician-detail__section space-y-4">
             <div className="flex items-center gap-2">
               <h2 className="text-zinc-100 font-semibold">Work Sessions · {formatTrendDate(m.date)}</h2>
               <SectionInfoTooltip text="Chronological record of all timer sessions for the selected day, including active, stopped, edited, and deletable entries." />
@@ -689,7 +690,7 @@ export default function MechanicBoardDetailPage() {
                         {s.note && <div className="text-xs text-zinc-300 mt-2 truncate">{s.note}</div>}
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <button
+                        <ControlButton
                           onClick={() => {
                             setSelectedSession(s)
                             setEditNote(s.note || '')
@@ -699,8 +700,8 @@ export default function MechanicBoardDetailPage() {
                           className="p-2 rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30 transition-all duration-200"
                         >
                           <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button
+                        </ControlButton>
+                        <ControlButton
                           onClick={() => {
                             setSelectedSession(s)
                             setEditReason('')
@@ -709,7 +710,7 @@ export default function MechanicBoardDetailPage() {
                           className="p-2 rounded-lg bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/30 transition-all duration-200"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        </ControlButton>
                       </div>
                     </div>
                   </Card>
@@ -739,13 +740,13 @@ export default function MechanicBoardDetailPage() {
                   {/* Completed sessions — collapsed by default */}
                   {completedSessions.length > 0 && (
                     <>
-                      <button
+                      <ControlButton
                         onClick={() => setSessionsExpanded(!sessionsExpanded)}
                         className="flex items-center gap-2 text-xs text-zinc-400 hover:text-zinc-200 transition-all duration-200 font-medium"
                       >
                         {sessionsExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                         {sessionsExpanded ? 'Hide' : 'Show'} {completedSessions.length} completed session{completedSessions.length !== 1 ? 's' : ''}
-                      </button>
+                      </ControlButton>
                       {sessionsExpanded && (
                         <div className="space-y-2">
                           {completedSessions.map((s, i) => renderSessionRow(s, i))}
@@ -762,7 +763,7 @@ export default function MechanicBoardDetailPage() {
 
       {/* ── CONTROLS TAB ── */}
       {activeTab === 'controls' && (
-        <Card className="space-y-4">
+        <Card className="db-technician-detail__section space-y-4">
           <div className="flex items-center gap-2">
             <h2 className="text-zinc-100 font-semibold">Admin Override Controls</h2>
             <SectionInfoTooltip text="Owner/admin controls to start or stop this technician's active timer with mandatory manager reason for audit tracking." />
@@ -781,10 +782,10 @@ export default function MechanicBoardDetailPage() {
                   <span className="text-[11px] text-zinc-500">{attendanceMetaLabel}</span>
                 ) : null}
               </div>
-              <button
+              <ControlButton
                 onClick={() => attendanceToggleMutation.mutate()}
                 disabled={attendanceToggleMutation.isPending}
-                className={`w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+                className={`w-full flex items-center justify-center gap-2 rounded-xl px-4  text-sm font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
                   m.attendance_active 
                     ? 'bg-red-950/80 hover:bg-red-900 text-red-400 border border-red-800/50' 
                     : 'bg-emerald-950/80 hover:bg-emerald-900 text-emerald-400 border border-emerald-800/50'
@@ -792,7 +793,7 @@ export default function MechanicBoardDetailPage() {
               >
                 {attendanceToggleMutation.isPending ? <Spinner size="xs" /> : null}
                 {m.attendance_active ? 'Clock Out Technician' : 'Clock In Technician'}
-              </button>
+              </ControlButton>
             </Card>
             {m.attendance_active ? <Card variant="subtle" padding="sm" className="space-y-3">
               <div className="text-xs text-zinc-400 flex items-center gap-2">
@@ -802,10 +803,10 @@ export default function MechanicBoardDetailPage() {
                   {m.break_active ? 'On Break' : 'Not on Break'}
                 </span>
               </div>
-              <button
+              <ControlButton
                 onClick={() => breakToggleMutation.mutate()}
                 disabled={breakToggleMutation.isPending}
-                className={`w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+                className={`w-full flex items-center justify-center gap-2 rounded-xl px-4  text-sm font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
                   m.break_active 
                     ? 'bg-blue-950/80 hover:bg-blue-900 text-blue-400 border border-blue-800/50' 
                     : 'bg-amber-950/80 hover:bg-amber-900 text-amber-400 border border-amber-800/50'
@@ -813,7 +814,7 @@ export default function MechanicBoardDetailPage() {
               >
                 {breakToggleMutation.isPending ? <Spinner size="xs" /> : null}
                 {m.break_active ? 'End Break' : 'Start Break'}
-              </button>
+              </ControlButton>
             </Card> : null}
           </div>
           {m.attendance_active ? <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -821,28 +822,28 @@ export default function MechanicBoardDetailPage() {
             <div className="space-y-3">
               <Label>Session Type</Label>
               <div className="grid grid-cols-2 gap-2">
-                <button
+                <ControlButton
                   type="button"
                   onClick={() => setSessionType('misc')}
-                  className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all duration-200 ${
+                  className={`px-4  rounded-xl border text-sm font-semibold transition-all duration-200 ${
                     sessionType === 'misc'
                       ? 'bg-[var(--accent-500)]/20 border-[var(--accent-400)] text-[var(--accent-400)]'
                       : 'bg-zinc-800/60 border-zinc-600/50 text-zinc-300 hover:bg-zinc-700 hover:border-zinc-500'
                   }`}
                 >
                   Misc
-                </button>
-                <button
+                </ControlButton>
+                <ControlButton
                   type="button"
                   onClick={() => setSessionType('repair_order')}
-                  className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all duration-200 ${
+                  className={`px-4  rounded-xl border text-sm font-semibold transition-all duration-200 ${
                     sessionType === 'repair_order'
                       ? 'bg-[var(--accent-500)]/20 border-[var(--accent-400)] text-[var(--accent-400)]'
                       : 'bg-zinc-800/60 border-zinc-600/50 text-zinc-300 hover:bg-zinc-700 hover:border-zinc-500'
                   }`}
                 >
                   Repair Order
-                </button>
+                </ControlButton>
               </div>
               {sessionType === 'repair_order' ? (
                 <Input
@@ -853,18 +854,18 @@ export default function MechanicBoardDetailPage() {
               ) : (
                 <div className="grid grid-cols-2 gap-2">
                   {MISC_WORK_OPTIONS.map((option) => (
-                    <button
+                    <ControlButton
                       key={option.value}
                       type="button"
                       onClick={() => setMiscCategory(option.value)}
-                      className={`px-3 py-2 rounded-xl border text-xs font-semibold transition-all duration-200 ${
+                      className={`px-3  rounded-xl border text-xs font-semibold transition-all duration-200 ${
                         miscCategory === option.value
                           ? 'bg-[var(--accent-500)]/20 border-[var(--accent-400)] text-[var(--accent-400)]'
                           : 'bg-zinc-800/60 border-zinc-600/50 text-zinc-300 hover:bg-zinc-700 hover:border-zinc-500'
                       }`}
                     >
                       {option.label}
-                    </button>
+                    </ControlButton>
                   ))}
                 </div>
               )}
@@ -873,14 +874,14 @@ export default function MechanicBoardDetailPage() {
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="Note (optional)"
               />
-              <button
+              <ControlButton
                 onClick={() => startTimerMutation.mutate()}
                 disabled={startTimerMutation.isPending || (sessionType === 'repair_order' && !repairOrderId.trim())}
-                className="w-full flex items-center justify-center gap-2 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] text-white font-semibold rounded-xl px-4 py-2.5 text-sm border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none"
+                className="w-full flex items-center justify-center gap-2 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] text-white font-semibold rounded-xl px-4  text-sm border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none"
               >
                 {startTimerMutation.isPending ? <Spinner size="xs" /> : <PlayCircle className="w-4 h-4" />}
                 Start Timer
-              </button>
+              </ControlButton>
             </div>
             ) : (
             <div className="space-y-3">
@@ -904,14 +905,14 @@ export default function MechanicBoardDetailPage() {
                   </span>
                 )}
               </div>
-              <button
+              <ControlButton
                 onClick={() => stopTimerMutation.mutate()}
                 disabled={stopTimerMutation.isPending}
-                className="w-full flex items-center justify-center gap-2 bg-red-950/80 hover:bg-red-900 text-red-400 font-semibold rounded-xl px-4 py-2.5 text-sm border border-red-800/50 hover:border-red-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full flex items-center justify-center gap-2 bg-red-950/80 hover:bg-red-900 text-red-400 font-semibold rounded-xl px-4  text-sm border border-red-800/50 hover:border-red-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {stopTimerMutation.isPending ? <Spinner size="xs" /> : <Square className="w-4 h-4" />}
                 Stop Active Timer
-              </button>
+              </ControlButton>
             </div>
             )}
           </div>
@@ -955,13 +956,13 @@ export default function MechanicBoardDetailPage() {
                 Cancel
               </Button>
               {editMode === 'edit' ? (
-                <button
+                <ControlButton
                   onClick={() => editSessionMutation.mutate()}
                   disabled={!editReason.trim() || editSessionMutation.isPending}
-                  className="px-4 py-2.5 text-sm rounded-xl bg-amber-950/80 hover:bg-amber-900 text-amber-400 font-semibold border border-amber-800/50 hover:border-amber-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4  text-sm rounded-xl bg-amber-950/80 hover:bg-amber-900 text-amber-400 font-semibold border border-amber-800/50 hover:border-amber-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {editSessionMutation.isPending ? 'Saving...' : 'Save'}
-                </button>
+                </ControlButton>
               ) : (
                 <Button
                   variant="danger"
