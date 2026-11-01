@@ -4,6 +4,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/stores/authStore'
 import type { User } from '@/types'
+import { importedBillingWarnings } from '../importedBillingWarnings'
 import { ImportedBillingDetails } from '../ImportedBillingDetails'
 import { importedMoney, useImportedBilling, type ImportedBilling } from '../importedBilling'
 
@@ -205,6 +206,16 @@ describe('Imported ETS billing', () => {
     await tap(trigger)
     await tap(screen.getByRole('button', { name: 'Outside' }))
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+  it('preserves multiple distinct review reasons and a transparent fallback', async () => {
+    const billing = { ...paid, review_required: true, review_reasons: ['shared_job_identity_conflict', 'imported_financial_rows_differ', 'future_review_code', 'shared_job_identity_conflict'] }
+    expect(importedBillingWarnings(billing)).toHaveLength(3)
+    render(<ImportedBillingDetails billing={billing} />)
+    await userEvent.click(screen.getByRole('button', { name: 'ETS billing details' }))
+    expect(screen.getByRole('tooltip')).toHaveTextContent('ETS source amounts differ from the imported financial records.')
+    expect(screen.getByRole('tooltip')).toHaveTextContent('ETS reported a billing review reason: future review code.')
+    expect(importedBillingWarnings(paid)).toEqual([])
+    expect(importedBillingWarnings({ ...paid, review_required: true })).toContain('ETS flagged this invoice for review without providing a reason.')
   })
   it('does not fetch for a native order', () => {
     renderQuery('native-order', false)
