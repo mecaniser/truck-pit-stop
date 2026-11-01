@@ -39,3 +39,5 @@ Signed-in desktop browser checks all six fields and direction toggles, keyboard 
 Screenshots: [desktop](db042-full-width-names/sort-desktop.png), [desktop menu](db042-full-width-names/sort-menu-desktop.png), [mobile](db042-full-width-names/sort-mobile.png), [mobile menu](db042-full-width-names/sort-menu-mobile.png). Fictional local fixtures.
 
 Runtime refreshed: same worktree/branch, Vite5198 PID74576 source cwd verified; API8015 mount matches checkout, proxy and direct readiness healthy. Existing fictional truckpitstop_db042_qa schema196_historical_owner_self_review matches source, no migration/reseed or service restart. Changed-source dropdown and direction rendered in signed-in local tab. http://127.0.0.1:5198/dashboard/garage/inventory aligned and browser-verified. Extends draft PR #727; not deployed.
+
+Final sorting gates:75 tests pass; TypeScript/Vite build passes; changed-source lint reports no new violations across2 changed TypeScript files; diff check clean. Code revision c71e60bc. Updated draft PR #727 CI remains integration gate; no merge/deployment.
