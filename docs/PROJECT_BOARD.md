@@ -1,3 +1,7 @@
+> **DB-043 bare colored icons / LOCAL VERIFIED, REVIEW (2026-11-01), Frontend & UX:** Removed all icon backgrounds/shadows, including selection. Colors retained with legible light-theme tones; dimensions/sliding marker unchanged. Browser verifies six transparent/no-image/no-shadow glyphs,390px44px targets/no overflow. Same PR728; no merge/deploy.
+
+> **DB-043 bare colored icons / IN PROGRESS (2026-11-01), Frontend & UX:** User removes icon backgrounds. Remove resting/selected housing and shadow; retain individual colors, existing dimensions and sliding marker. Darken bare strokes on light surfaces for contrast. Same PR728; no release.
+
 > **DB-043 colored mechanical icons / LOCAL REVIEW (2026-11-01), Frontend & UX:** User-requested main-rail mechanical material restored only to28px operational/24px tertiary glyphs, each with its own color. Tab backgrounds remain transparent; shared moving underline unchanged. Signed-in desktop/mobile color/size/containment checks and17 tests/lint/build pass. [Evidence](verification/DB043_NAV_STABILITY_2026-11-01.md). Same draft PR728, no merge/deploy.
 
 > **DB-043 colored mechanical icons / IN PROGRESS (2026-11-01), Frontend & UX:** User approves transparent tabs/sliding marker, requests sidebar mechanical icon design and individual colors. Restore only icon housing at28px (tertiary24px), main rail remains34×36px. Acceptance: six distinct icon colors, transparent tab states, unchanged marker travel/focus, desktop/mobile containment and high-contrast fallback. Same PR728; no release.

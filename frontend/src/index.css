@@ -2825,7 +2825,7 @@ html::-webkit-scrollbar-thumb:hover {
   box-shadow: none;
 }
 
-/* Transparent secondary tabs; compact machined icons echo the main rail. */
+/* Transparent secondary tabs and colored glyphs share one moving marker. */
 .db-my-shop-nav-marker { display: none; }
 .db-presentation-new .db-my-shop-navigation { position: relative; }
 .db-presentation-new .db-my-shop-nav-glyph {
@@ -2836,8 +2836,8 @@ html::-webkit-scrollbar-thumb:hover {
   height: 28px;
   border-radius: 8px;
   color: var(--shop-icon-color);
-  background: linear-gradient(145deg, color-mix(in srgb, var(--shell-field-raised) 76%, white), var(--shell-field-raised));
-  box-shadow: 0 2px 3px rgb(0 0 0 / .2), inset 0 1px rgb(255 255 255 / .2);
+  background: transparent;
+  box-shadow: none;
 }
 .db-presentation-new .db-my-shop-nav-glyph > svg { width: 17px; height: 17px; stroke-width: 1.7; }
 .db-my-shop-nav-item[data-shop-section='inventory'] { --shop-icon-color: #dfc8a0; }
@@ -2846,9 +2846,14 @@ html::-webkit-scrollbar-thumb:hover {
 .db-my-shop-nav-item[data-shop-section='labor-book-time'] { --shop-icon-color: #ffac77; }
 .db-my-shop-nav-item[data-shop-section='mechanics'] { --shop-icon-color: #c3b2ff; }
 .db-my-shop-nav-item[data-shop-section='analytics'] { --shop-icon-color: #85d5df; }
-.db-presentation-new .db-my-shop-nav-item[aria-current='page'] .db-my-shop-nav-glyph {
-  background: linear-gradient(145deg, color-mix(in srgb, var(--shop-icon-color) 20%, var(--shell-field-raised)), var(--shell-field-raised));
-}
+
+/* Keep the unbacked icon strokes legible on light surfaces. */
+.db-presentation-new[data-appearance-mode='light'] .db-my-shop-nav-item[data-shop-section='inventory'] { --shop-icon-color: #80602c; }
+.db-presentation-new[data-appearance-mode='light'] .db-my-shop-nav-item[data-shop-section='purchasing'] { --shop-icon-color: #24679a; }
+.db-presentation-new[data-appearance-mode='light'] .db-my-shop-nav-item[data-shop-section='services'] { --shop-icon-color: #287450; }
+.db-presentation-new[data-appearance-mode='light'] .db-my-shop-nav-item[data-shop-section='labor-book-time'] { --shop-icon-color: #a45425; }
+.db-presentation-new[data-appearance-mode='light'] .db-my-shop-nav-item[data-shop-section='mechanics'] { --shop-icon-color: #7354a2; }
+.db-presentation-new[data-appearance-mode='light'] .db-my-shop-nav-item[data-shop-section='analytics'] { --shop-icon-color: #237580; }
 .db-presentation-new .db-my-shop-nav-cluster-secondary .db-my-shop-nav-glyph {
   flex-basis: 24px;
   width: 24px;
@@ -2858,14 +2863,12 @@ html::-webkit-scrollbar-thumb:hover {
 .db-presentation-new .db-my-shop-nav-cluster-secondary .db-my-shop-nav-glyph > svg { width: 16px; height: 16px; }
 .db-presentation-new[data-appearance-mode='high_contrast'] .db-my-shop-nav-glyph {
   color: var(--workspace-text);
-  border: 1px solid var(--workspace-border);
   box-shadow: none;
 }
 @media (forced-colors: active) {
   .db-presentation-new .db-my-shop-nav-glyph {
     color: ButtonText;
-    background: Canvas;
-    border: 1px solid ButtonText;
+    background: transparent;
     box-shadow: none;
   }
 }
