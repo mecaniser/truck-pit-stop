@@ -1,3 +1,4 @@
+import { shopWorkReturnUrl, shopWorkQueryScope } from '@/features/dashboard/shopWorkNavigation'
 import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { usePricingCommand } from '@/features/parts-pricing/usePricingCommand'
@@ -15,7 +16,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import DatePicker from '@/components/DatePicker'
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import { Spinner, LoadingLine } from '@/components/ui'
-import { useMutation, useQuery, useQueryClient, keepPreviousData, useInfiniteQuery,
+import { useMutation, useQuery, useQueryClient, useInfiniteQuery,
 } from '@tanstack/react-query'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useCompactWorkspace } from '@/hooks/useCompactWorkspace'
@@ -320,7 +321,15 @@ function RepairOrderLaborBreakdown({
   )
 }
 
-export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbenchScope?: WorkbenchScope }) {
+export default function RepairOrdersPage(props: { workbenchScope?: WorkbenchScope }) {
+  const actor = useAuthStore(state => state.user)
+  const logoutInProgress = useAuthStore(state => state.logoutInProgress)
+  const queryScope = useAuthStore(state => shopWorkQueryScope(state.user, state.authSessionEpoch))
+  if (!actor || logoutInProgress) return null
+  return <RepairOrdersWorkspace key={queryScope} {...props} queryScope={queryScope} />
+}
+
+function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workbenchScope?: WorkbenchScope; queryScope: string }) {
   const compactWorkspace = useCompactWorkspace()
   const currentUser = useAuthStore((s) => s.user)
   const authSessionEpoch = useAuthStore((s) => s.authSessionEpoch)
@@ -365,7 +374,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   // returns early for the legacy presentation, so a query declared beside
   // statusOptions further down runs on only some renders.
   const statusCountsQuery = useQuery<Record<string, number>>({
-    queryKey: ['repair-orders', 'status-counts', debouncedSearch, scheduleFilters, statusFilter === 'deleted'],
+    queryKey: ['repair-orders', 'status-counts', debouncedSearch, scheduleFilters, statusFilter === 'deleted', queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get('/repair-orders/status-counts', {
       params: { ...scheduleFilters, ...(statusFilter === 'deleted' ? { deleted: true } : {}), ...(debouncedSearch ? { search: debouncedSearch } : {}) },
     })).data,
@@ -532,7 +542,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   // Dashboard cards identify their originating lane in the URL. The focused
   // queue contract keeps workspace navigation from loading dashboard KPIs.
   const { data: workQueueStats, error: workQueueError } = useQuery<WorkQueue>({
-    queryKey: ['dashboard-action-queue'],
+    queryKey: ['dashboard-action-queue', queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get('/dashboard/action-queue')).data,
     enabled: workbenchScope === 'all' && Boolean(workQueueLane && workQueueLane !== 'closed_today'),
     refetchInterval: query => scheduleRefreshInterval([...(query.state.data?.orders_needing_action ?? []), ...(query.state.data?.orders_on_floor ?? []), ...(query.state.data?.orders_ready_to_close ?? [])]),
@@ -546,7 +557,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     isLoading: isDailyWorkbenchLoading,
     isFetching: isDailyWorkbenchFetching,
   } = useQuery<DailyWorkbench>({
-    queryKey: ['dashboard-daily-workset'],
+    queryKey: ['dashboard-daily-workset', queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get('/dashboard/daily-workset')).data,
     enabled: workbenchScope === 'daily' && Boolean(workQueueLane),
     refetchInterval: query => scheduleRefreshInterval(query.state.data ? ['needs_attention', 'on_floor', 'ready_to_close', 'closed_today'].flatMap(key => query.state.data![key as keyof Pick<DailyWorkbench, 'needs_attention' | 'on_floor' | 'ready_to_close' | 'closed_today'>].items) : []),
@@ -585,7 +597,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     return response.data as OrderPage
   }
   const ordersQuery = useInfiniteQuery({
-    queryKey: ['repair-orders', 'infinite', { search: debouncedSearch, status: statusFilter, ...scheduleFilters }] as const,
+    queryKey: ['repair-orders', 'infinite', { search: debouncedSearch, status: statusFilter, ...scheduleFilters }, queryScope] as const,
     queryFn: ({ pageParam, signal }: { pageParam: number; signal: AbortSignal }) => fetchOrderPage(pageParam, signal),
     initialPageParam: 0,
     getNextPageParam: (last: OrderPage, all: OrderPage[]) => (last.has_more ? all.length : undefined),
@@ -600,7 +612,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     // React unmounts the search input mid-word — the operator's focus and the
     // rest of what they were typing go with it. Hold the previous rows on
     // screen while the next ones load.
-    placeholderData: keepPreviousData,
+    placeholderData: (previous, query) => query?.queryKey.includes(queryScope) ? previous : undefined,
   })
   const {
     isLoading,
@@ -620,7 +632,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const totalOrders = ordersQuery.data?.pages[0]?.total ?? 0
   const loadedOrderCount = orders?.length ?? 0
   const repairOrderValueQuery = useQuery<OrderValueSummary>({
-    queryKey: ['repair-orders', 'value-summary', { search: debouncedSearch, status: statusFilter, ...scheduleFilters }],
+    queryKey: ['repair-orders', 'value-summary', { search: debouncedSearch, status: statusFilter, ...scheduleFilters }, queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get('/repair-orders/value-summary', {
       params: {
         ...scheduleFilters,
@@ -640,7 +653,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     retry: false,
   })
   const dailyValueQuery = useQuery<OrderValueSummary>({
-    queryKey: ['dashboard-daily-workset', 'value-summary', workQueueLane, debouncedSearch],
+    queryKey: ['dashboard-daily-workset', 'value-summary', workQueueLane, debouncedSearch, queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get('/dashboard/daily-workset/value-summary', {
       params: {
         lane: workQueueLane,
@@ -772,24 +786,28 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   // a carrier from an order and their tab already has it, and an edit on either
   // screen invalidates both.
   const { data: customerViewRecord, isError: customerViewError, isFetching: customerViewFetching, refetch: refetchCustomerView } = useQuery<Customer>({
-    queryKey: ['customer', customerViewId],
+    queryKey: ['customer', customerViewId, queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get(`/customers/${customerViewId}`)).data,
     enabled: !!customerViewId,
   })
   const { data: customerViewVehicles, isLoading: customerViewVehiclesLoading, isError: customerVehiclesError, isFetching: customerVehiclesFetching, refetch: refetchCustomerVehicles } = useQuery<Vehicle[]>({
-    queryKey: ['customerVehicles', customerViewId],
+    queryKey: ['customerVehicles', customerViewId, queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get(`/customers/${customerViewId}/vehicles`)).data,
     enabled: !!customerViewId,
   })
   const { data: customerViewContacts, isLoading: customerViewContactsLoading, isError: customerContactsError, isFetching: customerContactsFetching, refetch: refetchCustomerContacts } = useQuery<Contact[]>({
-    queryKey: ['customerContacts', customerViewId],
+    queryKey: ['customerContacts', customerViewId, queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get(`/customers/${customerViewId}/contacts`)).data,
     enabled: !!customerViewId,
   })
   const [customerViewTab, setCustomerViewTab] = useState<'overview' | 'history'>('overview')
   const [customerViewExpandedHistoryId, setCustomerViewExpandedHistoryId] = useState<string | null>(null)
   const { data: customerViewHistory, isLoading: customerViewHistoryLoading, isError: customerHistoryError, refetch: refetchCustomerHistory } = useQuery<CustomerHistoryResponse>({
-    queryKey: ['customerHistory', customerViewId],
+    queryKey: ['customerHistory', customerViewId, queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get(`/customers/${customerViewId}/history`)).data,
     enabled: !!customerViewId && customerViewTab === 'history',
   })
@@ -798,7 +816,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   // the customer's truck list. Resolve the explicit URL target independently.
   // Keep the customerVehicles prefix so edits/merges invalidate both views.
   const customerVehicleQuery = useQuery<Vehicle>({
-    queryKey: ['customerVehicles', customerViewId, 'selected', currentUser?.tenant_id, currentUser?.id, currentUser?.role, authSessionEpoch, customerViewVehicleId],
+    queryKey: ['customerVehicles', customerViewId, 'selected', currentUser?.tenant_id, currentUser?.id, currentUser?.role, authSessionEpoch, customerViewVehicleId, queryScope],
+    placeholderData: undefined,
     queryFn: async ({ signal }) => {
       const { data } = await api.get<Vehicle>(`/vehicles/${customerViewVehicleId}`, { signal })
       if (!data || data.id !== customerViewVehicleId || data.tenant_id !== currentUser?.tenant_id) throw new Error('That vehicle is unavailable.')
@@ -839,6 +858,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   })
 
   const closeDetail = () => {
+    const shopWorkReturn = shopWorkReturnUrl(searchParams)
+    if (shopWorkReturn) {
+      clearDetailState()
+      navigate(shopWorkReturn)
+      return
+    }
     const issueOrigin = readTruckIssueReturn(location.state, JSON.stringify([currentUser?.tenant_id, currentUser?.id, currentUser?.role, authSessionEpoch]), searchParams.get('selected'))
     clearDetailState()
     if (issueOrigin) {
@@ -885,7 +910,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     api.get(`/repair-orders/${selectedId}/workspace`, { signal: controller.signal })
       .then((response) => {
         if (cancelled) return
-        queryClient.setQueryData(['repair-order-workspace', selectedId], response.data)
+        queryClient.setQueryData(['repair-order-workspace', selectedId, queryScope], response.data)
         applyDetailState(response.data as RepairOrder)
       })
       .catch(() => {
@@ -908,7 +933,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   // capped, debounced server-side typeahead, so opening an existing order no
   // longer pages through every customer, vehicle, and service in the tenant.
   const { data: customerResults = [], isLoading: isLoadingCustomers, isFetching: isFetchingCustomers } = useQuery<CustomerTypeaheadItem[]>({
-    queryKey: ['customer-typeahead', debouncedCustomerQuery],
+    queryKey: ['customer-typeahead', debouncedCustomerQuery, queryScope],
     queryFn: async ({ signal }) => {
       const response = await api.get('/customers/typeahead', {
         signal,
@@ -920,14 +945,15 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     // Keep the menu stable while a new debounced term is fetched. The spinner
     // in CustomerSelect signals that these are outgoing results until the
     // replacement arrives, avoiding an empty-panel flicker on every keystroke.
-    placeholderData: keepPreviousData,
+    placeholderData: (previous, query) => query?.queryKey.includes(queryScope) ? previous : undefined,
     staleTime: 30_000,
   })
 
   // Fleet company name, so internal fleet ROs show the fleet operator (e.g.
   // "77 Cargo") as the customer instead of the generic house account.
   const { data: fleetSettings } = useQuery<{ fleet_company_name: string | null }>({
-    queryKey: ['fleet-settings'],
+    queryKey: ['fleet-settings', queryScope],
+    placeholderData: undefined,
     queryFn: async ({ signal }) => {
       const response = await api.get('/fleet/settings', { signal })
       return response.data
@@ -940,7 +966,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   })
 
   const { data: vehicleResultPage, isLoading: isLoadingVehicles, isFetching: isFetchingVehicles } = useQuery<{ customerId: string; items: VehicleTypeaheadItem[] }>({
-    queryKey: ['vehicle-typeahead', selectedCustomerId, debouncedVehicleQuery],
+    queryKey: ['vehicle-typeahead', selectedCustomerId, debouncedVehicleQuery, queryScope],
     queryFn: async ({ signal }) => {
       const response = await api.get('/vehicles/typeahead', {
         signal,
@@ -956,14 +982,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       return { customerId: selectedCustomerId, items: response.data }
     },
     enabled: isModalOpen && !!selectedCustomerId && selectedCustomerId !== 'add_new',
-    placeholderData: keepPreviousData,
+    placeholderData: (previous, query) => query?.queryKey.includes(queryScope) ? previous : undefined,
     staleTime: 30_000,
   })
 
   const vehicleResults = useMemo(() => vehicleResultPage?.customerId === selectedCustomerId ? vehicleResultPage.items : [], [vehicleResultPage, selectedCustomerId])
 
   const { data: serviceResults = [], isLoading: isLoadingServices, isFetching: isFetchingServices } = useQuery<ServiceTypeaheadItem[]>({
-    queryKey: ['service-typeahead', debouncedServiceSearch],
+    queryKey: ['service-typeahead', debouncedServiceSearch, queryScope],
     queryFn: async ({ signal }) => {
       const response = await api.get('/services/typeahead', {
         signal,
@@ -972,7 +998,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       return response.data
     },
     enabled: isModalOpen,
-    placeholderData: keepPreviousData,
+    placeholderData: (previous, query) => query?.queryKey.includes(queryScope) ? previous : undefined,
     staleTime: 30_000,
   })
 
@@ -990,7 +1016,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   )
 
   const { data: mechanics } = useQuery<{ mechanic_id: string; mechanic_name: string; assigned_count?: number; in_progress_count?: number }[]>({
-    queryKey: ['mechanics'],
+    queryKey: ['mechanics', queryScope],
+    placeholderData: undefined,
     queryFn: async ({ signal }) => {
       const response = await api.get('/dashboard/mechanics/options', { signal })
       return response.data
@@ -1006,7 +1033,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   // workspace projection observed so remote stage/operation changes refresh
   // the open panel even while its heavier History detail query stays disabled.
   const { data: workspaceOrder } = useQuery<RepairOrder>({
-    queryKey: ['repair-order-workspace', selectedOrder?.id],
+    queryKey: ['repair-order-workspace', selectedOrder?.id, queryScope],
+    placeholderData: undefined,
     queryFn: async ({ signal }) => {
       const orderId = selectedOrder!.id
       const response = await api.get(`/repair-orders/${orderId}/workspace`, { signal })
@@ -1022,8 +1050,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   // Profile refreshes must not repeatedly replace the selected workspace.
   const selectedOrderDetailKey = useMemo(() => [
     'repair-order-detail', selectedOrder?.id, currentUser?.tenant_id,
-    currentUser?.id, currentUser?.role, authSessionEpoch,
-  ] as const, [selectedOrder?.id, currentUser?.tenant_id, currentUser?.id, currentUser?.role, authSessionEpoch])
+    currentUser?.id, currentUser?.role, authSessionEpoch, queryScope,
+  ] as const, [selectedOrder?.id, currentUser?.tenant_id, currentUser?.id, currentUser?.role, authSessionEpoch, queryScope])
   useEffect(() => {
     if (!workspaceOrder || workspaceOrder.id !== selectedOrder?.id) return
     setSelectedOrder(current => {
@@ -1040,6 +1068,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
   const { data: orderDetail, refetch: refetchOrderDetail, isLoading: isOrderDetailLoading, isFetching: isHistoryDetailFetching, isError: isHistoryDetailError } = useQuery<RepairOrderDetail>({
     queryKey: selectedOrderDetailKey,
+    placeholderData: undefined,
     queryFn: async ({ signal }) => {
       const response = await api.get(`/repair-orders/${selectedOrder!.id}/detail`, { signal })
       return response.data
@@ -1067,7 +1096,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const inventory: InventoryItem[] = []
 
   const { data: quoteForOrder, refetch: refetchQuote } = useQuery<Quote | null>({
-    queryKey: ['quote', selectedOrder?.id],
+    queryKey: ['quote', selectedOrder?.id, queryScope],
+    placeholderData: undefined,
     queryFn: async ({ signal }) => {
       const response = await api.get(`/quotes?repair_order_id=${selectedOrder!.id}`, { signal })
       return response.data
@@ -1076,7 +1106,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   })
 
   const { data: authorizationHistory, refetch: refetchAuthorizationHistory, isFetching: isAuthorizationHistoryFetching, isError: isAuthorizationHistoryError } = useQuery<AuthorizationHistory>({
-    queryKey: ['authorization-history', selectedOrder?.id],
+    queryKey: ['authorization-history', selectedOrder?.id, queryScope],
+    placeholderData: undefined,
     queryFn: async ({ signal }) => {
       const response = await api.get(`/quotes/repair-order/${selectedOrder!.id}/history`, { signal })
       return response.data as AuthorizationHistory
@@ -1095,7 +1126,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const importedBillingQuery = useImportedBilling(selectedOrder?.id, importedEtsOrder && isDetailOpen && !selectedOrder?.deleted_at)
   const importedBilling = importedBillingQuery.isError ? undefined : importedBillingQuery.data
   const { data: invoiceForOrder } = useQuery<Invoice | null>({
-    queryKey: ['invoice-for-order', selectedOrder?.id, currentUser?.tenant_id, currentUser?.id, currentUser?.role, authSessionEpoch, importedEtsOrder],
+    queryKey: ['invoice-for-order', selectedOrder?.id, currentUser?.tenant_id, currentUser?.id, currentUser?.role, authSessionEpoch, importedEtsOrder, queryScope],
+    placeholderData: undefined,
     queryFn: async ({ signal }) => {
       const response = await api.get(`/invoices?repair_order_id=${selectedOrder!.id}`, { signal })
       const invoices = response.data as Invoice[]
@@ -1113,7 +1145,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     : invoiceSettlementQuery.data
 
   const { data: truckRecipientConnections = [] } = useQuery<TruckInvoiceRecipientConnection[]>({
-    queryKey: ['vehicle-account-relationships', selectedOrder?.vehicle_id],
+    queryKey: ['vehicle-account-relationships', selectedOrder?.vehicle_id, queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get(`/vehicles/${selectedOrder!.vehicle_id}/relationships`)).data,
     // Connected bill-to companies matter only inside the invoice chooser. The
     // default customer remains available immediately, while this list loads on
@@ -1158,7 +1191,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   }, [selectedOrder?.id, selectedOrder?.customer_id, invoiceRecipientOptions])
 
   const { data: recommendedServices, refetch: refetchRecServices, isFetching: recommendedServicesFetching } = useQuery<RecommendedService[]>({
-    queryKey: ['recommended-services', selectedOrder?.id],
+    queryKey: ['recommended-services', selectedOrder?.id, queryScope],
+    placeholderData: undefined,
     queryFn: async ({ signal }) => {
       const response = await api.get(`/repair-orders/${selectedOrder!.id}/recommended-services`, { signal })
       return response.data
@@ -1312,7 +1346,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   })
 
   const { data: zelleSettings } = useQuery<{ zelle_email: string | null; zelle_phone: string | null; zelle_qr_image: string | null }>({
-    queryKey: ['zelle-settings'],
+    queryKey: ['zelle-settings', queryScope],
+    placeholderData: undefined,
     queryFn: async ({ signal }) => {
       const response = await api.get('/admin/zelle-settings', { signal })
       return response.data
@@ -1321,7 +1356,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   })
 
   const { data: taxFeeSettings } = useQuery<{ labor_rate: number }>({
-    queryKey: ['tax-fee-settings'],
+    queryKey: ['tax-fee-settings', queryScope],
+    placeholderData: undefined,
     queryFn: async ({ signal }) => {
       const response = await api.get('/admin/tax-fee-settings', { signal })
       return response.data
@@ -1711,7 +1747,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       // A previous History visit must not win over the freshly deleted ledger
       // row when it is reopened. Cancelled requests are already aborted above.
       queryClient.removeQueries({ queryKey: ['repair-order-detail', orderId] })
-      queryClient.removeQueries({ queryKey: ['repair-order-workspace', orderId], exact: true })
+      queryClient.removeQueries({ queryKey: ['repair-order-workspace', orderId] })
       toast.success(orderNumber ? `Repair order ${orderNumber} deleted` : 'Repair order deleted')
       // Let the card play its fade+collapse exit before the refetch drops it.
       window.setTimeout(() => {
@@ -1731,7 +1767,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       return response.data as { order: RepairOrder; stock_shortages: string[] }
     },
     onSuccess: ({ order: updated, stock_shortages }) => {
-      queryClient.setQueryData(['repair-order-workspace', updated.id], updated)
+      queryClient.setQueryData(['repair-order-workspace', updated.id, queryScope], updated)
       queryClient.removeQueries({ queryKey: ['repair-order-detail', updated.id] })
       invalidateOrderBoards()
       queryClient.invalidateQueries({ queryKey: ['price-build', updated.id] })
@@ -1858,7 +1894,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       queryClient.invalidateQueries({ queryKey: ['invoice-for-order', updated.repair_order_id] })
       queryClient.invalidateQueries({ queryKey: ['price-build', updated.repair_order_id] })
       queryClient.setQueryData<RepairOrderDetail>(
-        scopedOrderDetailKey('repair-order-detail', updated.repair_order_id, currentUser, authSessionEpoch),
+        [...scopedOrderDetailKey('repair-order-detail', updated.repair_order_id, currentUser, authSessionEpoch), queryScope],
         prev => prev ? { ...prev, status: updated.raw_status } : prev,
       )
       setSelectedOrder(prev => prev ? { ...prev, status: updated.raw_status } : null)
@@ -2334,7 +2370,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   // explicit History intent, because it also pulls parts, labor and PM scope.
   // Notes show whenever the order is open, so they must not depend on it.
   const { data: orderNotesData } = useQuery<RepairOrderHistoryEvent[]>({
-    queryKey: ['repair-order-notes', selectedOrder?.id],
+    queryKey: ['repair-order-notes', selectedOrder?.id, queryScope],
+    placeholderData: undefined,
     queryFn: async ({ signal }) => {
       const response = await api.get(`/repair-orders/${selectedOrder!.id}/notes`, { signal })
       return response.data
@@ -3257,6 +3294,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const pricingNotice = <>{servicePricing.dialog}{legacyPartPricing.dialog}{serviceRecoveryNotice}</>
   return (
     <div className={`db-repair-orders-workspace flex flex-col h-full ${presentationVariant === 'new' ? 'db-repair-orders-workspace--new' : ''} ${presentationVariant === 'new' && isDetailOpen && selectedOrder ? 'db-repair-orders-workspace--detail-open' : ''}`}>
+      {shopWorkReturnUrl(searchParams) && <ControlButton type="button" className="min-h-11 shrink-0 self-start px-3 text-sm font-semibold underline" onClick={() => navigate(shopWorkReturnUrl(searchParams)!)}>Back to Shop Work</ControlButton>}
       {maintenanceFinalization.dialog}
       {maintenanceRemoval.dialog}
 

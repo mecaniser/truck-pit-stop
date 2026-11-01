@@ -312,6 +312,7 @@ export interface ImportedBilling {
   shared_invoice?: boolean
   invoice_id?: string | null
   invoice_number?: string | null
+  source_invoice_url?: string | null
   total_amount?: string | null
   recorded_completed_amount?: string | null
   recorded_remaining_amount?: string | null

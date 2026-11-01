@@ -30,6 +30,32 @@ Acceptance: one visible outline on the actual boundary, matched wrapper/child he
 - Initial six-route desktop/mobile survey found no page overflow; bordered mobile inventory input42px sits inside its44px clickable field, as intended.
 - Raw ESLint exposed existing `no-explicit-any` errors in FleetModals and existing refresh warnings; baseline-aware changed-source lint is the gate. No unrelated lint cleanup included.
 
-## Release
+## Release — complete
 
-PR: https://github.com/mecaniser/truck-pit-stop/pull/745. Baseline-aware lint passed all13 changed TypeScript files with no new violations. Final production build passed; pointer-focus shadow regression also passed. Pending protected CI, merge, deployed commit and production browser acceptance. Do not mark Done until those exist.
+- PR: https://github.com/mecaniser/truck-pit-stop/pull/745
+- Baseline-aware lint:13 changed TypeScript files, no new violations. Production build passed.
+- Final integrated head: `770dcce8d511ecb3da32e91c9eb3b85d3655ec38`. Both concurrent main updates were backend/docs-only; frontend implementation remained unchanged.
+- All7 CI checks passed: https://github.com/mecaniser/truck-pit-stop/actions/runs/41351346898 (including both full suites and Playwright smoke).
+- Squash merge: `b28bac1ab124c9682e9264f1c48dc57fe8aa882f`.
+- Railway deployment: `4ba1f382-3c7d-4e8c-a40b-c223501ecc2e`, SUCCESS, exact merge SHA.
+- Production web and API `/build-version`: exact merge SHA, built2026-11-01T21:29:15.579Z. API readiness: database and Redis healthy.
+
+### Production browser acceptance
+
+Fresh authenticated production tab, real repair-order selected pane, then full ledger and inventory. Read-only navigation/filter controls only; no business records saved.
+
+| Check | Before correction | Released result |
+| --- | --- | --- |
+| Desktop status wrapper / trigger |44px /34px |34px /34px |
+| Desktop status / Overdue top |150px /155px |140px /140px |
+| Desktop search wrapper / input | legacy independent focus styles |34px /34px, one2px inset outline |
+| Mobile status wrapper / trigger / Overdue | not measured before |44px each, top221px each |
+| Inventory search | not measured before |34px outer boundary, one outline, inner outline disabled |
+
+Status dropdown opened with all expected options and closed normally. Focused search/status shells use2px solid inset outlines and no box shadows; inner controls do not duplicate the ring. No page overflow at1440px or390px. No Runtime exceptions or error log entries during captured interactions (initial page load is outside that event window). Local keyboard tests additionally cover Enter/Escape status selection and Tab/Enter Clear behavior; production focus checks used ordinary DOM focus/click through browser tooling.
+
+Visual evidence is local, cropped to controls to exclude customer information:
+- `/Users/sergio_m1_promax/.codex/visualizations/2026/11/01/01a1987c-744f-7bf2-a2e7-bb9ab22a7190/controls-focus-production.png`
+- `/Users/sergio_m1_promax/.codex/visualizations/2026/11/01/01a1987c-744f-7bf2-a2e7-bb9ab22a7190/controls-focus-production-mobile.png`
+
+Temporary browser viewport override reset after acceptance. No unresolved blocker for this correction.

@@ -124,6 +124,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
       source: 'easy_truck_shop_import', evidence_basis: 'ets_source_snapshot', reconciliation_status: 'not_checked',
       invoice_id: 'qa-invoice', total_amount: '100.00', recorded_completed_amount: '0.00', recorded_remaining_amount: '100.00',
       payment_status: 'unpaid', review_required: true, review_reasons: ['shared_job_identity_conflict', 'imported_financial_rows_differ'],
+      source_invoice_url:'https://easytruck.shop/shop1/services/7001/invoice',
     } }] })
     expect(screen.queryByRole('region', { name: 'Why billing needs attention' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Show details for RO-1017' }))
@@ -131,6 +132,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(reasons).toHaveTextContent('Related operations have different customer or vehicle identities. Shared billing needs review.')
     expect(reasons).toHaveTextContent('ETS source amounts differ from the imported financial records.')
     expect(reasons).toHaveTextContent('This invoice has an unpaid balance of $100.00.')
+    await userEvent.click(within(reasons).getByRole('link',{name:/Verify in ETS/}))
     expect(props.onOpenOrder).not.toHaveBeenCalled()
   })
 
