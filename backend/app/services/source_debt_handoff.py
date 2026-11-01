@@ -98,7 +98,7 @@ async def preview(db,tenant_id,invoice_id,customer_id):
 
 async def get_handoff(db,tenant_id,handoff_id,lock=False):
     query=select(SourceDebtHandoff).where(SourceDebtHandoff.id==handoff_id,SourceDebtHandoff.tenant_id==tenant_id,SourceDebtHandoff.deleted_at.is_(None))
-    if lock:query=query.with_for_update()
+    if lock:query=query.with_for_update().execution_options(populate_existing=True)
     row=await db.scalar(query)
     if not row:fail('handoff_not_found','Source debt handoff not found.',404)
     return row
@@ -150,7 +150,7 @@ async def pending_activity(db,invoice_ids,tenant_id):
 async def activate(db,row,actor,body,key):
     await lock_tenant_financials(db,row.tenant_id)
     row=await get_handoff(db,row.tenant_id,row.id,True)
-    payload=body.model_dump(mode='json')
+    payload={'handoff_id':str(row.id),**body.model_dump(mode='json')}
     replay=await db.scalar(select(SourceDebtEvent).where(SourceDebtEvent.tenant_id==row.tenant_id,SourceDebtEvent.request_key=='activate:'+key))
     if replay:
         if replay.request_sha256!=hash_body(payload):fail('idempotency_conflict','Idempotency key was used for a different request.')
@@ -274,7 +274,7 @@ async def record_native_receipt(db,invoice,payment,attempt,actor=None):
 
 async def task_for_tenant(db,tenant_id,task_id,lock=False):
     q=select(EtsReceiptUpdateTask).where(EtsReceiptUpdateTask.tenant_id==tenant_id,EtsReceiptUpdateTask.id==task_id,EtsReceiptUpdateTask.deleted_at.is_(None))
-    if lock:q=q.with_for_update()
+    if lock:q=q.with_for_update().execution_options(populate_existing=True)
     task=await db.scalar(q)
     if not task:fail('ets_task_not_found','ETS update task not found.',404)
     return task
@@ -342,7 +342,7 @@ async def acknowledge_task(db,task,actor,body,key):
 async def reconcile(db,row,actor,body,key):
     await lock_tenant_financials(db,row.tenant_id)
     row=await get_handoff(db,row.tenant_id,row.id,True)
-    request=body.model_dump(mode='json')
+    request={'handoff_id':str(row.id),**body.model_dump(mode='json')}
     previous=await db.scalar(select(SourceDebtEvent).where(SourceDebtEvent.tenant_id==row.tenant_id,SourceDebtEvent.request_key=='reconcile:'+key))
     if previous:
         if previous.request_sha256!=hash_body(request):fail('idempotency_conflict','Idempotency key was used for a different request.')

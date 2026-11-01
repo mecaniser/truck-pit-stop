@@ -1233,7 +1233,7 @@ async def get_dashboard_stats(
                 )
                 .scalar_subquery()
                 .label("total_paid_orders"),
-            ).where(
+            ).join(Invoice, and_(Invoice.id == Payment.invoice_id, Invoice.tenant_id == Payment.tenant_id)).where(
                 Payment.tenant_id == tenant_id,
                 Invoice.accounting_policy != "source_collection_hold",
                 Payment.status == PaymentStatus.COMPLETED,

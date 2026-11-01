@@ -37,7 +37,7 @@ async def test_prepare_only_replay_and_activation_requires_post_ack(db_session,m
     native=await db_session.get(Invoice,row.native_invoice_id)
     assert native.total_amount==Decimal('600') and native.tax_amount==0
     assert native.repair_order_id==original.repair_order_id
-    assert native.line_items_snapshot['labor'][0]['total_cost']=='600'
+    assert Decimal(native.line_items_snapshot['labor'][0]['total_cost'])==Decimal('600')
     assert original.total_amount==Decimal('1000')
     assert (await svc.activate(db_session,row,a,activate,'activate'))[1]
     with pytest.raises(SettlementDomainError) as exc:
@@ -57,7 +57,7 @@ async def test_committed_conflict_replays_same_result_and_hash(db_session,monkey
     _,second=await svc.reconcile(db_session,row,a,request,'reconcile')
     assert first==second=={'conflict':'source_invoice_total_changed'}
     event=await db_session.scalar(select(SourceDebtEvent).where(SourceDebtEvent.request_key=='reconcile:reconcile'))
-    assert event.request_sha256==svc.hash_body(request.model_dump(mode='json'))
+    assert event.request_sha256==svc.hash_body({'handoff_id':str(row.id),**request.model_dump(mode='json')})
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('semantics,reference,reason',[
@@ -157,6 +157,7 @@ async def test_collection_provider_gate_and_accounting_exclusions(db_session,mon
     row=await svc.prepare(db_session,t.id,a,b,'prepare')
     p['summary'].observed_at=datetime.now(timezone.utc)+timedelta(seconds=1)
     row,_=await svc.activate(db_session,row,a,SourceVersionRequest(expected_version=1,expected_source_capture_sha256='a'*64,expected_source_revision='b'*64),'activate')
+    assert (await svc.summary(db_session,row))['collection_enabled'] is True
     monkeypatch.setattr(settings,'INVOICE_SPLIT_PAYMENTS_ENABLED',False)
     result=await svc.summary(db_session,row)
     assert result['collection_enabled'] is False
@@ -168,3 +169,35 @@ async def test_collection_provider_gate_and_accounting_exclusions(db_session,mon
     body=svc.collection_email_html(native,result,InvoicePaymentSummary(state='unpaid',applied_amount='0.00',balance_due='600.00',basis='settlement'),'https://example.test/invoice',t)
     assert 'Transferred balance' in body and '600.00' in body and 'new sale or tax invoice' in body
     assert 'Qty/Hrs' not in body and '>Labor<' not in body
+
+@pytest.mark.asyncio
+async def test_dashboard_revenue_links_payment_invoice_and_tenant(db_session,monkeypatch):
+    from app.api.v1.endpoints.dashboard import get_dashboard_stats
+    from app.api.v1.endpoints import dashboard
+    from sqlalchemy import Date,cast as sqlalchemy_cast
+    # SQLite CAST(datetime AS DATE) returns a year integer; emulate PG date cast.
+    monkeypatch.setattr(dashboard,'cast',lambda expression,target:func.date(expression) if target is Date else sqlalchemy_cast(expression,target))
+    from app.db.models.payment import Payment,PaymentMethod,PaymentStatus
+    from test_db048_invoice_settlements import _add_eligible_invoice
+    t,a,c,original,p,b=await context(db_session,monkeypatch)
+    other,other_owner,other_customer,other_invoice=await _financial_context(db_session,monkeypatch)
+    await _add_eligible_invoice(db_session,tenant=other,customer=other_customer,reference_invoice=other_invoice,with_shadow_settlement=False)
+    db_session.add_all([
+        Payment(tenant_id=t.id,invoice_id=original.id,payment_number='DB149-DASH-OWN',amount=Decimal('100'),method=PaymentMethod.OTHER,status=PaymentStatus.COMPLETED),
+        Payment(tenant_id=other.id,invoice_id=other_invoice.id,payment_number='DB149-DASH-OTHER',amount=Decimal('999'),method=PaymentMethod.OTHER,status=PaymentStatus.COMPLETED),
+    ])
+    await db_session.commit()
+    result=await get_dashboard_stats(db=db_session,current_user=a)
+    assert Decimal(result.revenue.today)==Decimal('100')
+    assert Decimal(result.revenue.this_month)==Decimal('100')
+
+@pytest.mark.asyncio
+async def test_accounting_export_keeps_source_excludes_collection_copy(db_session,monkeypatch):
+    from app.api.v1.endpoints.fleet_invoice_exports import _invoice_query
+    t,a,c,original,p,b=await context(db_session,monkeypatch)
+    original.billed_customer_id=c.id
+    row=await svc.prepare(db_session,t.id,a,b,'prepare')
+    p['summary'].observed_at=datetime.now(timezone.utc)+timedelta(seconds=1)
+    row,_=await svc.activate(db_session,row,a,SourceVersionRequest(expected_version=1,expected_source_capture_sha256='a'*64,expected_source_revision='b'*64),'activate')
+    exported=(await db_session.execute(_invoice_query(NS(tenant_id=t.id,customer_id=c.id)))).all()
+    assert [item[0].id for item in exported]==[original.id]
