@@ -9,7 +9,7 @@ import {
   FileText, FilePlus, CheckCircle2, CreditCard, OctagonX, Trash2, ClipboardList, CircleAlert, SlidersHorizontal, X, ChevronRight, History, RefreshCw,
 } from 'lucide-react'
 import api from '@/lib/api'
-import { useAuthStore } from '@/stores/authStore'
+import { getAuthenticatedSessionIdentity, useAuthStore } from '@/stores/authStore'
 import { useActivityFeed, type ActivityEvent, type ActivityFeedResponse } from './activityFeedQuery'
 import ShopWorkSelect from './ShopWorkSelect'
 import './shopWorkPolish.css'
@@ -60,10 +60,8 @@ function groupByDay(items: ActivityEvent[]) {
 }
 
 export default function RecentActivityFeed({ className }: { className?: string }) {
-  const identity = useAuthStore(state => JSON.stringify([
-    state.user?.tenant_id, state.user?.id, state.user?.role, state.user?.is_active, state.authSessionEpoch,
-  ]))
-  return <ScopedRecentActivityFeed key={identity} className={className} />
+  const identity = useAuthStore(getAuthenticatedSessionIdentity)
+  return <ScopedRecentActivityFeed key={identity ?? 'inactive-session'} className={className} />
 }
 
 function ScopedRecentActivityFeed({ className }: { className?: string }) {

@@ -46,9 +46,10 @@ vi.mock('@tanstack/react-query', async () => {
       : testState.query },
   useQueryClient: () => testState.realQueries ? actual.useQueryClient() : ({ invalidateQueries: testState.invalidateQueries }),
 } })
-vi.mock('../../../stores/authStore', () => ({
+vi.mock('../../../stores/authStore', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../stores/authStore')>(),
   useAuthStore: (selector?: (state: { user: typeof garageOwnerSession | null; authSessionEpoch: number }) => unknown) => {
-    const state = { user: testState.signedOut ? null : testState.actor ?? garageOwnerSession, authSessionEpoch: testState.epoch }
+    const state = { user: testState.signedOut ? null : testState.actor ?? garageOwnerSession, authSessionEpoch: testState.epoch, isAuthenticated: !testState.signedOut, logoutInProgress: false, authProvider: 'legacy' }
     return selector ? selector(state) : state
   },
 }))

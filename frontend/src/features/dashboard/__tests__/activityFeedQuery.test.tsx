@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { activityCountLabel, useActivityFeed } from '../activityFeedQuery'
 
-const state = vi.hoisted(() => ({ user: { id: 'owner', tenant_id: 'shop-a', role: 'garage_owner', is_active: true }, epoch: 1, get: vi.fn() }))
-vi.mock('@/stores/authStore', () => ({ useAuthStore: (select: (s: unknown) => unknown) => select({ user: state.user, authSessionEpoch: state.epoch }) }))
+const state = vi.hoisted(() => ({ user: { id: 'owner', tenant_id: 'shop-a', role: 'garage_owner', is_active: true }, epoch: 1, isAuthenticated: true, logoutInProgress: false, authProvider: 'legacy', get: vi.fn() }))
+vi.mock('@/stores/authStore', async importOriginal => ({ ...await importOriginal<typeof import('@/stores/authStore')>(), useAuthStore: (select: (s: unknown) => unknown) => select({ user: state.user, authSessionEpoch: state.epoch, isAuthenticated: state.isAuthenticated, logoutInProgress: state.logoutInProgress, authProvider: state.authProvider }) }))
 vi.mock('@/lib/api', () => ({ default: { get: state.get } }))
 const page = { items: [{ id: 'event' }], has_more: true, next_cursor: 'next', warnings: [], available_actors: [] }
 function setup() {
@@ -13,7 +13,7 @@ function setup() {
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
   return { client, wrapper }
 }
-beforeEach(() => { state.user = { id: 'owner', tenant_id: 'shop-a', role: 'garage_owner', is_active: true }; state.epoch = 1; state.get.mockReset().mockResolvedValue({ data: page }) })
+beforeEach(() => { state.user = { id: 'owner', tenant_id: 'shop-a', role: 'garage_owner', is_active: true }; state.epoch = 1; state.isAuthenticated = true; state.logoutInProgress = false; state.authProvider = 'legacy'; state.get.mockReset().mockResolvedValue({ data: page }) })
 describe('Shop Work activity summary', () => {
   it('loads on arrival before mounting the feed and shares its unfiltered first page', async () => {
     const { wrapper } = setup()
@@ -58,6 +58,16 @@ describe('Shop Work activity summary', () => {
     await waitFor(() => expect(hook.result.current.isSuccess).toBe(true))
     state.user = { ...state.user, is_active: false }
     hook.rerender()
+    expect(hook.result.current.data).toBeUndefined()
+  })
+  it('does not start another activity request while logout is pending', async () => {
+    const { wrapper } = setup()
+    const hook = renderHook(() => useActivityFeed(), { wrapper })
+    await waitFor(() => expect(hook.result.current.isSuccess).toBe(true))
+    state.logoutInProgress = true
+    state.epoch++
+    hook.rerender()
+    await waitFor(() => expect(state.get).toHaveBeenCalledTimes(1))
     expect(hook.result.current.data).toBeUndefined()
   })
   it.each([[8, false, '8'], [9, false, '9'], [9, true, '9+'], [10, false, '9+'], [20, true, '9+']])('caps %s events with more=%s as %s', (count, more, label) => {

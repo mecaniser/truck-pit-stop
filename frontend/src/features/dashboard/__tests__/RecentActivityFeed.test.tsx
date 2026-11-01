@@ -4,16 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import RecentActivityFeed from '../RecentActivityFeed'
 import type { ActivityFeedResponse } from '../activityFeedQuery'
 
-const state = vi.hoisted(() => ({ user: { id: 'owner', tenant_id: 'shop-a', role: 'garage_owner', is_active: true }, epoch: 1, data: undefined as ActivityFeedResponse | undefined, isLoading: false, isError: false, isFetching: false, error: null as unknown, filters: {} as Record<string, string>, refetch: vi.fn(), get: vi.fn(), navigate: vi.fn() }))
+const state = vi.hoisted(() => ({ user: { id: 'owner', tenant_id: 'shop-a', role: 'garage_owner', is_active: true }, epoch: 1, isAuthenticated: true, logoutInProgress: false, authProvider: 'legacy', data: undefined as ActivityFeedResponse | undefined, isLoading: false, isError: false, isFetching: false, error: null as unknown, filters: {} as Record<string, string>, refetch: vi.fn(), get: vi.fn(), navigate: vi.fn() }))
 vi.mock('../activityFeedQuery', () => ({ useActivityFeed: (filters: Record<string, string>) => { state.filters = filters; return state } }))
-vi.mock('@/stores/authStore', () => ({ useAuthStore: (select: (s: unknown) => unknown) => select({ user: state.user, authSessionEpoch: state.epoch }) }))
+vi.mock('@/stores/authStore', async importOriginal => ({ ...await importOriginal<typeof import('@/stores/authStore')>(), useAuthStore: (select: (s: unknown) => unknown) => select({ user: state.user, authSessionEpoch: state.epoch, isAuthenticated: state.isAuthenticated, logoutInProgress: state.logoutInProgress, authProvider: state.authProvider }) }))
 vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ appearance: {} }), appearanceTokenRecord: () => ({}) }))
 vi.mock('@/lib/api', () => ({ default: { get: state.get } }))
 vi.mock('react-router-dom', () => ({ useNavigate: () => state.navigate }))
 const event = (id: string, actor: string, time: string) => ({ id, event_type: 'ro_created', label: `Created ${id}`, occurred_at: `2026-11-01T${time}:00Z`, actor_name: actor, order_id: `order-${id}`, order_number: `RO-${id}` })
 const page: ActivityFeedResponse = { items: [event('1', 'Alex', '15:00'), event('2', 'Sam', '14:00'), event('3', 'Alex', '13:00')], next_cursor: null, has_more: false, available_actors: [{ id: 'alex', name: 'Alex' }], warnings: [] }
 afterEach(() => vi.unstubAllGlobals())
-beforeEach(() => { state.user = { id: 'owner', tenant_id: 'shop-a', role: 'garage_owner', is_active: true }; state.epoch = 1; vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} }); state.data = structuredClone(page); state.isLoading = false; state.isError = false; state.isFetching = false; state.error = null; state.get.mockReset(); state.refetch.mockReset(); state.navigate.mockReset() })
+beforeEach(() => { state.user = { id: 'owner', tenant_id: 'shop-a', role: 'garage_owner', is_active: true }; state.epoch = 1; state.isAuthenticated = true; state.logoutInProgress = false; state.authProvider = 'legacy'; vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} }); state.data = structuredClone(page); state.isLoading = false; state.isError = false; state.isFetching = false; state.error = null; state.get.mockReset(); state.refetch.mockReset(); state.navigate.mockReset() })
 describe('Shop Work activity consistency', () => {
   it('keeps events in time order across actors and opens the exact existing record', () => {
     render(<RecentActivityFeed />)
