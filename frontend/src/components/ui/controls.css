@@ -46,8 +46,8 @@ body:has([data-db-touch-controls]), [data-db-touch-controls] { --control-height:
 [data-db-control='action'] > svg,
 [data-db-control='icon'] > svg,
 [data-db-control='select'] > svg {
-  width: var(--control-icon-size);
-  height: var(--control-icon-size);
+  width: var(--control-icon-size) !important;
+  height: var(--control-icon-size) !important;
   flex-shrink: 0;
 }
 [data-db-control]:focus-visible {

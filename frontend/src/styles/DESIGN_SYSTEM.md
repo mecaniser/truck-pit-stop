@@ -481,7 +481,7 @@ When updating existing components to use this design system:
 <button className="bg-[var(--accent-600)] hover:bg-[var(--accent-500)] text-white font-semibold px-6 py-3 rounded-xl border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)] transition-all">
 ```
 
-## Application control geometry (DB-151)
+## Application control geometry (DB-152)
 
 Use `ControlButton`, `ControlInput`, and `ControlGroup` from `@/components/ui`.
 Use `PlatformSelect` for controlled option menus, `BaseSelect` for search-backed

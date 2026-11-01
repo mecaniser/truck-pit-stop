@@ -1,4 +1,4 @@
-# DB-151 — shared application controls
+# DB-152 — shared application controls
 
 Owner: Frontend & UX. Fast UI lane. Branch: `codex/shared-controls`.
 Status: local acceptance passed; PR integration gate and authorized release pending.
@@ -7,7 +7,7 @@ Status: local acceptance passed; PR integration gate and authorized release pend
 
 `ControlButton`, `ControlInput`, and `ControlGroup` own native semantics and reusable grouping. `controls.css` owns height, padding, radius, typography, focus, icon sizing and responsive targets. BaseSelect/PlatformSelect, ShopWorkSelect and headless triggers consume the same geometry. Existing surface classes retain colors and emphasis.
 
-The source inventory covers 1,554 buttons and 470 text-like inputs across application features. Structural/content buttons explicitly preserve record, tile, navigation and disclosure layout. Public marketing, checkbox/radio/file/range/color controls retain their distinct contracts. See [inventory](DB151_CONTROL_INVENTORY.md). Build-time `lint:controls` rejects new native buttons/text fields or unmarked headless triggers outside documented primitive exceptions.
+The source inventory covers 1,554 buttons and 470 text-like inputs across application features. Structural/content buttons explicitly preserve record, tile, navigation and disclosure layout. Public marketing, checkbox/radio/file/range/color controls retain their distinct contracts. See [inventory](DB152_CONTROL_INVENTORY.md). Build-time `lint:controls` rejects new native buttons/text fields or unmarked headless triggers outside documented primitive exceptions.
 
 Desktop fine-pointer controls have a 34px minimum height; mobile/coarse-pointer, large density and touch-first portals use 44px. Text can grow rather than clip. Icon actions are square. Appearance font scaling remains inherited. The development-only [catalog](../../frontend/tests/control-catalog.tsx) exercises real primitives without business writes.
 
