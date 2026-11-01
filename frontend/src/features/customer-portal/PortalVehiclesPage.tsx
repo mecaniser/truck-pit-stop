@@ -43,7 +43,7 @@ export default function PortalVehiclesPage() {
           <h1 className="text-2xl font-extrabold tracking-[-0.01em]">My fleet</h1>
           <p className="mt-1 text-[13px] text-[#8b92a5]">{vehicles.length} vehicle{vehicles.length === 1 ? '' : 's'} registered</p>
         </div>
-        <Link
+        <Link data-db-control="action"
           to="/portal/settings?tab=vehicles"
           className="inline-flex h-10 items-center gap-1.5 rounded-[10px] border border-[#272d3d] bg-[#191d2a] px-3.5 text-[13px] font-bold text-[#c9cdd8]"
         >
@@ -110,8 +110,8 @@ export default function PortalVehiclesPage() {
                 <div><SectionLabel className="block text-[10px] text-[#5c6375]">Orders</SectionLabel><span className="mt-1 block text-[#c9cdd8]">{vehicleOrders.length} all-time</span></div>
               </div>
               <div className="grid grid-cols-2 gap-2 sm:flex">
-                <Link to="/portal/services" className="flex h-10 items-center justify-center rounded-[10px] bg-[#8b7cf7] px-4 text-xs font-extrabold text-[#0e1118]">Book service</Link>
-                <Link to="/portal/repairs" className="flex h-10 items-center justify-center rounded-[10px] border border-[#272d3d] bg-[#191d2a] px-4 text-xs font-bold text-[#c9cdd8]">Service history</Link>
+                <Link data-db-control="action" to="/portal/services" className="flex h-10 items-center justify-center rounded-[10px] bg-[#8b7cf7] px-4 text-xs font-extrabold text-[#0e1118]">Book service</Link>
+                <Link data-db-control="action" to="/portal/repairs" className="flex h-10 items-center justify-center rounded-[10px] border border-[#272d3d] bg-[#191d2a] px-4 text-xs font-bold text-[#c9cdd8]">Service history</Link>
               </div>
             </div>
           </Card>

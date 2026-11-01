@@ -352,7 +352,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
   })
 
   it('aligns the selected-record header and filter controls to shared dimensions', () => {
-    expect(LEDGER_CSS).toContain('--db-repair-orders-control-height: 44px')
+    expect(LEDGER_CSS).toContain('--db-repair-orders-control-height: var(--control-height)')
     expect(LEDGER_CSS).toContain('--db-repair-orders-side-control-width: 184px')
     expect(LEDGER_CSS).toContain('.db-presentation-new .db-repair-orders-new__search { height: var(--db-repair-orders-control-height); align-self: stretch; padding: 0; }')
     expect(LEDGER_CSS).toContain('.db-repair-orders-new__status-select { position: relative; display: none; min-width: 0; height: var(--db-repair-orders-control-height); }')

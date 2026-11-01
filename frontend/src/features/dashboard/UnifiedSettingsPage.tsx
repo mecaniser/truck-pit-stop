@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { useState, useEffect, useId, useRef } from 'react'
 import { LoadingLine } from '@/components/ui'
@@ -388,7 +389,7 @@ function PaymentIntegrationPanel({
 
   return (
     <IndustrialCard className="db-settings-payment-card">
-      <button
+      <ControlButton controlKind="content"
         id={triggerId}
         type="button"
         onClick={() => onOpenChange(!open)}
@@ -414,7 +415,7 @@ function PaymentIntegrationPanel({
         )}
         <span className="hidden text-xs font-semibold text-zinc-400 sm:inline">{open ? 'Hide details' : 'Manage'}</span>
         <ChevronDown className={`col-start-3 row-start-1 h-5 w-5 shrink-0 text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
+      </ControlButton>
       {open && (
         <div id={panelId} role="region" aria-labelledby={triggerId} className="border-t border-zinc-800/70 px-6 py-6 sm:px-8">
           {children}
@@ -467,9 +468,9 @@ function PaymentSourceDisconnectDialog({
             </span>
             <h3 id={titleId} className="db-payment-dialog__title text-lg font-semibold">{title}</h3>
           </div>
-          <button type="button" onClick={onCancel} disabled={pending} aria-label="Close confirmation" className="db-payment-dialog__close grid h-9 w-9 shrink-0 place-items-center rounded-lg transition disabled:opacity-50">
+          <ControlButton controlKind="icon" type="button" onClick={onCancel} disabled={pending} aria-label="Close confirmation" className="db-payment-dialog__close grid  w-9 shrink-0 place-items-center rounded-lg transition disabled:opacity-50">
             <X className="h-5 w-5" />
-          </button>
+          </ControlButton>
         </div>
         <p id={descriptionId} className="db-payment-dialog__copy mt-4 text-sm leading-6">{description}</p>
         {notice && (
@@ -478,10 +479,10 @@ function PaymentSourceDisconnectDialog({
           </p>
         )}
         <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-          <button type="button" autoFocus onClick={onCancel} disabled={pending} className={industrialStyles.btnSecondary}>Cancel</button>
-          <button type="button" onClick={onConfirm} disabled={pending} className={industrialStyles.btnDanger}>
+          <ControlButton type="button" autoFocus onClick={onCancel} disabled={pending} className={industrialStyles.btnSecondary}>Cancel</ControlButton>
+          <ControlButton type="button" onClick={onConfirm} disabled={pending} className={industrialStyles.btnDanger}>
             {pending ? pendingLabel : confirmLabel}
-          </button>
+          </ControlButton>
         </div>
       </div>
     </div>
@@ -610,7 +611,7 @@ function ProfileSection() {
                 </div>
               ))}
             </div>
-            <button
+            <ControlButton
               onClick={() => setIsEditing(true)}
               className={industrialStyles.btnPrimary}
             >
@@ -618,30 +619,30 @@ function ProfileSection() {
                 <Settings2 className="w-4 h-4" />
                 Edit Profile
               </span>
-            </button>
+            </ControlButton>
           </div>
         ) : (
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <label className={industrialStyles.label}>First Name</label>
-                <input {...register('first_name')} className={inputClasses(!!errors.first_name)} />
+                <ControlInput {...register('first_name')} className={inputClasses(!!errors.first_name)} />
                 {errors.first_name && <p className="mt-2 text-xs text-red-400">{errors.first_name.message}</p>}
               </div>
               <div>
                 <label className={industrialStyles.label}>Last Name</label>
-                <input {...register('last_name')} className={inputClasses(!!errors.last_name)} />
+                <ControlInput {...register('last_name')} className={inputClasses(!!errors.last_name)} />
                 {errors.last_name && <p className="mt-2 text-xs text-red-400">{errors.last_name.message}</p>}
               </div>
             </div>
             <div>
               <label className={industrialStyles.label}>Email</label>
-              <input {...register('email')} type="email" className={inputClasses(!!errors.email)} />
+              <ControlInput {...register('email')} type="email" className={inputClasses(!!errors.email)} />
               {errors.email && <p className="mt-2 text-xs text-red-400">{errors.email.message}</p>}
             </div>
             <div>
               <label className={industrialStyles.label}>Phone</label>
-              <input {...register('phone')} className={inputClasses(!!errors.phone)} placeholder="(555) 123-4567" />
+              <ControlInput {...register('phone')} className={inputClasses(!!errors.phone)} placeholder="(555) 123-4567" />
               {errors.phone && <p className="mt-2 text-xs text-red-400">{errors.phone.message}</p>}
             </div>
             
@@ -652,38 +653,38 @@ function ProfileSection() {
                   Password Required for Email Change
                 </label>
                 <div className="relative mt-2">
-                  <input
+                  <ControlInput
                     {...register('password')}
                     type={showPassword ? 'text' : 'password'}
                     className={inputClasses(false)}
                     placeholder="Enter your password"
                   />
-                  <button
+                  <ControlButton
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-zinc-500 hover:text-zinc-300"
                   >
                     {showPassword ? 'Hide' : 'Show'}
-                  </button>
+                  </ControlButton>
                 </div>
               </div>
             )}
 
             <div className="flex gap-4 pt-4 border-t border-zinc-800/50">
-              <button
+              <ControlButton
                 type="button"
                 onClick={() => { setIsEditing(false); reset() }}
                 className={industrialStyles.btnSecondary}
               >
                 Cancel
-              </button>
-              <button
+              </ControlButton>
+              <ControlButton
                 type="submit"
                 disabled={updateMutation.isPending}
                 className={industrialStyles.btnPrimary}
               >
                 {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
-              </button>
+              </ControlButton>
             </div>
           </form>
         )}
@@ -946,7 +947,7 @@ function GarageProfileSection() {
               </div>
             </div>
 
-            <button
+            <ControlButton
               onClick={openEditMode}
               className={industrialStyles.btnPrimary}
             >
@@ -954,42 +955,42 @@ function GarageProfileSection() {
                 <Settings2 className="w-4 h-4" />
                 Edit Shop Profile
               </span>
-            </button>
+            </ControlButton>
           </div>
         ) : (
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             <div>
               <label className={industrialStyles.label}>Shop Name</label>
-              <input {...register('name')} className={inputClasses(!!errors.name)} />
+              <ControlInput {...register('name')} className={inputClasses(!!errors.name)} />
               {errors.name && <p className="mt-2 text-xs text-red-400">{errors.name.message}</p>}
             </div>
 
             <div>
               <label className={industrialStyles.label}>Shop Slug (read-only)</label>
-              <input value={garageProfile?.slug || ''} className={`${industrialStyles.input} opacity-70`} disabled />
+              <ControlInput value={garageProfile?.slug || ''} className={`${industrialStyles.input} opacity-70`} disabled />
             </div>
 
             <div>
               <label className={industrialStyles.label}>Shop Email</label>
-              <input {...register('email')} type="email" className={inputClasses(!!errors.email)} placeholder="shop@example.com" />
+              <ControlInput {...register('email')} type="email" className={inputClasses(!!errors.email)} placeholder="shop@example.com" />
               {errors.email && <p className="mt-2 text-xs text-red-400">{errors.email.message}</p>}
             </div>
 
             <div>
               <label className={industrialStyles.label}>Shop Phone</label>
-              <input {...register('phone')} className={inputClasses(!!errors.phone)} placeholder="(555) 123-4567" />
+              <ControlInput {...register('phone')} className={inputClasses(!!errors.phone)} placeholder="(555) 123-4567" />
               {errors.phone && <p className="mt-2 text-xs text-red-400">{errors.phone.message}</p>}
             </div>
 
             <div>
               <label className={industrialStyles.label}>Website</label>
-              <input {...register('website')} className={inputClasses(!!errors.website)} placeholder="https://example.com" />
+              <ControlInput {...register('website')} className={inputClasses(!!errors.website)} placeholder="https://example.com" />
               {errors.website && <p className="mt-2 text-xs text-red-400">{errors.website.message}</p>}
             </div>
 
             <div>
               <label htmlFor="shop-review-url" className={industrialStyles.label}>Review link</label>
-              <input id="shop-review-url" {...register('review_url')} className={inputClasses(!!errors.review_url)} placeholder="https://g.page/r/your-business/review" />
+              <ControlInput id="shop-review-url" {...register('review_url')} className={inputClasses(!!errors.review_url)} placeholder="https://g.page/r/your-business/review" />
               <p className="mt-2 text-xs text-gray-400">Shown on customer invoices, PDFs and invoice emails. Paste your Google review link or another HTTPS review page.</p>
               {errors.review_url && <p className="mt-2 text-xs text-red-400">{errors.review_url.message}</p>}
             </div>
@@ -998,7 +999,7 @@ function GarageProfileSection() {
               <div className="space-y-4">
                 <div>
                   <label className={industrialStyles.label}>Logo URL</label>
-                  <input
+                  <ControlInput
                     {...register('logo_url')}
                     className={inputClasses(!!errors.logo_url)}
                     placeholder="https://cdn.example.com/logo.png"
@@ -1010,7 +1011,7 @@ function GarageProfileSection() {
                 </div>
 
                 <div className="flex flex-wrap gap-3">
-                  <button
+                  <ControlButton
                     type="button"
                     onClick={handleImportLogo}
                     disabled={importLogoMutation.isPending || !websiteValue.trim()}
@@ -1020,9 +1021,9 @@ function GarageProfileSection() {
                       <RefreshCw className={`h-4 w-4 ${importLogoMutation.isPending ? 'animate-spin' : ''}`} />
                       {importLogoMutation.isPending ? 'Importing...' : 'Import from Website'}
                     </span>
-                  </button>
+                  </ControlButton>
 
-                  <button
+                  <ControlButton
                     type="button"
                     onClick={handleClearLogo}
                     disabled={!logoUrlValue}
@@ -1032,7 +1033,7 @@ function GarageProfileSection() {
                       <Trash2 className="h-4 w-4" />
                       Clear Logo
                     </span>
-                  </button>
+                  </ControlButton>
 
                   {logoUrlValue && (
                     <a
@@ -1077,7 +1078,7 @@ function GarageProfileSection() {
 
             <div>
               <label className={industrialStyles.label}>Repair Order Prefix</label>
-              <input
+              <ControlInput
                 {...register('order_number_prefix')}
                 className={inputClasses(!!errors.order_number_prefix)}
                 placeholder={garageProfile?.effective_order_number_prefix || 'TPS'}
@@ -1120,7 +1121,7 @@ function GarageProfileSection() {
             </div>
 
             <div className="flex gap-4 pt-4 border-t border-zinc-800/50">
-              <button
+              <ControlButton
                 type="button"
                 onClick={() => {
                   setIsEditing(false)
@@ -1142,14 +1143,14 @@ function GarageProfileSection() {
                 className={industrialStyles.btnSecondary}
               >
                 Cancel
-              </button>
-              <button
+              </ControlButton>
+              <ControlButton
                 type="submit"
                 disabled={updateMutation.isPending}
                 className={industrialStyles.btnPrimary}
               >
                 {updateMutation.isPending ? 'Saving...' : 'Save Shop Profile'}
-              </button>
+              </ControlButton>
             </div>
           </form>
         )}
@@ -1200,7 +1201,7 @@ function SecuritySection() {
         </p>
 
         {!showForm ? (
-          <button
+          <ControlButton
             onClick={() => setShowForm(true)}
             className={industrialStyles.btnPrimary}
           >
@@ -1208,39 +1209,39 @@ function SecuritySection() {
               <Lock className="w-4 h-4" />
               Change Password
             </span>
-          </button>
+          </ControlButton>
         ) : (
           <form onSubmit={handleSubmit((data) => mutation.mutate(data))} className="space-y-6 max-w-md">
             <div>
               <label className={industrialStyles.label}>Current Password</label>
-              <input {...register('current_password')} type="password" className={errors.current_password ? `${industrialStyles.input} border-red-500` : industrialStyles.input} />
+              <ControlInput {...register('current_password')} type="password" className={errors.current_password ? `${industrialStyles.input} border-red-500` : industrialStyles.input} />
               {errors.current_password && <p className="mt-2 text-xs text-red-400">{errors.current_password.message}</p>}
             </div>
             <div>
               <label className={industrialStyles.label}>New Password</label>
-              <input {...register('new_password')} type="password" className={errors.new_password ? `${industrialStyles.input} border-red-500` : industrialStyles.input} />
+              <ControlInput {...register('new_password')} type="password" className={errors.new_password ? `${industrialStyles.input} border-red-500` : industrialStyles.input} />
               {errors.new_password && <p className="mt-2 text-xs text-red-400">{errors.new_password.message}</p>}
             </div>
             <div>
               <label className={industrialStyles.label}>Confirm New Password</label>
-              <input {...register('confirm_password')} type="password" className={errors.confirm_password ? `${industrialStyles.input} border-red-500` : industrialStyles.input} />
+              <ControlInput {...register('confirm_password')} type="password" className={errors.confirm_password ? `${industrialStyles.input} border-red-500` : industrialStyles.input} />
               {errors.confirm_password && <p className="mt-2 text-xs text-red-400">{errors.confirm_password.message}</p>}
             </div>
             <div className="flex gap-4">
-              <button
+              <ControlButton
                 type="button"
                 onClick={() => { setShowForm(false); reset() }}
                 className={industrialStyles.btnSecondary}
               >
                 Cancel
-              </button>
-              <button
+              </ControlButton>
+              <ControlButton
                 type="submit"
                 disabled={mutation.isPending}
                 className={industrialStyles.btnPrimary}
               >
                 {mutation.isPending ? 'Changing...' : 'Update Password'}
-              </button>
+              </ControlButton>
             </div>
           </form>
         )}
@@ -1256,7 +1257,7 @@ function SecuritySection() {
           Terminate your current session on this device.
         </p>
         
-        <button
+        <ControlButton
           onClick={() => { logout(); navigate('/login') }}
           className={industrialStyles.btnDanger}
         >
@@ -1264,7 +1265,7 @@ function SecuritySection() {
             <Zap className="w-4 h-4" />
             Sign Out
           </span>
-        </button>
+        </ControlButton>
       </IndustrialCard>
     </div>
   )
@@ -1332,7 +1333,7 @@ function PaymentSourceStepUpDialog({
             <h3 id="payment-step-up-title" className="db-payment-dialog__title text-lg font-semibold">{prompt.title}</h3>
             <p id="payment-step-up-description" className="db-payment-dialog__copy mt-2 text-sm leading-6">{prompt.description}</p>
           </div>
-          <button type="button" onClick={onCancel} disabled={grantMutation.isPending} aria-label="Close verification" className="db-payment-dialog__close rounded p-1 disabled:opacity-50"><X className="h-5 w-5" /></button>
+          <ControlButton controlKind="icon" type="button" onClick={onCancel} disabled={grantMutation.isPending} aria-label="Close verification" className="db-payment-dialog__close rounded p-1 disabled:opacity-50"><X className="h-5 w-5" /></ControlButton>
         </div>
         <form className="mt-5 space-y-4" onSubmit={(event) => {
           event.preventDefault()
@@ -1343,12 +1344,12 @@ function PaymentSourceStepUpDialog({
         }}>
           <div>
             <label htmlFor="payment-step-up-password" className={industrialStyles.label}>Your current password</label>
-            <input id="payment-step-up-password" autoFocus disabled={grantMutation.isPending} type="password" autoComplete="current-password" value={password} onChange={(event) => { setPassword(event.target.value); setError(null) }} className={industrialStyles.input} />
+            <ControlInput id="payment-step-up-password" autoFocus disabled={grantMutation.isPending} type="password" autoComplete="current-password" value={password} onChange={(event) => { setPassword(event.target.value); setError(null) }} className={industrialStyles.input} />
             {error && <p className="mt-2 text-xs text-red-400" role="alert">{error}</p>}
           </div>
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-            <button type="button" className={industrialStyles.btnSecondary} onClick={onCancel} disabled={grantMutation.isPending}>Cancel</button>
-            <button type="submit" className={`${industrialStyles.btnDanger} db-payment-dialog__verify-action`} disabled={!password || grantMutation.isPending}>{grantMutation.isPending ? 'Verifying...' : 'Verify and continue'}</button>
+            <ControlButton type="button" className={industrialStyles.btnSecondary} onClick={onCancel} disabled={grantMutation.isPending}>Cancel</ControlButton>
+            <ControlButton type="submit" className={`${industrialStyles.btnDanger} db-payment-dialog__verify-action`} disabled={!password || grantMutation.isPending}>{grantMutation.isPending ? 'Verifying...' : 'Verify and continue'}</ControlButton>
           </div>
         </form>
       </div>
@@ -1593,7 +1594,7 @@ function PaymentsSection() {
 
         <div className="pt-4 border-t border-zinc-800/50">
           {!status?.is_connected && status?.configured ? (
-            <button
+            <ControlButton controlKind="content"
               onClick={() => requestDestructiveStepUp({
                 scope: 'payment_sources.manage',
                 title: 'Verify Stripe connection',
@@ -1614,36 +1615,36 @@ function PaymentsSection() {
                   Set Up Stripe Payments
                 </span>
               )}
-            </button>
+            </ControlButton>
           ) : !status?.is_connected ? (
             <p className="text-sm text-amber-300">The Stripe platform keys must be configured before this shop can begin setup.</p>
           ) : !status.configured && !status.onboarding_complete ? (
             <div className="space-y-3">
               <p className="text-sm text-amber-300">This account is connected, but DieselBridge platform configuration must be restored before onboarding can continue.</p>
-              <button onClick={() => beginStripeDisconnect('current')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
+              <ControlButton onClick={() => beginStripeDisconnect('current')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
                 {disconnectMutation.isPending ? 'Resetting...' : 'Reset Stripe Connection'}
-              </button>
+              </ControlButton>
             </div>
           ) : status.verification_status === 'under_review' ? (
             <div className="space-y-3">
               <p className="text-sm text-sky-300">Verification is in progress. This page refreshes automatically while Stripe reviews your account.</p>
-              <button onClick={() => beginStripeDisconnect('current')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
+              <ControlButton onClick={() => beginStripeDisconnect('current')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
                 {disconnectMutation.isPending ? 'Resetting...' : 'Reset Stripe Connection'}
-              </button>
+              </ControlButton>
             </div>
           ) : !status.onboarding_complete && status.connection_type !== 'express_legacy' ? (
             <div className="flex flex-wrap items-center gap-3">
-              <button onClick={() => requestDestructiveStepUp({
+              <ControlButton onClick={() => requestDestructiveStepUp({
                 scope: 'payment_sources.manage',
                 title: 'Verify Stripe connection',
                 description: 'Enter your current password to continue to Stripe and authorize this connection.',
                 onGranted: (grantToken) => connectMutation.mutate(grantToken),
               })} disabled={connectMutation.isPending || isRedirecting} className={industrialStyles.btnPrimary}>
                 {connectMutation.isPending || isRedirecting ? 'Redirecting...' : status.verification_status === 'needs_information' || status.verification_status === 'restricted' ? 'Update Stripe Details' : 'Continue Stripe Setup'}
-              </button>
-              <button onClick={() => beginStripeDisconnect('current')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
+              </ControlButton>
+              <ControlButton onClick={() => beginStripeDisconnect('current')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
                 {disconnectMutation.isPending ? 'Resetting...' : 'Reset Stripe Connection'}
-              </button>
+              </ControlButton>
             </div>
           ) : status.connection_type !== 'express_legacy' ? (
             <div className="flex flex-wrap items-center gap-3">
@@ -1652,14 +1653,14 @@ function PaymentsSection() {
                   <span className="inline-flex items-center gap-2"><ExternalLink className="w-4 h-4" />View Connected Account Payments</span>
                 </a>
               )}
-              <button onClick={() => beginStripeDisconnect('current')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
+              <ControlButton onClick={() => beginStripeDisconnect('current')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
                 {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect Stripe'}
-              </button>
+              </ControlButton>
             </div>
           ) : (
-            <button onClick={() => beginStripeDisconnect('legacy')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
+            <ControlButton onClick={() => beginStripeDisconnect('legacy')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
               {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect Legacy Connection'}
-            </button>
+            </ControlButton>
           )}
         </div>
       </PaymentIntegrationPanel>
@@ -1990,11 +1991,11 @@ function QuickBooksIntegrationCard({
                 <>
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <p className="text-sm text-[var(--text-secondary)]">Connection management</p>
-                    <button type="button" className={industrialStyles.btnSecondary} aria-expanded={showConnectionSettings} aria-controls={connectionSettingsId} onClick={() => setShowConnectionSettings(!showConnectionSettings)}>{showConnectionSettings ? 'Close management' : 'Manage connection'}</button>
+                    <ControlButton controlKind="action" type="button" className={industrialStyles.btnSecondary} aria-expanded={showConnectionSettings} aria-controls={connectionSettingsId} onClick={() => setShowConnectionSettings(!showConnectionSettings)}>{showConnectionSettings ? 'Close management' : 'Manage connection'}</ControlButton>
                   </div>
                   <div id={connectionSettingsId} hidden={!showConnectionSettings} className="mt-4">
                   {connectionNeedsAttention && (
-                    <button
+                    <ControlButton
                       onClick={() => requestDestructiveStepUp({
                 scope: 'payment_sources.manage',
                 title: 'Verify QuickBooks connection',
@@ -2005,19 +2006,19 @@ function QuickBooksIntegrationCard({
                       className={industrialStyles.btnPrimary}
                     >
                       {connectMutation.isPending || isRedirecting ? 'Redirecting...' : 'Reconnect QuickBooks'}
-                    </button>
+                    </ControlButton>
                   )}
-                  <button
+                  <ControlButton
                     onClick={beginQuickBooksDisconnect}
                     disabled={disconnectMutation.isPending}
                     className={industrialStyles.btnSecondary}
                   >
                     {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect QuickBooks'}
-                  </button>
+                  </ControlButton>
                   </div>
                 </>
               ) : (
-                <button
+                <ControlButton
                   onClick={() => requestDestructiveStepUp({
                 scope: 'payment_sources.manage',
                 title: 'Verify QuickBooks connection',
@@ -2031,7 +2032,7 @@ function QuickBooksIntegrationCard({
                     <Building2 className="w-4 h-4" />
                     {connectMutation.isPending || isRedirecting ? 'Redirecting...' : 'Connect My QuickBooks'}
                   </span>
-                </button>
+                </ControlButton>
               )}
             </div>
           )}
@@ -2180,7 +2181,7 @@ function ZelleSection({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label htmlFor="zelle-payment-email" className={industrialStyles.label}>Zelle Email</label>
-                      <input
+                      <ControlInput
                         id="zelle-payment-email"
                         type="email"
                         value={zelleEmail}
@@ -2192,7 +2193,7 @@ function ZelleSection({
                     </div>
                     <div>
                       <label htmlFor="zelle-payment-phone" className={industrialStyles.label}>Zelle Phone</label>
-                      <input
+                      <ControlInput
                         id="zelle-payment-phone"
                         type="tel"
                         value={zellePhone}
@@ -2205,7 +2206,7 @@ function ZelleSection({
                   </div>
                   {contactEditing && (
                     <div className="flex gap-3">
-                      <button
+                      <ControlButton
                         onClick={() => {
                           const isDisabling = !zelleEmail.trim() && !zellePhone.trim()
                           if (isDisabling) {
@@ -2234,8 +2235,8 @@ function ZelleSection({
                           <Save className="w-4 h-4" />
                           {saveContactMutation.isPending ? 'Saving...' : 'Save'}
                         </span>
-                      </button>
-                      <button
+                      </ControlButton>
+                      <ControlButton
                         onClick={() => {
                           setZelleEmail(zelleSettings?.zelle_email || garageProfile?.email || '')
                           setZellePhone(zelleSettings?.zelle_phone || garageProfile?.phone || '')
@@ -2244,7 +2245,7 @@ function ZelleSection({
                         className={industrialStyles.btnSecondary}
                       >
                         Cancel
-                      </button>
+                      </ControlButton>
                     </div>
                   )}
                 </div>
@@ -2276,7 +2277,7 @@ function ZelleSection({
                 </div>
                 <div className="flex gap-3">
                   {zelleQrPreview && (
-                    <button
+                    <ControlButton
                       onClick={() => requestDestructiveStepUp({
                         scope: 'payment_sources.manage',
                         title: 'Verify Zelle QR upload',
@@ -2290,10 +2291,10 @@ function ZelleSection({
                         <Save className="w-4 h-4" />
                         Save
                       </span>
-                    </button>
+                    </ControlButton>
                   )}
                   {(zelleSettings?.zelle_qr_image || zelleQrPreview) && (
-                    <button
+                    <ControlButton
                       onClick={() => {
                         const removeQr = (grantToken: string) => {
                           setPendingDestructiveAction({ kind: 'remove_qr', grantToken })
@@ -2312,7 +2313,7 @@ function ZelleSection({
                         <Trash2 className="w-4 h-4" />
                         Remove
                       </span>
-                    </button>
+                    </ControlButton>
                   )}
                 </div>
               </div>
@@ -2429,7 +2430,7 @@ function NotificationsSection() {
               Shows the Messages inbox and customer conversations. Turn off to hide the feature shop-wide while it's still being built.
             </p>
           </div>
-          <button
+          <ControlButton controlKind="content"
             onClick={() => messagingMutation.mutate(!messagingEnabled)}
             disabled={messagingMutation.isPending}
             role="switch"
@@ -2444,7 +2445,7 @@ function NotificationsSection() {
             <span aria-hidden="true" className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${
               messagingEnabled ? 'left-7' : 'left-1'
             }`} />
-          </button>
+          </ControlButton>
         </div>
       </IndustrialCard>
 
@@ -2461,7 +2462,7 @@ function NotificationsSection() {
               <h4 className="font-semibold text-zinc-100 text-sm">Enable Reminders</h4>
               <p className="text-xs text-zinc-500 mt-1">Send automatic SMS reminders for overdue invoices</p>
             </div>
-            <button
+            <ControlButton controlKind="content"
               onClick={() => { setRemindersEnabled(!remindersEnabled); setIsEditing(true) }}
               role="switch"
               aria-checked={remindersEnabled}
@@ -2475,14 +2476,14 @@ function NotificationsSection() {
               <span aria-hidden="true" className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${
                 remindersEnabled ? 'left-7' : 'left-1'
               }`} />
-            </button>
+            </ControlButton>
           </div>
 
           {remindersEnabled && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <label className={industrialStyles.label}>Reminder Frequency (days)</label>
-                <input
+                <ControlInput
                   type="number"
                   min="1"
                   max="30"
@@ -2493,7 +2494,7 @@ function NotificationsSection() {
               </div>
               <div>
                 <label className={industrialStyles.label}>Max Reminders</label>
-                <input
+                <ControlInput
                   type="number"
                   min="1"
                   max="10"
@@ -2507,16 +2508,16 @@ function NotificationsSection() {
 
           {isEditing && (
             <div className="flex gap-4 pt-4 border-t border-zinc-800/50">
-              <button onClick={cancelEdit} className={industrialStyles.btnSecondary}>
+              <ControlButton onClick={cancelEdit} className={industrialStyles.btnSecondary}>
                 Cancel
-              </button>
-              <button
+              </ControlButton>
+              <ControlButton
                 onClick={() => saveMutation.mutate()}
                 disabled={saveMutation.isPending}
                 className={industrialStyles.btnPrimary}
               >
                 {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
-              </button>
+              </ControlButton>
             </div>
           )}
         </div>
@@ -2663,7 +2664,7 @@ function FeesSection() {
               </p>
               <div className="flex gap-3 items-start">
                 <div className="flex-1 max-w-xs">
-                  <input
+                  <ControlInput
                     type="password"
                     value={password}
                     onChange={(e) => { setPassword(e.target.value); setPasswordError('') }}
@@ -2673,7 +2674,7 @@ function FeesSection() {
                   />
                   {passwordError && <p className="text-xs text-red-400 mt-2">{passwordError}</p>}
                 </div>
-                <button
+                <ControlButton controlKind="content"
                   onClick={handleUnlock}
                   disabled={isVerifying}
                   className={industrialStyles.btnPrimary}
@@ -2689,7 +2690,7 @@ function FeesSection() {
                       Unlock
                     </span>
                   )}
-                </button>
+                </ControlButton>
               </div>
             </div>
           </div>
@@ -2699,7 +2700,7 @@ function FeesSection() {
               <div>
                 <label className={industrialStyles.label}>Sales Tax (%)</label>
                 <div className="relative">
-                  <input
+                  <ControlInput
                     type="text"
                     value={salesTaxRate}
                     onChange={handleRateChange(setSalesTaxRate)}
@@ -2712,7 +2713,7 @@ function FeesSection() {
               <div>
                 <label className={industrialStyles.label}>Supplies (%)</label>
                 <div className="relative">
-                  <input
+                  <ControlInput
                     type="text"
                     value={shopSuppliesRate}
                     onChange={handleRateChange(setShopSuppliesRate)}
@@ -2725,7 +2726,7 @@ function FeesSection() {
               <div>
                 <label className={industrialStyles.label}>Card Processing Fee (%)</label>
                 <div className="relative">
-                  <input
+                  <ControlInput
                     type="text"
                     value={serviceFeeRate}
                     onChange={handleRateChange(setServiceFeeRate)}
@@ -2737,7 +2738,7 @@ function FeesSection() {
               </div>
               <div>
                 <label className={industrialStyles.label}>Labor Rate ($/hr)</label>
-                <input
+                <ControlInput
                   type="text"
                   value={laborRate}
                   onChange={handleRateChange(setLaborRate)}
@@ -2747,7 +2748,7 @@ function FeesSection() {
               </div>
               <div>
                 <label className={industrialStyles.label}>Internal Fleet Labor Rate ($/hr)</label>
-                <input
+                <ControlInput
                   type="text"
                   value={internalLaborRate}
                   onChange={handleRateChange(setInternalLaborRate)}
@@ -2760,17 +2761,17 @@ function FeesSection() {
 
             <SurchargeExplanation />
             <div className="flex gap-4 pt-4 border-t border-zinc-800/50">
-              <button onClick={cancelEdit} className={industrialStyles.btnSecondary}>
+              <ControlButton onClick={cancelEdit} className={industrialStyles.btnSecondary}>
                 Cancel
-              </button>
+              </ControlButton>
               {hasChanges && (
-                <button
+                <ControlButton
                   onClick={() => saveMutation.mutate()}
                   disabled={saveMutation.isPending}
                   className={industrialStyles.btnPrimary}
                 >
                   {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
-                </button>
+                </ControlButton>
               )}
             </div>
           </div>
@@ -2920,7 +2921,7 @@ function FleetSection() {
               <div className="flex gap-3 items-start">
                 <div className="flex-1 max-w-xs">
                   <label htmlFor="fleet-configuration-password" className="sr-only">Password</label>
-                  <input
+                  <ControlInput
                     id="fleet-configuration-password"
                     type="password"
                     value={password}
@@ -2931,7 +2932,7 @@ function FleetSection() {
                   />
                   {passwordError && <p className="text-xs text-red-400 mt-2">{passwordError}</p>}
                 </div>
-                <button
+                <ControlButton controlKind="content"
                   onClick={handleUnlock}
                   disabled={isVerifying}
                   className={industrialStyles.btnPrimary}
@@ -2947,7 +2948,7 @@ function FleetSection() {
                       Unlock
                     </span>
                   )}
-                </button>
+                </ControlButton>
               </div>
             </div>
           </div>
@@ -2955,7 +2956,7 @@ function FleetSection() {
           <div className="space-y-6">
             <div>
               <label className={industrialStyles.label}>Internal Fleet Company Name</label>
-              <input
+              <ControlInput
                 type="text"
                 value={fleetCompanyName}
                 onChange={(e) => setFleetCompanyName(e.target.value)}
@@ -2984,17 +2985,17 @@ function FleetSection() {
             </div>
 
             <div className="flex gap-4 pt-4 border-t border-zinc-800/50">
-              <button onClick={cancelEdit} className={industrialStyles.btnSecondary}>
+              <ControlButton onClick={cancelEdit} className={industrialStyles.btnSecondary}>
                 Cancel
-              </button>
+              </ControlButton>
               {hasChanges && (
-                <button
+                <ControlButton
                   onClick={() => saveMutation.mutate()}
                   disabled={saveMutation.isPending}
                   className={industrialStyles.btnPrimary}
                 >
                   {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
-                </button>
+                </ControlButton>
               )}
             </div>
           </div>
@@ -3008,7 +3009,7 @@ function FleetSection() {
             <Truck className="w-4 h-4 text-[var(--accent-400)]" />
             <span>Fleet Overview</span>
           </div>
-          <button
+          <ControlButton
             onClick={() => navigate('/fleet', {
               state: {
                 returnTo: '/dashboard/settings?section=fleet',
@@ -3021,7 +3022,7 @@ function FleetSection() {
               Manage on Fleet board
               <ChevronRight className="w-4 h-4" />
             </span>
-          </button>
+          </ControlButton>
         </div>
 
         <section className="db-settings-fleet-overview__section">
@@ -3217,7 +3218,7 @@ function WorkforceSection() {
                   <span className="text-zinc-500 font-normal ml-2">({(parseInt(coreMinutes, 10) / 60).toFixed(1)}h)</span>
                 )}
               </label>
-              <input
+              <ControlInput
                 type="number"
                 min={1}
                 max={1440}
@@ -3245,7 +3246,7 @@ function WorkforceSection() {
             </div>
             <div>
               <label className={industrialStyles.label}>Shift Start (HH:MM)</label>
-              <input
+              <ControlInput
                 type="text"
                 value={shiftStart}
                 onChange={(e) => { setShiftStart(e.target.value); setIsEditing(true) }}
@@ -3255,7 +3256,7 @@ function WorkforceSection() {
             </div>
             <div>
               <label className={industrialStyles.label}>Shift End (HH:MM)</label>
-              <input
+              <ControlInput
                 type="text"
                 value={shiftEnd}
                 onChange={(e) => { setShiftEnd(e.target.value); setIsEditing(true) }}
@@ -3267,17 +3268,17 @@ function WorkforceSection() {
 
           {isEditing && (
             <div className="flex gap-4 pt-4 border-t border-zinc-800/50">
-              <button onClick={cancelEdit} className={industrialStyles.btnSecondary}>
+              <ControlButton onClick={cancelEdit} className={industrialStyles.btnSecondary}>
                 Cancel
-              </button>
+              </ControlButton>
               {hasChanges && (
-                <button
+                <ControlButton
                   onClick={handleSave}
                   disabled={saveMutation.isPending}
                   className={industrialStyles.btnPrimary}
                 >
                   {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
-                </button>
+                </ControlButton>
               )}
             </div>
           )}
@@ -3326,13 +3327,13 @@ export function LegacyAppearanceSection() {
         <div className={industrialStyles.sectionHeader}>
           <Palette className="w-4 h-4 text-[var(--accent-400)]" />
           <span>Live Preview</span>
-          <button
+          <ControlButton
             onClick={resetToDefaults}
-            className="ml-auto px-3 py-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-300 border border-zinc-700/50 hover:border-zinc-600 rounded-lg transition-colors flex items-center gap-2"
+            className="ml-auto px-3  text-xs font-medium text-zinc-500 hover:text-zinc-300 border border-zinc-700/50 hover:border-zinc-600 rounded-lg transition-colors flex items-center gap-2"
           >
             <RotateCcw className="w-3 h-3" />
             Reset
-          </button>
+          </ControlButton>
         </div>
 
         <div className="p-4 bg-zinc-800/40 border border-zinc-700/50 rounded-xl" style={{ borderColor: accentColors[500] + '40' }}>
@@ -3349,18 +3350,18 @@ export function LegacyAppearanceSection() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <button 
-              className="px-4 py-2.5 text-white text-sm font-semibold rounded-xl border transition-all hover:shadow-lg"
+            <ControlButton
+              className="px-4  text-white text-sm font-semibold rounded-xl border transition-all hover:shadow-lg"
               style={{ backgroundColor: accentColors[500], borderColor: accentColors[400] + '60' }}
             >
               Primary Button
-            </button>
-            <button 
-              className="px-4 py-2.5 text-sm font-semibold rounded-xl border bg-transparent transition-all"
+            </ControlButton>
+            <ControlButton
+              className="px-4  text-sm font-semibold rounded-xl border bg-transparent transition-all"
               style={{ borderColor: accentColors[500], color: accentColors[500] }}
             >
               Secondary
-            </button>
+            </ControlButton>
             <span 
               className="px-3 py-1.5 text-xs font-semibold rounded-full border"
               style={{ backgroundColor: accentColors[500] + '20', color: accentColors[400], borderColor: accentColors[500] + '40' }}
@@ -3384,7 +3385,7 @@ export function LegacyAppearanceSection() {
 
         <div className="flex flex-wrap gap-4">
           {ACCENT_OPTIONS.map((option, i) => (
-            <button
+            <ControlButton controlKind="content"
               key={option.id}
               onClick={() => setAccent(option.id)}
               style={staggeredReveal(i)}
@@ -3409,7 +3410,7 @@ export function LegacyAppearanceSection() {
               }`}>
                 {option.label}
               </span>
-            </button>
+            </ControlButton>
           ))}
         </div>
       </IndustrialCard>
@@ -3423,7 +3424,7 @@ export function LegacyAppearanceSection() {
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {FONT_FAMILY_OPTIONS.map((option, i) => (
-            <button
+            <ControlButton controlKind="content"
               key={option.id}
               onClick={() => setFontFamily(option.id)}
               style={{ ...staggeredReveal(i), fontFamily: option.stack }}
@@ -3437,7 +3438,7 @@ export function LegacyAppearanceSection() {
                 {option.label}
               </span>
               <span className="block text-xs text-zinc-600 mt-1">Aa Bb Cc 123</span>
-            </button>
+            </ControlButton>
           ))}
         </div>
       </IndustrialCard>
@@ -3451,11 +3452,11 @@ export function LegacyAppearanceSection() {
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {FONT_SIZE_OPTIONS.map((option, i) => (
-            <button
+            <ControlButton
               key={option.id}
               onClick={() => setFontSize(option.id)}
               style={staggeredReveal(i)}
-              className={`py-3 px-4 text-center rounded-xl border transition-all animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 ${
+              className={` px-4 text-center rounded-xl border transition-all animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 ${
                 fontSize === option.id
                   ? 'border-white/50 bg-zinc-800/80'
                   : 'border-zinc-700/50 hover:border-zinc-600 bg-zinc-800/40'
@@ -3467,7 +3468,7 @@ export function LegacyAppearanceSection() {
               <span className="hidden sm:block text-xs text-zinc-600 mt-1">
                 {option.previewPx}px
               </span>
-            </button>
+            </ControlButton>
           ))}
         </div>
         <p className="mt-4 text-xs text-zinc-600">
@@ -3484,7 +3485,7 @@ export function LegacyAppearanceSection() {
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {NOTIFICATION_POSITION_OPTIONS.map((option, i) => (
-            <button
+            <ControlButton controlKind="content"
               key={option.id}
               type="button"
               onClick={() => previewNotificationPosition(option.id)}
@@ -3502,7 +3503,7 @@ export function LegacyAppearanceSection() {
               <span className="block text-xs text-zinc-600 mt-2 leading-relaxed">
                 {option.description}
               </span>
-            </button>
+            </ControlButton>
           ))}
         </div>
       </IndustrialCard>
@@ -3523,7 +3524,7 @@ export function LegacyAppearanceSection() {
               { id: 'legacy', label: 'Classic', description: 'The original workspace.' },
               { id: 'new', label: 'Modern', description: 'The rebuilt workspace.' },
             ] as const).map(option => (
-              <button
+              <ControlButton controlKind="content"
                 key={option.id}
                 type="button"
                 aria-pressed={presentationVariant === option.id}
@@ -3542,7 +3543,7 @@ export function LegacyAppearanceSection() {
                 <span className="block text-xs text-zinc-600 mt-2 leading-relaxed">
                   {option.description}
                 </span>
-              </button>
+              </ControlButton>
             ))}
           </div>
 
@@ -3593,10 +3594,10 @@ function QuickBooksRateGuidance() {
   const ratesId = useId()
   return (
       <section aria-label="Processing rates" className="text-sm text-[var(--text-secondary)] leading-relaxed">
-        <button type="button" aria-expanded={expanded} aria-controls={ratesId} onClick={() => setExpanded(!expanded)} className="flex min-h-12 w-full items-center justify-between gap-4 rounded-lg px-3 py-3 text-left font-semibold text-[var(--text-primary)] transition-colors hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent-500)]">
+        <ControlButton controlKind="content" type="button" aria-expanded={expanded} aria-controls={ratesId} onClick={() => setExpanded(!expanded)} className="flex min-h-12 w-full items-center justify-between gap-4 rounded-lg px-3 py-3 text-left font-semibold text-[var(--text-primary)] transition-colors hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent-500)]">
           <span>Processing rates</span>
           <ChevronDown aria-hidden="true" className={`h-4 w-4 shrink-0 transition-transform duration-200 motion-reduce:transition-none ${expanded ? 'rotate-180' : ''}`} />
-        </button>
+        </ControlButton>
         <div id={ratesId} aria-hidden={!expanded} className="grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none" style={{ gridTemplateRows: expanded ? '1fr' : '0fr', visibility: expanded ? 'visible' : 'hidden' }}>
         <div className="min-h-0 overflow-hidden"><div className="space-y-3 px-3 pb-3 pt-2">
           <dl className="space-y-2">
@@ -3624,8 +3625,8 @@ function PaymentsAccountingSection({ user }: { user: UserType | null }) {
     <div className="space-y-6">
       <h2 className="sr-only">Payments &amp; Accounting</h2>
       <div className="flex flex-wrap gap-2" role="group" aria-label="Payments & Accounting views">
-        {canManagePayments && <button type="button" aria-pressed={showSources} onClick={() => setView('sources')} className={showSources ? industrialStyles.btnPrimary : industrialStyles.btnSecondary}>Payment sources</button>}
-        {canManageFees && <button type="button" aria-pressed={!showSources} onClick={() => { setHasOpenedFees(true); setView('fees') }} className={!showSources ? industrialStyles.btnPrimary : industrialStyles.btnSecondary}>Taxes &amp; Fees</button>}
+        {canManagePayments && <ControlButton controlKind="action" type="button" aria-pressed={showSources} onClick={() => setView('sources')} className={showSources ? industrialStyles.btnPrimary : industrialStyles.btnSecondary}>Payment sources</ControlButton>}
+        {canManageFees && <ControlButton controlKind="action" type="button" aria-pressed={!showSources} onClick={() => { setHasOpenedFees(true); setView('fees') }} className={!showSources ? industrialStyles.btnPrimary : industrialStyles.btnSecondary}>Taxes &amp; Fees</ControlButton>}
       </div>
       {/* Preserve drafts and the existing scoped unlock while switching subviews.
           Permission checks still prevent either protected component mounting. */}
@@ -3711,7 +3712,7 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
       {/* New presentation: one compact context selector prevents section tabs
           from becoming an unreadable horizontal scroller on narrow screens. */}
       <div ref={mobileSectionSelectorRef} className="db-settings-mobile-section-selector lg:hidden">
-        <button
+        <ControlButton controlKind="action"
           type="button"
           aria-label={`Settings section: ${activeSectionMeta.label}`}
           aria-expanded={isMobileSectionMenuOpen}
@@ -3726,7 +3727,7 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
           <ActiveSectionIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span className="min-w-0 flex-1 truncate text-left">{activeSectionMeta.label}</span>
           <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${isMobileSectionMenuOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
-        </button>
+        </ControlButton>
         {isMobileSectionMenuOpen && (
           <div
             id={mobileSectionMenuId}
@@ -3742,7 +3743,7 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
                 <p className="db-settings-mobile-section-selector__group-label">{group.label}</p>
                 <div className="space-y-1">
                   {group.sections.map((section) => (
-                    <button
+                    <ControlButton controlKind="content"
                       key={section.id}
                       type="button"
                       data-active={activeSection === section.id}
@@ -3753,7 +3754,7 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
                       <section.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
                       <span className="min-w-0 flex-1 text-left">{section.label}</span>
                       {activeSection === section.id && <Check className="h-4 w-4 shrink-0" aria-hidden="true" />}
-                    </button>
+                    </ControlButton>
                   ))}
                 </div>
               </div>
@@ -3768,11 +3769,11 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
         <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-2xl p-2">
           <nav className="flex gap-2 overflow-x-auto scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
             {allSections.map((section) => (
-              <button
+              <ControlButton
                 key={section.id}
                 onClick={() => setActiveSection(section.id)}
                 data-active={activeSection === section.id}
-                className={`db-settings-nav-item flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-medium transition-colors flex-shrink-0 rounded-xl border ${
+                className={`db-settings-nav-item flex items-center justify-center gap-2 px-4  text-xs font-medium transition-colors flex-shrink-0 rounded-xl border ${
                   activeSection === section.id
                     ? 'bg-[var(--accent-600)] border-[var(--accent-400)]/50 text-white shadow-lg shadow-[var(--accent-500)]/20'
                     : 'bg-zinc-800/60 border-zinc-700/50 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600'
@@ -3780,7 +3781,7 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
               >
                 <section.icon className="w-4 h-4 flex-shrink-0" />
                 <span className="whitespace-nowrap">{section.shortLabel}</span>
-              </button>
+              </ControlButton>
             ))}
           </nav>
         </div>
@@ -3797,11 +3798,11 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
             </h3>
             <nav className="space-y-1">
               {PROFILE_SECTIONS.map((section) => (
-                <button
+                <ControlButton
                   key={section.id}
                   onClick={() => setActiveSection(section.id)}
                   data-active={activeSection === section.id}
-                  className={`db-settings-nav-item w-full flex items-center gap-3 px-3 py-3 text-sm font-medium transition-colors rounded-xl ${
+                  className={`db-settings-nav-item w-full flex items-center gap-3 px-3  text-sm font-medium transition-colors rounded-xl ${
                     activeSection === section.id
                       ? 'bg-[var(--accent-500)]/10 text-[var(--accent-400)] border border-[var(--accent-500)]/30'
                       : 'border border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60'
@@ -3812,7 +3813,7 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
                   {activeSection === section.id && (
                     <ChevronRight className="w-4 h-4 ml-auto mr-1 flex-shrink-0" />
                   )}
-                </button>
+                </ControlButton>
               ))}
             </nav>
           </div>
@@ -3826,11 +3827,11 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
               </h3>
               <nav className="space-y-1">
                 {PLATFORM_SECTIONS.map((section) => (
-                  <button
+                  <ControlButton
                     key={section.id}
                     onClick={() => setActiveSection(section.id)}
                     data-active={activeSection === section.id}
-                    className={`db-settings-nav-item w-full flex items-center gap-3 px-3 py-3 text-sm font-medium transition-colors rounded-xl ${
+                    className={`db-settings-nav-item w-full flex items-center gap-3 px-3  text-sm font-medium transition-colors rounded-xl ${
                       activeSection === section.id
                         ? 'bg-[var(--accent-500)]/10 text-[var(--accent-400)] border border-[var(--accent-500)]/30'
                         : 'border border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60'
@@ -3841,7 +3842,7 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
                     {activeSection === section.id && (
                       <ChevronRight className="w-4 h-4 ml-auto mr-1 flex-shrink-0" />
                     )}
-                  </button>
+                  </ControlButton>
                 ))}
               </nav>
             </div>
@@ -3856,11 +3857,11 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
               </h3>
               <nav className="space-y-1">
                 {garageSections.map((section) => (
-                  <button
+                  <ControlButton
                     key={section.id}
                     onClick={() => setActiveSection(section.id)}
                     data-active={activeSection === section.id}
-                    className={`db-settings-nav-item w-full flex items-center gap-3 px-3 py-3 text-sm font-medium transition-colors rounded-xl ${
+                    className={`db-settings-nav-item w-full flex items-center gap-3 px-3  text-sm font-medium transition-colors rounded-xl ${
                       activeSection === section.id
                         ? 'bg-[var(--accent-500)]/10 text-[var(--accent-400)] border border-[var(--accent-500)]/30'
                         : 'border border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60'
@@ -3871,7 +3872,7 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
                     {activeSection === section.id && (
                       <ChevronRight className="w-4 h-4 ml-auto mr-1 flex-shrink-0" />
                     )}
-                  </button>
+                  </ControlButton>
                 ))}
               </nav>
             </div>
@@ -3888,11 +3889,11 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
               </h3>
               <nav className="space-y-1" aria-label="Additional services">
                 {additionalServiceSections.map((section) => (
-                  <button
+                  <ControlButton
                     key={section.id}
                     onClick={() => setActiveSection(section.id)}
                     data-active={activeSection === section.id}
-                    className={`db-settings-nav-item w-full flex items-center gap-3 px-3 py-3 text-sm font-medium transition-colors rounded-xl ${
+                    className={`db-settings-nav-item w-full flex items-center gap-3 px-3  text-sm font-medium transition-colors rounded-xl ${
                       activeSection === section.id
                         ? 'bg-[var(--accent-500)]/10 text-[var(--accent-400)] border border-[var(--accent-500)]/30'
                         : 'border border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60'
@@ -3903,7 +3904,7 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
                     {activeSection === section.id && (
                       <ChevronRight className="w-4 h-4 ml-auto mr-1 flex-shrink-0" />
                     )}
-                  </button>
+                  </ControlButton>
                 ))}
               </nav>
             </div>

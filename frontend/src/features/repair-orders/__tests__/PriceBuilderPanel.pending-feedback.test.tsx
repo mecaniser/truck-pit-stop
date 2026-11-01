@@ -617,9 +617,11 @@ describe('PriceBuilderPanel pending feedback', () => {
     })
     const mobileAction = actions.find((action) => action.parentElement?.classList.contains('sm:hidden'))
     const desktopAction = actions.find((action) => action.classList.contains('sm:inline-flex'))
-    expect(mobileAction).toHaveClass('min-h-[44px]', 'w-full')
+    expect(mobileAction).toHaveAttribute('data-db-control', 'action')
+    expect(mobileAction).toHaveClass('w-full')
     expect(mobileAction?.parentElement).toHaveClass('sm:hidden')
-    expect(desktopAction).toHaveClass('hidden', 'h-8', 'sm:inline-flex')
+    expect(desktopAction).toHaveAttribute('data-db-control', 'action')
+    expect(desktopAction).toHaveClass('hidden', 'sm:inline-flex')
 
     await waitFor(() => expect(mobileAction).toBeEnabled())
     mobileAction?.focus()
@@ -1059,10 +1061,10 @@ describe('PriceBuilderPanel pending feedback', () => {
     })
     const footer = container.querySelector('.db-workspace-footer') as HTMLElement
 
-    expect(within(footer).getByText('ETS invoice total')).toBeVisible()
+    expect(within(footer).getByText('Invoice total')).toBeVisible()
     expect(within(footer).getAllByText('$534.41')).toHaveLength(1)
-    expect(within(footer).getByText('Paid in ETS')).toBeVisible()
-    expect(within(footer).getByText('$0.00')).toBeVisible()
+    expect(within(footer).getByText('Paid in full')).toBeVisible()
+    expect(within(footer).queryByText('$0.00')).not.toBeInTheDocument()
     expect(screen.queryByText('ETS invoice on file · no new invoice')).not.toBeInTheDocument()
     await userEvent.click(within(footer).getByRole('button', { name: 'ETS billing details' }))
     expect(screen.getByText('ETS invoice on file · no new invoice')).toBeVisible()

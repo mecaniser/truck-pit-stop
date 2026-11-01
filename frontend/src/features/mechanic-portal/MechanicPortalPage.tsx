@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { MechanicOperations } from '@/features/operation-execution/OperationExecution'
 import OrderChecklist from '@/features/service-checklists/OrderChecklist'
 import { errorDetail as checklistErrorDetail, openChecklistOnCompletionError } from '@/features/service-checklists/queries'
@@ -286,7 +287,7 @@ function LiveTimer({ startedAt, totalMinutesToday = 0, operationTime = false }: 
 
 // Responsive container - full width on mobile, max 512px on larger screens, centered
 const Container = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
-  <div className={`min-h-screen bg-zinc-950 touch-manipulation ${className}`}>
+  <div data-db-touch-controls className={`min-h-screen bg-zinc-950 touch-manipulation ${className}`}>
     <div className="w-full sm:max-w-lg sm:mx-auto bg-zinc-950 min-h-screen relative sm:shadow-2xl sm:shadow-black/50 pb-[env(safe-area-inset-bottom)]">
       {children}
     </div>
@@ -954,13 +955,13 @@ export default function MechanicPortalPage() {
                   <span className="font-mono">{mechanicSuggestion.recommendedJob?.order_number}</span>
                   <span className="font-mono text-emerald-300">{formatSecondsAsClock(activeSessionElapsedSeconds)}</span>
                 </div>
-                <button
+                <ControlButton
                   onClick={() => { if (mechanicSuggestion.recommendedJob) { if (suggestedOperationsOnly) setExpandedJobId(mechanicSuggestion.recommendedJob.id); else completeWorkMutation.mutate(mechanicSuggestion.recommendedJob.id) } }}
                   disabled={completeWorkMutation.isPending || !mechanicSuggestion.recommendedJob}
-                  className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white text-base font-semibold whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed shrink-0 border border-emerald-400/50 transition-all hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
+                  className="px-5  rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white text-base font-semibold whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed shrink-0 border border-emerald-400/50 transition-all hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
                 >
                   {completeWorkMutation.isPending ? 'Completing...' : suggestedOperationsOnly ? 'Operations' : 'Job Done'}
-                </button>
+                </ControlButton>
               </div>
             ) : (
               <div className="flex items-center justify-between gap-3">
@@ -969,57 +970,57 @@ export default function MechanicPortalPage() {
                     ? `Start ${MISC_WORK_OPTIONS.find((o) => o.value === miscCategory)?.label || 'misc'} timer`
                     : mechanicSuggestion.action === 'start_assigned_ro' && suggestedOperationsOnly ? 'Your assigned work' : formatSuggestedNextAction(mechanicSuggestion.action)}
                 </div>
-                <button
+                <ControlButton
                   onClick={handleStickyAction}
                   disabled={stickyActionBusy}
-                  className="px-5 py-3 rounded-xl bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] text-white text-base font-semibold whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed shrink-0 border border-[var(--accent-400)]/50 transition-all hover:shadow-[0_0_24px_var(--accent-500)]"
+                  className="px-5  rounded-xl bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] text-white text-base font-semibold whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed shrink-0 border border-[var(--accent-400)]/50 transition-all hover:shadow-[0_0_24px_var(--accent-500)]"
                 >
                   {stickyActionBusy
                     ? '...'
                     : mechanicSuggestion.action === 'start_misc'
                       ? `Start ${MISC_WORK_OPTIONS.find((o) => o.value === miscCategory)?.label || 'Misc'}`
                       : mechanicSuggestion.action === 'start_assigned_ro' && suggestedOperationsOnly ? 'Open operations' : getSuggestedActionButtonLabel(mechanicSuggestion.action)}
-                </button>
+                </ControlButton>
               </div>
             )}
           </div>
         ) : null}
         <div className="max-w-lg mx-auto bg-zinc-900/95 backdrop-blur-sm border-t border-zinc-700/50 px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex justify-around">
-          <button
+          <ControlButton controlKind="content"
             onClick={() => setView('list')}
             className={`flex flex-col items-center justify-center gap-0.5 min-h-[48px] min-w-[64px] rounded-xl active:bg-zinc-800/60 transition-colors ${currentView !== 'list' && currentView !== 'detail' ? 'text-zinc-500' : 'text-[var(--accent-400)]'}`}
           >
             <Wrench className="w-7 h-7" />
             <span className="text-[11px] font-medium">Jobs</span>
-          </button>
-          <button
+          </ControlButton>
+          <ControlButton controlKind="content"
             onClick={() => setView('history')}
             className={`flex flex-col items-center justify-center gap-0.5 min-h-[48px] min-w-[64px] rounded-xl active:bg-zinc-800/60 transition-colors ${currentView !== 'history' ? 'text-zinc-500' : 'text-[var(--accent-400)]'}`}
           >
             <History className="w-7 h-7" />
             <span className="text-[11px] font-medium">History</span>
-          </button>
-          <button
+          </ControlButton>
+          <ControlButton controlKind="content"
             onClick={() => setView('stats')}
             className={`flex flex-col items-center justify-center gap-0.5 min-h-[48px] min-w-[64px] rounded-xl active:bg-zinc-800/60 transition-colors ${currentView !== 'stats' && currentView !== 'request' ? 'text-zinc-500' : 'text-[var(--accent-400)]'}`}
           >
             <Trophy className="w-7 h-7" />
             <span className="text-[11px] font-medium">Rewards</span>
-          </button>
-          <button
+          </ControlButton>
+          <ControlButton controlKind="content"
             onClick={() => setView('profile')}
             className={`flex flex-col items-center justify-center gap-0.5 min-h-[48px] min-w-[64px] rounded-xl active:bg-zinc-800/60 transition-colors ${currentView !== 'profile' ? 'text-zinc-500' : 'text-[var(--accent-400)]'}`}
           >
             <User className="w-7 h-7" />
             <span className="text-[11px] font-medium">Profile</span>
-          </button>
+          </ControlButton>
         </div>
       </div>
     )
   }
 
   if (view === 'detail' && selectedJobId && (!jobDetail || jobDetailError)) {
-    return <Container><div className="p-4 space-y-3"><button type="button" onClick={goBack} className="inline-flex min-h-10 items-center gap-2 text-zinc-200"><ArrowLeft size={18} />Back to jobs</button>{jobDetailError ? <p role="alert" className="text-red-300">Job details could not be refreshed. <button type="button" onClick={() => void refetchJobDetail()} className="min-h-10 whitespace-nowrap underline">Retry job details</button></p> : <p role="status">Loading job…</p>}</div><BottomNav /></Container>
+    return <Container><div className="p-4 space-y-3"><ControlButton type="button" onClick={goBack} className="inline-flex  items-center gap-2 text-zinc-200"><ArrowLeft size={18} />Back to jobs</ControlButton>{jobDetailError ? <p role="alert" className="text-red-300">Job details could not be refreshed. <ControlButton type="button" onClick={() => void refetchJobDetail()} className=" whitespace-nowrap underline">Retry job details</ControlButton></p> : <p role="status">Loading job…</p>}</div><BottomNav /></Container>
   }
 
   // ============ JOB DETAIL VIEW ============
@@ -1033,9 +1034,9 @@ export default function MechanicPortalPage() {
         <div className="flex flex-col min-h-screen">
           {/* Header */}
           <header className="bg-zinc-900/80 backdrop-blur-sm px-4 py-3 flex items-center gap-3 border-b border-zinc-700/50">
-            <button onClick={goBack} className="p-3 -ml-3 active:bg-zinc-800 rounded-xl">
+            <ControlButton onClick={goBack} className="p-3 -ml-3 active:bg-zinc-800 rounded-xl">
               <ArrowLeft className="w-6 h-6 text-zinc-400" />
-            </button>
+            </ControlButton>
             <div className="flex-1">
               <p className="text-xs text-zinc-500 uppercase tracking-wide">
                 {STATUS_LABELS[jobDetail.status] || jobDetail.status}
@@ -1086,14 +1087,14 @@ export default function MechanicPortalPage() {
           {/* BIG ACTION BUTTON */}
           <div className="db-mechanic-stage-actions p-4 mt-auto">
             {jobDetail.is_order_lead && (jobDetail.status === 'assigned' || jobDetail.status === 'acknowledged') && (
-              <button
+              <ControlButton
                 onClick={() => acceptAndStartMutation.mutate({ orderId: jobDetail.id, currentStatus: jobDetail.status })}
                 disabled={isPending}
-                className="w-full py-5 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-[var(--accent-400)]/50 hover:shadow-[0_0_32px_var(--accent-500)]"
+                className="w-full  bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-[var(--accent-400)]/50 hover:shadow-[0_0_32px_var(--accent-500)]"
               >
                 {isPending ? <Spinner size="lg" /> : <PlayCircle className="w-7 h-7" />}
                 ACCEPT & START
-              </button>
+              </ControlButton>
             )}
 
             {jobDetail.is_order_lead && jobDetail.status === 'in_progress' && jobDetail.hold_reason && (
@@ -1105,22 +1106,22 @@ export default function MechanicPortalPage() {
                   </span>
                 </div>
                 <div className="db-mechanic-stage-buttons">
-                  <button
+                  <ControlButton
                     onClick={() => resumeOrderMutation.mutate(jobDetail.id)}
                     disabled={isPending}
-                    className="w-full py-5 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
+                    className="w-full  bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
                   >
                     {isPending ? <Spinner size="lg" /> : <PlayCircle className="w-7 h-7" />}
                     RESUME
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton
                     onClick={() => completeWorkMutation.mutate(jobDetail.id)}
                     disabled={isPending}
-                    className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-emerald-400/50 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
+                    className="w-full  bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-emerald-400/50 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
                   >
                     {isPending ? <Spinner size="lg" /> : <CheckCircle className="w-7 h-7" />}
                     JOB DONE
-                  </button>
+                  </ControlButton>
                 </div>
               </div>
             )}
@@ -1132,7 +1133,7 @@ export default function MechanicPortalPage() {
                     <p className="text-sm text-zinc-400 font-medium">Why are you pausing?</p>
                     <div className="flex flex-wrap gap-2">
                       {HOLD_REASONS.map((r) => (
-                        <button
+                        <ControlButton controlKind="content"
                           key={r.value}
                           type="button"
                           onClick={() => setHoldReason(r.value)}
@@ -1143,53 +1144,53 @@ export default function MechanicPortalPage() {
                           }`}
                         >
                           {r.label}
-                        </button>
+                        </ControlButton>
                       ))}
                     </div>
                     <div className="db-mechanic-stage-buttons">
-                      <button
+                      <ControlButton
                         onClick={() => { setHoldTarget(null); setHoldReason('') }}
-                        className="py-4 bg-zinc-800/80 hover:bg-zinc-700 active:scale-[0.98] text-zinc-300 text-lg font-semibold rounded-2xl transition-all border border-zinc-600/50"
+                        className=" bg-zinc-800/80 hover:bg-zinc-700 active:scale-[0.98] text-zinc-300 text-lg font-semibold rounded-2xl transition-all border border-zinc-600/50"
                       >
                         Cancel
-                      </button>
-                      <button
+                      </ControlButton>
+                      <ControlButton
                         onClick={() => holdReason && holdOrderMutation.mutate({ orderId: jobDetail.id, reason: holdReason })}
                         disabled={!holdReason || holdOrderMutation.isPending}
-                        className="py-4 bg-amber-600 hover:bg-amber-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-lg font-semibold rounded-2xl transition-all border border-amber-400/50"
+                        className=" bg-amber-600 hover:bg-amber-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-lg font-semibold rounded-2xl transition-all border border-amber-400/50"
                       >
                         {holdOrderMutation.isPending ? 'Holding...' : 'Confirm Hold'}
-                      </button>
+                      </ControlButton>
                     </div>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     <div className="db-mechanic-stage-buttons">
                       {!isTimedForDetail && (
-                        <button
+                        <ControlButton
                           onClick={() => acceptAndStartMutation.mutate({ orderId: jobDetail.id, currentStatus: jobDetail.status })}
                           disabled={isPending}
-                          className="w-full py-5 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
+                          className="w-full  bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
                         >
                           {isPending ? <Spinner size="lg" /> : <PlayCircle className="w-7 h-7" />}
                           RESUME
-                        </button>
+                        </ControlButton>
                       )}
-                      <button
+                      <ControlButton
                         onClick={() => setHoldTarget(jobDetail.id)}
-                        className="w-full py-5 bg-amber-600/80 hover:bg-amber-600 active:scale-[0.98] text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-amber-400/50"
+                        className="w-full  bg-amber-600/80 hover:bg-amber-600 active:scale-[0.98] text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-amber-400/50"
                       >
                         <PauseCircle className="w-7 h-7" />
                         HOLD
-                      </button>
-                      <button
+                      </ControlButton>
+                      <ControlButton
                         onClick={() => completeWorkMutation.mutate(jobDetail.id)}
                         disabled={isPending}
-                        className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-emerald-400/50 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
+                        className="w-full  bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-emerald-400/50 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
                       >
                         {isPending ? <Spinner size="lg" /> : <CheckCircle className="w-7 h-7" />}
                         DONE
-                      </button>
+                      </ControlButton>
                     </div>
                   </div>
                 )}
@@ -1228,9 +1229,9 @@ export default function MechanicPortalPage() {
     return (
       <Container>
         <header className="bg-zinc-900/80 backdrop-blur-sm px-4 py-3 flex items-center gap-3 border-b border-zinc-700/50">
-          <button onClick={() => setView('list')} className="p-3 -ml-3 active:bg-zinc-800 rounded-xl">
+          <ControlButton onClick={() => setView('list')} className="p-3 -ml-3 active:bg-zinc-800 rounded-xl">
             <ArrowLeft className="w-6 h-6 text-zinc-400" />
-          </button>
+          </ControlButton>
           <h1 className="text-lg font-bold text-zinc-100">Work History</h1>
         </header>
 
@@ -1242,7 +1243,7 @@ export default function MechanicPortalPage() {
           ) : history && history.length > 0 ? (
             <div className="space-y-3">
               {history.map((item) => (
-                <button
+                <ControlButton controlKind="content"
                   key={item.id}
                   onClick={() => openJob(item.id, 'history')}
                   className="w-full text-left bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 hover:border-[var(--accent-500)]/40 transition-all shadow-xl shadow-black/20 hover:shadow-[var(--accent-500)]/10"
@@ -1263,7 +1264,7 @@ export default function MechanicPortalPage() {
                       <span className="text-xs text-[var(--accent-400)] font-mono">{item.actual_hours}h worked</span>
                     )}
                   </div>
-                </button>
+                </ControlButton>
               ))}
             </div>
           ) : (
@@ -1292,9 +1293,9 @@ export default function MechanicPortalPage() {
     return (
       <Container>
         <header className="bg-zinc-900/80 backdrop-blur-sm px-4 py-3 flex items-center gap-3 border-b border-zinc-700/50">
-          <button onClick={() => setView('list')} className="p-3 -ml-3 active:bg-zinc-800 rounded-xl">
+          <ControlButton onClick={() => setView('list')} className="p-3 -ml-3 active:bg-zinc-800 rounded-xl">
             <ArrowLeft className="w-6 h-6 text-zinc-400" />
-          </button>
+          </ControlButton>
           <h1 className="text-lg font-bold text-zinc-100">My Stats & Rewards</h1>
         </header>
 
@@ -1375,13 +1376,13 @@ export default function MechanicPortalPage() {
             </div>
 
             {/* Request Button */}
-            <button
+            <ControlButton
               onClick={() => setView('request')}
               disabled={availablePoints <= 0}
-              className="w-full py-4 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all mt-3 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
+              className="w-full  bg-[var(--accent-600)] hover:bg-[var(--accent-500)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all mt-3 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
             >
               Request PTO or Cash
-            </button>
+            </ControlButton>
           </div>
 
           {/* Job Counts */}
@@ -1471,9 +1472,9 @@ export default function MechanicPortalPage() {
     return (
       <Container>
         <header className="bg-zinc-900/80 backdrop-blur-sm px-4 py-3 flex items-center gap-3 border-b border-zinc-700/50">
-          <button onClick={() => setView('stats')} className="p-3 -ml-3 active:bg-zinc-800 rounded-xl">
+          <ControlButton onClick={() => setView('stats')} className="p-3 -ml-3 active:bg-zinc-800 rounded-xl">
             <ArrowLeft className="w-6 h-6 text-zinc-400" />
-          </button>
+          </ControlButton>
           <h1 className="text-lg font-bold text-zinc-100">Request Rewards</h1>
         </header>
 
@@ -1486,9 +1487,9 @@ export default function MechanicPortalPage() {
 
           {/* Request Type Toggle */}
           <div className="flex gap-2 bg-zinc-900/80 backdrop-blur-sm p-1.5 rounded-2xl border border-zinc-700/50">
-            <button
+            <ControlButton
               onClick={() => setRequestType('pto')}
-              className={`flex-1 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
+              className={`flex-1  rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
                 requestType === 'pto' 
                   ? 'bg-[var(--accent-500)]/20 text-white border border-[var(--accent-500)]/50' 
                   : 'text-zinc-500 border border-transparent hover:text-zinc-300 hover:bg-zinc-800/40'
@@ -1496,10 +1497,10 @@ export default function MechanicPortalPage() {
             >
               <Calendar className="w-5 h-5" />
               PTO
-            </button>
-            <button
+            </ControlButton>
+            <ControlButton
               onClick={() => setRequestType('cash')}
-              className={`flex-1 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
+              className={`flex-1  rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
                 requestType === 'cash' 
                   ? 'bg-emerald-500/20 text-white border border-emerald-500/50' 
                   : 'text-zinc-500 border border-transparent hover:text-zinc-300 hover:bg-zinc-800/40'
@@ -1507,7 +1508,7 @@ export default function MechanicPortalPage() {
             >
               <DollarSign className="w-5 h-5" />
               Cash
-            </button>
+            </ControlButton>
           </div>
 
           {/* PTO Form */}
@@ -1553,7 +1554,7 @@ export default function MechanicPortalPage() {
                 rows={2}
               />
 
-              <button
+              <ControlButton
                 onClick={() => {
                   if (!ptoStartDate || !ptoEndDate) {
                     toast.error('Please select dates')
@@ -1572,11 +1573,11 @@ export default function MechanicPortalPage() {
                   })
                 }}
                 disabled={!canRequestPTO || !ptoStartDate || !ptoEndDate || ptoPointsNeeded > availablePoints || createRequestMutation.isPending}
-                className="w-full py-4 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
+                className="w-full  bg-[var(--accent-600)] hover:bg-[var(--accent-500)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
               >
                 {createRequestMutation.isPending ? <Spinner size="sm" /> : <Calendar className="w-5 h-5" />}
                 Request PTO
-              </button>
+              </ControlButton>
             </div>
           )}
 
@@ -1599,7 +1600,7 @@ export default function MechanicPortalPage() {
                 rows={2}
               />
 
-              <button
+              <ControlButton
                 onClick={() => {
                   if (availablePoints <= 0) {
                     toast.error('No points to cash out')
@@ -1612,11 +1613,11 @@ export default function MechanicPortalPage() {
                   })
                 }}
                 disabled={availablePoints <= 0 || createRequestMutation.isPending}
-                className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-emerald-400/50 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
+                className="w-full  bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-emerald-400/50 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
               >
                 {createRequestMutation.isPending ? <Spinner size="sm" /> : <DollarSign className="w-5 h-5" />}
                 Request Cash Out
-              </button>
+              </ControlButton>
             </div>
           )}
 
@@ -1663,12 +1664,12 @@ export default function MechanicPortalPage() {
                         {format(new Date(req.created_at), 'MMM d, yyyy')}
                       </span>
                       {req.status === 'pending' && (
-                        <button
+                        <ControlButton
                           onClick={() => cancelRequestMutation.mutate(req.id)}
                           className="text-xs text-red-400 hover:text-red-300 transition-colors"
                         >
                           Cancel
-                        </button>
+                        </ControlButton>
                       )}
                     </div>
                     {req.manager_notes && (
@@ -1738,9 +1739,9 @@ export default function MechanicPortalPage() {
     return (
       <Container>
         <header className="bg-zinc-900/80 backdrop-blur-sm px-4 py-3 flex items-center gap-3 border-b border-zinc-700/50">
-          <button onClick={() => setView('list')} className="p-3 -ml-3 active:bg-zinc-800 rounded-xl">
+          <ControlButton onClick={() => setView('list')} className="p-3 -ml-3 active:bg-zinc-800 rounded-xl">
             <ArrowLeft className="w-6 h-6 text-zinc-400" />
-          </button>
+          </ControlButton>
           <h1 className="text-lg font-bold text-zinc-100">Profile Settings</h1>
         </header>
 
@@ -1750,7 +1751,7 @@ export default function MechanicPortalPage() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-zinc-100 font-semibold">Personal Information</h2>
               {!isEditingProfile && (
-                <button
+                <ControlButton
                   onClick={() => {
                     setFirstName(user?.first_name || '')
                     setLastName(user?.last_name || '')
@@ -1758,10 +1759,10 @@ export default function MechanicPortalPage() {
                     setPhone(user?.phone || '')
                     setIsEditingProfile(true)
                   }}
-                  className="px-4 py-2 text-sm bg-[var(--accent-600)] hover:bg-[var(--accent-500)] text-white rounded-xl transition-all border border-[var(--accent-400)]/50 hover:shadow-[0_0_16px_var(--accent-500)]"
+                  className="px-4  text-sm bg-[var(--accent-600)] hover:bg-[var(--accent-500)] text-white rounded-xl transition-all border border-[var(--accent-400)]/50 hover:shadow-[0_0_16px_var(--accent-500)]"
                 >
                   Edit
-                </button>
+                </ControlButton>
               )}
             </div>
             
@@ -1786,31 +1787,31 @@ export default function MechanicPortalPage() {
               <div className="space-y-3">
               <div>
                 <label className="block text-xs font-medium text-zinc-400 mb-2">First Name</label>
-                <input
+                <ControlInput
                   type="text"
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
-                  className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all hover:border-zinc-500"
+                  className="w-full px-4  bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all hover:border-zinc-500"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-medium text-zinc-400 mb-2">Last Name</label>
-                <input
+                <ControlInput
                   type="text"
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
-                  className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all hover:border-zinc-500"
+                  className="w-full px-4  bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all hover:border-zinc-500"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-medium text-zinc-400 mb-2">Email Address</label>
-                <input
+                <ControlInput
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all hover:border-zinc-500"
+                  className="w-full px-4  bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all hover:border-zinc-500"
                 />
                 <p className="text-xs text-zinc-500 mt-1">This is your login email</p>
                 {email !== originalEmail && (
@@ -1824,12 +1825,12 @@ export default function MechanicPortalPage() {
 
               <div>
                 <label className="block text-xs font-medium text-zinc-400 mb-2">Phone</label>
-                <input
+                <ControlInput
                   type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="(555) 123-4567"
-                  className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all hover:border-zinc-500"
+                  className="w-full px-4  bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all hover:border-zinc-500"
                 />
               </div>
 
@@ -1838,20 +1839,20 @@ export default function MechanicPortalPage() {
                 <div>
                   <label className="block text-xs font-medium text-zinc-400 mb-2">Confirm Password</label>
                   <div className="relative">
-                    <input
+                    <ControlInput
                       type={showProfilePassword ? 'text' : 'password'}
                       value={profilePassword}
                       onChange={(e) => setProfilePassword(e.target.value)}
                       placeholder="Enter your current password"
                       className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all hover:border-zinc-500 pr-12"
                     />
-                    <button
+                    <ControlButton
                       type="button"
                       onClick={() => setShowProfilePassword(!showProfilePassword)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-100 p-1 transition-colors"
                     >
                       {showProfilePassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
+                    </ControlButton>
                   </div>
                   <p className="text-xs text-amber-400 mt-1">
                     Password required for security
@@ -1860,7 +1861,7 @@ export default function MechanicPortalPage() {
               )}
 
                 <div className="flex gap-2 pt-2">
-                  <button
+                  <ControlButton
                     type="button"
                     onClick={() => {
                       setFirstName(user?.first_name || '')
@@ -1870,18 +1871,18 @@ export default function MechanicPortalPage() {
                       setProfilePassword('')
                       setIsEditingProfile(false)
                     }}
-                    className="flex-1 py-3 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 font-semibold rounded-xl transition-all border border-zinc-600/50 hover:border-zinc-500"
+                    className="flex-1  bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 font-semibold rounded-xl transition-all border border-zinc-600/50 hover:border-zinc-500"
                   >
                     Cancel
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton
                     onClick={handleProfileUpdate}
                     disabled={updateProfileMutation.isPending}
-                    className="flex-1 py-3 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
+                    className="flex-1  bg-[var(--accent-600)] hover:bg-[var(--accent-500)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
                   >
                     {updateProfileMutation.isPending ? <Spinner size="sm" /> : <CheckCircle className="w-5 h-5" />}
                     Save
-                  </button>
+                  </ControlButton>
                 </div>
               </div>
             )}
@@ -1892,17 +1893,17 @@ export default function MechanicPortalPage() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-zinc-100 font-semibold">Change Password</h2>
               {!isChangingPassword && (
-                <button
+                <ControlButton
                   onClick={() => {
                     setCurrentPassword('')
                     setNewPassword('')
                     setConfirmPassword('')
                     setIsChangingPassword(true)
                   }}
-                  className="px-4 py-2 text-sm bg-amber-600 hover:bg-amber-500 text-white rounded-xl transition-all border border-amber-400/50 hover:shadow-[0_0_16px_rgba(251,191,36,0.4)]"
+                  className="px-4  text-sm bg-amber-600 hover:bg-amber-500 text-white rounded-xl transition-all border border-amber-400/50 hover:shadow-[0_0_16px_rgba(251,191,36,0.4)]"
                 >
                   Change
-                </button>
+                </ControlButton>
               )}
             </div>
             
@@ -1911,54 +1912,54 @@ export default function MechanicPortalPage() {
               <div>
                 <label className="block text-xs font-medium text-zinc-400 mb-2">Current Password</label>
                 <div className="relative">
-                  <input
+                  <ControlInput
                     type={showCurrentPassword ? 'text' : 'password'}
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
                     className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all hover:border-zinc-500 pr-12"
                   />
-                  <button
+                  <ControlButton
                     type="button"
                     onClick={() => setShowCurrentPassword(!showCurrentPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-100 p-1 transition-colors"
                   >
                     {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
+                  </ControlButton>
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-medium text-zinc-400 mb-2">New Password</label>
                 <div className="relative">
-                  <input
+                  <ControlInput
                     type={showNewPassword ? 'text' : 'password'}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all hover:border-zinc-500 pr-12"
                   />
-                  <button
+                  <ControlButton
                     type="button"
                     onClick={() => setShowNewPassword(!showNewPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-100 p-1 transition-colors"
                   >
                     {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
+                  </ControlButton>
                 </div>
                 <p className="text-xs text-zinc-500 mt-1">Min 8 characters</p>
               </div>
 
               <div>
                 <label className="block text-xs font-medium text-zinc-400 mb-2">Confirm New Password</label>
-                <input
+                <ControlInput
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all hover:border-zinc-500"
+                  className="w-full px-4  bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all hover:border-zinc-500"
                 />
               </div>
 
                 <div className="flex gap-2 pt-2">
-                  <button
+                  <ControlButton
                     type="button"
                     onClick={() => {
                       setCurrentPassword('')
@@ -1966,18 +1967,18 @@ export default function MechanicPortalPage() {
                       setConfirmPassword('')
                       setIsChangingPassword(false)
                     }}
-                    className="flex-1 py-3 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 font-semibold rounded-xl transition-all border border-zinc-600/50 hover:border-zinc-500"
+                    className="flex-1  bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 font-semibold rounded-xl transition-all border border-zinc-600/50 hover:border-zinc-500"
                   >
                     Cancel
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton
                     onClick={handlePasswordChange}
                     disabled={changePasswordMutation.isPending || !currentPassword || !newPassword || !confirmPassword}
-                    className="flex-1 py-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-amber-400/50 hover:shadow-[0_0_24px_rgba(251,191,36,0.4)]"
+                    className="flex-1  bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-amber-400/50 hover:shadow-[0_0_24px_rgba(251,191,36,0.4)]"
                   >
                     {changePasswordMutation.isPending ? <Spinner size="sm" /> : <CheckCircle className="w-5 h-5" />}
                     Change
-                  </button>
+                  </ControlButton>
                 </div>
               </div>
             )}
@@ -1990,12 +1991,12 @@ export default function MechanicPortalPage() {
                 <Palette className="w-5 h-5 text-[var(--accent-400)]" />
                 <h2 className="text-zinc-100 font-semibold">Appearance</h2>
               </div>
-              <button
+              <ControlButton
                 onClick={resetToDefaults}
                 className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-xl transition-all"
               >
                 <RotateCcw className="w-4 h-4" />
-              </button>
+              </ControlButton>
             </div>
             
             {/* Accent Color */}
@@ -2003,7 +2004,7 @@ export default function MechanicPortalPage() {
               <label className="block text-xs font-medium text-zinc-400 mb-2">Accent Color</label>
               <div className="flex gap-2">
                 {ACCENT_OPTIONS.map((option) => (
-                  <button
+                  <ControlButton controlKind="content"
                     key={option.id}
                     onClick={() => setAccent(option.id)}
                     className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
@@ -2012,7 +2013,7 @@ export default function MechanicPortalPage() {
                     style={{ backgroundColor: option.colors[500] }}
                   >
                     {accent === option.id && <Check className="w-4 h-4 text-white" />}
-                  </button>
+                  </ControlButton>
                 ))}
               </div>
             </div>
@@ -2022,17 +2023,17 @@ export default function MechanicPortalPage() {
               <label className="block text-xs font-medium text-zinc-400 mb-2">Font Size</label>
               <div className="flex gap-2">
                 {FONT_SIZE_OPTIONS.map((option) => (
-                  <button
+                  <ControlButton
                     key={option.id}
                     onClick={() => setFontSize(option.id)}
-                    className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-semibold transition-all ${
+                    className={`flex-1  px-3 rounded-xl text-xs font-semibold transition-all ${
                       fontSize === option.id
                         ? 'bg-[var(--accent-500)] text-white border border-[var(--accent-400)]/50 shadow-[0_0_12px_var(--accent-500)/40]'
                         : 'bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 border border-zinc-600/50'
                     }`}
                   >
                     {option.label}
-                  </button>
+                  </ControlButton>
                 ))}
               </div>
             </div>
@@ -2041,13 +2042,13 @@ export default function MechanicPortalPage() {
           <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 shadow-xl shadow-black/20">
             <h2 className="text-zinc-100 font-semibold">Session</h2>
             <p className="text-sm text-zinc-400 mt-1">Sign out from this device.</p>
-            <button
+            <ControlButton
               onClick={handleLogout}
-              className="w-full mt-4 py-4 bg-red-950/80 hover:bg-red-900 active:scale-[0.98] text-red-400 text-base font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-red-800/50 hover:border-red-600"
+              className="w-full mt-4  bg-red-950/80 hover:bg-red-900 active:scale-[0.98] text-red-400 text-base font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-red-800/50 hover:border-red-600"
             >
               <LogOut className="w-4 h-4" />
               Sign Out
-            </button>
+            </ControlButton>
           </div>
         </div>
         {/* Spacer for bottom nav */}
@@ -2071,21 +2072,21 @@ export default function MechanicPortalPage() {
             <h1 className="text-xl font-bold text-zinc-100">My Jobs</h1>
           </div>
           <div className="flex items-center gap-1">
-            <button
+            <ControlButton controlKind="content"
               onClick={() => setView('stats')}
               className="flex items-center gap-1.5 px-4 py-2.5 rounded-full transition-colors active:opacity-70 bg-[var(--accent-500)]/20 border border-[var(--accent-500)]/30"
             >
               <Star className="w-5 h-5 text-[var(--accent-400)]" />
               <span className="font-bold text-base text-[var(--accent-400)]">{stats?.available_points || 0}</span>
-            </button>
+            </ControlButton>
             {isClockedIn ? (
-              <button
+              <ControlButton controlKind="icon"
                 onClick={handleHeaderClockOutAction}
                 className="p-3 text-zinc-400 active:text-amber-300 active:bg-zinc-800 rounded-xl"
                 title="Clock Out"
               >
                 <LogOut className="w-6 h-6" />
-              </button>
+              </ControlButton>
             ) : null}
           </div>
         </div>
@@ -2134,13 +2135,13 @@ export default function MechanicPortalPage() {
                 </p>
               </div>
             </div>
-            <button
+            <ControlButton
               onClick={handleAttendanceToggle}
               disabled={attendanceToggleBusy}
-              className="w-full py-5 text-white text-xl font-bold rounded-2xl transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-emerald-600 active:bg-emerald-700 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)] shadow-lg shadow-emerald-500/25"
+              className="w-full  text-white text-xl font-bold rounded-2xl transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-emerald-600 active:bg-emerald-700 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)] shadow-lg shadow-emerald-500/25"
             >
               {attendanceToggleBusy ? 'Clocking In...' : 'Clock In'}
-            </button>
+            </ControlButton>
           </div>
         ) : null}
 
@@ -2148,13 +2149,13 @@ export default function MechanicPortalPage() {
           <>
             {isTimerPanelExpanded ? (
               <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 shadow-xl shadow-black/20 space-y-3">
-                <button onClick={handleTimerPanelToggle} className="flex items-center justify-between w-full active:opacity-70">
+                <ControlButton controlKind="content" onClick={handleTimerPanelToggle} className="flex items-center justify-between w-full active:opacity-70">
                   <div className="flex items-center gap-2">
                     <StatusLED status="active" />
                     <span className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500">Timer Panel</span>
                   </div>
                   <span className="text-sm text-[var(--accent-400)] font-medium">▲ Collapse</span>
-                </button>
+                </ControlButton>
             {isOnBreak ? (
               <>
                 <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3">
@@ -2166,13 +2167,13 @@ export default function MechanicPortalPage() {
                     <span className="font-mono text-lg font-semibold text-amber-100">{formatSecondsAsClock(breakElapsedSeconds)}</span>
                   </div>
                 </div>
-                <button
+                <ControlButton
                   onClick={handleBreakToggle}
                   disabled={breakToggleBusy}
-                  className="w-full py-4 text-white text-base font-semibold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-[var(--accent-600)] active:bg-[var(--accent-500)] hover:shadow-[0_0_24px_var(--accent-500)]"
+                  className="w-full  text-white text-base font-semibold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-[var(--accent-600)] active:bg-[var(--accent-500)] hover:shadow-[0_0_24px_var(--accent-500)]"
                 >
                   {breakToggleBusy ? 'Ending Break...' : 'End Break'}
-                </button>
+                </ControlButton>
               </>
             ) : (
               <>
@@ -2227,7 +2228,7 @@ export default function MechanicPortalPage() {
                     const isSelected = miscCategory === option.value
                     const isSuggestedPick = isMiscSuggestion && !hasActiveDayTimer && isSelected
                     return (
-                      <button
+                      <ControlButton controlKind="content"
                         key={option.value}
                         type="button"
                         disabled={isActiveRoTimer}
@@ -2241,16 +2242,16 @@ export default function MechanicPortalPage() {
                         } disabled:opacity-40 disabled:cursor-not-allowed`}
                       >
                         {option.label}
-                      </button>
+                      </ControlButton>
                     )
                   })}
                 </div>
 
                 {/* Timer toggle — shows selected category */}
-                <button
+                <ControlButton
                   onClick={handleTimerToggle}
                   disabled={timerToggleBusy || (isActiveRoTimer && !hasActiveDayTimer)}
-                  className={`w-full py-4 text-white text-base font-semibold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                  className={`w-full  text-white text-base font-semibold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                     hasActiveDayTimer 
                       ? 'bg-red-950/80 text-red-400 border border-red-800/50 hover:bg-red-900 hover:border-red-600' 
                       : 'bg-[var(--accent-600)] border border-[var(--accent-400)]/50 hover:bg-[var(--accent-500)] hover:shadow-[0_0_24px_var(--accent-500)]'
@@ -2261,17 +2262,17 @@ export default function MechanicPortalPage() {
                     : hasActiveDayTimer
                       ? 'Stop Active Timer'
                       : `Start ${MISC_WORK_OPTIONS.find((o) => o.value === miscCategory)?.label || 'Misc'} Timer`}
-                </button>
+                </ControlButton>
 
                 {/* Break button */}
                 {showPanelBreakControl ? (
-                  <button
+                  <ControlButton
                     onClick={handleBreakToggle}
                     disabled={breakToggleBusy}
-                    className="w-full py-4 text-white text-base font-semibold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-amber-600 border border-amber-400/50 hover:bg-amber-500 hover:shadow-[0_0_24px_rgba(251,191,36,0.5)]"
+                    className="w-full  text-white text-base font-semibold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-amber-600 border border-amber-400/50 hover:bg-amber-500 hover:shadow-[0_0_24px_rgba(251,191,36,0.5)]"
                   >
                     {breakToggleBusy ? 'Starting Break...' : 'Start Break'}
-                  </button>
+                  </ControlButton>
                 ) : null}
 
                 {/* Collapsible breakdown */}
@@ -2283,11 +2284,11 @@ export default function MechanicPortalPage() {
                       <div>Misc: <span className="text-zinc-100 font-semibold">{(daySummary.misc_minutes / 60).toFixed(1)}h</span></div>
                       <div>Break: <span className="text-zinc-100 font-semibold">{(daySummary.break_minutes / 60).toFixed(1)}h</span></div>
                     </div>
-                    <input
+                    <ControlInput
                       value={miscNote}
                       onChange={(e) => setMiscNote(e.target.value)}
                       placeholder="Misc note (optional)"
-                      className="w-full bg-zinc-800/60 border border-zinc-600/50 rounded-xl px-4 py-3 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all"
+                      className="w-full bg-zinc-800/60 border border-zinc-600/50 rounded-xl px-4  text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all"
                       disabled={isActiveRoTimer}
                     />
                   </div>
@@ -2298,7 +2299,7 @@ export default function MechanicPortalPage() {
         ) : (
           <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl border border-zinc-700/50 shadow-xl shadow-black/20">
                 {/* Tappable status + timer area */}
-                <button
+                <ControlButton controlKind="content"
                   onClick={handleTimerPanelToggle}
                   className="w-full p-4 active:opacity-70"
                 >
@@ -2327,7 +2328,7 @@ export default function MechanicPortalPage() {
                   <div className={`font-mono text-3xl font-bold tracking-tight ${isOnBreak ? 'text-amber-200' : hasActiveDayTimer ? 'text-emerald-300' : 'text-zinc-300'}`}>
                     {collapsedInlineTimerLabel}
                   </div>
-                </button>
+                </ControlButton>
 
                 {/* Quick actions below the tappable area */}
                 {(!hasActiveDayTimer && !isOnBreak) || isOnBreak ? (
@@ -2335,31 +2336,31 @@ export default function MechanicPortalPage() {
                     {/* Quick actions when idle (no active timer, not on break) */}
                     {!hasActiveDayTimer && !isOnBreak && (
                       <div className="flex gap-2">
-                        <button
+                        <ControlButton
                           onClick={handleTimerToggle}
                           disabled={timerToggleBusy}
-                          className="flex-1 py-3 text-white text-sm font-semibold rounded-xl bg-[var(--accent-600)] border border-[var(--accent-400)]/50 active:bg-[var(--accent-500)] disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:shadow-[0_0_24px_var(--accent-500)]"
+                          className="flex-1  text-white text-sm font-semibold rounded-xl bg-[var(--accent-600)] border border-[var(--accent-400)]/50 active:bg-[var(--accent-500)] disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:shadow-[0_0_24px_var(--accent-500)]"
                         >
                           {timerToggleBusy ? 'Starting...' : 'Start Misc Timer'}
-                        </button>
-                        <button
+                        </ControlButton>
+                        <ControlButton
                           onClick={handleBreakToggle}
                           disabled={breakToggleBusy}
-                          className="py-3 px-5 text-white text-sm font-semibold rounded-xl bg-amber-600 border border-amber-400/50 active:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                          className=" px-5 text-white text-sm font-semibold rounded-xl bg-amber-600 border border-amber-400/50 active:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                         >
                           Break
-                        </button>
+                        </ControlButton>
                       </div>
                     )}
                     {/* End break button when on break */}
                     {isOnBreak && (
-                      <button
+                      <ControlButton
                         onClick={handleBreakToggle}
                         disabled={breakToggleBusy}
-                        className="w-full py-3 text-white text-sm font-semibold rounded-xl bg-[var(--accent-600)] border border-[var(--accent-400)]/50 active:bg-[var(--accent-500)] disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:shadow-[0_0_24px_var(--accent-500)]"
+                        className="w-full  text-white text-sm font-semibold rounded-xl bg-[var(--accent-600)] border border-[var(--accent-400)]/50 active:bg-[var(--accent-500)] disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:shadow-[0_0_24px_var(--accent-500)]"
                       >
                         {breakToggleBusy ? 'Ending Break...' : 'End Break'}
-                      </button>
+                      </ControlButton>
                     )}
                   </div>
                 ) : null}
@@ -2373,7 +2374,7 @@ export default function MechanicPortalPage() {
             <Spinner size="lg" />
           </div>
         ) : jobsError && !jobs ? (
-          <p role="alert" className="text-sm text-red-300">Jobs could not be loaded. <button type="button" onClick={() => void refetchJobs()} className="min-h-10 whitespace-nowrap underline">Retry jobs</button></p>
+          <p role="alert" className="text-sm text-red-300">Jobs could not be loaded. <ControlButton type="button" onClick={() => void refetchJobs()} className=" whitespace-nowrap underline">Retry jobs</ControlButton></p>
         ) : activeJobs.length === 0 && pendingReview.length === 0 ? (
           <>
             {/* No Active Jobs - Show Stats Instead */}
@@ -2401,19 +2402,19 @@ export default function MechanicPortalPage() {
               </div>
             </div>
 
-            <button
+            <ControlButton controlKind="content"
               type="button"
               onClick={() => setView('history')}
               className="w-full rounded-2xl border border-zinc-700/50 bg-zinc-900/80 p-4 text-left shadow-xl shadow-black/20 transition-colors hover:border-[var(--accent-500)]/40 active:bg-zinc-800"
             >
               <p className="text-sm font-semibold text-zinc-100">Completed work</p>
               <p className="mt-1 text-xs text-[var(--accent-400)]">View repair history and earned points</p>
-            </button>
+            </ControlButton>
 
           </>
         ) : (
           <>
-            {jobsError && <p role="alert" className="text-sm text-red-300">Jobs could not be refreshed. <button type="button" onClick={() => void refetchJobs()} className="min-h-10 whitespace-nowrap underline">Retry jobs</button></p>}
+            {jobsError && <p role="alert" className="text-sm text-red-300">Jobs could not be refreshed. <ControlButton type="button" onClick={() => void refetchJobs()} className=" whitespace-nowrap underline">Retry jobs</ControlButton></p>}
             {/* Active Jobs - Expandable Cards */}
             {activeJobs.length > 0 && (
               <div className="flex items-center gap-2 mb-1">
@@ -2442,7 +2443,7 @@ export default function MechanicPortalPage() {
                   className={`rounded-2xl overflow-hidden bg-zinc-900/80 backdrop-blur-sm border ${borderColor} shadow-xl shadow-black/20 transition-all ${isSuggestedJob ? 'shadow-[0_0_16px_var(--accent-500)/30] ring-1 ring-[var(--accent-400)]/50' : ''} ${isExpanded ? 'border-[var(--accent-500)]/40' : ''}`}
                 >
                   {/* Header - Always visible */}
-                  <button
+                  <ControlButton controlKind="content"
                     onClick={() => toggleExpand(job.id)}
                     className="w-full p-4 text-left transition-all active:scale-[0.99]"
                   >
@@ -2483,7 +2484,7 @@ export default function MechanicPortalPage() {
                         <ChevronDown className={`w-5 h-5 text-zinc-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                       </div>
                     </div>
-                  </button>
+                  </ControlButton>
                   
                   {/* Expanded Content */}
                   <div className={`overflow-hidden transition-all duration-200 ${
@@ -2491,7 +2492,7 @@ export default function MechanicPortalPage() {
                   }`}>
                     <div className="px-4 pb-4 space-y-3 border-t border-zinc-700/50 pt-3">
                       {expandedJobError ? (
-                        <p role="alert" className="text-sm text-red-300">Job details could not be refreshed. <button type="button" onClick={() => void refetchExpandedJob()} className="min-h-10 whitespace-nowrap underline">Retry job details</button></p>
+                        <p role="alert" className="text-sm text-red-300">Job details could not be refreshed. <ControlButton type="button" onClick={() => void refetchExpandedJob()} className=" whitespace-nowrap underline">Retry job details</ControlButton></p>
                       ) : expandedJobLoading ? (
                         <div className="flex justify-center py-6">
                           <Spinner size="md" />
@@ -2563,28 +2564,28 @@ export default function MechanicPortalPage() {
                                         )}
                                       </div>
                                     ))}
-                                    <button
+                                    <ControlButton controlKind="content"
                                       onClick={() => { clearSelectedPhotos(); setPhotoCaption('') }}
                                       className="absolute top-1.5 right-1.5 p-1.5 bg-black/60 rounded-full hover:bg-black/80 transition-colors"
                                     >
                                       <X className="w-3 h-3 text-white" />
-                                    </button>
+                                    </ControlButton>
                                   </div>
-                                  <input
+                                  <ControlInput
                                     type="text"
                                     placeholder="Add note..."
                                     value={photoCaption}
                                     onChange={(e) => setPhotoCaption(e.target.value)}
-                                    className="w-full mt-2 px-4 py-2 rounded-xl bg-zinc-800/60 border border-zinc-600/50 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] transition-all"
+                                    className="w-full mt-2 px-4  rounded-xl bg-zinc-800/60 border border-zinc-600/50 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] transition-all"
                                   />
-                                  <button
+                                  <ControlButton
                                     onClick={handlePhotoUpload}
                                     disabled={isUploadingPhoto}
-                                    className="w-full mt-2 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-all hover:shadow-[0_0_16px_rgba(16,185,129,0.4)]"
+                                    className="w-full mt-2  bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-all hover:shadow-[0_0_16px_rgba(16,185,129,0.4)]"
                                   >
                                     {isUploadingPhoto ? <Spinner size="xs" /> : <Camera className="w-3.5 h-3.5" />}
                                     Upload {selectedPhotoPreviews.length} photo{selectedPhotoPreviews.length === 1 ? '' : 's'} · {formatFileSize(selectedPhotoPreviews.reduce((sum, photo) => sum + photo.size, 0))}
-                                  </button>
+                                  </ControlButton>
                                 </div>
                               )}
                               
@@ -2598,7 +2599,7 @@ export default function MechanicPortalPage() {
                                         alt={photo.caption || 'Work photo'}
                                         className="w-full aspect-square object-cover rounded-lg"
                                       />
-                                      <button
+                                      <ControlButton controlKind="content"
                                         onClick={(e) => {
                                           e.stopPropagation()
                                           if (confirm('Delete this photo?')) {
@@ -2608,7 +2609,7 @@ export default function MechanicPortalPage() {
                                         className="absolute top-0.5 right-0.5 p-1 bg-black/60 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                                       >
                                         <X className="w-2.5 h-2.5 text-white" />
-                                      </button>
+                                      </ControlButton>
                                     </div>
                                   ))}
                                 </div>
@@ -2624,17 +2625,17 @@ export default function MechanicPortalPage() {
                           {/* Action Button */}
                           <div className="db-mechanic-stage-actions pt-2">
                             {detail.is_order_lead && (job.status === 'assigned' || job.status === 'acknowledged') && (
-                              <button
+                              <ControlButton
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   acceptAndStartMutation.mutate({ orderId: job.id, currentStatus: job.status })
                                 }}
                                 disabled={isPending}
-                                className="w-full py-3 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
+                                className="w-full  bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
                               >
                                 {isPending ? <Spinner size="sm" /> : <PlayCircle className="w-5 h-5" />}
                                 ACCEPT & START
-                              </button>
+                              </ControlButton>
                             )}
                             
                             {detail.is_order_lead && job.status === 'in_progress' && job.hold_reason && (
@@ -2646,28 +2647,28 @@ export default function MechanicPortalPage() {
                                   </span>
                                 </div>
                                 <div className="db-mechanic-stage-buttons">
-                                  <button
+                                  <ControlButton
                                     onClick={(e) => {
                                       e.stopPropagation()
                                       resumeOrderMutation.mutate(job.id)
                                     }}
                                     disabled={isPending}
-                                    className="w-full py-3 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
+                                    className="w-full  bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
                                   >
                                     {isPending ? <Spinner size="sm" /> : <PlayCircle className="w-5 h-5" />}
                                     RESUME
-                                  </button>
-                                  <button
+                                  </ControlButton>
+                                  <ControlButton
                                     onClick={(e) => {
                                       e.stopPropagation()
                                       completeWorkMutation.mutate(job.id)
                                     }}
                                     disabled={isPending}
-                                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-emerald-400/50 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
+                                    className="w-full  bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-emerald-400/50 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
                                   >
                                     {isPending ? <Spinner size="sm" /> : <CheckCircle className="w-5 h-5" />}
                                     JOB DONE
-                                  </button>
+                                  </ControlButton>
                                 </div>
                               </div>
                             )}
@@ -2679,7 +2680,7 @@ export default function MechanicPortalPage() {
                                     <p className="text-xs text-zinc-400 font-medium">Why are you pausing?</p>
                                     <div className="flex flex-wrap gap-2">
                                       {HOLD_REASONS.map((r) => (
-                                        <button
+                                        <ControlButton controlKind="content"
                                           key={r.value}
                                           type="button"
                                           onClick={() => setHoldReason(r.value)}
@@ -2690,61 +2691,61 @@ export default function MechanicPortalPage() {
                                           }`}
                                         >
                                           {r.label}
-                                        </button>
+                                        </ControlButton>
                                       ))}
                                     </div>
                                     <div className="db-mechanic-stage-buttons">
-                                      <button
+                                      <ControlButton
                                         onClick={() => { setHoldTarget(null); setHoldReason('') }}
-                                        className="py-3 bg-zinc-800/80 hover:bg-zinc-700 active:scale-[0.98] text-zinc-300 text-sm font-semibold rounded-xl transition-all border border-zinc-600/50"
+                                        className=" bg-zinc-800/80 hover:bg-zinc-700 active:scale-[0.98] text-zinc-300 text-sm font-semibold rounded-xl transition-all border border-zinc-600/50"
                                       >
                                         Cancel
-                                      </button>
-                                      <button
+                                      </ControlButton>
+                                      <ControlButton
                                         onClick={() => holdReason && holdOrderMutation.mutate({ orderId: job.id, reason: holdReason })}
                                         disabled={!holdReason || holdOrderMutation.isPending}
-                                        className="py-3 bg-amber-600 hover:bg-amber-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition-all border border-amber-400/50"
+                                        className=" bg-amber-600 hover:bg-amber-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition-all border border-amber-400/50"
                                       >
                                         {holdOrderMutation.isPending ? 'Holding...' : 'Confirm Hold'}
-                                      </button>
+                                      </ControlButton>
                                     </div>
                                   </div>
                                 ) : (
                                   <div className="db-mechanic-stage-buttons">
                                     {!isTimedForThisJob && (
-                                      <button
+                                      <ControlButton
                                         onClick={(e) => {
                                           e.stopPropagation()
                                           acceptAndStartMutation.mutate({ orderId: job.id, currentStatus: job.status })
                                         }}
                                         disabled={isPending}
-                                        className="w-full py-3 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
+                                        className="w-full  bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
                                       >
                                         {isPending ? <Spinner size="sm" /> : <PlayCircle className="w-5 h-5" />}
                                         RESUME
-                                      </button>
+                                      </ControlButton>
                                     )}
-                                    <button
+                                    <ControlButton
                                       onClick={(e) => {
                                         e.stopPropagation()
                                         setHoldTarget(job.id)
                                       }}
-                                      className="w-full py-3 bg-amber-600/80 hover:bg-amber-600 active:scale-[0.98] text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-amber-400/50"
+                                      className="w-full  bg-amber-600/80 hover:bg-amber-600 active:scale-[0.98] text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-amber-400/50"
                                     >
                                       <PauseCircle className="w-5 h-5" />
                                       HOLD
-                                    </button>
-                                    <button
+                                    </ControlButton>
+                                    <ControlButton
                                       onClick={(e) => {
                                         e.stopPropagation()
                                         completeWorkMutation.mutate(job.id)
                                       }}
                                       disabled={isPending}
-                                      className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-emerald-400/50 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
+                                      className="w-full  bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-emerald-400/50 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
                                     >
                                       {isPending ? <Spinner size="sm" /> : <CheckCircle className="w-5 h-5" />}
                                       DONE
-                                    </button>
+                                    </ControlButton>
                                   </div>
                                 )}
                               </div>
@@ -2766,7 +2767,7 @@ export default function MechanicPortalPage() {
                   <SectionInfoTooltip text="Completed jobs waiting for manager verification before final closeout." />
                 </div>
                 {pendingReview.map((job) => (
-                  <button
+                  <ControlButton controlKind="content"
                     type="button"
                     onClick={() => openJob(job.id, 'list')}
                     key={job.id}
@@ -2781,7 +2782,7 @@ export default function MechanicPortalPage() {
                     <span className="inline-flex items-center gap-1.5 text-xs text-amber-300 bg-amber-500/20 px-2.5 py-1 rounded-full border border-amber-500/30 shrink-0">
                       Pending Review
                     </span>
-                  </button>
+                  </ControlButton>
                 ))}
               </div>
             )}
@@ -2797,31 +2798,31 @@ export default function MechanicPortalPage() {
               End your shift now? Any active timer or break will be closed automatically.
             </p>
             <div className="grid grid-cols-2 gap-3 pt-1">
-              <button
+              <ControlButton
                 onClick={() => setShowClockOutModal(false)}
                 disabled={attendanceToggleBusy}
-                className="w-full py-3.5 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 active:scale-[0.98] text-zinc-300 text-base font-medium disabled:opacity-60 border border-zinc-600/50 transition-all"
+                className="w-full  rounded-xl bg-zinc-800/80 hover:bg-zinc-700 active:scale-[0.98] text-zinc-300 text-base font-medium disabled:opacity-60 border border-zinc-600/50 transition-all"
               >
                 Cancel
-              </button>
-              <button
+              </ControlButton>
+              <ControlButton
                 onClick={handleConfirmClockOut}
                 disabled={attendanceToggleBusy}
-                className="w-full py-3.5 rounded-xl bg-red-950/80 hover:bg-red-900 active:scale-[0.98] text-red-400 text-base font-semibold disabled:opacity-60 border border-red-800/50 hover:border-red-600 transition-all"
+                className="w-full  rounded-xl bg-red-950/80 hover:bg-red-900 active:scale-[0.98] text-red-400 text-base font-semibold disabled:opacity-60 border border-red-800/50 hover:border-red-600 transition-all"
               >
                 {attendanceToggleBusy ? 'Clocking Out...' : 'Clock Out'}
-              </button>
+              </ControlButton>
             </div>
-            <button
+            <ControlButton
               onClick={() => {
                 setShowClockOutModal(false)
                 setView('profile')
               }}
               disabled={attendanceToggleBusy}
-              className="w-full py-3 text-sm text-zinc-500 hover:text-zinc-300 active:text-zinc-100 disabled:opacity-60 transition-colors"
+              className="w-full  text-sm text-zinc-500 hover:text-zinc-300 active:text-zinc-100 disabled:opacity-60 transition-colors"
             >
               Need to sign out too? Go to Profile.
-            </button>
+            </ControlButton>
           </div>
         </div>
       ) : null}

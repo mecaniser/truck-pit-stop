@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useRef, useState } from 'react'
 import BusinessSettings from './BusinessSettings'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -26,7 +27,7 @@ function CustomerTaxExemptionEditor({ customerId, scope }: { customerId: string;
   if (query.isLoading) return <p role="status" className="text-sm text-slate-600">Loading customer tax setting…</p>
   if (query.error || !query.data) return <div role="alert" className="text-sm text-slate-700">
     <p>Customer tax setting is unavailable. No changes were made.</p>
-    <button type="button" onClick={() => void query.refetch()} className="min-h-11 font-semibold underline underline-offset-4">Retry tax setting</button>
+    <ControlButton type="button" onClick={() => void query.refetch()} className=" font-semibold underline underline-offset-4">Retry tax setting</ControlButton>
   </div>
   return <><TaxSettingForm key={`${scope}:${customerId}:${query.data.version}:${reloadVersion}`} initial={query.data} customerId={customerId}
     onSaved={next => {
@@ -71,16 +72,16 @@ function TaxSettingForm({ customerId, initial, onSaved, onReload, onEdit }: {
       </span>
     </label>
     {exempt && <label className="mt-3 block text-xs font-semibold text-slate-600">Certificate or supporting reference (optional)
-      <input value={reference} disabled={locked} maxLength={255} onChange={event => { setReference(event.target.value); onEdit() }}
-        className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 disabled:opacity-60" />
+      <ControlInput value={reference} disabled={locked} maxLength={255} onChange={event => { setReference(event.target.value); onEdit() }}
+        className="mt-2  w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 disabled:opacity-60" />
     </label>}
     {save.error && <div role="alert" className="mt-3 text-sm text-red-800">
       <p>{paymentApiError(save.error, 'The change was not verified. Retry the same change or reload the saved setting.').message}</p>
-      <button type="button" onClick={onReload} className="min-h-11 rounded-lg font-semibold underline underline-offset-4">Reload saved tax setting</button>
+      <ControlButton type="button" onClick={onReload} className=" rounded-lg font-semibold underline underline-offset-4">Reload saved tax setting</ControlButton>
     </div>}
-    {(changed || save.error) && <button type="button" onClick={() => save.mutate()} disabled={save.isPending} className="mt-3 min-h-11 rounded-xl bg-emerald-800 px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2 disabled:opacity-60">
+    {(changed || save.error) && <ControlButton type="button" onClick={() => save.mutate()} disabled={save.isPending} className="mt-3  rounded-xl bg-emerald-800 px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2 disabled:opacity-60">
       {save.isPending ? 'Saving…' : save.error ? 'Retry tax setting' : 'Save tax setting'}
-    </button>}
+    </ControlButton>}
   </section>
 }
 

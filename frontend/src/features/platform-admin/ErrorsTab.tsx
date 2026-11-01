@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { useEffect, useState, useCallback } from 'react'
 import {
@@ -278,13 +279,13 @@ export default function ErrorsTab() {
           <h3 className="text-sm font-medium text-gold-400/80 mb-3">Errors by Category (24h)</h3>
           <div className="flex flex-wrap gap-2">
             {Object.entries(stats.by_category).map(([cat, count]) => (
-              <button
+              <ControlButton controlKind="content"
                 key={cat}
                 onClick={() => { setCategory(cat); setPage(0); }}
                 className={`px-3 py-1 rounded-full text-sm ${getCategoryBadge(cat)} hover:opacity-80 transition-opacity`}
               >
                 {cat}: {count}
-              </button>
+              </ControlButton>
             ))}
           </div>
         </GlassNoirCard>
@@ -296,34 +297,34 @@ export default function ErrorsTab() {
           {/* Search */}
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
+            <ControlInput
               type="text"
               placeholder="Search by message, type, or correlation ID..."
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-              className="w-full pl-10 pr-4 py-2 bg-black/40 border border-gold-500/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-gold-500"
+              className="w-full pl-10 pr-4  bg-black/40 border border-gold-500/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-gold-500"
             />
           </div>
 
           {/* Filter toggle */}
-          <button
+          <ControlButton
             onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors ${
+            className={`flex items-center gap-2 px-4  rounded-lg border transition-colors ${
               showFilters ? 'bg-gold-500/20 border-gold-500 text-gold-400' : 'bg-black/40 border-gold-500/20 text-gray-300 hover:border-gold-500/40'
             }`}
           >
             <Filter className="w-4 h-4" />
             Filters
-          </button>
+          </ControlButton>
 
           {/* Refresh */}
-          <button
+          <ControlButton
             onClick={() => { fetchErrors(); fetchStats(); }}
-            className="flex items-center gap-2 px-4 py-2 bg-gold-500/10 border border-gold-500/30 rounded-lg text-gold-400 hover:bg-gold-500/20 transition-colors"
+            className="flex items-center gap-2 px-4  bg-gold-500/10 border border-gold-500/30 rounded-lg text-gold-400 hover:bg-gold-500/20 transition-colors"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
-          </button>
+          </ControlButton>
         </div>
 
         {/* Expanded filters */}
@@ -372,13 +373,13 @@ export default function ErrorsTab() {
               ))}
             </PlatformSelect>
 
-            <button
+            <ControlButton
               onClick={clearFilters}
-              className="flex items-center justify-center gap-2 px-4 py-2 bg-black/40 border border-gold-500/20 rounded-lg text-gray-300 hover:border-gold-500/40 transition-colors"
+              className="flex items-center justify-center gap-2 px-4  bg-black/40 border border-gold-500/20 rounded-lg text-gray-300 hover:border-gold-500/40 transition-colors"
             >
               <X className="w-4 h-4" />
               Clear
-            </button>
+            </ControlButton>
           </div>
         )}
       </GlassNoirCard>
@@ -405,7 +406,7 @@ export default function ErrorsTab() {
             {errors.map((err) => {
               const createdAt = formatDateParts(err.created_at)
               return (
-                <button
+                <ControlButton controlKind="content"
                   key={err.id}
                   onClick={() => openErrorDetail(err.id)}
                   className="w-full text-left rounded-lg border border-gold-500/20 bg-black/30 p-4 hover:bg-gold-500/5 transition-colors"
@@ -460,7 +461,7 @@ export default function ErrorsTab() {
                     <p className="text-xs text-gold-400/80 uppercase">Message</p>
                     <p className="text-sm text-gray-200 whitespace-pre-wrap break-words">{err.message}</p>
                   </div>
-                </button>
+                </ControlButton>
               )
             })}
           </div>
@@ -525,13 +526,13 @@ export default function ErrorsTab() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <button
+                        <ControlButton
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation()
                             handleQuickCopy(err)
                           }}
-                          className="inline-flex items-center gap-1 rounded-md border border-gold-500/30 bg-gold-500/10 px-2 py-1 text-xs text-gold-300 hover:bg-gold-500/20 transition-colors"
+                          className="inline-flex items-center gap-1 rounded-md border border-gold-500/30 bg-gold-500/10 px-2  text-xs text-gold-300 hover:bg-gold-500/20 transition-colors"
                         >
                           {copiedErrorId === err.id ? (
                             <>
@@ -544,7 +545,7 @@ export default function ErrorsTab() {
                               Copy
                             </>
                           )}
-                        </button>
+                        </ControlButton>
                       </td>
                     </tr>
                   )
@@ -559,23 +560,23 @@ export default function ErrorsTab() {
               Showing {page * limit + 1} - {Math.min((page + 1) * limit, total)} of {total}
             </div>
             <div className="flex items-center gap-2">
-              <button
+              <ControlButton
                 onClick={() => setPage(p => Math.max(0, p - 1))}
                 disabled={page === 0}
                 className="p-2 rounded-lg bg-gold-500/10 border border-gold-500/20 text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gold-500/20 transition-colors"
               >
                 <ChevronLeft className="w-4 h-4" />
-              </button>
+              </ControlButton>
               <span className="text-sm text-gray-400">
                 Page {page + 1} of {totalPages || 1}
               </span>
-              <button
+              <ControlButton
                 onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
                 disabled={page >= totalPages - 1}
                 className="p-2 rounded-lg bg-gold-500/10 border border-gold-500/20 text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gold-500/20 transition-colors"
               >
                 <ChevronRight className="w-4 h-4" />
-              </button>
+              </ControlButton>
             </div>
           </div>
         </GlassNoirCard>
@@ -594,12 +595,12 @@ export default function ErrorsTab() {
                   <p className="text-sm text-gray-400">{formatDate(selectedError.created_at)}</p>
                 </div>
               </div>
-              <button
+              <ControlButton
                 onClick={() => setSelectedError(null)}
                 className="p-2 rounded-lg hover:bg-gold-500/10 text-gray-400 hover:text-gold-400 transition-colors"
               >
                 <X className="w-5 h-5" />
-              </button>
+              </ControlButton>
             </div>
 
             {/* Modal Body */}
@@ -654,7 +655,7 @@ export default function ErrorsTab() {
                     <code className="text-sm text-white bg-black/40 px-2 py-1 rounded border border-gold-500/20">
                       {selectedError.correlation_id}
                     </code>
-                    <button
+                    <ControlButton
                       onClick={() => {
                         setSearch(selectedError.correlation_id || '')
                         setSelectedError(null)
@@ -662,7 +663,7 @@ export default function ErrorsTab() {
                       className="text-xs text-gold-400 hover:text-gold-300 flex items-center gap-1"
                     >
                       <ExternalLink className="w-3 h-3" /> Find related
-                    </button>
+                    </ControlButton>
                   </div>
                 </div>
               )}
@@ -722,9 +723,9 @@ export default function ErrorsTab() {
 
             {/* Modal Footer */}
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gold-500/20">
-              <button
+              <ControlButton
                 onClick={() => handleQuickCopy(selectedError)}
-                className="px-4 py-2 bg-black/40 border border-gold-500/30 text-gold-300 rounded-lg hover:bg-gold-500/10 transition-colors inline-flex items-center gap-2"
+                className="px-4  bg-black/40 border border-gold-500/30 text-gold-300 rounded-lg hover:bg-gold-500/10 transition-colors inline-flex items-center gap-2"
               >
                 {copiedErrorId === selectedError.id ? (
                   <>
@@ -737,27 +738,27 @@ export default function ErrorsTab() {
                     Copy
                   </>
                 )}
-              </button>
-              <button
+              </ControlButton>
+              <ControlButton
                 onClick={() => setSelectedError(null)}
-                className="px-4 py-2 bg-gold-500/10 border border-gold-500/30 text-gold-400 rounded-lg hover:bg-gold-500/20 transition-colors"
+                className="px-4  bg-gold-500/10 border border-gold-500/30 text-gold-400 rounded-lg hover:bg-gold-500/20 transition-colors"
               >
                 Close
-              </button>
+              </ControlButton>
               {selectedError.resolved ? (
-                <button
+                <ControlButton
                   onClick={handleUnresolve}
-                  className="px-4 py-2 bg-gold-500 text-black font-semibold rounded-lg hover:bg-gold-400 transition-colors"
+                  className="px-4  bg-gold-500 text-black font-semibold rounded-lg hover:bg-gold-400 transition-colors"
                 >
                   Reopen
-                </button>
+                </ControlButton>
               ) : (
-                <button
+                <ControlButton
                   onClick={handleResolve}
-                  className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+                  className="px-4  bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
                 >
                   Mark Resolved
-                </button>
+                </ControlButton>
               )}
             </div>
           </div>

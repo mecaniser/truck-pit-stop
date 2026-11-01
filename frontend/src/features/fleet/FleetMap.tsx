@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { memo, useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, ChevronDown, Home, LocateFixed, Search, X } from 'lucide-react'
 import type { BoardTruck } from './types'
@@ -65,10 +66,10 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
   return <section className={`proximity${compact ? ' proximity--compact' : ''}`} aria-label="Fleet proximity map">
     <header className="proximity-toolbar">
       <div className="proximity-map-toolbar"><div className="proximity-map-title"><strong>Fleet map</strong><span>{located.length} located · {trucks.length - located.length} without coordinates</span></div>
-      <div className="proximity-map-controls">{homeAddress && <button type="button" title={homeAddress} disabled={!home.point} onClick={() => { select(undefined); setHomeVisit(value => value + 1) }}><Home size={16} />Home</button>}<button type="button" onClick={() => setRecenter(value => value + 1)}><LocateFixed size={16} />Recenter</button></div>
+      <div className="proximity-map-controls">{homeAddress && <ControlButton controlKind="action" type="button" title={homeAddress} disabled={!home.point} onClick={() => { select(undefined); setHomeVisit(value => value + 1) }}><Home size={16} />Home</ControlButton>}<ControlButton type="button" onClick={() => setRecenter(value => value + 1)}><LocateFixed size={16} />Recenter</ControlButton></div>
       </div>
       <div className="proximity-search-toolbar">
-        <label className="proximity-search"><Search size={17} /><input ref={searchRef} type="search" aria-label="Find truck" placeholder="Find truck or driver" value={query} onChange={event => setQuery(event.target.value)} /></label>
+        <label className="proximity-search"><Search size={17} /><ControlInput ref={searchRef} type="search" aria-label="Find truck" placeholder="Find truck or driver" value={query} onChange={event => setQuery(event.target.value)} /></label>
       </div>
     </header>
     <div className="proximity-workspace">
@@ -85,8 +86,8 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
           <span className="sr-only">Comparing from</span>
           <div className="proximity-focus-heading">
             <strong ref={headingRef} tabIndex={-1} className="proximity-unit">{mapUnitLabel(focus)}</strong>
-            {onSelect && <button className="proximity-details" type="button" onClick={() => onSelect(focus)}>Truck details<ArrowUpRight size={15} /></button>}
-            <button className="proximity-clear" type="button" aria-label="Clear selected truck" onClick={() => select(undefined)}><X size={17} /></button>
+            {onSelect && <ControlButton className="proximity-details" type="button" onClick={() => onSelect(focus)}>Truck details<ArrowUpRight size={15} /></ControlButton>}
+            <ControlButton controlKind="icon" className="proximity-clear" type="button" aria-label="Clear selected truck" onClick={() => select(undefined)}><X size={17} /></ControlButton>
           </div>
           <div className="proximity-focus-meta"><Status truck={focus} /><small>{positionAge(focus, now)}</small></div>
           <p className="proximity-focus-location">{mapCity(truckLocation(focus, now)?.label)}</p>
@@ -109,20 +110,20 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
         {!focus && homeAddress && homeStatus && <div className="proximity-basis" role="status">{homeStatus}</div>}
         {focus && !searching && <>
           <label className="proximity-toggle"><input type="checkbox" checked={includeLastKnown} onChange={event => { setIncludeLastKnown(event.target.checked); setExpanded(false) }} />Include last-known</label>
-          {missingOrigin ? <p className="proximity-empty">This truck has no verified coordinates. Distance is unavailable.</p> : oldOrigin ? <p className="proximity-empty">This truck’s position is old or undated. Include last-known to compare recorded positions.</p> : road.phase === 'loading' ? null : road.phase === 'unconfigured' ? <p className="proximity-empty" role="status">Road routing is not configured.</p> : road.phase === 'error' ? <p className="proximity-empty" role="status">Road distances unavailable. <button type="button" onClick={() => setRetry(value => value + 1)}>Retry routing</button></p> : road.phase === 'ready' && nearby.length === 0 ? <p className="proximity-empty">No road routes to other trucks.</p> : nearby.length === 0 ? <p className="proximity-empty">No other {includeLastKnown ? 'located' : 'recently located'} trucks.</p> : null}
+          {missingOrigin ? <p className="proximity-empty">This truck has no verified coordinates. Distance is unavailable.</p> : oldOrigin ? <p className="proximity-empty">This truck’s position is old or undated. Include last-known to compare recorded positions.</p> : road.phase === 'loading' ? null : road.phase === 'unconfigured' ? <p className="proximity-empty" role="status">Road routing is not configured.</p> : road.phase === 'error' ? <p className="proximity-empty" role="status">Road distances unavailable. <ControlButton type="button" onClick={() => setRetry(value => value + 1)}>Retry routing</ControlButton></p> : road.phase === 'ready' && nearby.length === 0 ? <p className="proximity-empty">No road routes to other trucks.</p> : nearby.length === 0 ? <p className="proximity-empty">No other {includeLastKnown ? 'located' : 'recently located'} trucks.</p> : null}
           {road.unreachable > 0 && <p className="proximity-empty">{road.unreachable} truck{road.unreachable === 1 ? '' : 's'} without a road route.</p>}
         </>}
         <div className="proximity-rows" aria-busy={loadingRows}>
           {loadingRows && <div role="status" aria-label="Loading nearby trucks">{Array.from({length: placeholderRows}, (_, index) => <div className="proximity-row proximity-row-loading" key={index} aria-hidden="true"><span className="proximity-skeleton" /><span className="proximity-skeleton proximity-skeleton-location" /><span className="proximity-skeleton" /></div>)}</div>}
-          {rows.map(({ truck, miles, seconds }) => <button type="button" className="proximity-row" key={truck.id} aria-pressed={focus?.id === truck.id} onClick={() => select(truck.id)}>
+          {rows.map(({ truck, miles, seconds }) => <ControlButton controlKind="action" type="button" className="proximity-row" key={truck.id} aria-pressed={focus?.id === truck.id} onClick={() => select(truck.id)}>
             <span className="proximity-row-unit"><strong>{mapUnitLabel(truck)}</strong><i role="img" aria-label={STATUS_META[truck.status].label} title={STATUS_META[truck.status].label} style={{ background: STATUS_META[truck.status].dot }} /></span>
             <span className="proximity-row-location" title={mapCity(truckLocation(truck, now)?.label)}>{mapCity(truckLocation(truck, now)?.label)}</span>
             <small className="proximity-row-age" title={positionAge(truck, now)}>{positionAge(truck, now).startsWith('Last known') ? 'Last known' : positionAge(truck, now)}</small>
             {miles != null && <><b className="proximity-row-miles" style={{ color: homeMiles.length ? distanceColor(miles, minMiles, maxMiles) : undefined }}>{formatDistance(miles)}</b><span className="proximity-row-time" title={`${formatDriveTime(seconds!)} estimated drive`}>{formatDriveTime(seconds!).replace(' hr', 'h').replace(' min', 'm')}</span></>}
-          </button>)}
+          </ControlButton>)}
         </div>
         {loadingRows && road.candidates > 3 && <div className="proximity-more-loading" aria-hidden="true"><span className="proximity-skeleton" /></div>}
-        {focus && !searching && nearby.length > 3 && <button className="proximity-more" type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Closest 3' : `Show all ${nearby.length}`}<ChevronDown size={16} style={{ transform: expanded ? 'rotate(180deg)' : undefined }} /></button>}
+        {focus && !searching && nearby.length > 3 && <ControlButton controlKind="action" className="proximity-more" type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Closest 3' : `Show all ${nearby.length}`}<ChevronDown size={16} style={{ transform: expanded ? 'rotate(180deg)' : undefined }} /></ControlButton>}
         {searching && !matches.length && <p className="proximity-empty">No trucks match your search.</p>}
         {!trucks.length && <p className="proximity-empty">No trucks in this view.</p>}
         </div>

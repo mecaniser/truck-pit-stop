@@ -5,14 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "npm run lint:controls && tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "lint:changed": "node scripts/lint-changed.mjs",
     "preview": "vite preview",
     "start": "serve -s dist -l ${PORT:-3000}",
     "test": "vitest",
     "test:critical": "node scripts/run-critical-tests.mjs",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "lint:controls": "node scripts/check-controls.mjs"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.9",

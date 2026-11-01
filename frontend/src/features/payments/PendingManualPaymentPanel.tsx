@@ -1,3 +1,4 @@
+import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Clock3 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -86,7 +87,7 @@ function PendingManualPaymentItem({
         <label className="block text-xs font-bold">Amount actually received
           <div className="relative mt-1">
             <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${quiet}`}>$</span>
-            <input
+            <ControlInput
               type="text"
               inputMode="decimal"
               autoComplete="off"
@@ -95,26 +96,26 @@ function PendingManualPaymentItem({
               onChange={event => setReceivedAmount(event.target.value)}
               onBlur={() => { const normalized = normalizeMoney(receivedAmount); if (normalized) setReceivedAmount(normalized) }}
               aria-invalid={!receivedValid}
-              className={`h-11 w-full rounded-xl border pl-8 pr-3 font-bold tabular-nums outline-none focus:ring-2 focus:ring-amber-600 ${input}`}
+              className={` w-full rounded-xl border pl-8 pr-3 font-bold tabular-nums outline-none focus:ring-2 focus:ring-amber-600 ${input}`}
             />
           </div>
         </label>
         <label className="block text-xs font-bold">Transaction reference
-          <input value={reference} readOnly={allocation.rail === 'fleet_payment'} onChange={event => setReference(event.target.value)} className={`mt-1 h-11 w-full rounded-xl border px-3 outline-none focus:ring-2 focus:ring-amber-600 ${input}`} />
+          <ControlInput value={reference} readOnly={allocation.rail === 'fleet_payment'} onChange={event => setReference(event.target.value)} className={`mt-1  w-full rounded-xl border px-3 outline-none focus:ring-2 focus:ring-amber-600 ${input}`} />
         </label>
       </div>
       <label className="mt-3 block text-xs font-bold">Verification note <span className="font-normal">(optional)</span>
-        <input value={note} onChange={event => setNote(event.target.value)} className={`mt-1 h-11 w-full rounded-xl border px-3 outline-none focus:ring-2 focus:ring-amber-600 ${input}`} />
+        <ControlInput value={note} onChange={event => setNote(event.target.value)} className={`mt-1  w-full rounded-xl border px-3 outline-none focus:ring-2 focus:ring-amber-600 ${input}`} />
       </label>
       {!allocation.attempt_version && <p role="alert" className="mt-2 text-xs text-red-500">Refresh this invoice before confirming; its optimistic version is unavailable.</p>}
-      <button
+      <ControlButton
         type="button"
         disabled={!allocation.attempt_version || !receivedValid || !reference.trim() || confirm.isPending}
         onClick={() => confirm.mutate()}
-        className="mt-3 min-h-[44px] rounded-xl bg-amber-900 px-3 text-xs font-extrabold text-white disabled:opacity-50"
+        className="mt-3  rounded-xl bg-amber-900 px-3 text-xs font-extrabold text-white disabled:opacity-50"
       >
         {confirm.isPending ? 'Confirming…' : `Confirm ${label} received`}
-      </button>
+      </ControlButton>
       </fieldset>
     </li>
   )

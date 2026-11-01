@@ -8,7 +8,7 @@ export default function InboxSelect({label, value, options, onChange, disabled =
   onChange: (value: string) => void; disabled?: boolean;
 }) {
   return <Listbox value={value} onChange={onChange} disabled={disabled}>
-    <ListboxButton aria-label={label} className="inbox-select-button">
+    <ListboxButton data-db-control="select" aria-label={label} className="inbox-select-button">
       <span>{options.find(option => option.value === value)?.label ?? "Choose…"}</span>
       <ChevronDown size={14} aria-hidden="true" />
     </ListboxButton>

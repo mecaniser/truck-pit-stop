@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -35,15 +36,15 @@ export function MotiveGrants({ companyId }: { companyId: string }) {
   return <section className="motive-trucks" aria-label="Motive administrators">
     <h4>Company administrators</h4>
     <p className="motive-muted">Allow a linked customer to connect and manage this company’s Motive account.</p>
-    {(grants.isError || candidates.isError) && <p role="alert">Could not load administrator access. <button className="dbtn dbtn-ghost" onClick={() => { void grants.refetch(); void candidates.refetch() }}>Retry</button></p>}
+    {(grants.isError || candidates.isError) && <p role="alert">Could not load administrator access. <ControlButton className="dbtn dbtn-ghost" onClick={() => { void grants.refetch(); void candidates.refetch() }}>Retry</ControlButton></p>}
     {grants.isPending && <p role="status">Loading administrators…</p>}
-    {!grants.isError && active.map((person) => <div className="motive-actions" key={person.user_id}><span>{person.name || person.email}</span><button className="dbtn dbtn-ghost" disabled={change.isPending} onClick={() => change.mutate({ userId: person.user_id, revoke: true })}>Revoke {person.name || person.email}</button></div>)}
+    {!grants.isError && active.map((person) => <div className="motive-actions" key={person.user_id}><span>{person.name || person.email}</span><ControlButton className="dbtn dbtn-ghost" disabled={change.isPending} onClick={() => change.mutate({ userId: person.user_id, revoke: true })}>Revoke {person.name || person.email}</ControlButton></div>)}
     <label htmlFor={`motive-admin-${companyId}`}>Linked customer</label>
     <PlatformSelect id={`motive-admin-${companyId}`} value={selection} onChange={(e) => setSelection(e.target.value)} disabled={change.isPending || candidates.isError || grants.isError}>
       <option value="">Choose a customer</option>
       {people.filter((p) => !active.some((a) => a.user_id === p.user_id)).map((person) => <option key={person.user_id} value={person.user_id}>{person.name ? `${person.name} · ${person.email}` : person.email}</option>)}
     </PlatformSelect>
-    <button className="dbtn dbtn-ghost" disabled={!selection || change.isPending || candidates.isError || grants.isError} onClick={() => change.mutate({ userId: selection, revoke: false })}>Grant administrator access</button>
+    <ControlButton className="dbtn dbtn-ghost" disabled={!selection || change.isPending || candidates.isError || grants.isError} onClick={() => change.mutate({ userId: selection, revoke: false })}>Grant administrator access</ControlButton>
     {notice && <p role="status">{notice}</p>}
   </section>
 }
@@ -71,15 +72,15 @@ export function MotiveWebhook({ companyId }: { companyId: string }) {
   return <section className="motive-trucks" aria-label="Motive webhook setup">
     <h4>Live updates</h4>
     {status.isPending && <p role="status">Loading live update status…</p>}
-    {status.isError && <p role="alert">Could not load live update setup. <button className="dbtn dbtn-ghost" onClick={() => { setSecret(''); void status.refetch() }}>Retry</button></p>}
+    {status.isError && <p role="alert">Could not load live update setup. <ControlButton className="dbtn dbtn-ghost" onClick={() => { setSecret(''); void status.refetch() }}>Retry</ControlButton></p>}
     {status.data && !status.isError && <>
       <p>{labels[status.data.status]}</p>
       {status.data.last_received_at && <p className="motive-muted">Last event: {new Date(status.data.last_received_at).toLocaleString()}</p>}
       <p className="motive-muted">{status.data.pending_count ?? 0} pending · {status.data.failed_count ?? 0} need attention</p>
-      {status.data.url && <label>Webhook URL<input readOnly value={status.data.url} /></label>}
-      <button className="dbtn dbtn-ghost" disabled={busy} onClick={() => { setSecret(''); setConfirm(true) }}>{status.data.url ? 'Rotate webhook secret' : 'Prepare live updates'}</button>
-      {confirm && <div className="motive-confirm"><p>{status.data.url ? 'Replace the current secret? Update the Motive subscription with the new URL and secret to resume live events.' : 'Create a webhook URL and secret for this company’s Motive subscription.'}</p><div className="motive-actions"><button className="dbtn dbtn-ghost" disabled={busy} onClick={() => setConfirm(false)}>Cancel</button><button className="dbtn dbtn-yellow" disabled={busy} onClick={() => void rotate()}>Generate webhook secret</button></div></div>}
-      {secret && <div className="motive-confirm"><p>Save this secret in Motive’s webhook configuration now. It is shown only once. Preparing these values does not activate a subscription in Motive.</p><label>One-time shared secret<input readOnly autoComplete="off" value={secret} /></label><button className="dbtn dbtn-ghost" onClick={() => setSecret('')}>Hide secret</button></div>}
+      {status.data.url && <label>Webhook URL<ControlInput readOnly value={status.data.url} /></label>}
+      <ControlButton className="dbtn dbtn-ghost" disabled={busy} onClick={() => { setSecret(''); setConfirm(true) }}>{status.data.url ? 'Rotate webhook secret' : 'Prepare live updates'}</ControlButton>
+      {confirm && <div className="motive-confirm"><p>{status.data.url ? 'Replace the current secret? Update the Motive subscription with the new URL and secret to resume live events.' : 'Create a webhook URL and secret for this company’s Motive subscription.'}</p><div className="motive-actions"><ControlButton className="dbtn dbtn-ghost" disabled={busy} onClick={() => setConfirm(false)}>Cancel</ControlButton><ControlButton className="dbtn dbtn-yellow" disabled={busy} onClick={() => void rotate()}>Generate webhook secret</ControlButton></div></div>}
+      {secret && <div className="motive-confirm"><p>Save this secret in Motive’s webhook configuration now. It is shown only once. Preparing these values does not activate a subscription in Motive.</p><label>One-time shared secret<ControlInput readOnly autoComplete="off" value={secret} /></label><ControlButton className="dbtn dbtn-ghost" onClick={() => setSecret('')}>Hide secret</ControlButton></div>}
     </>}
     {notice && <p role="status">{notice}</p>}
   </section>

@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Check, ClipboardCheck, LogOut, Minus, ShieldCheck, Truck, X } from 'lucide-react'
@@ -191,19 +192,19 @@ function DriverHome() {
     }
   }
 
-  if (loading) return <main className="driver-loading" aria-live="polite">Loading your assignment…</main>
-  if (loadError) return <main className="driver-loading"><section className="driver-load-error" role="alert"><AlertTriangle /><h1>Driver Workspace unavailable</h1><p>{loadError}</p><button type="button" className="driver-primary" onClick={() => void load()}>Try again</button></section></main>
+  if (loading) return <main data-db-touch-controls className="driver-loading" aria-live="polite">Loading your assignment…</main>
+  if (loadError) return <main data-db-touch-controls className="driver-loading"><section className="driver-load-error" role="alert"><AlertTriangle /><h1>Driver Workspace unavailable</h1><p>{loadError}</p><ControlButton type="button" className="driver-primary" onClick={() => void load()}>Try again</ControlButton></section></main>
 
   return (
-    <main className="driver-home">
+    <main data-db-touch-controls className="driver-home">
       <header className="driver-header">
         <div>
           <h1>{profile ? `${profile.first_name} ${profile.last_name}` : 'My equipment'}</h1>
           <p>Confirm custody, complete your pre-trip inspection, and report conditions as they happen.</p>
         </div>
-        <button type="button" className="driver-icon-button" onClick={async () => {
+        <ControlButton controlKind="icon" type="button" className="driver-icon-button" onClick={async () => {
           try { await api.post('/auth/workos/logout') } finally { clearSession(); window.location.assign('/driver/login') }
-        }} aria-label="Sign out"><LogOut /></button>
+        }} aria-label="Sign out"><LogOut /></ControlButton>
       </header>
 
       {operationError && <div className="driver-inline-error" role="alert"><AlertTriangle /> <span>{operationError}</span></div>}
@@ -233,15 +234,15 @@ function DriverHome() {
                       <strong>Confirm before operating</strong>
                       <p>This records when the equipment entered your custody. It does not assign fault for existing conditions.</p>
                     </div>
-                    <button type="button" className="driver-primary" disabled={acknowledgingId === item.custody_session_id} onClick={() => void acknowledge(item.custody_session_id)}>{acknowledgingId === item.custody_session_id ? 'Confirming…' : 'Confirm this equipment'}</button>
+                    <ControlButton type="button" className="driver-primary" disabled={acknowledgingId === item.custody_session_id} onClick={() => void acknowledge(item.custody_session_id)}>{acknowledgingId === item.custody_session_id ? 'Confirming…' : 'Confirm this equipment'}</ControlButton>
                   </div>
                 )}
                 {custodyConfirmed && item.vehicle_id && (
                   <div className="driver-actions">
-                    <button type="button" className="driver-primary" disabled={startingVehicleId === item.vehicle_id} onClick={() => openInspection ? navigate(`/driver/inspections/${openInspection.id}`) : void startInspection(item.vehicle_id!)}>
+                    <ControlButton type="button" className="driver-primary" disabled={startingVehicleId === item.vehicle_id} onClick={() => openInspection ? navigate(`/driver/inspections/${openInspection.id}`) : void startInspection(item.vehicle_id!)}>
                       <ClipboardCheck /> {startingVehicleId === item.vehicle_id ? 'Opening PTI…' : openInspection ? 'Continue PTI' : 'Start PTI'}
-                    </button>
-                    <button type="button" className="driver-secondary driver-danger" onClick={(event) => { reportOpenerRef.current = event.currentTarget; setIncidentError(null); setReportingFor(item) }}><AlertTriangle /> Report incident</button>
+                    </ControlButton>
+                    <ControlButton type="button" className="driver-secondary driver-danger" onClick={(event) => { reportOpenerRef.current = event.currentTarget; setIncidentError(null); setReportingFor(item) }}><AlertTriangle /> Report incident</ControlButton>
                   </div>
                 )}
               </article>
@@ -284,15 +285,15 @@ function DriverHome() {
       {reportingFor && (
         <div className="driver-sheet-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !reporting) setReportingFor(null) }}>
           <section ref={sheetRef} className="driver-sheet" role="dialog" aria-modal="true" aria-labelledby="incident-title" aria-describedby="incident-description" aria-busy={reporting || undefined}>
-            <div className="driver-sheet-header"><div><p className="driver-sheet-context">Unit {reportingFor.unit_number || 'not set'}</p><h2 id="incident-title">Report an incident</h2></div><button type="button" className="driver-icon-button" disabled={reporting} aria-label="Close incident report" onClick={() => setReportingFor(null)}><X /></button></div>
+            <div className="driver-sheet-header"><div><p className="driver-sheet-context">Unit {reportingFor.unit_number || 'not set'}</p><h2 id="incident-title">Report an incident</h2></div><ControlButton controlKind="icon" type="button" className="driver-icon-button" disabled={reporting} aria-label="Close incident report" onClick={() => setReportingFor(null)}><X /></ControlButton></div>
             <p id="incident-description">Describe what happened and the equipment’s current condition. Reporting an incident does not assign fault.</p>
             <form className="driver-sheet-form" onSubmit={(event) => { event.preventDefault(); void reportIncident() }}>
               <label>Type<PlatformSelect disabled={reporting} value={incident.incident_type} onChange={(event) => setIncident({ ...incident, incident_type: event.target.value })}><option value="mechanical">Mechanical</option><option value="collision">Collision</option><option value="cargo">Cargo or securement</option><option value="roadside">Roadside</option><option value="other">Other</option></PlatformSelect></label>
               <label>Severity<PlatformSelect disabled={reporting} value={incident.severity} onChange={(event) => setIncident({ ...incident, severity: event.target.value })}><option value="low">Low — safe to continue</option><option value="medium">Medium — needs review</option><option value="high">High — stop and contact fleet</option><option value="critical">Critical — emergency</option></PlatformSelect></label>
-              <label>Location<input disabled={reporting} maxLength={255} value={incident.location} onChange={(event) => setIncident({ ...incident, location: event.target.value })} placeholder="Road, city, or yard location" /></label>
+              <label>Location<ControlInput disabled={reporting} maxLength={255} value={incident.location} onChange={(event) => setIncident({ ...incident, location: event.target.value })} placeholder="Road, city, or yard location" /></label>
               <label>What happened?<textarea ref={incidentDescriptionRef} disabled={reporting} required maxLength={2000} value={incident.description} onChange={(event) => setIncident({ ...incident, description: event.target.value })} rows={5} /></label>
               {incidentError && <div className="driver-inline-error" role="alert"><AlertTriangle /> <span>{incidentError}</span></div>}
-              <div className="driver-sheet-actions"><button type="button" className="driver-secondary" disabled={reporting} onClick={() => setReportingFor(null)}>Cancel</button><button type="submit" className="driver-primary driver-danger-solid" disabled={!incident.description.trim() || reporting}>{reporting ? 'Sending report…' : 'Send incident report'}</button></div>
+              <div className="driver-sheet-actions"><ControlButton type="button" className="driver-secondary" disabled={reporting} onClick={() => setReportingFor(null)}>Cancel</ControlButton><ControlButton type="submit" className="driver-primary driver-danger-solid" disabled={!incident.description.trim() || reporting}>{reporting ? 'Sending report…' : 'Send incident report'}</ControlButton></div>
             </form>
           </section>
         </div>
@@ -384,20 +385,20 @@ function DriverInspection() {
     } finally { setSaving(false) }
   }
 
-  if (loadError) return <main className="driver-loading"><section className="driver-load-error" role="alert"><AlertTriangle /><h1>PTI unavailable</h1><p>{loadError}</p><div><button type="button" className="driver-secondary" onClick={() => navigate('/driver')}>Back to workspace</button><button type="button" className="driver-primary" onClick={() => void load()}>Try again</button></div></section></main>
-  if (!inspection) return <main className="driver-loading" aria-live="polite">Opening PTI…</main>
+  if (loadError) return <main data-db-touch-controls className="driver-loading"><section className="driver-load-error" role="alert"><AlertTriangle /><h1>PTI unavailable</h1><p>{loadError}</p><div><ControlButton type="button" className="driver-secondary" onClick={() => navigate('/driver')}>Back to workspace</ControlButton><ControlButton type="button" className="driver-primary" onClick={() => void load()}>Try again</ControlButton></div></section></main>
+  if (!inspection) return <main data-db-touch-controls className="driver-loading" aria-live="polite">Opening PTI…</main>
   const items = inspection.items || []
   const completed = items.filter((item) => item.result !== 'pending').length
   const failedWithoutNotes = items.filter((item) => item.result === 'fail' && !(notes[item.id] || '').trim()).length
   return (
-    <main className="driver-inspection">
-      <header className="driver-inspection-header"><button type="button" className="driver-secondary" onClick={() => navigate('/driver')}>Back</button><div><p className="driver-inspection-context">Pre-trip inspection</p><h1>Unit {inspection.vehicle_unit_number || 'not set'}</h1></div><strong>{completed}/{items.length}</strong></header>
+    <main data-db-touch-controls className="driver-inspection">
+      <header className="driver-inspection-header"><ControlButton type="button" className="driver-secondary" onClick={() => navigate('/driver')}>Back</ControlButton><div><p className="driver-inspection-context">Pre-trip inspection</p><h1>Unit {inspection.vehicle_unit_number || 'not set'}</h1></div><strong>{completed}/{items.length}</strong></header>
       <div className="driver-progress" role="progressbar" aria-label="Inspection progress" aria-valuemin={0} aria-valuemax={items.length} aria-valuenow={completed}><span style={{ width: `${items.length ? completed / items.length * 100 : 0}%` }} /></div>
-      <label className="driver-odometer">Current odometer<input inputMode="numeric" maxLength={7} value={odometer} onChange={(event) => setOdometer(event.target.value.replace(/\D/g, ''))} /></label>
+      <label className="driver-odometer">Current odometer<ControlInput inputMode="numeric" maxLength={7} value={odometer} onChange={(event) => setOdometer(event.target.value.replace(/\D/g, ''))} /></label>
       <div className="driver-checklist">
-        {categories.map(([category, categoryItems]) => <section key={category}><h2>{category}</h2>{categoryItems.map((item) => <div className="driver-check" key={item.id} aria-busy={savingItemId === item.id || undefined}><strong>{item.label}</strong><div role="group" aria-label={`${item.label} result`}><button type="button" disabled={Boolean(savingItemId) || saving} aria-pressed={item.result === 'pass'} className={item.result === 'pass' ? 'is-pass' : ''} onClick={() => void update(item, 'pass')}><Check /> Pass</button><button type="button" disabled={Boolean(savingItemId) || saving} aria-pressed={item.result === 'fail'} className={item.result === 'fail' ? 'is-fail' : ''} onClick={() => void update(item, 'fail')}><X /> Fail</button><button type="button" disabled={Boolean(savingItemId) || saving} aria-pressed={item.result === 'na'} className={item.result === 'na' ? 'is-na' : ''} onClick={() => void update(item, 'na')}><Minus /> N/A</button></div>{item.result === 'fail' && <label className="driver-failure-note">What is wrong?<textarea required disabled={savingItemId === item.id || saving} maxLength={1000} rows={2} value={notes[item.id] || ''} onChange={(event) => setNotes((current) => ({ ...current, [item.id]: event.target.value }))} onBlur={() => void saveFailureNote(item)} placeholder="Describe the condition for fleet management" /></label>}</div>)}</section>)}
+        {categories.map(([category, categoryItems]) => <section key={category}><h2>{category}</h2>{categoryItems.map((item) => <div className="driver-check" key={item.id} aria-busy={savingItemId === item.id || undefined}><strong>{item.label}</strong><div role="group" aria-label={`${item.label} result`}><ControlButton controlKind="action" type="button" disabled={Boolean(savingItemId) || saving} aria-pressed={item.result === 'pass'} className={item.result === 'pass' ? 'is-pass' : ''} onClick={() => void update(item, 'pass')}><Check /> Pass</ControlButton><ControlButton controlKind="action" type="button" disabled={Boolean(savingItemId) || saving} aria-pressed={item.result === 'fail'} className={item.result === 'fail' ? 'is-fail' : ''} onClick={() => void update(item, 'fail')}><X /> Fail</ControlButton><ControlButton controlKind="action" type="button" disabled={Boolean(savingItemId) || saving} aria-pressed={item.result === 'na'} className={item.result === 'na' ? 'is-na' : ''} onClick={() => void update(item, 'na')}><Minus /> N/A</ControlButton></div>{item.result === 'fail' && <label className="driver-failure-note">What is wrong?<textarea required disabled={savingItemId === item.id || saving} maxLength={1000} rows={2} value={notes[item.id] || ''} onChange={(event) => setNotes((current) => ({ ...current, [item.id]: event.target.value }))} onBlur={() => void saveFailureNote(item)} placeholder="Describe the condition for fleet management" /></label>}</div>)}</section>)}
       </div>
-      <footer className="driver-submit" aria-live="polite"><span>{savingItemId ? 'Saving check…' : failedWithoutNotes ? `${failedWithoutNotes} failed ${failedWithoutNotes === 1 ? 'check needs' : 'checks need'} a note` : `${items.length - completed} checks remaining`}</span><button type="button" className="driver-primary" disabled={completed !== items.length || !odometer || failedWithoutNotes > 0 || Boolean(savingItemId) || saving} onClick={() => void complete()}>{saving ? 'Submitting…' : 'Confirm and submit PTI'}</button></footer>
+      <footer className="driver-submit" aria-live="polite"><span>{savingItemId ? 'Saving check…' : failedWithoutNotes ? `${failedWithoutNotes} failed ${failedWithoutNotes === 1 ? 'check needs' : 'checks need'} a note` : `${items.length - completed} checks remaining`}</span><ControlButton type="button" className="driver-primary" disabled={completed !== items.length || !odometer || failedWithoutNotes > 0 || Boolean(savingItemId) || saving} onClick={() => void complete()}>{saving ? 'Submitting…' : 'Confirm and submit PTI'}</ControlButton></footer>
     </main>
   )
 }

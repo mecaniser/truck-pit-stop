@@ -6,7 +6,7 @@ import { useMotiveCompanies } from '../fleet/motiveQueries'
 export function MotivePortalEntry() {
   const companies = useMotiveCompanies()
   if (companies.isError || !companies.data?.items?.length) return null
-  return <Link to="/portal/integrations" className="inline-flex min-h-[44px] items-center gap-2 rounded-lg px-3 text-sm font-semibold text-[#c9bfff]"><Link2 size={16} />Integrations</Link>
+  return <Link data-db-control="action" to="/portal/integrations" className="inline-flex min-h-[44px] items-center gap-2 rounded-lg px-3 text-sm font-semibold text-[#c9bfff]"><Link2 size={16} />Integrations</Link>
 }
 
 export default function MotivePortalPage() {

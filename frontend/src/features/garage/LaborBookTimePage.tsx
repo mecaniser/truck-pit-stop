@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useMemo, useRef, useState } from 'react'
 import { Spinner, LoadingLine } from '@/components/ui'
 import DurationStepper from '@/components/DurationStepper'
@@ -354,34 +355,34 @@ export default function LaborBookTimePage() {
                 <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500">Uses</div>
               </div>
             </div>
-            <button
+            <ControlButton
               type="button"
               onClick={() => setIsCreating((value) => !value)}
-              className="db-labor-book-time__primary-action flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--accent-500)]/40 bg-[var(--accent-500)] px-4 py-3 text-sm font-bold text-white transition hover:bg-[var(--accent-600)]"
+              className="db-labor-book-time__primary-action flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--accent-500)]/40 bg-[var(--accent-500)] px-4  text-sm font-bold text-white transition hover:bg-[var(--accent-600)]"
             >
               {isCreating ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
               {isCreating ? 'Close form' : 'New book time'}
-            </button>
+            </ControlButton>
           </div>
         </div>
 
         <div className="db-labor-book-time__search mt-5 flex items-center gap-3 rounded-xl border border-zinc-700/70 bg-zinc-950/60 px-3 py-2">
           <Search className="h-4 w-4 text-zinc-500" />
-          <input
+          <ControlInput
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
             placeholder="Search labor, vehicle, or operation key..."
-            className="h-10 flex-1 bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-600"
+            className=" flex-1 bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-600"
           />
           {searchQuery ? (
-            <button
+            <ControlButton controlKind="icon"
               type="button"
               onClick={() => setSearchQuery('')}
               className="rounded-lg p-2 text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-200"
               aria-label="Clear search"
             >
               <X className="h-4 w-4" />
-            </button>
+            </ControlButton>
           ) : null}
         </div>
       </div>
@@ -404,23 +405,23 @@ export default function LaborBookTimePage() {
               <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-zinc-500">Service</div>
               <label className="block">
                 <span className="mb-1 block text-xs font-semibold text-zinc-400">Service / labor name</span>
-                <input
+                <ControlInput
                   value={createState.operation_name}
                   onChange={(event) => setCreateState((prev) => ({ ...prev, operation_name: event.target.value }))}
                   placeholder="Water Pump Replacement"
-                  className="h-11 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
+                  className=" w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
                 />
               </label>
               <label className="block">
                 <span className="mb-1 block text-xs font-semibold text-zinc-400">Book hours</span>
-                <input
+                <ControlInput
                   value={createState.normalized_hours}
                   onChange={(event) => setCreateState((prev) => ({ ...prev, normalized_hours: event.target.value }))}
                   type="number"
                   min="0.01"
                   step="0.25"
                   placeholder="8.00"
-                  className="h-11 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
+                  className=" w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
                 />
               </label>
               <label className="block">
@@ -439,50 +440,50 @@ export default function LaborBookTimePage() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                 <label className="block flex-1">
                   <span className="mb-1 block text-xs font-semibold text-zinc-400">VIN helper</span>
-                  <input
+                  <ControlInput
                     value={createState.vin_sample}
                     onChange={(event) => handleVinSampleChange(event.target.value)}
                     placeholder="Optional VIN or partial VIN"
-                    className="h-11 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm uppercase text-white outline-none focus:border-[var(--accent-400)]"
+                    className=" w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm uppercase text-white outline-none focus:border-[var(--accent-400)]"
                   />
                 </label>
-                <button
+                <ControlButton
                   type="button"
                   onClick={decodeVin}
                   disabled={decodeVinMutation.isPending}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-zinc-700 px-4 text-sm font-semibold text-zinc-200 transition hover:border-[var(--accent-400)] hover:text-white disabled:opacity-50"
+                  className="inline-flex  items-center justify-center gap-2 rounded-lg border border-zinc-700 px-4 text-sm font-semibold text-zinc-200 transition hover:border-[var(--accent-400)] hover:text-white disabled:opacity-50"
                 >
                   {decodeVinMutation.isPending ? <Spinner size="xs" /> : <Search className="h-4 w-4" />}
                   Decode
-                </button>
+                </ControlButton>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-3">
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold text-zinc-400">Year</span>
-                  <input
+                  <ControlInput
                     value={createState.vehicle_year}
                     onChange={(event) => setCreateState((prev) => ({ ...prev, vehicle_year: event.target.value }))}
                     placeholder="2020"
-                    className="h-10 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
+                    className=" w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
                   />
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold text-zinc-400">Make</span>
-                  <input
+                  <ControlInput
                     value={createState.vehicle_make}
                     onChange={(event) => setCreateState((prev) => ({ ...prev, vehicle_make: event.target.value }))}
                     placeholder="Freightliner"
-                    className="h-10 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
+                    className=" w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
                   />
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold text-zinc-400">Model</span>
-                  <input
+                  <ControlInput
                     value={createState.vehicle_model}
                     onChange={(event) => setCreateState((prev) => ({ ...prev, vehicle_model: event.target.value }))}
                     placeholder="Cascadia"
-                    className="h-10 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
+                    className=" w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
                   />
                 </label>
               </div>
@@ -490,29 +491,29 @@ export default function LaborBookTimePage() {
               <div className="grid gap-3 sm:grid-cols-3">
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold text-zinc-400">Engine</span>
-                  <input
+                  <ControlInput
                     value={createState.engine}
                     onChange={(event) => setCreateState((prev) => ({ ...prev, engine: event.target.value }))}
                     placeholder="Detroit DD15"
-                    className="h-10 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
+                    className=" w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
                   />
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold text-zinc-400">Fuel</span>
-                  <input
+                  <ControlInput
                     value={createState.fuel_type}
                     onChange={(event) => setCreateState((prev) => ({ ...prev, fuel_type: event.target.value }))}
                     placeholder="Diesel"
-                    className="h-10 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
+                    className=" w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
                   />
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold text-zinc-400">Displacement</span>
-                  <input
+                  <ControlInput
                     value={createState.engine_displacement_l}
                     onChange={(event) => setCreateState((prev) => ({ ...prev, engine_displacement_l: event.target.value }))}
                     placeholder="14.8"
-                    className="h-10 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
+                    className=" w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
                   />
                 </label>
               </div>
@@ -520,54 +521,54 @@ export default function LaborBookTimePage() {
               <div className="grid gap-3 sm:grid-cols-3">
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold text-zinc-400">Vehicle type</span>
-                  <input
+                  <ControlInput
                     value={createState.vehicle_type}
                     onChange={(event) => setCreateState((prev) => ({ ...prev, vehicle_type: event.target.value }))}
                     placeholder="Truck"
-                    className="h-10 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
+                    className=" w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
                   />
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold text-zinc-400">Body class</span>
-                  <input
+                  <ControlInput
                     value={createState.body_class}
                     onChange={(event) => setCreateState((prev) => ({ ...prev, body_class: event.target.value }))}
                     placeholder="Truck-Tractor"
-                    className="h-10 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
+                    className=" w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
                   />
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold text-zinc-400">GVWR</span>
-                  <input
+                  <ControlInput
                     value={createState.gvwr}
                     onChange={(event) => setCreateState((prev) => ({ ...prev, gvwr: event.target.value }))}
                     placeholder="Class 8"
-                    className="h-10 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
+                    className=" w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-[var(--accent-400)]"
                   />
                 </label>
               </div>
 
               <div className="flex justify-end gap-2 border-t border-zinc-800 pt-4">
-                <button
+                <ControlButton
                   type="button"
                   onClick={() => {
                     setCreateState(emptyCreateState)
                     lastDecodedVin.current = ''
                     setIsCreating(false)
                   }}
-                  className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-300 transition hover:border-zinc-500 hover:text-white"
+                  className="rounded-lg border border-zinc-700 px-4  text-sm font-semibold text-zinc-300 transition hover:border-zinc-500 hover:text-white"
                 >
                   Cancel
-                </button>
-                <button
+                </ControlButton>
+                <ControlButton
                   type="button"
                   onClick={saveCreate}
                   disabled={createMutation.isPending}
-                  className="inline-flex items-center gap-2 rounded-lg bg-[var(--accent-500)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--accent-600)] disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-lg bg-[var(--accent-500)] px-4  text-sm font-bold text-white transition hover:bg-[var(--accent-600)] disabled:opacity-50"
                 >
                   {createMutation.isPending ? <Spinner size="xs" /> : <Plus className="h-4 w-4" />}
                   Save book time
-                </button>
+                </ControlButton>
               </div>
             </div>
           </div>
@@ -606,16 +607,16 @@ export default function LaborBookTimePage() {
                   <div className="db-labor-book-time__ledger-labor min-w-0">
                     {isEditing ? (
                       <div className="space-y-2">
-                        <input
+                        <ControlInput
                           value={editState.operation_name}
                           onChange={(event) => setEditState((prev) => ({ ...prev, operation_name: event.target.value }))}
-                          className="db-labor-book-time__edit-input h-10 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm font-semibold text-white outline-none focus:border-[var(--accent-400)]"
+                          className="db-labor-book-time__edit-input  w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm font-semibold text-white outline-none focus:border-[var(--accent-400)]"
                         />
-                        <input
+                        <ControlInput
                           value={editState.operation_description}
                           onChange={(event) => setEditState((prev) => ({ ...prev, operation_description: event.target.value }))}
                           placeholder="Optional description"
-                          className="db-labor-book-time__edit-input h-9 w-full rounded-lg border border-zinc-800 bg-zinc-950/80 px-3 text-xs text-zinc-300 outline-none focus:border-[var(--accent-400)]"
+                          className="db-labor-book-time__edit-input  w-full rounded-lg border border-zinc-800 bg-zinc-950/80 px-3 text-xs text-zinc-300 outline-none focus:border-[var(--accent-400)]"
                         />
                       </div>
                     ) : (
@@ -655,15 +656,15 @@ export default function LaborBookTimePage() {
                   <div className="db-labor-book-time__ledger-actions flex items-center justify-end gap-2">
                     {isEditing ? (
                       <>
-                        <button
+                        <ControlButton controlKind="icon"
                           type="button"
                           onClick={() => setEditingId(null)}
                           className="rounded-lg border border-zinc-700 p-2 text-zinc-400 transition hover:border-zinc-500 hover:text-white"
                           aria-label="Cancel edit"
                         >
                           <X className="h-4 w-4" />
-                        </button>
-                        <button
+                        </ControlButton>
+                        <ControlButton controlKind="icon"
                           type="button"
                           onClick={saveEdit}
                           disabled={updateMutation.isPending}
@@ -671,19 +672,19 @@ export default function LaborBookTimePage() {
                           aria-label="Save labor book time"
                         >
                           <Check className="h-4 w-4" />
-                        </button>
+                        </ControlButton>
                       </>
                     ) : (
                       <>
-                        <button
+                        <ControlButton controlKind="icon"
                           type="button"
                           onClick={() => startEdit(entry)}
                           className="rounded-lg border border-zinc-700 p-2 text-zinc-400 transition hover:border-[var(--accent-400)]/60 hover:text-[var(--accent-300)]"
                           aria-label={`Edit ${entry.operation_name}`}
                         >
                           <Pencil className="h-4 w-4" />
-                        </button>
-                        <button
+                        </ControlButton>
+                        <ControlButton controlKind="icon"
                           type="button"
                           onClick={() => removeEntry(entry)}
                           disabled={deleteMutation.isPending}
@@ -691,7 +692,7 @@ export default function LaborBookTimePage() {
                           aria-label={`Remove ${entry.operation_name}`}
                         >
                           <Trash2 className="h-4 w-4" />
-                        </button>
+                        </ControlButton>
                       </>
                     )}
                   </div>

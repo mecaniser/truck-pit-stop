@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useEffect, useState } from 'react'
 import {
   AlertTriangle,
@@ -243,7 +244,7 @@ function ProviderTabs({ active, onChange }: { active: Provider; onChange: (provi
         ['stripe', 'Stripe', 'Connect merchants, fees and card settlements', CreditCard],
         ['quickbooks', 'QuickBooks', 'Accounting authorization and QuickBooks Payments', BookOpenCheck],
       ] as const).map(([provider, title, description, Icon]) => (
-        <button
+        <ControlButton controlKind="content"
           key={provider}
           type="button"
           onClick={() => onChange(provider)}
@@ -255,7 +256,7 @@ function ProviderTabs({ active, onChange }: { active: Provider; onChange: (provi
         >
           <Icon className={`h-5 w-5 shrink-0 ${active === provider ? 'text-gold-400' : 'text-zinc-500'}`} />
           <span><span className="block font-semibold">{title}</span><span className="mt-0.5 block text-xs text-zinc-500">{description}</span></span>
-        </button>
+        </ControlButton>
       ))}
     </div>
   )
@@ -317,7 +318,7 @@ function StripeControls({
             {[overview.configuration.connect_webhook_url, overview.configuration.platform_webhook_url].map((url) => (
               <div key={url} className="flex items-center gap-2 rounded-lg border border-zinc-700/60 bg-zinc-950/40 p-2">
                 <code className="min-w-0 flex-1 truncate text-xs text-zinc-300">{url}</code>
-                <button onClick={() => onCopyWebhook(url)} className="rounded p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white" aria-label="Copy Stripe webhook URL"><Copy className="h-4 w-4" /></button>
+                <ControlButton controlKind="icon" onClick={() => onCopyWebhook(url)} className="rounded p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white" aria-label="Copy Stripe webhook URL"><Copy className="h-4 w-4" /></ControlButton>
               </div>
             ))}
           </div>
@@ -339,10 +340,10 @@ function StripeControls({
                   <td className="max-w-xs px-4 py-4 text-xs text-zinc-400">{merchant.requirements.length ? merchant.requirements.join(', ') : merchant.disabled_reason || 'None reported'}</td>
                   <td className="px-4 py-4">
                     <div className="flex items-center gap-2">
-                      <input aria-label={`Platform fee for ${merchant.tenant_name}`} value={feeDrafts[merchant.tenant_id] ?? ''} onChange={(event) => onFeeChange(merchant.tenant_id, event.target.value)} placeholder={`${overview.platform_fee_default_percent}% default`} inputMode="decimal" className="w-28 rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-2 text-sm text-white outline-none focus:border-gold-500" />
+                      <ControlInput aria-label={`Platform fee for ${merchant.tenant_name}`} value={feeDrafts[merchant.tenant_id] ?? ''} onChange={(event) => onFeeChange(merchant.tenant_id, event.target.value)} placeholder={`${overview.platform_fee_default_percent}% default`} inputMode="decimal" className="w-28 rounded-lg border border-zinc-700 bg-zinc-950 px-2.5  text-sm text-white outline-none focus:border-gold-500" />
                       <GlassNoirButton size="sm" onClick={() => onSaveFee(merchant)} disabled={savingTenantId === merchant.tenant_id}>{savingTenantId === merchant.tenant_id ? 'Saving' : 'Save'}</GlassNoirButton>
                     </div>
-                    <button onClick={() => onSaveFee(merchant, null)} className="mt-2 text-xs text-zinc-500 hover:text-gold-300">Use platform default</button>
+                    <ControlButton onClick={() => onSaveFee(merchant, null)} className="mt-2 text-xs text-zinc-500 hover:text-gold-300">Use platform default</ControlButton>
                   </td>
                   <td className="px-4 py-4"><p className="text-xs text-zinc-300">{dateTime(merchant.last_webhook_at)}</p><p className="mt-1 text-xs text-zinc-500">{merchant.last_webhook_event || 'No event'}{merchant.last_webhook_error ? ` · ${merchant.last_webhook_error}` : ''}</p></td>
                   <td className="px-4 py-4">{merchant.account_id ? <GlassNoirButton variant="danger" size="sm" onClick={() => onReset(merchant)} disabled={resettingTenantId === merchant.tenant_id}>{resettingTenantId === merchant.tenant_id ? 'Resetting' : 'Reset Stripe'}</GlassNoirButton> : <span className="text-xs text-zinc-500">No connection</span>}</td>
@@ -421,7 +422,7 @@ function QuickBooksControls({
           <p className="text-sm text-zinc-300">{overview.webhook_health.merchants_with_recent_delivery} delivered · {overview.webhook_health.merchants_with_delivery_error} webhook errors · {overview.webhook_health.merchants_with_cdc_error} CDC errors</p>
           <div className="mt-4 flex items-center gap-2 rounded-lg border border-zinc-700/60 bg-zinc-950/40 p-2">
             <code className="min-w-0 flex-1 truncate text-xs text-zinc-300">{overview.configuration.webhook_url}</code>
-            <button onClick={() => onCopyWebhook(overview.configuration.webhook_url)} className="rounded p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white" aria-label="Copy QuickBooks webhook URL"><Copy className="h-4 w-4" /></button>
+            <ControlButton controlKind="icon" onClick={() => onCopyWebhook(overview.configuration.webhook_url)} className="rounded p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white" aria-label="Copy QuickBooks webhook URL"><Copy className="h-4 w-4" /></ControlButton>
           </div>
         </GlassNoirCard>
       </div>
@@ -485,9 +486,9 @@ function ResetProviderDialog({
       <div role="alertdialog" aria-modal="true" aria-labelledby="reset-provider-title" aria-describedby="reset-provider-description" className="w-full max-w-md rounded-lg border border-red-800/50 bg-zinc-950 p-6 shadow-2xl shadow-black/60">
         <div className="flex items-start justify-between gap-4">
           <div><h3 id="reset-provider-title" className="text-lg font-semibold text-zinc-100">Reset {label} connection?</h3><p id="reset-provider-description" className="mt-3 text-sm leading-6 text-zinc-400">This removes the local {label} authorization for <span className="font-medium text-zinc-200">{target.tenantName}</span>. Provider accounts and prior accounting or payment history are preserved.</p></div>
-          <button type="button" onClick={onCancel} disabled={pending} aria-label="Close confirmation" className="rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-50"><X className="h-5 w-5" /></button>
+          <ControlButton controlKind="icon" type="button" onClick={onCancel} disabled={pending} aria-label="Close confirmation" className="rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-50"><X className="h-5 w-5" /></ControlButton>
         </div>
-        <div className="mt-5"><label htmlFor="platform-payment-reset-password" className="mb-2 block text-xs font-medium text-zinc-400">Your current password</label><input id="platform-payment-reset-password" autoFocus type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm text-zinc-100 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-500/20" /></div>
+        <div className="mt-5"><label htmlFor="platform-payment-reset-password" className="mb-2 block text-xs font-medium text-zinc-400">Your current password</label><ControlInput id="platform-payment-reset-password" autoFocus type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-4  text-sm text-zinc-100 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-500/20" /></div>
         <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><GlassNoirButton variant="secondary" onClick={onCancel} disabled={pending}>Cancel</GlassNoirButton><GlassNoirButton variant="danger" onClick={() => onConfirm(password)} disabled={pending || !password}>{pending ? 'Resetting...' : `Verify and reset ${label}`}</GlassNoirButton></div>
       </div>
     </div>

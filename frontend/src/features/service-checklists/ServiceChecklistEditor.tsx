@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
@@ -86,16 +87,16 @@ function Editor({ tenantId, serviceId, initialDraft, onSaved, editorRef }: {
   return <section ref={section} aria-label="Service checklist" className="space-y-3 border-t border-gray-200 pt-4">
     <div><h3 className="text-sm font-semibold !text-[#111827]">Checklist</h3><p className="mt-1 text-xs !text-[#4b5563]">Required tasks must be checked before finishing the job. Changes apply to future jobs.</p></div>
     {query.isPending && !initialDraft ? <p role="status" className="text-sm !text-[#4b5563]">Loading checklist…</p> : <>
-      {query.isError && <p role="alert" className="text-sm !text-[#b91c1c]">Could not load the checklist. <button type="button" onClick={() => void query.refetch()} className="underline">Retry</button></p>}
+      {query.isError && <p role="alert" className="text-sm !text-[#b91c1c]">Could not load the checklist. <ControlButton type="button" onClick={() => void query.refetch()} className="underline">Retry</ControlButton></p>}
       {(!query.isError || draft !== null) && <TemplateTaskEditor items={items} onChange={change} disabled={save.isPending} />}
       {message && <p role={save.isError || conflict || validationError ? 'alert' : 'status'} className={`text-xs ${save.isError || conflict || validationError ? '!text-[#b91c1c]' : '!text-[#4b5563]'}`}>{message}</p>}
-      {conflict && <button type="button" className="min-h-10 whitespace-nowrap text-sm font-semibold !text-[#374151] underline" onClick={async () => {
+      {conflict && <ControlButton type="button" className=" whitespace-nowrap text-sm font-semibold !text-[#374151] underline" onClick={async () => {
         const result = await query.refetch()
         if (!active.current || !result.data || result.isError) return
         save.reset(); setDraft(null); setVersion(null); setConflict(false); setValidationError(false); setMessage('Latest checklist loaded. Reapply your changes before saving.')
-      }}>Discard edits and reload</button>}
-      <button type="button" disabled={save.isPending || conflict || draft === null || expectedVersion == null || items.some(item => !item.label.trim())}
-        onClick={() => save.mutate()} className="min-h-10 whitespace-nowrap rounded-lg !bg-[#111827] px-3 py-2 text-xs font-semibold !text-[#ffffff] disabled:opacity-40">{save.isPending ? 'Saving checklist…' : 'Save checklist'}</button>
+      }}>Discard edits and reload</ControlButton>}
+      <ControlButton type="button" disabled={save.isPending || conflict || draft === null || expectedVersion == null || items.some(item => !item.label.trim())}
+        onClick={() => save.mutate()} className=" whitespace-nowrap rounded-lg !bg-[#111827] px-3  text-xs font-semibold !text-[#ffffff] disabled:opacity-40">{save.isPending ? 'Saving checklist…' : 'Save checklist'}</ControlButton>
     </>}
   </section>
 }

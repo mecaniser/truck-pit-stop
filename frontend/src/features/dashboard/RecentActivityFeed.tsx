@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useMemo, useState } from 'react'
 import DatePicker from '@/components/DatePicker'
 import { Spinner } from '@/components/ui'
@@ -180,13 +181,13 @@ export default function RecentActivityFeed({
         <DatePicker compact label="Activity from date" value={dateFrom} onChange={setDateFrom} />
         <DatePicker compact label="Activity to date" value={dateTo} onChange={setDateTo} min={dateFrom || undefined} />
         {hasActiveFilters && (
-          <button
+          <ControlButton
             type="button"
             onClick={() => { setActorFilter(''); setEventTypeFilter(''); setDateFrom(''); setDateTo('') }}
             className="text-sm text-gray-400 hover:text-white px-2"
           >
             Clear
-          </button>
+          </ControlButton>
         )}
       </div>
 
@@ -217,7 +218,7 @@ export default function RecentActivityFeed({
                           const Icon = EVENT_ICON[event.event_type] || ClipboardList
                           const color = EVENT_COLOR[event.event_type] || 'text-gray-400'
                           return (
-                            <button
+                            <ControlButton controlKind="content"
                               key={event.id}
                               type="button"
                               disabled={!event.order_id}
@@ -234,7 +235,7 @@ export default function RecentActivityFeed({
                                   {formatDistanceToNow(new Date(event.occurred_at), { addSuffix: true })}
                                 </p>
                               </div>
-                            </button>
+                            </ControlButton>
                           )
                         })}
                       </div>
@@ -247,23 +248,23 @@ export default function RecentActivityFeed({
           {(hasMore || olderItems.length > 0) && (
             <div className="flex items-center justify-center gap-3 mt-3 flex-shrink-0">
               {hasMore && (
-                <button
+                <ControlButton
                   type="button"
                   disabled={loadingMore}
                   onClick={loadMore}
-                  className="py-2 text-sm text-gray-400 hover:text-white transition-colors disabled:opacity-50"
+                  className=" text-sm text-gray-400 hover:text-white transition-colors disabled:opacity-50"
                 >
                   {loadingMore ? 'Loading…' : 'Load more'}
-                </button>
+                </ControlButton>
               )}
               {olderItems.length > 0 && (
-                <button
+                <ControlButton
                   type="button"
                   onClick={showLess}
-                  className="py-2 text-sm text-gray-400 hover:text-white transition-colors"
+                  className=" text-sm text-gray-400 hover:text-white transition-colors"
                 >
                   Show less
-                </button>
+                </ControlButton>
               )}
             </div>
           )}

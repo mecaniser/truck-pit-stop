@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Spinner } from '@/components/ui'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -146,12 +147,12 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
 
   return (
     <div className={'fleet-root' + (railExpanded ? ' rail-expanded' : '')}>
-      <div className="app">
+      <div className="app" data-db-touch-controls>
         <nav className={'rail' + (railExpanded ? ' is-expanded' : '')}>
           <div className="rail-mark"><Truck /></div>
           {canReturnToDashboard && (
             <>
-              <button
+              <ControlButton controlKind="content"
                 type="button"
                 className="rail-btn rail-btn-dashboard"
                 onClick={() => fleetReturn.returnsToSettings ? navigate(-1) : navigate('/dashboard')}
@@ -161,19 +162,19 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
                 <span className="rail-abbr">{fleetReturn.returnsToSettings ? 'SET' : 'SHOP'}</span>
                 <span className="rail-full">{fleetReturn.returnsToSettings ? 'Settings' : 'Shop'}</span>
                 <span className="rail-tip">{fleetReturn.returnsToSettings ? `Return to ${fleetReturn.label}` : 'Shop dashboard'}</span>
-              </button>
+              </ControlButton>
               <div className="rail-div" />
             </>
           )}
           {railItems.map(([v, icon, tip, abbr]) => (
-            <button key={v} className={'rail-btn' + (view === v || (v === 'board' && view === 'detail') ? ' is-on' : '')} onClick={() => goView(v)}>
+            <ControlButton controlKind="content" key={v} className={'rail-btn' + (view === v || (v === 'board' && view === 'detail') ? ' is-on' : '')} onClick={() => goView(v)}>
               {icon}<span className="rail-abbr">{abbr}</span><span className="rail-full">{tip}</span><span className="rail-tip">{tip}</span>
-            </button>
+            </ControlButton>
           ))}
           <div className="rail-sp" />
           <div className="rail-account" ref={profileMenuRef}>
             <div className="rail-account-controls">
-              <button
+              <ControlButton controlKind="action"
                 ref={profileTriggerRef}
                 type="button"
                 className="rail-user"
@@ -192,8 +193,8 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
                 <span className="rail-av">{initials(`${user?.first_name || ''} ${user?.last_name || ''}`)}</span>
                 <span className="rail-account-label">Profile</span>
                 <span className="rail-tip">Profile</span>
-              </button>
-              <button
+              </ControlButton>
+              <ControlButton controlKind="action"
                 type="button"
                 className="rail-collapse-quick"
                 onClick={() => {
@@ -204,11 +205,11 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
                 title={railExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
               >
                 {railExpanded ? <ChevronsLeft size={17} aria-hidden="true" /> : <ChevronsRight size={17} aria-hidden="true" />}
-              </button>
+              </ControlButton>
             </div>
             {profileMenuOpen && (
               <div id="fleet-profile-menu" className="rail-account-menu" role="menu" aria-label="Profile actions">
-                <button
+                <ControlButton controlKind="content"
                   type="button"
                   role="menuitem"
                   onClick={() => {
@@ -218,15 +219,15 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
                 >
                   <Settings size={17} aria-hidden="true" />
                   <span>Settings</span>
-                </button>
-                {canReturnToDashboard && <button
+                </ControlButton>
+                {canReturnToDashboard && <ControlButton controlKind="content"
                   type="button"
                   role="menuitem"
                   onClick={() => { setProfileMenuOpen(false); setIntegrationsOpen(true) }}
                 >
                   <Link2 size={17} aria-hidden="true" /><span>Integrations</span>
-                </button>}
-                <button
+                </ControlButton>}
+                <ControlButton controlKind="content"
                   type="button"
                   role="menuitem"
                   className="is-danger"
@@ -237,7 +238,7 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
                 >
                   <LogOut size={17} aria-hidden="true" />
                   <span>Log out</span>
-                </button>
+                </ControlButton>
               </div>
             )}
           </div>
@@ -252,9 +253,9 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
             <div className="topbar-l">
               {view === 'detail' ? (
                 <>
-                  <button className="topbar-back" onClick={() => goView('board')}>
+                  <ControlButton className="topbar-back" onClick={() => goView('board')}>
                     <ArrowLeft size={17} /> <span>Fleet board</span>
-                  </button>
+                  </ControlButton>
                   <span className="topbar-title topbar-title-unit">{detailTruck ? fleetUnitLabel(detailTruck) : 'Truck'}</span>
                 </>
               ) : (
@@ -276,9 +277,9 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
             </div>
             {view !== 'detail' && (
               <div className="topbar-r">
-                <button className="dbtn dbtn-yellow" onClick={() => setAdding(true)} title="Add truck"><Plus size={15} /> <span className="dbtn-label">Add truck</span></button>
+                <ControlButton className="dbtn dbtn-yellow" onClick={() => setAdding(true)} title="Add truck"><Plus size={15} /> <span className="dbtn-label">Add truck</span></ControlButton>
                 <div className="topbar-utilities">
-                  <button className="topbar-icbtn" title="Notifications" aria-label="Notifications"><Bell size={17} />{!!data?.stats.incidents_total && <span className="dot" />}</button>
+                  <ControlButton className="topbar-icbtn" title="Notifications" aria-label="Notifications"><Bell size={17} />{!!data?.stats.incidents_total && <span className="dot" />}</ControlButton>
                 </div>
               </div>
             )}
@@ -291,9 +292,9 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
               ) : isError || !data ? (
                 <div className="loader flex-col gap-3 text-center text-sm text-slate-500">
                   <span>The Fleet Board could not be loaded.</span>
-                  <button type="button" className="dbtn dbtn-yellow" onClick={() => refetch()}>
+                  <ControlButton type="button" className="dbtn dbtn-yellow" onClick={() => refetch()}>
                     Retry
-                  </button>
+                  </ControlButton>
                 </div>
               ) : view === 'detail' && selId ? (
                 <TruckDetail truckId={selId} trucks={trucks} onOpen={openTruck} onViewTrips={openTrips} />
@@ -416,7 +417,7 @@ function PmCard({ truck: t, onOpen }: { truck: BoardTruck; onOpen: (id: string) 
 
   return (
     <div className="scard">
-      <button className="scard-hd" onClick={() => onOpen(t.id)}>
+      <ControlButton controlKind="content" className="scard-hd" onClick={() => onOpen(t.id)}>
         <div className="tcard-unit" style={{ fontSize: 20 }}>{fleetUnitLabel(t)}</div>
         <div className="tcard-mm">{`${t.year || ''} ${t.make} ${t.model}`.trim()}</div>
         <div className={'scard-urgency ' + ucls}>{pm.label}</div>
@@ -431,7 +432,7 @@ function PmCard({ truck: t, onOpen }: { truck: BoardTruck; onOpen: (id: string) 
           </div>
         )}
         <span className={'scard-stage ' + stageMeta.cls}>{stageMeta.label}</span>
-      </button>
+      </ControlButton>
 
       {/* Green trucks with no open work order have no action — don't render an
           empty action bar for them. */}
@@ -441,34 +442,34 @@ function PmCard({ truck: t, onOpen }: { truck: BoardTruck; onOpen: (id: string) 
             green trucks (plenty of miles/time left) show no call to action.
             Reschedule = plan a future PM; Create repair order = service it now. */}
         {stage === 'none' && pm.cls !== 'pm-ok' && (
-          <button className="sbtn sbtn-yellow" onClick={() => setScheduleMode('reschedule')}>
+          <ControlButton className="sbtn sbtn-yellow" onClick={() => setScheduleMode('reschedule')}>
             <Calendar size={14} /> Schedule PM
-          </button>
+          </ControlButton>
         )}
         {stage === 'scheduled' && pm.cls !== 'pm-ok' && (
           <>
-            <button className="sbtn" onClick={() => setScheduleMode('reschedule')}>
+            <ControlButton className="sbtn" onClick={() => setScheduleMode('reschedule')}>
               <Calendar size={14} /> Reschedule
-            </button>
-            <button className="sbtn sbtn-yellow" onClick={() => setScheduleMode('create')}>
+            </ControlButton>
+            <ControlButton className="sbtn sbtn-yellow" onClick={() => setScheduleMode('create')}>
               <ClipboardCheck size={14} /> Create repair order
-            </button>
+            </ControlButton>
           </>
         )}
         {stage === 'ready' && (
           <>
-            <button className="sbtn" onClick={() => setRoPanelId(t.pm_work_order!.repair_order_id)}>
+            <ControlButton className="sbtn" onClick={() => setRoPanelId(t.pm_work_order!.repair_order_id)}>
               <Wrench size={14} /> Open RO
-            </button>
-            <button className="sbtn sbtn-yellow" disabled={startPM.isPending} onClick={() => startPM.mutate()}>
+            </ControlButton>
+            <ControlButton className="sbtn sbtn-yellow" disabled={startPM.isPending} onClick={() => startPM.mutate()}>
               {startPM.isPending ? <Spinner size="xs" /> : <Play size={14} />} Start PM
-            </button>
+            </ControlButton>
           </>
         )}
         {stage === 'progress' && (
-          <button className="sbtn sbtn-yellow" onClick={() => setRoPanelId(t.pm_work_order!.repair_order_id)}>
+          <ControlButton className="sbtn sbtn-yellow" onClick={() => setRoPanelId(t.pm_work_order!.repair_order_id)}>
             <Flag size={14} /> Complete PM
-          </button>
+          </ControlButton>
         )}
       </div>
       )}
@@ -492,7 +493,7 @@ function OrdersPage({ trucks, onOpen }: { trucks: BoardTruck[]; onOpen: (id: str
   return (
     <div className="list-rows">
       {list.map((t) => (
-        <button key={t.id} className="lrow" onClick={() => onOpen(t.id)}>
+        <ControlButton key={t.id} className="lrow" onClick={() => onOpen(t.id)}>
           <i className="lrow-dot" style={{ background: STATUS_META[t.status].dot }} />
           <span className="lrow-unit">{fleetUnitLabel(t)}</span>
           <span className="lrow-mono">{t.work_order!.id}</span>
@@ -501,7 +502,7 @@ function OrdersPage({ trucks, onOpen }: { trucks: BoardTruck[]; onOpen: (id: str
             <span className="lrow-st">{t.work_order!.status}</span>
             <span className="lrow-tx">{t.work_order!.mechanic || 'Unassigned'}</span>
           </span>
-        </button>
+        </ControlButton>
       ))}
     </div>
   )
@@ -562,7 +563,7 @@ function AuthorityPicker({ companies, value, onChange, defaultAuthorityId }: {
     <div className="authority-picker">
       <div className={'authority-combobox' + (open ? ' is-open' : '')}>
         <Search size={17} aria-hidden="true" />
-        <input
+        <ControlInput
           value={query || (open ? '' : selected?.company_name || '')}
           onFocus={(event) => { setQuery(selected?.company_name || ''); setOpen(true); requestAnimationFrame(() => event.currentTarget.select()) }}
           onChange={(event) => { setQuery(event.target.value); setOpen(true) }}
@@ -582,14 +583,14 @@ function AuthorityPicker({ companies, value, onChange, defaultAuthorityId }: {
             const isSelected = company.id === value
             const isDefault = company.id === defaultAuthorityId
             return (
-              <button key={company.id} type="button" className={'authority-picker-option' + (isSelected ? ' is-selected' : '')} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(company)} role="option" aria-selected={isSelected}>
+              <ControlButton controlKind="content" key={company.id} type="button" className={'authority-picker-option' + (isSelected ? ' is-selected' : '')} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(company)} role="option" aria-selected={isSelected}>
                 <span className="authority-picker-option-copy">
                   <span>{company.company_name}</span>
                   <small>{isDefault ? 'Default operating authority' : company.is_internal_fleet ? 'Internal shop fleet' : 'Fleet Board authority'}</small>
                 </span>
                 {isDefault && !isSelected && <span className="authority-picker-default">Default</span>}
                 {isSelected && <Check className="authority-picker-check" size={17} aria-hidden="true" />}
-              </button>
+              </ControlButton>
             )
           })}
           {!matches.length && <div className="authority-picker-empty">No operating authority matches that search.</div>}
@@ -703,8 +704,8 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
     >
       <div className="add-truck-modal">
         <div className="add-truck-mode" style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
-          <button type="button" className={`dbtn ${mode === 'new' ? 'dbtn-yellow' : 'dbtn-ghost'}`} onClick={() => { setMode('new'); setVinConflict(null) }}>New truck</button>
-          <button type="button" className={`dbtn ${mode === 'existing' ? 'dbtn-yellow' : 'dbtn-ghost'}`} onClick={() => setMode('existing')}>Link existing truck</button>
+          <ControlButton type="button" className={`dbtn ${mode === 'new' ? 'dbtn-yellow' : 'dbtn-ghost'}`} onClick={() => { setMode('new'); setVinConflict(null) }}>New truck</ControlButton>
+          <ControlButton type="button" className={`dbtn ${mode === 'existing' ? 'dbtn-yellow' : 'dbtn-ghost'}`} onClick={() => setMode('existing')}>Link existing truck</ControlButton>
         </div>
         <Field label="Operating authority *">
           <AuthorityPicker
@@ -717,7 +718,7 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
         {mode === 'existing' ? (
           <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
             <Field label="Find truck by VIN, unit, plate, make, or model">
-              <input className="w-full" value={vehicleSearch} onChange={(e) => { setVehicleSearch(e.target.value); setExistingVehicleId('') }} placeholder="Search existing trucks…" />
+              <ControlInput className="w-full" value={vehicleSearch} onChange={(e) => { setVehicleSearch(e.target.value); setExistingVehicleId('') }} placeholder="Search existing trucks…" />
             </Field>
             <div className="vehicle-candidate-picker" aria-label="Existing truck">
               <span className="id-k" style={{ display: 'block', marginBottom: 5 }}>Existing truck *</span>
@@ -728,7 +729,7 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
                   {vehicleCandidates.map((vehicle) => {
                     const selected = vehicle.id === existingVehicleId
                     return (
-                      <button
+                      <ControlButton controlKind="content"
                         key={vehicle.id}
                         type="button"
                         role="option"
@@ -741,7 +742,7 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
                           <small>{vehicle.vin ? `VIN …${vehicle.vin.slice(-6)}` : 'VIN not recorded'}</small>
                         </span>
                         {selected && <Check size={18} aria-hidden="true" />}
-                      </button>
+                      </ControlButton>
                     )
                   })}
                 </div>
@@ -758,7 +759,7 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
               <span>Paste a full VIN to fill vehicle details</span>
             </div>
             <div className="vin-autofill-control">
-              <input
+              <ControlInput
                 value={form.vin}
                 onChange={(e) => {
                   const v = e.target.value.toUpperCase()
@@ -770,19 +771,19 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
                 maxLength={17}
                 aria-label="Vehicle identification number"
               />
-              <button className="vin-decode" type="button" onClick={() => decodeVin(form.vin)} disabled={decoding || form.vin.trim().length !== 17}>
+              <ControlButton className="vin-decode" type="button" onClick={() => decodeVin(form.vin)} disabled={decoding || form.vin.trim().length !== 17}>
                 {decoding ? <Spinner size="xs" /> : 'Decode'}
-              </button>
+              </ControlButton>
             </div>
           </div>
-          <Field label="Make *"><input className={inp} value={form.make} onChange={set('make')} placeholder="Freightliner" /></Field>
-          <Field label="Model *"><input className={inp} value={form.model} onChange={set('model')} placeholder="Cascadia" /></Field>
-          <Field label="Year"><input className={inp} value={form.year} onChange={set('year')} inputMode="numeric" placeholder="2021" /></Field>
-          <Field label="Unit #"><input className={inp} value={form.unit_number} onChange={set('unit_number')} placeholder="TPS-109" /></Field>
-          <Field label="Mileage"><input className={inp} value={form.mileage} onChange={set('mileage')} inputMode="numeric" placeholder="120000" /></Field>
-          <Field label="Plate"><input className={inp} value={form.license_plate} onChange={set('license_plate')} placeholder="ABC-1234" /></Field>
-          <Field label="Driver"><input className={inp} value={form.driver_name} onChange={set('driver_name')} placeholder="Driver name (optional)" /></Field>
-          <Field label="Driver phone"><input className={inp} value={form.driver_phone} onChange={(e) => setForm((f) => ({ ...f, driver_phone: formatUSPhone(e.target.value) }))} placeholder="(704) 555-0123" /></Field>
+          <Field label="Make *"><ControlInput className={inp} value={form.make} onChange={set('make')} placeholder="Freightliner" /></Field>
+          <Field label="Model *"><ControlInput className={inp} value={form.model} onChange={set('model')} placeholder="Cascadia" /></Field>
+          <Field label="Year"><ControlInput className={inp} value={form.year} onChange={set('year')} inputMode="numeric" placeholder="2021" /></Field>
+          <Field label="Unit #"><ControlInput className={inp} value={form.unit_number} onChange={set('unit_number')} placeholder="TPS-109" /></Field>
+          <Field label="Mileage"><ControlInput className={inp} value={form.mileage} onChange={set('mileage')} inputMode="numeric" placeholder="120000" /></Field>
+          <Field label="Plate"><ControlInput className={inp} value={form.license_plate} onChange={set('license_plate')} placeholder="ABC-1234" /></Field>
+          <Field label="Driver"><ControlInput className={inp} value={form.driver_name} onChange={set('driver_name')} placeholder="Driver name (optional)" /></Field>
+          <Field label="Driver phone"><ControlInput className={inp} value={form.driver_phone} onChange={(e) => setForm((f) => ({ ...f, driver_phone: formatUSPhone(e.target.value) }))} placeholder="(704) 555-0123" /></Field>
         </div>
         )}
         {mode === 'new' && vinConflict?.vehicle && (
@@ -790,20 +791,20 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
             <strong style={{ color: '#fecaca', fontSize: 13 }}>VIN already assigned to {duplicateVinTruckLabel(vinConflict.vehicle)}</strong>
             <span style={{ color: 'var(--muted-2)', fontSize: 12 }}>{vinConflict.vehicle.owner_lessor_name ? `Owner / lessor: ${vinConflict.vehicle.owner_lessor_name}` : 'Owner / lessor not assigned'}</span>
             {vinConflict.vehicle.operating_authority_name && <span style={{ color: 'var(--muted-2)', fontSize: 12 }}>Operating authority: {vinConflict.vehicle.operating_authority_name}</span>}
-            <button type="button" className="dbtn dbtn-ghost" style={{ justifySelf: 'start', marginTop: 2 }} onClick={() => {
+            <ControlButton type="button" className="dbtn dbtn-ghost" style={{ justifySelf: 'start', marginTop: 2 }} onClick={() => {
               setMode('existing')
               setExistingVehicleId(vinConflict.vehicle!.id)
               setVehicleSearch(vinConflict.vehicle!.vin || '')
               setVinConflict(null)
             }}>
               Link this existing truck
-            </button>
+            </ControlButton>
           </div>
         )}
-        <button className="dbtn dbtn-yellow" style={{ marginTop: 16, width: '100%', justifyContent: 'center' }}
+        <ControlButton className="dbtn dbtn-yellow" style={{ marginTop: 16, width: '100%', justifyContent: 'center' }}
           disabled={!customerId || (mode === 'new' ? (!form.make.trim() || !form.model.trim()) : !existingVehicleId) || create.isPending} onClick={() => create.mutate()}>
           {create.isPending ? <Spinner size="sm" /> : <Plus size={15} />} {mode === 'existing' ? 'Link truck' : 'Add truck'}
-        </button>
+        </ControlButton>
       </div>
     </SidekickPanel>
   )
@@ -916,9 +917,9 @@ function FleetSettingsModal({ onClose }: { onClose: () => void }) {
       <div>
         {!profileEditing && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
-            <button className="dbtn dbtn-ghost" onClick={() => setProfileEditing(true)}>
+            <ControlButton className="dbtn dbtn-ghost" onClick={() => setProfileEditing(true)}>
               <Pencil size={15} /> Edit account
-            </button>
+            </ControlButton>
           </div>
         )}
 
@@ -932,14 +933,14 @@ function FleetSettingsModal({ onClose }: { onClose: () => void }) {
           ) : (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <Field label="First name"><input value={profile.first_name} onChange={setP('first_name')} /></Field>
-                <Field label="Last name"><input value={profile.last_name} onChange={setP('last_name')} /></Field>
-                <Field label="Phone"><input value={profile.phone} onChange={(e) => setProfile((p) => ({ ...p, phone: formatUSPhone(e.target.value) }))} placeholder="(704) 555-0123" inputMode="tel" autoComplete="tel" /></Field>
-                <Field label="Email"><input value={profile.email} onChange={setP('email')} type="email" /></Field>
+                <Field label="First name"><ControlInput value={profile.first_name} onChange={setP('first_name')} /></Field>
+                <Field label="Last name"><ControlInput value={profile.last_name} onChange={setP('last_name')} /></Field>
+                <Field label="Phone"><ControlInput value={profile.phone} onChange={(e) => setProfile((p) => ({ ...p, phone: formatUSPhone(e.target.value) }))} placeholder="(704) 555-0123" inputMode="tel" autoComplete="tel" /></Field>
+                <Field label="Email"><ControlInput value={profile.email} onChange={setP('email')} type="email" /></Field>
                 {emailChanged && (
                   <div style={{ gridColumn: '1 / -1' }}>
                     <Field label="Current password (required to change email)">
-                      <input value={pwd.current_password} onChange={(e) => setPwd((p) => ({ ...p, current_password: e.target.value }))} type="password" />
+                      <ControlInput value={pwd.current_password} onChange={(e) => setPwd((p) => ({ ...p, current_password: e.target.value }))} type="password" />
                     </Field>
                     <p className="id-k" style={{ marginTop: 6, textTransform: 'none', letterSpacing: 0 }}>
                       We'll send a verification link to the new address; your email changes once you confirm it.
@@ -952,47 +953,47 @@ function FleetSettingsModal({ onClose }: { onClose: () => void }) {
               <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border, rgba(255,255,255,.08))' }}>
                 <div className="dsec-title" style={{ marginBottom: 12 }}><KeyRound size={17} /><h3>Password</h3></div>
                 {!pwdOpen ? (
-                  <button className="dbtn dbtn-ghost" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setPwdOpen(true)}>
+                  <ControlButton className="dbtn dbtn-ghost" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setPwdOpen(true)}>
                     <KeyRound size={15} /> Change password
-                  </button>
+                  </ControlButton>
                 ) : (
                   <div style={{ display: 'grid', gap: 12 }}>
                     <Field label="Current password">
-                      <input value={pwd.current_password} onChange={(e) => setPwd((p) => ({ ...p, current_password: e.target.value }))} type="password" autoFocus />
+                      <ControlInput value={pwd.current_password} onChange={(e) => setPwd((p) => ({ ...p, current_password: e.target.value }))} type="password" autoFocus />
                     </Field>
                     <Field label="New password">
                       <div style={{ position: 'relative' }}>
-                        <input
+                        <ControlInput
                           value={pwd.new_password}
                           onChange={(e) => setPwd((p) => ({ ...p, new_password: e.target.value }))}
                           type={showPwd ? 'text' : 'password'}
                           style={{ paddingRight: 40 }}
                         />
-                        <button
+                        <ControlButton controlKind="icon"
                           type="button"
                           onClick={() => setShowPwd((s) => !s)}
                           aria-label={showPwd ? 'Hide password' : 'Show password'}
                           style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}
                         >
                           {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
-                        </button>
+                        </ControlButton>
                       </div>
                     </Field>
-                    <button className="dbtn dbtn-ghost" style={{ justifyContent: 'center' }} disabled={saving} onClick={closePwd}>
+                    <ControlButton className="dbtn dbtn-ghost" style={{ justifyContent: 'center' }} disabled={saving} onClick={closePwd}>
                       Cancel password change
-                    </button>
+                    </ControlButton>
                   </div>
                 )}
               </div>
 
               <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-                <button className="dbtn dbtn-ghost" style={{ flex: 1, justifyContent: 'center' }} disabled={saving} onClick={cancelProfileEdit}>
+                <ControlButton className="dbtn dbtn-ghost" style={{ flex: 1, justifyContent: 'center' }} disabled={saving} onClick={cancelProfileEdit}>
                   Cancel
-                </button>
-                <button className="dbtn dbtn-yellow" style={{ flex: 1, justifyContent: 'center' }}
+                </ControlButton>
+                <ControlButton className="dbtn dbtn-yellow" style={{ flex: 1, justifyContent: 'center' }}
                   disabled={saving} onClick={save}>
                   {saving ? <Spinner size="sm" /> : <UserRound size={15} />} Save changes
-                </button>
+                </ControlButton>
               </div>
             </>
           )}

@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useEffect, useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -106,28 +107,28 @@ export default function InvoiceChargeControls({ invoiceId, summary, onUpdated, o
       if (mounted.current) setPending(false)
     }
   }
-  const toggle = (label: string, value: boolean, change: () => void) => <button type="button" role="switch" aria-label={label} aria-checked={value} aria-busy={pending} disabled={!controls.can_adjust || locked || staleVersion === summary.version}
+  const toggle = (label: string, value: boolean, change: () => void) => <ControlButton type="button" controlKind="content" role="switch" aria-label={label} aria-checked={value} aria-busy={pending} disabled={!controls.can_adjust || locked || staleVersion === summary.version}
       onPointerDown={event => { if (dirty) event.preventDefault() }}
       onClick={event => { event.currentTarget.focus(); change() }}
       className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">
       <span aria-hidden="true" className={`relative inline-flex h-6 w-10 shrink-0 rounded-full ${value ? 'bg-emerald-700' : 'bg-slate-300'}`}><span className={`absolute left-1 top-1 h-4 w-4 rounded-full bg-white ${value ? 'translate-x-4' : ''}`} /></span>
-    </button>
-  const referenceAction = <button type="button" aria-label={reference ? 'View certificate/reference' : 'Add certificate/reference'} title={reference ? 'View certificate/reference' : 'Add certificate/reference'} aria-expanded={showReference} aria-controls={`${id}-reference-panel`}
+    </ControlButton>
+  const referenceAction = <ControlButton controlKind="icon" type="button" aria-label={reference ? 'View certificate/reference' : 'Add certificate/reference'} title={reference ? 'View certificate/reference' : 'Add certificate/reference'} aria-expanded={showReference} aria-controls={`${id}-reference-panel`}
     aria-hidden={!taxExempt && !showReference} tabIndex={taxExempt || showReference ? 0 : -1} disabled={locked || (!taxExempt && !showReference)} onClick={() => setShowReference(!showReference)}
-    className={`flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 focus-visible:ring-2 focus-visible:ring-emerald-700 ${taxExempt || showReference ? '' : 'invisible'}`}><Paperclip className="h-4 w-4" aria-hidden="true" /></button>
+    className={`flex  min-w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 focus-visible:ring-2 focus-visible:ring-emerald-700 ${taxExempt || showReference ? '' : 'invisible'}`}><Paperclip className="h-4 w-4" aria-hidden="true" /></ControlButton>
   const details = <>
     {showReference && <div id={`${id}-reference-panel`} className="mb-2 space-y-1">
       <label htmlFor={`${id}-reference`} className="text-xs font-medium">Certificate or supporting reference (optional)</label>
-      <input id={`${id}-reference`} maxLength={255} disabled={!taxExempt || !controls.can_adjust || locked || staleVersion === summary.version} value={reference} onChange={event => setReference(event.target.value)}
+      <ControlInput id={`${id}-reference`} maxLength={255} disabled={!taxExempt || !controls.can_adjust || locked || staleVersion === summary.version} value={reference} onChange={event => setReference(event.target.value)}
         onBlur={() => { referenceTimer.current = setTimeout(() => { void save() }, 0) }}
         onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void save() } }}
-        className="min-h-11 w-full rounded-lg border border-slate-300 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 disabled:opacity-60" />
+        className=" w-full rounded-lg border border-slate-300 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 disabled:opacity-60" />
     </div>}
     <p role="status" className="sr-only">{pending ? 'Updating invoice…' : ''}</p>
     {!controls.can_adjust && controls.unavailable_reason && <p className="text-xs text-slate-600">{controls.unavailable_reason}</p>}
     {error && <p role="alert" className="mt-2 text-sm text-red-700">{error}</p>}
-    {request.current && !pending && <button type="button" onClick={() => void save()} className="min-h-11 rounded-lg px-2 text-sm font-semibold text-emerald-800 underline focus-visible:ring-2 focus-visible:ring-emerald-700">Retry update</button>}
-    {staleVersion === summary.version && <button type="button" onClick={() => { void queryClient.invalidateQueries({ queryKey: ['invoice-settlement', 'authenticated', invoiceId] }) }} className="min-h-11 rounded-lg px-2 text-sm font-semibold text-emerald-800 underline focus-visible:ring-2 focus-visible:ring-emerald-700">Refresh invoice</button>}
+    {request.current && !pending && <ControlButton type="button" onClick={() => void save()} className=" rounded-lg px-2 text-sm font-semibold text-emerald-800 underline focus-visible:ring-2 focus-visible:ring-emerald-700">Retry update</ControlButton>}
+    {staleVersion === summary.version && <ControlButton type="button" onClick={() => { void queryClient.invalidateQueries({ queryKey: ['invoice-settlement', 'authenticated', invoiceId] }) }} className=" rounded-lg px-2 text-sm font-semibold text-emerald-800 underline focus-visible:ring-2 focus-visible:ring-emerald-700">Refresh invoice</ControlButton>}
   </>
   const slots = {
     salesTax: toggle('Sales tax', !taxExempt, () => { void save(!taxExempt, supplies) }),

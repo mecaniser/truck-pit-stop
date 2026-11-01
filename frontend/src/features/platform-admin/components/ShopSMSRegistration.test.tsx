@@ -1,7 +1,8 @@
+import { ControlInput } from '@/components/ui/Controls'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import ShopSMSRegistration from './ShopSMSRegistration'
-vi.mock('../../communications/SMSSetup', () => ({ default: ({tenantId, onDirtyChange}: {tenantId: string; onDirtyChange: (dirty: boolean) => void}) => <input aria-label={`Draft for ${tenantId}`} onChange={() => onDirtyChange(true)} /> }))
+vi.mock('../../communications/SMSSetup', () => ({ default: ({tenantId, onDirtyChange}: {tenantId: string; onDirtyChange: (dirty: boolean) => void}) => <ControlInput aria-label={`Draft for ${tenantId}`} onChange={() => onDirtyChange(true)} /> }))
 describe('Platform registration dialog', () => {
   it('names the selected shop and requires explicit discard of unsaved changes', () => {
     const onClose = vi.fn()

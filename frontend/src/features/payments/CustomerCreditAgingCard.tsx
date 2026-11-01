@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Download, WalletCards } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -56,15 +57,15 @@ export default function CustomerCreditAgingCard() {
           <h3 id="customer-credit-aging-heading" className="mt-1 flex items-center gap-2 font-extrabold text-zinc-100"><WalletCards className="h-4 w-4" />Customer credits</h3>
           <p className="mt-1 max-w-2xl text-sm text-zinc-400">Only customer-consented credit remains here. It is not revenue and has no arbitrary expiration.</p>
         </div>
-        <button
+        <ControlButton
           type="button"
           disabled={exportMutation.isPending || credits.data.length === 0}
           onClick={() => exportMutation.mutate()}
-          className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-zinc-700 px-3 text-sm font-bold text-zinc-200 hover:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex  items-center gap-2 rounded-xl border border-zinc-700 px-3 text-sm font-bold text-zinc-200 hover:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Download className="h-4 w-4" />
           {exportMutation.isPending ? 'Exporting…' : 'Export CSV'}
-        </button>
+        </ControlButton>
       </header>
 
       <dl className="grid grid-cols-3 border-b border-zinc-800">

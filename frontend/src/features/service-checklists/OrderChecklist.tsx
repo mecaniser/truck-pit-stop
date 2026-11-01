@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, RefreshCw } from 'lucide-react'
@@ -54,21 +55,21 @@ function Checklist({ tenantId, orderId, refreshToken, orderStatus, dark, actorSc
   const canUpdate = Boolean(first?.can_update) && !query.isError && (!orderStatus || ['in_progress', 'pending_review'].includes(orderStatus))
   const muted = dark ? '!text-[#d4d4d8]' : '!text-[#4b5563]'
   return <section ref={section} aria-label="Work order checklist" className={`my-3 rounded-xl border p-3 ${dark ? 'border-zinc-700 !bg-[#18181b] !text-[#f4f4f5]' : 'border-gray-200 !bg-[#ffffff] !text-[#111827]'}`}>
-    <button type="button" onClick={() => setOpen(value => !value)} aria-expanded={open} aria-controls={contentId} className="flex min-h-10 w-full items-center justify-between gap-2 text-left">
+    <ControlButton controlKind="content" type="button" onClick={() => setOpen(value => !value)} aria-expanded={open} aria-controls={contentId} className="flex min-h-10 w-full items-center justify-between gap-2 text-left">
       <span className="flex flex-wrap items-center gap-x-2 gap-y-1"><span className="whitespace-nowrap text-sm font-semibold">Checklist{first ? ` · ${first.summary.completed}/${first.summary.total}` : ''}</span>
         {first && <span className={`text-xs ${first.summary.required_remaining ? (dark ? '!text-[#fcd34d]' : '!text-[#92400e]') : muted}`}>{query.isFetching && first.summary.required_remaining === 0 ? 'Checking required tasks…' : `${first.summary.required_remaining} required remaining`}</span>}
       </span><ChevronRight size={18} className={`shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
-    </button>
+    </ControlButton>
     {open && <div id={contentId} className="space-y-3 pt-2">
       {query.isPending && <p role="status" className={`text-sm ${muted}`}>Loading checklist…</p>}
-      {query.isError && <p role="alert" className={`text-sm ${dark ? '!text-[#fca5a5]' : '!text-[#b91c1c]'}`}>Checklist could not be refreshed. Completion status is unverified. <button type="button" onClick={() => void query.refetch()} className="inline-flex items-center gap-1 whitespace-nowrap underline"><RefreshCw size={12} />Retry</button></p>}
+      {query.isError && <p role="alert" className={`text-sm ${dark ? '!text-[#fca5a5]' : '!text-[#b91c1c]'}`}>Checklist could not be refreshed. Completion status is unverified. <ControlButton type="button" onClick={() => void query.refetch()} className="inline-flex items-center gap-1 whitespace-nowrap underline"><RefreshCw size={12} />Retry</ControlButton></p>}
       {message && <p role="status" className={`text-xs ${dark ? '!text-[#fcd34d]' : '!text-[#92400e]'}`}>{message}</p>}
       {first && !canUpdate && <p className={`text-xs ${muted}`}>Read only. Checks can be changed while this work order is open and work has started.</p>}
       {first && groups.map(items => <div key={items[0].labor_id}>
         <h4 className={`mb-1 text-xs font-semibold ${muted}`}>{items[0].service_name}</h4>
         <ul className="divide-y divide-current/10">{items.map(item => <ChecklistRow key={item.id} item={item} tenantId={tenantId} orderId={orderId} canUpdate={canUpdate && (isMechanic ? item.can_update === true : item.can_update !== false)} dark={dark} />)}</ul>
       </div>)}
-      {query.hasNextPage && <button type="button" disabled={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()} className="min-h-10 whitespace-nowrap text-sm font-semibold underline disabled:opacity-40">{query.isFetchingNextPage ? 'Loading more…' : 'Load more tasks'}</button>}
+      {query.hasNextPage && <ControlButton type="button" disabled={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()} className=" whitespace-nowrap text-sm font-semibold underline disabled:opacity-40">{query.isFetchingNextPage ? 'Loading more…' : 'Load more tasks'}</ControlButton>}
       {query.isFetching && !query.isPending && !query.isFetchingNextPage && <p role="status" className={`text-xs ${muted}`}>Refreshing checklist…</p>}
     </div>}
   </section>

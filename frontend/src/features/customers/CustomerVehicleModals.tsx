@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import React, { useEffect, useRef, useState } from 'react'
 import type { AxiosError } from 'axios'
 import { createPortal } from 'react-dom'
@@ -707,24 +708,24 @@ const {
 
   const renderVehicleModeTabs = () => (
     <div className="grid grid-cols-2 gap-2 rounded-xl bg-gray-100 p-1">
-      <button
+      <ControlButton
         type="button"
         onClick={() => setVehicleModalMode('new')}
-        className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+        className={`rounded-lg px-3  text-sm font-medium transition-colors ${
           vehicleModalMode === 'new' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
         }`}
       >
         New equipment
-      </button>
-      <button
+      </ControlButton>
+      <ControlButton
         type="button"
         onClick={() => setVehicleModalMode('existing')}
-        className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+        className={`rounded-lg px-3  text-sm font-medium transition-colors ${
           vehicleModalMode === 'existing' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
         }`}
       >
         Link / manage equipment
-      </button>
+      </ControlButton>
     </div>
   )
 
@@ -736,14 +737,14 @@ const {
         <label className="block text-sm font-medium text-gray-700 mb-1">Find the existing truck</label>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-          <input
+          <ControlInput
             value={vehicleLinkSearch}
             onChange={(event) => {
               setVehicleLinkSearch(event.target.value)
               setSelectedLinkVehicle(null)
               setVehicleLinkUnitNumber('')
             }}
-            className="w-full rounded-lg border border-gray-300 py-2.5 pl-9 pr-4 focus:border-amber-500 focus:ring-2 focus:ring-amber-500"
+            className="w-full rounded-lg border border-gray-300  pl-9 pr-4 focus:border-amber-500 focus:ring-2 focus:ring-amber-500"
             placeholder="Search VIN, unit, plate, make, or model…"
             autoFocus
           />
@@ -756,7 +757,7 @@ const {
 
       <div className="max-h-56 space-y-2 overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-2">
         {selectedLinkVehicle && !availableVehicleLinkCandidates.some((vehicle) => vehicle.id === selectedLinkVehicle.id) && (
-          <button
+          <ControlButton controlKind="content"
             type="button"
             className="w-full rounded-lg border border-amber-400 bg-amber-50 p-3 text-left"
           >
@@ -771,12 +772,12 @@ const {
             <span className="mt-1 block text-xs text-gray-600">
               {[selectedLinkVehicle.license_plate ? `Plate ${selectedLinkVehicle.license_plate}` : null, selectedLinkVehicle.vin ? `VIN ${selectedLinkVehicle.vin}` : null].filter(Boolean).join(' · ')}
             </span>
-          </button>
+          </ControlButton>
         )}
         {availableVehicleLinkCandidates.map((vehicle) => {
           const selected = selectedLinkVehicle?.id === vehicle.id
           return (
-            <button
+            <ControlButton controlKind="content"
               key={vehicle.id}
               type="button"
               onClick={() => {
@@ -798,7 +799,7 @@ const {
               <span className="mt-1 block text-xs text-gray-600">
                 {[vehicle.license_plate ? `Plate ${vehicle.license_plate}` : null, vehicle.vin ? `VIN ${vehicle.vin}` : null].filter(Boolean).join(' · ') || 'No plate or VIN recorded'}
               </span>
-            </button>
+            </ControlButton>
           )
         })}
         {!isFetchingVehicleLinkCandidates && availableVehicleLinkCandidates.length === 0 && !selectedLinkVehicle && (
@@ -812,10 +813,10 @@ const {
         <>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Canonical unit number</label>
-            <input
+            <ControlInput
               value={vehicleLinkUnitNumber}
               onChange={(event) => setVehicleLinkUnitNumber(event.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2.5 focus:border-amber-500 focus:ring-2 focus:ring-amber-500"
+              className="w-full rounded-lg border border-gray-300 px-4  focus:border-amber-500 focus:ring-2 focus:ring-amber-500"
               placeholder="603"
             />
             <p className="mt-1 text-xs text-gray-500">Enter only the truck’s unit, such as 603. The owner/lessor company prefix is added automatically.</p>
@@ -845,28 +846,28 @@ const {
                         <span className="mt-0.5 block text-xs text-gray-500">{help}</span>
                       </div>
                       {relationshipType === 'operator' && relationship && pendingFleetRemovalId !== relationship.id && (
-                        <button
+                        <ControlButton
                           type="button"
                           onClick={() => setPendingFleetRemovalId(relationship.id)}
-                          className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
+                          className="shrink-0 rounded-lg px-2.5  text-xs font-medium text-red-600 hover:bg-red-50"
                         >
                           Remove from Fleet Board
-                        </button>
+                        </ControlButton>
                       )}
                     </div>
                     {relationshipType === 'operator' && relationship && pendingFleetRemovalId === relationship.id && (
                       <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs text-red-800">
                         <p className="m-0">This only ends the {companyName} authority assignment. The owner, invoice recipient, and service history stay unchanged.</p>
                         <div className="mt-2 flex justify-end gap-2">
-                          <button type="button" className="rounded-md px-2.5 py-1.5 font-medium text-gray-700 hover:bg-white" onClick={() => setPendingFleetRemovalId(null)}>Cancel</button>
-                          <button
+                          <ControlButton type="button" className="rounded-md px-2.5  font-medium text-gray-700 hover:bg-white" onClick={() => setPendingFleetRemovalId(null)}>Cancel</ControlButton>
+                          <ControlButton
                             type="button"
                             disabled={removeFleetAssignmentMutation.isPending}
-                            className="rounded-md bg-red-600 px-2.5 py-1.5 font-medium text-white disabled:opacity-50"
+                            className="rounded-md bg-red-600 px-2.5  font-medium text-white disabled:opacity-50"
                             onClick={() => removeFleetAssignmentMutation.mutate({ vehicleId: selectedLinkVehicle.id, relationshipId: relationship.id, companyName })}
                           >
                             {removeFleetAssignmentMutation.isPending ? 'Removing…' : 'Confirm removal'}
-                          </button>
+                          </ControlButton>
                         </div>
                       </div>
                     )}
@@ -933,22 +934,22 @@ const {
       )}
 
       <div className="flex items-center justify-end gap-3 border-t border-gray-200 pt-4">
-        <button
+        <ControlButton
           type="button"
           onClick={closeVehicleModal}
-          className="rounded-lg px-5 py-2.5 font-medium text-gray-700 hover:bg-gray-100"
+          className="rounded-lg px-5  font-medium text-gray-700 hover:bg-gray-100"
         >
           Cancel
-        </button>
-        <button
+        </ControlButton>
+        <ControlButton
           type="submit"
           disabled={!selectedLinkVehicle || linkVehicleMutation.isPending}
-          className="flex items-center gap-2 rounded-lg px-5 py-2.5 font-medium text-white disabled:opacity-50"
+          className="flex items-center gap-2 rounded-lg px-5  font-medium text-white disabled:opacity-50"
           style={{ backgroundColor: accentColors[500] }}
         >
           {linkVehicleMutation.isPending && <Spinner size="xs" className="border-white/40 border-t-white" />}
           Save truck roles
-        </button>
+        </ControlButton>
       </div>
     </form>
   )
@@ -979,12 +980,12 @@ const {
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Make <span className="text-red-500">*</span>
           </label>
-          <input
+          <ControlInput
             type="text"
             name="make"
             value={vehicleFormData.make}
             onChange={handleVehicleInputChange}
-            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
             placeholder="Ford"
             required
           />
@@ -993,12 +994,12 @@ const {
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Model <span className="text-red-500">*</span>
           </label>
-          <input
+          <ControlInput
             type="text"
             name="model"
             value={vehicleFormData.model}
             onChange={handleVehicleInputChange}
-            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
             placeholder="F-150"
             required
           />
@@ -1009,12 +1010,12 @@ const {
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
-          <input
+          <ControlInput
             type="number"
             name="year"
             value={vehicleFormData.year}
             onChange={handleVehicleInputChange}
-            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
             placeholder="2024"
             min="1900"
             max="2100"
@@ -1022,12 +1023,12 @@ const {
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
-          <input
+          <ControlInput
             type="text"
             name="color"
             value={vehicleFormData.color}
             onChange={handleVehicleInputChange}
-            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
             placeholder="White"
           />
         </div>
@@ -1037,14 +1038,14 @@ const {
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">VIN</label>
         <div className="flex gap-2">
-          <input
+          <ControlInput
             type="text"
             name="vin"
             value={vehicleFormData.vin}
             onChange={handleVehicleInputChange}
             aria-invalid={vehicleVinError ? 'true' : undefined}
             aria-describedby={vehicleVinError ? 'vehicle-vin-error' : 'vehicle-vin-help'}
-            className={`min-w-0 flex-1 px-4 py-2.5 border rounded-lg focus:ring-2 transition-colors font-mono uppercase ${
+            className={`min-w-0 flex-1 px-4  border rounded-lg focus:ring-2 transition-colors font-mono uppercase ${
               vehicleVinError
                 ? 'border-red-500 bg-red-50 focus:ring-red-200 focus:border-red-500'
                 : 'border-gray-300 focus:ring-amber-500 focus:border-amber-500'
@@ -1052,11 +1053,11 @@ const {
             placeholder="Enter VIN to auto-fill"
             maxLength={17}
           />
-          <button
+          <ControlButton
             type="button"
             onClick={() => decodeVehicleVin(vehicleFormData.vin)}
             disabled={isDecodingVehicleVin || vehicleFormData.vin.length < 11}
-            className="shrink-0 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 font-medium rounded-lg transition-colors flex items-center gap-2"
+            className="shrink-0 px-4  bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 font-medium rounded-lg transition-colors flex items-center gap-2"
           >
             {isDecodingVehicleVin ? (
               <Spinner size="xs" />
@@ -1064,7 +1065,7 @@ const {
               <Search className="w-4 h-4" />
             )}
             Decode
-          </button>
+          </ControlButton>
         </div>
         {vehicleVinError ? (
           <p id="vehicle-vin-error" role="alert" className="mt-2 flex items-start gap-1.5 text-sm text-red-600">
@@ -1104,21 +1105,21 @@ const {
                 </span>
               )}
               {vehicleVinError.vehicle && editingVehicle ? (
-                <button
+                <ControlButton
                   type="button"
                   onClick={() => reviewDuplicateTruckConflict(vehicleVinError.vehicle!)}
-                  className="mt-2 inline-flex rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700"
+                  className="mt-2 inline-flex rounded-lg bg-red-600 px-3  text-xs font-semibold text-white hover:bg-red-700"
                 >
                   Review and merge duplicate trucks
-                </button>
+                </ControlButton>
               ) : vehicleVinError.vehicle ? (
-                <button
+                <ControlButton
                   type="button"
                   onClick={() => selectExistingTruckFromConflict(vehicleVinError.vehicle!)}
-                  className="mt-2 inline-flex rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700"
+                  className="mt-2 inline-flex rounded-lg bg-red-600 px-3  text-xs font-semibold text-white hover:bg-red-700"
                 >
                   Use this existing truck and manage its roles
-                </button>
+                </ControlButton>
               ) : (
                 <span className="mt-2 block text-xs">Switch to “Link existing truck” and search this VIN.</span>
               )}
@@ -1132,12 +1133,12 @@ const {
       {/* Unit Number */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Unit Number</label>
-        <input
+        <ControlInput
           type="text"
           name="unit_number"
           value={vehicleFormData.unit_number}
           onChange={handleVehicleInputChange}
-          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors font-mono"
+          className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors font-mono"
           placeholder="UNIT-001"
         />
       </div>
@@ -1146,23 +1147,23 @@ const {
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">License Plate</label>
-          <input
+          <ControlInput
             type="text"
             name="license_plate"
             value={vehicleFormData.license_plate}
             onChange={handleVehicleInputChange}
-            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors uppercase"
+            className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors uppercase"
             placeholder="ABC-1234"
           />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Mileage</label>
-          <input
+          <ControlInput
             type="number"
             name="mileage"
             value={vehicleFormData.mileage}
             onChange={handleVehicleInputChange}
-            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
             placeholder="50000"
             min="0"
           />
@@ -1184,24 +1185,24 @@ const {
 
       {/* Actions */}
       <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
-        <button
+        <ControlButton
           type="button"
           onClick={closeVehicleModal}
-          className="px-5 py-2.5 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+          className="px-5  text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
         >
           Cancel
-        </button>
-        <button
+        </ControlButton>
+        <ControlButton
           type="submit"
           disabled={createVehicleMutation.isPending || updateVehicleMutation.isPending}
-          className="px-5 py-2.5 disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+          className="px-5  disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
           style={{ backgroundColor: accentColors[500] }}
         >
           {(createVehicleMutation.isPending || updateVehicleMutation.isPending) && (
             <Spinner size="xs" className="border-white/40 border-t-white" />
           )}
           {editingVehicle ? 'Save Changes' : 'Add Equipment'}
-        </button>
+        </ControlButton>
       </div>
     </form>
   )
@@ -1234,12 +1235,12 @@ const {
                       for {selectedCustomer.company_name || `${selectedCustomer.first_name} ${selectedCustomer.last_name}`}
                     </p>
                   </div>
-                  <button
+                  <ControlButton
                     onClick={closeVehicleModal}
                     className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                   >
                     <X className="w-5 h-5 text-gray-500" />
-                  </button>
+                  </ControlButton>
                 </div>
               </div>
 
@@ -1261,15 +1262,15 @@ const {
                     Compare both records and keep the one with the strongest identity and service history.
                   </p>
                 </div>
-                <button
+                <ControlButton controlKind="icon"
                   type="button"
                   onClick={closeVehicleMerge}
                   disabled={mergeVehicleMutation.isPending}
-                  className="flex h-11 w-11 flex-none items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 disabled:opacity-50"
+                  className="flex  w-11 flex-none items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 disabled:opacity-50"
                   aria-label="Close merge dialog"
                 >
                   <X className="h-5 w-5" />
-                </button>
+                </ControlButton>
               </div>
 
               <div className="max-h-[70vh] overflow-y-auto px-5 py-5 sm:px-6">
@@ -1288,7 +1289,7 @@ const {
                   ) : isVehicleMergeCandidatesError ? (
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-red-50 p-4 text-sm text-red-800">
                       <span>Duplicate records could not be loaded.</span>
-                      <button type="button" onClick={() => refetchVehicleMergeCandidates()} className="font-semibold underline underline-offset-2">Try again</button>
+                      <ControlButton type="button" onClick={() => refetchVehicleMergeCandidates()} className="font-semibold underline underline-offset-2">Try again</ControlButton>
                     </div>
                   ) : vehicleMergeCandidates.length === 0 ? (
                     <div className="mt-4 rounded-xl bg-gray-50 p-4 text-sm text-gray-700">
@@ -1398,18 +1399,18 @@ const {
               </div>
 
               <div className="flex flex-col-reverse gap-3 border-t border-gray-200 bg-gray-50 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
-                <button type="button" onClick={closeVehicleMerge} disabled={mergeVehicleMutation.isPending} className="min-h-11 px-4 py-2 text-gray-700 font-medium hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50">
+                <ControlButton type="button" onClick={closeVehicleMerge} disabled={mergeVehicleMutation.isPending} className=" px-4  text-gray-700 font-medium hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50">
                   Cancel
-                </button>
-                <button
+                </ControlButton>
+                <ControlButton
                   type="button"
                   onClick={() => mergeVehicleMutation.mutate()}
                   disabled={!vehicleMergePreview || !mergeIdentityConfirmed || mergeVehicleMutation.isPending}
-                  className="min-h-11 whitespace-nowrap px-5 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+                  className=" whitespace-nowrap px-5  bg-red-600 hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
                 >
                   {mergeVehicleMutation.isPending ? <Spinner size="xs" className="border-white/40 border-t-white" /> : <Combine className="h-4 w-4" />}
                   Merge trucks
-                </button>
+                </ControlButton>
               </div>
             </div>
           </div>
@@ -1446,22 +1447,22 @@ const {
               </p>
 
               <div className="flex items-center justify-end gap-3">
-                <button
+                <ControlButton
                   onClick={() => setDeleteConfirmVehicle(null)}
-                  className="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+                  className="px-4  text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
                 >
                   Cancel
-                </button>
-                <button
+                </ControlButton>
+                <ControlButton
                   onClick={confirmDeleteVehicle}
                   disabled={deleteVehicleMutation.isPending}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                  className="px-4  bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
                 >
                   {deleteVehicleMutation.isPending && (
                     <Spinner size="xs" className="border-white/40 border-t-white" />
                   )}
                   Delete Vehicle
-                </button>
+                </ControlButton>
               </div>
             </div>
           </div>
