@@ -411,7 +411,7 @@ async def _load_billing_batch(db, orders, tenant_id):
             eligible[key] = members
     ids = [member.id for members in eligible.values() for member in members]
     invoices = list((await db.scalars(select(Invoice).where(
-        Invoice.tenant_id == tenant_id, Invoice.repair_order_id.in_(ids)))).all()) if ids else []
+        Invoice.tenant_id == tenant_id, Invoice.repair_order_id.in_(ids), Invoice.accounting_policy != "source_collection_hold"))).all()) if ids else []
     by_order = {}
     for invoice in invoices:
         by_order.setdefault(invoice.repair_order_id, []).append(invoice)

@@ -1,3 +1,4 @@
+from app.services.source_debt_handoff import source_collection_for_invoice, source_history_alias_clause
 from app.services.invoice_payment_presentation import InvoicePaymentSummary, load_payment_summary, payment_summary_html
 from app.services.invoice_review_service import invoice_review_url, invoice_review_html
 from datetime import datetime, date, timezone
@@ -137,7 +138,7 @@ def _line_items_snapshot(labor_items: list[dict], parts_items: list[dict]) -> di
 
 def _build_invoice_pdf_bytes(
     invoice, order, customer, vehicle, tenant,
-    labor_items, parts_items, invoice_access_url: Optional[str], cash_receipt=None, payment_summary=None
+    labor_items, parts_items, invoice_access_url: Optional[str], cash_receipt=None, payment_summary=None, source_collection=None
 ) -> bytes:
     if cash_receipt:
         invoice = receipt_invoice_view(invoice, cash_receipt)
@@ -156,6 +157,7 @@ def _build_invoice_pdf_bytes(
     return generate_invoice_pdf(
         cash_receipt=bool(cash_receipt),
         payment_summary=payment_summary.model_dump() if payment_summary else None,
+        source_collection=source_collection,
         invoice_number=invoice.invoice_number,
         order_number=order.order_number,
         invoice_date=invoice.created_at.strftime("%m/%d/%Y") if invoice.created_at else "",
@@ -229,7 +231,11 @@ def _build_invoice_email_html(
     pdf_attached: bool = True,
     cash_receipt=None,
     payment_summary=None,
+    source_collection=None,
 ) -> str:
+    if source_collection and not source_collection.get("is_source_history"):
+        from app.services.source_debt_handoff import collection_email_html
+        return collection_email_html(invoice, source_collection, payment_summary, invoice_access_url, tenant)
     shop_name = tenant.name if tenant else "Your Shop"
     shop_phone = tenant.phone if tenant else ""
     shop_email = tenant.email if tenant else ""
@@ -440,6 +446,7 @@ class PaymentSummary(BaseModel):
 
 
 class InvoiceResponse(BaseModel):
+    source_collection: Optional[dict] = None
     id: UUID
     tenant_id: UUID
     repair_order_id: UUID
@@ -551,6 +558,7 @@ async def enqueue_invoice_created_email(
     labor_items, parts_items = await _load_line_items(db, order.id, invoice)
     payment_summary = await load_payment_summary(db, invoice, await load_cash_receipt(db, invoice))
     email_html = _build_invoice_email_html(
+        source_collection=await source_collection_for_invoice(db, invoice),
         payment_summary=payment_summary,
         customer=recipient,
         vehicle_info=vehicle_info,
@@ -633,6 +641,7 @@ async def notify_invoice_created(
     labor_items, parts_items = await _load_line_items(db, order.id, invoice)
     payment_summary = await load_payment_summary(db, invoice, await load_cash_receipt(db, invoice))
     email_html = _build_invoice_email_html(
+        source_collection=await source_collection_for_invoice(db, invoice),
         payment_summary=payment_summary,
         customer=recipient,
         vehicle_info=vehicle_info,
@@ -646,6 +655,7 @@ async def notify_invoice_created(
     try:
         pdf_bytes = _build_invoice_pdf_bytes(
             payment_summary=payment_summary,
+            source_collection=await source_collection_for_invoice(db, invoice),
             invoice=invoice,
             order=order,
             customer=recipient,
@@ -1031,8 +1041,8 @@ async def list_invoices(
     if current_user.role == UserRole.CUSTOMER:
         if not current_user.customer_id:
             return paginated_or_list([], 0, skip, limit, paginated)
-        source_filters = [RepairOrder.customer_id == current_user.customer_id, Invoice.tenant_id == current_user.tenant_id]
-        projection_filters = [InvoiceReadModel.customer_id == current_user.customer_id, InvoiceReadModel.tenant_id == current_user.tenant_id]
+        source_filters = [RepairOrder.customer_id == current_user.customer_id, Invoice.tenant_id == current_user.tenant_id, source_history_alias_clause()]
+        projection_filters = [InvoiceReadModel.customer_id == current_user.customer_id, InvoiceReadModel.tenant_id == current_user.tenant_id, source_history_alias_clause()]
     else:
         if not current_user.tenant_id:
             return paginated_or_list([], 0, skip, limit, paginated)
@@ -1074,6 +1084,9 @@ async def list_invoices(
     for payload, source in rows.all():
         item = InvoiceResponse.model_validate(payload)
         item.source = source
+        if source == "ets_collection_handoff":
+            actual=await db.get(Invoice,item.id)
+            item.source_collection=await source_collection_for_invoice(db,actual)
         items.append(item)
     for item in items:
         item.cash_receipt = await load_cash_receipt(db, item)
@@ -1104,8 +1117,8 @@ async def _list_invoices_legacy(
             return paginated_or_list([], 0, skip, limit, paginated)
         selected_scope = and_(RepairOrder.customer_id == current_user.customer_id,
                               Invoice.tenant_id == current_user.tenant_id)
-        query = query.where(selected_scope)
-        count_query = count_query.where(selected_scope)
+        query = query.where(selected_scope, source_history_alias_clause())
+        count_query = count_query.where(selected_scope, source_history_alias_clause())
     else:
         if not current_user.tenant_id:
             return paginated_or_list([], 0, skip, limit, paginated)
@@ -1167,6 +1180,7 @@ async def _list_invoices_legacy(
         resp = InvoiceResponse.model_validate(inv)
         resp.payment = payments_by_invoice.get(inv.id)
         resp.cash_receipt = await load_cash_receipt(db, inv)
+        if inv.source == "ets_collection_handoff":resp.source_collection=await source_collection_for_invoice(db,inv)
         items.append(resp)
     return paginated_or_list(items, total, skip, limit, paginated)
 
@@ -1209,8 +1223,9 @@ async def get_invoice(
     tenant = (await db.execute(select(Tenant).where(Tenant.id == inv.tenant_id))).scalar_one_or_none()
     return InvoiceDetailResponse(
         payment_summary=await load_payment_summary(db, inv, response.cash_receipt),
+        source_collection=await source_collection_for_invoice(db, inv),
         review_url=invoice_review_url(tenant, inv),
-        **response.model_dump(),
+        **response.model_dump(exclude={"source_collection"}),
         order_number=order.order_number,
         customer_name=customer_name,
         vehicle_info=vehicle_info,
@@ -1436,6 +1451,7 @@ async def resend_invoice(
     cash_receipt = await load_cash_receipt(db, invoice)
     payment_summary = await load_payment_summary(db, invoice, cash_receipt)
     email_html = _build_invoice_email_html(
+        source_collection=await source_collection_for_invoice(db, invoice),
         payment_summary=payment_summary,
         customer=recipient,
         vehicle_info=vehicle_info,
@@ -1451,6 +1467,7 @@ async def resend_invoice(
     try:
         pdf_bytes = _build_invoice_pdf_bytes(
             payment_summary=payment_summary,
+            source_collection=await source_collection_for_invoice(db, invoice),
             invoice=invoice, order=order, customer=recipient,
             vehicle=vehicle, tenant=tenant,
             labor_items=labor_items, parts_items=parts_items,
@@ -1507,6 +1524,7 @@ async def download_invoice_pdf(
     cash_receipt = await load_cash_receipt(db, inv)
     pdf_bytes = _build_invoice_pdf_bytes(
         payment_summary=await load_payment_summary(db, inv, cash_receipt),
+        source_collection=await source_collection_for_invoice(db, inv),
         invoice=inv, order=order, customer=customer,
         vehicle=vehicle, tenant=tenant,
         labor_items=labor_items, parts_items=parts_items,

@@ -95,6 +95,8 @@ async def require_exportable_invoice(invoice):
     from app.services.quickbooks_accounting_service import QuickBooksAccountingError
     db = async_object_session(invoice) if inspect(invoice, raiseerr=False) is not None else None
     policy = await locked_policy(db, invoice) if db else getattr(invoice, "accounting_policy", "standard")
+    if policy == "source_collection_hold":
+        raise QuickBooksAccountingError("Source collection copies never create or export QuickBooks receivables")
     if policy == LOCAL_CASH:
         raise QuickBooksAccountingError("Local cash invoices are excluded from QuickBooks")
     from app.services.new_receipt_accounting import scoped_invoice
@@ -110,6 +112,14 @@ async def require_exportable_invoice(invoice):
 async def require_standard_payment(db, invoice, *, verified_provider_fact=False, new_entry=False, attempt=None):
     from app.services.invoice_settlement_service import SettlementDomainError
     policy = await locked_policy(db, invoice)
+    if policy == "source_collection_hold":
+        from app.services.source_debt_handoff import invoice_handoff
+        await invoice_handoff(db, invoice, require_active=not verified_provider_fact, check_source=not verified_provider_fact)
+        if not new_entry and attempt is None:
+            raise SettlementDomainError("collection_split_flow_required", "Use the verified collection payment flow; legacy payment actions are unavailable.")
+        if attempt is not None and (attempt.invoice_id != invoice.id or attempt.tenant_id != invoice.tenant_id):
+            raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+        return
     if policy == HISTORICAL_HOLD and not verified_provider_fact:
         from app.services.new_receipt_accounting import require_clean_historical_balance, valid_attempt_authorization
         if new_entry:

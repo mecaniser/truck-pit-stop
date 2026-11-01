@@ -514,6 +514,8 @@ async def reviewed_cash_ancestry_reason(db, invoice, *, lock=False, reviews=None
 
 
 async def cash_eligibility(db, invoice, settlement, *, lock=False):
+    if invoice.accounting_policy == "source_collection_hold":
+        return "Source collection cash requires a supported cross-system receipt workflow.", []
     if invoice.cash_export_review_required:
         return "Previous QuickBooks accounting activity requires review before local cash.", []
     if (invoice.deleted_at or invoice.voided_at or invoice.is_internal

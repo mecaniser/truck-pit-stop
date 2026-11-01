@@ -1,3 +1,4 @@
+from app.services.source_debt_handoff import source_collection_for_invoice
 from app.services.invoice_payment_presentation import load_payment_summary, payment_summary_html
 from app.services.invoice_review_service import invoice_review_url, invoice_review_html
 from app.services.cash_receipt_service import load_cash_receipt, receipt_invoice_view
@@ -234,6 +235,11 @@ async def send_invoice_payment_confirmation_email(
 </div>
 """
 
+    collection = await source_collection_for_invoice(db, invoice)
+    if collection and not collection.get("is_source_history"):
+        from app.services.source_debt_handoff import collection_email_html
+        html_body = collection_email_html(invoice, collection, payment_summary, invoice_access_url, tenant)
+
     # ── PDF ─────────────────────────────────────────────────────────────────────
     attachments = None
     try:
@@ -244,7 +250,8 @@ async def send_invoice_payment_confirmation_email(
         snapshot_parts_total = sum(Decimal(str(item.get("total_price", 0))) for item in parts_items)
 
         pdf_bytes = generate_invoice_pdf(
-            payment_summary=payment_summary.model_dump(),            invoice_number=invoice.invoice_number,
+            payment_summary=payment_summary.model_dump(),
+            source_collection=await source_collection_for_invoice(db,invoice),            invoice_number=invoice.invoice_number,
             order_number=order.order_number,
             invoice_date=invoice.created_at.strftime("%m/%d/%Y") if invoice.created_at else "",
             service_completed=service_date,

@@ -31,6 +31,8 @@ def snapshot(invoice):
 
 
 async def eligibility(db, invoice, settlement, *, lock=False, adjustment=False):
+    if invoice.accounting_policy == "source_collection_hold":
+        return "Source collection charges remain bound to the original invoice; contact the shop for reconciliation."
     if not adjustment and getattr(invoice, "charge_adjustments", []):
         return "Use invoice charge controls to change this invoice."
     if invoice.tax_exemption and not adjustment:

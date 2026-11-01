@@ -69,7 +69,7 @@ async def enqueue_quickbooks_invoice_sync(
     )
     from app.services.invoice_accounting_policy import HISTORICAL_HOLD
     policy = await locked_policy(db, invoice)
-    if policy == HISTORICAL_HOLD:
+    if policy in (HISTORICAL_HOLD, "source_collection_hold"):
         return None
     if policy == LOCAL_CASH:
         invoice.quickbooks_sync_status = LOCAL_CASH_SYNC
@@ -290,7 +290,7 @@ async def process_quickbooks_invoice_sync_events(
                 results["skipped"] += 1
                 continue
             from app.services.invoice_accounting_policy import HISTORICAL_HOLD
-            if policy == HISTORICAL_HOLD:
+            if policy in (HISTORICAL_HOLD, "source_collection_hold"):
                 event.status = "suppressed"
                 event.payload = {**(event.payload or {}), "suppression_reason": HISTORICAL_HOLD}
                 event.completed_at = _now()

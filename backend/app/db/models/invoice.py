@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Date, ForeignKey, ForeignKeyConstraint, Numeric, Text, Enum as SQLEnum, Integer, Boolean, Index, text, CheckConstraint
+from sqlalchemy import Column, String, DateTime, Date, ForeignKey, ForeignKeyConstraint, Numeric, Text, Enum as SQLEnum, Integer, Boolean, Index, text, CheckConstraint, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 import enum
@@ -17,18 +17,23 @@ class InvoiceStatus(str, enum.Enum):
 class Invoice(BaseModel):
     __tablename__ = "invoices"
     __table_args__ = (
-        CheckConstraint("accounting_policy IN ('standard','local_cash_only','historical_export_hold')", name="ck_invoice_accounting_policy"),
+        UniqueConstraint("tenant_id", "id", name="uq_invoices_tenant_id"),
+        UniqueConstraint("tenant_id", "source_debt_handoff_id", name="uq_invoice_source_handoff"),
+        ForeignKeyConstraint(["tenant_id", "source_debt_handoff_id"], ["source_debt_handoffs.tenant_id", "source_debt_handoffs.id"], name="fk_invoice_source_handoff", use_alter=True),
+        CheckConstraint("(accounting_policy = 'source_collection_hold') = (source_debt_handoff_id IS NOT NULL) AND (source_debt_handoff_id IS NULL OR (source IS NOT NULL AND source = 'ets_collection_handoff')) AND (source IS NULL OR source <> 'ets_collection_handoff' OR source_debt_handoff_id IS NOT NULL)", name="ck_invoice_collection_lineage"),
+        CheckConstraint("accounting_policy IN ('standard','local_cash_only','historical_export_hold','source_collection_hold')", name="ck_invoice_accounting_policy"),
         ForeignKeyConstraint(["tenant_id", "qbo_shop_activation_id"],
             ["quickbooks_shop_activations.tenant_id", "quickbooks_shop_activations.id"], name="fk_invoice_qbo_shop_activation"),
         Index(
             "ux_invoices_active_repair_order_id",
             "repair_order_id",
             unique=True,
-            postgresql_where=text("status <> 'cancelled'"),
-            sqlite_where=text("status <> 'cancelled'"),
+            postgresql_where=text("status <> 'cancelled' AND accounting_policy <> 'source_collection_hold'"),
+            sqlite_where=text("status <> 'cancelled' AND accounting_policy <> 'source_collection_hold'"),
         ),
     )
     
+    source_debt_handoff_id = Column(UUID(as_uuid=True), nullable=True)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     tenant = relationship("Tenant", backref="invoices")
     

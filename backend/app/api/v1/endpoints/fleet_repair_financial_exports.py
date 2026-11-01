@@ -70,7 +70,7 @@ async def repair_financial_manifest(request:Request,response:Response,
     joined=(await db.execute(select(RepairOrder,Vehicle,Invoice,HistoricalInvoiceMapping,InvoiceSettlement,InvoicePaymentAttempt)
         .join(base_ids,base_ids.c.id==RepairOrder.id)
         .join(Vehicle,and_(Vehicle.id==RepairOrder.vehicle_id,Vehicle.tenant_id==key.tenant_id))
-        .outerjoin(Invoice,and_(Invoice.repair_order_id==RepairOrder.id,Invoice.tenant_id==key.tenant_id,Invoice.status!=InvoiceStatus.CANCELLED))
+        .outerjoin(Invoice,and_(Invoice.repair_order_id==RepairOrder.id,Invoice.tenant_id==key.tenant_id,Invoice.status!=InvoiceStatus.CANCELLED,Invoice.accounting_policy!="source_collection_hold"))
         .outerjoin(HistoricalInvoiceMapping,and_(HistoricalInvoiceMapping.invoice_id==Invoice.id,HistoricalInvoiceMapping.tenant_id==key.tenant_id))
         .outerjoin(InvoiceSettlement,and_(InvoiceSettlement.invoice_id==Invoice.id,InvoiceSettlement.tenant_id==key.tenant_id,InvoiceSettlement.customer_id==key.customer_id))
         .outerjoin(InvoicePaymentAttempt,and_(InvoicePaymentAttempt.settlement_id==InvoiceSettlement.id,InvoicePaymentAttempt.invoice_id==Invoice.id,InvoicePaymentAttempt.tenant_id==key.tenant_id,InvoicePaymentAttempt.customer_id==key.customer_id))

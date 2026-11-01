@@ -622,6 +622,7 @@ async def get_dashboard_daily_workset(
             RepairOrder.deleted_at.is_(None),
             Invoice.tenant_id == current_user.tenant_id,
             Invoice.status == InvoiceStatus.PAID,
+            Invoice.accounting_policy != "source_collection_hold",
             Invoice.paid_at.is_not(None),
             Invoice.paid_at >= local_day_start.astimezone(timezone.utc),
             Invoice.paid_at < next_reset_at.astimezone(timezone.utc),
@@ -702,6 +703,7 @@ async def get_dashboard_daily_workset_value_summary(
             Invoice.tenant_id == current_user.tenant_id,
             Invoice.repair_order_id == RepairOrder.id,
             Invoice.status == InvoiceStatus.PAID,
+            Invoice.accounting_policy != "source_collection_hold",
             Invoice.paid_at.is_not(None),
             Invoice.paid_at >= local_day_start.astimezone(timezone.utc),
             Invoice.paid_at < next_reset_at.astimezone(timezone.utc),
@@ -1233,6 +1235,7 @@ async def get_dashboard_stats(
                 .label("total_paid_orders"),
             ).where(
                 Payment.tenant_id == tenant_id,
+                Invoice.accounting_policy != "source_collection_hold",
                 Payment.status == PaymentStatus.COMPLETED,
             )
         )
@@ -1262,6 +1265,7 @@ async def get_dashboard_stats(
         .where(
             and_(
                 Payment.tenant_id == tenant_id,
+                Invoice.accounting_policy != "source_collection_hold",
                 Payment.status == PaymentStatus.COMPLETED,
                 cast(Payment.created_at, Date) >= calc_start,
             )

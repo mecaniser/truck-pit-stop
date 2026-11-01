@@ -74,6 +74,13 @@ def event_selection_predicate(event):
 
 
 async def require_shop_invoice_admission(db, invoice, *, connection=None, payment=False, payment_provider=None):
+    if invoice.accounting_policy == "source_collection_hold":
+        if not payment:
+            _deny("source_collection_accounting_external", "Collection copies cannot create or export QuickBooks accounting transactions.")
+        from app.services.source_debt_handoff import invoice_handoff
+        await invoice_handoff(db, invoice, require_active=True)
+        # Payment service separately verifies approval, OAuth payment scope, configuration snapshot and realm.
+        return None
     activation = await load_shop_activation(db, invoice.tenant_id)
     if activation is None:
         if getattr(invoice, "qbo_shop_activation_id", None) is not None:

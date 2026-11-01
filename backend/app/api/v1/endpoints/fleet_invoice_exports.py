@@ -24,6 +24,7 @@ from app.db.models.repair_order import RepairOrder
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
+from app.services.source_debt_handoff import source_collection_for_invoice, source_history_alias_clause
 from app.api.v1.endpoints.invoices import _load_line_items
 from app.services.invoice_charge_state import effective_tax_exempt
 from app.services.pdf_service import generate_invoice_pdf
@@ -145,6 +146,7 @@ async def revoke_key(
 def _scope(key: FleetInvoiceApiKey):
     return (
         Invoice.tenant_id == key.tenant_id,
+        source_history_alias_clause(),
         RepairOrder.tenant_id == key.tenant_id,
         or_(Invoice.billed_customer_id == key.customer_id,
             and_(Invoice.billed_customer_id.is_(None),
@@ -225,11 +227,12 @@ def _money(value) -> str:
 
 
 def _integration_pdf(invoice: Invoice, order: RepairOrder, customer: Customer,
-                     vehicle: Vehicle, tenant: Tenant, labor: list, parts: list, payment_summary=None, cash_receipt=None) -> bytes:
+                     vehicle: Vehicle, tenant: Tenant, labor: list, parts: list, payment_summary=None, cash_receipt=None, source_collection=None) -> bytes:
     """Render financial invoice facts without contact, private notes or payment rails."""
     if cash_receipt:
         invoice = receipt_invoice_view(invoice, cash_receipt)
     return generate_invoice_pdf(
+        source_collection=source_collection,
         payment_summary=payment_summary.model_dump() if payment_summary else None,
         cash_receipt=bool(cash_receipt),        invoice_number=invoice.invoice_number,
         order_number=order.order_number,
@@ -369,7 +372,7 @@ async def invoice_pdf(
     tenant = await db.get(Tenant, key.tenant_id)
     labor, parts = await _load_line_items(db, order.id, invoice)
     cash_receipt = await load_cash_receipt(db, invoice)
-    pdf = _integration_pdf(invoice, order, customer, vehicle, tenant, labor, parts, await load_payment_summary(db, invoice, cash_receipt), cash_receipt)
+    pdf = _integration_pdf(invoice, order, customer, vehicle, tenant, labor, parts, await load_payment_summary(db, invoice, cash_receipt), cash_receipt, await source_collection_for_invoice(db, invoice))
     key.last_used_at = datetime.now(timezone.utc)
     await db.commit()
     return Response(pdf, media_type="application/pdf", headers={
