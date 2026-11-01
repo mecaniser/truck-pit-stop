@@ -1,8 +1,25 @@
 """Bounded ETS provenance only. Never supplies settlement eligibility."""
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
+
+
+
+def _receipt_reference(value):
+    if isinstance(value, str) and re.fullmatch(r"DBN-RECEIPT:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", value):
+        return "DBN-RECEIPT:" + value.split(":", 1)[1].lower()
+    return None
+
+
+def _payment_date_semantics(value, claimed):
+    if claimed != "source_datetime_utc" or not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|\+00:00)", value):
+        return "source_datetime_unverified"
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return "source_datetime_utc" if parsed.utcoffset() == timedelta(0) else "source_datetime_unverified"
+    except ValueError:
+        return "source_datetime_unverified"
 
 
 def normalize_source_evidence(value):
@@ -77,7 +94,8 @@ def normalize_source_evidence(value):
         p = line["payment"]
         result["payment_lines"].append({"id": ident(line.get("id")), "amount": money(line.get("amount")), "payment": {
             "id": ident(p.get("id")), "date_source": date(p.get("date_source")),
-            "date_semantics": "source_datetime_unverified",
+            "date_semantics": _payment_date_semantics(p.get("date_source"), p.get("date_semantics")),
+            **({"dbn_receipt_reference": _receipt_reference(p.get("dbn_receipt_reference"))} if _receipt_reference(p.get("dbn_receipt_reference")) else {}),
             **{k: ident(p.get(k)) for k in ("status", "type", "provider", "qb_reference")},
             **{k: money(p.get(k)) for k in ("total", "credit_total", "unapplied_amount")},
             "canceled": p.get("canceled") if type(p.get("canceled")) is bool else None}})

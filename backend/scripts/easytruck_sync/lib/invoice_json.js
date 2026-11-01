@@ -55,6 +55,25 @@ function extractLaborHours(rawDataPage) {
   return Math.round((minutes / 60) * 100) / 100;
 }
 
+// Retain only an unambiguous receipt marker; never persist free-form Notes.
+function receiptReference(payment) {
+  const values = [payment.notes, payment.note].filter(v => typeof v === 'string' && v.length <= 4096);
+  const refs = new Set();
+  for (const value of values) {
+    for (const match of value.matchAll(/\bDBN-RECEIPT:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?![A-Za-z0-9_-])/g)) {
+      refs.add(`DBN-RECEIPT:${match[1].toLowerCase()}`);
+    }
+  }
+  return refs.size === 1 ? [...refs][0] : null;
+}
+
+function paymentDateSemantics(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|\+00:00)$/.test(value)) return 'source_datetime_unverified';
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value.slice(0, 10)
+    ? 'source_datetime_utc' : 'source_datetime_unverified';
+}
+
 // This is source evidence only, never a settlement assertion. Do not retain
 // arbitrary Inertia fields: they include contacts, notes and session data.
 function extractSourceEvidence(rawDataPage) {
@@ -96,7 +115,8 @@ function extractSourceEvidence(rawDataPage) {
         id: scalar(line?.id), amount: money(line?.amount),
         payment: {
           id: scalar(payment.id), date_source: scalar(payment.date),
-          date_semantics: 'source_datetime_unverified',
+          date_semantics: paymentDateSemantics(payment.date),
+          ...(receiptReference(payment) ? {dbn_receipt_reference: receiptReference(payment)} : {}),
           status: scalar(payment.status), type: scalar(payment.type),
           provider: scalar(payment.provider), qb_reference: scalar(payment.qb_reference),
           total: money(payment.total), credit_total: money(payment.credit_total),
@@ -108,4 +128,4 @@ function extractSourceEvidence(rawDataPage) {
   };
 }
 
-module.exports = { extractLaborHours, extractSourceEvidence };
+module.exports = { extractLaborHours, extractSourceEvidence, receiptReference, paymentDateSemantics };
