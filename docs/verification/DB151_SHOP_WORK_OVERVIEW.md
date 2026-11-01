@@ -154,3 +154,16 @@ Updated actual-app screenshots (synthetic local records only):
 - [Day Activity and Lightning Order, before shared-control integration](assets/db151/activity-lightning-day.png)
 
 PR736 remains draft and In Review. New sweep CI is pending. No merge/deployment or production acceptance; not Done.
+
+
+## Final release integration and Activity pagination gate
+
+The741 sequencing hold was explicitly cleared after deployment5d5a0a13. Owner completed/published47b33a79 and left the original worktree clean. This candidate preserves the owner sweep plus currentmain5d5a0a13 (including744 and741); only documentation conflicts required reconciliation. Owner application changes are preserved except the independently identified Activity isolation correction below.
+
+Independent full-sweep review found uncancelled manual older-page requests could append events after filter/tenant/session changes. The existing failure/retry coverage did not protect stale successful responses. Four regressions were added first and failed for the expected leakage/retained-cache reason: delayed successful response after filter change, tenant change, session epoch change, and a cached first page after the principal became inactive.
+
+Activity now keys its local filters/pagination state to tenant/user/role/active/session identity. Layout cleanup aborts and invalidates manual requests on filter/first-page replacement and unmount; completed requests update state only while their AbortController remains current and un-aborted. Show recent likewise invalidates outstanding pagination. Stale success, failure and finally paths cannot alter the new scope or its request state. The first-page query includes active state in its cache identity. No endpoint, role, financial or tenant authorization is relaxed.
+
+Red evidence:/tmp/pr736-activity-race-red.log (4failed/16passed). Green:/tmp/pr736-activity-race-green.log (20passed). Broader owner/main integration:/tmp/pr736-release-final-frontend.log (40files/699passed), backend overview/retired-display/operational-tool tests:/tmp/pr736-release-final-backend.log (88passed). After isolation correction:/tmp/pr736-final-activity-dashboard.log (9files/110passed). Counts overlap; do not add them. TypeScript/Vite production build and shared-control guard pass after correction. Original broader suite preceded the small pagination change; final exact-head hosted full suites remain required.
+
+Fresh independent Security/QA re-review owns the isolation-fix gate and adversarial stale-response coverage. Prior no-GO is retained as resolved only after that gate confirms it. The original API-backed owner desktop/mobile journeys remain the UI acceptance evidence; final production acceptance must verify exact deployment, endpoint response/readcost, real record destinations/returns, zero-active behavior if actually available, Activity recovery/filter controls and desktop/mobile popovers without business mutations.

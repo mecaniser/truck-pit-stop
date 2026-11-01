@@ -1,5 +1,5 @@
 import { ControlButton } from '@/components/ui/Controls'
-import { useEffect, useMemo, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Popover, PopoverButton, PopoverGroup, PopoverPanel } from '@headlessui/react'
 import DatePicker from '@/components/DatePicker'
 import { Spinner } from '@/components/ui'
@@ -9,6 +9,7 @@ import {
   FileText, FilePlus, CheckCircle2, CreditCard, OctagonX, Trash2, ClipboardList, CircleAlert, SlidersHorizontal, X, ChevronRight, History, RefreshCw,
 } from 'lucide-react'
 import api from '@/lib/api'
+import { useAuthStore } from '@/stores/authStore'
 import { useActivityFeed, type ActivityEvent, type ActivityFeedResponse } from './activityFeedQuery'
 import ShopWorkSelect from './ShopWorkSelect'
 import './shopWorkPolish.css'
@@ -58,17 +59,21 @@ function groupByDay(items: ActivityEvent[]) {
   return Array.from(days.values())
 }
 
-export default function RecentActivityFeed({
-  className,
-}: {
-  className?: string
-}) {
+export default function RecentActivityFeed({ className }: { className?: string }) {
+  const identity = useAuthStore(state => JSON.stringify([
+    state.user?.tenant_id, state.user?.id, state.user?.role, state.user?.is_active, state.authSessionEpoch,
+  ]))
+  return <ScopedRecentActivityFeed key={identity} className={className} />
+}
+
+function ScopedRecentActivityFeed({ className }: { className?: string }) {
   const navigate = useNavigate()
   const [olderItems, setOlderItems] = useState<ActivityEvent[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [loadMoreError, setLoadMoreError] = useState(false)
+  const olderRequest = useRef<AbortController | null>(null)
 
   const [actorFilter, setActorFilter] = useState('')
   const [eventTypeFilter, setEventTypeFilter] = useState('')
@@ -84,32 +89,50 @@ export default function RecentActivityFeed({
 
   const { data, isLoading, isError, error, refetch, isFetching } = useActivityFeed(filterParams)
 
-  useEffect(() => {
+  // Reset before paint; a previous filter/session must never contribute events.
+  useLayoutEffect(() => {
+    olderRequest.current?.abort()
+    olderRequest.current = null
     setOlderItems([])
     setLoadMoreError(false)
+    setLoadingMore(false)
     setCursor(data?.next_cursor ?? null)
     setHasMore(data?.has_more ?? false)
-  }, [data])
+    return () => {
+      olderRequest.current?.abort()
+      olderRequest.current = null
+    }
+  }, [data, actorFilter, eventTypeFilter, dateFrom, dateTo])
 
   const loadMore = async () => {
-    if (!cursor) return
+    if (!cursor || olderRequest.current) return
+    const request = new AbortController()
+    olderRequest.current = request
     try {
       setLoadingMore(true)
       setLoadMoreError(false)
       const { data: page } = await api.get<ActivityFeedResponse>('/activity', {
         params: { limit: 20, cursor, ...filterParams },
+        signal: request.signal,
       })
+      if (request.signal.aborted || olderRequest.current !== request) return
       setOlderItems((prev) => [...prev, ...page.items])
       setCursor(page.next_cursor)
       setHasMore(page.has_more)
     } catch {
-      setLoadMoreError(true)
+      if (!request.signal.aborted && olderRequest.current === request) setLoadMoreError(true)
     } finally {
-      setLoadingMore(false)
+      if (olderRequest.current === request) {
+        olderRequest.current = null
+        setLoadingMore(false)
+      }
     }
   }
 
   const showLess = () => {
+    olderRequest.current?.abort()
+    olderRequest.current = null
+    setLoadingMore(false)
     setOlderItems([])
     setLoadMoreError(false)
     setCursor(data?.next_cursor ?? null)

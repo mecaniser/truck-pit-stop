@@ -1,18 +1,19 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import RecentActivityFeed from '../RecentActivityFeed'
 import type { ActivityFeedResponse } from '../activityFeedQuery'
 
-const state = vi.hoisted(() => ({ data: undefined as ActivityFeedResponse | undefined, isLoading: false, isError: false, isFetching: false, error: null as unknown, filters: {} as Record<string, string>, refetch: vi.fn(), get: vi.fn(), navigate: vi.fn() }))
+const state = vi.hoisted(() => ({ user: { id: 'owner', tenant_id: 'shop-a', role: 'garage_owner', is_active: true }, epoch: 1, data: undefined as ActivityFeedResponse | undefined, isLoading: false, isError: false, isFetching: false, error: null as unknown, filters: {} as Record<string, string>, refetch: vi.fn(), get: vi.fn(), navigate: vi.fn() }))
 vi.mock('../activityFeedQuery', () => ({ useActivityFeed: (filters: Record<string, string>) => { state.filters = filters; return state } }))
+vi.mock('@/stores/authStore', () => ({ useAuthStore: (select: (s: unknown) => unknown) => select({ user: state.user, authSessionEpoch: state.epoch }) }))
 vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ appearance: {} }), appearanceTokenRecord: () => ({}) }))
 vi.mock('@/lib/api', () => ({ default: { get: state.get } }))
 vi.mock('react-router-dom', () => ({ useNavigate: () => state.navigate }))
 const event = (id: string, actor: string, time: string) => ({ id, event_type: 'ro_created', label: `Created ${id}`, occurred_at: `2026-11-01T${time}:00Z`, actor_name: actor, order_id: `order-${id}`, order_number: `RO-${id}` })
 const page: ActivityFeedResponse = { items: [event('1', 'Alex', '15:00'), event('2', 'Sam', '14:00'), event('3', 'Alex', '13:00')], next_cursor: null, has_more: false, available_actors: [{ id: 'alex', name: 'Alex' }], warnings: [] }
 afterEach(() => vi.unstubAllGlobals())
-beforeEach(() => { vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} }); state.data = structuredClone(page); state.isLoading = false; state.isError = false; state.isFetching = false; state.error = null; state.get.mockReset(); state.refetch.mockReset(); state.navigate.mockReset() })
+beforeEach(() => { state.user = { id: 'owner', tenant_id: 'shop-a', role: 'garage_owner', is_active: true }; state.epoch = 1; vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} }); state.data = structuredClone(page); state.isLoading = false; state.isError = false; state.isFetching = false; state.error = null; state.get.mockReset(); state.refetch.mockReset(); state.navigate.mockReset() })
 describe('Shop Work activity consistency', () => {
   it('keeps events in time order across actors and opens the exact existing record', () => {
     render(<RecentActivityFeed />)
@@ -70,8 +71,38 @@ describe('Shop Work activity consistency', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(3)
     await userEvent.click(screen.getByRole('button', { name: 'Retry older activity' }))
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(4))
-    expect(state.get).toHaveBeenLastCalledWith('/activity', { params: { limit: 20, cursor: 'older', actor_id: undefined, event_type: undefined, date_from: undefined, date_to: undefined } })
+    expect(state.get).toHaveBeenLastCalledWith('/activity', { params: { limit: 20, cursor: 'older', actor_id: undefined, event_type: undefined, date_from: undefined, date_to: undefined }, signal: expect.any(AbortSignal) })
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+  it('discards an older page that finishes after the activity filter changes', async () => {
+    state.data = { ...page, next_cursor: 'older-a', has_more: true }
+    let finish!: (value: { data: ActivityFeedResponse }) => void
+    state.get.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const user = userEvent.setup()
+    const { rerender } = render(<RecentActivityFeed />)
+    await user.click(screen.getByRole('button', { name: 'Load older activity' }))
+    await user.click(screen.getByRole('button', { name: 'Activity filters' }))
+    await user.click(screen.getByRole('button', { name: 'Activity type' }))
+    await user.click(screen.getByRole('option', { name: 'Order created', exact: true }))
+    state.data = { ...page, items: [event('filtered', 'Sam', '11:00')], has_more: false }
+    rerender(<RecentActivityFeed />)
+    await act(async () => finish({ data: { ...page, items: [event('stale-filter', 'Alex', '12:00')] } }))
+    expect(screen.queryByRole('button', { name: /Created stale-filter/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Created filtered/ })).toBeInTheDocument()
+  })
+  it.each(['tenant', 'session'])('discards an older page that finishes after the %s changes', async change => {
+    state.data = { ...page, next_cursor: 'older-a', has_more: true }
+    let finish!: (value: { data: ActivityFeedResponse }) => void
+    state.get.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const { rerender } = render(<RecentActivityFeed />)
+    await userEvent.click(screen.getByRole('button', { name: 'Load older activity' }))
+    if (change === 'tenant') state.user = { ...state.user, tenant_id: 'shop-b' }
+    else state.epoch++
+    state.data = { ...page, items: [event('new-scope', 'Sam', '11:00')], has_more: false }
+    rerender(<RecentActivityFeed />)
+    await act(async () => finish({ data: { ...page, items: [event('stale-scope', 'Alex', '12:00')] } }))
+    expect(screen.queryByRole('button', { name: /Created stale-scope/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Created new-scope/ })).toBeInTheDocument()
   })
   it('leaves events without a record readable and non-actionable', () => {
     state.data = { ...page, items: [{ ...page.items[0], order_id: null }] }

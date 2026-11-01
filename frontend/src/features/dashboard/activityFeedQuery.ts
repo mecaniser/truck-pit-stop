@@ -35,7 +35,7 @@ export function useActivityFeed(filters: ActivityFilters = {}) {
   const epoch = useAuthStore(state => state.authSessionEpoch)
   const allowed = !!user?.is_active && ['garage_owner', 'garage_admin', 'receptionist'].includes(user.role)
   return useQuery<ActivityFeedResponse>({
-    queryKey: ['activity-feed', user?.tenant_id, user?.id, user?.role, epoch,
+    queryKey: ['activity-feed', user?.tenant_id, user?.id, user?.role, user?.is_active, epoch,
       filters.actor_id || '', filters.event_type || '', filters.date_from || '', filters.date_to || ''],
     queryFn: async ({ signal }) => (await api.get<ActivityFeedResponse>('/activity', { params: { limit: 20, ...filters }, signal })).data,
     enabled: allowed,
