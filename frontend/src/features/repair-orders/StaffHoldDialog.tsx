@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { useState } from 'react'
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react'
@@ -58,7 +59,7 @@ export default function StaffHoldDialog({ order, onClose, onUpdated }: {
       <DialogPanel className="flex max-h-full w-full max-w-md flex-col overflow-hidden rounded-xl bg-white text-gray-900 shadow-xl">
         <div className="flex shrink-0 items-center justify-between gap-2 border-b px-4 py-2">
           <DialogTitle className="text-base font-semibold">{intent.release ? 'Release hold' : 'Put order on hold'}</DialogTitle>
-          <button type="button" aria-label="Close hold dialog" disabled={mutation.isPending} onClick={dismiss} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-gray-100 disabled:opacity-50"><X size={20} /></button>
+          <ControlButton controlKind="icon" type="button" aria-label="Close hold dialog" disabled={mutation.isPending} onClick={dismiss} className="inline-flex  w-11 shrink-0 items-center justify-center rounded-lg hover:bg-gray-100 disabled:opacity-50"><X size={20} /></ControlButton>
         </div>
         <form className="flex min-h-0 flex-col" onSubmit={event => { event.preventDefault(); if (!stale && !mutation.isPending && (intent.release || value.length > 0 && value.length <= 100)) { setError(''); mutation.mutate() } }}>
           <div className="min-h-0 space-y-3 overflow-y-auto px-4 py-3">
@@ -85,8 +86,8 @@ export default function StaffHoldDialog({ order, onClose, onUpdated }: {
             {stale && <p role="alert" className="text-sm text-amber-800">This order changed. Close this dialog and review its current state before continuing.</p>}
           </div>
           <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t px-4 py-2">
-            <button type="button" disabled={mutation.isPending} onClick={dismiss} className="min-h-11 whitespace-nowrap rounded-lg border border-gray-300 px-4 text-sm font-semibold disabled:opacity-50">Cancel</button>
-            <button type="submit" disabled={mutation.isPending || stale || !intent.release && (!value || value.length > 100)} className="min-h-11 whitespace-nowrap rounded-lg bg-orange-600 px-4 text-sm font-semibold text-white disabled:opacity-50">{mutation.isPending ? 'Saving…' : intent.release ? 'Release hold' : 'Put on hold'}</button>
+            <ControlButton type="button" disabled={mutation.isPending} onClick={dismiss} className=" whitespace-nowrap rounded-lg border border-gray-300 px-4 text-sm font-semibold disabled:opacity-50">Cancel</ControlButton>
+            <ControlButton type="submit" disabled={mutation.isPending || stale || !intent.release && (!value || value.length > 100)} className=" whitespace-nowrap rounded-lg bg-orange-600 px-4 text-sm font-semibold text-white disabled:opacity-50">{mutation.isPending ? 'Saving…' : intent.release ? 'Release hold' : 'Put on hold'}</ControlButton>
           </div>
         </form>
       </DialogPanel>

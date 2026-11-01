@@ -1,4 +1,5 @@
 import { shopWorkReturnUrl, shopWorkQueryScope } from '@/features/dashboard/shopWorkNavigation'
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { pricingError, pricingMoney } from '@/features/parts-pricing/contract'
 import PartPolicySummary from '@/features/parts-pricing/PartPolicySummary'
@@ -153,7 +154,7 @@ function SellingPriceField({
     <label className="db-inventory-price-field text-sm text-gray-700 space-y-1.5">
       <span className="flex min-h-11 items-center justify-between gap-2">
         <span className="truncate">{label}</span>
-        <button
+        <ControlButton controlKind="action"
           ref={methodButtonRef}
           type="button"
           onClick={(event) => {
@@ -163,11 +164,11 @@ function SellingPriceField({
           aria-haspopup="menu"
           aria-expanded={methodOpen}
           aria-controls="inventory-price-method-menu"
-          className="db-inventory-price-method-trigger inline-flex h-11 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold"
+          className="db-inventory-price-method-trigger inline-flex  shrink-0 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold"
         >
           {mode === 'price' ? 'Price' : 'Markup'}
           <ChevronDown className={`h-3.5 w-3.5 transition-transform ${methodOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
-        </button>
+        </ControlButton>
       </span>
       <div className="db-inventory-price-field__input">
         {mode === 'price' ? (
@@ -210,7 +211,7 @@ function SellingPriceField({
           className="db-inventory-price-method-menu z-[80] rounded-xl border p-1.5 shadow-xl"
         >
           <p className="px-2.5 pb-1.5 pt-1 text-xs font-semibold">Set selling price by</p>
-          <button
+          <ControlButton controlKind="content"
             type="button"
             role="menuitemradio"
             aria-checked={mode === 'price'}
@@ -222,8 +223,8 @@ function SellingPriceField({
               <span className="block text-xs">Enter the selling price per unit.</span>
             </span>
             {mode === 'price' && <Check className="h-4 w-4 shrink-0" aria-hidden="true" />}
-          </button>
-          <button
+          </ControlButton>
+          <ControlButton controlKind="content"
             type="button"
             role="menuitemradio"
             aria-checked={mode === 'markup'}
@@ -236,7 +237,7 @@ function SellingPriceField({
               <span className="block text-xs">Calculate price from the unit cost.</span>
             </span>
             {mode === 'markup' && <Check className="h-4 w-4 shrink-0" aria-hidden="true" />}
-          </button>
+          </ControlButton>
           <p className="db-inventory-price-method-note px-2.5 pb-1 pt-2 text-xs">
             {costValid ? `Current markup: ${markupSummary}` : 'Set a unit cost before using markup.'}
           </p>
@@ -987,59 +988,59 @@ function LegacyInventoryPage() {
           />
         </div>
         <div className="relative shrink-0" ref={mobileMenuRef}>
-          <button
+          <ControlButton controlKind="icon"
             onClick={() => setShowMenu(v => !v)}
             className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-gray-400 hover:text-gray-200 border border-white/15 transition-colors"
             title="Catalog options"
           >
             <Settings className="w-4 h-4" />
-          </button>
+          </ControlButton>
           {showMenu && (
             <div className="absolute left-0 top-full mt-1 w-56 bg-[#1a2030] border border-white/15 rounded-lg shadow-xl z-50 overflow-hidden">
               {showClearConfirm ? (
                 <div className="p-2 space-y-1">
                   <p className="text-xs text-gray-400 px-2 py-1">Clear all parts?</p>
-                  <button
+                  <ControlButton controlKind="content"
                     onClick={() => clearInventoryMutation.mutate()}
                     disabled={clearInventoryMutation.isPending}
                     className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-white/10 rounded-md disabled:opacity-50"
                   >
                     {clearInventoryMutation.isPending ? 'Clearing…' : 'Yes, clear all'}
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton controlKind="content"
                     onClick={() => setShowClearConfirm(false)}
                     className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-white/10 rounded-md"
                   >
                     Cancel
-                  </button>
+                  </ControlButton>
                 </div>
               ) : (
                 <>
-                  {(user?.role === 'garage_owner' || user?.role === 'garage_admin') && <button type="button" onClick={() => { setShowMenu(false); mobileMenuRef.current?.querySelector('button')?.focus(); setPricingSettingsOpen(true) }} className="w-full flex items-center gap-2.5 px-3 py-2.5 min-h-11 text-sm text-gray-200 hover:bg-white/10 whitespace-nowrap"><Settings className="w-3.5 h-3.5 shrink-0" />Parts pricing</button>}
-                  <button
+                  {(user?.role === 'garage_owner' || user?.role === 'garage_admin') && <ControlButton type="button" onClick={() => { setShowMenu(false); mobileMenuRef.current?.querySelector('button')?.focus(); setPricingSettingsOpen(true) }} className="w-full flex items-center gap-2.5 px-3   text-sm text-gray-200 hover:bg-white/10 whitespace-nowrap"><Settings className="w-3.5 h-3.5 shrink-0" />Parts pricing</ControlButton>}
+                  <ControlButton
                     onClick={() => { preloadInventoryMutation.mutate(); setShowMenu(false) }}
                     disabled={preloadInventoryMutation.isPending}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
+                    className="w-full flex items-center gap-2.5 px-3  text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
                   >
                     <Download className="w-3.5 h-3.5 shrink-0" />
                     {preloadInventoryMutation.isPending ? 'Loading…' : 'Load defaults'}
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton controlKind="action"
                     onClick={() => regeneratePartLibraryMutation.mutate()}
                     disabled={regeneratePartLibraryMutation.isPending}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
+                    className="w-full flex items-center gap-2.5 px-3  text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
                     title="Rebuild part-name/category/description suggestions from your inventory"
                   >
                     <Sparkles className="w-3.5 h-3.5 shrink-0" />
                     {regeneratePartLibraryMutation.isPending ? 'Queuing…' : 'Refresh part suggestions'}
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton
                     onClick={() => setShowClearConfirm(true)}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-red-400 hover:bg-white/10"
+                    className="w-full flex items-center gap-2.5 px-3  text-sm text-red-400 hover:bg-white/10"
                   >
                     <Trash2 className="w-3.5 h-3.5 shrink-0" />
                     Clear all
-                  </button>
+                  </ControlButton>
                 </>
               )}
             </div>
@@ -1070,71 +1071,71 @@ function LegacyInventoryPage() {
 
         </div>
 
-        <button
+        <ControlButton
           type="button"
           onClick={openAddPart}
-          className="db-inventory-workspace__primary-action inline-flex h-[42px] shrink-0 items-center gap-2 rounded-lg px-4 text-sm font-semibold text-white transition-colors"
+          className="db-inventory-workspace__primary-action inline-flex  shrink-0 items-center gap-2 rounded-lg px-4 text-sm font-semibold text-white transition-colors"
           style={{ backgroundColor: accentColors[600] }}
         >
           <Plus className="w-4 h-4" />
           Add part
-        </button>
+        </ControlButton>
 
         {/* Catalog gear menu */}
         <div className="relative shrink-0" ref={desktopMenuRef}>
-          <button
+          <ControlButton controlKind="icon"
             onClick={() => setShowMenu(v => !v)}
-            className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-gray-400 hover:text-gray-200 border border-white/15 transition-colors"
+            className="inline-flex  w-[42px] items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-gray-400 hover:text-gray-200 border border-white/15 transition-colors"
             title="Catalog options"
           >
             <Settings className="w-4 h-4" />
-          </button>
+          </ControlButton>
           {showMenu && (
             <div className="absolute right-0 top-full mt-1 w-56 bg-[#1a2030] border border-white/15 rounded-lg shadow-xl z-50 overflow-hidden">
               {showClearConfirm ? (
                 <div className="p-2 space-y-1">
                   <p className="text-xs text-gray-400 px-2 py-1">Clear all parts?</p>
-                  <button
+                  <ControlButton controlKind="content"
                     onClick={() => clearInventoryMutation.mutate()}
                     disabled={clearInventoryMutation.isPending}
                     className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-white/10 rounded-md disabled:opacity-50"
                   >
                     {clearInventoryMutation.isPending ? 'Clearing…' : 'Yes, clear all'}
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton controlKind="content"
                     onClick={() => setShowClearConfirm(false)}
                     className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-white/10 rounded-md"
                   >
                     Cancel
-                  </button>
+                  </ControlButton>
                 </div>
               ) : (
                 <>
-                  {(user?.role === 'garage_owner' || user?.role === 'garage_admin') && <button type="button" onClick={() => { setShowMenu(false); desktopMenuRef.current?.querySelector('button')?.focus(); setPricingSettingsOpen(true) }} className="w-full flex items-center gap-2.5 px-3 py-2.5 min-h-11 text-sm text-gray-200 hover:bg-white/10 whitespace-nowrap"><Settings className="w-3.5 h-3.5 shrink-0" />Parts pricing</button>}
-                  <button
+                  {(user?.role === 'garage_owner' || user?.role === 'garage_admin') && <ControlButton type="button" onClick={() => { setShowMenu(false); desktopMenuRef.current?.querySelector('button')?.focus(); setPricingSettingsOpen(true) }} className="w-full flex items-center gap-2.5 px-3   text-sm text-gray-200 hover:bg-white/10 whitespace-nowrap"><Settings className="w-3.5 h-3.5 shrink-0" />Parts pricing</ControlButton>}
+                  <ControlButton
                     onClick={() => { preloadInventoryMutation.mutate(); setShowMenu(false) }}
                     disabled={preloadInventoryMutation.isPending}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
+                    className="w-full flex items-center gap-2.5 px-3  text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
                   >
                     <Download className="w-3.5 h-3.5 shrink-0" />
                     {preloadInventoryMutation.isPending ? 'Loading…' : 'Load defaults'}
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton controlKind="action"
                     onClick={() => regeneratePartLibraryMutation.mutate()}
                     disabled={regeneratePartLibraryMutation.isPending}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
+                    className="w-full flex items-center gap-2.5 px-3  text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
                     title="Rebuild part-name/category/description suggestions from your inventory"
                   >
                     <Sparkles className="w-3.5 h-3.5 shrink-0" />
                     {regeneratePartLibraryMutation.isPending ? 'Queuing…' : 'Refresh part suggestions'}
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton
                     onClick={() => setShowClearConfirm(true)}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-red-400 hover:bg-white/10"
+                    className="w-full flex items-center gap-2.5 px-3  text-sm text-red-400 hover:bg-white/10"
                   >
                     <Trash2 className="w-3.5 h-3.5 shrink-0" />
                     Clear all
-                  </button>
+                  </ControlButton>
                 </>
               )}
             </div>
@@ -1146,37 +1147,37 @@ function LegacyInventoryPage() {
       <div className="flex items-center gap-2 mb-3 lg:hidden">
         <span className="text-xs text-gray-400 font-medium">Sort:</span>
         <div className="inline-flex items-center bg-white/10 border border-white/15 rounded-lg p-0.5">
-          <button
+          <ControlButton
             onClick={() => setStockSort('none')}
-            className={`db-inventory-stock-sort px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+            className={`db-inventory-stock-sort px-2.5  rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
               stockSort === 'none' ? 'db-inventory-stock-sort--selected' : ''
             }`}
             style={stockSort === 'none' ? { backgroundColor: accentColors[500] } : undefined}
           >
             Default
-          </button>
-          <button
+          </ControlButton>
+          <ControlButton
             onClick={() => setStockSort('low-high')}
-            className={`db-inventory-stock-sort px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+            className={`db-inventory-stock-sort px-2.5  rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
               stockSort === 'low-high' ? 'db-inventory-stock-sort--selected' : ''
             }`}
             style={stockSort === 'low-high' ? { backgroundColor: accentColors[500] } : undefined}
           >
             Stock ↑
-          </button>
-          <button
+          </ControlButton>
+          <ControlButton
             onClick={() => setStockSort('high-low')}
-            className={`db-inventory-stock-sort px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+            className={`db-inventory-stock-sort px-2.5  rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
               stockSort === 'high-low' ? 'db-inventory-stock-sort--selected' : ''
             }`}
             style={stockSort === 'high-low' ? { backgroundColor: accentColors[500] } : undefined}
           >
             Stock ↓
-          </button>
+          </ControlButton>
         </div>
-        <button
+        <ControlButton
           onClick={() => setShowLowStock(!showLowStock)}
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap border ${
+          className={`inline-flex items-center gap-1.5 px-3  rounded-lg text-xs font-semibold transition-colors whitespace-nowrap border ${
             showLowStock
               ? 'bg-red-500/20 text-red-300 border-red-500/40'
               : 'bg-white/10 text-white border-white/15'
@@ -1189,7 +1190,7 @@ function LegacyInventoryPage() {
               {inventory.filter((item) => item.stock_quantity <= item.reorder_level).length}
             </span>
           )}
-        </button>
+        </ControlButton>
       </div>
 
       {/* Mobile/Tablet: Always cards */}
@@ -1204,7 +1205,7 @@ function LegacyInventoryPage() {
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-start gap-2 min-w-0">
                   {item.image_url || fallbackPartImageUrl ? (
-                    <button
+                    <ControlButton controlKind="content"
                       type="button"
                       onClick={() => setLightboxSrc(item.image_url || fallbackPartImageUrl)}
                       className={`shrink-0 w-11 h-11 rounded-md overflow-hidden border border-white/15 ${!item.image_url ? 'bg-white p-1' : ''}`}
@@ -1215,7 +1216,7 @@ function LegacyInventoryPage() {
                         alt={item.name}
                         className={item.image_url ? 'w-full h-full object-cover' : 'w-full h-full object-contain'}
                       />
-                    </button>
+                    </ControlButton>
                   ) : (
                     <div className="shrink-0 w-11 h-11 rounded-md border border-dashed border-white/15 flex items-center justify-center text-gray-500">
                       <ImageOff className="w-4 h-4" />
@@ -1274,9 +1275,9 @@ function LegacyInventoryPage() {
               </div>
 
               <div className="flex justify-end">
-                <button
+                <ControlButton
                   onClick={() => openManage(item)}
-                  className="inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold transition"
+                  className="inline-flex items-center gap-1 px-3  rounded-md text-xs font-semibold transition"
                     style={{
                       color: accentColors[400],
                     backgroundColor: `${accentColors[500]}1a`,
@@ -1286,7 +1287,7 @@ function LegacyInventoryPage() {
                 >
                   Manage
                   <ArrowRight className="w-3 h-3" />
-                </button>
+                </ControlButton>
               </div>
             </div>
           )
@@ -1299,9 +1300,9 @@ function LegacyInventoryPage() {
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-400 font-medium">Sort:</span>
             <div className="inline-flex items-center bg-white/10 border border-white/15 rounded-lg p-0.5">
-              <button
+              <ControlButton
                 onClick={() => setStockSort('none')}
-                className={`db-inventory-stock-sort px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                className={`db-inventory-stock-sort px-2.5  rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                   stockSort === 'none' ? 'db-inventory-stock-sort--selected' : ''
                 } ${
                   stockSort === 'none' ? 'text-white' : 'text-white hover:bg-white/20'
@@ -1309,10 +1310,10 @@ function LegacyInventoryPage() {
                 style={stockSort === 'none' ? { backgroundColor: accentColors[500] } : undefined}
               >
                 Default
-              </button>
-              <button
+              </ControlButton>
+              <ControlButton
                 onClick={() => setStockSort('low-high')}
-                className={`db-inventory-stock-sort px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                className={`db-inventory-stock-sort px-2.5  rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                   stockSort === 'low-high' ? 'db-inventory-stock-sort--selected' : ''
                 } ${
                   stockSort === 'low-high' ? 'text-white' : 'text-white hover:bg-white/20'
@@ -1320,10 +1321,10 @@ function LegacyInventoryPage() {
                 style={stockSort === 'low-high' ? { backgroundColor: accentColors[500] } : undefined}
               >
                 Stock ↑
-              </button>
-              <button
+              </ControlButton>
+              <ControlButton
                 onClick={() => setStockSort('high-low')}
-                className={`db-inventory-stock-sort px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                className={`db-inventory-stock-sort px-2.5  rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                   stockSort === 'high-low' ? 'db-inventory-stock-sort--selected' : ''
                 } ${
                   stockSort === 'high-low' ? 'text-white' : 'text-white hover:bg-white/20'
@@ -1331,12 +1332,12 @@ function LegacyInventoryPage() {
                 style={stockSort === 'high-low' ? { backgroundColor: accentColors[500] } : undefined}
               >
                 Stock ↓
-              </button>
+              </ControlButton>
             </div>
           </div>
-          <button
+          <ControlButton
             onClick={() => setShowLowStock(!showLowStock)}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap border ${
+            className={`inline-flex items-center gap-1.5 px-3  rounded-lg text-xs font-semibold transition-colors whitespace-nowrap border ${
               showLowStock
                 ? 'bg-red-500/20 text-red-300 border-red-500/40'
                 : 'bg-white/10 text-white border-white/15 hover:bg-white/20'
@@ -1349,7 +1350,7 @@ function LegacyInventoryPage() {
                 {inventory.filter((item) => item.stock_quantity <= item.reorder_level).length}
               </span>
             )}
-          </button>
+          </ControlButton>
         </div>
         {viewMode === 'cards' ? (
           <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4">
@@ -1363,7 +1364,7 @@ function LegacyInventoryPage() {
                   >
                     <div className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-start gap-3">
                       {item.image_url || fallbackPartImageUrl ? (
-                        <button
+                        <ControlButton controlKind="content"
                           type="button"
                           onClick={() => setLightboxSrc(item.image_url || fallbackPartImageUrl)}
                           className={`shrink-0 w-14 h-14 rounded-lg overflow-hidden border border-white/15 hover:border-amber-400/50 transition-colors ${!item.image_url ? 'bg-white p-1.5' : ''}`}
@@ -1374,7 +1375,7 @@ function LegacyInventoryPage() {
                             alt={item.name}
                             className={item.image_url ? 'w-full h-full object-cover' : 'w-full h-full object-contain'}
                           />
-                        </button>
+                        </ControlButton>
                       ) : (
                         <div className="shrink-0 w-14 h-14 rounded-lg border border-dashed border-white/15 flex items-center justify-center text-gray-500">
                           <ImageOff className="w-5 h-5" />
@@ -1412,9 +1413,9 @@ function LegacyInventoryPage() {
                       </div>
                     </div>
 
-                    <button
+                    <ControlButton
                       onClick={() => openManage(item)}
-                      className="w-full px-3 py-2 text-sm font-medium rounded-lg transition inline-flex items-center justify-center gap-1 whitespace-nowrap"
+                      className="w-full px-3  text-sm font-medium rounded-lg transition inline-flex items-center justify-center gap-1 whitespace-nowrap"
                       style={{
                         color: accentColors[400],
                         backgroundColor: `${accentColors[500]}1a`,
@@ -1424,7 +1425,7 @@ function LegacyInventoryPage() {
                     >
                       Manage Stock
                       <ArrowRight className="w-4 h-4" />
-                    </button>
+                    </ControlButton>
                   </div>
                 )
               })}
@@ -1462,7 +1463,7 @@ function LegacyInventoryPage() {
                     <tr key={item.id} className="hover:bg-white/5 transition-colors">
                       <td className="px-4 py-3">
                         {item.image_url || fallbackPartImageUrl ? (
-                          <button
+                          <ControlButton controlKind="content"
                             type="button"
                             onClick={() => setLightboxSrc(item.image_url || fallbackPartImageUrl)}
                             className={`w-9 h-9 rounded-md overflow-hidden border border-white/15 hover:border-amber-400/50 transition-colors ${!item.image_url ? 'bg-white p-1' : ''}`}
@@ -1473,7 +1474,7 @@ function LegacyInventoryPage() {
                               alt={item.name}
                               className={item.image_url ? 'w-full h-full object-cover' : 'w-full h-full object-contain'}
                             />
-                          </button>
+                          </ControlButton>
                         ) : (
                           <div className="w-9 h-9 rounded-md border border-dashed border-white/15 flex items-center justify-center text-gray-500">
                             <ImageOff className="w-4 h-4" />
@@ -1504,9 +1505,9 @@ function LegacyInventoryPage() {
                         {item.updated_at ? new Date(item.updated_at).toLocaleDateString() : <span className="text-gray-500">—</span>}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button
+                        <ControlButton
                           onClick={() => openManage(item)}
-                          className="inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold transition"
+                          className="inline-flex items-center gap-1 px-3  rounded-md text-xs font-semibold transition"
                           style={{ 
                             color: accentColors[400], 
                             backgroundColor: `${accentColors[500]}1a`,
@@ -1516,7 +1517,7 @@ function LegacyInventoryPage() {
                         >
                           Manage
                           <ArrowRight className="w-3 h-3" />
-                        </button>
+                        </ControlButton>
                       </td>
                     </tr>
                   )
@@ -1553,7 +1554,7 @@ function LegacyInventoryPage() {
         panelClassName="db-inventory-editor-panel"
         titleIcon={
           (selectedItem?.image_url || fallbackPartImageUrl) ? (
-            <button
+            <ControlButton controlKind="content"
               type="button"
               onClick={() => setLightboxSrc(selectedItem?.image_url || fallbackPartImageUrl)}
               className={`shrink-0 w-11 h-11 rounded-lg overflow-hidden border border-gray-200 ${!selectedItem?.image_url ? 'bg-white p-1' : ''}`}
@@ -1564,7 +1565,7 @@ function LegacyInventoryPage() {
                 alt={selectedItem?.name || ''}
                 className={selectedItem?.image_url ? 'w-full h-full object-cover' : 'w-full h-full object-contain'}
               />
-            </button>
+            </ControlButton>
           ) : (
             <div className="shrink-0 w-11 h-11 rounded-lg border border-dashed border-gray-300 flex items-center justify-center text-gray-400">
               <ImageOff className="w-4 h-4" />
@@ -1572,7 +1573,7 @@ function LegacyInventoryPage() {
           )
         }
         headerAction={
-          <button
+          <ControlButton controlKind="icon"
             type="button"
             onClick={() => setEditingIdentity((v) => !v)}
             className={`db-inventory-editor-panel__identity-trigger ${editingIdentity ? 'is-active' : ''}`}
@@ -1580,11 +1581,11 @@ function LegacyInventoryPage() {
             title={editingIdentity ? 'Close part details editor' : 'Edit name, SKU, category, description, and photo'}
           >
             <Pencil className="w-4 h-4" />
-          </button>
+          </ControlButton>
         }
       >
-        {selectedItem && (user?.role === 'garage_owner' || user?.role === 'garage_admin') && <button type="button" className="min-h-11 whitespace-nowrap px-2 text-sm" onClick={() => { setPricingPart(selectedItem) }}>Part pricing</button>}
-        {freshPricingItem && <div className="db-parts-pricing__confirm"><p>Saved prices changed · Cost {pricingMoney(String(freshPricingItem.cost))} · Catalog {pricingMoney(String(freshPricingItem.selling_price))}. Your draft is kept.</p><button type="button" className="min-h-11 whitespace-nowrap px-2 text-sm" onClick={() => { setPricingBaseVersion(freshPricingItem.pricing_version); setFreshPricingItem(null); setError(null) }}>Keep my draft</button></div>}
+        {selectedItem && (user?.role === 'garage_owner' || user?.role === 'garage_admin') && <ControlButton type="button" className=" whitespace-nowrap px-2 text-sm" onClick={() => { setPricingPart(selectedItem) }}>Part pricing</ControlButton>}
+        {freshPricingItem && <div className="db-parts-pricing__confirm"><p>Saved prices changed · Cost {pricingMoney(String(freshPricingItem.cost))} · Catalog {pricingMoney(String(freshPricingItem.selling_price))}. Your draft is kept.</p><ControlButton type="button" className=" whitespace-nowrap px-2 text-sm" onClick={() => { setPricingBaseVersion(freshPricingItem.pricing_version); setFreshPricingItem(null); setError(null) }}>Keep my draft</ControlButton></div>}
         {selectedItem && <PartPolicySummary inventoryId={selectedItem.id} />}
         {/* Part details editor — only visible when pencil toggled */}
         {editingIdentity && (
@@ -1594,14 +1595,14 @@ function LegacyInventoryPage() {
             {/* Part photo */}
             <div className="flex items-center gap-3 pb-2">
               {selectedItem?.image_url ? (
-                <button
+                <ControlButton controlKind="content"
                   type="button"
                   onClick={() => setLightboxSrc(selectedItem.image_url)}
                   className="shrink-0 w-16 h-16 rounded-lg overflow-hidden border border-gray-200"
                   aria-label="View part photo"
                 >
                   <img src={selectedItem.image_url} alt={selectedItem.name} className="w-full h-full object-cover" />
-                </button>
+                </ControlButton>
               ) : (
                 <div className="shrink-0 w-16 h-16 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center overflow-hidden p-1">
                   {fallbackPartImageUrl ? (
@@ -1614,25 +1615,25 @@ function LegacyInventoryPage() {
               <div className="flex-1 min-w-0 space-y-1.5">
                 <p className="db-inventory-identity-editor__label text-sm font-medium">Part photo</p>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <button
+                  <ControlButton
                     type="button"
                     onClick={() => photoInputRef.current?.click()}
                     disabled={uploadPhotoMutation.isPending}
-                    className="db-inventory-identity-editor__photo-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors disabled:opacity-50 whitespace-nowrap"
+                    className="db-inventory-identity-editor__photo-action inline-flex items-center gap-1.5 px-3  rounded-md text-xs font-semibold transition-colors disabled:opacity-50 whitespace-nowrap"
                   >
                     <Camera className="w-3.5 h-3.5" />
                     {uploadPhotoMutation.isPending ? 'Uploading…' : selectedItem?.image_url ? 'Replace' : 'Add photo'}
-                  </button>
+                  </ControlButton>
                   {selectedItem?.image_url && (
-                    <button
+                    <ControlButton
                       type="button"
                       onClick={() => deletePhotoMutation.mutate()}
                       disabled={deletePhotoMutation.isPending}
-                      className="db-inventory-identity-editor__secondary-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors disabled:opacity-50 whitespace-nowrap"
+                      className="db-inventory-identity-editor__secondary-action inline-flex items-center gap-1.5 px-3  rounded-md text-xs font-semibold transition-colors disabled:opacity-50 whitespace-nowrap"
                     >
                       <X className="w-3.5 h-3.5" />
                       Remove
-                    </button>
+                    </ControlButton>
                   )}
                 </div>
                 <input
@@ -1661,11 +1662,11 @@ function LegacyInventoryPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <label className="db-inventory-identity-editor__label text-sm space-y-1 block">
                 <span>SKU</span>
-                <input
+                <ControlInput
                   type="text"
                   value={manageForm.sku}
                   onChange={(e) => handleManageChange('sku', e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                  className="w-full rounded-lg border border-gray-200 px-3  text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
                 />
               </label>
               <label className="db-inventory-identity-editor__label text-sm space-y-1 block">
@@ -1681,11 +1682,11 @@ function LegacyInventoryPage() {
             </div>
             <label className="db-inventory-identity-editor__label text-sm space-y-1 block">
               <span>Warehouse location</span>
-              <input
+              <ControlInput
                 type="text"
                 value={manageForm.location}
                 onChange={(e) => handleManageChange('location', e.target.value)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                className="w-full rounded-lg border border-gray-200 px-3  text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
                 placeholder="e.g. Aisle 3, Shelf B"
               />
             </label>
@@ -1808,22 +1809,22 @@ function LegacyInventoryPage() {
                 ariaLabel="Quantity to receive"
                 align="start"
               />
-              <button
+              <ControlButton
                 type="button"
                 onClick={() => receiveShipmentMutation.mutate()}
                 disabled={!receiveQty || receiveShipmentMutation.isPending}
-                className="px-3 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                className="px-3  rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
               >
                 {receiveShipmentMutation.isPending ? 'Receiving…' : 'Receive into stock'}
-              </button>
+              </ControlButton>
               {selectedItem.on_order_quantity > 0 && (
-                <button
+                <ControlButton
                   type="button"
                   onClick={() => setReceiveQty(String(selectedItem.on_order_quantity))}
-                  className="px-2 py-2 rounded-lg text-xs font-medium text-blue-700 hover:bg-blue-100"
+                  className="px-2  rounded-lg text-xs font-medium text-blue-700 hover:bg-blue-100"
                 >
                   Receive all
-                </button>
+                </ControlButton>
               )}
             </div>
             {receiveMessage && <p className="text-xs text-green-700 font-medium">{receiveMessage}</p>}
@@ -1852,26 +1853,26 @@ function LegacyInventoryPage() {
             <div className="space-y-3 rounded-lg border border-gray-200 p-3 bg-gray-50">
               <p className="text-xs font-semibold text-gray-600 uppercase">New Supplier</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <input
+                <ControlInput
                   type="text"
                   value={newSupplierForm.name}
                   onChange={(e) => handleNewSupplierChange('name', e.target.value)}
-                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                  className="rounded-lg border border-gray-200 px-3  text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
                   placeholder="Supplier name *"
                 />
-                <input
+                <ControlInput
                   type="text"
                   value={newSupplierForm.contact_name}
                   onChange={(e) => handleNewSupplierChange('contact_name', e.target.value)}
-                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                  className="rounded-lg border border-gray-200 px-3  text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
                   placeholder="Contact name"
                 />
               </div>
-              <input
+              <ControlInput
                 type="text"
                 value={newSupplierForm.phone}
                 onChange={(e) => handleNewSupplierChange('phone', formatUSPhone(e.target.value))}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                className="w-full rounded-lg border border-gray-200 px-3  text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
                 placeholder="Phone"
               />
               <MapboxAddressInput
@@ -1882,39 +1883,39 @@ function LegacyInventoryPage() {
                 onAddressSelect={({ formatted }) => handleNewSupplierChange('address', formatted || '')}
               />
               <div className="flex items-center gap-2">
-                <button
+                <ControlButton
                   type="button"
                   onClick={() => {
                     if (!newSupplierForm.name.trim()) return
                     createSupplierMutation.mutate('manage')
                   }}
                   disabled={!newSupplierForm.name.trim() || createSupplierMutation.isPending}
-                  className="px-3 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+                  className="px-3  rounded-lg text-sm font-semibold text-white disabled:opacity-50"
                   style={{ backgroundColor: accentColors[500] }}
                 >
                   {createSupplierMutation.isPending ? 'Adding...' : 'Add Supplier'}
-                </button>
-                <button
+                </ControlButton>
+                <ControlButton
                   type="button"
                   onClick={() => {
                     setNewSupplierForm({ name: '', address: '', phone: '', contact_name: '' })
                     setAddingSupplierInManage(false)
                   }}
-                  className="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
+                  className="px-3  rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
                 >
                   Cancel
-                </button>
+                </ControlButton>
               </div>
             </div>
           )}
 
           <label className="text-sm text-gray-700 space-y-1 block">
             <span>Supplier Contact</span>
-            <input
+            <ControlInput
               type="text"
               value={manageForm.supplier_contact}
               onChange={(e) => handleManageChange('supplier_contact', e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="w-full rounded-lg border border-gray-200 px-3  text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
               placeholder="Auto-filled from supplier, or enter manually"
             />
           </label>
@@ -1959,11 +1960,11 @@ function LegacyInventoryPage() {
 
         <label className="text-sm text-gray-700 space-y-1 block">
           <span>Warehouse location</span>
-          <input
+          <ControlInput
             type="text"
             value={addForm.location}
             onChange={(e) => handleAddFormChange('location', e.target.value)}
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+            className="w-full rounded-lg border border-gray-200 px-3  text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
             placeholder="e.g. Aisle 3, Shelf B"
           />
         </label>
@@ -1972,22 +1973,22 @@ function LegacyInventoryPage() {
         <div className="space-y-1">
           <label className="text-sm text-gray-700 space-y-1 block">
             <span>SKU *</span>
-            <input
+            <ControlInput
               type="text"
               value={addForm.sku}
               onChange={(e) => handleAddFormChange('sku', e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="w-full rounded-lg border border-gray-200 px-3  text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
               placeholder="Auto-generated or enter custom"
             />
           </label>
           {skuSuggestion && (
-            <button
+            <ControlButton
               type="button"
               onClick={() => handleAddFormChange('sku', skuSuggestion)}
-              className="text-[11px] px-2 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 transition"
+              className="text-[11px] px-2  rounded bg-blue-50 text-blue-700 hover:bg-blue-100 transition"
             >
               Use suggested: <span className="font-mono font-semibold">{skuSuggestion}</span>
-            </button>
+            </ControlButton>
           )}
         </div>
 
@@ -2090,26 +2091,26 @@ function LegacyInventoryPage() {
             <div className="space-y-3 rounded-lg border border-gray-200 p-3 bg-gray-50">
               <p className="text-xs font-semibold text-gray-600 uppercase">New Supplier</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <input
+                <ControlInput
                   type="text"
                   value={newSupplierForm.name}
                   onChange={(e) => handleNewSupplierChange('name', e.target.value)}
-                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                  className="rounded-lg border border-gray-200 px-3  text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
                   placeholder="Supplier name *"
                 />
-                <input
+                <ControlInput
                   type="text"
                   value={newSupplierForm.contact_name}
                   onChange={(e) => handleNewSupplierChange('contact_name', e.target.value)}
-                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                  className="rounded-lg border border-gray-200 px-3  text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
                   placeholder="Contact name"
                 />
               </div>
-              <input
+              <ControlInput
                 type="text"
                 value={newSupplierForm.phone}
                 onChange={(e) => handleNewSupplierChange('phone', formatUSPhone(e.target.value))}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                className="w-full rounded-lg border border-gray-200 px-3  text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
                 placeholder="Phone"
               />
               <MapboxAddressInput
@@ -2120,39 +2121,39 @@ function LegacyInventoryPage() {
                 onAddressSelect={({ formatted }) => handleNewSupplierChange('address', formatted || '')}
               />
               <div className="flex items-center gap-2">
-                <button
+                <ControlButton
                   type="button"
                   onClick={() => {
                     if (!newSupplierForm.name.trim()) return
                     createSupplierMutation.mutate('add')
                   }}
                   disabled={!newSupplierForm.name.trim() || createSupplierMutation.isPending}
-                  className="px-3 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+                  className="px-3  rounded-lg text-sm font-semibold text-white disabled:opacity-50"
                   style={{ backgroundColor: accentColors[500] }}
                 >
                   {createSupplierMutation.isPending ? 'Adding...' : 'Add Supplier'}
-                </button>
-                <button
+                </ControlButton>
+                <ControlButton
                   type="button"
                   onClick={() => {
                     setNewSupplierForm({ name: '', address: '', phone: '', contact_name: '' })
                     setAddingSupplierInAdd(false)
                   }}
-                  className="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
+                  className="px-3  rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
                 >
                   Cancel
-                </button>
+                </ControlButton>
               </div>
             </div>
           )}
 
           <label className="text-sm text-gray-700 space-y-1 block">
             <span>Supplier Contact</span>
-            <input
+            <ControlInput
               type="text"
               value={addForm.supplier_contact}
               onChange={(e) => handleAddFormChange('supplier_contact', e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="w-full rounded-lg border border-gray-200 px-3  text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
               placeholder="Auto-filled from supplier, or enter manually"
             />
           </label>

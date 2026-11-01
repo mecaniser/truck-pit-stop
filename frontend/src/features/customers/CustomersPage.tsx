@@ -1,4 +1,5 @@
 import { shopWorkReturnUrl, shopWorkQueryScope } from '@/features/dashboard/shopWorkNavigation'
+import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import { canStartCustomerOrder, readCustomerDirectoryContext, repairOrderEntrySearch, type RepairOrderReturn } from '../repair-orders/repairOrderEntry'
 import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { Spinner, LoadingLine, StaffSearchField } from '@/components/ui'
@@ -115,7 +116,7 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
   const routeParams = new URLSearchParams(location.search)
   const shopWorkReturn = shopWorkReturnUrl(routeParams)
   const requestedCustomerView = routeParams.get('tab') === 'account' ? 'account' : routeParams.get('tab') === 'history' ? 'history' : 'overview'
-  const shopWorkBack = shopWorkReturn && <button type="button" className="min-h-11 shrink-0 self-start px-3 text-sm font-semibold underline" onClick={() => navigate(shopWorkReturn)}>Back to Shop Work</button>
+  const shopWorkBack = shopWorkReturn && <ControlButton type="button" className="min-h-11 shrink-0 self-start px-3 text-sm font-semibold underline" onClick={() => navigate(shopWorkReturn)}>Back to Shop Work</ControlButton>
   const changeCustomerView = (view: 'overview' | 'history' | 'account') => {
     const params = new URLSearchParams(location.search)
     params.set('tab', view)
@@ -518,14 +519,14 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
     <div className="mb-6 flex-shrink-0">
       <div className="relative">
         <Search aria-hidden="true" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
-        <input
+        <ControlInput
           type="text"
           aria-label="Search customers"
           placeholder="Search by name, email, or phone..."
         value={searchQuery}
           onChange={disabled ? undefined : (event) => setSearchQuery(event.target.value)}
           disabled={disabled}
-          className="w-full rounded-lg bg-white py-2.5 pl-10 pr-4 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-60"
+          className="w-full rounded-lg bg-white  pl-10 pr-4 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-60"
         />
       </div>
     </div>
@@ -539,13 +540,13 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
             <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>
             {presentationVariant === 'new' && <p>Find customers, their vehicles, and service history.</p>}
           </div>
-          <button
+          <ControlButton
             disabled
-            className="mt-3 sm:mt-0 px-4 py-2 text-white font-medium rounded-lg opacity-60"
+            className="mt-3 sm:mt-0 px-4  text-white font-medium rounded-lg opacity-60"
             style={{ backgroundColor: accentColors[500] }}
           >
             + Add Customer
-          </button>
+          </ControlButton>
         </div>
 
         {/* Search Bar */}
@@ -659,7 +660,7 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
           </div>
         </div>
         <div className="db-customer-inspection__actions">
-          <button
+          <ControlButton
             type="button"
             className="db-customer-inspection__open"
             onClick={(event) => {
@@ -669,7 +670,7 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
           >
             Open customer
             <ArrowRight aria-hidden="true" />
-          </button>
+          </ControlButton>
         </div>
       </section>
     )
@@ -682,13 +683,13 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
           <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>
           {presentationVariant === 'new' && <p>Find customers, their vehicles, and service history.</p>}
         </div>
-        <button
+        <ControlButton
           onClick={openCreateModal}
-          className="mt-3 sm:mt-0 px-4 py-2 text-white font-medium rounded-lg transition-colors"
+          className="mt-3 sm:mt-0 px-4  text-white font-medium rounded-lg transition-colors"
           style={{ backgroundColor: accentColors[500] }}
         >
           + Add Customer
-        </button>
+        </ControlButton>
       </div>
 
       {/* Search Bar */}
@@ -737,7 +738,7 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
                     >
                       <div className="db-customer-navigator__identity">
                         <div className="db-customer-navigator__name-line">
-                          <button
+                          <ControlButton
                             type="button"
                             ref={(node) => {
                               if (node) customerRowRefs.current.set(customer.id, node)
@@ -755,7 +756,7 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
                               {customerDisplayName(customer)}
                             </span>
                             <ArrowRight aria-hidden="true" />
-                          </button>
+                          </ControlButton>
                           {customer.fleet_enabled && <FleetMemberBadge variant="dark" />}
                         </div>
                         <MatchBadges matchedFields={customer.matched_fields} />
@@ -786,7 +787,7 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
                           </span>
                         )}
                       </span>
-                      <button
+                      <ControlButton controlKind="action"
                         type="button"
                         ref={(node) => {
                           if (node) customerDetailsButtonRefs.current.set(customer.id, node)
@@ -803,7 +804,7 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
                       >
                         Details
                         <ChevronDown aria-hidden="true" />
-                      </button>
+                      </ControlButton>
                     </div>
                     {isInspected && renderCustomerInspectionBrief(customer)}
                   </article>
@@ -817,7 +818,7 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
                 <thead className="bg-white/5 text-white/70 text-xs uppercase tracking-wider">
                   <tr>
                     <th className="px-4 py-3 text-left font-medium">
-                      <button
+                      <ControlButton
                         onClick={() => toggleSort('name')}
                         className="db-customer-sort-control flex items-center gap-1 hover:text-white transition-colors"
                       >
@@ -827,13 +828,13 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
                         ) : (
                           <ArrowDown className="w-3 h-3" />
                         ))}
-                      </button>
+                      </ControlButton>
                     </th>
                     <th className="px-4 py-3 text-left font-medium hidden sm:table-cell">Email</th>
                     <th className="px-4 py-3 text-left font-medium hidden sm:table-cell whitespace-nowrap">Phone</th>
                     <th className="px-4 py-3 text-left font-medium hidden xl:table-cell">DOT / MC</th>
                     <th className="px-4 py-3 text-left font-medium hidden xl:table-cell">
-                      <button
+                      <ControlButton
                         onClick={() => toggleSort('vehicle_count')}
                         className="db-customer-sort-control flex items-center gap-1 hover:text-white transition-colors whitespace-nowrap"
                       >
@@ -843,10 +844,10 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
                         ) : (
                           <ArrowDown className="w-3 h-3" />
                         ))}
-                      </button>
+                      </ControlButton>
                     </th>
                     <th className="px-4 py-3 text-right font-medium hidden md:table-cell">
-                      <button
+                      <ControlButton
                         onClick={() => toggleSort('balance')}
                         className="db-customer-sort-control flex items-center gap-1 ml-auto hover:text-white transition-colors"
                       >
@@ -856,7 +857,7 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
                         ) : (
                           <ArrowDown className="w-3 h-3" />
                         ))}
-                      </button>
+                      </ControlButton>
                     </th>
                     <th className="px-4 py-3 text-right font-medium">Actions</th>
                   </tr>
@@ -916,7 +917,7 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
                         ) : '—'}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button
+                        <ControlButton
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation()
@@ -925,7 +926,7 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
                           className="text-emerald-400 hover:text-emerald-300"
                         >
                           View
-                        </button>
+                        </ControlButton>
                       </td>
                     </tr>
                     </React.Fragment>
@@ -1015,7 +1016,7 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
                   </div>
 
                   <div className="pt-3 border-t border-amber-200/50">
-                    <button
+                    <ControlButton
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation()
@@ -1024,7 +1025,7 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
                       className="w-full text-center font-medium text-amber-700"
                     >
                       View Details
-                    </button>
+                    </ControlButton>
                   </div>
                 </div>
                 </article>
@@ -1052,20 +1053,20 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
             </span>
             {totalCustomers > PAGE_SIZE && (
               <div className="flex items-center gap-2">
-                <button
+                <ControlButton
                   onClick={() => setPage((p) => Math.max(0, p - 1))}
                   disabled={page === 0 || isPlaceholderData}
-                  className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="px-3  rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   Previous
-                </button>
-                <button
+                </ControlButton>
+                <ControlButton
                   onClick={() => setPage((p) => (customerPage?.has_more ? p + 1 : p))}
                   disabled={!customerPage?.has_more || isPlaceholderData}
-                  className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="px-3  rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   Next
-                </button>
+                </ControlButton>
               </div>
             )}
           </div>
@@ -1159,7 +1160,7 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
         }
       >
         {selectedVehicleId && linkedVehicleQuery.isFetching && <p role="status" className="p-4 text-sm text-slate-600">Opening vehicle…</p>}
-        {selectedVehicleId && linkedVehicleQuery.isError && <div role="alert" className="flex flex-wrap items-center gap-3 p-4 text-sm text-red-700"><span>That vehicle is unavailable for this customer.</span><button type="button" onClick={returnToCustomer} className="min-h-11 whitespace-nowrap font-semibold underline">Back to customer</button></div>}
+        {selectedVehicleId && linkedVehicleQuery.isError && <div role="alert" className="flex flex-wrap items-center gap-3 p-4 text-sm text-red-700"><span>That vehicle is unavailable for this customer.</span><ControlButton type="button" onClick={returnToCustomer} className=" whitespace-nowrap font-semibold underline">Back to customer</ControlButton></div>}
         {selectedCustomer && !customerOnCurrentPage && isSelectedCustomerUnavailable && <div className="db-customer-recovery"><CustomerLoadError subject="customer updates" onRetry={() => void refetchSelectedCustomer()} isRetrying={isFetchingSelectedCustomer} /></div>}
         {!selectedCustomer ? null : selectedVehicleInPanel ? (
           <CustomerVehicleDetail createOrderButtonRef={createOrderButtonRef} customer={selectedCustomer} vehicle={selectedVehicleInPanel}

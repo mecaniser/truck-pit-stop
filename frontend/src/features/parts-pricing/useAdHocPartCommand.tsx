@@ -1,3 +1,4 @@
+import { ControlInput } from '@/components/ui/Controls'
 import { useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
 import SlidePanelForm from '@/components/SlidePanelForm'
@@ -52,6 +53,6 @@ export function useAdHocPartCommand(orderId: string, presentation: 'shop' | 'fle
     } finally { if (active()) { pending.current = false; setMatch(null); awaiting.current = null } }
   }
   return { execute, dialog: <>{pricing.dialog}{match && <SlidePanelForm portalToShell isOpen={Boolean(match)} title="Part already in catalog" category="Parts pricing" panelClassName="db-parts-pricing" overlayClassName="db-parts-pricing-overlay" width="sm:w-[480px]" onClose={() => awaiting.current?.cancel()} onSubmit={event => { event.preventDefault(); awaiting.current?.accept({ manual, reason: reason.trim() }) }} submitLabel="Review catalog price" submitDisabled={manual && reason.trim().length < 3}>
-    {match && <><strong>{match.name}</strong><p className="db-parts-pricing__muted">{match.sku} · Your entered draft is kept.</p>{manager && <><label className="db-parts-pricing__check"><input type="checkbox" checked={manual} onChange={event => setManual(event.target.checked)} />Keep my entered price</label>{manual && <label>Override reason<input value={reason} maxLength={500} onChange={event => setReason(event.target.value)} /></label>}</>}</>}
+    {match && <><strong>{match.name}</strong><p className="db-parts-pricing__muted">{match.sku} · Your entered draft is kept.</p>{manager && <><label className="db-parts-pricing__check"><input type="checkbox" checked={manual} onChange={event => setManual(event.target.checked)} />Keep my entered price</label>{manual && <label>Override reason<ControlInput value={reason} maxLength={500} onChange={event => setReason(event.target.value)} /></label>}</>}</>}
   </SlidePanelForm>}</> }
 }

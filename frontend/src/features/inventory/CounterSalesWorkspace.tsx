@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { usePricingScope } from '@/features/parts-pricing/usePricingScope'
@@ -70,27 +71,27 @@ function SaleList({ onOpen, onNew }: { onOpen: (id: string) => void; onNew: () =
   return <div className="db-counter-sales__list">
     <div className="db-counter-sales__list-head">
       <div><h1>Parts sales</h1><p>Occasional walk-in sales, receipts, and audited returns.</p></div>
-      <button type="button" onClick={onNew}><Plus aria-hidden="true" />New counter sale</button>
+      <ControlButton type="button" onClick={onNew}><Plus aria-hidden="true" />New counter sale</ControlButton>
     </div>
     <form className="db-counter-sales__list-filters" onSubmit={(event) => { event.preventDefault(); setSearch(searchDraft.trim()); setCursors([null]) }}>
-      <label><Search aria-hidden="true" /><span className="sr-only">Search parts sales</span><input type="search" value={searchDraft} onChange={(event) => setSearchDraft(event.target.value)} placeholder="Search sale number or buyer" /></label>
+      <label><Search aria-hidden="true" /><span className="sr-only">Search parts sales</span><ControlInput type="search" value={searchDraft} onChange={(event) => setSearchDraft(event.target.value)} placeholder="Search sale number or buyer" /></label>
       <PlatformSelect aria-label="Filter sale status" value={status} onChange={(event) => { setStatus(event.target.value); setCursors([null]) }}>
         {SALE_STATUSES.map((value) => <option key={value} value={value}>{value ? saleStateLabel(value) : 'All statuses'}</option>)}
       </PlatformSelect>
-      <button type="submit">Search</button>
+      <ControlButton type="submit">Search</ControlButton>
     </form>
     {query.isPending && <div className="db-counter-sales__state" role="status">Loading parts sales…</div>}
-    {query.isError && <div className="db-counter-sales__state" role="alert">Parts sales could not be loaded.<button type="button" onClick={() => void query.refetch()}>Retry</button></div>}
+    {query.isError && <div className="db-counter-sales__state" role="alert">Parts sales could not be loaded.<ControlButton type="button" onClick={() => void query.refetch()}>Retry</ControlButton></div>}
     {!query.isPending && !query.isError && !query.data.items.length && <div className="db-counter-sales__state"><ShoppingBag aria-hidden="true" /><strong>No counter sales match this view.</strong><span>Start a walk-in sale or adjust the filters.</span></div>}
     {!query.isError && !!query.data?.items.length && <div className="db-counter-sales__sale-rows">{query.data.items.map((sale) =>
-      <button type="button" key={sale.id} onClick={() => onOpen(sale.id)}>
+      <ControlButton type="button" key={sale.id} onClick={() => onOpen(sale.id)}>
         <span><strong>{sale.sale_number}</strong><small>{sale.buyer_name || 'Walk-in customer'} · {sale.line_count} {sale.line_count === 1 ? 'line' : 'lines'}</small></span>
         <span><em data-status={sale.status}>{saleStateLabel(sale.status)}</em><strong>{formatMoney(sale.total_amount)}</strong><small>{new Date(sale.completed_at || sale.created_at).toLocaleString()}</small></span>
         <ArrowRight aria-hidden="true" />
-      </button>)}</div>}
+      </ControlButton>)}</div>}
     {!query.isError && query.data && <div className="db-counter-sales__pager">
       <span aria-live="polite">Showing {query.data.items.length} sales</span>
-      <div><button type="button" disabled={cursors.length === 1 || query.isFetching} onClick={() => setCursors((current) => current.slice(0, -1))}>Previous</button><button type="button" disabled={!query.data.next_cursor || query.isFetching} onClick={() => query.data.next_cursor && setCursors((current) => [...current, query.data.next_cursor])}>Next</button></div>
+      <div><ControlButton type="button" disabled={cursors.length === 1 || query.isFetching} onClick={() => setCursors((current) => current.slice(0, -1))}>Previous</ControlButton><ControlButton type="button" disabled={!query.data.next_cursor || query.isFetching} onClick={() => query.data.next_cursor && setCursors((current) => [...current, query.data.next_cursor])}>Next</ControlButton></div>
     </div>}
   </div>
 }
@@ -221,42 +222,42 @@ function DraftSale({ initialPartId, existingSale, onSaved, onCancel }: { initial
 
   return <div className="db-counter-sales__draft">
     {pricingCommand.dialog}
-    {freshSale && <div className="db-counter-sales__notice"><strong>Saved sale changed · {freshSale.sale_number}</strong><span>{freshSale.buyer_name || 'Walk-in'} · {formatMoney(freshSale.total_amount)}</span>{freshSale.lines.map(line => <span key={line.id}>{line.name} × {line.quantity} · {formatMoney(line.charged_unit_price)}</span>)}<button type="button" disabled={!freshSale.allowed_actions.includes('edit_draft')} onClick={() => { setSaleVersion(freshSale.version); setPricingBaseline(freshSale); setLines(current => current.map(line => { const saved = freshSale.lines.find(item => item.inventory_id === line.part.id); return { ...line, savedLineId: saved?.id, savedPrice: saved?.price_override_reason ? saved.charged_unit_price : '', savedReason: saved?.price_override_reason || '' } })); setFreshSale(null); setVersionBlocked(false); setError(null) }}>Keep my draft</button><button type="button" onClick={onCancel}>Return to saved sale</button></div>}
+    {freshSale && <div className="db-counter-sales__notice"><strong>Saved sale changed · {freshSale.sale_number}</strong><span>{freshSale.buyer_name || 'Walk-in'} · {formatMoney(freshSale.total_amount)}</span>{freshSale.lines.map(line => <span key={line.id}>{line.name} × {line.quantity} · {formatMoney(line.charged_unit_price)}</span>)}<ControlButton type="button" disabled={!freshSale.allowed_actions.includes('edit_draft')} onClick={() => { setSaleVersion(freshSale.version); setPricingBaseline(freshSale); setLines(current => current.map(line => { const saved = freshSale.lines.find(item => item.inventory_id === line.part.id); return { ...line, savedLineId: saved?.id, savedPrice: saved?.price_override_reason ? saved.charged_unit_price : '', savedReason: saved?.price_override_reason || '' } })); setFreshSale(null); setVersionBlocked(false); setError(null) }}>Keep my draft</ControlButton><ControlButton type="button" onClick={onCancel}>Return to saved sale</ControlButton></div>}
 
-    <div className="db-counter-sales__workspace-head"><button type="button" disabled={save.isPending} onClick={onCancel}><ArrowLeft aria-hidden="true" />{existingSale ? existingSale.sale_number : 'Parts sales'}</button><div><h1>{existingSale ? 'Edit draft sale' : 'New counter sale'}</h1><p>Choose whole quantities, then record one manual tender at checkout.</p></div></div>
+    <div className="db-counter-sales__workspace-head"><ControlButton type="button" disabled={save.isPending} onClick={onCancel}><ArrowLeft aria-hidden="true" />{existingSale ? existingSale.sale_number : 'Parts sales'}</ControlButton><div><h1>{existingSale ? 'Edit draft sale' : 'New counter sale'}</h1><p>Choose whole quantities, then record one manual tender at checkout.</p></div></div>
     <fieldset className="db-counter-sales__draft-grid" disabled={save.isPending}>
       <section>
         <h2>Parts</h2>
-        <label className="db-counter-sales__search"><Search aria-hidden="true" /><span className="sr-only">Search catalog parts</span><input autoFocus type="search" value={partSearch} onChange={(event) => setPartSearch(event.target.value)} placeholder="Search part name or SKU" /></label>
+        <label className="db-counter-sales__search"><Search aria-hidden="true" /><span className="sr-only">Search catalog parts</span><ControlInput autoFocus type="search" value={partSearch} onChange={(event) => setPartSearch(event.target.value)} placeholder="Search part name or SKU" /></label>
         {initialPartQuery.isFetching && <p role="status">Loading selected part…</p>}
         {initialPartQuery.isError && <p role="alert">The selected part could not be loaded. Search for it to continue.</p>}
         {partsQuery.isFetching && <p role="status">Searching catalog…</p>}
         {!partsQuery.isError && partsQuery.data && <div className="db-counter-sales__search-results">{partsQuery.data.items.filter((part) => !part.is_archived && !part.is_placeholder).map((part) =>
-          <button type="button" key={part.id} onClick={() => addPart(part)}><span><strong>{part.name}</strong><small>{part.sku}</small></span><span>{part.available_packages} on hand<Plus aria-hidden="true" /></span></button>)}</div>}
+          <ControlButton type="button" key={part.id} onClick={() => addPart(part)}><span><strong>{part.name}</strong><small>{part.sku}</small></span><span>{part.available_packages} on hand<Plus aria-hidden="true" /></span></ControlButton>)}</div>}
         <div className="db-counter-sales__draft-lines">{lines.map((line, index) => {
           const maximum = Math.max(1, line.part.available_to_sell_packages ?? line.part.available_packages)
           const quotedPrice = displayedQuote?.lines.find(item => item.inventory_id === line.part.id && (!line.savedLineId || item.sale_line_id === line.savedLineId))?.pricing
           return <article key={line.part.id}>
             <div><strong>{line.part.name}</strong><small>{line.part.sku} · {line.part.unit_type || 'each'}</small><small>{line.part.physical_on_hand_packages ?? line.part.available_packages} on hand</small>{quotedPrice && <small>{formatMoney(quotedPrice.charged_unit_price)} · {priceSourceLabel(quotedPrice.current_source, quotedPrice.policy_source)}</small>}</div>
             <QuantityStepper value={line.quantity} min={1} step={1} unitLabel={line.part.unit_type || 'units'} ariaLabel={`Quantity for ${line.part.name}`} size="lg" theme={appearance.mode === 'light' ? 'light' : 'dark'} onChange={(quantity) => setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, quantity: Math.min(maximum, Math.max(1, quantity)) } : item))} />
-            {manager && <details><summary>Manager price override</summary>{line.savedLineId && <button type="button" onClick={() => setLines(current => current.map((item, row) => row === index ? { ...item, resetToList: true, overridePrice: '', overrideReason: '' } : item))}>{line.resetToList ? 'Restore saved default selected' : 'Restore saved default'}</button>}<label>Charged unit price<input inputMode="decimal" value={line.overridePrice} onChange={(event) => setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, overridePrice: event.target.value, resetToList: false } : item))} placeholder={line.savedLineId ? 'Keep saved price' : 'Use shop price'} /></label><label>Reason<input value={line.overrideReason} minLength={3} maxLength={500} onChange={(event) => setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, overrideReason: event.target.value } : item))} placeholder="Required when price changes" /></label></details>}
-            <button type="button" aria-label={`Remove ${line.part.name}`} onClick={() => setLines((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X aria-hidden="true" /></button>
+            {manager && <details><summary>Manager price override</summary>{line.savedLineId && <ControlButton type="button" onClick={() => setLines(current => current.map((item, row) => row === index ? { ...item, resetToList: true, overridePrice: '', overrideReason: '' } : item))}>{line.resetToList ? 'Restore saved default selected' : 'Restore saved default'}</ControlButton>}<label>Charged unit price<ControlInput inputMode="decimal" value={line.overridePrice} onChange={(event) => setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, overridePrice: event.target.value, resetToList: false } : item))} placeholder={line.savedLineId ? 'Keep saved price' : 'Use shop price'} /></label><label>Reason<ControlInput value={line.overrideReason} minLength={3} maxLength={500} onChange={(event) => setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, overrideReason: event.target.value } : item))} placeholder="Required when price changes" /></label></details>}
+            <ControlButton controlKind="icon" type="button" aria-label={`Remove ${line.part.name}`} onClick={() => setLines((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X aria-hidden="true" /></ControlButton>
           </article>
         })}</div>
       </section>
       <aside>
         <h2>Buyer</h2>
-        <label>Existing customer<input value={customerSearch} onChange={(event) => { setCustomerSearch(event.target.value); setCustomer(null) }} placeholder="Optional customer lookup" /></label>
+        <label>Existing customer<ControlInput value={customerSearch} onChange={(event) => { setCustomerSearch(event.target.value); setCustomer(null) }} placeholder="Optional customer lookup" /></label>
         {!customersQuery.isError && customersQuery.data && !customer && <div className="db-counter-sales__customer-results">{customersQuery.data.map((option) =>
-          <button type="button" key={option.id} onClick={() => { setCustomer(option); setCustomerSearch(option.name); setBuyerName(option.name); setBuyerEmail(option.email || ''); setBuyerPhone(option.phone || '') }}><strong>{option.name}</strong><small>{option.email || option.phone || 'Customer record'}</small></button>)}</div>}
+          <ControlButton type="button" key={option.id} onClick={() => { setCustomer(option); setCustomerSearch(option.name); setBuyerName(option.name); setBuyerEmail(option.email || ''); setBuyerPhone(option.phone || '') }}><strong>{option.name}</strong><small>{option.email || option.phone || 'Customer record'}</small></ControlButton>)}</div>}
         <p>{pricingNotice}{existingSale && ' Saved prices stay unchanged.'}</p>
-        <label>Buyer name<input value={buyerName} onChange={(event) => setBuyerName(event.target.value)} /></label>
-        <label>Email<input type="email" value={buyerEmail} onChange={(event) => setBuyerEmail(event.target.value)} /></label>
-        <label>Phone<input type="tel" value={buyerPhone} onChange={(event) => setBuyerPhone(event.target.value)} /></label>
+        <label>Buyer name<ControlInput value={buyerName} onChange={(event) => setBuyerName(event.target.value)} /></label>
+        <label>Email<ControlInput type="email" value={buyerEmail} onChange={(event) => setBuyerEmail(event.target.value)} /></label>
+        <label>Phone<ControlInput type="tel" value={buyerPhone} onChange={(event) => setBuyerPhone(event.target.value)} /></label>
         {displayedQuote && <p><strong>Quoted total {formatMoney(previewTotal(displayedQuote))}</strong></p>}
-        {quoteReady && !displayedQuote && <p role={preview.isError ? 'alert' : 'status'}>{preview.isError ? pricingError(preview.error, 'Price preview unavailable. Retry before checkout.') : 'Checking prices…'}{preview.isError && <button type="button" onClick={() => void preview.refetch()}>Retry preview</button>}</p>}
+        {quoteReady && !displayedQuote && <p role={preview.isError ? 'alert' : 'status'}>{preview.isError ? pricingError(preview.error, 'Price preview unavailable. Retry before checkout.') : 'Checking prices…'}{preview.isError && <ControlButton type="button" onClick={() => void preview.refetch()}>Retry preview</ControlButton>}</p>}
         {error && <p className="db-counter-sales__error" role="alert">{error}</p>}
-        <button className="db-counter-sales__primary" type="button" disabled={save.isPending || versionBlocked} onClick={submit}>{save.isPending ? 'Saving draft…' : existingSale ? 'Save draft' : 'Review checkout'}<ArrowRight aria-hidden="true" /></button>
+        <ControlButton className="db-counter-sales__primary" type="button" disabled={save.isPending || versionBlocked} onClick={submit}>{save.isPending ? 'Saving draft…' : existingSale ? 'Save draft' : 'Review checkout'}<ArrowRight aria-hidden="true" /></ControlButton>
       </aside>
     </fieldset>
   </div>
@@ -297,7 +298,7 @@ function ReturnPanel({ sale, onClose, onChanged }: { sale: CounterSale; onClose:
   }
 
   return <div className="db-counter-sales__return-panel" role="dialog" aria-modal="true" aria-labelledby="return-sale-title">
-    <div><h2 id="return-sale-title">Return items from {sale.sale_number}</h2><button ref={closeRef} type="button" aria-label="Close return" onClick={onClose}><X aria-hidden="true" /></button></div>
+    <div><h2 id="return-sale-title">Return items from {sale.sale_number}</h2><ControlButton controlKind="icon" ref={closeRef} type="button" aria-label="Close return" onClick={onClose}><X aria-hidden="true" /></ControlButton></div>
     <p>Restocked units return to on-hand. Damaged units remain out of inventory. Record any external refund separately.</p>
     {sale.lines.map((line) => {
       const remaining = line.remaining_returnable_quantity
@@ -308,9 +309,9 @@ function ReturnPanel({ sale, onClose, onChanged }: { sale: CounterSale; onClose:
         {!!draft?.quantity && <><label>Reason<textarea minLength={3} maxLength={500} value={draft.reason} onChange={(event) => setLines((current) => ({ ...current, [line.id]: { ...current[line.id], reason: event.target.value } }))} /></label><fieldset><legend>Disposition</legend><label><input type="radio" name={`disposition-${line.id}`} checked={draft.disposition === 'restock'} onChange={() => setLines((current) => ({ ...current, [line.id]: { ...current[line.id], disposition: 'restock' } }))} />Restock</label><label><input type="radio" name={`disposition-${line.id}`} checked={draft.disposition === 'damaged'} onChange={() => setLines((current) => ({ ...current, [line.id]: { ...current[line.id], disposition: 'damaged' } }))} />Damaged</label></fieldset></>}
       </article>
     })}
-    <label>Refund or reversal reference<input value={manualReference} onChange={(event) => setManualReference(event.target.value)} placeholder="Optional external reference" /></label>
+    <label>Refund or reversal reference<ControlInput value={manualReference} onChange={(event) => setManualReference(event.target.value)} placeholder="Optional external reference" /></label>
     {error && <p role="alert">{error}</p>}
-    <div className="db-counter-sales__dialog-actions"><button type="button" onClick={onClose}>Cancel</button><button type="button" disabled={mutation.isPending} onClick={submit}>{mutation.isPending ? 'Recording…' : 'Record return'}</button></div>
+    <div className="db-counter-sales__dialog-actions"><ControlButton type="button" onClick={onClose}>Cancel</ControlButton><ControlButton type="button" disabled={mutation.isPending} onClick={submit}>{mutation.isPending ? 'Recording…' : 'Record return'}</ControlButton></div>
   </div>
 }
 
@@ -370,7 +371,7 @@ function SaleDetail({ saleId, tenders, onBack }: { saleId: string; tenders: Coun
   }
 
   if (query.isPending) return <div className="db-counter-sales__state" role="status">Loading sale…</div>
-  if (query.isError || !sale) return <div className="db-counter-sales__state" role="alert">This sale could not be loaded.<button type="button" onClick={() => void query.refetch()}>Retry</button></div>
+  if (query.isError || !sale) return <div className="db-counter-sales__state" role="alert">This sale could not be loaded.<ControlButton type="button" onClick={() => void query.refetch()}>Retry</ControlButton></div>
   if (editing) return <DraftSale existingSale={sale} initialPartId={null} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); void refresh(); setNotice('Draft sale updated.') }} />
 
   const completed = ['completed', 'partially_returned', 'returned'].includes(sale.status)
@@ -380,12 +381,12 @@ function SaleDetail({ saleId, tenders, onBack }: { saleId: string; tenders: Coun
   }
 
   return <div className="db-counter-sales__detail">
-    <div className="db-counter-sales__workspace-head"><button type="button" onClick={onBack}><ArrowLeft aria-hidden="true" />Parts sales</button><div><h1>{sale.sale_number}</h1><p>{sale.buyer_name || 'Walk-in customer'} · <span data-status={sale.status}>{saleStateLabel(sale.status)}</span></p></div></div>
-    {(notice || error) && <div className={error ? 'db-counter-sales__error' : 'db-counter-sales__notice'} role={error ? 'alert' : 'status'}><span>{error || notice}</span><button type="button" onClick={() => { setError(null); setNotice(null) }}>Dismiss</button></div>}
+    <div className="db-counter-sales__workspace-head"><ControlButton type="button" onClick={onBack}><ArrowLeft aria-hidden="true" />Parts sales</ControlButton><div><h1>{sale.sale_number}</h1><p>{sale.buyer_name || 'Walk-in customer'} · <span data-status={sale.status}>{saleStateLabel(sale.status)}</span></p></div></div>
+    {(notice || error) && <div className={error ? 'db-counter-sales__error' : 'db-counter-sales__notice'} role={error ? 'alert' : 'status'}><span>{error || notice}</span><ControlButton type="button" onClick={() => { setError(null); setNotice(null) }}>Dismiss</ControlButton></div>}
     <div className="db-counter-sales__detail-grid">
       <main>
         <section className="db-counter-sales__lines">
-          <div><h2>Sale lines</h2><span><strong>{sale.lines.length}</strong>{sale.allowed_actions.includes('edit_draft') && <button type="button" onClick={() => setEditing(true)}>Edit draft</button>}</span></div>
+          <div><h2>Sale lines</h2><span><strong>{sale.lines.length}</strong>{sale.allowed_actions.includes('edit_draft') && <ControlButton type="button" onClick={() => setEditing(true)}>Edit draft</ControlButton>}</span></div>
           {sale.lines.map((line) => <article key={line.id}><div><strong>{line.name}</strong><small>{line.sku} · {line.quantity} {line.unit_type || 'units'} × {formatMoney(line.charged_unit_price)}</small>{line.pricing && <small>{priceSourceLabel(line.pricing.current_source, line.pricing.policy_source)}</small>}{line.price_override_reason && <small>Manager override · {line.price_override_reason}</small>}</div><div><strong>{formatMoney(line.total_amount)}</strong><small>{line.physical_on_hand} on hand</small></div></article>)}
         </section>
         {!!sale.payment_attempts.length && <section className="db-counter-sales__attempts"><h2>Tender record</h2>{sale.payment_attempts.map((attempt) => <article key={attempt.id}><span><strong>{COUNTER_SALE_TENDER_LABELS[attempt.tender]}</strong><small>{attempt.reference || 'No external reference'} · {new Date(attempt.created_at).toLocaleString()}</small></span><span><em data-status={attempt.state}>recorded</em><strong>{formatMoney(attempt.amount)}</strong></span></article>)}</section>}
@@ -393,8 +394,8 @@ function SaleDetail({ saleId, tenders, onBack }: { saleId: string; tenders: Coun
       </main>
       <aside>
         <section className="db-counter-sales__totals"><h2>Totals</h2><dl aria-live="polite"><div><dt>List subtotal</dt><dd>{formatMoney(sale.list_subtotal)}</dd></div><div><dt>Discount</dt><dd>−{formatMoney(sale.discount_amount)}</dd></div><div><dt>Charged subtotal</dt><dd>{formatMoney(sale.charged_subtotal)}</dd></div><div><dt>Tax</dt><dd>{formatMoney(sale.tax_amount)}</dd></div><div><dt>Total</dt><dd>{formatMoney(sale.total_amount)}</dd></div></dl></section>
-        {sale.status === 'draft' && sale.allowed_actions.includes('checkout') && <section className="db-counter-sales__checkout"><h2>Record payment</h2><p>One manual tender settles the sale in full. Stock updates only when this succeeds.</p><label>Tender<PlatformSelect value={tender} onChange={(event) => setTender(event.target.value as CounterSaleTender)}>{tenders.map((value) => <option key={value} value={value}>{COUNTER_SALE_TENDER_LABELS[value]}</option>)}</PlatformSelect></label><label>Reference<input value={manualReference} onChange={(event) => setManualReference(event.target.value)} placeholder={tender === 'cash' ? 'Optional till note' : 'Check, ACH, Zelle, terminal, or fleet reference'} /></label><button className="db-counter-sales__primary" type="button" disabled={checkout.isPending || !tenders.length} onClick={() => checkout.mutate()}>{checkout.isPending ? 'Completing…' : `Complete sale · ${formatMoney(sale.total_amount)}`}</button>{manager && sale.allowed_actions.includes('cancel') && <div className="db-counter-sales__cancel"><label>Cancellation reason<input minLength={3} maxLength={500} value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} placeholder="Required for the audit trail" /></label><button type="button" disabled={cancel.isPending || cancelReason.trim().length < 3} onClick={() => cancel.mutate()}>{cancel.isPending ? 'Cancelling…' : 'Cancel draft'}</button></div>}</section>}
-        {completed && <section className="db-counter-sales__receipt-actions"><h2>Receipt and returns</h2>{sale.allowed_actions.includes('download_receipt') && <button type="button" onClick={() => void downloadReceipt()}><Download aria-hidden="true" />Download receipt</button>}{manager && sale.allowed_actions.includes('create_return') && <button ref={returnTriggerRef} type="button" onClick={() => setReturnOpen(true)}><RotateCcw aria-hidden="true" />Return items</button>}<p>External refunds are handled outside DieselBridge and can be referenced in the audited return.</p></section>}
+        {sale.status === 'draft' && sale.allowed_actions.includes('checkout') && <section className="db-counter-sales__checkout"><h2>Record payment</h2><p>One manual tender settles the sale in full. Stock updates only when this succeeds.</p><label>Tender<PlatformSelect value={tender} onChange={(event) => setTender(event.target.value as CounterSaleTender)}>{tenders.map((value) => <option key={value} value={value}>{COUNTER_SALE_TENDER_LABELS[value]}</option>)}</PlatformSelect></label><label>Reference<ControlInput value={manualReference} onChange={(event) => setManualReference(event.target.value)} placeholder={tender === 'cash' ? 'Optional till note' : 'Check, ACH, Zelle, terminal, or fleet reference'} /></label><ControlButton className="db-counter-sales__primary" type="button" disabled={checkout.isPending || !tenders.length} onClick={() => checkout.mutate()}>{checkout.isPending ? 'Completing…' : `Complete sale · ${formatMoney(sale.total_amount)}`}</ControlButton>{manager && sale.allowed_actions.includes('cancel') && <div className="db-counter-sales__cancel"><label>Cancellation reason<ControlInput minLength={3} maxLength={500} value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} placeholder="Required for the audit trail" /></label><ControlButton type="button" disabled={cancel.isPending || cancelReason.trim().length < 3} onClick={() => cancel.mutate()}>{cancel.isPending ? 'Cancelling…' : 'Cancel draft'}</ControlButton></div>}</section>}
+        {completed && <section className="db-counter-sales__receipt-actions"><h2>Receipt and returns</h2>{sale.allowed_actions.includes('download_receipt') && <ControlButton type="button" onClick={() => void downloadReceipt()}><Download aria-hidden="true" />Download receipt</ControlButton>}{manager && sale.allowed_actions.includes('create_return') && <ControlButton ref={returnTriggerRef} type="button" onClick={() => setReturnOpen(true)}><RotateCcw aria-hidden="true" />Return items</ControlButton>}<p>External refunds are handled outside DieselBridge and can be referenced in the audited return.</p></section>}
       </aside>
     </div>
     {returnOpen && <ReturnPanel sale={sale} onClose={closeReturn} onChanged={() => { closeReturn(); void refresh() }} />}
@@ -415,7 +416,7 @@ function CounterSalesContent() {
   const initialPartId = searchParams.get('part')
 
   if (summary.isPending) return <section className="db-counter-sales"><div className="db-counter-sales__state" role="status">Opening Parts sales…</div></section>
-  if (summary.isError || !summary.data.capabilities?.counter_sales) return <section className="db-counter-sales"><div className="db-counter-sales__state" role="alert"><ReceiptText aria-hidden="true" /><strong>Parts sales is not available for this shop.</strong><button type="button" onClick={() => navigate('/dashboard/garage/inventory')}>Back to Parts</button></div></section>
+  if (summary.isError || !summary.data.capabilities?.counter_sales) return <section className="db-counter-sales"><div className="db-counter-sales__state" role="alert"><ReceiptText aria-hidden="true" /><strong>Parts sales is not available for this shop.</strong><ControlButton type="button" onClick={() => navigate('/dashboard/garage/inventory')}>Back to Parts</ControlButton></div></section>
 
   const back = () => setSearchParams({}, { replace: true })
   const tenders = summary.data.capabilities.counter_sale_tenders || []

@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
@@ -47,7 +48,7 @@ export function useIntakePricing(customerId: string | null | undefined, vehicleI
     return preview ? { expected_pricing_policy: preview.expected_pricing_policy, pricing_presentation: preview.projection } : {}
   }
   const notice = active ? <div className="db-account-pricing-notice">
-    {changed ? <PricingFeedback revision={changed}><IntakePricingSummary preview={changed.preview} /><div>Account pricing changed. <button type="button" onClick={() => { if (currentIdentity.current !== identity || !isPricingScopeCurrent(scope)) return; client.setQueryData(queryKey, changed.preview); setConflict(null); changed.onAccepted?.() }}>Use current defaults</button></div></PricingFeedback> : preview ? <IntakePricingSummary preview={preview} /> : query.isError ? <p role="alert">Account pricing unavailable. <button type="button" onClick={() => void query.refetch()}>Retry pricing</button></p> : <p role="status">Loading account pricing…</p>}
+    {changed ? <PricingFeedback revision={changed}><IntakePricingSummary preview={changed.preview} /><div>Account pricing changed. <ControlButton type="button" onClick={() => { if (currentIdentity.current !== identity || !isPricingScopeCurrent(scope)) return; client.setQueryData(queryKey, changed.preview); setConflict(null); changed.onAccepted?.() }}>Use current defaults</ControlButton></div></PricingFeedback> : preview ? <IntakePricingSummary preview={preview} /> : query.isError ? <p role="alert">Account pricing unavailable. <ControlButton type="button" onClick={() => void query.refetch()}>Retry pricing</ControlButton></p> : <p role="status">Loading account pricing…</p>}
   </div> : null
   return { preview, ready, notice, confirmation, handleConflict }
 }

@@ -1,9 +1,10 @@
+import { ControlButton } from '@/components/ui/Controls'
 import './repairOrderSchedule.css'
 import './repairOrderControls.css'
 import './importedBilling.css'
-import { importedMoney, importedPaymentLabel, type ImportedBilling } from './importedBilling'
+import { importedMoney, importedPaymentLabel, importedBillingSeverity, type ImportedBilling } from './importedBilling'
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
-import { Check, ChevronDown, ChevronRight, Plus } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Plus, TriangleAlert } from 'lucide-react'
 import { StaffSearchField } from '@/components/ui'
 import { REPAIR_ORDERS_QUEUE_LABEL, type RepairOrdersQueueOrigin } from './repairOrdersPresentation'
 
@@ -215,10 +216,10 @@ export default function RepairOrdersLedger({
           <h1 id="repair-orders-title">{pageTitle}</h1>
           <p>{pageDescription}</p>
         </div>
-        <button type="button" className="db-repair-orders-new__create" aria-label="New repair order" onClick={onCreateOrder} disabled={isFetching && rows.length === 0}>
+        <ControlButton type="button" className="db-repair-orders-new__create" aria-label="New repair order" onClick={onCreateOrder} disabled={isFetching && rows.length === 0}>
           <Plus aria-hidden="true" />
           <span className="db-repair-orders-new__create-label">New repair order</span>
-        </button>
+        </ControlButton>
       </header>
 
       <div className="db-repair-orders-new__toolbar">
@@ -238,7 +239,7 @@ export default function RepairOrdersLedger({
                   names the active status on its face, and is themed like the rest
                   of the surface. */}
               <div className="db-repair-orders-new__status-select" ref={statusMenu}>
-                <button
+                <ControlButton controlKind="action"
                   type="button"
                   aria-haspopup="listbox"
                   aria-expanded={statusOpen}
@@ -247,12 +248,12 @@ export default function RepairOrdersLedger({
                 >
                   <span>{statusFilter === 'all' ? 'All statuses' : statusOptions.find((option) => option.value === statusFilter)?.label ?? 'All statuses'}</span>
                   <ChevronDown aria-hidden="true" />
-                </button>
+                </ControlButton>
                 {statusOpen && (
                   <ul role="listbox" aria-label="Order status options">
                     {statusOptions.map((option) => (
                       <li key={option.value} role="presentation">
-                        <button
+                        <ControlButton controlKind="content"
                           type="button"
                           role="option"
                           aria-selected={option.value === statusFilter}
@@ -263,7 +264,7 @@ export default function RepairOrdersLedger({
                         >
                           <span>{option.label}</span>
                           {option.count !== undefined && <span className="db-repair-orders-new__status-count">{option.count}</span>}
-                        </button>
+                        </ControlButton>
                       </li>
                     ))}
                   </ul>
@@ -271,7 +272,7 @@ export default function RepairOrdersLedger({
               </div>
               <div className="db-repair-orders-new__status-tabs" role="group" aria-label="Filter repair orders by status">
                 {statusOptions.map((option) => (
-                  <button
+                  <ControlButton controlKind="action"
                     type="button"
                     key={option.value}
                     aria-pressed={statusFilter === option.value}
@@ -279,15 +280,15 @@ export default function RepairOrdersLedger({
                   >
                     {option.label}
                     {option.count !== undefined && <span className="db-repair-orders-new__status-count">{option.count}</span>}
-                  </button>
+                  </ControlButton>
                 ))}
               </div>
             </>
           )}
-          {onOverdueChange && <button type="button" className="db-order-overdue-filter" aria-pressed={overdue} onClick={() => onOverdueChange(!overdue)}>
+          {onOverdueChange && <ControlButton controlKind="action" type="button" className="db-order-overdue-filter" aria-pressed={overdue} onClick={() => onOverdueChange(!overdue)}>
             {overdue && <Check aria-hidden="true" />}
             <span>{queueOrigin || compact && !overdue ? 'All overdue work' : 'Overdue'}</span>
-          </button>}
+          </ControlButton>}
         </div>
       </div>
 
@@ -304,7 +305,7 @@ export default function RepairOrdersLedger({
             <h2 className={compact ? undefined : 'sr-only'}>{sectionTitle}</h2>
             {queueLabel && (
               <div ref={scopeControlRef} className="db-repair-orders-ledger__scope-control">
-                <button
+                <ControlButton controlKind="action"
                   ref={scopeTriggerRef}
                   type="button"
                   aria-haspopup="menu"
@@ -316,10 +317,10 @@ export default function RepairOrdersLedger({
                   <span>{queueLabel}</span>
                   {scopeCount && <span aria-hidden="true">· {scopeCount}</span>}
                   <ChevronDown aria-hidden="true" />
-                </button>
+                </ControlButton>
                 {scopeMenuOpen && (
                   <div id={scopeMenuId} role="menu" aria-label="Repair Orders scope" className="db-repair-orders-ledger__scope-menu">
-                    <button
+                    <ControlButton controlKind="content"
                       type="button"
                       role="menuitem"
                       onClick={() => {
@@ -328,7 +329,7 @@ export default function RepairOrdersLedger({
                       }}
                     >
                       All repair orders
-                    </button>
+                    </ControlButton>
                   </div>
                 )}
               </div>
@@ -376,6 +377,7 @@ export default function RepairOrdersLedger({
             tabIndex={0}
           >
             {rows.map((row) => {
+              const billingSeverity = row.importedBilling ? importedBillingSeverity(row.importedBilling) : null
               const briefId = `repair-order-brief-${row.id}`
               const workRequestId = `${briefId}-work-request`
               const isOpenInWorkspace = selectedId === row.id
@@ -405,7 +407,7 @@ export default function RepairOrdersLedger({
                   data-inspected={isBriefOpen || undefined}
                 >
                   <div className="db-repair-orders-ledger__row">
-                    <button
+                    <ControlButton controlKind="content"
                       type="button"
                       className="db-repair-orders-ledger__record"
                       data-has-deadline={!!row.deadline || undefined}
@@ -434,17 +436,17 @@ export default function RepairOrdersLedger({
                       </span>
                       {requestOnRow && <span className="db-repair-orders-ledger__work">{row.description}</span>}
                       <span className="db-repair-orders-ledger__money">
-                        <strong>{row.total}</strong>
+                        <strong>{row.total}{billingSeverity?.tone === 'warning' && <span className="db-imported-billing-ledger-warning" role="img" aria-label={billingSeverity.description} title={billingSeverity.description}><TriangleAlert className="h-3.5 w-3.5" aria-hidden="true" /></span>}</strong>
                         {!row.deadline && <small>{row.updated}</small>}
                       </span>
-                      {row.importedBilling && <span className="db-imported-billing-row" aria-label="ETS invoice payment status">
-                        <span>{importedPaymentLabel(row.importedBilling.payment_status)}</span>
-                        <span>Remaining <strong>{importedMoney(row.importedBilling.payment_status === 'unverified' ? null : row.importedBilling.recorded_remaining_amount)}</strong></span>
+                      {row.importedBilling && (row.importedBilling.payment_status !== 'unverified' || row.importedBilling.shared_invoice) && <span className="db-imported-billing-row" aria-label="ETS invoice payment status">
+                        {row.importedBilling.payment_status !== 'unverified' && <span>{importedPaymentLabel(row.importedBilling.payment_status)}</span>}
+                        {billingSeverity?.remaining !== 'Unavailable' && <span>Remaining <strong>{importedMoney(row.importedBilling.recorded_remaining_amount)}</strong></span>}
                         {row.importedBilling.shared_invoice && <span>Shared ETS invoice</span>}
                       </span>}
                       {row.deadline && <span className="db-order-schedule-deadline db-order-schedule-ledger-date" data-overdue={row.overdue || undefined} title={row.deadline}>{row.deadline}</span>}
-                    </button>
-                    {!isOpenInWorkspace && <button
+                    </ControlButton>
+                    {!isOpenInWorkspace && <ControlButton controlKind="action"
                       type="button"
                       className="db-repair-orders-ledger__details-toggle"
                       aria-expanded={isBriefOpen}
@@ -457,7 +459,7 @@ export default function RepairOrdersLedger({
                     >
                       <span aria-hidden="true">Details</span>
                       <ChevronDown aria-hidden="true" />
-                    </button>}
+                    </ControlButton>}
                   </div>
                   {isBriefMounted && (
                     <div
@@ -496,7 +498,7 @@ export default function RepairOrdersLedger({
                           The ledger is hidden entirely at widths where the
                           workspace is not visible, so a selected row here always
                           means an open workspace. */}
-                      {selectedId !== row.id && <button
+                      {selectedId !== row.id && <ControlButton
                         type="button"
                         className="db-repair-orders-ledger__open-workspace"
                         aria-label={`Open repair order ${row.orderNumber} from details`}
@@ -512,7 +514,7 @@ export default function RepairOrdersLedger({
                       >
                         Open repair order
                         <ChevronRight aria-hidden="true" />
-                      </button>}
+                      </ControlButton>}
                     </section>
                     </div>
                   )}
@@ -548,7 +550,7 @@ export default function RepairOrdersLedger({
               {hasMore ? `${loadedCount} of ${totalOrders} loaded` : `${totalOrders} order${totalOrders === 1 ? '' : 's'}`}
             </span>
             {hasMore && (
-              <button
+              <ControlButton
                 type="button"
                 onClick={onLoadMore}
                 disabled={isFetching || isLoadingMore}
@@ -556,7 +558,7 @@ export default function RepairOrdersLedger({
               >
                 {isLoadingMore && <span className="db-repair-orders-ledger__spinner" aria-hidden="true" />}
                 {isLoadingMore ? 'Loading' : 'Load more'}
-              </button>
+              </ControlButton>
             )}
           </footer>
         )}

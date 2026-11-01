@@ -1,3 +1,4 @@
+import { ControlButton, ControlGroup } from '@/components/ui/Controls'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -59,25 +60,25 @@ function IssueContext({ vehicleId, customerId, contextOrderId, scope }: Props & 
   }, [restored, query.data, query.isError, location.key])
   const refresh = async () => { await client.invalidateQueries({ queryKey: prefix }) }
   return <section className="db-truck-issues" aria-label="Truck issues">
-    <header className="db-truck-issues__header"><h3>Truck issues</h3><div className="db-truck-issues__controls">
+    <header className="db-truck-issues__header"><h3>Truck issues</h3><ControlGroup className="db-truck-issues__controls">
       <ShopWorkSelect label="Issue state" value={filter} options={[...stateOptions]} onChange={value => { setFilter(value); setSkip(0) }} />
-      <button type="button" className="db-truck-issues__icon" aria-label="Refresh truck issues" disabled={query.isFetching} onClick={() => void query.refetch()}><RotateCcw size={15} /></button>
-      <button type="button" disabled={query.isError || query.isPending} onClick={() => setCreating(true)}><Plus size={15} />Add issue</button>
-    </div></header>
+      <ControlButton controlKind="icon" type="button" className="db-truck-issues__icon" aria-label="Refresh truck issues" disabled={query.isFetching} onClick={() => void query.refetch()}><RotateCcw size={15} /></ControlButton>
+      <ControlButton type="button" disabled={query.isError || query.isPending} onClick={() => setCreating(true)}><Plus size={15} />Add issue</ControlButton>
+    </ControlGroup></header>
     {query.isPending && <p role="status">Loading truck issues…</p>}
-    {query.isError && <p role="alert">Could not load truck issues. <button type="button" onClick={() => void query.refetch()}>Retry</button></p>}
+    {query.isError && <p role="alert">Could not load truck issues. <ControlButton type="button" onClick={() => void query.refetch()}>Retry</ControlButton></p>}
     {!query.isError && query.data?.total === 0 && <p>No {filter === 'all' ? '' : `${filter} `}truck issues.</p>}
     {!query.isError && query.data && <ul className="db-truck-issues__list">{query.data.items.map(issue => <li key={issue.id}>
-      <button ref={element => { if (element) rows.current.set(issue.id, element); else rows.current.delete(issue.id) }} type="button" className="db-truck-issues__row" onClick={() => setSelected(issue.id)} aria-label={`View truck issue: ${issue.description}`}>
+      <ControlButton controlKind="content" ref={element => { if (element) rows.current.set(issue.id, element); else rows.current.delete(issue.id) }} type="button" className="db-truck-issues__row" onClick={() => setSelected(issue.id)} aria-label={`View truck issue: ${issue.description}`}>
         <span className="db-truck-issues__description">{issue.description}</span>
         <IssueMetadata issue={issue} />
         {issue.current_link && <span className="db-truck-issues__muted">{issue.current_link.availability === 'available' ? `Linked visit · ${issue.current_link.order_number}` : 'Linked visit unavailable'}</span>}
-      </button>
+      </ControlButton>
     </li>)}</ul>}
     {(skip > 0 || query.data?.has_more) && <footer className="db-truck-issues__paging">
       <span>{query.data ? `${query.data.items.length ? skip + 1 : 0}–${skip + query.data.items.length} of ${query.data.total}` : 'Issues'}</span>
-      <button type="button" disabled={skip === 0 || query.isFetching} onClick={() => setSkip(Math.max(0, skip - 25))}><ChevronLeft size={15} />Previous</button>
-      <button type="button" disabled={!query.data?.has_more || query.isFetching} onClick={() => setSkip(skip + 25)}>Next<ChevronRight size={15} /></button>
+      <ControlButton type="button" disabled={skip === 0 || query.isFetching} onClick={() => setSkip(Math.max(0, skip - 25))}><ChevronLeft size={15} />Previous</ControlButton>
+      <ControlButton type="button" disabled={!query.data?.has_more || query.isFetching} onClick={() => setSkip(skip + 25)}>Next<ChevronRight size={15} /></ControlButton>
     </footer>}
     {(creating || selected) && <IssueDialog key={selected ?? 'new'} vehicleId={vehicleId} contextOrderId={contextOrderId} context={context} scope={scope} prefix={prefix} issueId={selected} filter={filter} skip={skip} onClose={() => { setSelected(null); setCreating(false) }} refresh={refresh} />}
   </section>
@@ -192,19 +193,19 @@ function IssueDialog({ vehicleId, contextOrderId, context, scope, prefix, issueI
   return <Dialog open onClose={() => { if (pendingLeave) setPendingLeave(null); else leave() }} className="db-issue-dialog" style={style} data-appearance-mode={appearance.mode}>
     <div className="db-issue-dialog__backdrop" aria-hidden="true" />
     <div className="db-issue-dialog__position"><DialogPanel className="db-issue-dialog__panel">
-      <header><DialogTitle>{pendingLeave ? 'Discard unsaved issue changes?' : actionLabels[action]}</DialogTitle><button type="button" className="db-truck-issues__icon" aria-label="Close truck issue" disabled={busy} onClick={leave}><X size={18} /></button></header>
-      {pendingLeave ? <><p>{uncertain ? 'The save may have reached the server. Reopen this truck’s issues to check before making another change.' : 'Your changes have not been saved.'}</p><div className="db-issue-dialog__actions"><button type="button" data-autofocus onClick={() => setPendingLeave(null)}>Keep editing</button><button type="button" disabled={busy} onClick={() => { const next = pendingLeave; setPendingLeave(null); next() }}>Discard changes</button></div></> : <>
+      <header><DialogTitle>{pendingLeave ? 'Discard unsaved issue changes?' : actionLabels[action]}</DialogTitle><ControlButton controlKind="icon" type="button" className="db-truck-issues__icon" aria-label="Close truck issue" disabled={busy} onClick={leave}><X size={18} /></ControlButton></header>
+      {pendingLeave ? <><p>{uncertain ? 'The save may have reached the server. Reopen this truck’s issues to check before making another change.' : 'Your changes have not been saved.'}</p><div className="db-issue-dialog__actions"><ControlButton type="button" data-autofocus onClick={() => setPendingLeave(null)}>Keep editing</ControlButton><ControlButton type="button" disabled={busy} onClick={() => { const next = pendingLeave; setPendingLeave(null); next() }}>Discard changes</ControlButton></div></> : <>
         {issueId && detail.isPending && <p role="status">Loading issue…</p>}
-        {detail.isError && <p role="alert">Could not load this issue. <button type="button" onClick={() => void detail.refetch()}>Retry</button></p>}
+        {detail.isError && <p role="alert">Could not load this issue. <ControlButton type="button" onClick={() => void detail.refetch()}>Retry</ControlButton></p>}
         {issue && action === 'view' && !detail.isError && <><p className="db-truck-issues__full-description">{issue.description}</p><IssueMetadata issue={issue} />
           {issue.state_reason && <p className="db-truck-issues__muted">Reason: {issue.state_reason}</p>}
           {openLink && (openLink.target_order_id === contextOrderId ? <p>This visit · {openLink.order_number}</p> : <Link to={visitHref} state={returnOrigin ? { truckIssueReturn: returnOrigin } : undefined} onClick={onClose}>Visit {openLink.order_number}<ArrowUpRight size={15} /></Link>)}
           {issue.current_link?.availability === 'unavailable' && <p>Linked visit unavailable</p>}
           <div className="db-issue-dialog__actions">
-            {issue.capabilities.can_edit && <button type="button" disabled={detail.isFetching} onClick={() => begin('edit')}>Edit</button>}
-            {issue.capabilities.can_change_state && (issue.state === 'open' ? <><button type="button" disabled={detail.isFetching} onClick={() => begin('resolved')}>Resolve</button><button type="button" disabled={detail.isFetching} onClick={() => begin('dismissed')}>Dismiss</button></> : <button type="button" disabled={detail.isFetching} onClick={() => begin('open')}>Reopen</button>)}
-            {issue.capabilities.can_link_context && contextOrderId && !issue.current_link && <button type="button" disabled={detail.isFetching} onClick={() => begin('link')}>Link this visit</button>}
-            {issue.capabilities.can_end_link && issue.current_link && <button type="button" disabled={detail.isFetching} onClick={() => begin('end')}>End visit link</button>}
+            {issue.capabilities.can_edit && <ControlButton type="button" disabled={detail.isFetching} onClick={() => begin('edit')}>Edit</ControlButton>}
+            {issue.capabilities.can_change_state && (issue.state === 'open' ? <><ControlButton type="button" disabled={detail.isFetching} onClick={() => begin('resolved')}>Resolve</ControlButton><ControlButton type="button" disabled={detail.isFetching} onClick={() => begin('dismissed')}>Dismiss</ControlButton></> : <ControlButton type="button" disabled={detail.isFetching} onClick={() => begin('open')}>Reopen</ControlButton>)}
+            {issue.capabilities.can_link_context && contextOrderId && !issue.current_link && <ControlButton type="button" disabled={detail.isFetching} onClick={() => begin('link')}>Link this visit</ControlButton>}
+            {issue.capabilities.can_end_link && issue.current_link && <ControlButton type="button" disabled={detail.isFetching} onClick={() => begin('end')}>End visit link</ControlButton>}
           </div>
         </>}
         {form && <form onSubmit={event => { event.preventDefault(); void submit() }}>
@@ -215,15 +216,15 @@ function IssueDialog({ vehicleId, contextOrderId, context, scope, prefix, issueI
                 <label>Responsible staff<ShopWorkSelect label="Responsible staff" value={draft.owner} options={ownerOptions} onChange={owner => setDraft({ ...draft, owner })} /></label>
                 <DatePicker label="Follow-up date" value={draft.date} onChange={date => setDraft({ ...draft, date })} placeholder="Not scheduled" showDayDetails={false} />
               </div>
-              {owners.isPending && <p role="status">Loading staff…</p>}{owners.isError && <p role="alert">Staff list unavailable. <button type="button" onClick={() => void owners.refetch()}>Retry staff</button></p>}
+              {owners.isPending && <p role="status">Loading staff…</p>}{owners.isError && <p role="alert">Staff list unavailable. <ControlButton type="button" onClick={() => void owners.refetch()}>Retry staff</ControlButton></p>}
             </> : <>
               <p>{action === 'link' ? 'Reference this existing visit. This creates no work and does not resolve the issue.' : action === 'end' ? 'End this visit reference. The issue’s state stays unchanged.' : action === 'resolved' ? 'Record that this issue is resolved. This does not close or charge the repair order.' : action === 'open' ? 'Reopen this issue for follow-up.' : 'Keep this issue in history as dismissed.'}</p>
               {action !== 'link' && <label>Reason<textarea data-autofocus value={reason} maxLength={1000} required rows={3} onChange={event => setReason(event.target.value)} /></label>}
             </>}
           </fieldset>
           {error && <p role="alert">{error}</p>}
-          {!editingIssue && action !== 'create' && <button type="button" onClick={resetAction}>Back to latest issue</button>}
-          <div className="db-issue-dialog__actions"><button type="button" disabled={busy} onClick={cancel}>Cancel</button><button type="submit" className="db-issue-dialog__primary" disabled={busy || (action !== 'create' && !editingIssue) || ((action === 'create' || action === 'edit') && (owners.isPending || owners.isError))}>{busy ? 'Saving…' : uncertain ? 'Retry same request' : action === 'edit' || action === 'create' ? 'Save issue' : actionLabels[action]}</button></div>
+          {!editingIssue && action !== 'create' && <ControlButton type="button" onClick={resetAction}>Back to latest issue</ControlButton>}
+          <div className="db-issue-dialog__actions"><ControlButton type="button" disabled={busy} onClick={cancel}>Cancel</ControlButton><ControlButton type="submit" className="db-issue-dialog__primary" disabled={busy || (action !== 'create' && !editingIssue) || ((action === 'create' || action === 'edit') && (owners.isPending || owners.isError))}>{busy ? 'Saving…' : uncertain ? 'Retry same request' : action === 'edit' || action === 'create' ? 'Save issue' : actionLabels[action]}</ControlButton></div>
         </form>}
       </>}
     </DialogPanel></div>

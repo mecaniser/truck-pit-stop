@@ -1,3 +1,4 @@
+import { ControlInput } from '@/components/ui/Controls'
 import { useSuggestions, type SuggestionVariant } from './useSuggestions'
 import SuggestionDropdown from './SuggestionDropdown'
 
@@ -37,7 +38,7 @@ export default function SuggestingInput({
 
   return (
     <div ref={containerRef} style={{ position: 'relative' }}>
-      <input
+      <ControlInput
         {...inputProps}
         type="text"
         value={value}

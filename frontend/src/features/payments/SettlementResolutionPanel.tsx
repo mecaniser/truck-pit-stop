@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
@@ -109,24 +110,24 @@ function SettlementResolutionItem({
       </div>
 
       {automaticFailed && canManage && (
-        <button
+        <ControlButton
           type="button"
           disabled={busy}
           onClick={() => retryRefundMutation.mutate()}
-          className="mt-3 min-h-[44px] rounded-xl bg-amber-900 px-3 text-xs font-extrabold text-white disabled:opacity-50"
+          className="mt-3  rounded-xl bg-amber-900 px-3 text-xs font-extrabold text-white disabled:opacity-50"
         >
           {retryRefundMutation.isPending ? 'Retrying…' : 'Retry card refund'}
-        </button>
+        </ControlButton>
       )}
 
       {manualRefundRequired && canManage && (
         <fieldset disabled={busy} className={`mt-3 min-w-0 rounded-xl border p-3 ${dark ? 'border-amber-800/60 bg-black/20' : 'border-amber-200 bg-white/70'}`}>
           <label className={`block text-xs font-bold ${dark ? 'text-amber-100' : 'text-amber-950'}`}>Refund transaction or check reference
-            <input value={refundReference} onChange={event => setRefundReference(event.target.value)} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 focus:ring-amber-600 ${dark ? 'border-amber-800 bg-[#161b27] text-white' : 'border-amber-300 bg-white'}`} />
+            <ControlInput value={refundReference} onChange={event => setRefundReference(event.target.value)} className={`mt-1  w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 focus:ring-amber-600 ${dark ? 'border-amber-800 bg-[#161b27] text-white' : 'border-amber-300 bg-white'}`} />
           </label>
-          <button type="button" disabled={!refundReference.trim() || refundMutation.isPending} onClick={() => refundMutation.mutate()} className="mt-2 min-h-[44px] rounded-xl bg-amber-900 px-3 text-xs font-extrabold text-white disabled:opacity-50">
+          <ControlButton type="button" disabled={!refundReference.trim() || refundMutation.isPending} onClick={() => refundMutation.mutate()} className="mt-2  rounded-xl bg-amber-900 px-3 text-xs font-extrabold text-white disabled:opacity-50">
             {refundMutation.isPending ? 'Confirming…' : 'Confirm refund completed'}
-          </button>
+          </ControlButton>
         </fieldset>
       )}
 
@@ -143,9 +144,9 @@ function SettlementResolutionItem({
           <label className={`${audience === 'staff' ? 'mt-2 ' : ''}block text-xs font-bold ${dark ? 'text-amber-100' : 'text-amber-950'}`}>Customer consent note
             <textarea value={consentNote} onChange={event => setConsentNote(event.target.value)} rows={2} placeholder="Record the customer's explicit request to keep this amount as shop credit." className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-600 ${dark ? 'border-amber-800 bg-[#161b27] text-white placeholder:text-amber-200/40' : 'border-amber-300 bg-white'}`} />
           </label>
-          <button type="button" disabled={!consentNote.trim() || consentMutation.isPending} onClick={() => consentMutation.mutate()} className={`mt-2 min-h-[44px] rounded-xl border px-3 text-xs font-extrabold disabled:opacity-50 ${dark ? 'border-amber-600 text-amber-100' : 'border-amber-800 text-amber-950'}`}>
+          <ControlButton type="button" disabled={!consentNote.trim() || consentMutation.isPending} onClick={() => consentMutation.mutate()} className={`mt-2  rounded-xl border px-3 text-xs font-extrabold disabled:opacity-50 ${dark ? 'border-amber-600 text-amber-100' : 'border-amber-800 text-amber-950'}`}>
             {consentMutation.isPending ? 'Recording…' : 'Keep as customer credit'}
-          </button>
+          </ControlButton>
         </fieldset>
       )}
     </section>

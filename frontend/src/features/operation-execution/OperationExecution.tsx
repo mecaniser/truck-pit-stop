@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { useState } from 'react'
 import { trackedTimeLabel } from './format'
@@ -22,7 +23,7 @@ export function OperationExecutionFeedback({ query, dark = false }: { query: Ret
   if (!query.allowed) return null
   if (query.isPending) return <p role="status" className="py-1 text-xs">Loading operation progress…</p>
   if (!query.isError) return null
-  return <p role="alert" className={`py-2 text-xs ${dark ? 'text-red-300' : 'text-red-700'}`}>Operation progress could not be refreshed. Status is unverified. <button type="button" disabled={query.isFetching} onClick={() => void query.refetch()} className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap underline"><RefreshCw size={13} />{query.isFetching ? 'Retrying…' : 'Retry operation progress'}</button></p>
+  return <p role="alert" className={`py-2 text-xs ${dark ? 'text-red-300' : 'text-red-700'}`}>Operation progress could not be refreshed. Status is unverified. <ControlButton type="button" disabled={query.isFetching} onClick={() => void query.refetch()} className="inline-flex  items-center gap-1 whitespace-nowrap underline"><RefreshCw size={13} />{query.isFetching ? 'Retrying…' : 'Retry operation progress'}</ControlButton></p>
 }
 
 type Technician = { mechanic_id: string; mechanic_name: string }
@@ -69,14 +70,14 @@ export function OperationExecutionControls({ orderId, item, technicians = [], di
           {technicians.map(tech => <option key={tech.mechanic_id} value={tech.mechanic_id}>{tech.mechanic_name}</option>)}
         </PlatformSelect>
       </label>}
-      {item.status === null && item.can_assign && item.mechanic_id && <button type="button" disabled={busy} onClick={() => mutation.mutate({ type: 'assignment', mechanicId: item.mechanic_id })} className={control}>Track operation</button>}
-      {item.can_start_timer && <button type="button" disabled={busy} onClick={() => mutation.mutate({ type: 'start' })} className={control}><Play size={14} />Start timer</button>}
-      {item.can_stop_timer && item.active_session && <button type="button" disabled={busy} onClick={() => mutation.mutate({ type: 'stop', sessionId: item.active_session!.id })} className={control}><Square size={13} />Stop timer</button>}
-      {item.can_complete && <button type="button" disabled={busy} onClick={() => mutation.mutate({ type: 'completion', completed: true })} className={control}><Check size={14} />Complete operation</button>}
-      {item.can_reopen && <button type="button" disabled={busy} onClick={() => mutation.mutate({ type: 'completion', completed: false })} className={control}><RotateCcw size={14} />Reopen operation</button>}
+      {item.status === null && item.can_assign && item.mechanic_id && <ControlButton type="button" disabled={busy} onClick={() => mutation.mutate({ type: 'assignment', mechanicId: item.mechanic_id })} className={control}>Track operation</ControlButton>}
+      {item.can_start_timer && <ControlButton type="button" disabled={busy} onClick={() => mutation.mutate({ type: 'start' })} className={control}><Play size={14} />Start timer</ControlButton>}
+      {item.can_stop_timer && item.active_session && <ControlButton type="button" disabled={busy} onClick={() => mutation.mutate({ type: 'stop', sessionId: item.active_session!.id })} className={control}><Square size={13} />Stop timer</ControlButton>}
+      {item.can_complete && <ControlButton type="button" disabled={busy} onClick={() => mutation.mutate({ type: 'completion', completed: true })} className={control}><Check size={14} />Complete operation</ControlButton>}
+      {item.can_reopen && <ControlButton type="button" disabled={busy} onClick={() => mutation.mutate({ type: 'completion', completed: false })} className={control}><RotateCcw size={14} />Reopen operation</ControlButton>}
       {mutation.isPending && <span role="status" className="text-xs">Saving…</span>}
     </div>
-    {item.required_tasks_remaining > 0 && item.status !== 'completed' && <div className={`flex flex-wrap items-center gap-x-2 text-xs ${dark ? 'text-amber-300' : 'text-amber-800'}`}><span>{item.required_tasks_remaining} required checklist task{item.required_tasks_remaining === 1 ? '' : 's'} remaining.</span><button type="button" onClick={() => window.dispatchEvent(new CustomEvent(checklistOpenEvent, { detail: { orderId } }))} className="min-h-9 whitespace-nowrap underline">View checklist</button></div>}
+    {item.required_tasks_remaining > 0 && item.status !== 'completed' && <div className={`flex flex-wrap items-center gap-x-2 text-xs ${dark ? 'text-amber-300' : 'text-amber-800'}`}><span>{item.required_tasks_remaining} required checklist task{item.required_tasks_remaining === 1 ? '' : 's'} remaining.</span><ControlButton type="button" onClick={() => window.dispatchEvent(new CustomEvent(checklistOpenEvent, { detail: { orderId } }))} className=" whitespace-nowrap underline">View checklist</ControlButton></div>}
     {item.completed_at && <p className={`text-xs ${dark ? 'text-zinc-400' : 'text-slate-500'}`}>Completed by {item.completed_by?.name || 'Staff'} · <time dateTime={item.completed_at}>{new Date(item.completed_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</time></p>}
     {error && <p role="alert" className={`break-words text-xs ${dark ? 'text-red-300' : 'text-red-700'}`}>{error}</p>}
   </div>

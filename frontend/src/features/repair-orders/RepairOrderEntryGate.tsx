@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useRef } from 'react'
 import { Dialog } from '@headlessui/react'
 import { useQuery } from '@tanstack/react-query'
@@ -29,8 +30,8 @@ export default function RepairOrderEntryGate({ customerId, vehicleId, onReady, o
         {query.isError ? <p role="alert" className="my-4 text-sm text-red-800">Could not load this customer and truck. They may no longer be available. Retry or return to the record.</p>
           : <p role="status" className="my-4 text-sm">Loading customer and truck…</p>}
         <div className="flex flex-wrap justify-end gap-2">
-          <button type="button" onClick={onCancel} className="min-h-11 rounded-lg border px-4">Cancel</button>
-          {query.isError && <button type="button" onClick={() => void query.refetch()} className="min-h-11 rounded-lg bg-slate-900 px-4 text-white">Retry</button>}
+          <ControlButton type="button" onClick={onCancel} className=" rounded-lg border px-4">Cancel</ControlButton>
+          {query.isError && <ControlButton type="button" onClick={() => void query.refetch()} className=" rounded-lg bg-slate-900 px-4 text-white">Retry</ControlButton>}
         </div>
       </Dialog.Panel>
     </div>

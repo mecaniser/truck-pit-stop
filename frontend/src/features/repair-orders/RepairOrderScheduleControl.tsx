@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useEffect, useRef, useState } from 'react'
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -29,9 +30,9 @@ export default function RepairOrderScheduleControl({ orderId, schedule = {}, onU
   const deadline = scheduleDeadline(schedule)
   const start = formatScheduleDate(schedule.scheduled_start_at, schedule.schedule_timezone)
   return <div className="db-order-schedule-control">
-    <button type="button" className="db-order-schedule-trigger" onClick={() => setOpen(true)} aria-label="Open repair order schedule">
+    <ControlButton type="button" className="db-order-schedule-trigger" onClick={() => setOpen(true)} aria-label="Open repair order schedule">
       <CalendarClock size={15} aria-hidden="true" /><span>Schedule</span>
-    </button>
+    </ControlButton>
     {(deadline || start) && <span className="db-order-schedule-summary" data-overdue={schedule.is_overdue || undefined}>{deadline ?? `Start · ${start}`}</span>}
     {open && <RepairOrderScheduleDialog key={`${orderId}:${user?.tenant_id}:${user?.id}:${user?.role}:${epoch}`} orderId={orderId} onClose={() => setOpen(false)} onUpdated={onUpdated} />}
   </div>
@@ -96,7 +97,7 @@ export function RepairOrderScheduleDialog({ orderId, onClose, onUpdated }: { ord
       <DialogPanel className="db-order-schedule-panel flex max-h-full w-full max-w-md flex-col overflow-hidden rounded-xl shadow-xl">
         <div className="db-order-schedule-heading flex shrink-0 items-center justify-between gap-2 px-4 py-2">
           <DialogTitle className="text-base font-semibold">Repair order schedule</DialogTitle>
-          <button type="button" className="db-order-schedule-close" aria-label="Close schedule dialog" disabled={mutation.isPending} onClick={dismiss}><X size={20} /></button>
+          <ControlButton controlKind="icon" type="button" className="db-order-schedule-close" aria-label="Close schedule dialog" disabled={mutation.isPending} onClick={dismiss}><X size={20} /></ControlButton>
         </div>
         <form className="flex min-h-0 flex-col" onSubmit={event => { event.preventDefault(); if (draft && baseline?.can_edit && !saving.current && !mutation.isPending && !needsReview) { saving.current = true; setError(null); mutation.mutate() } }}>
           <div className="db-order-schedule-body min-h-0 space-y-3 overflow-y-auto px-4 py-3">
@@ -107,8 +108,8 @@ export function RepairOrderScheduleDialog({ orderId, onClose, onUpdated }: { ord
               {fields.map(field => <div key={field} className="db-order-schedule-field">
                 <label htmlFor={`schedule-${field}`} className="block text-sm font-semibold">{scheduleLabels[field]}</label>
                 <div className="db-order-schedule-field-controls mt-1 flex min-w-0 items-center gap-2">
-                  <input id={`schedule-${field}`} type="datetime-local" step="60" value={draft[field]} disabled={mutation.isPending || !!readOnly} onChange={event => { setDraft({ ...draft, [field]: event.target.value, [foldKey(field)]: null }); if (error?.field === field) setError(null) }} className="db-order-schedule-input min-w-0 flex-1" />
-                  <button type="button" className="db-order-schedule-button" aria-label={`Clear ${scheduleLabels[field].toLowerCase()}`} disabled={mutation.isPending || !!readOnly || !draft[field]} onClick={() => { setDraft({ ...draft, [field]: '', [foldKey(field)]: null }); if (error?.field === field) setError(null) }}>Clear</button>
+                  <ControlInput id={`schedule-${field}`} type="datetime-local" step="60" value={draft[field]} disabled={mutation.isPending || !!readOnly} onChange={event => { setDraft({ ...draft, [field]: event.target.value, [foldKey(field)]: null }); if (error?.field === field) setError(null) }} className="db-order-schedule-input min-w-0 flex-1" />
+                  <ControlButton type="button" className="db-order-schedule-button" aria-label={`Clear ${scheduleLabels[field].toLowerCase()}`} disabled={mutation.isPending || !!readOnly || !draft[field]} onClick={() => { setDraft({ ...draft, [field]: '', [foldKey(field)]: null }); if (error?.field === field) setError(null) }}>Clear</ControlButton>
                 </div>
                 {error?.code === 'schedule_time_ambiguous' && error.field === field && error.choices && <fieldset className="mt-2 space-y-1">
                   <legend className="text-sm">This clock time occurs twice. Choose which one.</legend>
@@ -120,22 +121,22 @@ export function RepairOrderScheduleDialog({ orderId, onClose, onUpdated }: { ord
               </div>)}
             </>}
             {currentError && <p role="alert" className="db-order-schedule-error text-sm">{currentError.message}</p>}
-            {query.isError && !baseline && <button type="button" className="db-order-schedule-button" onClick={() => void query.refetch()}>Retry loading schedule</button>}
+            {query.isError && !baseline && <ControlButton type="button" className="db-order-schedule-button" onClick={() => void query.refetch()}>Retry loading schedule</ControlButton>}
             {needsReview && <section aria-label="Review saved schedule" className="db-order-schedule-conflict space-y-2 rounded-lg border p-3 text-sm">
               <p>Your draft has been kept. Review the saved schedule before continuing.</p>
               {refreshing ? <p role="status">Loading saved schedule…</p> : latest ? <>
                 <p>Saved in {latest.timezone}</p>
                 <dl>{fields.map(field => <div key={field}><dt className="font-semibold">{scheduleLabels[field]}</dt><dd>{latest[field]?.replace('T', ' ') ?? 'Not set'}</dd></div>)}</dl>
                 <div className="flex flex-wrap gap-2">
-                  <button type="button" className="db-order-schedule-button" onClick={() => { setBaseline(latest); setDraft(draftFor(latest)); setNeedsReview(false); setLatest(null); setError(null) }}>Use saved schedule</button>
-                  {error?.code === 'schedule_changed' && latest.can_edit && latest.timezone === baseline?.timezone && <button type="button" className="db-order-schedule-button" onClick={() => { setBaseline(latest); setNeedsReview(false); setLatest(null); setError(null) }}>Keep my draft</button>}
+                  <ControlButton type="button" className="db-order-schedule-button" onClick={() => { setBaseline(latest); setDraft(draftFor(latest)); setNeedsReview(false); setLatest(null); setError(null) }}>Use saved schedule</ControlButton>
+                  {error?.code === 'schedule_changed' && latest.can_edit && latest.timezone === baseline?.timezone && <ControlButton type="button" className="db-order-schedule-button" onClick={() => { setBaseline(latest); setNeedsReview(false); setLatest(null); setError(null) }}>Keep my draft</ControlButton>}
                 </div>
-              </> : <button type="button" className="db-order-schedule-button" onClick={() => void refreshSaved()}>Reload saved schedule</button>}
+              </> : <ControlButton type="button" className="db-order-schedule-button" onClick={() => void refreshSaved()}>Reload saved schedule</ControlButton>}
             </section>}
           </div>
           <div className="db-order-schedule-footer flex shrink-0 flex-wrap justify-end gap-2 px-4 py-2">
-            <button type="button" className="db-order-schedule-button" disabled={mutation.isPending} onClick={dismiss}>Cancel</button>
-            {!readOnly && <button type="submit" className="db-order-schedule-button db-order-schedule-save" disabled={!baseline || !draft || mutation.isPending || needsReview}>{mutation.isPending ? 'Saving…' : 'Save'}</button>}
+            <ControlButton type="button" className="db-order-schedule-button" disabled={mutation.isPending} onClick={dismiss}>Cancel</ControlButton>
+            {!readOnly && <ControlButton type="submit" className="db-order-schedule-button db-order-schedule-save" disabled={!baseline || !draft || mutation.isPending || needsReview}>{mutation.isPending ? 'Saving…' : 'Save'}</ControlButton>}
           </div>
         </form>
       </DialogPanel>

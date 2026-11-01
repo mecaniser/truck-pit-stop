@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { ChevronLeft } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
@@ -13,7 +14,7 @@ export default function BackPill({
   const navigate = useNavigate()
 
   return (
-    <button
+    <ControlButton controlKind="content"
       type="button"
       onClick={() => {
         const routerHistoryIndex = Number(window.history.state?.idx || 0)
@@ -28,6 +29,6 @@ export default function BackPill({
     >
       <ChevronLeft className="h-4 w-4" aria-hidden="true" />
       {destination}
-    </button>
+    </ControlButton>
   )
 }

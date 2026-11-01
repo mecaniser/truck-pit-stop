@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useId, useRef, useState, type FormEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ChevronDown } from 'lucide-react'
@@ -54,7 +55,7 @@ export default function TelemetryCapture({ truck }: { truck: BoardTruck }) {
     } finally { pending.current = false; setBusy(false) }
   }
   return <section className={`telemetry-capture${open ? ' telemetry-capture--open' : ''}`}>
-    <button type="button" className="dbtn" aria-expanded={open} aria-controls={formId} disabled={busy} onClick={() => setOpen(!open)}>Add reading <ChevronDown size={16} style={{ transform: open ? 'rotate(180deg)' : undefined }} /></button>
+    <ControlButton controlKind="action" type="button" className="dbtn" aria-expanded={open} aria-controls={formId} disabled={busy} onClick={() => setOpen(!open)}>Add reading <ChevronDown size={16} style={{ transform: open ? 'rotate(180deg)' : undefined }} /></ControlButton>
     {open && <div id={formId}>
       <h3>Manual Motive reading</h3>
       <p>Fleet: <strong>{truck.board_membership_company_name || 'Fleet membership unavailable'}</strong> · VIN: <strong>{vin || 'Missing'}</strong></p>
@@ -62,20 +63,20 @@ export default function TelemetryCapture({ truck }: { truck: BoardTruck }) {
         <p className="telemetry-muted">Copy a new reading from Motive. Leave unknown values blank; service mileage stays unchanged.</p>
         <fieldset disabled={busy} style={{ border: 0, padding: 0 }}>
           <div className="telemetry-form-grid">
-            <label>VIN verified in Motive<input name="confirm_vin" required maxLength={17} autoComplete="off" /></label>
-            <label>Exact observation time (optional)<input name="observed_at" placeholder="2026-10-01T12:00:00-04:00" /></label>
-            <label>Source age text (if displayed)<input name="source_age_text" maxLength={120} placeholder="e.g. 41s ago" /></label>
-            <label>Motive company label<input name="provider_company_label" maxLength={255} /></label>
-            <label>Motive vehicle number<input name="provider_vehicle_number" maxLength={120} /></label>
-            <label>Motive vehicle ID (optional)<input name="provider_vehicle_id" maxLength={120} /></label>
-            <label>Reported location label<input name="location_label" maxLength={500} /></label>
-            {numericFields.map(([key, label, max]) => <label key={key}>{label}<input name={key} type="number" min={0} max={max} step={key === 'fault_count' ? 1 : 'any'} /></label>)}
-            <label>Verified truck latitude<input name="lat" type="number" min={-90} max={90} step="any" /></label>
-            <label>Verified truck longitude<input name="lng" type="number" min={-180} max={180} step="any" /></label>
+            <label>VIN verified in Motive<ControlInput name="confirm_vin" required maxLength={17} autoComplete="off" /></label>
+            <label>Exact observation time (optional)<ControlInput name="observed_at" placeholder="2026-10-01T12:00:00-04:00" /></label>
+            <label>Source age text (if displayed)<ControlInput name="source_age_text" maxLength={120} placeholder="e.g. 41s ago" /></label>
+            <label>Motive company label<ControlInput name="provider_company_label" maxLength={255} /></label>
+            <label>Motive vehicle number<ControlInput name="provider_vehicle_number" maxLength={120} /></label>
+            <label>Motive vehicle ID (optional)<ControlInput name="provider_vehicle_id" maxLength={120} /></label>
+            <label>Reported location label<ControlInput name="location_label" maxLength={500} /></label>
+            {numericFields.map(([key, label, max]) => <label key={key}>{label}<ControlInput name={key} type="number" min={0} max={max} step={key === 'fault_count' ? 1 : 'any'} /></label>)}
+            <label>Verified truck latitude<ControlInput name="lat" type="number" min={-90} max={90} step="any" /></label>
+            <label>Verified truck longitude<ControlInput name="lng" type="number" min={-180} max={180} step="any" /></label>
           </div>
           <p className="telemetry-muted">Use exact truck coordinates only. A map center or nearby place is not a truck position. Relative age does not establish an exact observation time.</p>
           <label>Evidence note (optional)<textarea name="evidence_note" maxLength={1000} /></label>
-          <button className="dbtn" type="submit">{busy ? 'Saving…' : 'Save dashboard snapshot'}</button>
+          <ControlButton className="dbtn" type="submit">{busy ? 'Saving…' : 'Save dashboard snapshot'}</ControlButton>
         </fieldset>
       </form>}
     </div>}

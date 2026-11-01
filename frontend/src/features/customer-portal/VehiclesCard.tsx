@@ -1,3 +1,4 @@
+import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import { useRef, useState } from 'react'
 import { Spinner } from '@/components/ui'
 import { useForm } from 'react-hook-form'
@@ -66,7 +67,7 @@ function EditVehicleForm({ vehicle, onClose }: { vehicle: Vehicle; onClose: () =
 
       <div>
         <label className="block text-xs font-medium text-gray-400 mb-1">Tag / License Plate</label>
-        <input {...register('license_plate')} className={inputClasses} placeholder="ABC-1234" />
+        <ControlInput {...register('license_plate')} className={inputClasses} placeholder="ABC-1234" />
       </div>
 
       {mutation.isError && (
@@ -74,20 +75,20 @@ function EditVehicleForm({ vehicle, onClose }: { vehicle: Vehicle; onClose: () =
       )}
 
       <div className="flex gap-2">
-        <button
+        <ControlButton
           type="submit"
           disabled={!isDirty || mutation.isPending}
-          className="flex-1 px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors"
+          className="flex-1 px-4  bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors"
         >
           {mutation.isPending ? 'Saving...' : 'Save Changes'}
-        </button>
-        <button
+        </ControlButton>
+        <ControlButton
           type="button"
           onClick={onClose}
-          className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-sm font-medium rounded-lg transition-colors"
+          className="px-4  bg-white/10 hover:bg-white/20 text-white text-sm font-medium rounded-lg transition-colors"
         >
           Cancel
-        </button>
+        </ControlButton>
       </div>
     </form>
   )
@@ -166,12 +167,12 @@ function AddVehicleForm({ onClose }: { onClose: () => void }) {
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-400 mb-1">Make *</label>
-          <input {...register('make')} className={inputClasses(!!errors.make)} placeholder="Peterbilt" />
+          <ControlInput {...register('make')} className={inputClasses(!!errors.make)} placeholder="Peterbilt" />
           {errors.make && <p className="text-xs text-red-400 mt-1">{errors.make.message}</p>}
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-400 mb-1">Model *</label>
-          <input {...register('model')} className={inputClasses(!!errors.model)} placeholder="579" />
+          <ControlInput {...register('model')} className={inputClasses(!!errors.model)} placeholder="579" />
           {errors.model && <p className="text-xs text-red-400 mt-1">{errors.model.message}</p>}
         </div>
       </div>
@@ -179,12 +180,12 @@ function AddVehicleForm({ onClose }: { onClose: () => void }) {
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-400 mb-1">Year</label>
-          <input {...register('year')} type="number" className={inputClasses(!!errors.year)} placeholder="2022" />
+          <ControlInput {...register('year')} type="number" className={inputClasses(!!errors.year)} placeholder="2022" />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-400 mb-1">VIN</label>
           <div className="relative">
-            <input
+            <ControlInput
               {...register('vin', { onChange: (event) => handleVinChange(event.target.value) })}
               className={`${inputClasses(false)} pr-9 uppercase`}
               placeholder="1HTMMAAM45H123456"
@@ -198,17 +199,17 @@ function AddVehicleForm({ onClose }: { onClose: () => void }) {
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-400 mb-1">License Plate</label>
-          <input {...register('license_plate')} className={inputClasses(false)} placeholder="ABC-1234" />
+          <ControlInput {...register('license_plate')} className={inputClasses(false)} placeholder="ABC-1234" />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-400 mb-1">Color</label>
-          <input {...register('color')} className={inputClasses(false)} placeholder="Red" />
+          <ControlInput {...register('color')} className={inputClasses(false)} placeholder="Red" />
         </div>
       </div>
 
       <div>
         <label className="block text-xs font-medium text-gray-400 mb-1">Mileage</label>
-        <input {...register('mileage')} type="number" className={inputClasses(false)} placeholder="150000" />
+        <ControlInput {...register('mileage')} type="number" className={inputClasses(false)} placeholder="150000" />
       </div>
 
       {mutation.isError && (
@@ -216,20 +217,20 @@ function AddVehicleForm({ onClose }: { onClose: () => void }) {
       )}
 
       <div className="flex gap-2">
-        <button
+        <ControlButton
           type="submit"
           disabled={mutation.isPending}
-          className="flex-1 px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors"
+          className="flex-1 px-4  bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors"
         >
           {mutation.isPending ? 'Adding...' : 'Add Vehicle'}
-        </button>
-        <button
+        </ControlButton>
+        <ControlButton
           type="button"
           onClick={onClose}
-          className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-sm font-medium rounded-lg transition-colors"
+          className="px-4  bg-white/10 hover:bg-white/20 text-white text-sm font-medium rounded-lg transition-colors"
         >
           Cancel
-        </button>
+        </ControlButton>
       </div>
     </form>
   )
@@ -293,7 +294,7 @@ export default function VehiclesCard() {
                     </p>
                   </div>
                 </div>
-                <button
+                <ControlButton controlKind="icon"
                   onClick={() => setEditingVehicle(vehicle)}
                   className="p-2 text-gray-400 hover:text-amber-400 transition-colors shrink-0"
                   title="Edit vehicle"
@@ -301,22 +302,22 @@ export default function VehiclesCard() {
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                   </svg>
-                </button>
+                </ControlButton>
               </div>
             ))
           ) : (
             <p className="text-gray-400 text-sm py-4 text-center">No vehicles on file yet.</p>
           )}
 
-          <button
+          <ControlButton
             onClick={() => setShowAddForm(true)}
-            className="w-full py-2.5 border border-dashed border-white/20 hover:border-cyan-500/50 text-gray-400 hover:text-cyan-400 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm"
+            className="w-full  border border-dashed border-white/20 hover:border-cyan-500/50 text-gray-400 hover:text-cyan-400 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
             Add New Vehicle
-          </button>
+          </ControlButton>
         </div>
       )}
     </div>

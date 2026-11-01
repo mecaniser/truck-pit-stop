@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { ReactNode, forwardRef } from 'react'
 
 // ============ DESIGN SYSTEM STYLES ============
@@ -121,9 +122,9 @@ const buttonVariants = {
 }
 
 const buttonSizes = {
-  sm: 'px-3 py-1.5 text-xs rounded-lg',
-  md: 'px-4 py-2.5 text-sm rounded-xl',
-  lg: 'px-6 py-3 text-sm rounded-xl',
+  sm: '',
+  md: '',
+  lg: '',
 }
 
 export function GlassNoirButton({
@@ -136,7 +137,7 @@ export function GlassNoirButton({
   type = 'button',
 }: ButtonProps) {
   return (
-    <button
+    <ControlButton
       type={type}
       onClick={onClick}
       disabled={disabled}
@@ -149,7 +150,7 @@ export function GlassNoirButton({
       `}
     >
       {children}
-    </button>
+    </ControlButton>
   )
 }
 
@@ -164,7 +165,7 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 export const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ className = '', error = false, ...props }, ref) => {
     return (
-      <input
+      <ControlInput
         ref={ref}
         className={`
           ${styles.input}
@@ -343,7 +344,7 @@ interface ToggleProps {
 
 export function Toggle({ enabled, onChange, disabled = false }: ToggleProps) {
   return (
-    <button
+    <ControlButton controlKind="content"
       type="button"
       onClick={() => !disabled && onChange(!enabled)}
       disabled={disabled}
@@ -361,7 +362,7 @@ export function Toggle({ enabled, onChange, disabled = false }: ToggleProps) {
         transition-transform shadow-md
         ${enabled ? 'left-7' : 'left-1'}
       `} />
-    </button>
+    </ControlButton>
   )
 }
 

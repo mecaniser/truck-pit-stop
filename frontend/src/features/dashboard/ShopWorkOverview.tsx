@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useState } from 'react'
 import { ArrowRight, ArrowUpRight, CalendarClock, CheckCircle2, ClipboardList, CloudOff, Package, Receipt, RotateCcw, Truck, Wrench } from 'lucide-react'
 import type { ShopWorkDestination } from './shopWorkNavigation'
@@ -115,7 +116,7 @@ export default function ShopWorkOverview({ data, loading, failed, refreshing, on
     {failed ? <CloudOff aria-hidden="true" /> : <CalendarClock aria-hidden="true" />}
     <h2>{failed ? 'Shop overview is unavailable' : 'Checking what needs your attention'}</h2>
     <p>{failed ? 'Your work is still in its existing workspace. Try again to check the board.' : 'Checking repairs, stock, purchasing, and your authorized account reviews.'}</p>
-    {failed && <button type="button" className="db-overview__primary" onClick={onRetry} disabled={refreshing}>Try again</button>}
+    {failed && <ControlButton type="button" className="db-overview__primary" onClick={onRetry} disabled={refreshing}>Try again</ControlButton>}
   </section>
 
   const checkedTime = Number.isFinite(Date.parse(data.as_of)) ? new Date(data.as_of).toLocaleString() : 'time unavailable'
@@ -130,10 +131,10 @@ export default function ShopWorkOverview({ data, loading, failed, refreshing, on
   }
   const overdue = (item: ShopWorkItem) => item.due_kind === 'repair_promise' && !!item.due_at && Date.parse(item.due_at) < clock
   return <div className="db-overview db-operating-surface__scroller" aria-label="Shop Work overview" aria-busy={refreshing}>
-    {failed && <div className="db-overview__warning" role="alert"><CloudOff aria-hidden="true" /><div><strong>Refresh failed. Showing the last checked work.</strong><span>Last checked {checkedTime}. New or completed tasks may not be reflected.</span></div><button type="button" onClick={onRetry}>Retry</button></div>}
+    {failed && <div className="db-overview__warning" role="alert"><CloudOff aria-hidden="true" /><div><strong>Refresh failed. Showing the last checked work.</strong><span>Last checked {checkedTime}. New or completed tasks may not be reflected.</span></div><ControlButton type="button" onClick={onRetry}>Retry</ControlButton></div>}
     {issues.length > 0 && <details className="db-overview__coverage" open={issues.some(source => source.state === 'unavailable')}>
       <summary>{issues.some(source => source.state === 'unavailable') ? 'Some areas could not be checked' : 'Some work needs source review'} <span>{issues.map(source => SOURCE[source.id].label).join(' · ')}</span></summary>
-      <ul>{issues.map(source => <li key={source.id}><div><strong>{SOURCE[source.id].label}</strong><span>{sourceIssue(source)}</span></div><button type="button" onClick={() => onWorkspace(SOURCE[source.id].path)}>Open {SOURCE[source.id].label}<ArrowUpRight aria-hidden="true" /></button></li>)}</ul>
+      <ul>{issues.map(source => <li key={source.id}><div><strong>{SOURCE[source.id].label}</strong><span>{sourceIssue(source)}</span></div><ControlButton type="button" onClick={() => onWorkspace(SOURCE[source.id].path)}>Open {SOURCE[source.id].label}<ArrowUpRight aria-hidden="true" /></ControlButton></li>)}</ul>
     </details>}
     <div className="db-overview__grid">
       <section aria-labelledby="overview-attention-title">
@@ -142,26 +143,26 @@ export default function ShopWorkOverview({ data, loading, failed, refreshing, on
           <article className="db-overview__lead" data-work-id={lead.id}>
             <div className="db-overview__lead-meta"><span>{(() => { const Icon = SOURCE[lead.source].icon; return <Icon aria-hidden="true" /> })()}{SOURCE[lead.source].label}</span>{overdue(lead) && <strong className="db-overview__overdue">Past promise</strong>}</div>
             <h3>{lead.title}</h3><p>{itemMeta(lead)}</p>
-            <button type="button" className="db-overview__primary" aria-label={`${lead.action_label}: ${lead.title}`} onClick={() => onOpen(lead.destination)}>{lead.action_label}<ArrowRight aria-hidden="true" /></button>
+            <ControlButton type="button" className="db-overview__primary" aria-label={`${lead.action_label}: ${lead.title}`} onClick={() => onOpen(lead.destination)}>{lead.action_label}<ArrowRight aria-hidden="true" /></ControlButton>
           </article>
           <div className="db-overview__rows">{remaining.map(item => {
             const Icon = SOURCE[item.source].icon
             return <article className="db-overview__row" key={item.id} data-work-id={item.id}>
               <Icon className="db-overview__domain-icon" aria-hidden="true" /><div><h3>{item.title}</h3><p>{SOURCE[item.source].label} · {itemMeta(item)}</p>{overdue(item) && <span className="db-overview__overdue">Past promise</span>}</div>
-              <button type="button" className="db-overview__link" aria-label={`${item.action_label}: ${item.title}`} onClick={() => onOpen(item.destination)}>{item.action_label}<ArrowUpRight aria-hidden="true" /></button>
+              <ControlButton type="button" className="db-overview__link" aria-label={`${item.action_label}: ${item.title}`} onClick={() => onOpen(item.destination)}>{item.action_label}<ArrowUpRight aria-hidden="true" /></ControlButton>
             </article>
           })}</div>
         </> : <div className="db-overview__empty" role="status"><CheckCircle2 aria-hidden="true" /><h3>{allChecked ? 'You’re caught up in your available workspaces' : 'No confirmed actions in the checked work'}</h3><p>{allChecked ? 'No action is due in the areas you can access. Upcoming commitments stay alongside.' : 'Review the source notices before treating the shop as clear.'}</p></div>}
-        {visibleCount < data.actions.length && <button type="button" className="db-overview__more" onClick={() => setVisibleCount(count => count + 6)}>Show next {Math.min(6, data.actions.length - visibleCount)} tasks</button>}
-        {data.has_more_actions && visibleCount >= data.actions.length && <div className="db-overview__overflow"><p>{data.actions_total == null ? 'Some areas need review in their workspace.' : 'More work is available in the owning workspaces.'}</p>{data.sources.filter(s => s.has_more && s.state !== 'restricted' && s.state !== 'disabled').map(s => <button type="button" key={s.id} onClick={() => onWorkspace(SOURCE[s.id].path)}>{SOURCE[s.id].label}<ArrowUpRight aria-hidden="true" /></button>)}</div>}
+        {visibleCount < data.actions.length && <ControlButton type="button" className="db-overview__more" onClick={() => setVisibleCount(count => count + 6)}>Show next {Math.min(6, data.actions.length - visibleCount)} tasks</ControlButton>}
+        {data.has_more_actions && visibleCount >= data.actions.length && <div className="db-overview__overflow"><p>{data.actions_total == null ? 'Some areas need review in their workspace.' : 'More work is available in the owning workspaces.'}</p>{data.sources.filter(s => s.has_more && s.state !== 'restricted' && s.state !== 'disabled').map(s => <ControlButton type="button" key={s.id} onClick={() => onWorkspace(SOURCE[s.id].path)}>{SOURCE[s.id].label}<ArrowUpRight aria-hidden="true" /></ControlButton>)}</div>}
       </section>
       <aside className="db-overview__upcoming" aria-labelledby="overview-upcoming-title"><header className="db-overview__section-heading"><h2 id="overview-upcoming-title">Coming up</h2></header>
         {data.upcoming.length ? <ol>{data.upcoming.slice(0, upcomingCount).map(item => <li key={item.id}>
           <span className="db-overview__event-time">{dateLabel(item, data.timezone) || 'Time unavailable'}</span><h3>{item.title}</h3><p>{duePrefix(item)} · {SOURCE[item.source].label}</p>
-          <button type="button" className="db-overview__link" aria-label={`${item.action_label}: ${item.title}`} onClick={() => onOpen(item.destination)}>{item.action_label}<ArrowUpRight aria-hidden="true" /></button>
+          <ControlButton type="button" className="db-overview__link" aria-label={`${item.action_label}: ${item.title}`} onClick={() => onOpen(item.destination)}>{item.action_label}<ArrowUpRight aria-hidden="true" /></ControlButton>
         </li>)}</ol> : <p className="db-overview__no-commitments">{data.sources.some(s => (s.id === 'schedule' || s.id === 'purchasing') && (s.state === 'unavailable' || s.state === 'partial')) ? 'Upcoming commitments could not be fully checked.' : 'No dated commitments in the checked work.'}</p>}
-        {data.upcoming.length > upcomingCount && <button type="button" className="db-overview__more" onClick={() => setUpcomingCount(count => count + 5)}>Show more commitments</button>}
-        {data.has_more_upcoming && upcomingCount >= data.upcoming.length && <div className="db-overview__overflow"><p>{data.upcoming_total == null ? 'Review upcoming commitments in their workspace.' : 'More dated work is available in its workspace.'}</p>{data.sources.filter(s => (s.id === 'schedule' || s.id === 'purchasing') && s.state !== 'restricted' && s.state !== 'disabled').map(s => <button type="button" key={s.id} onClick={() => onWorkspace(SOURCE[s.id].path)}>{SOURCE[s.id].label}<ArrowUpRight aria-hidden="true" /></button>)}</div>}
+        {data.upcoming.length > upcomingCount && <ControlButton type="button" className="db-overview__more" onClick={() => setUpcomingCount(count => count + 5)}>Show more commitments</ControlButton>}
+        {data.has_more_upcoming && upcomingCount >= data.upcoming.length && <div className="db-overview__overflow"><p>{data.upcoming_total == null ? 'Review upcoming commitments in their workspace.' : 'More dated work is available in its workspace.'}</p>{data.sources.filter(s => (s.id === 'schedule' || s.id === 'purchasing') && s.state !== 'restricted' && s.state !== 'disabled').map(s => <ControlButton type="button" key={s.id} onClick={() => onWorkspace(SOURCE[s.id].path)}>{SOURCE[s.id].label}<ArrowUpRight aria-hidden="true" /></ControlButton>)}</div>}
         <p className="db-overview__scope"><ClipboardList aria-hidden="true" />{data.scope === 'assigned' ? 'Your assigned repair work' : 'Your shop · authorized workspaces'}</p>
       </aside>
     </div>

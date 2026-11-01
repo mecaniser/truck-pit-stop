@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ChevronDown, Download, PauseCircle } from "lucide-react";
 import { errorMessage } from "./api";
@@ -69,7 +70,7 @@ function ShopRegistration({ tenantId, shopName, onClose, onDirtyChange }: { tena
     const id = `sms-registration-${field.key}`;
     return <div className="sms-field" key={field.key}>
       <label htmlFor={id}>{field.label}</label>
-      <input id={id} type={field.type ?? "text"} value={draft?.[field.key] ?? ""}
+      <ControlInput id={id} type={field.type ?? "text"} value={draft?.[field.key] ?? ""}
         aria-required={required} aria-describedby={field.help ? `${id}-help` : undefined}
         disabled={busy || !editable} onChange={event => draft && setDraft({ ...draft, [field.key]: event.target.value })} />
       {field.help && <p className="sms-field-help" id={`${id}-help`}>{field.help}</p>}
@@ -133,9 +134,9 @@ function ShopRegistration({ tenantId, shopName, onClose, onDirtyChange }: { tena
   }
   return (
     <main className="sms-setup">
-      {<button className="subtle-button" onClick={onClose}>
+      {<ControlButton className="subtle-button" onClick={onClose}>
         <ArrowLeft size={16} /> Back to shops
-      </button>}
+      </ControlButton>}
       <header className="sms-setup-header">
         <div>
           <h1>Repair texting registration</h1>
@@ -156,13 +157,13 @@ function ShopRegistration({ tenantId, shopName, onClose, onDirtyChange }: { tena
       )}
       {notice && <p role="status">{notice}</p>}
       {stale && (
-        <button
+        <ControlButton
           className="subtle-button"
           disabled={busy}
           onClick={() => void action("rebase")}
         >
           Load latest version and keep my edits
-        </button>
+        </ControlButton>
       )}
       {record && draft && (
         <>
@@ -173,9 +174,9 @@ function ShopRegistration({ tenantId, shopName, onClose, onDirtyChange }: { tena
             {editable && <span className="sms-progress">{missing.length ? `${missing.length} required ${missing.length === 1 ? "item" : "items"} left` : "Required information filled in"}</span>}
           </section>
           <section className="sms-connection">
-            <button type="button" className="sms-connection-toggle" aria-expanded={showConnection} aria-controls="sms-connection-details" onClick={() => setShowConnection(!showConnection)}>
+            <ControlButton controlKind="action" type="button" className="sms-connection-toggle" aria-expanded={showConnection} aria-controls="sms-connection-details" onClick={() => setShowConnection(!showConnection)}>
               Registration status and number <ChevronDown size={16} className={showConnection ? "is-expanded" : ""} />
-            </button>
+            </ControlButton>
             <div id="sms-connection-details" hidden={!showConnection}>
               <p>{({ legacy_configured: "An existing SMS number is configured. This does not confirm approval for repair texting.", not_configured: "No Twilio number is configured for this registration.", managed_routing_disabled: "A number is assigned. The new repair-texting route is not enabled.", pending_verification: "The assigned number still needs verification.", configured: "The assigned number has passed the connection checks." }[record.connection.status] ?? "The connection needs an administrator’s review.")}</p>
               {record.connection.sender_last4 && <p>Number ending {record.connection.sender_last4}</p>}
@@ -231,25 +232,25 @@ function ShopRegistration({ tenantId, shopName, onClose, onDirtyChange }: { tena
             </section>
             <p className="sms-section-help">Save draft keeps your progress here. Prepare for review checks the required information; it does not submit a registration.</p>
             <div className="sms-actions">
-              <button className="primary-button" disabled={busy || stale || !editable}>
+              <ControlButton className="primary-button" disabled={busy || stale || !editable}>
                 Save draft
-              </button>
-              <button
+              </ControlButton>
+              <ControlButton
                 className="subtle-button"
                 type="button"
                 disabled={busy || stale || !!dirty || !editable}
                 onClick={() => void action("review")}
               >
                 Prepare for review
-              </button>
-              <button
+              </ControlButton>
+              <ControlButton
                 className="subtle-button"
                 type="button"
                 disabled={busy || !!dirty}
                 onClick={() => void action("export")}
               >
                 <Download size={16} /> Download review package
-              </button>
+              </ControlButton>
               {dirty && <span>Unsaved changes</span>}
             </div>
           </form>

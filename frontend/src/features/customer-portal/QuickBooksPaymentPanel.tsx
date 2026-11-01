@@ -1,3 +1,4 @@
+import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import { ChangeEvent, FormEvent, useState } from 'react'
 import { CreditCard } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -157,35 +158,35 @@ export default function QuickBooksPaymentPanel({ invoiceId, tokenUrl, onSuccess,
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className={`text-sm sm:col-span-2 ${labelClass}`}>
           Name on card
-          <input required name="name" autoComplete="cc-name" maxLength={64} value={fields.name} onChange={updateField('name')} aria-invalid={Boolean(fieldErrors.name)} aria-describedby={fieldErrors.name ? 'qbp-name-error' : undefined} className={`mt-1 h-12 w-full rounded-xl border px-3 text-base outline-none focus:ring-2 ${inputClass}`} />
+          <ControlInput required name="name" autoComplete="cc-name" maxLength={64} value={fields.name} onChange={updateField('name')} aria-invalid={Boolean(fieldErrors.name)} aria-describedby={fieldErrors.name ? 'qbp-name-error' : undefined} className={`mt-1  w-full rounded-xl border px-3 text-base outline-none focus:ring-2 ${inputClass}`} />
           {fieldErrors.name && <span id="qbp-name-error" className="mt-1 block text-xs text-red-600">{fieldErrors.name}</span>}
         </label>
         <label className={`text-sm sm:col-span-2 ${labelClass}`}>
           Card number
-          <input required name="number" type="text" inputMode="numeric" autoComplete="cc-number" maxLength={23} value={fields.number} onChange={updateField('number', formatCardNumber)} aria-invalid={Boolean(fieldErrors.number)} aria-describedby={fieldErrors.number ? 'qbp-number-error' : undefined} className={`mt-1 h-12 w-full rounded-xl border px-3 font-mono text-base tracking-wide outline-none focus:ring-2 ${inputClass}`} />
+          <ControlInput required name="number" type="text" inputMode="numeric" autoComplete="cc-number" maxLength={23} value={fields.number} onChange={updateField('number', formatCardNumber)} aria-invalid={Boolean(fieldErrors.number)} aria-describedby={fieldErrors.number ? 'qbp-number-error' : undefined} className={`mt-1  w-full rounded-xl border px-3 font-mono text-base tracking-wide outline-none focus:ring-2 ${inputClass}`} />
           {fieldErrors.number && <span id="qbp-number-error" className="mt-1 block text-xs text-red-600">{fieldErrors.number}</span>}
         </label>
         <label className={`text-sm ${labelClass}`}>
           Expiry
-          <input required name="expiry" type="text" inputMode="numeric" autoComplete="cc-exp" placeholder="MM / YYYY" maxLength={9} value={fields.expiry} onChange={updateField('expiry', formatExpiry)} aria-invalid={Boolean(fieldErrors.expiry)} aria-describedby={fieldErrors.expiry ? 'qbp-expiry-error' : undefined} className={`mt-1 h-12 w-full rounded-xl border px-3 font-mono text-base outline-none focus:ring-2 ${inputClass}`} />
+          <ControlInput required name="expiry" type="text" inputMode="numeric" autoComplete="cc-exp" placeholder="MM / YYYY" maxLength={9} value={fields.expiry} onChange={updateField('expiry', formatExpiry)} aria-invalid={Boolean(fieldErrors.expiry)} aria-describedby={fieldErrors.expiry ? 'qbp-expiry-error' : undefined} className={`mt-1  w-full rounded-xl border px-3 font-mono text-base outline-none focus:ring-2 ${inputClass}`} />
           {fieldErrors.expiry && <span id="qbp-expiry-error" className="mt-1 block text-xs text-red-600">{fieldErrors.expiry}</span>}
         </label>
         <label className={`text-sm ${labelClass}`}>
           Security code
-          <input required name="cvc" type="password" inputMode="numeric" autoComplete="cc-csc" maxLength={4} value={fields.cvc} onChange={updateField('cvc', value => digitsOnly(value, 4))} aria-invalid={Boolean(fieldErrors.cvc)} aria-describedby={fieldErrors.cvc ? 'qbp-cvc-error' : undefined} className={`mt-1 h-12 w-full rounded-xl border px-3 font-mono text-base outline-none focus:ring-2 ${inputClass}`} />
+          <ControlInput required name="cvc" type="password" inputMode="numeric" autoComplete="cc-csc" maxLength={4} value={fields.cvc} onChange={updateField('cvc', value => digitsOnly(value, 4))} aria-invalid={Boolean(fieldErrors.cvc)} aria-describedby={fieldErrors.cvc ? 'qbp-cvc-error' : undefined} className={`mt-1  w-full rounded-xl border px-3 font-mono text-base outline-none focus:ring-2 ${inputClass}`} />
           {fieldErrors.cvc && <span id="qbp-cvc-error" className="mt-1 block text-xs text-red-600">{fieldErrors.cvc}</span>}
         </label>
         <label className={`text-sm sm:col-span-2 ${labelClass}`}>
           Billing ZIP code
-          <input required name="postalCode" type="text" inputMode="numeric" autoComplete="postal-code" maxLength={10} value={fields.postalCode} onChange={updateField('postalCode', formatPostalCode)} aria-invalid={Boolean(fieldErrors.postalCode)} aria-describedby={fieldErrors.postalCode ? 'qbp-postal-error' : undefined} className={`mt-1 h-12 w-full rounded-xl border px-3 font-mono text-base outline-none focus:ring-2 ${inputClass}`} />
+          <ControlInput required name="postalCode" type="text" inputMode="numeric" autoComplete="postal-code" maxLength={10} value={fields.postalCode} onChange={updateField('postalCode', formatPostalCode)} aria-invalid={Boolean(fieldErrors.postalCode)} aria-describedby={fieldErrors.postalCode ? 'qbp-postal-error' : undefined} className={`mt-1  w-full rounded-xl border px-3 font-mono text-base outline-none focus:ring-2 ${inputClass}`} />
           {fieldErrors.postalCode && <span id="qbp-postal-error" className="mt-1 block text-xs text-red-600">{fieldErrors.postalCode}</span>}
         </label>
       </div>
       {error && <p className={`rounded-xl border p-3 text-sm ${isDark ? 'border-red-500/30 bg-red-500/10 text-red-300' : 'border-red-200 bg-red-50 text-red-700'}`}>{error}</p>}
-      <button type="submit" disabled={isProcessing} className={`flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl px-4 font-extrabold hover:brightness-110 disabled:opacity-60 ${isDark ? 'bg-[#8b7cf7] text-[#0e1118]' : 'bg-[var(--accent-600,#b9472f)] text-white'}`}>
+      <ControlButton type="submit" disabled={isProcessing} className={`flex  w-full items-center justify-center gap-2 rounded-xl px-4 font-extrabold hover:brightness-110 disabled:opacity-60 ${isDark ? 'bg-[#8b7cf7] text-[#0e1118]' : 'bg-[var(--accent-600,#b9472f)] text-white'}`}>
         <CreditCard className="h-5 w-5" />
         {isProcessing ? 'Processing...' : submitLabel || 'Submit secure payment'}
-      </button>
+      </ControlButton>
     </form>
   )
 }

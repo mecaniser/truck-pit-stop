@@ -1,3 +1,4 @@
+import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Search, Wrench } from 'lucide-react'
@@ -97,11 +98,11 @@ export default function ServicesPage() {
         <label className="relative block w-full lg:w-[250px]">
           <span className="sr-only">Search services</span>
           <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5c6375]" />
-          <input
+          <ControlInput
             value={search}
             onChange={event => setSearch(event.target.value)}
             placeholder={`Search ${services.length} services…`}
-            className="h-11 w-full rounded-[10px] border border-[#272d3d] bg-[#161a26] pl-10 pr-3 text-base text-[#eceef4] outline-none placeholder:text-[#5c6375] focus:border-[#8b7cf7] focus:ring-2 focus:ring-[#8b7cf7]/35 lg:h-10 lg:text-[13px]"
+            className=" w-full rounded-[10px] border border-[#272d3d] bg-[#161a26] pl-10 pr-3 text-base text-[#eceef4] outline-none placeholder:text-[#5c6375] focus:border-[#8b7cf7] focus:ring-2 focus:ring-[#8b7cf7]/35  lg:text-[13px]"
           />
         </label>
       </header>
@@ -142,13 +143,13 @@ export default function ServicesPage() {
                     <p className="text-sm font-extrabold tabular-nums">{formatMoney(service.computed_total_price)}</p>
                     <p className="mt-0.5 text-[11px] text-[#5c6375]">{service.duration_minutes} min</p>
                   </div>
-                  <button
+                  <ControlButton
                     type="button"
                     onClick={() => navigate(`/portal/book/${service.id}`)}
-                    className="h-[38px] shrink-0 rounded-lg border border-[#8b7cf7] bg-[#8b7cf7]/10 px-3.5 text-xs font-extrabold text-[#c9bfff] hover:bg-[#8b7cf7]/15 sm:h-[34px]"
+                    className=" shrink-0 rounded-lg border border-[#8b7cf7] bg-[#8b7cf7]/10 px-3.5 text-xs font-extrabold text-[#c9bfff] hover:bg-[#8b7cf7]/15 "
                   >
                     Book
-                  </button>
+                  </ControlButton>
                 </article>
               ))}
             </div>

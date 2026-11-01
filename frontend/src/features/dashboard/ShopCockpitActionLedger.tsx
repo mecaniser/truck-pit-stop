@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { scheduleDeadline, type OrderScheduleSummary } from '../repair-orders/repairOrderSchedule'
 import '../repair-orders/repairOrderSchedule.css'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
@@ -227,7 +228,7 @@ export default function ShopCockpitActionLedger({
           {!activeWork && <p>Open a repair order to review work, approvals, history, and payment.</p>}
         </div>
         <div className="db-shop-work-new__header-actions">
-          <button
+          <ControlButton controlKind="icon"
             type="button"
             className="db-shop-work-new__quiet-action"
             onClick={onRefresh}
@@ -236,10 +237,10 @@ export default function ShopCockpitActionLedger({
             title={isRefreshing ? 'Refreshing Shop Work' : 'Refresh Shop Work'}
           >
             <RefreshCw aria-hidden="true" className={isRefreshing ? 'animate-spin' : ''} />
-          </button>
+          </ControlButton>
           {isManager && (
             <>
-              <button
+              <ControlButton controlKind="action"
                 type="button"
                 className="db-shop-work-new__quick-action"
                 onClick={onToggleQuickOrder}
@@ -249,11 +250,11 @@ export default function ShopCockpitActionLedger({
               >
                 <Zap aria-hidden="true" />
                 <span className="db-shop-work-new__action-full">Lightning Order</span>
-              </button>
-              <button type="button" className="db-shop-work-new__primary-action" aria-label="Full Order" title="Full Order" onClick={onFullOrder}>
+              </ControlButton>
+              <ControlButton type="button" className="db-shop-work-new__primary-action" aria-label="Full Order" title="Full Order" onClick={onFullOrder}>
                 <Plus aria-hidden="true" />
                 <span className="db-shop-work-new__action-full">Full Order</span>
-              </button>
+              </ControlButton>
             </>
           )}
         </div>
@@ -269,9 +270,9 @@ export default function ShopCockpitActionLedger({
         <header className="db-action-ledger__caption">
           <div className="db-action-ledger__caption-text">
             <div className="db-shop-work-new__view-switch" aria-label="Shop Work view">
-              {overview && <button type="button" aria-pressed={showingOverview} onClick={() => { onWorkViewChange?.('overview'); onQueueViewChange('queue') }}><LayoutDashboard aria-hidden="true" />Overview</button>}
-              {activeWork && <button type="button" aria-pressed={showingActive} onClick={() => { onWorkViewChange?.('active'); onQueueViewChange('queue') }}><LayoutList aria-hidden="true" />Active work{activeCount !== undefined && <span>{activeCount ?? '—'}</span>}</button>}
-              <button
+              {overview && <ControlButton controlKind="action" type="button" aria-pressed={showingOverview} onClick={() => { onWorkViewChange?.('overview'); onQueueViewChange('queue') }}><LayoutDashboard aria-hidden="true" />Overview</ControlButton>}
+              {activeWork && <ControlButton controlKind="action" type="button" aria-pressed={showingActive} onClick={() => { onWorkViewChange?.('active'); onQueueViewChange('queue') }}><LayoutList aria-hidden="true" />Active work{activeCount !== undefined && <span>{activeCount ?? '—'}</span>}</ControlButton>}
+              <ControlButton controlKind="action"
                 type="button"
                 aria-pressed={queueView === 'queue' && !showingActive && !showingOverview}
                 onClick={() => { onWorkViewChange?.('closeout'); onQueueViewChange('queue') }}
@@ -279,9 +280,9 @@ export default function ShopCockpitActionLedger({
                 {!activeWork && <LayoutList aria-hidden="true" />}
                 {activeWork ? 'Closeout' : 'Queue'}
                 {activeWork && <span>{closeoutCountLabel}</span>}
-              </button>
+              </ControlButton>
               {canViewActivity && (
-                <button
+                <ControlButton controlKind="action"
                   type="button"
                   aria-pressed={queueView === 'activity'}
                   onClick={() => onQueueViewChange('activity')}
@@ -289,7 +290,7 @@ export default function ShopCockpitActionLedger({
                   <History aria-hidden="true" />
                   Activity
                   {activityCount != null && <span title="Recent activity; + means more events are available">{activityCount}</span>}
-                </button>
+                </ControlButton>
               )}
             </div>
             {!activeWork && <h2>{queueView === 'activity' ? 'Activity' : 'Action Ledger'}</h2>}
@@ -314,16 +315,16 @@ export default function ShopCockpitActionLedger({
         {queueView === 'queue' && !showingActive && !showingOverview && (
           <div className="db-shop-work-new__toolbar">
             <div className="db-shop-work-new__lane-tabs" role="tablist" aria-label="Work queues">
-            {!activeWork && <button
+            {!activeWork && <ControlButton controlKind="content"
               type="button"
               role="tab"
               aria-selected={laneFilter === 'all'}
               onClick={() => selectLane('all')}
             >
               All work <span>{totalCount}</span>
-            </button>}
+            </ControlButton>}
             {lanes.map((lane) => (
-              <button
+              <ControlButton controlKind="content"
                 type="button"
                 role="tab"
                 key={lane.key}
@@ -332,13 +333,13 @@ export default function ShopCockpitActionLedger({
                 data-lane={lane.key}
               >
                 {lane.label} <span>{lane.orders.length}{activeWork && lane.key === 'needs_action' && lane.orders.length >= 50 ? ' shown' : lane.hasMore ? '+' : ''}</span>
-              </button>
+              </ControlButton>
             ))}
           </div>
           <label className="db-shop-work-new__search">
             <span className="sr-only">Search work queue</span>
             <Search aria-hidden="true" />
-            <input
+            <ControlInput
               type="search"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
@@ -365,7 +366,7 @@ export default function ShopCockpitActionLedger({
                 </div>
               ) : visibleRows.map(({ order, lane }) => {
                 return (
-                  <button
+                  <ControlButton controlKind="content"
                     type="button"
                     key={`${lane}-${order.id}`}
                     className="db-action-ledger__row"
@@ -388,7 +389,7 @@ export default function ShopCockpitActionLedger({
                       <strong>{currency(order.total_cost)}</strong>
                       <span aria-hidden="true">Open</span>
                     </span>
-                  </button>
+                  </ControlButton>
                 )
               })}
             </div>

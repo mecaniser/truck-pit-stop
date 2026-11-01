@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useEffect, useRef, useState } from 'react'
 import { CalendarDays, Check, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { REPORT_PRESETS, formatReportDate, rangeError, validDate, type ReportPreset, type ReportRange, type ResolvedRange } from './reportRange'
@@ -102,7 +103,7 @@ export default function ReportingDatePicker({ value, resolved, onChange, resolve
         {monthDays.map((day, i) => {
           const selected = Boolean(from) && day >= from && day <= (to || from)
           const edge = Boolean(from) && (day === from || day === to)
-          return <button type="button" key={day} data-day={day} aria-label={formatReportDate(day)} aria-pressed={selected}
+          return <ControlButton controlKind="action" type="button" key={day} data-day={day} aria-label={formatReportDate(day)} aria-pressed={selected}
             className={`${selected ? 'is-in-range' : ''} ${edge ? 'is-endpoint' : ''}`}
             tabIndex={focusedDay === day ? 0 : -1}
             onClick={() => chooseDay(day)} onFocus={() => setFocusedDay(day)} onKeyDown={event => {
@@ -110,36 +111,36 @@ export default function ReportingDatePicker({ value, resolved, onChange, resolve
               if (step) { event.preventDefault(); focusDay(shiftDay(day, step)) }
               if (event.key === 'Home' || event.key === 'End') { event.preventDefault(); focusDay(event.key === 'Home' ? first : `${current}-${days}`) }
               if (event.key === 'PageUp' || event.key === 'PageDown') { event.preventDefault(); focusDay(`${shiftMonth(current, event.key === 'PageUp' ? -1 : 1)}-01`) }
-            }}>{i + 1}</button>
+            }}>{i + 1}</ControlButton>
         })}
       </div>
     </section>
   }
   return <div className="db-report-period">
-    <button className="db-report-period__trigger" type="button" ref={trigger} onClick={launch} aria-haspopup="dialog" aria-expanded={open}>
+    <ControlButton controlKind="action" className="db-report-period__trigger" type="button" ref={trigger} onClick={launch} aria-haspopup="dialog" aria-expanded={open}>
       <CalendarDays size={18} aria-hidden="true" /><span><strong>{label}</strong><small>{actual ? `${formatReportDate(actual.range_start)} – ${formatReportDate(actual.range_end)}` : 'Choose reporting dates'}</small></span>
-    </button>
+    </ControlButton>
     <dialog className="db-report-picker" ref={dialog} aria-labelledby="report-period-title" onCancel={event => { event.preventDefault(); close() }} onClick={event => { if (event.target === event.currentTarget) close() }}>
       <div className="db-report-picker__content">
-        <header><div><h2 id="report-period-title">Reporting period</h2><p>Shop-local dates. Start and end dates are included.</p></div><button type="button" aria-label="Close reporting period" onClick={close}><X size={20} /></button></header>
+        <header><div><h2 id="report-period-title">Reporting period</h2><p>Shop-local dates. Start and end dates are included.</p></div><ControlButton controlKind="icon" type="button" aria-label="Close reporting period" onClick={close}><X size={20} /></ControlButton></header>
         <div className="db-report-picker__body">
           <aside aria-label="Reporting shortcuts">
             <h3>Quick periods</h3>
-            {Object.entries(REPORT_PRESETS).map(([key, text]) => <button type="button" key={key} aria-pressed={draft === key} onClick={() => void choosePreset(key as ReportPreset)}><span>{text}</span><Check size={16} aria-hidden="true" /></button>)}
-            <button type="button" aria-pressed={draft === 'custom'} onClick={() => { stopPreview(); setDraft('custom') }}><span>Custom range</span><Check size={16} aria-hidden="true" /></button>
+            {Object.entries(REPORT_PRESETS).map(([key, text]) => <ControlButton controlKind="action" type="button" key={key} aria-pressed={draft === key} onClick={() => void choosePreset(key as ReportPreset)}><span>{text}</span><Check size={16} aria-hidden="true" /></ControlButton>)}
+            <ControlButton controlKind="action" type="button" aria-pressed={draft === 'custom'} onClick={() => { stopPreview(); setDraft('custom') }}><span>Custom range</span><Check size={16} aria-hidden="true" /></ControlButton>
           </aside>
           <div className="db-report-picker__selection">
             <div className="db-report-picker__fields">
-              <label>Start date<input type="date" aria-label="Start date" value={from} onChange={e => { stopPreview(); setFrom(e.target.value); setDraft('custom'); setPickingEnd(false); if (validDate(e.target.value)) { setMonth(e.target.value.slice(0, 7)); setFocusedDay(e.target.value) } }} /></label>
-              <label>End date<input type="date" aria-label="End date" value={to} onChange={e => { stopPreview(); setTo(e.target.value); setDraft('custom'); setPickingEnd(false) }} /></label>
+              <label>Start date<ControlInput type="date" aria-label="Start date" value={from} onChange={e => { stopPreview(); setFrom(e.target.value); setDraft('custom'); setPickingEnd(false); if (validDate(e.target.value)) { setMonth(e.target.value.slice(0, 7)); setFocusedDay(e.target.value) } }} /></label>
+              <label>End date<ControlInput type="date" aria-label="End date" value={to} onChange={e => { stopPreview(); setTo(e.target.value); setDraft('custom'); setPickingEnd(false) }} /></label>
             </div>
-            <div className="db-report-picker__navigation"><button type="button" aria-label="Previous month" onClick={() => { setMonth(shiftMonth(month, -1)); setFocusedDay(`${shiftMonth(month, -1)}-01`) }}><ChevronLeft size={18} /></button><span>{pickingEnd ? 'Choose an end date' : 'Choose a start date, then an end date'}</span><button type="button" aria-label="Next month" onClick={() => { setMonth(shiftMonth(month, 1)); setFocusedDay(`${shiftMonth(month, 1)}-01`) }}><ChevronRight size={18} /></button></div>
+            <div className="db-report-picker__navigation"><ControlButton controlKind="icon" type="button" aria-label="Previous month" onClick={() => { setMonth(shiftMonth(month, -1)); setFocusedDay(`${shiftMonth(month, -1)}-01`) }}><ChevronLeft size={18} /></ControlButton><span>{pickingEnd ? 'Choose an end date' : 'Choose a start date, then an end date'}</span><ControlButton controlKind="icon" type="button" aria-label="Next month" onClick={() => { setMonth(shiftMonth(month, 1)); setFocusedDay(`${shiftMonth(month, 1)}-01`) }}><ChevronRight size={18} /></ControlButton></div>
             <div className="db-report-picker__months">{calendar(0)}{calendar(1)}</div>
             <p className="db-report-picker__summary" role="status">{loading ? 'Loading shop-local dates…' : previewError || error || `${draft === 'custom' ? 'Custom range' : REPORT_PRESETS[draft]} · ${formatReportDate(from)} – ${formatReportDate(to)}`}</p>
-            {previewError && draft !== 'custom' && <button type="button" onClick={() => void choosePreset(draft)}>Retry period</button>}
+            {previewError && draft !== 'custom' && <ControlButton type="button" onClick={() => void choosePreset(draft)}>Retry period</ControlButton>}
           </div>
         </div>
-        <footer><span>Applies to date-filtered reports. Inventory is current value.</span><div><button type="button" onClick={close}>Cancel</button><button type="button" className="db-report-picker__apply" disabled={loading || Boolean(error) || Boolean(previewError)} onClick={() => { onChange(draft === 'custom' ? { range: draft, from_date: from, to_date: to } : { range: draft }); close() }}>Apply period</button></div></footer>
+        <footer><span>Applies to date-filtered reports. Inventory is current value.</span><div><ControlButton type="button" onClick={close}>Cancel</ControlButton><ControlButton type="button" className="db-report-picker__apply" disabled={loading || Boolean(error) || Boolean(previewError)} onClick={() => { onChange(draft === 'custom' ? { range: draft, from_date: from, to_date: to } : { range: draft }); close() }}>Apply period</ControlButton></div></footer>
       </div>
     </dialog>
   </div>

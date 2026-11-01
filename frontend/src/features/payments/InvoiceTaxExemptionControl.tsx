@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useEffect, useId, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2 } from 'lucide-react'
@@ -83,23 +84,23 @@ function LegacyInvoiceTaxExemptionControl({ invoiceId, summary, onUpdated, onEdi
     </div> : <>
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
         <span id={`${id}-label`} className="text-sm font-semibold">Sales tax exemption</span>
-        <button type="button" role="switch" aria-checked={editing} aria-labelledby={`${id}-label`} aria-controls={id} disabled={!exemption.can_apply || pending || request.current !== null}
+        <ControlButton controlKind="content" type="button" role="switch" aria-checked={editing} aria-labelledby={`${id}-label`} aria-controls={id} disabled={!exemption.can_apply || pending || request.current !== null}
           onClick={() => changeEditing(!editing)} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">
           <span aria-hidden="true" className={`relative inline-flex h-6 w-10 shrink-0 rounded-full ${editing ? 'bg-emerald-700' : 'bg-slate-300'}`}>
             <span className={`absolute left-1 top-1 h-4 w-4 rounded-full bg-white ${editing ? 'translate-x-4' : ''}`} />
           </span>
-        </button>
+        </ControlButton>
       </div>
       {!exemption.can_apply && exemption.unavailable_reason && <p className="text-xs leading-relaxed text-slate-600">{exemption.unavailable_reason}</p>}
       {editing && <form id={id} onSubmit={event => { event.preventDefault(); void apply() }} className="mt-1 space-y-2">
-        {!showReference ? <button type="button" onClick={() => setShowReference(true)} className="min-h-11 rounded-lg text-xs font-semibold text-slate-600 underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">Add certificate/reference</button> : <>
+        {!showReference ? <ControlButton type="button" onClick={() => setShowReference(true)} className=" rounded-lg text-xs font-semibold text-slate-600 underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">Add certificate/reference</ControlButton> : <>
           <label className="block text-xs font-medium" htmlFor={`${id}-reference`}>Certificate or supporting reference (optional)</label>
-          <input id={`${id}-reference`} maxLength={255} disabled={pending || request.current !== null} value={reference} onChange={event => setReference(event.target.value)} className="block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 disabled:opacity-70" />
+          <ControlInput id={`${id}-reference`} maxLength={255} disabled={pending || request.current !== null} value={reference} onChange={event => setReference(event.target.value)} className="block  w-full rounded-lg border border-slate-300 bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 disabled:opacity-70" />
         </>}
         {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-        <button type="submit" disabled={pending || !exemption.can_apply || staleVersion === summary.version} className="min-h-11 rounded-lg border border-emerald-700 px-3 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 disabled:opacity-50">
+        <ControlButton type="submit" disabled={pending || !exemption.can_apply || staleVersion === summary.version} className=" rounded-lg border border-emerald-700 px-3 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 disabled:opacity-50">
           {pending ? 'Updating…' : 'Update invoice'}
-        </button>
+        </ControlButton>
       </form>}
     </>}
   </section>
