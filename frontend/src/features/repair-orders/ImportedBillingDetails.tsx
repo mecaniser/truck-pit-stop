@@ -10,7 +10,7 @@ export function ImportedBillingDetails({ billing, failed = false }: { billing?: 
     <Popover className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
       <span className="font-semibold text-slate-900">{label}</span>
       <span>Remaining <strong className="font-semibold">{importedMoney(failed || verifiedStatus === 'unverified' ? null : billing?.recorded_remaining_amount)}</strong></span>
-      <PopoverButton aria-label="ETS billing details" className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-600">
+      <PopoverButton data-db-control="icon" aria-label="ETS billing details" className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-600">
         <Info className="h-4 w-4" aria-hidden="true" />
       </PopoverButton>
       <PopoverPanel anchor="top end" focus aria-label="ETS billing details" className="z-[100] w-72 max-w-[calc(100vw-2rem)] rounded-xl bg-white p-4 text-left text-xs text-slate-600 shadow-lg ring-1 ring-slate-200 [--anchor-gap:8px] [--anchor-padding:16px]">

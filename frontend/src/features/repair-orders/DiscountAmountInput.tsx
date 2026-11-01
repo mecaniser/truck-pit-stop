@@ -1,3 +1,4 @@
+import { ControlInput } from '@/components/ui/Controls'
 import { useLayoutEffect, useRef } from 'react'
 
 /** A formatted display over the existing ungrouped decimal API value. */
@@ -27,7 +28,7 @@ export default function DiscountAmountInput({ label, value, onChange, disabled }
   return (
     <span className="relative inline-flex w-28 shrink-0">
       <span aria-hidden="true" className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-slate-500">$</span>
-      <input
+      <ControlInput
         ref={inputRef}
         aria-label={label}
         title={display ? `$${display}` : undefined}
@@ -45,7 +46,7 @@ export default function DiscountAmountInput({ label, value, onChange, disabled }
           if (value && Number.isFinite(Number(value))) onChange(Number(value).toFixed(2))
         }}
         placeholder="0.00"
-        className="h-9 w-full rounded-lg border border-gray-200 bg-white pl-5 pr-2 text-right font-['JetBrains_Mono',monospace] text-sm text-slate-950 placeholder:text-slate-500 disabled:opacity-60"
+        className=" w-full rounded-lg border border-gray-200 bg-white pl-5 pr-2 text-right font-['JetBrains_Mono',monospace] text-sm text-slate-950 placeholder:text-slate-500 disabled:opacity-60"
       />
     </span>
   )

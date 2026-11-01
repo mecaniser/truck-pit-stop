@@ -504,7 +504,7 @@ html::-webkit-scrollbar-thumb:hover {
 
 .db-presentation-new .db-staff-content h1 { font-size: clamp(1.7rem, 2.3vw, 2.35rem); }
 
-.db-presentation-new .db-staff-content :is(button, a, input, select, textarea)[class] {
+.db-presentation-new .db-staff-content :is(button, a, input, select, textarea)[class]:not([data-db-control]) {
   min-height: var(--density-control-min);
 }
 
@@ -3092,7 +3092,7 @@ html::-webkit-scrollbar-thumb:hover {
   justify-content: center;
   flex-shrink: 0;
   min-width: 23px;
-  height: 23px;
+  height: 20px;
   padding: 0 3px;
   border-radius: 999px;
   background: transparent;
@@ -3388,7 +3388,7 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-new {
   --text-primary: #12233b;
   --text-secondary: #5b6d82;
-  --db-repair-orders-control-height: 44px;
+  --db-repair-orders-control-height: var(--control-height);
   --db-repair-orders-side-control-width: 184px;
   container-type: inline-size;
   min-width: 0;

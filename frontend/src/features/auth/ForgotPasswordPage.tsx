@@ -1,3 +1,4 @@
+import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import { useState } from 'react'
 import { Spinner } from '@/components/ui'
 import { useForm } from 'react-hook-form'
@@ -50,7 +51,7 @@ export default function ForgotPasswordPage() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(6,182,212,0.22),transparent_36%),radial-gradient(circle_at_85%_15%,rgba(79,70,229,0.2),transparent_34%),radial-gradient(circle_at_70%_80%,rgba(14,116,144,0.16),transparent_44%)]" />
 
       <div className="relative mx-auto flex min-h-screen w-full max-w-md flex-col items-center justify-center px-4 py-8">
-        <Link
+        <Link data-db-control="action"
           to="/login"
           className="mb-6 inline-flex items-center gap-2 self-start rounded-full border border-zinc-700/80 bg-zinc-900/70 px-4 py-2 text-sm font-medium text-zinc-200 backdrop-blur transition-colors hover:border-zinc-500 hover:text-[var(--accent-400)]"
         >
@@ -79,7 +80,7 @@ export default function ForgotPasswordPage() {
                   Check your email for a password reset link. It will expire in 1 hour.
                 </span>
               </div>
-              <Link
+              <Link data-db-control="action"
                 to="/login"
                 className="flex w-full justify-center rounded-xl border border-transparent px-4 py-3 text-sm font-semibold text-white transition-all hover:shadow-[0_0_24px_var(--accent-500)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-500)] focus:ring-offset-2 focus:ring-offset-zinc-950"
                 style={{ background: 'linear-gradient(135deg, var(--accent-500) 0%, var(--accent-600) 100%)' }}
@@ -103,12 +104,12 @@ export default function ForgotPasswordPage() {
                   Email Address
                 </label>
                 <div className="relative">
-                  <input
+                  <ControlInput
                     {...register('email')}
                     type="email"
                     id="email"
                     autoComplete="email"
-                    className={`block w-full rounded-xl border bg-zinc-950/70 px-4 py-3 text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 transition-colors sm:text-sm ${
+                    className={`block w-full rounded-xl border bg-zinc-950/70 px-4  text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 transition-colors sm:text-sm ${
                       errors.email
                         ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
                         : 'border-zinc-700 hover:border-zinc-500 focus:border-[var(--accent-500)] focus:ring-[var(--accent-500)]'
@@ -134,10 +135,10 @@ export default function ForgotPasswordPage() {
               </div>
 
               <div className="pt-2">
-                <button
+                <ControlButton
                   type="submit"
                   disabled={isLoading}
-                  className="flex w-full justify-center rounded-xl border border-transparent px-4 py-3 text-sm font-semibold text-white transition-all disabled:cursor-not-allowed disabled:opacity-50 hover:shadow-[0_0_24px_var(--accent-500)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-500)] focus:ring-offset-2 focus:ring-offset-zinc-950"
+                  className="flex w-full justify-center rounded-xl border border-transparent px-4  text-sm font-semibold text-white transition-all disabled:cursor-not-allowed disabled:opacity-50 hover:shadow-[0_0_24px_var(--accent-500)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-500)] focus:ring-offset-2 focus:ring-offset-zinc-950"
                   style={{ background: 'linear-gradient(135deg, var(--accent-500) 0%, var(--accent-600) 100%)' }}
                 >
                   {isLoading ? (
@@ -148,7 +149,7 @@ export default function ForgotPasswordPage() {
                   ) : (
                     'Send Reset Link'
                   )}
-                </button>
+                </ControlButton>
               </div>
 
               <div className="text-center text-sm">

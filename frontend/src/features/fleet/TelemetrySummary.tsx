@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useId, useState } from 'react'
 import { ChevronDown, Gauge, MapPin } from 'lucide-react'
 import type { BoardTruck } from './types'
@@ -37,7 +38,7 @@ export default function TelemetrySummary({ truck, compact = false }: { truck: Bo
     {!speed && <p className="telemetry-speed-unavailable">Speed unavailable</p>}
     <div className="telemetry-footer">
       {shared && <small title={readingCaption(shared)}>{readingSummary(shared, now)}</small>}
-      {!compact && <button type="button" className="telemetry-disclosure" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded(!expanded)}>Reading details <ChevronDown size={14} aria-hidden="true" style={{ transform: expanded ? 'rotate(180deg)' : undefined }} /></button>}
+      {!compact && <ControlButton controlKind="action" type="button" className="telemetry-disclosure" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded(!expanded)}>Reading details <ChevronDown size={14} aria-hidden="true" style={{ transform: expanded ? 'rotate(180deg)' : undefined }} /></ControlButton>}
     </div>
     {!compact && expanded && <div id={detailsId} className="telemetry-provenance">
       {provenance.map(({ label, reading }) => <div key={label}><strong>{label}</strong><small>{readingCaption(reading)}</small></div>)}

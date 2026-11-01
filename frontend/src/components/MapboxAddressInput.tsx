@@ -1,3 +1,4 @@
+import { ControlInput } from '@/components/ui/Controls'
 import { forwardRef } from 'react'
 import { AddressAutofill } from '@mapbox/search-js-react'
 import type { AddressAutofillOptions, AddressAutofillRetrieveResponse } from '@mapbox/search-js-core'
@@ -32,7 +33,7 @@ export const formatAddressFromFeature = (feature?: MapboxFeature) => {
 
 const MapboxAddressInput = forwardRef<HTMLInputElement, MapboxAddressInputProps>(
   ({ options, onAddressSelect, type = 'text', ...inputProps }, ref) => {
-    const input = <input {...inputProps} type={type} ref={ref} />
+    const input = <ControlInput {...inputProps} type={type} ref={ref} />
 
     if (!MAPBOX_TOKEN) {
       return input

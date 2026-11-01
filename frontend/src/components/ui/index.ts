@@ -38,3 +38,6 @@ export {
 export { Spinner, LoadingLine, default as SpinnerDefault } from './Spinner'
 export type { SpinnerSize, SpinnerProps, LoadingLineProps } from './Spinner'
 export { default as StaffSearchField } from './StaffSearchField'
+
+export { ControlButton, ControlInput, ControlGroup } from './Controls'
+export type { ControlButtonProps } from './Controls'

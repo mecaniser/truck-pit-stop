@@ -617,9 +617,11 @@ describe('PriceBuilderPanel pending feedback', () => {
     })
     const mobileAction = actions.find((action) => action.parentElement?.classList.contains('sm:hidden'))
     const desktopAction = actions.find((action) => action.classList.contains('sm:inline-flex'))
-    expect(mobileAction).toHaveClass('min-h-[44px]', 'w-full')
+    expect(mobileAction).toHaveAttribute('data-db-control', 'action')
+    expect(mobileAction).toHaveClass('w-full')
     expect(mobileAction?.parentElement).toHaveClass('sm:hidden')
-    expect(desktopAction).toHaveClass('hidden', 'h-8', 'sm:inline-flex')
+    expect(desktopAction).toHaveAttribute('data-db-control', 'action')
+    expect(desktopAction).toHaveClass('hidden', 'sm:inline-flex')
 
     await waitFor(() => expect(mobileAction).toBeEnabled())
     mobileAction?.focus()

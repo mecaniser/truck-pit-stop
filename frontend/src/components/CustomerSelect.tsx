@@ -1,3 +1,4 @@
+import { ControlInput } from '@/components/ui/Controls'
 import { Spinner } from '@/components/ui'
 import BaseSelect from './BaseSelect'
 import { formatUSPhone } from '../utils/phone'
@@ -104,8 +105,8 @@ export default function CustomerSelect({
 
       {needsPhone && (
         <div>
-          <input
-            className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none transition-colors ${
+          <ControlInput
+            className={`w-full rounded-lg border px-3  text-sm focus:outline-none transition-colors ${
               variant === 'dark'
                 ? 'border-amber-400/40 bg-white/10 text-white placeholder:text-gray-500 focus:border-amber-400/70'
                 : 'border-amber-400 bg-amber-50 text-gray-900 placeholder:text-gray-400 focus:border-amber-500'

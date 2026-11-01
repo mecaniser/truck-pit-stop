@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { useState, type CSSProperties } from 'react'
 import { Wrench, Gauge, ClipboardList, User, Search, ChevronDown, ChevronRight, Check, AlertTriangle, X } from 'lucide-react'
@@ -28,7 +29,7 @@ function ActionQueue({ icon, value, label, detail, tone, active, onClick }: {
   icon: React.ReactNode; value: number; label: string; detail: string; tone: string; active: boolean; onClick: () => void
 }) {
   return (
-    <button className={'action-queue' + (active ? ' is-active' : '')} style={{ '--queue': tone } as CSSProperties} onClick={onClick}>
+    <ControlButton className={'action-queue' + (active ? ' is-active' : '')} style={{ '--queue': tone } as CSSProperties} onClick={onClick}>
       <span className="action-queue-icon">{icon}</span>
       <span className="action-queue-copy">
         <span className="action-queue-label">{label}</span>
@@ -36,7 +37,7 @@ function ActionQueue({ icon, value, label, detail, tone, active, onClick }: {
       </span>
       <span className="action-queue-count">{value}</span>
       <ChevronRight className="action-queue-go" size={18} />
-    </button>
+    </ControlButton>
   )
 }
 
@@ -142,7 +143,7 @@ function TruckCard({ t, onOpen, onOpenRepairOrder }: { t: BoardTruck; onOpen: (t
         <div className={'tcard-pm-lbl ' + pm.cls}>{pm.label}</div>
       </div>
       {t.work_order ? (
-        <button
+        <ControlButton
           type="button"
           className="tcard-wo tcard-wo--action"
           onClick={(event) => { event.stopPropagation(); onOpenRepairOrder(t.work_order!.repair_order_id) }}
@@ -161,7 +162,7 @@ function TruckCard({ t, onOpen, onOpenRepairOrder }: { t: BoardTruck; onOpen: (t
           )}
           {t.open_work_order_count > 1 && <span className="tcard-wo-st">+{t.open_work_order_count - 1} more</span>}
           <ChevronRight className="tcard-wo-go" size={15} aria-hidden="true" />
-        </button>
+        </ControlButton>
       ) : (
         <div className="tcard-wo tcard-wo--clear"><Check size={13} /><span>No open repair orders</span></div>
       )}
@@ -268,7 +269,7 @@ export default function FleetBoard({
           <div className="board-bar-l">
             <div className="board-tabs" role="tablist" aria-label="Board view">
               {(['trucks', 'activity'] as const).map((value) => (
-                <button
+                <ControlButton controlKind="content"
                   key={value}
                   type="button"
                   role="tab"
@@ -277,20 +278,20 @@ export default function FleetBoard({
                   onClick={() => setTab(value)}
                 >
                   {value === 'trucks' ? 'Trucks' : 'Activity'}
-                </button>
+                </ControlButton>
               ))}
             </div>
             {tab === 'trucks' && (
             <>
             {!(ordersActive && orderView === 'closed') && <div className="fld-search">
               <Search size={16} />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search unit, VIN, plate, driver, make…" />
+              <ControlInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search unit, VIN, plate, driver, make…" />
             </div>}
             {activeFilter && (
-              <button className="active-filter" onClick={() => setFilter('all')} aria-label={`Clear ${activeFilter.title} filter`}>
+              <ControlButton className="active-filter" onClick={() => setFilter('all')} aria-label={`Clear ${activeFilter.title} filter`}>
                 <span className="active-filter-label">{activeFilter.title}</span>
                 <span className="active-filter-clear" aria-hidden="true"><X size={13} strokeWidth={2.5} /></span>
-              </button>
+              </ControlButton>
             )}
             </>
             )}
@@ -317,9 +318,9 @@ export default function FleetBoard({
         <section className="board-section" aria-label="Repair order views">
           <div className="board-bar">
             <div className="board-tabs" role="tablist" aria-label="Repair order state">
-              {(['open', 'closed'] as const).map((view) => <button key={view} type="button" role="tab" aria-selected={orderView === view} className={'board-tab' + (orderView === view ? ' is-on' : '')} onClick={() => setOrderView(view)}>{view === 'open' ? 'Open' : 'Closed'}</button>)}
+              {(['open', 'closed'] as const).map((view) => <ControlButton controlKind="content" key={view} type="button" role="tab" aria-selected={orderView === view} className={'board-tab' + (orderView === view ? ' is-on' : '')} onClick={() => setOrderView(view)}>{view === 'open' ? 'Open' : 'Closed'}</ControlButton>)}
             </div>
-            {orderView === 'open' && <button type="button" className="active-filter" aria-pressed={filter === 'visits_to_close'} onClick={() => setFilter(filter === 'visits_to_close' ? 'open_work_orders' : 'visits_to_close')}>Open {VISIT_STALE_AFTER_DAYS}+ days · {staleVisits} trucks</button>}
+            {orderView === 'open' && <ControlButton controlKind="action" type="button" className="active-filter" aria-pressed={filter === 'visits_to_close'} onClick={() => setFilter(filter === 'visits_to_close' ? 'open_work_orders' : 'visits_to_close')}>Open {VISIT_STALE_AFTER_DAYS}+ days · {staleVisits} trucks</ControlButton>}
           </div>
           {orderView === 'closed' && <ClosedRepairOrders trucks={trucks} onOpenRepairOrder={onOpenRepairOrder} />}
         </section>

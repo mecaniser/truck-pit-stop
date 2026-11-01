@@ -480,3 +480,45 @@ When updating existing components to use this design system:
 // After
 <button className="bg-[var(--accent-600)] hover:bg-[var(--accent-500)] text-white font-semibold px-6 py-3 rounded-xl border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)] transition-all">
 ```
+
+## Application control geometry (DB-151)
+
+Use `ControlButton`, `ControlInput`, and `ControlGroup` from `@/components/ui`.
+Use `PlatformSelect` for controlled option menus, `BaseSelect` for search-backed
+menus, and `ShopWorkSelect` for compact Headless UI lists. All share
+`components/ui/controls.css`; do not create local height or vertical-padding rules.
+
+- Desktop pointer controls have a 34px minimum height; mobile/coarse-pointer
+  controls have a 44px minimum. Text may grow the control for accessibility.
+- Icons use `controlKind="icon"` and an accessible label. Do not use icon mode
+  for a button containing visible text. The icon target matches the control height.
+- Record rows, cards, navigation, switches, calendar cells and structural
+  disclosures use `controlKind="content"`; their layout is content-driven.
+- `data-db-touch-controls` preserves touch-first geometry in Fleet, Mechanic and
+  Driver shells and the customer portal. Large density also retains 44px controls.
+- `ControlInput` is for text-like input types. Native checkbox, radio, file,
+  range, color and hidden inputs keep their specialized semantics.
+- Wrappers preserve native form submission, validation, name/value, disabled
+  fieldsets, refs and event handlers. Set `type="button"` for non-submit actions.
+- Surface classes still supply color, borders, emphasis, horizontal field insets,
+  and layout. Geometry is centralized in a named CSS layer; its important
+  declarations beat legacy unlayered page overrides without specificity escalation.
+- Button-shaped router links may use `data-db-control="action"`; inline links
+  retain ordinary text layout. Existing `Button`/`Input` exports delegate to the
+  shared primitives. Legacy button size props remain source-compatible.
+
+```tsx
+<ControlGroup aria-label="Issue actions">
+  <ShopWorkSelect label="Issue state" value={state} options={options} onChange={setState} />
+  <ControlButton type="button" controlKind="icon" aria-label="Refresh issues" onClick={refresh}>
+    <RotateCcw aria-hidden="true" />
+  </ControlButton>
+  <ControlButton type="button" onClick={addIssue}><Plus aria-hidden="true" />Add issue</ControlButton>
+</ControlGroup>
+```
+
+`npm run lint:controls` is part of the production build and rejects new raw
+buttons/text-like fields outside the primitive internals and public landing page.
+Run the Vite-only catalog at `/tests/control-catalog.html` to inspect aligned
+controls, disabled states, keyboard menus and responsive wrapping. It contains
+only local component state and performs no business mutations.

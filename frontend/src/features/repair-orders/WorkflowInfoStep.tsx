@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useState } from 'react'
 import { Popover, PopoverButton, PopoverGroup, PopoverPanel } from '@headlessui/react'
 import { X } from 'lucide-react'
@@ -87,7 +88,7 @@ export default function WorkflowInfoStep(props: Props) {
   const title = { intake: 'Check-in details', technician: 'Technician details', bay: 'In-the-bay details', review: 'Quality-review details' }[props.stage]
   return <Popover className="shrink-0">
     {({ close, open }) => <>
-      <PopoverButton aria-label={props.stage === 'technician' ? 'Technician status' : undefined} className={`db-pipeline-step inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-600 ${props.className}`}>
+      <PopoverButton data-db-control="action" aria-label={props.stage === 'technician' ? 'Technician status' : undefined} className={`db-pipeline-step inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-600 ${props.className}`}>
         {props.label}
         <span
           aria-hidden="true"
@@ -99,7 +100,7 @@ export default function WorkflowInfoStep(props: Props) {
         </span>
       </PopoverButton>
       <PopoverPanel anchor="bottom start" focus aria-label={title} className="z-[100] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl bg-white p-4 text-left shadow-lg ring-1 ring-gray-200 [--anchor-gap:8px] [--anchor-padding:16px]">
-        <div className="mb-3 flex items-center justify-between gap-2"><h3 tabIndex={0} data-autofocus className="text-base font-bold text-gray-900 outline-none">{title}</h3><button type="button" onClick={() => close()} aria-label={`Close ${title.toLowerCase()}`} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-600"><X className="h-4 w-4" /></button></div>
+        <div className="mb-3 flex items-center justify-between gap-2"><h3 tabIndex={0} data-autofocus className="text-base font-bold text-gray-900 outline-none">{title}</h3><ControlButton controlKind="icon" type="button" onClick={() => close()} aria-label={`Close ${title.toLowerCase()}`} className="flex  w-11 shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-600"><X className="h-4 w-4" /></ControlButton></div>
         <Details {...props} />
       </PopoverPanel>
     </>}

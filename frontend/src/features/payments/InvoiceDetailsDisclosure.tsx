@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useId, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { formatMoney, isPositiveMoney } from './money'
@@ -18,11 +19,11 @@ export default function InvoiceDetailsDisclosure({ summary }: { summary: Invoice
     ] : []),
   ]
   return <div className="border-t border-slate-200">
-    <button type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen(value => !value)}
+    <ControlButton controlKind="content" type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen(value => !value)}
       className="flex w-full items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500">
       {open ? 'Hide details' : 'View details'}
       <ChevronDown aria-hidden="true" className={`h-4 w-4 shrink-0 ${open ? 'rotate-180' : ''}`} />
-    </button>
+    </ControlButton>
     {open && <div id={id} className="border-t border-slate-200 p-4">
       {!hasSnapshot && <p className="text-xs text-slate-500">Labor/parts breakdown wasn’t saved.</p>}
       <dl className="space-y-2 text-sm">

@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { currentInvoicePaymentSummary } from '@/lib/invoicePaymentPresentation'
 import InvoicePaymentSummary from '@/components/InvoicePaymentSummary'
 import { invoicePaymentLabels } from '@/lib/invoicePaymentLabels'
@@ -116,14 +117,14 @@ function StripePaymentForm({
           {error}
         </p>
       )}
-      <button
+      <ControlButton
         type="submit"
         disabled={!stripe || isProcessing}
-        className="flex h-[50px] w-full items-center justify-center gap-2 rounded-xl bg-[#8b7cf7] text-sm font-extrabold text-[#0e1118] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex  w-full items-center justify-center gap-2 rounded-xl bg-[#8b7cf7] text-sm font-extrabold text-[#0e1118] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {isProcessing && <Spinner size="sm" className="border-black/30 border-t-black" />}
         {isProcessing ? 'Processing payment…' : `Pay ${money(amount)} by card`}
-      </button>
+      </ControlButton>
     </form>
   )
 }
@@ -476,7 +477,7 @@ export default function CustomerInvoicePage() {
             {!isPending && methodCount > 1 && (
               <div role="radiogroup" aria-label="Payment method" className="mt-4 grid grid-cols-2 gap-2.5">
                 {zelleEnabled && (
-                  <button
+                  <ControlButton controlKind="content"
                     ref={element => { methodRefs.current[0] = element }}
                     type="button"
                     role="radio"
@@ -492,10 +493,10 @@ export default function CustomerInvoicePage() {
                   >
                     <span className="whitespace-nowrap text-sm font-extrabold">Zelle · {money(pricing.zelleTotal)}</span>
                     <span className="text-[10px] font-bold text-[#2dd4bf]">NO FEE</span>
-                  </button>
+                  </ControlButton>
                 )}
                 {cardEnabled && (
-                  <button
+                  <ControlButton controlKind="content"
                     ref={element => { methodRefs.current[zelleEnabled ? 1 : 0] = element }}
                     type="button"
                     role="radio"
@@ -511,17 +512,17 @@ export default function CustomerInvoicePage() {
                   >
                     <span className="whitespace-nowrap text-sm font-extrabold">Card · {money(pricing.cardTotal)}</span>
                     <span className="text-[10px] font-bold opacity-70">QUICKBOOKS</span>
-                  </button>
+                  </ControlButton>
                 )}
               </div>
             )}
 
             <div className="sticky bottom-2 z-20 mt-4 sm:static">
-              <button
+              <ControlButton
                 type="button"
                 onClick={isPending ? () => setShowZelleDetails(true) : startPayment}
                 disabled={createIntentMutation.isPending || submitZelleMutation.isPending || methodCount === 0}
-                className="flex h-[54px] w-full items-center justify-center gap-2 rounded-[13px] bg-[#8b7cf7] px-4 text-[15px] font-extrabold text-[#0e1118] shadow-[0_8px_30px_rgba(16,19,28,0.65)] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60 sm:shadow-none"
+                className="flex  w-full items-center justify-center gap-2 rounded-[13px] bg-[#8b7cf7] px-4 text-[15px] font-extrabold text-[#0e1118] shadow-[0_8px_30px_rgba(16,19,28,0.65)] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60 sm:shadow-none"
               >
                 {(createIntentMutation.isPending || submitZelleMutation.isPending) && (
                   <Spinner size="sm" className="border-black/30 border-t-black" />
@@ -531,7 +532,7 @@ export default function CustomerInvoicePage() {
                   : selectedMethod === 'zelle'
                     ? `Get Zelle details — ${money(pricing.zelleTotal)}`
                     : `Pay ${money(pricing.cardTotal)} by card`}
-              </button>
+              </ControlButton>
             </div>
 
             {showZelleDetails && selectedMethod === 'zelle' && (
@@ -555,10 +556,10 @@ export default function CustomerInvoicePage() {
                         <p className="mt-0.5 truncate text-sm font-bold tabular-nums">{display}</p>
                       </div>
                       {value && (
-                        <button type="button" onClick={() => copy(value, label)} className="inline-flex items-center gap-1 text-xs font-bold text-[#a78bfa] hover:text-[#c4b1ff]">
+                        <ControlButton type="button" onClick={() => copy(value, label)} className="inline-flex items-center gap-1 text-xs font-bold text-[#a78bfa] hover:text-[#c4b1ff]">
                           {copied === label ? <Check className="h-4 w-4 text-[#2dd4bf]" /> : <Copy className="h-4 w-4" />}
                           {copied === label ? 'Copied' : 'Copy'}
-                        </button>
+                        </ControlButton>
                       )}
                     </div>
                   ))}
@@ -570,14 +571,14 @@ export default function CustomerInvoicePage() {
                 )}
                 {!isPending && (
                   <div className="border-t border-[#1e2432] p-4">
-                    <button
+                    <ControlButton
                       type="button"
                       onClick={() => submitZelleMutation.mutate()}
                       disabled={submitZelleMutation.isPending}
-                      className="h-11 w-full rounded-xl border border-[#2dd4bf]/35 bg-[#2dd4bf]/10 text-sm font-extrabold text-[#5eead4] hover:bg-[#2dd4bf]/15 disabled:opacity-60"
+                      className=" w-full rounded-xl border border-[#2dd4bf]/35 bg-[#2dd4bf]/10 text-sm font-extrabold text-[#5eead4] hover:bg-[#2dd4bf]/15 disabled:opacity-60"
                     >
                       {submitZelleMutation.isPending ? 'Submitting…' : "I've sent it"}
-                    </button>
+                    </ControlButton>
                   </div>
                 )}
               </section>

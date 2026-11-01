@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import CashReceiptBreakdown from './CashReceiptBreakdown'
 import { useState, useEffect, useRef, type MouseEvent as ReactMouseEvent, type TouchEvent } from 'react'
 import { Spinner } from '@/components/ui'
@@ -675,10 +676,10 @@ function PaymentForm({
           )}
         </div>
       )}
-      <button
+      <ControlButton
         type="submit"
         disabled={!stripe || isProcessing}
-        className="w-full rounded-xl bg-violet-600 py-3 font-semibold text-white transition-colors hover:bg-violet-500 disabled:bg-gray-600"
+        className="w-full rounded-xl bg-violet-600  font-semibold text-white transition-colors hover:bg-violet-500 disabled:bg-gray-600"
       >
         {isProcessing ? (
           <>
@@ -691,7 +692,7 @@ function PaymentForm({
             Pay Now
           </>
         )}
-      </button>
+      </ControlButton>
     </form>
   )
 }
@@ -1017,7 +1018,7 @@ function CustomerRepairs() {
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-          <button
+          <ControlButton controlKind="content"
             onClick={() => {
               setSelectedOrder(null)
               setShowPayment(false)
@@ -1027,7 +1028,7 @@ function CustomerRepairs() {
           >
             <ArrowLeft className="h-4 w-4" />
             {isActiveRepairsView ? 'Repairs' : 'History'}
-          </button>
+          </ControlButton>
           <div className="min-w-0">
             <h1 className="text-2xl font-bold text-white">{selectedOrder.order_number}</h1>
             {getVehicleLabel(selectedOrder) && (
@@ -1179,15 +1180,15 @@ function CustomerRepairs() {
                 )}
                 <p className="text-sm text-gray-400">Ready for payment</p>
               </div>
-              <button
+              <ControlButton controlKind="icon"
                 type="button"
                 onClick={handleDownloadPdf}
                 title="Download Invoice PDF"
                 aria-label="Download PDF"
-                className="flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-lg text-purple-300 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 sm:h-9 sm:w-9"
+                className="flex  w-[44px] shrink-0 items-center justify-center rounded-lg text-purple-300 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-300  sm:w-9"
               >
                 <Download className="w-5 h-5" />
-              </button>
+              </ControlButton>
             </div>
 
             <div className="bg-white/5 rounded-lg p-4 mb-4">
@@ -1221,7 +1222,7 @@ function CustomerRepairs() {
               </>}
             </div>
 
-            <Link
+            <Link data-db-control="action"
               to={`/portal/invoices/${invoice.id}`}
               state={{ paymentOrigin: 'History' }}
               className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-[#8b7cf7] px-4 py-3.5 text-sm font-extrabold text-[#0e1118] hover:brightness-110"
@@ -1258,13 +1259,13 @@ function CustomerRepairs() {
                 <div>
                   <p className="text-xs uppercase tracking-wide text-gray-400 mb-2">Pay instantly by card</p>
                   {!showPayment ? (
-                    <button
+                    <ControlButton
                       onClick={handlePayClick}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 py-3 font-semibold text-white transition-colors hover:bg-violet-500"
+                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600  font-semibold text-white transition-colors hover:bg-violet-500"
                     >
                       <CreditCard className="w-5 h-5" />
                       Pay Now
-                    </button>
+                    </ControlButton>
                   ) : stripeOptions && stripeInstance ? (
                     <Elements stripe={stripeInstance} options={stripeOptions}>
                       <PaymentForm invoiceId={invoice.id} onSuccess={handlePaymentSuccess} />
@@ -1293,7 +1294,7 @@ function CustomerRepairs() {
 
               {!invoice.pending_zelle_confirmation && quickBooksPayment?.available && quickBooksPayment.token_url && (
                 <div className="overflow-hidden rounded-xl border border-emerald-500/40 bg-slate-950/40">
-                  <button
+                  <ControlButton controlKind="content"
                     type="button"
                     aria-expanded={showQuickBooksPayment}
                     aria-controls="history-quickbooks-payment-panel"
@@ -1307,7 +1308,7 @@ function CustomerRepairs() {
                     {showQuickBooksPayment
                       ? <ChevronUp className="h-4 w-4 shrink-0 text-emerald-200" />
                       : <ChevronDown className="h-4 w-4 shrink-0 text-emerald-200" />}
-                  </button>
+                  </ControlButton>
                   {showQuickBooksPayment && (
                     <div id="history-quickbooks-payment-panel" className="border-t border-emerald-500/30 px-4 py-4">
                       <QuickBooksPaymentPanel
@@ -1345,13 +1346,13 @@ function CustomerRepairs() {
                 </p>
               </div>
               {invoice && (
-                <button
+                <ControlButton
                   onClick={handleDownloadPdf}
-                  className="flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg bg-green-700/40 px-3 py-1.5 text-sm font-medium text-green-200 transition-colors hover:bg-green-700/60"
+                  className="flex  shrink-0 items-center gap-1.5 rounded-lg bg-green-700/40 px-3  text-sm font-medium text-green-200 transition-colors hover:bg-green-700/60"
                 >
                   <Download className="w-4 h-4" />
                   Receipt
-                </button>
+                </ControlButton>
               )}
             </div>
           </div>
@@ -1378,7 +1379,7 @@ function CustomerRepairs() {
               {attentionCount > 0 ? ` · ${attentionCount} need${attentionCount === 1 ? 's' : ''} your attention` : ' · Everything is moving'}
             </p>
           </div>
-          <Link
+          <Link data-db-control="action"
             to="/portal/repairs"
             className="inline-flex min-h-[44px] items-center justify-center rounded-[10px] border border-[#272d3d] bg-[#191d2a] px-4 text-xs font-bold text-[#c9cdd8] hover:border-[#343b52]"
           >
@@ -1399,7 +1400,7 @@ function CustomerRepairs() {
                   : 'View details'
 
               return (
-                <button
+                <ControlButton controlKind="content"
                   key={order.id}
                   type="button"
                   onClick={() => setSelectedOrder(order)}
@@ -1433,7 +1434,7 @@ function CustomerRepairs() {
                   }`}>
                     {actionLabel} →
                   </span>
-                </button>
+                </ControlButton>
               )
             })}
           </div>
@@ -1442,7 +1443,7 @@ function CustomerRepairs() {
             <CheckCircle className="mx-auto h-9 w-9 text-[#3ecf6f]" />
             <h2 className="mt-3 font-extrabold">No active repairs</h2>
             <p className="mt-1 text-sm text-[#8b92a5]">New repair work will appear here as soon as it is checked in.</p>
-            <Link
+            <Link data-db-control="action"
               to="/portal/services"
               className="mt-5 inline-flex min-h-[44px] items-center justify-center rounded-[10px] bg-[#8b7cf7] px-4 text-xs font-extrabold text-[#0e1118]"
             >
@@ -1511,9 +1512,9 @@ function CustomerRepairs() {
           </p>
         </div>
         {historyOrders.length > 12 && (
-          <button type="button" onClick={downloadHistoryCsv} className="min-h-[44px] rounded-[10px] border border-[#272d3d] bg-[#191d2a] px-4 text-xs font-bold text-[#c9cdd8]">
+          <ControlButton type="button" onClick={downloadHistoryCsv} className=" rounded-[10px] border border-[#272d3d] bg-[#191d2a] px-4 text-xs font-bold text-[#c9cdd8]">
             Download all (CSV)
-          </button>
+          </ControlButton>
         )}
       </div>
 
@@ -1554,7 +1555,7 @@ function CustomerRepairs() {
                     const invoiceForOrder = invoiceByOrder.get(order.id)
                     const amount = Number(invoiceForOrder?.total_amount || getOrderTotal(order))
                     return (
-                <button
+                <ControlButton controlKind="content"
                   key={order.id}
                   onClick={() => setSelectedOrder(order)}
                         className="grid w-full grid-cols-[52px_1fr_auto] items-center gap-3 rounded-xl border border-[#232939] bg-[#161a26] p-3 text-left hover:border-[#343b52] hover:bg-[#161b26] sm:grid-cols-[52px_1fr_auto_84px_auto] sm:gap-4 sm:px-4"
@@ -1584,7 +1585,7 @@ function CustomerRepairs() {
                             Invoice ↓
                           </a>
                         )}
-                </button>
+                </ControlButton>
                     )
                   })}
                 </div>
@@ -1704,7 +1705,7 @@ export default function CustomerPortalPage() {
   }
 
   return (
-    <div className="fixed inset-0 grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-[#0d1018] font-['Helvetica_Neue',Helvetica,Arial,sans-serif] text-[#eceef4]">
+    <div data-db-touch-controls className="fixed inset-0 grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-[#0d1018] font-['Helvetica_Neue',Helvetica,Arial,sans-serif] text-[#eceef4]">
       <PortalDocumentTitle portalBrandName={portalBrandName} />
       <nav
         className="relative z-50 min-w-0 shrink-0 border-b border-[#1e2432] bg-[#0a0d14]"
@@ -1728,7 +1729,7 @@ export default function CustomerPortalPage() {
             <MotivePortalEntry />
             <div className="hidden items-center gap-1.5 md:flex">
               {!isInvoicePage && navLinks.map(link => (
-                <Link
+                <Link data-db-control="action"
                   key={link.to}
                   to={link.to}
                   className={`flex h-[34px] items-center rounded-lg px-3 text-[13px] font-bold ${
@@ -1827,13 +1828,13 @@ export default function CustomerPortalPage() {
                   </Link>
                 )
               })}
-              <button
+              <ControlButton controlKind="action"
                 type="button"
                 onClick={() => setMobileNavPage('secondary')}
                 tabIndex={mobileNavPage === 'primary' ? 0 : -1}
                 aria-expanded={mobileNavPage === 'secondary'}
                 aria-controls="portal-mobile-secondary-navigation"
-                className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
+                className={`flex  min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
                   isMobileMoreActive
                     ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
                     : 'text-[#737b8f] hover:text-[#c9cdd8]'
@@ -1841,7 +1842,7 @@ export default function CustomerPortalPage() {
               >
                 <MoreHorizontal className="h-5 w-5" />
                 <span>More</span>
-              </button>
+              </ControlButton>
             </div>
 
             <div
@@ -1849,7 +1850,7 @@ export default function CustomerPortalPage() {
               className="flex w-1/2 shrink-0 px-1"
               aria-hidden={mobileNavPage !== 'secondary'}
             >
-              <button
+              <ControlButton controlKind="content"
                 type="button"
                 onClick={() => setMobileNavPage('primary')}
                 tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
@@ -1858,7 +1859,7 @@ export default function CustomerPortalPage() {
               >
                 <ChevronLeft className="h-5 w-5" />
                 <span>Back</span>
-              </button>
+              </ControlButton>
               <Link
                 to="/portal/repairs?view=active"
                 tabIndex={mobileNavPage === 'secondary' ? 0 : -1}

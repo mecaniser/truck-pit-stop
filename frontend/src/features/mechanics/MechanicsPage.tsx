@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import React, { useMemo, useState, useEffect } from 'react'
 import { Spinner, LoadingLine } from '@/components/ui'
@@ -501,15 +502,15 @@ export default function MechanicsPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <button
+                  <ControlButton controlKind="icon"
                     onClick={() => processRequestMutation.mutate({ requestId: req.id, action: 'approve' })}
                     disabled={processRequestMutation.isPending}
                     className="p-2 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-lg transition-colors"
                     title="Approve"
                   >
                     <Check className="w-5 h-5" />
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton controlKind="icon"
                     onClick={() => {
                       const notes = prompt('Reason for denial (optional):')
                       processRequestMutation.mutate({ requestId: req.id, action: 'deny', notes: notes || undefined })
@@ -519,7 +520,7 @@ export default function MechanicsPage() {
                     title="Deny"
                   >
                     <X className="w-5 h-5" />
-                  </button>
+                  </ControlButton>
                 </div>
               </div>
             ))}
@@ -538,13 +539,13 @@ export default function MechanicsPage() {
           className="flex-1"
           inputWidthClass="sm:min-w-[320px] md:max-w-xl"
         />
-        <button
+        <ControlButton
           onClick={() => navigate('/dashboard/mechanics')}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-gray-200 text-sm font-medium transition-colors shrink-0"
+          className="flex items-center gap-2 px-4  rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-gray-200 text-sm font-medium transition-colors shrink-0"
         >
           <Clock className="w-4 h-4" />
           <span className="hidden sm:inline">Time Board</span>
-        </button>
+        </ControlButton>
       </div>
 
       {nonTechStaff.length > 0 && (
@@ -567,19 +568,19 @@ export default function MechanicsPage() {
                 </span>
                 {s.role !== 'garage_owner' && (
                   <>
-                    <button
+                    <ControlButton
                       onClick={() => { setFormError(null); setEditingStaff(s) }}
-                      className="text-xs px-2.5 py-1 rounded-lg border border-white/10 hover:bg-white/10 text-gray-300 transition-colors shrink-0"
+                      className="text-xs px-2.5  rounded-lg border border-white/10 hover:bg-white/10 text-gray-300 transition-colors shrink-0"
                     >
                       Edit
-                    </button>
-                    <button
+                    </ControlButton>
+                    <ControlButton
                       onClick={() => toggleStaffActive.mutate({ id: s.id, is_active: !s.is_active })}
                       disabled={toggleStaffActive.isPending}
-                      className="text-xs px-2.5 py-1 rounded-lg border border-white/10 hover:bg-white/10 text-gray-300 transition-colors shrink-0"
+                      className="text-xs px-2.5  rounded-lg border border-white/10 hover:bg-white/10 text-gray-300 transition-colors shrink-0"
                     >
                       {s.is_active ? 'Deactivate' : 'Reactivate'}
-                    </button>
+                    </ControlButton>
                   </>
                 )}
               </div>
@@ -617,14 +618,14 @@ export default function MechanicsPage() {
                       <td className="px-4 py-3 font-medium">
                         <div className="flex flex-col gap-1">
                           <span>{mechanic.first_name} {mechanic.last_name}</span>
-                          <button
+                          <ControlButton controlKind="content"
                             type="button"
                             onClick={() => setEditingMechanic(mechanic)}
                             className="text-xs font-semibold hover:text-white text-left"
                             style={{ color: accentColors[400] }}
                           >
                             Edit
-                          </button>
+                          </ControlButton>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-gray-300">{mechanic.email}</td>
@@ -635,7 +636,7 @@ export default function MechanicsPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button
+                        <ControlButton
                           type="button"
                           onClick={() => {
                             setIsDetailOpen(false)
@@ -645,7 +646,7 @@ export default function MechanicsPage() {
                           style={{ color: accentColors[400] }}
                         >
                           {expandedMechanicId === mechanic.id ? 'Hide work' : 'View work'}
-                        </button>
+                        </ControlButton>
                       </td>
                     </tr>
                     {expandedMechanicId === mechanic.id && (
@@ -671,7 +672,7 @@ export default function MechanicsPage() {
                                       ? 'border-gray-400/40 bg-gray-500/10 text-gray-200'
                                       : 'border-amber-400/40 bg-amber-500/10 text-amber-200'
                                   return (
-                                    <button
+                                    <ControlButton controlKind="content"
                                       key={item.id}
                                       type="button"
                                       onClick={() => {
@@ -689,7 +690,7 @@ export default function MechanicsPage() {
                                       </div>
                                       <p className="text-xs text-gray-300 mt-1">{item.vehicle_info}</p>
                                       <p className="text-[11px] text-gray-500 mt-2">Updated: {new Date(item.updated_at).toLocaleString()}</p>
-                                    </button>
+                                    </ControlButton>
                                   )
                                 })}
                               </div>
@@ -764,13 +765,13 @@ export default function MechanicsPage() {
                     
                     {/* Action buttons - always at bottom */}
                     <div className="flex gap-2 mt-4 pt-3 border-t border-white/10">
-                      <button
+                      <ControlButton
                         type="button"
                         onClick={() => {
                           setIsDetailOpen(false)
                           setExpandedMechanicId((prev) => (prev === mechanic.id ? null : mechanic.id))
                         }}
-                        className="flex-1 px-3 py-2 text-sm font-medium rounded-lg transition"
+                        className="flex-1 px-3  text-sm font-medium rounded-lg transition"
                         style={{ 
                           color: accentColors[400], 
                           backgroundColor: `${accentColors[500]}1a`,
@@ -779,14 +780,14 @@ export default function MechanicsPage() {
                         }}
                       >
                         {expandedMechanicId === mechanic.id ? 'Hide work' : 'View work'}
-                      </button>
-                      <button
+                      </ControlButton>
+                      <ControlButton
                         type="button"
                         onClick={() => setEditingMechanic(mechanic)}
-                        className="flex-1 px-3 py-2 text-sm font-medium text-white bg-white/10 border border-white/20 rounded-lg hover:bg-white/20 transition"
+                        className="flex-1 px-3  text-sm font-medium text-white bg-white/10 border border-white/20 rounded-lg hover:bg-white/20 transition"
                       >
                         Edit
-                      </button>
+                      </ControlButton>
                     </div>
                   </div>
                 )
@@ -814,7 +815,7 @@ export default function MechanicsPage() {
                           ? 'border-gray-400/40 bg-gray-500/10 text-gray-200'
                           : 'border-amber-400/40 bg-amber-500/10 text-amber-200'
                       return (
-                        <button
+                        <ControlButton controlKind="content"
                           key={item.id}
                           type="button"
                           onClick={() => {
@@ -832,7 +833,7 @@ export default function MechanicsPage() {
                           </div>
                           <p className="text-xs text-gray-300 mt-1">{item.vehicle_info}</p>
                           <p className="text-[11px] text-gray-500 mt-2">Updated: {new Date(item.updated_at).toLocaleString()}</p>
-                        </button>
+                        </ControlButton>
                       )
                     })}
                   </div>
@@ -869,7 +870,7 @@ export default function MechanicsPage() {
                     {editingMechanic ? `${editingMechanic.first_name} ${editingMechanic.last_name}` : 'Onboard a team member'}
                   </p>
                 </div>
-                <button
+                <ControlButton controlKind="content"
                   type="button"
                   onClick={handleCloseDrawer}
                   className={[
@@ -883,7 +884,7 @@ export default function MechanicsPage() {
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
-                </button>
+                </ControlButton>
               </div>
 
               <div className="p-5 space-y-4 overflow-y-auto flex-1">
@@ -903,10 +904,10 @@ export default function MechanicsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">First Name</label>
-                    <input
+                    <ControlInput
                       {...register('first_name')}
                       type="text"
-                      className={`w-full px-4 py-3 bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition-colors ${
+                      className={`w-full px-4  bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition-colors ${
                         errors.first_name ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-amber-500'
                       }`}
                       placeholder="Alex"
@@ -917,10 +918,10 @@ export default function MechanicsPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">Last Name</label>
-                    <input
+                    <ControlInput
                       {...register('last_name')}
                       type="text"
-                      className={`w-full px-4 py-3 bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition-colors ${
+                      className={`w-full px-4  bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition-colors ${
                         errors.last_name ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-amber-500'
                       }`}
                       placeholder="Rivera"
@@ -934,10 +935,10 @@ export default function MechanicsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
-                    <input
+                    <ControlInput
                       {...register('email')}
                       type="email"
-                      className={`w-full px-4 py-3 bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition-colors ${
+                      className={`w-full px-4  bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition-colors ${
                         errors.email ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-amber-500'
                       }`}
                       placeholder="mechanic@dieselbridge.com"
@@ -948,12 +949,12 @@ export default function MechanicsPage() {
                   </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Phone</label>
-                  <input
+                  <ControlInput
                   {...register('phone', {
                     onChange: (e) => setValue('phone', formatUSPhone(e.target.value)),
                     })}
                     type="tel"
-                      className={`w-full px-4 py-3 bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition-colors ${
+                      className={`w-full px-4  bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition-colors ${
                         errors.phone ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-amber-500'
                       }`}
                       placeholder="(555) 222-1111"
@@ -980,12 +981,12 @@ export default function MechanicsPage() {
                 <div className={`grid grid-cols-1 sm:grid-cols-3 gap-4 ${watch('role') === 'mechanic' ? '' : 'hidden'}`}>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">Core Minutes</label>
-                    <input
+                    <ControlInput
                       {...register('core_hours_target_minutes_override')}
                       type="number"
                       min={1}
                       max={1440}
-                      className={`w-full px-4 py-3 bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition-colors ${
+                      className={`w-full px-4  bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition-colors ${
                         errors.core_hours_target_minutes_override ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-amber-500'
                       }`}
                       placeholder="480"
@@ -996,10 +997,10 @@ export default function MechanicsPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">Shift Start (HH:MM)</label>
-                    <input
+                    <ControlInput
                       {...register('shift_start_local_override')}
                       type="text"
-                      className={`w-full px-4 py-3 bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition-colors ${
+                      className={`w-full px-4  bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition-colors ${
                         errors.shift_start_local_override ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-amber-500'
                       }`}
                       placeholder="08:00"
@@ -1010,10 +1011,10 @@ export default function MechanicsPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">Shift End (HH:MM)</label>
-                    <input
+                    <ControlInput
                       {...register('shift_end_local_override')}
                       type="text"
-                      className={`w-full px-4 py-3 bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition-colors ${
+                      className={`w-full px-4  bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition-colors ${
                         errors.shift_end_local_override ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-amber-500'
                       }`}
                       placeholder="18:00"
@@ -1027,7 +1028,7 @@ export default function MechanicsPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Temporary Password</label>
                   <div className="relative">
-                    <input
+                    <ControlInput
                       {...register('password')}
                       type={showPassword ? 'text' : 'password'}
                       className={`w-full pr-11 pl-4 py-3 bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition-colors ${
@@ -1035,19 +1036,19 @@ export default function MechanicsPage() {
                       }`}
                       placeholder="At least 8 chars, upper/lower, number, special"
                     />
-                    <button
+                    <ControlButton controlKind="action"
                       type="button"
                       onClick={() => setShowPassword((prev) => !prev)}
                       className="absolute inset-y-0 right-2 px-2 flex items-center text-gray-500 hover:text-amber-600"
                       aria-label={showPassword ? 'Hide password' : 'Show password'}
                     >
                       {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                    </button>
+                    </ControlButton>
                   </div>
                   {editingMechanic ? (
                     <div className="flex flex-wrap items-center gap-2 mt-2">
                       <p className="text-xs text-gray-500 mb-0">Leave blank to keep current password</p>
-                      <button
+                      <ControlButton
                         type="button"
                         onClick={() =>
                           setValue(
@@ -1060,30 +1061,30 @@ export default function MechanicsPage() {
                         className="text-xs font-semibold text-amber-700 hover:text-amber-900 disabled:text-gray-400 disabled:hover:text-gray-400"
                       >
                         {suggestedPassword ? `or reset to ${suggestedPassword}` : 'Reset to suggested'}
-                      </button>
+                      </ControlButton>
                     </div>
                   ) : (
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-2">
                       <p className="text-xs text-gray-500">First name + @ + last 4 of phone.</p>
                       <div className="flex items-center gap-3">
                         {suggestedPassword ? (
-                          <button
+                          <ControlButton
                             type="button"
                             onClick={() => setValue('password', suggestedPassword, { shouldValidate: true })}
                             className="text-xs font-semibold text-amber-700 hover:text-amber-900"
                           >
                             Use {suggestedPassword}
-                          </button>
+                          </ControlButton>
                         ) : (
                           <span className="text-xs text-gray-400">Add name & phone</span>
                         )}
-                        <button
+                        <ControlButton
                           type="button"
                           onClick={() => setValue('password', '', { shouldValidate: true })}
                           className="text-xs font-semibold text-gray-600 hover:text-gray-800"
                         >
                           Clear / custom
-                        </button>
+                        </ControlButton>
                       </div>
                     </div>
                   )}
@@ -1094,17 +1095,17 @@ export default function MechanicsPage() {
               </div>
 
               <div className="px-5 py-4 border-t border-gray-200 flex justify-end gap-3">
-                <button
+                <ControlButton
                   type="button"
                   onClick={handleCloseDrawer}
-                  className="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
+                  className="px-4  rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
                 >
                   Cancel
-                </button>
-                <button
+                </ControlButton>
+                <ControlButton
                   type="submit"
                   disabled={createMechanicMutation.isPending || createStaffMutation.isPending || updateMechanicMutation.isPending}
-                  className="inline-flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-70"
+                  className="inline-flex items-center gap-2 px-5  rounded-lg text-sm font-semibold text-white disabled:opacity-70"
                   style={{ backgroundColor: accentColors[600] }}
                 >
                   {(createMechanicMutation.isPending || createStaffMutation.isPending || updateMechanicMutation.isPending) && (
@@ -1115,7 +1116,7 @@ export default function MechanicsPage() {
                     : editingMechanic
                     ? 'Update technician'
                     : 'Add technician'}
-                </button>
+                </ControlButton>
               </div>
             </form>
           </aside>
@@ -1298,7 +1299,7 @@ function StaffEditModal({
       <div className="w-full max-w-md bg-white rounded-xl shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h3 className="text-base font-semibold text-gray-900">Edit team member</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+          <ControlButton onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></ControlButton>
         </div>
         <div className="p-5 space-y-4">
           {error && <p className="text-sm text-red-600">{error}</p>}
@@ -1309,14 +1310,14 @@ function StaffEditModal({
             </PlatformSelect>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className={label}>First name</label><input value={f.first_name} onChange={set('first_name')} className={input} /></div>
-            <div><label className={label}>Last name</label><input value={f.last_name} onChange={set('last_name')} className={input} /></div>
+            <div><label className={label}>First name</label><ControlInput value={f.first_name} onChange={set('first_name')} className={input} /></div>
+            <div><label className={label}>Last name</label><ControlInput value={f.last_name} onChange={set('last_name')} className={input} /></div>
           </div>
-          <div><label className={label}>Email</label><input value={f.email} onChange={set('email')} className={input} /></div>
-          <div><label className={label}>Phone</label><input value={f.phone} onChange={set('phone')} className={input} placeholder="Optional" /></div>
+          <div><label className={label}>Email</label><ControlInput value={f.email} onChange={set('email')} className={input} /></div>
+          <div><label className={label}>Phone</label><ControlInput value={f.phone} onChange={set('phone')} className={input} placeholder="Optional" /></div>
           <div>
             <label className={label}>New password</label>
-            <input type="text" value={f.password} onChange={set('password')} className={input} placeholder="Leave blank to keep current" />
+            <ControlInput type="text" value={f.password} onChange={set('password')} className={input} placeholder="Leave blank to keep current" />
           </div>
           {canGrantPermissions && (
             <div className="border-t border-gray-100 pt-4">
@@ -1329,7 +1330,7 @@ function StaffEditModal({
                       <span className="block text-sm text-gray-800">{opt.label}</span>
                       <span className="block text-xs text-gray-400">{opt.hint}</span>
                     </span>
-                    <button
+                    <ControlButton controlKind="content"
                       type="button"
                       role="switch"
                       aria-checked={!!grants[opt.key]}
@@ -1337,7 +1338,7 @@ function StaffEditModal({
                       className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${grants[opt.key] ? 'bg-amber-500' : 'bg-gray-200'}`}
                     >
                       <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${grants[opt.key] ? 'translate-x-6' : 'translate-x-1'}`} />
-                    </button>
+                    </ControlButton>
                   </label>
                 ))}
               </div>
@@ -1345,11 +1346,11 @@ function StaffEditModal({
           )}
         </div>
         <div className="flex gap-3 px-5 py-4 border-t border-gray-100">
-          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-lg border border-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-50">Cancel</button>
-          <button onClick={submit} disabled={isPending || !f.first_name.trim() || !f.last_name.trim() || !f.email.trim()}
-            className="flex-1 px-4 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold disabled:opacity-50">
+          <ControlButton onClick={onClose} className="flex-1 px-4  rounded-lg border border-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-50">Cancel</ControlButton>
+          <ControlButton onClick={submit} disabled={isPending || !f.first_name.trim() || !f.last_name.trim() || !f.email.trim()}
+            className="flex-1 px-4  rounded-lg bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold disabled:opacity-50">
             {isPending ? 'Saving…' : 'Save changes'}
-          </button>
+          </ControlButton>
         </div>
       </div>
     </div>

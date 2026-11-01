@@ -96,7 +96,7 @@ export default function VerifyEmailPage() {
               <p className="text-gray-400 text-sm mb-6">
                 The verification link may have expired or is invalid.
               </p>
-              <Link
+              <Link data-db-control="action"
                 to="/login"
                 className="inline-block px-6 py-3 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition-colors"
               >

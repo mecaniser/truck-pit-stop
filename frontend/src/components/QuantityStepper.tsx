@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Minus, Plus, Trash2 } from 'lucide-react'
 
@@ -170,7 +171,7 @@ export default function QuantityStepper({
   return (
     <span className={`inline-flex items-center gap-1.5 ${align === 'start' ? 'justify-start' : 'min-w-[9.75rem] justify-end'} ${className}`}>
       <span className={`inline-flex items-center rounded-lg border shadow-sm ${t.pill}`}>
-        <button
+        <ControlButton controlKind="icon"
           type="button"
           disabled={disabled}
           onClick={canRemove ? onRemove : () => commit(displayValue - step, true)}
@@ -181,8 +182,8 @@ export default function QuantityStepper({
           }`}
         >
           {canRemove ? <Trash2 className="h-3.5 w-3.5" /> : <Minus className="h-3.5 w-3.5" />}
-        </button>
-        <input
+        </ControlButton>
+        <ControlInput
           autoFocus={autoFocus}
           type="text"
           inputMode="decimal"
@@ -199,7 +200,7 @@ export default function QuantityStepper({
           style={{ width: sz.input, height: sz.btn, fontSize: sz.font }}
           className={`flex-none border-x bg-transparent text-center font-['JetBrains_Mono',monospace] tabular-nums outline-none disabled:opacity-50 ${t.input}`}
         />
-        <button
+        <ControlButton controlKind="icon"
           type="button"
           disabled={disabled}
           onClick={() => commit(displayValue + step, true)}
@@ -208,7 +209,7 @@ export default function QuantityStepper({
           className={`flex items-center justify-center rounded-r-lg disabled:opacity-50 ${t.btn}`}
         >
           <Plus className="h-3.5 w-3.5" />
-        </button>
+        </ControlButton>
       </span>
       {unitLabel !== '' && <span className={`w-7 text-left text-xs ${t.unit}`}>{unitLabel}</span>}
     </span>

@@ -1,3 +1,4 @@
+import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import { useEffect, useState } from 'react'
 import { Spinner } from '@/components/ui'
 import { Link, useNavigate } from 'react-router-dom'
@@ -311,7 +312,7 @@ export default function GarageEnrollmentPage() {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(6,182,212,0.22),transparent_36%),radial-gradient(circle_at_85%_15%,rgba(79,70,229,0.2),transparent_34%),radial-gradient(circle_at_70%_80%,rgba(14,116,144,0.16),transparent_44%)]" />
 
         <div className="relative mx-auto flex min-h-screen w-full max-w-6xl flex-col justify-center px-4 py-8 sm:py-10">
-          <Link
+          <Link data-db-control="action"
             to="/"
             className="mb-5 inline-flex items-center gap-2 self-start rounded-full border border-zinc-700/80 bg-zinc-900/70 px-4 py-2 text-sm font-medium text-zinc-200 backdrop-blur transition-colors hover:border-zinc-500 hover:text-[var(--accent-400)] lg:absolute lg:left-4 lg:top-6 lg:mb-0"
           >
@@ -404,7 +405,7 @@ export default function GarageEnrollmentPage() {
     <div className="relative min-h-screen overflow-hidden">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(6,182,212,0.22),transparent_36%),radial-gradient(circle_at_85%_15%,rgba(79,70,229,0.2),transparent_34%),radial-gradient(circle_at_70%_80%,rgba(14,116,144,0.16),transparent_44%)]" />
 
-      <a
+      <a data-db-control="action"
         href="#enroll-main"
         className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-slate-950"
       >
@@ -412,7 +413,7 @@ export default function GarageEnrollmentPage() {
       </a>
 
       <div className="relative mx-auto flex min-h-screen w-full max-w-6xl flex-col justify-center px-4 py-8 sm:py-10">
-        <Link
+        <Link data-db-control="action"
           to="/"
           className="mb-5 inline-flex items-center gap-2 self-start rounded-full border border-zinc-700/80 bg-zinc-900/70 px-4 py-2 text-sm font-medium text-zinc-200 backdrop-blur transition-colors hover:border-zinc-500 hover:text-[var(--accent-400)] lg:absolute lg:left-4 lg:top-6 lg:mb-0"
         >
@@ -521,7 +522,7 @@ export default function GarageEnrollmentPage() {
                   <label htmlFor="garage_name" className="mb-1 block text-sm font-medium text-zinc-300">
                     Shop Name <span className="text-red-400">*</span>
                   </label>
-                  <input
+                  <ControlInput
                     {...step1Form.register('garage_name', {
                       onChange: (e) => {
                         const slug = generateSlug(e.target.value)
@@ -544,7 +545,7 @@ export default function GarageEnrollmentPage() {
                   </label>
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-zinc-500">dieselbridge.com/</span>
-                    <input
+                    <ControlInput
                       {...step1Form.register('slug')}
                       type="text"
                       id="slug"
@@ -561,7 +562,7 @@ export default function GarageEnrollmentPage() {
                   <label htmlFor="address" className="mb-1 block text-sm font-medium text-zinc-300">
                     Address <span className="text-red-400">*</span>
                   </label>
-                  <input
+                  <ControlInput
                     {...step1Form.register('address')}
                     type="text"
                     id="address"
@@ -578,7 +579,7 @@ export default function GarageEnrollmentPage() {
                     <label htmlFor="phone" className="mb-1 block text-sm font-medium text-zinc-300">
                       Phone <span className="text-red-400">*</span>
                     </label>
-                    <input
+                    <ControlInput
                       {...step1Form.register('phone', {
                         onChange: (e) => step1Form.setValue('phone', formatUSPhone(e.target.value)),
                       })}
@@ -596,7 +597,7 @@ export default function GarageEnrollmentPage() {
                     <label htmlFor="email" className="mb-1 block text-sm font-medium text-zinc-300">
                       Business Contact Email <span className="text-red-400">*</span>
                     </label>
-                    <input
+                    <ControlInput
                       {...step1Form.register('email')}
                       type="email"
                       id="email"
@@ -614,7 +615,7 @@ export default function GarageEnrollmentPage() {
                   <label htmlFor="website" className="mb-1 block text-sm font-medium text-zinc-300">
                     Website <span className="text-zinc-500">(optional)</span>
                   </label>
-                  <input
+                  <ControlInput
                     {...step1Form.register('website')}
                     type="url"
                     id="website"
@@ -631,14 +632,14 @@ export default function GarageEnrollmentPage() {
                     <ArrowLeft className="h-4 w-4" />
                     Back to Login
                   </Link>
-                  <button
+                  <ControlButton
                     type="submit"
                     className={primaryButtonClasses}
                     style={{ background: 'linear-gradient(135deg, var(--accent-500) 0%, var(--accent-600) 100%)' }}
                   >
                     {resumeStepAfterGarageEdit === 4 ? 'Return to Review' : 'Next'}
                     <ArrowRight className="h-4 w-4" />
-                  </button>
+                  </ControlButton>
                 </div>
               </form>
             )}
@@ -654,7 +655,7 @@ export default function GarageEnrollmentPage() {
                   <label htmlFor="business_license" className="mb-1 block text-sm font-medium text-zinc-300">
                     Business License Number <span className="text-zinc-500">(optional)</span>
                   </label>
-                  <input
+                  <ControlInput
                     {...step2Form.register('business_license')}
                     type="text"
                     id="business_license"
@@ -670,7 +671,7 @@ export default function GarageEnrollmentPage() {
                   <label htmlFor="ein" className="mb-1 block text-sm font-medium text-zinc-300">
                     EIN (Employer Identification Number) <span className="text-zinc-500">(optional)</span>
                   </label>
-                  <input
+                  <ControlInput
                     {...step2Form.register('ein')}
                     type="text"
                     id="ein"
@@ -684,18 +685,18 @@ export default function GarageEnrollmentPage() {
                 </div>
 
                 <div className="flex items-center justify-between pt-4">
-                  <button type="button" onClick={goBack} className={backButtonClasses}>
+                  <ControlButton type="button" onClick={goBack} className={backButtonClasses}>
                     <ArrowLeft className="h-4 w-4" />
                     Back
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton
                     type="submit"
                     className={primaryButtonClasses}
                     style={{ background: 'linear-gradient(135deg, var(--accent-500) 0%, var(--accent-600) 100%)' }}
                   >
                     Next
                     <ArrowRight className="h-4 w-4" />
-                  </button>
+                  </ControlButton>
                 </div>
               </form>
             )}
@@ -708,7 +709,7 @@ export default function GarageEnrollmentPage() {
                     <label htmlFor="owner_first_name" className="mb-1 block text-sm font-medium text-zinc-300">
                       First Name <span className="text-red-400">*</span>
                     </label>
-                    <input
+                    <ControlInput
                       {...step3Form.register('owner_first_name')}
                       type="text"
                       id="owner_first_name"
@@ -723,7 +724,7 @@ export default function GarageEnrollmentPage() {
                     <label htmlFor="owner_last_name" className="mb-1 block text-sm font-medium text-zinc-300">
                       Last Name <span className="text-red-400">*</span>
                     </label>
-                    <input
+                    <ControlInput
                       {...step3Form.register('owner_last_name')}
                       type="text"
                       id="owner_last_name"
@@ -741,7 +742,7 @@ export default function GarageEnrollmentPage() {
                     Owner Login Email <span className="text-red-400">*</span>
                   </label>
                   <p className="mb-1 text-xs text-zinc-500">Uses the same email as Business Contact Email.</p>
-                  <input
+                  <ControlInput
                     {...step3Form.register('owner_email')}
                     type="email"
                     id="owner_email"
@@ -759,7 +760,7 @@ export default function GarageEnrollmentPage() {
                     Phone <span className="text-red-400">*</span>
                   </label>
                   <p className="mb-1 text-xs text-zinc-500">Prefilled from Shop Info. Change only if needed.</p>
-                  <input
+                  <ControlInput
                     {...step3Form.register('owner_phone', {
                       onChange: (e) => step3Form.setValue('owner_phone', formatUSPhone(e.target.value)),
                     })}
@@ -778,14 +779,14 @@ export default function GarageEnrollmentPage() {
                     Password <span className="text-red-400">*</span>
                   </label>
                   <div className="relative">
-                    <input
+                    <ControlInput
                       {...step3Form.register('owner_password')}
                       type={showOwnerPassword ? 'text' : 'password'}
                       id="owner_password"
                       className={getInputClasses(!!step3Form.formState.errors.owner_password)}
                       placeholder="8+ chars, upper/lower/digit/special"
                     />
-                    <button
+                    <ControlButton controlKind="action"
                       type="button"
                       onClick={() => setShowOwnerPassword((prev) => !prev)}
                       className="absolute inset-y-0 right-0 flex items-center pr-3 text-zinc-400 hover:text-zinc-200 focus:outline-none"
@@ -801,7 +802,7 @@ export default function GarageEnrollmentPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                         </svg>
                       )}
-                    </button>
+                    </ControlButton>
                   </div>
                   {ownerPassword && (
                     <div className="mt-2">
@@ -829,14 +830,14 @@ export default function GarageEnrollmentPage() {
                     Confirm Password <span className="text-red-400">*</span>
                   </label>
                   <div className="relative">
-                    <input
+                    <ControlInput
                       {...step3Form.register('confirm_password')}
                       type={showConfirmPassword ? 'text' : 'password'}
                       id="confirm_password"
                       className={getInputClasses(!!step3Form.formState.errors.confirm_password)}
                       placeholder="Confirm your password"
                     />
-                    <button
+                    <ControlButton controlKind="action"
                       type="button"
                       onClick={() => setShowConfirmPassword((prev) => !prev)}
                       className="absolute inset-y-0 right-0 flex items-center pr-3 text-zinc-400 hover:text-zinc-200 focus:outline-none"
@@ -852,7 +853,7 @@ export default function GarageEnrollmentPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                         </svg>
                       )}
-                    </button>
+                    </ControlButton>
                   </div>
                   {step3Form.formState.errors.confirm_password && (
                     <p className="mt-1.5 text-sm text-red-400">{step3Form.formState.errors.confirm_password.message}</p>
@@ -863,18 +864,18 @@ export default function GarageEnrollmentPage() {
                 </div>
 
                 <div className="flex items-center justify-between pt-4">
-                  <button type="button" onClick={goBack} className={backButtonClasses}>
+                  <ControlButton type="button" onClick={goBack} className={backButtonClasses}>
                     <ArrowLeft className="h-4 w-4" />
                     Back
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton
                     type="submit"
                     className={primaryButtonClasses}
                     style={{ background: 'linear-gradient(135deg, var(--accent-500) 0%, var(--accent-600) 100%)' }}
                   >
                     Review
                     <ArrowRight className="h-4 w-4" />
-                  </button>
+                  </ControlButton>
                 </div>
               </form>
             )}
@@ -888,7 +889,7 @@ export default function GarageEnrollmentPage() {
                       <Building2 className="h-4 w-4 text-[var(--accent-400)]" />
                       Shop Information
                     </h2>
-                    <button
+                    <ControlButton
                       type="button"
                       onClick={() => {
                         setResumeStepAfterGarageEdit(4)
@@ -897,7 +898,7 @@ export default function GarageEnrollmentPage() {
                       className="text-xs font-medium text-zinc-300 underline transition-colors hover:text-[var(--accent-400)]"
                     >
                       Edit
-                    </button>
+                    </ControlButton>
                   </div>
                   <div className="grid grid-cols-1 gap-3 text-sm text-zinc-300 sm:grid-cols-2">
                     <div>
@@ -936,13 +937,13 @@ export default function GarageEnrollmentPage() {
                         <FileText className="h-4 w-4 text-[var(--accent-400)]" />
                         Business Details
                       </h2>
-                      <button
+                      <ControlButton
                         type="button"
                         onClick={() => setCurrentStep(2)}
                         className="text-xs font-medium text-zinc-300 underline transition-colors hover:text-[var(--accent-400)]"
                       >
                         Edit
-                      </button>
+                      </ControlButton>
                     </div>
                     <div className="grid grid-cols-1 gap-3 text-sm text-zinc-300 sm:grid-cols-2">
                       {formData.business_license && (
@@ -967,13 +968,13 @@ export default function GarageEnrollmentPage() {
                       <User className="h-4 w-4 text-[var(--accent-400)]" />
                       Owner Account
                     </h2>
-                    <button
+                    <ControlButton
                       type="button"
                       onClick={() => setCurrentStep(3)}
                       className="text-xs font-medium text-zinc-300 underline transition-colors hover:text-[var(--accent-400)]"
                     >
                       Edit
-                    </button>
+                    </ControlButton>
                   </div>
                   <div className="grid grid-cols-1 gap-3 text-sm text-zinc-300 sm:grid-cols-2">
                     <div className="sm:col-span-2">
@@ -998,11 +999,11 @@ export default function GarageEnrollmentPage() {
                 </div>
 
                 <div className="flex items-center justify-between pt-2">
-                  <button type="button" onClick={goBack} className={backButtonClasses}>
+                  <ControlButton type="button" onClick={goBack} className={backButtonClasses}>
                     <ArrowLeft className="h-4 w-4" />
                     Back
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton
                     onClick={handleFinalSubmit}
                     disabled={isLoading}
                     className={primaryButtonClasses}
@@ -1019,7 +1020,7 @@ export default function GarageEnrollmentPage() {
                         <CheckCircle className="h-4 w-4" />
                       </>
                     )}
-                  </button>
+                  </ControlButton>
                 </div>
               </div>
             )}

@@ -1,0 +1,68 @@
+@layer db-controls {
+/* Single geometry contract for application controls. Color belongs to surfaces.
+   Important geometry intentionally wins over legacy page/Tailwind sizes during
+   migration. Do not add local height overrides; content controls are explicit. */
+:root {
+  --control-height: 44px;
+  --control-padding-inline: 10px;
+  --control-radius: 7px;
+  --control-gap: 6px;
+  --control-font-ratio: .875;
+  --control-icon-size: 16px;
+}
+@media (min-width: 769px) and (pointer: fine) {
+  :root { --control-height: 34px; }
+}
+/* Fleet and dedicated mobile portals keep their touch-first contract. */
+body:has([data-db-touch-controls]), [data-db-touch-controls] { --control-height: 44px; }
+[data-appearance-density='large'] { --control-height: 44px; }
+[data-db-control]:not([data-db-control='content']) {
+  --control-font-size: max(13px, calc(var(--font-size-body, 16px) * var(--control-font-ratio)));
+  box-sizing: border-box;
+  align-self: center !important;
+  min-height: var(--control-height) !important;
+  height: auto !important;
+  min-block-size: var(--control-height) !important;
+  block-size: auto !important;
+  border-radius: var(--control-radius) !important;
+  font-size: var(--control-font-size) !important;
+  line-height: max(20px, 1.4em) !important;
+  padding-block: 6px !important;
+}
+[data-db-control='action'], [data-db-control='icon'], [data-db-control='select'] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--control-gap) !important;
+  padding-inline: var(--control-padding-inline) !important;
+}
+[data-db-control='select'] { justify-content: space-between; }
+[data-db-control='icon'] {
+  inline-size: var(--control-height) !important;
+  min-inline-size: var(--control-height) !important;
+  padding-inline: 0 !important;
+  flex-shrink: 0;
+}
+[data-db-control='action'] > svg,
+[data-db-control='icon'] > svg,
+[data-db-control='select'] > svg {
+  width: var(--control-icon-size);
+  height: var(--control-icon-size);
+  flex-shrink: 0;
+}
+[data-db-control]:focus-visible {
+  outline: 2px solid var(--personal-accent-600, #0369a1);
+  outline-offset: 2px;
+}
+[data-db-control]:disabled { cursor: not-allowed; }
+/* iOS must not zoom text entry; preserve larger user-selected type. */
+@media (max-width: 768px), (pointer: coarse) {
+  [data-db-control='field'] { font-size: max(16px, var(--control-font-size)) !important; }
+}
+
+}
+
+.db-control-group { display: flex; flex-wrap: wrap; align-items: center; gap: var(--control-gap); }
+/* An auto-sized wrapper must reserve room for a readable selected value; a
+   percentage-width trigger otherwise contributes only its chevron to flex sizing. */
+.platform-select-field.min-w-0 { min-inline-size: 6rem; max-inline-size: 100%; }
