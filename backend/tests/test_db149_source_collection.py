@@ -25,7 +25,10 @@ async def context(db,monkeypatch):
 @pytest.mark.asyncio
 async def test_prepare_only_replay_and_activation_requires_post_ack(db_session,monkeypatch):
     t,a,c,original,p,b=await context(db_session,monkeypatch)
+    c.company_name='Société'
     row=await svc.prepare(db_session,t.id,a,b,'prepare')
+    assert '\\u00e9' in row.bill_to_authorization_canonical
+    assert row.bill_to_authorization_sha256==svc.sha256(row.bill_to_authorization_canonical.encode()).hexdigest()
     assert row.native_invoice_id is None
     assert await svc.prepare(db_session,t.id,a,b,'prepare') is row
     assert await db_session.scalar(select(func.count()).select_from(Invoice))==1

@@ -182,7 +182,7 @@ async def prepare(db,tenant_id,actor,body,key):
     row=SourceDebtHandoff(id=uuid4(),tenant_id=tenant_id,source_kind='easy_truck_shop',ets_shop_id=proof['shop'],
         ets_service_internal_id=str(l['service_internal_id']),ets_invoice_internal_id=str(l['invoice_id']),
         source_invoice_number=str(l['invoice_number']),source_service_number=str(l['service_id']),
-        source_dbn_invoice_id=proof['invoice'].id,source_repair_order_id=proof['order'].id,customer_id=body.target_customer_id,source_customer_id=source_customer.id,bill_to_authorization=authorization,bill_to_authorization_sha256=hash_body(authorization),
+        source_dbn_invoice_id=proof['invoice'].id,source_repair_order_id=proof['order'].id,customer_id=body.target_customer_id,source_customer_id=source_customer.id,bill_to_authorization=authorization,bill_to_authorization_canonical=json.dumps(authorization,sort_keys=True,separators=(',',':'),default=str),bill_to_authorization_sha256=hash_body(authorization),
         source_capture_document=proof['envelope'],source_capture_sha256=proof['digest'],source_observed_at=proof['summary'].observed_at,
         original_issued_total=proof['summary'].total_amount,source_prior_allocated=proof['summary'].recorded_completed_amount,
         opening_principal=proof['summary'].recorded_remaining_amount,currency='USD',state='prepared',source_revision=proof['revision'],version=1,
@@ -226,6 +226,8 @@ async def activate(db,row,actor,body,key):
         line_items_snapshot={'version':1,'purpose':'source_debt_collection','labor':[],'parts':[],'collection':[{'description':f'Balance transferred from ETS invoice {row.source_invoice_number}','amount':str(row.opening_principal),'currency':'USD'}]},
         quickbooks_sync_status='external_reconciliation_pending',created_by_user_id=actor.id)
     db.add(invoice);await db.flush()
+    row.native_invoice_id=invoice.id
+    await db.flush()
     db.add(InvoiceSettlement(tenant_id=row.tenant_id,invoice_id=invoice.id,customer_id=row.customer_id,principal_total=row.opening_principal,
         max_card_fee=ZERO,max_card_fee_tax=ZERO,sales_tax_rate_snapshot=ZERO,card_fee_rate_snapshot=ZERO,currency='USD',state='unpaid',
         confirmed_principal=ZERO,active_pending_principal=ZERO,legacy_reconciliation_status='native',accounting_sync_status='external_reconciliation_pending'))
@@ -514,9 +516,14 @@ def legal_name(customer):
 
 def validate_bill_to_authorization(row):
     auth=row.bill_to_authorization or {}
-    expected=dict(tenant_id=str(row.tenant_id),source_invoice_id=str(row.source_dbn_invoice_id),ets_shop_id=row.ets_shop_id,
+    try:
+        canonical_auth=json.loads(row.bill_to_authorization_canonical)
+        canonical_hash=sha256(row.bill_to_authorization_canonical.encode()).hexdigest()
+    except (TypeError,ValueError,AttributeError):
+        fail('bill_to_authorization_invalid','Reviewed bill-to authority requires verification.')
+    expected=dict(schema_version=1,source_capture_sha256=row.source_capture_sha256,tenant_id=str(row.tenant_id),source_invoice_id=str(row.source_dbn_invoice_id),ets_shop_id=row.ets_shop_id,
         ets_invoice_internal_id=row.ets_invoice_internal_id,source_customer_id=str(row.source_customer_id),target_customer_id=str(row.customer_id))
-    if (hash_body(auth)!=row.bill_to_authorization_sha256 or any(auth.get(k)!=v for k,v in expected.items())
+    if (hash_body(auth)!=row.bill_to_authorization_sha256 or canonical_auth!=auth or canonical_hash!=row.bill_to_authorization_sha256 or any(auth.get(k)!=v for k,v in expected.items())
         or auth.get('mode') not in ('same_customer','owner_same_legal_entity')
         or (row.source_customer_id!=row.customer_id and (auth.get('mode')!='owner_same_legal_entity' or auth.get('attested_same_legal_entity') is not True))):
         fail('bill_to_authorization_invalid','Reviewed bill-to authority requires verification.')

@@ -1,5 +1,5 @@
 """One source receivable, its native collection copy, and receipt acknowledgements."""
-from sqlalchemy import Column, String, Integer, Numeric, DateTime, ForeignKey, ForeignKeyConstraint, UniqueConstraint, CheckConstraint, JSON
+from sqlalchemy import Column, String, Integer, Numeric, DateTime, ForeignKey, ForeignKeyConstraint, UniqueConstraint, CheckConstraint, JSON, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from app.db.base import BaseModel
 J = JSON().with_variant(JSONB, 'postgresql')
@@ -18,6 +18,7 @@ class SourceDebtHandoff(BaseModel):
     customer_id = Column(UUID(as_uuid=True), nullable=False)
     source_customer_id = Column(UUID(as_uuid=True), nullable=False)
     bill_to_authorization = Column(J, nullable=False)
+    bill_to_authorization_canonical = Column(Text, nullable=False)
     bill_to_authorization_sha256 = Column(String(64), nullable=False)
     native_invoice_id = Column(UUID(as_uuid=True), nullable=True, unique=True)
     source_capture_document = Column(J, nullable=False)
