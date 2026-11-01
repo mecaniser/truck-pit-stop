@@ -1,6 +1,7 @@
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import React, { useMemo, useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { Spinner, LoadingLine } from '@/components/ui'
 import { Controller, useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -460,7 +461,7 @@ export default function MechanicsPage() {
 
   return (
     <>
-    <div className="db-team-workspace db-operating-surface">
+    <div className="db-team-colors db-team-workspace db-operating-surface">
     <div className="db-team-workspace__scroll db-operating-surface__scroller space-y-6">
       {user?.role !== 'garage_owner' && user?.role !== 'garage_admin' ? (
         <div className="bg-white/5 rounded-xl p-6 border border-white/10">
@@ -844,9 +845,9 @@ export default function MechanicsPage() {
         )}
       </div>
 
-      {isAdding && (
+      {isAdding && createPortal(
         <div
-          className={`fixed inset-0 z-[60] transition ${isAdding ? 'pointer-events-auto' : 'pointer-events-none'}`}
+          className={`db-team-colors fixed inset-0 z-[60] transition ${isAdding ? 'pointer-events-auto' : 'pointer-events-none'}`}
           aria-hidden={!isAdding}
         >
           <div
@@ -1120,7 +1121,8 @@ export default function MechanicsPage() {
               </div>
             </form>
           </aside>
-        </div>
+        </div>,
+        document.querySelector('.db-staff-shell') || document.body,
       )}
         </>
       )}
@@ -1133,6 +1135,7 @@ export default function MechanicsPage() {
         title={orderDetail?.order_number || selectedWorkItem?.order_number || 'Loading...'}
         subtitle="Repair Order"
         headerVariant="minimal"
+        panelClassName="db-team-colors"
         width="max-w-md"
       >
         <div className="p-4 space-y-3 text-sm text-gray-700">
@@ -1294,9 +1297,9 @@ function StaffEditModal({
     phone: f.phone || undefined, role: f.role, password: f.password || undefined,
     permissions: canGrantPermissions ? grants : undefined,
   })
-  return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="w-full max-w-md bg-white rounded-xl shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+  return createPortal(
+    <div className="db-team-colors fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div role="dialog" aria-label="Edit team member" className="w-full max-w-md bg-white rounded-xl shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h3 className="text-base font-semibold text-gray-900">Edit team member</h3>
           <ControlButton onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></ControlButton>
@@ -1353,6 +1356,7 @@ function StaffEditModal({
           </ControlButton>
         </div>
       </div>
-    </div>
+    </div>,
+    document.querySelector('.db-staff-shell') || document.body,
   )
 }

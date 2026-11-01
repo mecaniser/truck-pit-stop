@@ -79,11 +79,6 @@ interface TeamBoardResponse {
 const toHours = (minutes: number) => (minutes / 60).toFixed(1)
 
 const PRIORITY_ORDER: Record<AttentionPriority, number> = { red: 0, yellow: 1, green: 2 }
-const PRIORITY_BORDER: Record<AttentionPriority, string> = {
-  red: 'border-l-red-500',
-  yellow: 'border-l-amber-400',
-  green: 'border-l-emerald-500',
-}
 const PRIORITY_LED: Record<AttentionPriority, 'error' | 'warning' | 'active'> = {
   red: 'error',
   yellow: 'warning',
@@ -113,7 +108,7 @@ const getMechanicStatusBadge = (mechanic: MechanicBoardItem) => {
   if (mechanic.attendance_active) {
     return { variant: 'default' as const, label: 'Clocked In', className: '' }
   }
-  return { variant: 'default' as const, label: 'Clocked Out', className: 'opacity-50' }
+  return { variant: 'default' as const, label: 'Clocked Out', className: '' }
 }
 
 function sortByAttention(mechanics: MechanicBoardItem[]): MechanicBoardItem[] {
@@ -181,7 +176,7 @@ export default function MechanicsBoardPage() {
 
   if (isError || !data) {
     return (
-      <Card className="p-6">
+      <Card className="db-team-colors p-6">
         <p className="text-red-400">Failed to load technicians board.</p>
       </Card>
     )
@@ -193,7 +188,7 @@ export default function MechanicsBoardPage() {
   const greenCount = sorted.filter((m) => m.attention_priority === 'green').length
 
   return (
-    <div className="space-y-4">
+    <div className="db-team-colors space-y-4">
       {/* Header */}
       <Header
         title="Technician Board"
@@ -254,12 +249,12 @@ export default function MechanicsBoardPage() {
             return (
               <Card
                 key={m.mechanic_id}
-                hover
                 padding="none"
-                className={`p-4 cursor-pointer border-l-4 ${PRIORITY_BORDER[m.attention_priority]} animate-[fadeIn_0.3s_ease-out_forwards] opacity-0`}
+                className="db-technician-tile animate-[fadeIn_0.3s_ease-out_forwards] opacity-0"
                 style={staggeredReveal(index)}
               >
                 <div
+                  className="db-technician-tile__target p-4 cursor-pointer"
                   role="button"
                   tabIndex={0}
                   aria-label={`Open technician board for ${m.mechanic_name}`}

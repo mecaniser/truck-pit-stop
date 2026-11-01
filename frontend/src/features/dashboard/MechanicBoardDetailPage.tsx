@@ -318,7 +318,7 @@ export default function MechanicBoardDetailPage() {
 
   if (isError || !data) {
     return (
-      <Card className="p-6">
+      <Card className="db-team-colors p-6">
         <p className="text-red-400">Failed to load technician board detail.</p>
       </Card>
     )
@@ -364,7 +364,7 @@ export default function MechanicBoardDetailPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="db-team-colors db-technician-detail space-y-4">
       <div className="flex items-center gap-4">
         <ControlButton
           onClick={() => navigate('/dashboard/mechanics')} 
@@ -424,7 +424,7 @@ export default function MechanicBoardDetailPage() {
       {/* ── OVERVIEW TAB ── */}
       {activeTab === 'overview' && (
         <>
-          <Card className="space-y-4">
+          <Card className="db-technician-detail__section space-y-4">
             <div className="flex items-center gap-2">
               <h2 className="text-zinc-100 font-semibold">Daily Summary</h2>
               <SectionInfoTooltip text="At-a-glance performance for this technician on the selected work day: scheduled shift, attendance, tracked hours, work mix, utilization, and efficiency." />
@@ -539,7 +539,7 @@ export default function MechanicBoardDetailPage() {
             ) : null}
           </Card>
 
-          <Card className="space-y-4">
+          <Card className="db-technician-detail__section space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <h2 className="text-zinc-100 font-semibold">7-Day Trend</h2>
@@ -645,7 +645,7 @@ export default function MechanicBoardDetailPage() {
           </Card>
 
           {/* Selected-day sessions — active session prominent, history collapsed */}
-          <Card className="space-y-4">
+          <Card className="db-technician-detail__section space-y-4">
             <div className="flex items-center gap-2">
               <h2 className="text-zinc-100 font-semibold">Work Sessions · {formatTrendDate(m.date)}</h2>
               <SectionInfoTooltip text="Chronological record of all timer sessions for the selected day, including active, stopped, edited, and deletable entries." />
@@ -763,7 +763,7 @@ export default function MechanicBoardDetailPage() {
 
       {/* ── CONTROLS TAB ── */}
       {activeTab === 'controls' && (
-        <Card className="space-y-4">
+        <Card className="db-technician-detail__section space-y-4">
           <div className="flex items-center gap-2">
             <h2 className="text-zinc-100 font-semibold">Admin Override Controls</h2>
             <SectionInfoTooltip text="Owner/admin controls to start or stop this technician's active timer with mandatory manager reason for audit tracking." />
