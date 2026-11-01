@@ -9,7 +9,7 @@ function ReceiptTask({ task, handoff, onChange }: { task: EtsReceiptTask; handof
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(false)
   const claimKey = useRef(crypto.randomUUID())
-  const ackKey = useRef(crypto.randomUUID())
+  const ackRequest = useRef({ fingerprint: '', key: crypto.randomUUID() })
   const verified = task.state === 'verified'
   const claimExpired = Boolean(task.claim_expires_at && Date.parse(task.claim_expires_at) <= Date.now())
   const ids = allocationIds.split(/[\s,]+/).filter(Boolean)
@@ -24,6 +24,7 @@ function ReceiptTask({ task, handoff, onChange }: { task: EtsReceiptTask; handof
       <p className="mt-2 text-xs">Record only this principal against ETS invoice {handoff.source_invoice_number}. DBN fees and unapplied money are excluded.</p>
       <p className="mt-2 text-xs">Include this receipt reference in the ETS payment notes:</p>
       <code className="mt-1 block break-all rounded bg-slate-100 p-2 text-xs">DBN-RECEIPT:{task.payment_id}</code>
+      <p className="mt-2 text-xs">Check ETS for this reference before adding a payment. An existing matching entry only needs verification.</p>
       {(task.state === 'pending_manual' || claimExpired) && <ControlButton type="button" disabled={busy} className="mt-2 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-3 text-slate-800 hover:bg-slate-100 disabled:opacity-50" onClick={() => void perform(() => claimEtsReceiptTask(task, claimKey.current))}>{claimExpired ? 'Reclaim ETS update' : 'Claim ETS update'}</ControlButton>}
       {['claimed', 'awaiting_verification'].includes(task.state) && <div className="mt-3 space-y-2">
         <label className="block text-xs">ETS allocation IDs from the recorded receipt
@@ -32,7 +33,9 @@ function ReceiptTask({ task, handoff, onChange }: { task: EtsReceiptTask; handof
         <p className="text-xs text-slate-500">After the ETS record is refreshed, DBN verifies these IDs against its source evidence. Submitting IDs does not record another payment.</p>
         <ControlButton type="button" disabled={busy || claimExpired || !ids.length} className="whitespace-nowrap rounded-lg border border-slate-300 bg-white px-3 text-slate-800 hover:bg-slate-100 disabled:opacity-50" onClick={() => void perform(async () => {
           const fresh = await fetchSourceCollection(handoff.id)
-          await acknowledgeEtsReceiptTask(task, fresh, ids, ackKey.current)
+          const fingerprint = JSON.stringify([task.version, fresh.source_revision, fresh.source_capture_sha256, ids])
+          if (ackRequest.current.fingerprint !== fingerprint) ackRequest.current = { fingerprint, key: crypto.randomUUID() }
+          await acknowledgeEtsReceiptTask(task, fresh, ids, ackRequest.current.key)
         })}>Verify ETS receipt</ControlButton>
       </div>}
     </>}
@@ -47,7 +50,7 @@ export default function EtsReceiptTasks({ handoff, onChange }: { handoff: Source
   const tasks = useQuery({ queryKey, queryFn: () => fetchEtsReceiptTasks(handoff.id, skip), retry: false })
   const [reconciling, setReconciling] = useState(false)
   const [error, setError] = useState(false)
-  const reconcileKey = useRef(crypto.randomUUID())
+  const reconcileRequest = useRef({ fingerprint: '', key: crypto.randomUUID() })
   const refresh = async () => {
     onChange(await fetchSourceCollection(handoff.id))
     await queryClient.invalidateQueries({ queryKey: ['ets-receipt-tasks', handoff.id] })
@@ -69,11 +72,12 @@ export default function EtsReceiptTasks({ handoff, onChange }: { handoff: Source
         setReconciling(true); setError(false)
         try {
           const fresh = await fetchSourceCollection(handoff.id)
-          const result = await reconcileSourceCollection(fresh, reconcileKey.current)
+          const fingerprint = JSON.stringify([fresh.version, fresh.source_revision, fresh.source_capture_sha256])
+          if (reconcileRequest.current.fingerprint !== fingerprint) reconcileRequest.current = { fingerprint, key: crypto.randomUUID() }
+          const result = await reconcileSourceCollection(fresh, reconcileRequest.current.key)
           onChange(result.handoff)
           setError(result.conflict)
           await refresh()
-          reconcileKey.current = crypto.randomUUID()
         } catch {
           setError(true)
           try { await refresh() } catch { /* Keep the unverified-result warning visible. */ }

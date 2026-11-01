@@ -74,17 +74,37 @@ describe('historical customer invoices', () => {
 
   it('shows a collection hold without querying archived work or falling back to legacy card collection', async () => {
     renderInvoice('sent', 'ets_collection_handoff', 'unpaid', true, {
-      id: 'handoff-1', state: 'active', version: 1, source_invoice_number: '1687', source_service_number: '1821',
+      id: 'handoff-1', source_invoice_id: 'original-1687', original_invoice_date: '2026-10-19', state: 'active', version: 1, source_invoice_number: '1687', source_service_number: '1821',
       original_issued_total: '100.00', source_prior_allocated: '0.00', opening_principal: '100.00',
       native_invoice_id: 'history-1', balance_due: '100.00', native_confirmed_principal: '0.00', native_pending_principal: '0.00',
       source_observed_at: '2026-11-01T02:00:00Z', source_sync_state: 'source_unavailable',
       accounting_state: 'external_reconciliation_pending', hold_reasons: ['source_stale'], collection_enabled: false,
     })
     await screen.findByRole('heading', { name: 'Collection copy of ETS invoice 1687' })
+    expect(screen.getByRole('link', { name: 'View original ETS invoice' })).toHaveAttribute('href', '/portal/invoices/original-1687')
+    expect(screen.getByText('Oct 19, 2026')).toBeInTheDocument()
+    expect(screen.queryByText('Labor / Services')).not.toBeInTheDocument()
     expect(screen.getByText('Contact the shop to confirm payment availability for this collection copy.')).toBeInTheDocument()
     expect(screen.queryByRole('radiogroup', { name: 'Payment method' })).not.toBeInTheDocument()
     expect(mocks.get.mock.calls.some(([url]) => url.includes('/repair-orders/'))).toBe(false)
     expect(mocks.get.mock.calls.some(([url]) => url.includes('/quickbooks/'))).toBe(false)
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+
+  it('labels linked ETS history as the original total while showing the paid DBN balance once', async () => {
+    renderInvoice('sent', 'easy_truck_shop_import', 'unpaid', true, {
+      id: 'handoff-1', is_source_history: true, state: 'active', version: 3, source_invoice_number: '1687', source_service_number: '1821',
+      original_issued_total: '100.00', source_prior_allocated: '0.00', opening_principal: '100.00',
+      native_invoice_id: 'native-paid', balance_due: '0.00', native_confirmed_principal: '100.00', native_pending_principal: '0.00',
+      source_observed_at: '2026-11-01T02:00:00Z', source_sync_state: 'ets_update_pending', accounting_state: 'external_reconciliation_pending', hold_reasons: [],
+    })
+    await screen.findByText('Original invoice total')
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('$100.00')
+    expect(screen.getByText('Current DBN balance').nextElementSibling).toHaveTextContent('$0.00')
+    expect(screen.queryByText('Unpaid', { exact: true })).not.toBeInTheDocument()
+    expect(screen.queryByText('Balance due', { exact: true })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open collection invoice' })).toHaveAttribute('href', '/portal/invoices/native-paid')
+    expect(mocks.get.mock.calls.map(([url]) => url)).toEqual(['/invoices/history-1'])
     expect(mocks.post).not.toHaveBeenCalled()
   })
 

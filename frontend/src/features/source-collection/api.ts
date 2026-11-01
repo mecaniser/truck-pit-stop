@@ -1,5 +1,5 @@
 import api from '@/lib/api'
-import type { EtsReceiptTask, SourceCollectionPreview, SourceCollectionSummary } from './types'
+import type { BillToReview, EtsReceiptTask, SourceCollectionPreview, SourceCollectionSummary } from './types'
 
 const base = '/source-debt-handoffs'
 export async function fetchSourceCollection(id: string) {
@@ -8,15 +8,16 @@ export async function fetchSourceCollection(id: string) {
 export async function previewSourceCollection(sourceInvoiceId: string, customerId: string) {
   return (await api.post<SourceCollectionPreview>(`${base}/preview`, { source_invoice_id: sourceInvoiceId, target_customer_id: customerId })).data
 }
-export async function prepareSourceCollection(preview: SourceCollectionPreview, key: string) {
+export async function prepareSourceCollection(preview: SourceCollectionPreview, key: string, billToReview?: BillToReview) {
   const proposal = preview.proposal
-  if (preview.eligibility !== 'ready' || !proposal) throw new Error('Refresh the source invoice before preparing collection.')
+  if (!proposal || (preview.eligibility !== 'ready' && !(billToReview && preview.hold_reasons.every(reason => reason === 'bill_to_review_required')))) throw new Error('Refresh the source invoice before preparing collection.')
   return (await api.post<SourceCollectionSummary>(base, {
     source_invoice_id: proposal.source_invoice_id,
     target_customer_id: proposal.target_customer_id,
     expected_source_capture_sha256: proposal.source_capture_sha256,
     expected_source_revision: proposal.source_revision,
     acknowledge_dbn_primary: true,
+    ...(billToReview ? { bill_to_review: billToReview } : {}),
   }, { headers: { 'Idempotency-Key': key } })).data
 }
 export async function activateSourceCollection(handoff: SourceCollectionSummary, preview: SourceCollectionPreview, key: string) {

@@ -68,6 +68,19 @@ describe('customer account', () => {
     expect(within(reviewRow).queryByText('$100.00')).not.toBeInTheDocument()
   })
 
+  it('keeps a known transferred balance visible while collection is held for source reconciliation', async () => {
+    api.get.mockResolvedValue({ data: { ...account, native: { ...account.native,
+      collectible: '0.00', held_collection_balance: '300.00', collection_review_count: 1,
+    } } })
+    setup()
+    const view = await screen.findByRole('region', { name: 'Customer account' })
+    const hold = within(view).getByRole('status')
+    expect(hold).toHaveTextContent('DBN balance awaiting source reconciliation')
+    expect(hold).toHaveTextContent('$300.00')
+    expect(hold).toHaveTextContent('Confirmed DBN payments remain recorded')
+    expect(within(view).queryByText('DieselBridge collectible')).not.toBeInTheDocument()
+  })
+
   it('labels a complete verified account as collectible', async () => {
     api.get.mockResolvedValue({ data: { ...account, native: { ...account.native, collectible_complete: true, unverified_invoice_count: 0, review_required_count: 0 } } })
     setup()

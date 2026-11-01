@@ -170,6 +170,8 @@ export default function CustomerInvoicePage() {
   })
 
   const isHistoricalInvoice = invoice?.source === 'easy_truck_shop_import'
+  const isCollectionInvoice = invoice?.source === 'ets_collection_handoff'
+  const isLinkedSourceHistory = Boolean(invoice?.source_collection?.is_source_history)
   const settlementAccess = invoice?.id && !isHistoricalInvoice
     ? { kind: 'authenticated' as const, invoiceId: invoice.id }
     : null
@@ -375,14 +377,14 @@ export default function CustomerInvoicePage() {
             <span aria-hidden="true">·</span>
             <span className="text-[#d9a521]">{invoice.vehicle_info}</span>
             <span className="rounded-full border border-violet-400/35 bg-violet-400/10 px-2.5 py-0.5 text-[11px] font-bold text-[#a78bfa]">
-              {paymentSummary ? invoicePaymentLabels[paymentSummary.state] : isPaid ? 'paid' : 'invoiced'}
+              {isLinkedSourceHistory ? 'Original ETS record' : paymentSummary ? invoicePaymentLabels[paymentSummary.state] : isPaid ? 'paid' : 'invoiced'}
             </span>
           </p>
           {(isHistoricalInvoice || splitSettlement || cashReceipt || paymentSummary) && (
-            <p className="mt-2.5 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#8b92a5]">{isHistoricalInvoice && !paymentSummary ? 'Invoice total (recorded)' : paymentSummary?.state === 'cancelled' ? 'Invoice status' : cashReceipt ? 'Total paid in cash' : 'Balance due'}</p>
+            <p className="mt-2.5 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#8b92a5]">{isLinkedSourceHistory ? 'Original invoice total' : isHistoricalInvoice && !paymentSummary ? 'Invoice total (recorded)' : paymentSummary?.state === 'cancelled' ? 'Invoice status' : cashReceipt ? 'Total paid in cash' : 'Balance due'}</p>
           )}
           <h1 id="payment-total" className={`${splitSettlement ? 'mt-1' : 'mt-2.5'} whitespace-nowrap text-[38px] font-extrabold leading-none tracking-[-0.02em] tabular-nums sm:text-[46px]`}>
-            {isHistoricalInvoice && !paymentSummary ? money(invoice.total_amount) : paymentSummary?.state === 'cancelled' ? 'Cancelled' : paymentSummary?.balance_due === null ? 'Unavailable' : money(cashReceipt?.amount ?? splitSettlement?.outstanding_balance ?? paymentSummary?.balance_due ?? (isPaid ? '0' : pricing.selectedTotal))}
+            {isLinkedSourceHistory ? money(invoice.source_collection!.original_issued_total) : isHistoricalInvoice && !paymentSummary ? money(invoice.total_amount) : paymentSummary?.state === 'cancelled' ? 'Cancelled' : paymentSummary?.balance_due === null ? 'Unavailable' : money(cashReceipt?.amount ?? splitSettlement?.outstanding_balance ?? paymentSummary?.balance_due ?? (isPaid ? '0' : pricing.selectedTotal))}
           </h1>
           {!isHistoricalInvoice && !cashReceipt && !isPaid && <p className={`mt-1 min-h-5 text-[13px] font-bold ${selectedMethod === 'zelle' ? 'text-[#2dd4bf]' : 'text-[#8b92a5]'}`}>
             {splitSettlement
@@ -395,8 +397,8 @@ export default function CustomerInvoicePage() {
           </p>}
         </section>
 
-        <InvoicePaymentSummary summary={paymentSummary} dark />
-        {invoice.source_collection && <SourceCollectionSummary summary={invoice.source_collection} dark />}
+        {!isLinkedSourceHistory && <InvoicePaymentSummary summary={paymentSummary} dark />}
+        {invoice.source_collection && <SourceCollectionSummary summary={invoice.source_collection} dark originalInvoiceHref={invoice.source_collection.source_invoice_id ? `/portal/invoices/${invoice.source_collection.source_invoice_id}` : undefined} />}
 
         {isHistoricalInvoice ? (
           <section className="mt-4 rounded-[14px] border border-[#232939] bg-[#161a26] p-5" aria-labelledby="historical-invoice-title">
@@ -451,7 +453,7 @@ export default function CustomerInvoicePage() {
                 queryClient.invalidateQueries({ queryKey: ['invoice-detail', invoiceId] })
               }}
             />
-            <SettlementCreditPanel
+            {!invoice.source_collection && <SettlementCreditPanel
               access={settlementAccess}
               summary={splitSettlement}
               tone="dark"
@@ -459,7 +461,7 @@ export default function CustomerInvoicePage() {
                 queryClient.setQueryData(['invoice-settlement', 'authenticated', invoice.id], next)
                 queryClient.invalidateQueries({ queryKey: ['invoice-detail', invoiceId] })
               }}
-            />
+            />}
             <SettlementPaymentPanel
               access={settlementAccess}
               summary={splitSettlement}
@@ -629,7 +631,7 @@ export default function CustomerInvoicePage() {
         <section className="mt-4 rounded-[14px] border border-[#232939] bg-[#161a26] px-5 py-4" aria-labelledby="charge-breakdown">
           <div className="flex items-center justify-between gap-4 pb-2">
             <h2 id="charge-breakdown" className="min-w-0 truncate text-[11px] font-extrabold uppercase tracking-[0.1em] text-[#8b92a5]">
-              {concern} · Charges
+              {isCollectionInvoice ? 'Collection balance' : `${concern} · Charges`}
             </h2>
             <a
               href={`/api/v1/invoices/${invoice.id}/pdf`}
@@ -640,8 +642,8 @@ export default function CustomerInvoicePage() {
               Invoice PDF
             </a>
           </div>
-          {cashReceipt ? <CashReceiptBreakdown receipt={cashReceipt} /> : <div>
-            {[
+          {cashReceipt && !isCollectionInvoice ? <CashReceiptBreakdown receipt={cashReceipt} /> : <div>
+            {(isCollectionInvoice ? [['Balance transferred', Number(invoice.subtotal)]] : [
               ...(isHistoricalInvoice ? [['Subtotal', Number(invoice.subtotal)] as [string, number]] : [['Labor / Services', labor], ['Parts', parts]]),
               ['Shop Supplies', Number(invoice.shop_supplies_amount || 0)],
               ['Tax', Number(invoice.tax_amount || 0)],
@@ -651,7 +653,7 @@ export default function CustomerInvoicePage() {
               ...((isHistoricalInvoice || selectedMethod === 'card') && pricing.cardFee > 0
                 ? [['Card Processing Fee', pricing.cardFee] as [string, number]]
                 : []),
-            ].map(([label, amount], index, rows) => (
+            ]).map(([label, amount], index, rows) => (
               <div key={label} className={`flex items-center justify-between py-[9px] text-[13px] ${index < rows.length - 1 ? 'border-b border-[#1e2432]' : ''}`}>
                 <span className="text-[#9aa1b3]">{label}</span>
                 <span className="whitespace-nowrap font-semibold text-[#eceef4] tabular-nums">{money(amount)}</span>

@@ -5675,6 +5675,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       key={`${currentUser?.tenant_id}:${currentUser?.id}:${currentUser?.role}:${authSessionEpoch}:${importedBilling.invoice_id}:${selectedOrder.customer_id}`}
                       sourceInvoiceId={importedBilling.invoice_id}
                       customerId={selectedOrder.customer_id}
+                      sourceCustomerName={customerDisplayName}
                     />}
                   </div>
                 )}
