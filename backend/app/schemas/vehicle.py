@@ -51,9 +51,11 @@ class VehicleResponse(VehicleBase):
     id: UUID
     tenant_id: UUID
     customer_id: UUID
-    # Net accounts receivable for this truck in the customer context used by
-    # the listing endpoint. Positive means due; negative means customer credit.
+    # Current native principal due for this equipment and billed customer.
+    # Account credits and historical imports are not netted against this value.
     balance: Decimal = Decimal("0.00")
+    # Historical recorded remainder only; never included in current balance.
+    legacy_ets_balance: Decimal = Decimal("0.00")
     # Active roles for the customer whose profile requested this vehicle.
     # Billing-only relationships are intentionally not returned as vehicles.
     customer_relationship_types: List[Literal["owner", "operator"]] = Field(default_factory=list)

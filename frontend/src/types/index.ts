@@ -93,6 +93,8 @@ export interface Customer {
   quickbooks_customer_id?: string | null
   // Computed at query time (not stored columns), populated by the list/detail endpoints.
   balance?: string
+  /** Historical ETS remainder, unverified and excluded from balance due. */
+  legacy_ets_balance?: string
   vehicle_count?: number
   single_vehicle_license_plate?: string | null
   // Which field(s) satisfied the current search term (e.g. ["phone"]).
@@ -190,6 +192,8 @@ export interface Vehicle {
   notes: string | null
   /** Positive is due from this customer; negative is an account credit. */
   balance?: string
+  /** Historical ETS remainder, unverified and excluded from balance due. */
+  legacy_ets_balance?: string
   /** Active ownership/authority roles relative to the customer profile being viewed. */
   customer_relationship_types?: Array<'owner' | 'operator'>
   owner_customer_id?: string | null
@@ -299,7 +303,26 @@ export interface RepairOrderPhoto {
   uploader_name: string
 }
 
+export interface ImportedBilling {
+  source: 'easy_truck_shop_import'
+  evidence_basis: 'imported_records' | 'ets_source_snapshot'
+  reconciliation_status: 'not_checked'
+  invoice_repair_order_id?: string | null
+  invoice_repair_order_number?: string | null
+  shared_invoice?: boolean
+  invoice_id?: string | null
+  invoice_number?: string | null
+  total_amount?: string | null
+  recorded_completed_amount?: string | null
+  recorded_remaining_amount?: string | null
+  payment_status: 'paid' | 'partially_paid' | 'unpaid' | 'unverified'
+  observed_at?: string | null
+  review_required: boolean
+  review_reasons: string[]
+}
+
 export interface RepairOrder {
+  imported_billing?: ImportedBilling | null
   // Read-only source invoice projection; null means source billing is unavailable.
   imported_invoice_total_amount?: string | null
   pricing_policy?: ShopOrderPolicy

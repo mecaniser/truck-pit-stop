@@ -5,11 +5,12 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
-from sqlalchemy import bindparam, select, text
+from sqlalchemy import bindparam, or_, select, text
 
 from app.core.config import settings
 from app.db.models.invoice import Invoice
 from app.db.models.payment import Payment
+from app.db.models.repair_order import RepairOrder
 from app.schemas.imported_billing import ImportedBillingResponse
 from app.services.ets_completed_outcome_source import ETSCompletionHold, amount, identifier, _time
 from app.services.ets_source_evidence import latest_source_evidence, _digest
@@ -239,35 +240,116 @@ async def _source_evidence(db, tenant_id, invoice_ids):
     return result
 
 
-async def load_imported_billing(db, order):
+def _job_key(order):
+    match = re.fullmatch(r"(ETS-[0-9]+-[0-9]+)(?:-[0-9]+)?", getattr(order, "order_number", "") or "")
+    return match.group(1) if match else None
+
+
+def _group_hold(members):
+    if any(row.source != SOURCE or row.deleted_at is not None for row in members):
+        return "shared_job_source_conflict"
+    identities = {(row.customer_id, row.vehicle_id) for row in members}
+    if len(identities) != 1 or any(customer is None or vehicle is None for customer, vehicle in identities):
+        return "shared_job_identity_conflict"
+    return None
+
+
+async def _load_billing_batch(db, orders, tenant_id):
+    """Resolve invoice context once per job, without changing financial ownership.
+
+    Candidate orders deliberately include deleted/native rows: a conflicting
+    apparent sibling must hold the group, not silently disappear from evidence.
+    Queries are bounded per page rather than repeated per operation.
+    """
+    results = {}
+    valid = []
+    for order in orders:
+        if (order.tenant_id != tenant_id or order.source != SOURCE
+                or order.deleted_at is not None or not _job_key(order)):
+            results[order.id] = ImportedBillingResponse(review_reasons=["source_identity_unavailable"])
+        else:
+            valid.append(order)
+    if not valid:
+        return results
+    keys = {_job_key(order) for order in valid}
+    predicates = [predicate for key in keys for predicate in
+                  (RepairOrder.order_number == key, RepairOrder.order_number.like(key + "-%"))]
+    candidates = list((await db.scalars(select(RepairOrder).where(
+        RepairOrder.tenant_id == tenant_id, or_(*predicates)).limit(2001))).all())
+    if len(candidates) > 2000:
+        results.update({order.id: ImportedBillingResponse(review_reasons=["shared_job_capacity_exceeded"])
+                        for order in valid})
+        return results
+    groups = {}
+    for candidate in candidates:
+        key = _job_key(candidate)
+        if candidate.tenant_id == tenant_id and key in keys:
+            groups.setdefault(key, []).append(candidate)
+    eligible, holds = {}, {}
+    for order in valid:
+        key = _job_key(order)
+        members = groups.get(key, [])
+        reason = _group_hold(members) if members else "source_identity_unavailable"
+        if not any(member.id == order.id for member in members):
+            reason = "source_identity_unavailable"
+        if reason:
+            holds[key] = reason
+        else:
+            eligible[key] = members
+    ids = [member.id for members in eligible.values() for member in members]
     invoices = list((await db.scalars(select(Invoice).where(
-        Invoice.tenant_id == order.tenant_id, Invoice.repair_order_id == order.id))).all())
-    invoice, _ = supported_invoice(invoices)
-    payments, evidence = [], {}
-    if invoice is not None:
-        payments = list((await db.scalars(select(Payment).where(
-            Payment.tenant_id == order.tenant_id, Payment.invoice_id == invoice.id))).all())
-        evidence = await _source_evidence(db, order.tenant_id, [invoice.id])
-    shop, shop_error = trusted_shop_binding(order.tenant_id)
-    return summarize_imported_billing(invoices, payments, evidence.get(invoice.id) if invoice else None,
-        order=order, shop_id=shop, shop_error=shop_error)
+        Invoice.tenant_id == tenant_id, Invoice.repair_order_id.in_(ids)))).all()) if ids else []
+    by_order = {}
+    for invoice in invoices:
+        by_order.setdefault(invoice.repair_order_id, []).append(invoice)
+    canonical = {}
+    for key, members in eligible.items():
+        rows = [invoice for member in members for invoice in by_order.get(member.id, [])]
+        invoice, reason = supported_invoice(rows)
+        if reason:
+            holds[key] = reason
+            continue
+        owner = next(member for member in members if member.id == invoice.repair_order_id)
+        if getattr(invoice, "billed_customer_id", None) not in (None, owner.customer_id):
+            holds[key] = "invoice_customer_identity_mismatch"
+            continue
+        canonical[key] = (rows, invoice, owner, len(members) > 1)
+    invoice_ids = [value[1].id for value in canonical.values()]
+    payments = list((await db.scalars(select(Payment).where(
+        Payment.tenant_id == tenant_id, Payment.invoice_id.in_(invoice_ids)))).all()) if invoice_ids else []
+    by_invoice = {}
+    for payment in payments:
+        by_invoice.setdefault(payment.invoice_id, []).append(payment)
+    evidence = await _source_evidence(db, tenant_id, invoice_ids)
+    shop, shop_error = trusted_shop_binding(tenant_id)
+    summaries = {}
+    for key, (rows, invoice, owner, shared) in canonical.items():
+        summary = summarize_imported_billing(rows, by_invoice.get(invoice.id, []), evidence.get(invoice.id),
+            order=owner, shop_id=shop, shop_error=shop_error)
+        summary.invoice_repair_order_id = owner.id
+        summary.invoice_repair_order_number = owner.order_number
+        summary.shared_invoice = shared
+        summaries[key] = summary
+    for order in valid:
+        key = _job_key(order)
+        results[order.id] = (ImportedBillingResponse(review_reasons=[holds[key]]) if key in holds
+                             else summaries[key].model_copy(deep=True))
+    return results
+
+
+async def load_imported_billing(db, order):
+    return (await _load_billing_batch(db, [order], order.tenant_id))[order.id]
 
 
 async def attach_imported_invoice_totals(db, items, actor):
-    """One bounded invoice read per page; customers never gain a pricing field."""
+    """Staff-only, non-additive shared invoice context; no financial writes."""
     from app.services.parts_pricing import STAFF
     if actor.role not in STAFF:
         return
     imported = [item for item in items if item.source == SOURCE and item.tenant_id == actor.tenant_id and item.deleted_at is None]
-    if not imported: return
-    rows = list((await db.scalars(select(Invoice).where(Invoice.tenant_id == actor.tenant_id,
-        Invoice.repair_order_id.in_([item.id for item in imported])))).all())
-    evidence = await _source_evidence(db, actor.tenant_id, [row.id for row in rows])
-    grouped = {}
-    for row in rows: grouped.setdefault(row.repair_order_id, []).append(row)
-    shop, shop_error = trusted_shop_binding(actor.tenant_id)
+    if not imported:
+        return
+    summaries = await _load_billing_batch(db, imported, actor.tenant_id)
     for item in imported:
-        invoices = grouped.get(item.id, [])
-        invoice, _ = supported_invoice(invoices)
-        item.imported_invoice_total_amount = summarize_imported_billing(invoices, [],
-            evidence.get(invoice.id) if invoice else None, order=item, shop_id=shop, shop_error=shop_error).total_amount
+        item.imported_billing = summaries[item.id]
+        item.imported_invoice_total_amount = item.imported_billing.total_amount
