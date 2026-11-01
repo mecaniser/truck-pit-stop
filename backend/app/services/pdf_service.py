@@ -272,7 +272,7 @@ def generate_invoice_pdf(
     story = []
     if source_collection:
         if source_collection.get("is_source_history"):
-            payment_summary = {"state":"unknown", "note":"Historical source copy. Payment collection continues on the linked DBN collection invoice; do not pay this copy separately."}
+            payment_summary = {"state":"unknown", "note":"Historical source copy. Contact the shop for current billing information; do not pay this copy separately."}
         label = "Source invoice history" if source_collection.get("is_source_history") else "Collection copy"
         source_number = escape(str(source_collection.get("source_invoice_number", "")))
         story.append(_p(f'<b>{label} of ETS invoice {source_number}</b>', S_BOLD))
@@ -280,10 +280,13 @@ def generate_invoice_pdf(
             story.append(_p("Original invoice date: " + escape(str(source_collection["original_invoice_date"])[:10]), S_SMALL))
         original = Decimal(source_collection["original_issued_total"])
         prior = Decimal(source_collection["source_prior_allocated"])
-        opening = Decimal(source_collection["opening_principal"])
+        opening = Decimal(source_collection.get("opening_principal") or "0")
         story.append(_p(f'Original issued total: {_fmt(original)}  |  Prior ETS payments / credits: {_fmt(prior)}', S_SMALL))
-        story.append(_p(f'Balance transferred to DBN: {_fmt(opening)}. Balance includes original charges. This copy is not a new sale or tax invoice.', S_SMALL))
-        if source_collection.get("is_source_history"):
+        if source_collection.get("restricted_history"):
+            story.append(_p('Preserved source history. Contact the shop for current billing information; this is not a separate payment request.', S_SMALL))
+        else:
+            story.append(_p(f'Balance transferred to DBN: {_fmt(opening)}. Balance includes original charges. This copy is not a new sale or tax invoice.', S_SMALL))
+        if source_collection.get("is_source_history") and not source_collection.get("restricted_history"):
             current_balance = source_collection.get("balance_due")
             balance_label = _fmt(Decimal(current_balance)) if current_balance is not None else "Needs shop verification"
             story.append(_p("Current linked DBN balance: <b>" + balance_label + "</b>. This historical copy is not a separate payment request.", S_SMALL))

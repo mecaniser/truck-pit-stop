@@ -9,6 +9,7 @@ import json
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Literal, Optional
+from app.services.source_debt_handoff import invoice_customer_access_clause
 from uuid import UUID
 
 import stripe
@@ -122,7 +123,7 @@ async def invoice_for_principal(
     elif principal.role == UserRole.CUSTOMER:
         query = query.where(
             Invoice.tenant_id == principal.tenant_id,
-            RepairOrder.customer_id == principal.customer_id,
+            invoice_customer_access_clause(principal.customer_id),
         )
     else:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
@@ -143,7 +144,7 @@ async def invoice_for_principal(
     tenant = (await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id, Tenant.is_active.is_(True)))).scalar_one_or_none()
     if not tenant:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
-    return invoice, tenant, invoice.repair_order.customer_id
+    return invoice, tenant, handoff.customer_id if invoice.accounting_policy == "source_collection_hold" else invoice.repair_order.customer_id
 
 
 def _public_provider_status(readiness) -> str:

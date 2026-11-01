@@ -16,6 +16,9 @@ class SourceDebtHandoff(BaseModel):
     source_dbn_invoice_id = Column(UUID(as_uuid=True), nullable=False)
     source_repair_order_id = Column(UUID(as_uuid=True), nullable=False)
     customer_id = Column(UUID(as_uuid=True), nullable=False)
+    source_customer_id = Column(UUID(as_uuid=True), nullable=False)
+    bill_to_authorization = Column(J, nullable=False)
+    bill_to_authorization_sha256 = Column(String(64), nullable=False)
     native_invoice_id = Column(UUID(as_uuid=True), nullable=True, unique=True)
     source_capture_document = Column(J, nullable=False)
     source_capture_sha256 = Column(String(64), nullable=False)
@@ -40,6 +43,7 @@ class SourceDebtHandoff(BaseModel):
         ForeignKeyConstraint(['tenant_id','source_dbn_invoice_id'],['invoices.tenant_id','invoices.id'],name='fk_source_handoff_invoice',use_alter=True),
         ForeignKeyConstraint(['tenant_id','native_invoice_id'],['invoices.tenant_id','invoices.id'],name='fk_source_handoff_native',use_alter=True),
         ForeignKeyConstraint(['tenant_id','source_repair_order_id'],['repair_orders.tenant_id','repair_orders.id'],name='fk_source_handoff_order'),
+        ForeignKeyConstraint(['tenant_id','source_customer_id'],['customers.tenant_id','customers.id'],name='fk_source_handoff_source_customer'),
         ForeignKeyConstraint(['tenant_id','customer_id'],['customers.tenant_id','customers.id'],name='fk_source_handoff_customer'),
         CheckConstraint("currency='USD' AND source_kind='easy_truck_shop'",name='ck_source_handoff_identity'),
         CheckConstraint("state IN ('prepared','active','source_conflict','closed') AND version>=1",name='ck_source_handoff_state'),

@@ -72,6 +72,8 @@ async def send_invoice_payment_confirmation_email(
     vehicle: Optional[Vehicle],
 ) -> None:
     """Send a PAID invoice confirmation email with PDF attached."""
+    from app.services.source_debt_handoff import effective_billing_customer
+    customer=await effective_billing_customer(db,invoice,order,customer)
     if not customer.email:
         return
 
@@ -235,7 +237,7 @@ async def send_invoice_payment_confirmation_email(
 </div>
 """
 
-    collection = await source_collection_for_invoice(db, invoice)
+    collection = await source_collection_for_invoice(db, invoice,viewer_customer_id=customer.id)
     if collection:
         from app.services.source_debt_handoff import collection_email_html
         html_body = collection_email_html(invoice, collection, payment_summary, invoice_access_url, tenant)
@@ -251,7 +253,7 @@ async def send_invoice_payment_confirmation_email(
 
         pdf_bytes = generate_invoice_pdf(
             payment_summary=payment_summary.model_dump(),
-            source_collection=await source_collection_for_invoice(db,invoice),            invoice_number=invoice.invoice_number,
+            source_collection=await source_collection_for_invoice(db,invoice,viewer_customer_id=customer.id),            invoice_number=invoice.invoice_number,
             order_number=order.order_number,
             invoice_date=invoice.created_at.strftime("%m/%d/%Y") if invoice.created_at else "",
             service_completed=service_date,

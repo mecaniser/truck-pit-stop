@@ -2,7 +2,7 @@
 from datetime import date,datetime
 from decimal import Decimal
 from fastapi import APIRouter,Depends,HTTPException,Request,Response
-from sqlalchemy import and_,select
+from sqlalchemy import and_,or_,select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.endpoints.fleet_invoice_exports import _active_key
 from app.api.v1.endpoints.fleet_repair_history_exports import _digest,_utc,MAX_REPAIR_HISTORY_ROWS
@@ -62,7 +62,7 @@ async def repair_financial_manifest(request:Request,response:Response,
     # as deletion by receivers, so preserve their existing records and fail closed.
     held = await db.scalar(select(SourceDebtHandoff.id).where(
         SourceDebtHandoff.tenant_id==key.tenant_id,
-        SourceDebtHandoff.customer_id==key.customer_id).limit(1))
+        or_(SourceDebtHandoff.customer_id==key.customer_id,SourceDebtHandoff.source_customer_id==key.customer_id)).limit(1))
     if held:
         raise HTTPException(409,detail={"code":"external_manual_accounting_hold",
             "message":"This customer has externally reconciled source debt. Automatic complete financial export is held; preserve existing accounting records."})

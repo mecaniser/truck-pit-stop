@@ -483,9 +483,9 @@ async def provider_readiness(
                 ~select(InvoiceSettlement.id).where(
                     InvoiceSettlement.tenant_id == tenant.id,
                     InvoiceSettlement.invoice_id == Invoice.id,
-                    InvoiceSettlement.customer_id == RepairOrder.customer_id,
+                    InvoiceSettlement.customer_id == case((Invoice.accounting_policy == "source_collection_hold", Invoice.billed_customer_id), else_=RepairOrder.customer_id),
                     InvoiceSettlement.deleted_at.is_(None),
-                ).correlate(Invoice).exists(),
+                ).correlate(Invoice,RepairOrder).exists(),
             )
             .limit(1)
         )
@@ -521,7 +521,7 @@ async def provider_readiness(
                     and_(
                         RepairOrder.id == Invoice.repair_order_id,
                         RepairOrder.tenant_id == InvoicePaymentAttempt.tenant_id,
-                        RepairOrder.customer_id == InvoicePaymentAttempt.customer_id,
+                        case((Invoice.accounting_policy == "source_collection_hold", Invoice.billed_customer_id), else_=RepairOrder.customer_id) == InvoicePaymentAttempt.customer_id,
                         or_(
                             RepairOrder.deleted_at.is_(None),
                             InvoicePaymentAttempt.source == "backfill",
@@ -1033,8 +1033,14 @@ async def create_attempt(
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
     from app.services.source_debt_handoff import is_collection, invoice_handoff
     collection = is_collection(invoice)
+    collection_admission = None
     if collection:
         bound = await invoice_handoff(db, invoice, require_active=True)
+        from app.services.source_debt_handoff import source_proof
+        source_admission=await source_proof(db,tenant.id,bound.source_dbn_invoice_id,bound.customer_id)
+        collection_admission=dict(handoff_id=str(bound.id),handoff_version=bound.version,
+            source_capture_sha256=source_admission['digest'],source_revision=source_admission['revision'],
+            source_observed_at=source_admission['summary'].observed_at.isoformat(),bill_to_authorization_sha256=bound.bill_to_authorization_sha256)
         if bound.customer_id != customer_id:raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
     active_order_id = invoice.repair_order_id if collection else await db.scalar(select(RepairOrder.id).where(
         RepairOrder.id == invoice.repair_order_id,
@@ -1196,7 +1202,7 @@ async def create_attempt(
         prior_state=prior_state,
         new_state=settlement.state,
         pending_delta=amount,
-        evidence={"source": source, "rail": rail, "provider": provider},
+        evidence={"source": source, "rail": rail, "provider": provider, **({"source_collection_admission":collection_admission} if collection_admission else {})},
     )
     if rail != "card" and sender_evidence:
         await append_ledger_event(
@@ -1238,6 +1244,7 @@ async def locked_accessible_invoice_for_attempt(
     """
     from app.services.financial_transaction_lock import lock_tenant_financials
     await lock_tenant_financials(db, attempt.tenant_id)
+    from app.services.source_debt_handoff import invoice_customer_access_clause
     invoice = (
         await db.execute(
             select(Invoice)
@@ -1247,7 +1254,7 @@ async def locked_accessible_invoice_for_attempt(
                 and_(
                     Customer.id == attempt.customer_id,
                     Customer.tenant_id == attempt.tenant_id,
-                    Customer.id == RepairOrder.customer_id,
+                    invoice_customer_access_clause(attempt.customer_id),
                     Customer.deleted_at.is_(None),
                 ),
             )
@@ -1271,7 +1278,7 @@ async def locked_accessible_invoice_for_attempt(
                 Invoice.voided_at.is_(None),
                 Invoice.status != InvoiceStatus.CANCELLED,
                 RepairOrder.tenant_id == attempt.tenant_id,
-                RepairOrder.customer_id == attempt.customer_id,
+                invoice_customer_access_clause(attempt.customer_id),
                 or_(RepairOrder.deleted_at.is_(None), Invoice.accounting_policy == "source_collection_hold"),
                 RepairOrder.status != RepairOrderStatus.CANCELLED,
             )

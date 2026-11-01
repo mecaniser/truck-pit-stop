@@ -4,7 +4,7 @@ from decimal import Decimal
 from hashlib import sha256
 import json
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import uuid4, UUID
 from sqlalchemy import select, or_, and_
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.repair_order import RepairOrder
@@ -33,16 +33,19 @@ def hash_body(body):
 def utc(value):
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
-async def source_proof(db, tenant_id, invoice_id, customer_id):
+async def source_proof(db, tenant_id, invoice_id, customer_id, *, allow_bill_to_review=False):
     invoice=await db.scalar(select(Invoice).where(Invoice.id==invoice_id,Invoice.tenant_id==tenant_id))
     customer=await db.scalar(select(Customer).where(Customer.id==customer_id,Customer.tenant_id==tenant_id,Customer.deleted_at.is_(None)))
     if not invoice or not customer:
         fail('source_invoice_not_found','Source invoice or customer not found.',404)
     order=await db.scalar(select(RepairOrder).where(RepairOrder.id==invoice.repair_order_id,RepairOrder.tenant_id==tenant_id))
+    source_customer_id=(invoice.billed_customer_id or order.customer_id) if order else None
+    source_customer=await db.scalar(select(Customer).where(Customer.id==source_customer_id,Customer.tenant_id==tenant_id,Customer.deleted_at.is_(None)))
+    if not source_customer:fail('source_identity_unresolved','Original source bill-to is unavailable.')
     if (invoice.source!=SOURCE or invoice.deleted_at or invoice.status==InvoiceStatus.CANCELLED or invoice.voided_at
         or not order or order.source!=SOURCE or str(getattr(order.status,'value',order.status))=='cancelled'
-        or order.customer_id!=customer.id or invoice.billed_customer_id not in (None,customer.id)
-        or customer.is_internal_fleet or invoice.is_internal or not order.vehicle_id):
+        or order.customer_id!=source_customer.id or invoice.billed_customer_id not in (None,source_customer.id)
+        or customer.is_internal_fleet or source_customer.is_internal_fleet or invoice.is_internal or order.is_internal or not order.vehicle_id):
         fail('source_identity_unresolved','Exact source invoice and legal customer identity require review.')
     envelope=(await imported_billing._source_evidence(db,tenant_id,[invoice.id])).get(invoice.id)
     shop,error=imported_billing.trusted_shop_binding(tenant_id)
@@ -57,21 +60,39 @@ async def source_proof(db, tenant_id, invoice_id, customer_id):
         raise
     except Exception as exc:
         fail('source_evidence_unavailable','A fresh complete source observation is required: '+str(exc)[:100])
+    remote_identity_present=any(k in latest for k in ('source_customer_id','source_customer_uuid','source_customer_deleted','source_customer_binding_kind'))
+    if customer.id!=source_customer.id or remote_identity_present:
+        try:
+            UUID(latest.get('source_customer_uuid',''))
+            valid_source_customer=(latest.get('source_customer_binding_kind')=='embedded_service_customer' and latest.get('source_customer_deleted') is False
+                and str(latest.get('source_customer_id'))==str(getattr(source_customer,'ets_external_id',None)))
+        except (ValueError,TypeError,AttributeError):
+            valid_source_customer=False
+        if not valid_source_customer:
+            fail('source_customer_evidence_unavailable','Fresh digest-bound original ETS customer proof is required for a different portal bill-to.')
     # Exactly one source invoice for the entire source service, including soft archives.
     siblings=list((await db.scalars(select(RepairOrder).where(RepairOrder.tenant_id==tenant_id,
         RepairOrder.source==SOURCE,RepairOrder.order_number.like(f"ETS-{latest['service_id']}-%")))).all())
     sibling_ids=[o.id for o in siblings]
-    if order.id not in sibling_ids or any(o.customer_id!=customer.id or o.vehicle_id!=order.vehicle_id for o in siblings):
+    if order.id not in sibling_ids or any(o.customer_id!=source_customer.id or o.vehicle_id!=order.vehicle_id for o in siblings):
         fail('source_job_identity_conflict','Source service/customer/vehicle linkage requires review.')
     invoices=list((await db.scalars(select(Invoice).where(Invoice.tenant_id==tenant_id,Invoice.repair_order_id.in_(sibling_ids),Invoice.accounting_policy!=COLLECTION_POLICY))).all())
     candidate,reason=imported_billing.supported_invoice(invoices)
     if reason or not candidate or candidate.id!=invoice.id:
         fail('source_invoice_ambiguous','A unique canonical source invoice is required.')
+    if not allow_bill_to_review:
+        bound=await db.scalar(select(SourceDebtHandoff).where(SourceDebtHandoff.tenant_id==tenant_id,SourceDebtHandoff.source_dbn_invoice_id==invoice.id,SourceDebtHandoff.customer_id==customer.id))
+        if not bound and customer.id!=source_customer.id:fail('bill_to_review_required','Review the original and portal bill-to identity before collection.')
+        if bound:
+            validate_bill_to_authorization(bound)
+            if (bound.source_customer_id!=source_customer.id or bound.bill_to_authorization.get('source_ets_customer_id')!=getattr(source_customer,'ets_external_id',None)
+                or (bound.bill_to_authorization.get('source_customer_uuid') and bound.bill_to_authorization['source_customer_uuid']!=latest.get('source_customer_uuid'))):
+                fail('source_bill_to_changed','Original source bill-to changed after review.')
     allocations={str(row['id']):row for row in latest.get('payment_lines',[])}
     if len(allocations)!=len(latest.get('payment_lines',[])):
         fail('source_allocation_conflict','Source allocation identities conflict.')
     revision=str(envelope['observations'][-1]['sha256'])
-    return dict(invoice=invoice,order=order,customer=customer,envelope=envelope,latest=latest,summary=summary,
+    return dict(invoice=invoice,order=order,customer=customer,source_customer=source_customer,envelope=envelope,latest=latest,summary=summary,
         digest=_digest(latest),revision=revision,allocations=allocations,shop=shop)
 
 def proposal(proof):
@@ -88,10 +109,14 @@ async def preview(db,tenant_id,invoice_id,customer_id):
     existing=await db.scalar(select(SourceDebtHandoff).where(SourceDebtHandoff.tenant_id==tenant_id,SourceDebtHandoff.source_dbn_invoice_id==invoice_id,SourceDebtHandoff.customer_id==customer_id))
     existing_summary=await summary(db,existing) if existing else None
     try:
-        proof=await source_proof(db,tenant_id,invoice_id,customer_id)
+        proof=await source_proof(db,tenant_id,invoice_id,customer_id,allow_bill_to_review=True)
+        source_customer=proof.get('source_customer',proof['customer'])
+        review=dict(required=source_customer.id!=customer_id and not existing,source_customer_id=str(source_customer.id),source_ets_customer_id=getattr(source_customer,'ets_external_id',None),target_customer_id=str(customer_id),source_legal_name=legal_name(source_customer),target_legal_name=legal_name(proof['customer']),authorization_mode=existing.bill_to_authorization.get('mode') if existing else 'same_customer' if source_customer.id==customer_id else None)
+        if review['required']:
+            return dict(eligibility='held',hold_reasons=['bill_to_review_required'],proposal=proposal(proof),existing_handoff=existing_summary,bill_to_review=review)
         if money(proof['summary'].recorded_remaining_amount)<=ZERO:
-            return dict(eligibility='held',hold_reasons=['source_already_settled'],proposal=proposal(proof),existing_handoff=existing_summary)
-        return dict(eligibility='ready',hold_reasons=[],proposal=proposal(proof),existing_handoff=existing_summary)
+            return dict(eligibility='held',hold_reasons=['source_already_settled'],proposal=proposal(proof),existing_handoff=existing_summary,bill_to_review=review)
+        return dict(eligibility='ready',hold_reasons=[],proposal=proposal(proof),existing_handoff=existing_summary,bill_to_review=review)
     except SettlementDomainError as exc:
         if exc.status_code==404:raise
         return dict(eligibility='held',hold_reasons=[exc.code],proposal=None,existing_handoff=existing_summary)
@@ -121,7 +146,7 @@ async def prepare(db,tenant_id,actor,body,key):
     if old:
         if old.request_sha256!=request_hash:fail('idempotency_conflict','Idempotency key was used for a different request.')
         return old
-    proof=await source_proof(db,tenant_id,body.source_invoice_id,body.target_customer_id)
+    proof=await source_proof(db,tenant_id,body.source_invoice_id,body.target_customer_id,allow_bill_to_review=True)
     if proof['digest']!=body.expected_source_capture_sha256 or proof['revision']!=body.expected_source_revision:
         fail('source_version_changed','Source evidence changed. Refresh the preview.')
     if money(proof['summary'].recorded_remaining_amount)<=ZERO:fail('source_already_settled','The source debt is already settled.')
@@ -129,17 +154,39 @@ async def prepare(db,tenant_id,actor,body,key):
     existing=await db.scalar(select(SourceDebtHandoff).where(SourceDebtHandoff.tenant_id==tenant_id,SourceDebtHandoff.ets_shop_id==proof['shop'],SourceDebtHandoff.ets_invoice_internal_id==str(l['invoice_id'])))
     if existing:
         if existing.customer_id!=body.target_customer_id or existing.source_dbn_invoice_id!=body.source_invoice_id:fail('source_identity_conflict','This debt already has a different collection identity.')
+        validate_bill_to_authorization(existing)
+        original_customer=proof.get('source_customer',proof['customer'])
+        if existing.source_customer_id!=original_customer.id:fail('source_identity_conflict','Original source bill-to changed after review.')
+        incoming_review=body.bill_to_review.model_dump(mode='json') if body.bill_to_review else None
+        prior=existing.bill_to_authorization
+        if incoming_review and any(prior.get(k)!=v for k,v in incoming_review.items()):
+            fail('bill_to_review_conflict','This debt already has a different immutable bill-to review.')
+        if not incoming_review and prior.get('mode')!='same_customer':fail('bill_to_review_conflict','Exact reviewed bill-to acknowledgement is required.')
         return existing
+    source_customer=proof.get('source_customer',proof['customer'])
+    review=body.bill_to_review
+    if source_customer.id!=body.target_customer_id:
+        if (not review or review.source_customer_id!=source_customer.id or review.target_customer_id!=body.target_customer_id):
+            fail('bill_to_review_required','Exact original and portal bill-to identity approval is required.')
+    elif review:
+        fail('bill_to_review_conflict','Same-customer collection does not require another legal-entity claim.')
+    authorization=dict(schema_version=1,mode='owner_same_legal_entity' if review else 'same_customer',tenant_id=str(tenant_id),
+        source_invoice_id=str(proof['invoice'].id),ets_shop_id=proof['shop'],ets_invoice_internal_id=str(l['invoice_id']),
+        source_customer_id=str(source_customer.id),source_ets_customer_id=getattr(source_customer,'ets_external_id',None),source_customer_uuid=l.get('source_customer_uuid'),target_customer_id=str(body.target_customer_id),
+        original_bill_to_name=legal_name(source_customer),target_bill_to_name=legal_name(proof['customer']),attested_same_legal_entity=bool(review),
+        actor_user_id=str(actor.id),recorded_at=datetime.now(timezone.utc).isoformat(),confirmation_reference=review.confirmation_reference if review else None,
+        reason=review.reason if review else 'Same original and collection customer',source_capture_sha256=proof['digest'])
     row=SourceDebtHandoff(id=uuid4(),tenant_id=tenant_id,source_kind='easy_truck_shop',ets_shop_id=proof['shop'],
         ets_service_internal_id=str(l['service_internal_id']),ets_invoice_internal_id=str(l['invoice_id']),
         source_invoice_number=str(l['invoice_number']),source_service_number=str(l['service_id']),
-        source_dbn_invoice_id=proof['invoice'].id,source_repair_order_id=proof['order'].id,customer_id=body.target_customer_id,
+        source_dbn_invoice_id=proof['invoice'].id,source_repair_order_id=proof['order'].id,customer_id=body.target_customer_id,source_customer_id=source_customer.id,bill_to_authorization=authorization,bill_to_authorization_sha256=hash_body(authorization),
         source_capture_document=proof['envelope'],source_capture_sha256=proof['digest'],source_observed_at=proof['summary'].observed_at,
         original_issued_total=proof['summary'].total_amount,source_prior_allocated=proof['summary'].recorded_completed_amount,
         opening_principal=proof['summary'].recorded_remaining_amount,currency='USD',state='prepared',source_revision=proof['revision'],version=1,
         owner_acknowledged_at=datetime.now(timezone.utc),owner_acknowledged_by=actor.id,accounting_state='external_reconciliation_pending',accounting_owner='external_manual',
         idempotency_key=key,request_sha256=request_hash)
     db.add(row);await db.flush()
+    await event(db,row,actor,'bill_to_reviewed','bill-to:'+key,{'authorization_sha256':row.bill_to_authorization_sha256,'authorization':authorization})
     await event(db,row,actor,'prepared','prepare:'+key,payload)
     return row
 
@@ -168,12 +215,12 @@ async def activate(db,row,actor,body,key):
     if await pending_activity(db,[row.source_dbn_invoice_id],row.tenant_id):fail('source_payment_conflict','Existing payment activity requires reconciliation.')
     invoice=Invoice(id=uuid4(),tenant_id=row.tenant_id,repair_order_id=row.source_repair_order_id,billed_customer_id=row.customer_id,
         source_debt_handoff_id=row.id,source=COLLECTION_SOURCE,accounting_policy=COLLECTION_POLICY,
-        invoice_number='DBN-COL-'+row.id.hex[:20].upper(),status=InvoiceStatus.SENT,is_internal=False,
+        invoice_number='DBN-COL-'+row.id.hex[:20].upper(),status=InvoiceStatus.SENT,is_internal=False,due_date=proof['invoice'].due_date,
         recipient_name=(f'{proof["customer"].first_name} {proof["customer"].last_name}').strip(),
         recipient_email=proof['customer'].email,recipient_phone=proof['customer'].phone,
         subtotal=row.opening_principal,total_amount=row.opening_principal,shop_supplies_amount=ZERO,service_fee_amount=ZERO,tax_amount=ZERO,discount_amount=ZERO,
         notes=f'Collection copy of ETS invoice {row.source_invoice_number}; no new sale or tax.',
-        line_items_snapshot={'version':1,'labor':[{'description':f'Balance transferred from ETS invoice {row.source_invoice_number}','hours':'1.00','hourly_rate':str(row.opening_principal),'total_cost':str(row.opening_principal)}],'parts':[]},
+        line_items_snapshot={'version':1,'purpose':'source_debt_collection','labor':[],'parts':[],'collection':[{'description':f'Balance transferred from ETS invoice {row.source_invoice_number}','amount':str(row.opening_principal),'currency':'USD'}]},
         quickbooks_sync_status='external_reconciliation_pending',created_by_user_id=actor.id)
     db.add(invoice);await db.flush()
     db.add(InvoiceSettlement(tenant_id=row.tenant_id,invoice_id=invoice.id,customer_id=row.customer_id,principal_total=row.opening_principal,
@@ -208,7 +255,7 @@ async def summary(db,row):
         tenant=await db.scalar(select(Tenant).where(Tenant.id==row.tenant_id))
         readiness=await provider_readiness(db,tenant,invoice_id=row.native_invoice_id)
         if readiness.status!='ready':holds.extend(readiness.reasons or ['payment_capability_unavailable'])
-    return dict(id=str(row.id),source_invoice_id=str(row.source_dbn_invoice_id),state=row.state,version=row.version,source_invoice_number=row.source_invoice_number,
+    return dict(source_customer_id=str(row.source_customer_id),target_customer_id=str(row.customer_id),bill_to_authorization_mode=row.bill_to_authorization['mode'],bill_to_reviewed_at=row.bill_to_authorization['recorded_at'],id=str(row.id),source_invoice_id=str(row.source_dbn_invoice_id),state=row.state,version=row.version,source_invoice_number=row.source_invoice_number,
         source_service_number=row.source_service_number,original_issued_total=str(money(row.original_issued_total)),
         source_prior_allocated=str(money(row.source_prior_allocated)),opening_principal=str(money(row.opening_principal)),
         native_invoice_id=str(row.native_invoice_id) if row.native_invoice_id else None,
@@ -227,13 +274,21 @@ async def invoice_handoff(db,invoice,*,require_active=False,check_source=True):
         or invoice.deleted_at or invoice.status==InvoiceStatus.CANCELLED or invoice.voided_at):
         fail('collection_lineage_invalid','Collection invoice lineage requires review.')
     row=await get_handoff(db,invoice.tenant_id,invoice.source_debt_handoff_id)
+    validate_bill_to_authorization(row)
     if row.native_invoice_id!=invoice.id or row.source_repair_order_id!=invoice.repair_order_id or row.customer_id!=invoice.billed_customer_id:
         fail('collection_lineage_invalid','Collection invoice customer and source linkage require review.')
     customer=await db.scalar(select(Customer.id).where(Customer.id==row.customer_id,Customer.tenant_id==row.tenant_id,Customer.deleted_at.is_(None)))
     if not customer:fail('invoice_not_found','Invoice not found.',404)
     if require_active and row.state!='active':fail('collection_not_active','This source debt is not available for collection.')
+    original_customer=await db.scalar(select(Customer.id).where(Customer.id==row.source_customer_id,Customer.tenant_id==row.tenant_id,Customer.deleted_at.is_(None)))
+    original_order=await db.scalar(select(RepairOrder).where(RepairOrder.id==row.source_repair_order_id,RepairOrder.tenant_id==row.tenant_id))
+    if not original_customer or not original_order or original_order.customer_id!=row.source_customer_id:
+        fail('bill_to_authorization_invalid','Original source bill-to identity changed.')
     if check_source:
         proof=await source_proof(db,row.tenant_id,row.source_dbn_invoice_id,row.customer_id)
+        proof_source=proof.get('source_customer',proof['customer'])
+        if proof_source.id!=row.source_customer_id or getattr(proof_source,'ets_external_id',None)!=row.bill_to_authorization.get('source_ets_customer_id'):
+            fail('source_bill_to_changed','Original source bill-to changed after review.')
         links=list((await db.scalars(select(SourceReceiptLink).where(SourceReceiptLink.tenant_id==row.tenant_id,SourceReceiptLink.handoff_id==row.id))).all())
         original=latest_source_evidence(row.source_capture_document)
         known={str(x['id']):hash_body(x) for x in original.get('payment_lines',[])}
@@ -242,11 +297,18 @@ async def invoice_handoff(db,invoice,*,require_active=False,check_source=True):
         if known!=current:fail('source_reconciliation_required','Source payments changed. Reconcile before collecting another payment.')
     return row
 
-async def source_collection_for_invoice(db,invoice):
+async def source_collection_for_invoice(db,invoice,*,viewer_customer_id=None):
     if not is_collection(invoice):
         if getattr(invoice,'source',None)!=SOURCE:return None
         row=await db.scalar(select(SourceDebtHandoff).where(SourceDebtHandoff.tenant_id==invoice.tenant_id,SourceDebtHandoff.source_dbn_invoice_id==invoice.id,SourceDebtHandoff.native_invoice_id.is_not(None)))
-        if row:return {**await summary(db,row),'is_source_history':True}
+        if row:
+            if row.source_customer_id!=row.customer_id and viewer_customer_id==row.source_customer_id:
+                return dict(is_source_history=True,restricted_history=True,source_invoice_id=str(invoice.id),
+                    source_invoice_number=row.source_invoice_number,source_service_number=row.source_service_number,
+                    original_invoice_date=invoice.ets_invoiced_at.isoformat() if invoice.ets_invoiced_at else None,
+                    original_issued_total=str(money(row.original_issued_total)),source_prior_allocated=str(money(row.source_prior_allocated)),
+                    native_invoice_id=None,target_customer_id=None,balance_due=None,native_confirmed_principal=None,native_pending_principal=None)
+            return {**await summary(db,row),'is_source_history':True}
         return None
     row=await invoice_handoff(db,invoice,check_source=False)
     return {**await summary(db,row),'is_source_history':False}
@@ -406,13 +468,20 @@ async def reconcile(db,row,actor,body,key):
     return row,None
 
 
-def source_history_alias_clause():
-    return ~select(SourceDebtHandoff.id).where(SourceDebtHandoff.tenant_id==Invoice.tenant_id,SourceDebtHandoff.source_dbn_invoice_id==Invoice.id,SourceDebtHandoff.native_invoice_id.is_not(None)).correlate(Invoice).exists()
+def source_history_alias_clause(viewer_customer_id=None):
+    conditions=[SourceDebtHandoff.tenant_id==Invoice.tenant_id,SourceDebtHandoff.source_dbn_invoice_id==Invoice.id,SourceDebtHandoff.native_invoice_id.is_not(None)]
+    if viewer_customer_id is not None:conditions.append(SourceDebtHandoff.customer_id==viewer_customer_id)
+    return ~select(SourceDebtHandoff.id).where(*conditions).correlate(Invoice).exists()
 
 def collection_email_html(invoice,collection,payment_summary,invoice_access_url,tenant=None):
     from html import escape
     from app.services.invoice_payment_presentation import payment_summary_html
     from app.services.invoice_review_service import invoice_review_html
+    if collection.get('restricted_history'):
+        return (f'<h2>Historical source invoice {escape(invoice.invoice_number)}</h2>'
+            f'<p>Original issued total: ${Decimal(collection["original_issued_total"]):,.2f}. Prior source payments / credits: ${Decimal(collection["source_prior_allocated"]):,.2f}.</p>'
+            '<p>This invoice is preserved as source history. Contact the shop for current billing information; this copy is not a separate payment request.</p>'
+            +invoice_review_html(tenant,invoice))
     history=bool(collection.get('is_source_history'))
     if history:
         from app.services.invoice_payment_presentation import InvoicePaymentSummary
@@ -434,3 +503,44 @@ def accounting_export_allowed_clause():
     return and_(Invoice.accounting_policy != COLLECTION_POLICY,
         ~select(SourceDebtHandoff.id).where(SourceDebtHandoff.tenant_id==Invoice.tenant_id,
             or_(SourceDebtHandoff.source_dbn_invoice_id==Invoice.id,SourceDebtHandoff.native_invoice_id==Invoice.id)).correlate(Invoice).exists())
+
+
+def legal_name(customer):
+    return customer.company_name or ' '.join(filter(None,[customer.first_name,customer.last_name]))
+
+def validate_bill_to_authorization(row):
+    auth=row.bill_to_authorization or {}
+    expected=dict(tenant_id=str(row.tenant_id),source_invoice_id=str(row.source_dbn_invoice_id),ets_shop_id=row.ets_shop_id,
+        ets_invoice_internal_id=row.ets_invoice_internal_id,source_customer_id=str(row.source_customer_id),target_customer_id=str(row.customer_id))
+    if (hash_body(auth)!=row.bill_to_authorization_sha256 or any(auth.get(k)!=v for k,v in expected.items())
+        or auth.get('mode') not in ('same_customer','owner_same_legal_entity')
+        or (row.source_customer_id!=row.customer_id and (auth.get('mode')!='owner_same_legal_entity' or auth.get('attested_same_legal_entity') is not True))):
+        fail('bill_to_authorization_invalid','Reviewed bill-to authority requires verification.')
+
+async def effective_billing_customer(db,invoice,order,customer=None):
+    if not is_collection(invoice):
+        return customer or await db.scalar(select(Customer).where(Customer.id==order.customer_id,Customer.tenant_id==invoice.tenant_id))
+    row=await invoice_handoff(db,invoice,check_source=False)
+    return await db.scalar(select(Customer).where(Customer.id==row.customer_id,Customer.tenant_id==row.tenant_id,Customer.deleted_at.is_(None)))
+
+def native_collection_customer_clause(customer_id):
+    return and_(Invoice.accounting_policy==COLLECTION_POLICY,Invoice.source==COLLECTION_SOURCE,
+        Invoice.billed_customer_id==customer_id,
+        select(SourceDebtHandoff.id).where(SourceDebtHandoff.id==Invoice.source_debt_handoff_id,
+            SourceDebtHandoff.native_invoice_id==Invoice.id,SourceDebtHandoff.tenant_id==Invoice.tenant_id,
+            SourceDebtHandoff.customer_id==customer_id,SourceDebtHandoff.source_repair_order_id==Invoice.repair_order_id).correlate(Invoice).exists())
+
+def invoice_customer_access_clause(customer_id):
+    return or_(and_(Invoice.accounting_policy!=COLLECTION_POLICY,RepairOrder.customer_id==customer_id),native_collection_customer_clause(customer_id))
+
+async def can_view_source_history(db,invoice,customer_id):
+    if invoice.source!=SOURCE:return False
+    row=await db.scalar(select(SourceDebtHandoff).where(SourceDebtHandoff.tenant_id==invoice.tenant_id,
+        SourceDebtHandoff.source_dbn_invoice_id==invoice.id,SourceDebtHandoff.customer_id==customer_id,SourceDebtHandoff.native_invoice_id.is_not(None),SourceDebtHandoff.state.in_(['active','source_conflict','closed'])))
+    if not row:return False
+    validate_bill_to_authorization(row)
+    order=await db.scalar(select(RepairOrder).where(RepairOrder.id==invoice.repair_order_id,RepairOrder.tenant_id==invoice.tenant_id))
+    if not order or order.customer_id!=row.source_customer_id or (invoice.billed_customer_id or order.customer_id)!=row.source_customer_id:return False
+    for identity in (row.source_customer_id,row.customer_id):
+        if not await db.scalar(select(Customer.id).where(Customer.id==identity,Customer.tenant_id==row.tenant_id,Customer.deleted_at.is_(None))):return False
+    return True

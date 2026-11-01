@@ -313,7 +313,9 @@ async def _load_invoice_context(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Invoice not found.",
         )
-    return invoice, invoice.repair_order, invoice.repair_order.customer, invoice.repair_order.vehicle
+    from app.services.source_debt_handoff import effective_billing_customer
+    billing_customer=await effective_billing_customer(db,invoice,invoice.repair_order,invoice.repair_order.customer)
+    return invoice, invoice.repair_order, billing_customer, invoice.repair_order.vehicle
 
 
 async def _load_db048_guest_context(
@@ -339,7 +341,7 @@ async def _load_hardened_guest_invoice_context(
     except (HTTPException, KeyError, TypeError, ValueError):
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
     if (
-        str(order.customer_id) != payload.get("customer_id")
+        str(customer.id) != payload.get("customer_id")
         or str(invoice.tenant_id) != payload.get("tenant_id")
         or invoice.deleted_at is not None
         or invoice.voided_at is not None
@@ -349,7 +351,7 @@ async def _load_hardened_guest_invoice_context(
     ):
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
     if is_collection(invoice):
-        bound=await invoice_handoff(db,invoice,require_active=True)
+        bound=await invoice_handoff(db,invoice,check_source=False)
         if str(bound.customer_id)!=payload.get("customer_id"):
             raise SettlementDomainError("invoice_not_found","Invoice not found.",status_code=404)
     tenant = (await db.execute(select(Tenant).where(
@@ -363,7 +365,8 @@ async def _load_hardened_guest_invoice_context(
 
 def _validate_invoice_link_subject(payload: dict, invoice: Invoice, order: RepairOrder) -> None:
     """Validate token subject fields against current DB records."""
-    if str(order.customer_id) != payload.get("customer_id"):
+    subject_id=invoice.billed_customer_id if is_collection(invoice) else order.customer_id
+    if str(subject_id) != payload.get("customer_id"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid invoice link.")
     if str(invoice.tenant_id) != payload.get("tenant_id"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid invoice link.")
@@ -454,7 +457,7 @@ async def resolve_invoice_link(
     _zelle_amount = invoice_money_snapshot(invoice)[0]
     cash_receipt = await load_cash_receipt(db, invoice)
     return ResolveInvoiceLinkResponse(
-        source_collection=await source_collection_for_invoice(db,invoice),
+        source_collection=await source_collection_for_invoice(db,invoice,viewer_customer_id=customer.id),
         payment_summary=await load_payment_summary(db, invoice, cash_receipt),
         cash_receipt=cash_receipt,
         invoice_id=str(invoice.id),
@@ -1227,7 +1230,7 @@ async def download_invoice_pdf_by_token(
     cash_receipt = await load_cash_receipt(db, invoice)
     pdf_bytes = _build_invoice_pdf_bytes(
         payment_summary=await load_payment_summary(db, invoice, cash_receipt),
-        source_collection=await source_collection_for_invoice(db,invoice),
+        source_collection=await source_collection_for_invoice(db,invoice,viewer_customer_id=customer.id),
         invoice=invoice, order=order, customer=customer,
         vehicle=vehicle, tenant=tenant,
         labor_items=labor_items, parts_items=parts_items,

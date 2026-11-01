@@ -37,7 +37,8 @@ async def test_prepare_only_replay_and_activation_requires_post_ack(db_session,m
     native=await db_session.get(Invoice,row.native_invoice_id)
     assert native.total_amount==Decimal('600') and native.tax_amount==0
     assert native.repair_order_id==original.repair_order_id
-    assert Decimal(native.line_items_snapshot['labor'][0]['total_cost'])==Decimal('600')
+    assert native.line_items_snapshot['labor']==[]
+    assert Decimal(native.line_items_snapshot['collection'][0]['amount'])==Decimal('600')
     assert original.total_amount==Decimal('1000')
     assert (await svc.activate(db_session,row,a,activate,'activate'))[1]
     with pytest.raises(SettlementDomainError) as exc:
@@ -272,3 +273,156 @@ async def test_overview_customer_vehicle_and_sort_count_debt_once(db_session,mon
     # Operational outstanding balance stays known under a collection hold.
     amount=await db_session.scalar(select(customer_balance_sort()).select_from(Customer).where(Customer.id==c.id))
     assert Decimal(str(amount))==Decimal('300')
+
+@pytest.mark.asyncio
+async def test_reviewed_different_portal_billto_exact_membership_and_history(db_session,monkeypatch):
+    from app.db.models.customer import Customer
+    from app.db.models.user import UserRole
+    from app.schemas.source_debt_handoff import BillToReview
+    from app.api.v1.endpoints.invoices import get_invoice,download_invoice_pdf,_list_invoices_legacy
+    from app.api.v1.endpoints.invoice_settlements import invoice_for_principal
+    from app.api.v1.endpoints.invoice_access import _load_hardened_guest_invoice_context
+    t,a,source,original,p,b=await context(db_session,monkeypatch)
+    original.source='easy_truck_shop_import';source.ets_external_id='97052'
+    original.due_date=datetime(2026,10,19,tzinfo=timezone.utc)
+    target=Customer(tenant_id=t.id,first_name='Reviewed',last_name='Portal',company_name='Same legal business',email='target@example.test')
+    db_session.add(target);await db_session.flush()
+    p.update(source_customer=source,customer=target)
+    p['latest'].update(source_customer_id='97052',source_customer_uuid=str(uuid4()),source_customer_deleted=False,source_customer_binding_kind='embedded_service_customer')
+    target_prepare=b.model_copy(update={'target_customer_id':target.id})
+    preview=await svc.preview(db_session,t.id,original.id,target.id)
+    assert preview['hold_reasons']==['bill_to_review_required']
+    with pytest.raises(SettlementDomainError) as exc:
+        await svc.prepare(db_session,t.id,a,target_prepare,'missing-review')
+    assert exc.value.code=='bill_to_review_required'
+    target_prepare.bill_to_review=BillToReview(mode='owner_same_legal_entity',source_customer_id=source.id,target_customer_id=target.id,attested_same_legal_entity=True,confirmation_reference='Owner instruction for exact ETS1687',reason='Same legal business, use existing portal account')
+    row=await svc.prepare(db_session,t.id,a,target_prepare,'prepare')
+    assert row.source_customer_id==source.id and row.customer_id==target.id
+    assert row.bill_to_authorization['actor_user_id']==str(a.id)
+    assert row.bill_to_authorization_sha256==svc.hash_body(row.bill_to_authorization)
+    assert await db_session.scalar(select(func.count()).select_from(Invoice))==1
+    assert (await svc.prepare(db_session,t.id,a,target_prepare,'prepare')).id==row.id
+    p['summary'].observed_at=datetime.now(timezone.utc)+timedelta(seconds=1)
+    row,_=await svc.activate(db_session,row,a,SourceVersionRequest(expected_version=1,expected_source_capture_sha256='a'*64,expected_source_revision='b'*64),'activate')
+    native=await db_session.get(Invoice,row.native_invoice_id)
+    b_user=NS(role=UserRole.CUSTOMER,customer_id=target.id,tenant_id=t.id)
+    a_user=NS(role=UserRole.CUSTOMER,customer_id=source.id,tenant_id=t.id)
+    detail=await get_invoice(native.id,db=db_session,current_user=b_user)
+    assert detail.customer_name=='Reviewed Portal'
+    assert svc.utc(native.due_date)==svc.utc(original.due_date)
+    assert (await invoice_for_principal(db_session,native.id,b_user))[2]==target.id
+    for denied in (a_user,NS(role=UserRole.CUSTOMER,customer_id=uuid4(),tenant_id=t.id),NS(role=UserRole.CUSTOMER,customer_id=target.id,tenant_id=uuid4())):
+        with pytest.raises(Exception):await get_invoice(native.id,db=db_session,current_user=denied)
+        with pytest.raises(SettlementDomainError):await invoice_for_principal(db_session,native.id,denied)
+        with pytest.raises(Exception):await download_invoice_pdf(native.id,db=db_session,current_user=denied)
+    listed=await _list_invoices_legacy(status_filter=None,repair_order_id=None,skip=0,limit=100,paginated=False,db=db_session,current_user=b_user)
+    assert [i.id for i in listed]==[native.id]
+    assert await svc.can_view_source_history(db_session,original,target.id)
+    history=await get_invoice(original.id,db=db_session,current_user=b_user)
+    assert history.source_collection['is_source_history']
+    source_view=await get_invoice(original.id,db=db_session,current_user=a_user)
+    assert source_view.source_collection['restricted_history']
+    assert source_view.source_collection['native_invoice_id'] is None
+    assert source_view.source_collection['target_customer_id'] is None
+    assert source_view.source_collection['balance_due'] is None
+    assert 'source_capture_sha256' not in source_view.source_collection
+    a_list=await _list_invoices_legacy(status_filter=None,repair_order_id=None,skip=0,limit=100,paginated=False,db=db_session,current_user=a_user)
+    assert [i.id for i in a_list]==[original.id]
+    assert a_list[0].source_collection['restricted_history']
+    assert (await download_invoice_pdf(native.id,db=db_session,current_user=b_user)).media_type=='application/pdf'
+    token=dict(invoice_id=str(native.id),tenant_id=str(t.id),customer_id=str(target.id))
+    assert (await _load_hardened_guest_invoice_context(db_session,token))[2].id==target.id
+    with pytest.raises(SettlementDomainError):await _load_hardened_guest_invoice_context(db_session,{**token,'customer_id':str(source.id)})
+    assert original.repair_order.customer_id==source.id and original.billed_customer_id is None
+    from app.services.customer_balance import customer_balance_totals,vehicle_balance_totals,customer_balance_sort
+    totals,legacy=await customer_balance_totals(db_session,[source.id,target.id])
+    assert totals.get(source.id,Decimal('0'))==0 and totals[target.id]==Decimal('600')
+    vehicle_totals,_=await vehicle_balance_totals(db_session,target.id,[original.repair_order.vehicle_id])
+    assert vehicle_totals[original.repair_order.vehicle_id]==Decimal('600')
+    assert Decimal(str(await db_session.scalar(select(customer_balance_sort()).select_from(Customer).where(Customer.id==target.id))))==Decimal('600')
+    with pytest.raises(Exception):await get_invoice(original.id,db=db_session,current_user=NS(role=UserRole.CUSTOMER,customer_id=target.id,tenant_id=uuid4()))
+    from app.services.invoice_settlement_service import create_attempt
+    from app.db.models.invoice_settlement import InvoiceSettlement,InvoicePaymentLedgerEvent
+    settlement=await db_session.scalar(select(InvoiceSettlement).where(InvoiceSettlement.invoice_id==native.id))
+    from app.services.invoice_settlement_service import provider_readiness
+    readiness=await provider_readiness(db_session,t,invoice_id=native.id,lock_ancestry=True)
+    assert readiness.status=='ready',readiness.reasons
+    creation=await create_attempt(db_session,invoice=native,tenant=t,customer_id=target.id,actor=a,amount=Decimal('600'),rail='card',expected_settlement_version=settlement.version,idempotency_key='target-attempt',source='customer_portal',subject_type='customer',subject_id=target.id,sender_evidence={'source_collection_admission':'client-forgery'})
+    evidence=await db_session.scalar(select(InvoicePaymentLedgerEvent).where(InvoicePaymentLedgerEvent.attempt_id==creation.attempt.id,InvoicePaymentLedgerEvent.event_type=='attempt_created'))
+    admission=evidence.evidence_snapshot['source_collection_admission']
+    assert admission['handoff_id']==str(row.id) and admission['source_capture_sha256']=='a'*64
+    assert admission['source_revision']=='b'*64
+    from app.services.invoice_settlement_service import confirm_attempt
+    from app.db.models.source_debt_handoff import EtsReceiptUpdateTask
+    confirmation=await confirm_attempt(db_session,attempt_id=creation.attempt.id,tenant=t,actor=a,
+        expected_attempt_version=creation.attempt.version,idempotency_key='confirm-target',received_principal=Decimal('600'),
+        reference='pi_fictional',provider_charge_id='ch_fictional',provider_event_id='evt_fictional')
+    assert confirmation.paid_transition and native.status.value=='paid'
+    task=await db_session.scalar(select(EtsReceiptUpdateTask).where(EtsReceiptUpdateTask.payment_id==confirmation.payment.id))
+    assert task.handoff_id==row.id and task.principal_amount==Decimal('600')
+    assert original.status.value=='sent' and original.repair_order.status.value=='invoiced'
+    source_view=await get_invoice(original.id,db=db_session,current_user=a_user)
+    assert source_view.source_collection['balance_due'] is None
+    assert source_view.source_collection['native_confirmed_principal'] is None
+    from test_db048_invoice_settlements import _add_eligible_invoice
+    unrelated=await _add_eligible_invoice(db_session,tenant=t,customer=source,reference_invoice=original,with_shadow_settlement=False)
+    unrelated.source='easy_truck_shop_import'
+    with pytest.raises(Exception):await get_invoice(unrelated.id,db=db_session,current_user=b_user)
+    changed=target_prepare.model_copy(deep=True)
+    changed.bill_to_review.reason='Different claim'
+    with pytest.raises(SettlementDomainError) as exc:
+        await svc.prepare(db_session,t.id,a,changed,'different-claim')
+    assert exc.value.code=='bill_to_review_conflict'
+    for deleted_customer in (source,target):
+        deleted_customer.deleted_at=datetime.now(timezone.utc)
+        with pytest.raises(SettlementDomainError):await svc.effective_billing_customer(db_session,native,original.repair_order)
+        assert not await svc.can_view_source_history(db_session,original,target.id)
+        deleted_customer.deleted_at=None
+        await db_session.flush()
+    # A malformed proof never grants even the otherwise correct native target.
+    row.bill_to_authorization_sha256='f'*64
+    with pytest.raises(SettlementDomainError):await svc.effective_billing_customer(db_session,native,original.repair_order)
+
+@pytest.mark.asyncio
+async def test_real_source_proof_requires_original_remote_customer_for_alias(db_session,monkeypatch):
+    from app.db.models.customer import Customer
+    from test_db139_imported_billing import snapshot_fixture
+    from app.services.ets_source_evidence import _digest
+    real_proof=svc.source_proof
+    t,a,source,original,p,b=await context(db_session,monkeypatch)
+    monkeypatch.setattr(svc,'source_proof',real_proof)
+    source.ets_external_id='97052'
+    original.source=svc.SOURCE;original.invoice_number='ETSINV-9001';original.subtotal=original.total_amount=Decimal('534.41')
+    original.repair_order.source=svc.SOURCE;original.repair_order.order_number='ETS-7001-8002'
+    target=Customer(tenant_id=t.id,first_name='Portal',last_name='Target',email='proof-target@example.test')
+    db_session.add(target);await db_session.flush()
+    _,_,envelope=snapshot_fixture(invoice_status='5',balance={'amount':'534.41','currency':'USD'},payment_lines=[])
+    monkeypatch.setattr(svc.imported_billing,'_source_evidence',AsyncMock(return_value={original.id:envelope}))
+    monkeypatch.setattr(svc.imported_billing,'trusted_shop_binding',lambda tenant:('shop1',None))
+    with pytest.raises(SettlementDomainError) as exc:
+        await real_proof(db_session,t.id,original.id,target.id,allow_bill_to_review=True)
+    assert exc.value.code=='source_customer_evidence_unavailable'
+    facts=envelope['observations'][0]['evidence']
+    facts.update(source_customer_id='97052',source_customer_uuid=str(uuid4()),source_customer_deleted=False,source_customer_binding_kind='embedded_service_customer')
+    envelope['observations'][0]['sha256']=_digest(facts)
+    verified=await real_proof(db_session,t.id,original.id,target.id,allow_bill_to_review=True)
+    assert verified['source_customer'].id==source.id and verified['customer'].id==target.id
+    for owner,field in ((source,'is_internal_fleet'),(original.repair_order,'is_internal')):
+        setattr(owner,field,True)
+        with pytest.raises(SettlementDomainError) as exc:
+            await real_proof(db_session,t.id,original.id,target.id,allow_bill_to_review=True)
+        assert exc.value.code=='source_identity_unresolved'
+        setattr(owner,field,False)
+        await db_session.flush()
+    # Present conflicting proof holds either mode, including same-customer legacy flows.
+    good=dict(facts)
+    for change in ({'source_customer_id':'OTHER'},{'source_customer_deleted':True},{'source_customer_uuid':'invalid'}):
+        facts.clear();facts.update(good|change)
+        envelope['observations'][0]['sha256']=_digest(facts)
+        for bill_to in (source.id,target.id):
+            with pytest.raises(SettlementDomainError) as exc:
+                await real_proof(db_session,t.id,original.id,bill_to,allow_bill_to_review=True)
+            assert exc.value.code=='source_customer_evidence_unavailable'
+    with pytest.raises(SettlementDomainError) as exc:
+        await real_proof(db_session,uuid4(),original.id,target.id,allow_bill_to_review=True)
+    assert exc.value.status_code==404

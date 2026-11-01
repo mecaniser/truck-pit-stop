@@ -8,7 +8,17 @@ class PreviewRequest(BaseModel):
     source_invoice_id: UUID
     target_customer_id: UUID
 
+class BillToReview(BaseModel):
+    model_config = ConfigDict(extra='forbid',str_strip_whitespace=True)
+    mode: Literal['owner_same_legal_entity']
+    source_customer_id: UUID
+    target_customer_id: UUID
+    attested_same_legal_entity: Literal[True]
+    confirmation_reference: str = Field(min_length=3,max_length=500)
+    reason: str = Field(min_length=3,max_length=1000)
+
 class PrepareRequest(PreviewRequest):
+    bill_to_review: Optional[BillToReview] = None
     expected_source_capture_sha256: str = Field(min_length=64,max_length=64,pattern='^[a-f0-9]+$')
     expected_source_revision: str = Field(min_length=1,max_length=64)
     acknowledge_dbn_primary: Literal[True]

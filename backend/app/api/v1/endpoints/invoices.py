@@ -1,4 +1,4 @@
-from app.services.source_debt_handoff import source_collection_for_invoice, source_history_alias_clause
+from app.services.source_debt_handoff import source_collection_for_invoice, source_history_alias_clause, effective_billing_customer, invoice_customer_access_clause, can_view_source_history
 from app.services.invoice_payment_presentation import InvoicePaymentSummary, load_payment_summary, payment_summary_html
 from app.services.invoice_review_service import invoice_review_url, invoice_review_html
 from datetime import datetime, date, timezone
@@ -536,7 +536,7 @@ async def enqueue_invoice_created_email(
     tenant: Tenant,
 ) -> bool:
     """Persist a retryable invoice email in the caller's transaction."""
-    customer = order.customer
+    customer = await effective_billing_customer(db, invoice, order, order.customer)
     vehicle = order.vehicle
     recipient = _invoice_recipient(invoice, customer, vehicle)
     # Fleet billing contacts need the tokenized public invoice link generated
@@ -558,7 +558,7 @@ async def enqueue_invoice_created_email(
     labor_items, parts_items = await _load_line_items(db, order.id, invoice)
     payment_summary = await load_payment_summary(db, invoice, await load_cash_receipt(db, invoice))
     email_html = _build_invoice_email_html(
-        source_collection=await source_collection_for_invoice(db, invoice),
+        source_collection=await source_collection_for_invoice(db, invoice, viewer_customer_id=customer.id),
         payment_summary=payment_summary,
         customer=recipient,
         vehicle_info=vehicle_info,
@@ -622,7 +622,7 @@ async def notify_invoice_created(
     except Exception:
         logger.exception("invoice repair-order websocket failed for invoice %s", invoice.id)
 
-    customer = order.customer
+    customer = await effective_billing_customer(db, invoice, order, order.customer)
     vehicle = order.vehicle
     recipient = _invoice_recipient(invoice, customer, vehicle)
     if email_queued or not customer or not recipient or not recipient.email:
@@ -641,7 +641,7 @@ async def notify_invoice_created(
     labor_items, parts_items = await _load_line_items(db, order.id, invoice)
     payment_summary = await load_payment_summary(db, invoice, await load_cash_receipt(db, invoice))
     email_html = _build_invoice_email_html(
-        source_collection=await source_collection_for_invoice(db, invoice),
+        source_collection=await source_collection_for_invoice(db, invoice, viewer_customer_id=customer.id),
         payment_summary=payment_summary,
         customer=recipient,
         vehicle_info=vehicle_info,
@@ -655,7 +655,7 @@ async def notify_invoice_created(
     try:
         pdf_bytes = _build_invoice_pdf_bytes(
             payment_summary=payment_summary,
-            source_collection=await source_collection_for_invoice(db, invoice),
+            source_collection=await source_collection_for_invoice(db, invoice, viewer_customer_id=customer.id),
             invoice=invoice,
             order=order,
             customer=recipient,
@@ -1041,8 +1041,8 @@ async def list_invoices(
     if current_user.role == UserRole.CUSTOMER:
         if not current_user.customer_id:
             return paginated_or_list([], 0, skip, limit, paginated)
-        source_filters = [RepairOrder.customer_id == current_user.customer_id, Invoice.tenant_id == current_user.tenant_id, source_history_alias_clause()]
-        projection_filters = [InvoiceReadModel.customer_id == current_user.customer_id, InvoiceReadModel.tenant_id == current_user.tenant_id, source_history_alias_clause()]
+        source_filters = [invoice_customer_access_clause(current_user.customer_id), Invoice.tenant_id == current_user.tenant_id, source_history_alias_clause(current_user.customer_id)]
+        projection_filters = [invoice_customer_access_clause(current_user.customer_id), InvoiceReadModel.tenant_id == current_user.tenant_id, source_history_alias_clause(current_user.customer_id)]
     else:
         if not current_user.tenant_id:
             return paginated_or_list([], 0, skip, limit, paginated)
@@ -1084,9 +1084,9 @@ async def list_invoices(
     for payload, source in rows.all():
         item = InvoiceResponse.model_validate(payload)
         item.source = source
-        if source == "ets_collection_handoff":
+        if source in ("ets_collection_handoff", "easy_truck_shop_import"):
             actual=await db.get(Invoice,item.id)
-            item.source_collection=await source_collection_for_invoice(db,actual)
+            item.source_collection=await source_collection_for_invoice(db,actual,viewer_customer_id=current_user.customer_id if current_user.role==UserRole.CUSTOMER else None)
         items.append(item)
     for item in items:
         item.cash_receipt = await load_cash_receipt(db, item)
@@ -1115,10 +1115,10 @@ async def _list_invoices_legacy(
     if current_user.role == UserRole.CUSTOMER:
         if not current_user.customer_id or not current_user.tenant_id:
             return paginated_or_list([], 0, skip, limit, paginated)
-        selected_scope = and_(RepairOrder.customer_id == current_user.customer_id,
+        selected_scope = and_(invoice_customer_access_clause(current_user.customer_id),
                               Invoice.tenant_id == current_user.tenant_id)
-        query = query.where(selected_scope, source_history_alias_clause())
-        count_query = count_query.where(selected_scope, source_history_alias_clause())
+        query = query.where(selected_scope, source_history_alias_clause(current_user.customer_id))
+        count_query = count_query.where(selected_scope, source_history_alias_clause(current_user.customer_id))
     else:
         if not current_user.tenant_id:
             return paginated_or_list([], 0, skip, limit, paginated)
@@ -1180,7 +1180,7 @@ async def _list_invoices_legacy(
         resp = InvoiceResponse.model_validate(inv)
         resp.payment = payments_by_invoice.get(inv.id)
         resp.cash_receipt = await load_cash_receipt(db, inv)
-        if inv.source == "ets_collection_handoff":resp.source_collection=await source_collection_for_invoice(db,inv)
+        if inv.source in ("ets_collection_handoff","easy_truck_shop_import"):resp.source_collection=await source_collection_for_invoice(db,inv,viewer_customer_id=current_user.customer_id if current_user.role==UserRole.CUSTOMER else None)
         items.append(resp)
     return paginated_or_list(items, total, skip, limit, paginated)
 
@@ -1205,8 +1205,9 @@ async def get_invoice(
             detail="Invoice not found",
         )
     inv, order, customer, vehicle = row
+    customer = await effective_billing_customer(db, inv, order, customer)
     if current_user.role == UserRole.CUSTOMER:
-        if not current_user.customer_id or current_user.customer_id != order.customer_id:
+        if current_user.tenant_id != inv.tenant_id or not current_user.customer_id or (current_user.customer_id != customer.id and not await can_view_source_history(db, inv, current_user.customer_id)):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied",
@@ -1223,7 +1224,7 @@ async def get_invoice(
     tenant = (await db.execute(select(Tenant).where(Tenant.id == inv.tenant_id))).scalar_one_or_none()
     return InvoiceDetailResponse(
         payment_summary=await load_payment_summary(db, inv, response.cash_receipt),
-        source_collection=await source_collection_for_invoice(db, inv),
+        source_collection=await source_collection_for_invoice(db, inv, viewer_customer_id=current_user.customer_id if current_user.role == UserRole.CUSTOMER else None),
         review_url=invoice_review_url(tenant, inv),
         **response.model_dump(exclude={"source_collection"}),
         order_number=order.order_number,
@@ -1412,13 +1413,14 @@ async def resend_invoice(
         )
     
     invoice, order, customer, vehicle = row
+    customer = await effective_billing_customer(db, invoice, order, customer)
     
     if current_user.tenant_id != invoice.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         )
-    if invoice.source == "easy_truck_shop_import" or order.source == "easy_truck_shop_import":
+    if invoice.accounting_policy != "source_collection_hold" and (invoice.source == "easy_truck_shop_import" or order.source == "easy_truck_shop_import"):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Imported ETS invoices cannot be resent")
     if invoice.status == InvoiceStatus.CANCELLED:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot resend a voided invoice")
@@ -1451,7 +1453,7 @@ async def resend_invoice(
     cash_receipt = await load_cash_receipt(db, invoice)
     payment_summary = await load_payment_summary(db, invoice, cash_receipt)
     email_html = _build_invoice_email_html(
-        source_collection=await source_collection_for_invoice(db, invoice),
+        source_collection=await source_collection_for_invoice(db, invoice, viewer_customer_id=customer.id),
         payment_summary=payment_summary,
         customer=recipient,
         vehicle_info=vehicle_info,
@@ -1467,7 +1469,7 @@ async def resend_invoice(
     try:
         pdf_bytes = _build_invoice_pdf_bytes(
             payment_summary=payment_summary,
-            source_collection=await source_collection_for_invoice(db, invoice),
+            source_collection=await source_collection_for_invoice(db, invoice, viewer_customer_id=customer.id),
             invoice=invoice, order=order, customer=recipient,
             vehicle=vehicle, tenant=tenant,
             labor_items=labor_items, parts_items=parts_items,
@@ -1509,9 +1511,10 @@ async def download_invoice_pdf(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
 
     inv, order, customer, vehicle = row
+    customer = await effective_billing_customer(db, inv, order, customer)
 
     if current_user.role == UserRole.CUSTOMER:
-        if not current_user.customer_id or current_user.customer_id != order.customer_id:
+        if current_user.tenant_id != inv.tenant_id or not current_user.customer_id or (current_user.customer_id != customer.id and not await can_view_source_history(db, inv, current_user.customer_id)):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     elif current_user.tenant_id != inv.tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
@@ -1524,7 +1527,7 @@ async def download_invoice_pdf(
     cash_receipt = await load_cash_receipt(db, inv)
     pdf_bytes = _build_invoice_pdf_bytes(
         payment_summary=await load_payment_summary(db, inv, cash_receipt),
-        source_collection=await source_collection_for_invoice(db, inv),
+        source_collection=await source_collection_for_invoice(db, inv, viewer_customer_id=current_user.customer_id if current_user.role == UserRole.CUSTOMER else None),
         invoice=inv, order=order, customer=customer,
         vehicle=vehicle, tenant=tenant,
         labor_items=labor_items, parts_items=parts_items,
