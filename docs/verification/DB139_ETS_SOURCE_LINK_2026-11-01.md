@@ -44,3 +44,33 @@ desktop34px/mobile44px component geometry. Final full npm build and changed-sour
 lint pass. [Draft PR746](https://github.com/mecaniser/truck-pit-stop/pull/746).
 Subsequent commit records only this documentation/board evidence; application
 source is byte-identical to independently approved candidate. No release claimed.
+
+## Authorized release integration — 2026-11-01
+
+Release & Reliability resumes PR746 under the user's release-queue authorization.
+Original owner task **Find editing bugs** is idle at published bf6a21e5; its
+untracked fixture/screenshot/audit files are preserved in the original worktree.
+All integration work uses a separate clone/branch codex/pr746-release-integration.
+
+Main d15aa737 is integrated at 0e488ec68eca902d5604ef494675e65ae8680496.
+The sole application conflict retains both the provenance-validated URL helper
+and main's `_source_summary(..., allow_paid_unapplied=False)` contract. All
+financial calculations and retired/shared handling remain current-main behavior.
+Both board histories remain intact. B4/importer remains held; this navigation
+extension does not increase parity completion or authorize financial writes.
+
+Owner integration checks: 210 focused backend tests and 100 frontend tests pass;
+production build/control guard/TypeScript/Vite pass. Changed-source lint is
+recorded separately against the actual origin/main baseline. Counts overlap.
+
+Fresh independent integration GO at exact 0e488ec6: 181 backend tests (including
+10 EDG export-contract cases) and 105 frontend tests passed; source, tenant,
+digest, manifest, identity, fixed-origin/path, canonical sibling, keyboard,
+new-tab/rel and no-row-open boundaries reviewed. Mechanical comparison confirms
+main financial logic unchanged after excluding the URL helper/response field;
+EDG manifest/export/settlement source remains byte-identical to main. No edits,
+production actions, browser/service changes or formal PR approval by gatekeeper.
+
+Exact-head protected CI, signed-in production desktop/mobile warning links and
+correct ETS navigation, deployment SHA and readiness remain required before Done.
+Rollback is code revert/redeploy; no migration/data rollback is required.
