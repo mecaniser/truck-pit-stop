@@ -19,3 +19,5 @@ Screenshots: [Shop Work desktop](db150-pane-spacing/shop-desktop.png), [mobile](
 2026-11-01: Vite5199 PID16583 cwd this checkout/frontend, branch above/basef61fd271. API8016 dieselbridge_api_workspace-pane-spacing binds this checkout/backend. Proxy target8016 verified; direct and proxied readiness DB/Redis healthy. Existing fictional truckpitstop_db042_qa schema196_historical_owner_self_review matches source alembic head; no migrate/reseed. Redis12, no worker start or payment testing. Normal local sign-in with existing fictional QA account. Approved backend env symlink retained, no credentials copied or printed.
 
 http://127.0.0.1:5199/dashboard?selected=3858e180-0a2b-40d4-a2f0-b3c37ac3da7f&queue=needs_action&work_view=active aligned and browser-verified. Inventory branch/PR727 and5198/API8015 preserved. Focused shared-layout PR only; not merged/deployed. Status Review.
+
+Draft PR #729: https://github.com/mecaniser/truck-pit-stop/pull/729. Protected CI pending; local source and runtime QA passed.
