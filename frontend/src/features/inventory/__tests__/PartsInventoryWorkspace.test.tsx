@@ -282,6 +282,26 @@ describe('DB-038 Parts & inventory workspace', () => {
     window.sessionStorage.clear()
   })
 
+  it('keeps a long part identity complete and its labeled facts attached through selection', async () => {
+    installApi()
+    const original = apiMocks.get.getMockImplementation()!
+    const longPart = { ...activePart, name: 'HOSE — CHARGE AIR COOLER, COLD SIDE, B2, ISB G — Freightliner Cascadia replacement assembly' }
+    apiMocks.get.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+      if (url === '/parts-operations/parts') return Promise.resolve({ data: page([longPart]) })
+      if (url === `/parts-operations/parts/${longPart.id}`) return Promise.resolve({ data: detail(longPart) })
+      return original(url, config)
+    })
+    renderWorkspace()
+    const user = userEvent.setup()
+    const open = await screen.findByRole('button', { name: `${longPart.name} ${longPart.sku}` })
+    const row = open.closest('[role="row"]') as HTMLElement
+    expect(within(row).getByRole('cell', { name: /Available/ })).toBeInTheDocument()
+    expect(within(row).getByRole('cell', { name: /Cost \$/ })).toBeInTheDocument()
+    expect(within(row).getByRole('cell', { name: /Value \$/ })).toBeInTheDocument()
+    await user.click(open)
+    expect(await screen.findByRole('heading', { name: longPart.name })).toBeInTheDocument()
+  })
+
   it('appends explicit 50-row server pages and resets the loaded sequence when search changes', async () => {
     installApi()
     const user = userEvent.setup()
@@ -1108,6 +1128,7 @@ describe('DB-038 Parts & inventory workspace', () => {
       { label: 'Available', sort: 'available', first: 'asc', second: 'desc' },
       { label: 'Bin location', sort: 'location', first: 'asc', second: 'desc' },
       { label: 'Unit cost', sort: 'cost', first: 'desc', second: 'asc' },
+      { label: 'Stock value', sort: 'value', first: 'desc', second: 'asc' },
       { label: 'Remarks', sort: 'reorder', first: 'desc', second: 'asc' },
     ] as const
 
@@ -1177,6 +1198,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     }))
     expect(screen.queryByRole('dialog', { name: 'Sort parts' })).not.toBeInTheDocument()
     expect(sortTrigger).toHaveFocus()
+    expect(sortTrigger).toHaveTextContent('Unit cost high to low')
 
     await user.click(sortTrigger)
     await user.click(screen.getByRole('button', { name: 'Catalog order' }))
@@ -1266,8 +1288,8 @@ describe('DB-038 Parts & inventory workspace', () => {
 
     // Unit cost and stock value sit side by side, so both group the same way.
     const row = screen.getByRole('row', { selected: true })
-    expect(within(row).getByRole('cell', { name: '$1,800.00' })).toBeInTheDocument()
-    expect(within(row).getByRole('cell', { name: '$3,900.00' })).toBeInTheDocument()
+    expect(within(row).getByRole('cell', { name: 'Cost $1,800.00' })).toBeInTheDocument()
+    expect(within(row).getByRole('cell', { name: 'Value $3,900.00' })).toBeInTheDocument()
 
     const overview = screen.getByRole('tabpanel', { name: 'Overview' })
     expect(within(overview).getByText('$1,800.00')).toBeInTheDocument()
@@ -1483,6 +1505,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     await user.keyboard('{Enter}')
     const dialog = await screen.findByRole('dialog', { name: 'Brake shoe kit image' })
     expect(within(dialog).getByRole('img')).toHaveAccessibleName(/Brake shoe kit/)
+    await user.click(within(dialog).getByRole('img'))
     expect(screen.getByRole('heading', { name: 'Alternator', hidden: true })).toBeInTheDocument()
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
@@ -1526,7 +1549,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(apiMocks.post).not.toHaveBeenCalled()
   })
 
-  it('keeps the soft-hotspot cue decorative and the keyboard target on the part button', async () => {
+  it('keeps the row cue decorative and a single keyboard opening target on the part button', async () => {
     installApi()
     renderWorkspace()
     const partButton = await screen.findByRole('button', { name: 'Alternator ALT-42' })
@@ -1537,7 +1560,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(partButton.querySelectorAll('button, a, [tabindex]')).toHaveLength(0)
   })
 
-  it('opens parts with Enter and Space while other cells and purchase checkboxes do not select them', async () => {
+  it('opens parts from row facts or padding and with Enter or Space while purchase checkboxes stay separate', async () => {
     installApi()
     const user = userEvent.setup()
     renderWorkspace()
@@ -1545,8 +1568,12 @@ describe('DB-038 Parts & inventory workspace', () => {
     await user.click(screen.getByRole('button', { name: 'Load 50 more' }))
     const brakeButton = await screen.findByRole('button', { name: 'Brake shoe kit BRK-9' })
     const row = brakeButton.closest('[role="row"]')!
-    await user.click(within(row as HTMLElement).getByRole('cell', { name: '9', exact: true }))
-    expect(screen.getByRole('heading', { name: 'Alternator' })).toBeInTheDocument()
+    await user.click(within(row as HTMLElement).getByRole('cell', { name: 'Available 9', exact: true }))
+    expect(await screen.findByRole('heading', { name: 'Brake shoe kit' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Alternator ALT-42' }))
+    fireEvent.click(row)
+    expect(await screen.findByRole('heading', { name: 'Brake shoe kit' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Alternator ALT-42' }))
     const checkbox = screen.getByRole('checkbox', { name: 'Select Brake shoe kit for purchase preparation' })
     await user.click(checkbox)
     expect(screen.getByRole('heading', { name: 'Alternator' })).toBeInTheDocument()

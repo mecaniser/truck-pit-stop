@@ -7504,3 +7504,56 @@ html.customer-portal-active {
 .db-presentation-new .db-parts-workbench__row { outline:1px solid var(--workspace-border); outline-offset:-1px; }
 /* Supplier search meets its scroll container edge; contain focus paint. */
 .db-presentation-new .db-suppliers-workspace .db-search-add-bar__field:focus-within { outline-offset:-2px; }
+
+/* Full-width names: sorting stays in a compact sticky bar, facts wrap below
+   the identity instead of reserving mostly empty columns beside its name. */
+.db-parts-workbench .db-parts-workbench__sort-bar { display:flex; flex-wrap:wrap; align-items:center; gap:2px 8px; padding:4px 6px; min-block-size:44px; }
+.db-parts-workbench__sort-bar > .is-sortable { flex:0 0 auto; border:0; padding:0; }
+.db-parts-workbench__sort-bar > .is-sortable > button { justify-content:flex-start; gap:4px; min-block-size:36px; padding:4px 6px; white-space:nowrap; }
+.db-parts-workbench__sort-bar > .is-sortable > button > span { white-space:nowrap; }
+.db-parts-workbench__sort-bar .db-parts-workbench__sort-caption { padding:0 6px; border:0; }
+.db-parts-workbench .db-parts-workbench__row { display:grid; --parts-row-check-size:28px; grid-template-columns:var(--parts-row-check-size) minmax(0,1fr); grid-template-rows:auto auto; align-items:start; padding:3px 6px; gap:0 2px; overflow:visible; }
+.db-parts-workbench .db-parts-workbench__ledger.is-read-only .db-parts-workbench__row { grid-template-columns:minmax(0,1fr); }
+.db-parts-workbench .db-parts-workbench__check { grid-column:1; grid-row:1 / 3; align-self:center; min-block-size:44px; }
+.db-parts-workbench .db-parts-workbench__check label { inline-size:28px; block-size:44px; }
+.db-parts-workbench .db-parts-workbench__row > .db-parts-workbench__part-cell { grid-column:2; grid-row:1; position:static; border:0; }
+.db-parts-workbench .db-parts-workbench__ledger.is-read-only .db-parts-workbench__part-cell { grid-column:1; }
+.db-parts-workbench .db-parts-workbench__row-select { min-block-size:54px; padding-block:5px; }
+.db-parts-workbench .db-parts-workbench__identity strong { white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; }
+.db-parts-workbench .db-parts-workbench__identity small { white-space:normal; overflow-wrap:anywhere; }
+.db-parts-workbench .db-parts-workbench__photo-spacer { flex-basis:36px; inline-size:36px; block-size:36px; }
+.db-parts-workbench .db-parts-workbench__part-cell > .db-parts-workbench__photo-trigger .db-parts-workbench__photo { flex-basis:36px; inline-size:36px; block-size:36px; }
+.db-parts-workbench .db-parts-workbench__row-facts { grid-column:2; grid-row:2; display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 16px; min-inline-size:0; border:0; padding:0 12px 3px 58px; color:inherit; }
+.db-parts-workbench .db-parts-workbench__ledger.is-read-only .db-parts-workbench__row-facts { grid-column:1; }
+.db-parts-workbench__row-facts > [role='cell'] { min-inline-size:0; font-size:.75rem; white-space:normal; overflow-wrap:anywhere; }
+.db-parts-workbench__row-facts > strong { font-family:var(--font-mono,ui-monospace,monospace); font-variant-numeric:tabular-nums; }
+.db-parts-workbench__row-facts > strong > span { color:var(--text-secondary); font-family:var(--font-sans,inherit); font-weight:400; }
+.db-parts-workbench__row-facts .is-empty { display:none; }
+.db-parts-workbench .db-parts-workbench__ledger.is-compact .db-parts-workbench__row-facts { padding-inline-start:12px; }
+.db-parts-workbench .db-parts-workbench__ledger.is-compact .db-parts-workbench__row-select { min-block-size:44px; }
+@media (max-width:760px) {
+ .db-parts-workbench .db-parts-workbench__sort-bar { display:none; }
+ .db-parts-workbench .db-parts-workbench__row-facts { padding-inline-start:12px; gap:4px 12px; }
+}
+@media (pointer:coarse) {
+ .db-parts-workbench .db-parts-workbench__row { --parts-row-check-size:44px; }
+ .db-parts-workbench .db-parts-workbench__check label { inline-size:44px; }
+ .db-parts-workbench .db-parts-workbench__part-cell > .db-parts-workbench__photo-trigger { inline-size:44px; block-size:44px; }
+ .db-parts-workbench__sort-bar > .is-sortable > button { min-block-size:44px; }
+}
+
+/* The whole record opens details; checkbox, photo and action buttons remain
+   independent. Keep one keyboard opening target and show its focus on the row. */
+.db-parts-workbench .db-parts-workbench__row { cursor:pointer; }
+.db-parts-workbench .db-parts-workbench__row-select::before { display:none; }
+.db-parts-workbench .db-parts-workbench__row-select:focus-visible { outline:none; }
+.db-parts-workbench .db-parts-workbench__row:has(.db-parts-workbench__row-select:focus-visible) { outline:2px solid var(--parts-oxide); outline-offset:-2px; }
+@media (hover:hover) and (pointer:fine) {
+ .db-parts-workbench .db-parts-workbench__row:not(.is-selected):hover { background:var(--surface-raised); }
+ .db-parts-workbench__row:hover .db-parts-workbench__row-cue { opacity:.8; transform:none; }
+}
+
+/* Center the image and checkbox against the complete record, not only its
+   name/SKU band. The text and fact lines share one stable left edge. */
+.db-parts-workbench .db-parts-workbench__part-cell > .db-parts-workbench__photo-trigger { inset-inline-start:calc(var(--parts-row-check-size) + 20px); inset-block-start:50%; }
+.db-parts-workbench .db-parts-workbench__ledger.is-read-only .db-parts-workbench__photo-trigger { inset-inline-start:18px; }

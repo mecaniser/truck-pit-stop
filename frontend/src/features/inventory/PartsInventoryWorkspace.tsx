@@ -926,7 +926,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
       }}>
         <button ref={compactSortTrigger} type="button" aria-label="Sort parts" aria-expanded={compactSortOpen} aria-controls="parts-compact-sort-popover" onClick={() => {
           setCompactSortOpen((current) => !current)
-        }}><ChevronsUpDown aria-hidden="true" /><span>Sort</span></button>
+        }}><ChevronsUpDown aria-hidden="true" /><span>{COMPACT_SORT_OPTIONS.find((option) => option.sort === sort && option.direction === direction)?.label || 'Sort'}</span></button>
         {compactSortOpen && <div id="parts-compact-sort-popover" className="db-parts-workbench__compact-sort-popover" role="dialog" aria-label="Sort parts">
           <div className="db-parts-workbench__compact-sort-row">
             <span id="parts-ledger-sort-label">Sort</span>
@@ -971,9 +971,9 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
 function SortableColumnHeader({ label, columnClass, field, sort, direction, onSort }: { label: string; columnClass: string; field: Exclude<PartSort, 'catalog'>; sort: PartSort; direction: SortDirection; onSort: (field: Exclude<PartSort, 'catalog'>) => void }) {
   const active = sort === field
   const nextDirection = active ? direction === 'asc' ? 'desc' : 'asc' : FIRST_SORT_DIRECTION[field]
-  return <span className={`${columnClass} is-sortable`} role="columnheader" aria-sort={active ? direction === 'asc' ? 'ascending' : 'descending' : undefined}>
+  return <span className={`${columnClass} is-sortable`} role="columnheader" aria-label={label} aria-sort={active ? direction === 'asc' ? 'ascending' : 'descending' : undefined}>
     <button type="button" data-parts-sort-field={field} aria-label={`${label}: sort ${nextDirection === 'asc' ? 'ascending' : 'descending'}`} onClick={() => onSort(field)}>
-      <span>{label}</span>
+      <span>{field === 'name' ? 'Part name' : field === 'reorder' ? 'Reorder' : label}</span>
       {active ? direction === 'asc' ? <ArrowUp aria-hidden="true" /> : <ArrowDown aria-hidden="true" /> : <ChevronsUpDown aria-hidden="true" />}
     </button>
   </span>
@@ -999,14 +999,15 @@ function PartLedger({ page, loading, loadingMore, failed, manage, salesEnabled, 
   if (failed) return <div className="db-parts-workbench__state" role="alert">Parts could not be loaded.<button type="button" onClick={onRetry}>Retry</button></div>
   if (!page?.items.length) return <div className="db-parts-workbench__state"><strong>No parts match this view.</strong><span>Change the search or catalog filter to see more.</span></div>
   return <div className={`db-parts-workbench__ledger is-${density}${manage ? '' : ' is-read-only'}`} role="table" aria-label={`${page.total} matching parts`}>
-    <div className="db-parts-workbench__table-head" role="row">
-      {manage && <span role="columnheader" aria-label="Select part" />}
+    <div className="db-parts-workbench__table-head db-parts-workbench__sort-bar" role="row">
+      <span className="db-parts-workbench__sort-caption" aria-hidden="true">Sort by</span>
+      {manage && <span className="sr-only" role="columnheader" aria-label="Select part" />}
       <SortableColumnHeader label="Part / Description" columnClass="is-description" field="name" sort={sort} direction={direction} onSort={onSort} />
       <SortableColumnHeader label="Available" columnClass="is-available" field="available" sort={sort} direction={direction} onSort={onSort} />
       <SortableColumnHeader label="Bin location" columnClass="is-bin" field="location" sort={sort} direction={direction} onSort={onSort} />
       <SortableColumnHeader label="Unit cost" columnClass="is-cost" field="cost" sort={sort} direction={direction} onSort={onSort} />
       <SortableColumnHeader label="Stock value" columnClass="is-value" field="value" sort={sort} direction={direction} onSort={onSort} />
-      <span className="is-supplier" role="columnheader">Preferred supplier</span>
+      <span className="is-supplier sr-only" role="columnheader">Preferred supplier</span>
       <SortableColumnHeader label="Remarks" columnClass="is-remarks" field="reorder" sort={sort} direction={direction} onSort={onSort} />
     </div>
     <div className="db-parts-workbench__rows" role="rowgroup">
@@ -1014,7 +1015,10 @@ function PartLedger({ page, loading, loadingMore, failed, manage, salesEnabled, 
         const eligible = isManuallySelectable(part)
         const selected = selectedId === part.id
         const remark = partRemark(part)
-        return <div key={part.id} role="row" aria-selected={selected} className={`db-parts-workbench__row${selected ? ' is-selected' : ''}${!eligible ? ' is-ineligible' : ''}`} data-selected-surface={selected ? 'true' : undefined}>
+        return <div key={part.id} role="row" aria-selected={selected} className={`db-parts-workbench__row${selected ? ' is-selected' : ''}${!eligible ? ' is-ineligible' : ''}`} data-selected-surface={selected ? 'true' : undefined} onClick={(event) => {
+          if (!(event.target instanceof Element) || !event.currentTarget.contains(event.target) || event.target.closest('button,input,label,a,[role="menu"]')) return
+          onSelect(part.id)
+        }}>
           {manage && <span role="cell" className="db-parts-workbench__check" onClick={(event) => event.stopPropagation()}>{eligible && <label><input type="checkbox" aria-label={`Select ${part.name} for purchase preparation`} checked={checkedIds.has(part.id)} onClick={(event) => event.stopPropagation()} onChange={(event) => onCheck(part, event.target.checked)} /></label>}</span>}
           <span role="cell" className="db-parts-workbench__part-cell">
             <button type="button" className="db-parts-workbench__row-select" aria-current={selected ? 'true' : undefined} aria-controls="selected-part-inspector" onClick={() => onSelect(part.id)}>
@@ -1024,12 +1028,14 @@ function PartLedger({ page, loading, loadingMore, failed, manage, salesEnabled, 
             <PartPhoto part={part} logoUrl={logoUrl} companyName={companyName} />
             {salesEnabled && eligible && <span className="db-parts-workbench__row-actions" data-row-actions={part.id} onClick={(event) => event.stopPropagation()}><button type="button" aria-label={`More actions for ${part.name}`} aria-haspopup="menu" aria-expanded={openActions === part.id} onClick={() => setOpenActions((current) => current === part.id ? null : part.id)}><EllipsisVertical aria-hidden="true" /></button>{openActions === part.id && <span role="menu" aria-label={`Actions for ${part.name}`}><button type="button" role="menuitem" onClick={() => { setOpenActions(null); onSell(part.id) }}>Sell part</button></span>}</span>}
           </span>
-          <strong role="cell" data-label="Available" className="is-available">{part.available_to_sell_packages ?? part.available_packages}</strong>
-          <span role="cell" data-label="Bin location" className="is-bin">{part.location ? `Bin ${part.location}` : 'Bin not set'}</span>
-          <strong role="cell" data-label="Unit cost" className="is-cost">{formatMoney(money(part.average_unit_cost))}</strong>
-          <strong role="cell" data-label="Stock value" className="is-value">{formatStockValue(part)}</strong>
-          <span role="cell" data-label="Preferred supplier" className={`is-supplier${!part.preferred_source ? ' is-unassigned' : ''}`}>{part.preferred_source?.supplier_name || 'Unassigned'}</span>
-          <span role="cell" data-label="Remarks" className={`db-parts-workbench__remark is-remarks${remark === '—' ? ' is-empty' : ''}`}>{remark !== '—' && <i aria-hidden="true" />}{remark}</span>
+          <div className="db-parts-workbench__row-facts" role="presentation">
+            <strong role="cell" data-label="Available" className="is-available"><span>Available</span> {part.available_to_sell_packages ?? part.available_packages}</strong>
+            <span role="cell" data-label="Bin location" className="is-bin">{part.location ? `Bin ${part.location}` : 'Bin not set'}</span>
+            <strong role="cell" data-label="Unit cost" className="is-cost"><span>Cost</span> {formatMoney(money(part.average_unit_cost))}</strong>
+            <strong role="cell" data-label="Stock value" className="is-value"><span>Value</span> {formatStockValue(part)}</strong>
+            <span role="cell" data-label="Preferred supplier" className={`is-supplier${!part.preferred_source ? ' is-unassigned' : ''}`}>{part.preferred_source?.supplier_name || 'Unassigned'}</span>
+            <span role="cell" data-label="Remarks" className={`db-parts-workbench__remark is-remarks${remark === '—' ? ' is-empty' : ''}`}>{remark !== '—' && <i aria-hidden="true" />}{remark}</span>
+          </div>
         </div>
       })}
     </div>
