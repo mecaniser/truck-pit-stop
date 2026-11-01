@@ -15,7 +15,7 @@ No backend, auth, tenant, source-ownership, payment, financial record or archive
 - Historical real-hook regression7/7: paid/unpaid/cancelled, unknown balance, older response without summary, and native/null-source404. Imported cases assert invoice-detail is the only API request and no mutation occurred; summary/PDF/review remain visible.
 - Existing cash5/5 and shared payment-summary7/7: total19/19 focused assertions pass.
 - TypeScript noEmit passes; changed-source ESLint0 errors; Vite production build passes; diff check clean.
-- Fictional actual-component preview available at `http://127.0.0.1:4181/?status=sent` (paid/cancelled variants), axios adapter rejects all endpoints except fictional invoice detail. Parent owns browser screenshot/acceptance. Preview uses no backend/database/provider.
+- Fictional actual-component preview available at `http://127.0.0.1:4181/?status=sent` (paid/cancelled variants), axios adapter rejects all endpoints except fictional invoice detail. Parent CUA acceptance passes actual-component desktop1280/mobile390: confirmed0, balance654.89, historical read-only/contact-shop guidance, PDF retained, no payment/error UI and no horizontal overflow. Screenshots: local `output/playwright/historical-guidance-desktop.png` and `historical-guidance-phone.png`. Preview uses no backend/database/provider and owned4181 server stopped after verification.
 
 ## Runtime receipt and release limits
 
