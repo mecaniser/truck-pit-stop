@@ -1,7 +1,7 @@
 # DB-151 — Team and technician board contrast
 
 Frontend & UX accountable; Fast UI lane; `codex/team-contrast`, base `9d72b777`.
-Status: local verification passed; PR integration and production release pending.
+Status: local verification passed; [draft PR732](https://github.com/mecaniser/truck-pit-stop/pull/732) open. Protected CI, merge and production release pending.
 
 ## Findings and corrections
 
