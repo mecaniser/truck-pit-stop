@@ -82,3 +82,18 @@ Actual signed-in browser regression passed in the isolated busy QA tenant: open 
 ![Restored QA repair appears on Overview](assets/db151/overview-after-restore.png)
 
 Second CI run41343482346 on `5b46bd39` passed protected checks/Playwright but exposed an overstrict new test assertion (2073pass/1failure): a workspace observer legitimately repopulated a fresh deleted snapshot after eviction. Independent source/log review confirmed it was not stale live data. The test invariant is refined to prove a warm live snapshot before delete and only deleted snapshots afterward, retaining immediate Restore UI and no active-panel requests. Application source is unchanged by this test refinement.
+
+## Source-status UI correction — 2026-11-01
+
+User review rejected the native full-width source disclosure. The correction follows the Fast UI lane: existing read contract and authorization remain unchanged.
+
+- Compact named status sits beside the attention count. It uses the existing Headless UI popover and semantic warning/appearance tokens. No extra banner, default disclosure marker, or duplicate account footer.
+- Partial/unavailable sources retain a visible status and one owner-workspace action inside the anchored explanation. Verified overflow still has its workspace route. Restricted/disabled sources remain absent. Unknown balances never become zero or confirmed collectibles.
+- 29 focused Overview and Dashboard presentation tests pass, including zero active jobs, unknown accounts, multiple failures, restricted/disabled sources, actual overflow, destination identity, and keyboard Escape/focus return. Changed-source ESLint passes; Impeccable detector reports no findings.
+- Actual signed-in local API-backed Quiet QA tenant: zero active jobs, five actions and an upcoming PO remain visible. Account status opens Customers with the Shop Work return context, and Back restores Overview. Escape restores trigger focus; explicit Close and outside click dismiss correctly.
+- Desktop and390px visual acceptance: mobile page width390; panel bounds x27–367, no horizontal overflow. Temporary viewport reset. Synthetic QA records are persisted in the dedicated local clone; no mock UI data or production mutations.
+- [Desktop](assets/db151/status-heading.png), [mobile details](assets/db151/status-mobile.png).
+
+This UI follow-up supersedes the source-disclosure visuals in earlier screenshots. PR736 stays draft; no merge/deploy. Previous CI evidence belongs to the prior head and is not evidence for this follow-up head.
+
+Follow-up `npm run build` (TypeScript + Vite) passed. Routine existing bundle-size/Browserslist warnings remain; no build failure.
