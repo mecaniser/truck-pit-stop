@@ -1,0 +1,1025 @@
+[
+  {
+    "label": "detail-overview-settled",
+    "mode": "light",
+    "count": 90,
+    "min": 4.94,
+    "fails": []
+  },
+  {
+    "label": "detail-overview-settled",
+    "mode": "dark",
+    "count": 90,
+    "min": 8.65,
+    "fails": []
+  },
+  {
+    "label": "detail-overview-settled",
+    "mode": "high_contrast",
+    "count": 90,
+    "min": 9.13,
+    "fails": []
+  },
+  {
+    "label": "completed-sessions",
+    "mode": "light",
+    "count": 106,
+    "min": 4.94,
+    "fails": []
+  },
+  {
+    "label": "completed-sessions",
+    "mode": "dark",
+    "count": 106,
+    "min": 8.65,
+    "fails": []
+  },
+  {
+    "label": "completed-sessions",
+    "mode": "high_contrast",
+    "count": 106,
+    "min": 4.94,
+    "fails": []
+  },
+  {
+    "label": "edit-session-dialog",
+    "mode": "light",
+    "count": 113,
+    "min": 4.94,
+    "fails": []
+  },
+  {
+    "label": "edit-session-dialog",
+    "mode": "dark",
+    "count": 113,
+    "min": 8.65,
+    "fails": []
+  },
+  {
+    "label": "edit-session-dialog",
+    "mode": "high_contrast",
+    "count": 113,
+    "min": 9.13,
+    "fails": []
+  },
+  {
+    "label": "delete-session-dialog",
+    "mode": "light",
+    "count": 111,
+    "min": 4.94,
+    "fails": []
+  },
+  {
+    "label": "delete-session-dialog",
+    "mode": "dark",
+    "count": 111,
+    "min": 8.65,
+    "fails": []
+  },
+  {
+    "label": "delete-session-dialog",
+    "mode": "high_contrast",
+    "count": 111,
+    "min": 9.13,
+    "fails": []
+  },
+  {
+    "label": "admin-active",
+    "mode": "light",
+    "count": 18,
+    "min": 4.94,
+    "fails": []
+  },
+  {
+    "label": "admin-active",
+    "mode": "dark",
+    "count": 18,
+    "min": 8.65,
+    "fails": []
+  },
+  {
+    "label": "admin-active",
+    "mode": "high_contrast",
+    "count": 18,
+    "min": 9.13,
+    "fails": []
+  },
+  {
+    "label": "team-list-pending",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 50,
+    "min": 4.99,
+    "fails": []
+  },
+  {
+    "label": "team-list-pending",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 50,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "team-list-pending",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 50,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "work-list-statuses",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 67,
+    "min": 4.99,
+    "fails": []
+  },
+  {
+    "label": "work-list-statuses",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 67,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "work-list-statuses",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 67,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "add-technician",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 95,
+    "min": 4.99,
+    "fails": []
+  },
+  {
+    "label": "add-technician",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 95,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "add-technician",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 95,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "add-other-role",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 89,
+    "min": 4.99,
+    "fails": []
+  },
+  {
+    "label": "add-other-role",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 89,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "add-other-role",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 89,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "edit-admin-grants",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 87,
+    "min": 4.99,
+    "fails": []
+  },
+  {
+    "label": "edit-admin-grants",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 87,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "edit-admin-grants",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 87,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "repair-work-drawer",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 94,
+    "min": 4.99,
+    "fails": []
+  },
+  {
+    "label": "repair-work-drawer",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 94,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "repair-work-drawer",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 94,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "team-cards-final",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 60,
+    "min": 4.99,
+    "fails": []
+  },
+  {
+    "label": "team-cards-final",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 60,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "team-cards-final",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 60,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "team-mobile-cards",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 58,
+    "min": 4.99,
+    "fails": []
+  },
+  {
+    "label": "team-mobile-cards",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 58,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "team-mobile-cards",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 58,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "edit-technician-mobile",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 82,
+    "min": 4.99,
+    "fails": []
+  },
+  {
+    "label": "edit-technician-mobile",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 82,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "edit-technician-mobile",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 82,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "team-search-empty-mobile",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 32,
+    "min": 4.99,
+    "fails": []
+  },
+  {
+    "label": "team-search-empty-mobile",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 32,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "team-search-empty-mobile",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 32,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "board-mobile",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 58,
+    "min": 4.94,
+    "fails": [],
+    "graphics": {
+      "count": 18,
+      "min": 3.31,
+      "fails": []
+    }
+  },
+  {
+    "label": "board-mobile",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 58,
+    "min": 7.43,
+    "fails": [],
+    "graphics": {
+      "count": 18,
+      "min": 4.89,
+      "fails": []
+    }
+  },
+  {
+    "label": "board-mobile",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 58,
+    "min": 7.43,
+    "fails": [],
+    "graphics": {
+      "count": 18,
+      "min": 4.89,
+      "fails": []
+    }
+  },
+  {
+    "label": "detail-mobile",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 90,
+    "min": 4.94,
+    "fails": [],
+    "graphics": {
+      "count": 25,
+      "min": 3.31,
+      "fails": []
+    }
+  },
+  {
+    "label": "detail-mobile",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 90,
+    "min": 8.65,
+    "fails": [],
+    "graphics": {
+      "count": 25,
+      "min": 4.89,
+      "fails": []
+    }
+  },
+  {
+    "label": "detail-mobile",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 90,
+    "min": 9.13,
+    "fails": [],
+    "graphics": {
+      "count": 25,
+      "min": 4.89,
+      "fails": []
+    }
+  },
+  {
+    "label": "detail-tooltip-mobile",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 91,
+    "min": 4.94,
+    "fails": [],
+    "graphics": {
+      "count": 25,
+      "min": 3.31,
+      "fails": []
+    }
+  },
+  {
+    "label": "detail-tooltip-mobile",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 91,
+    "min": 8.65,
+    "fails": [],
+    "graphics": {
+      "count": 25,
+      "min": 4.89,
+      "fails": []
+    }
+  },
+  {
+    "label": "detail-tooltip-mobile",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 91,
+    "min": 9.13,
+    "fails": [],
+    "graphics": {
+      "count": 25,
+      "min": 4.89,
+      "fails": []
+    }
+  },
+  {
+    "label": "admin-idle-misc-mobile",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 20,
+    "min": 4.94,
+    "fails": [],
+    "graphics": {
+      "count": 9,
+      "min": 4.47,
+      "fails": []
+    }
+  },
+  {
+    "label": "admin-idle-misc-mobile",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 20,
+    "min": 7.43,
+    "fails": [],
+    "graphics": {
+      "count": 9,
+      "min": 6.83,
+      "fails": []
+    }
+  },
+  {
+    "label": "admin-idle-misc-mobile",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 20,
+    "min": 7.43,
+    "fails": [],
+    "graphics": {
+      "count": 9,
+      "min": 7.43,
+      "fails": []
+    }
+  },
+  {
+    "label": "admin-idle-ro-mobile",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 19,
+    "min": 4.94,
+    "fails": [],
+    "graphics": {
+      "count": 10,
+      "min": 4.47,
+      "fails": []
+    }
+  },
+  {
+    "label": "admin-idle-ro-mobile",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 19,
+    "min": 7.43,
+    "fails": [],
+    "graphics": {
+      "count": 10,
+      "min": 6.83,
+      "fails": []
+    }
+  },
+  {
+    "label": "admin-idle-ro-mobile",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 19,
+    "min": 7.43,
+    "fails": [],
+    "graphics": {
+      "count": 10,
+      "min": 7.43,
+      "fails": []
+    }
+  },
+  {
+    "label": "admin-idle-ro-desktop",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 19,
+    "min": 4.94,
+    "fails": [],
+    "graphics": {
+      "count": 10,
+      "min": 4.47,
+      "fails": []
+    }
+  },
+  {
+    "label": "admin-idle-ro-desktop",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 19,
+    "min": 7.43,
+    "fails": [],
+    "graphics": {
+      "count": 10,
+      "min": 6.83,
+      "fails": []
+    }
+  },
+  {
+    "label": "admin-idle-ro-desktop",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 19,
+    "min": 7.43,
+    "fails": [],
+    "graphics": {
+      "count": 10,
+      "min": 7.43,
+      "fails": []
+    }
+  },
+  {
+    "label": "calendar-october-final",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 122,
+    "min": 4.94,
+    "fails": [],
+    "graphics": {
+      "count": 27,
+      "min": 3.31,
+      "fails": []
+    }
+  },
+  {
+    "label": "calendar-october-final",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 122,
+    "min": 7.92,
+    "fails": [],
+    "graphics": {
+      "count": 27,
+      "min": 4.89,
+      "fails": []
+    }
+  },
+  {
+    "label": "calendar-october-final",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 122,
+    "min": 9.13,
+    "fails": [],
+    "graphics": {
+      "count": 27,
+      "min": 4.89,
+      "fails": []
+    }
+  },
+  {
+    "label": "detail-320",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 89,
+    "min": 4.94,
+    "fails": [],
+    "graphics": {
+      "count": 25,
+      "min": 3.31,
+      "fails": []
+    }
+  },
+  {
+    "label": "detail-320",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 89,
+    "min": 8.65,
+    "fails": [],
+    "graphics": {
+      "count": 25,
+      "min": 4.89,
+      "fails": []
+    }
+  },
+  {
+    "label": "detail-320",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 89,
+    "min": 9.13,
+    "fails": [],
+    "graphics": {
+      "count": 25,
+      "min": 4.89,
+      "fails": []
+    }
+  },
+  {
+    "label": "form-final",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 88,
+    "min": 4.99,
+    "fails": [],
+    "graphics": {
+      "count": 26,
+      "min": 3.31,
+      "fails": []
+    }
+  },
+  {
+    "label": "form-final",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 88,
+    "min": 7.43,
+    "fails": [],
+    "graphics": {
+      "count": 26,
+      "min": 4.89,
+      "fails": []
+    }
+  },
+  {
+    "label": "form-final",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 88,
+    "min": 7.43,
+    "fails": [],
+    "graphics": {
+      "count": 26,
+      "min": 4.89,
+      "fails": []
+    }
+  },
+  {
+    "label": "role-options",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 88,
+    "min": 4.99,
+    "fails": [],
+    "graphics": {
+      "count": 26,
+      "min": 3.31,
+      "fails": []
+    }
+  },
+  {
+    "label": "role-options",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 88,
+    "min": 7.43,
+    "fails": [],
+    "graphics": {
+      "count": 26,
+      "min": 4.89,
+      "fails": []
+    }
+  },
+  {
+    "label": "role-options",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 88,
+    "min": 7.43,
+    "fails": [],
+    "graphics": {
+      "count": 26,
+      "min": 4.89,
+      "fails": []
+    }
+  },
+  {
+    "label": "portaled-role-options",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 92,
+    "min": 4.99,
+    "fails": []
+  },
+  {
+    "label": "portaled-role-options",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 92,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "portaled-role-options",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 92,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "add-validation-errors",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 91,
+    "min": 4.99,
+    "fails": []
+  },
+  {
+    "label": "add-validation-errors",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 91,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "add-validation-errors",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 91,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "accent-cyan",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 60,
+    "min": 4.99,
+    "fails": []
+  },
+  {
+    "label": "accent-cyan",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 60,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "accent-cyan",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 60,
+    "min": 7.43,
+    "fails": []
+  },
+  {
+    "label": "accent-indigo",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 60,
+    "min": 4.99,
+    "fails": []
+  },
+  {
+    "label": "accent-indigo",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 60,
+    "min": 8.53,
+    "fails": []
+  },
+  {
+    "label": "accent-indigo",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 60,
+    "min": 10.22,
+    "fails": []
+  },
+  {
+    "label": "accent-emerald",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 60,
+    "min": 4.99,
+    "fails": []
+  },
+  {
+    "label": "accent-emerald",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 60,
+    "min": 7.59,
+    "fails": []
+  },
+  {
+    "label": "accent-emerald",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 60,
+    "min": 7.59,
+    "fails": []
+  },
+  {
+    "label": "accent-rose",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 60,
+    "min": 4.99,
+    "fails": []
+  },
+  {
+    "label": "accent-rose",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 60,
+    "min": 8.6,
+    "fails": []
+  },
+  {
+    "label": "accent-rose",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 60,
+    "min": 8.6,
+    "fails": []
+  },
+  {
+    "label": "accent-amber",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 60,
+    "min": 4.99,
+    "fails": []
+  },
+  {
+    "label": "accent-amber",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 60,
+    "min": 7.07,
+    "fails": []
+  },
+  {
+    "label": "accent-amber",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 60,
+    "min": 9.4,
+    "fails": []
+  },
+  {
+    "label": "empty-board",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 6,
+    "min": 4.94,
+    "fails": []
+  },
+  {
+    "label": "empty-board",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 6,
+    "min": 10,
+    "fails": []
+  },
+  {
+    "label": "empty-board",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 6,
+    "min": 16.18,
+    "fails": []
+  },
+  {
+    "label": "error-board",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 1,
+    "min": 6.78,
+    "fails": []
+  },
+  {
+    "label": "error-board",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 1,
+    "min": 8.65,
+    "fails": []
+  },
+  {
+    "label": "error-board",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 1,
+    "min": 9.13,
+    "fails": []
+  },
+  {
+    "label": "real-local-detail",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 72,
+    "min": 4.94,
+    "fails": []
+  },
+  {
+    "label": "real-local-detail",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 72,
+    "min": 8.65,
+    "fails": []
+  },
+  {
+    "label": "real-local-detail",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 72,
+    "min": 9.13,
+    "fails": []
+  },
+  {
+    "label": "real-local-admin-clocked-out",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 9,
+    "min": 4.94,
+    "fails": []
+  },
+  {
+    "label": "real-local-admin-clocked-out",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 9,
+    "min": 8.65,
+    "fails": []
+  },
+  {
+    "label": "real-local-admin-clocked-out",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 9,
+    "min": 9.13,
+    "fails": []
+  },
+  {
+    "label": "error-detail",
+    "mode": "light",
+    "actualMode": "light",
+    "count": 1,
+    "min": 6.78,
+    "fails": []
+  },
+  {
+    "label": "error-detail",
+    "mode": "dark",
+    "actualMode": "dark",
+    "count": 1,
+    "min": 8.65,
+    "fails": []
+  },
+  {
+    "label": "error-detail",
+    "mode": "high_contrast",
+    "actualMode": "high_contrast",
+    "count": 1,
+    "min": 9.13,
+    "fails": []
+  }
+]

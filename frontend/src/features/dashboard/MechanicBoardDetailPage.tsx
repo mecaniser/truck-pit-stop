@@ -317,7 +317,7 @@ export default function MechanicBoardDetailPage() {
 
   if (isError || !data) {
     return (
-      <Card className="p-6">
+      <Card className="db-team-colors p-6">
         <p className="text-red-400">Failed to load technician board detail.</p>
       </Card>
     )
@@ -363,7 +363,7 @@ export default function MechanicBoardDetailPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="db-team-colors space-y-4">
       <div className="flex items-center gap-4">
         <button 
           onClick={() => navigate('/dashboard/mechanics')} 

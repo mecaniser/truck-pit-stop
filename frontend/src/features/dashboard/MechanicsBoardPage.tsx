@@ -112,7 +112,7 @@ const getMechanicStatusBadge = (mechanic: MechanicBoardItem) => {
   if (mechanic.attendance_active) {
     return { variant: 'default' as const, label: 'Clocked In', className: '' }
   }
-  return { variant: 'default' as const, label: 'Clocked Out', className: 'opacity-50' }
+  return { variant: 'default' as const, label: 'Clocked Out', className: '' }
 }
 
 function sortByAttention(mechanics: MechanicBoardItem[]): MechanicBoardItem[] {
@@ -180,7 +180,7 @@ export default function MechanicsBoardPage() {
 
   if (isError || !data) {
     return (
-      <Card className="p-6">
+      <Card className="db-team-colors p-6">
         <p className="text-red-400">Failed to load technicians board.</p>
       </Card>
     )
@@ -192,7 +192,7 @@ export default function MechanicsBoardPage() {
   const greenCount = sorted.filter((m) => m.attention_priority === 'green').length
 
   return (
-    <div className="space-y-4">
+    <div className="db-team-colors space-y-4">
       {/* Header */}
       <Header
         title="Technician Board"
