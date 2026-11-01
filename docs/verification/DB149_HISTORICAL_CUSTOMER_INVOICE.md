@@ -38,7 +38,7 @@ rerun manually. PR738 normally squash-merged as
 tree`f2a57a5899870ce5fbb1a2ea2e567c1a7d3641d9` identical. Production
 Web deployment`de5c5bb5-a422-4ef5-ae49-b00ae555556e` started on exact merge.
 
-Signed-in customer acceptance remains pending: the parent-controlled Chrome
+At initial release, signed-in customer acceptance was pending: the parent-controlled Chrome
 profile is currently staff and redirects the requested portal invoice to the
 staff dashboard. User has been asked to complete normal customer sign-in in
 the identified Chrome group. No impersonation, account/role change or minted
@@ -55,10 +55,10 @@ not authentication or changed customer rendering. No worker inspection, extended
 canary, financial query/mutation, restored record, provider operation or send was
 performed for this Fast UI correction.
 
-Parent's latest browser inventory has no signed-in customer `/portal` tab across
+At that initial release checkpoint, the parent's browser inventory had no signed-in customer `/portal` tab across
 the three Chrome profiles. The identified handoff Chrome3 tab/group remains
 available for normal customer sign-in. A staff redirect is not customer acceptance.
-The item is RELEASED with live customer gate pending, not Done. After customer
+The item was RELEASED with live customer gate pending, not Done. After customer
 sign-in, the agent must verify the same authorized historical invoice's balance,
 PDF/review access, plain read-only guidance, and absence of the blocked payment
 requests/error UI. User is asked only to authenticate, not to perform regression
@@ -67,4 +67,33 @@ testing. No impersonation or credential workaround is appropriate.
 Rollback baseline served at release intake`4645ea6a`; current integration also
 includes already-merged PR737. Incorrect native error handling or missing historical
 summary/PDF would fail acceptance; focused fixtures cover those cases. No live
-customer result is inferred while normal customer authentication is unavailable.
+customer result was inferred while normal customer authentication was unavailable.
+
+## Final signed-in live customer acceptance — November 1, 2026
+
+User explicitly confirmed customer sign-in in the in-app browser. Parent CUA
+observed the actual customer dashboard and followed its legitimate invoice link
+to the currently available historical invoice`ETSINV-1182` / order`ETS-0759`
+(ID`6e6b72ca-8382-4b54-97ec-ac24d8ca13b5`). The live page displays:
+
+- Unpaid;0applied and314.02balance due.
+- Historical invoice heading, read-only/no-online-payments/contact-shop guidance.
+- Invoice PDF link and the existing review link retained.
+- No “Payment details could not be loaded” or “Invoice not found” message.
+- No payment controls.
+
+Actual screenshot verified on disk:
+`output/playwright/historical-guidance-live-customer.png`; the browser tab is
+marked as the deliverable. This is actual signed-in live acceptance, separate
+from the earlier fictional desktop/mobile previews. No service, financial,
+provider, record-restoration or message operation was performed for this check.
+
+An earlier direct full navigation to the previously inspected invoice returned
+to login; returning to the current customer dashboard restored the authorized
+session and its own invoice link was used. No assertion is made that the old
+invoice remains available or still has the earlier654.89balance. The current
+customer portal exposes one unpaid invoice with314.02due.
+
+The required live customer gate is now cleared. DB149 historical guidance is
+DONE: implementation, focused checks, protected CI, merge, exact deployment,
+served-build proof and authenticated customer acceptance are recorded.
