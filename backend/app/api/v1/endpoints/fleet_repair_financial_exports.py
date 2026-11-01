@@ -58,14 +58,6 @@ async def repair_financial_manifest(request:Request,response:Response,
     db:AsyncSession=Depends(get_db),key:FleetInvoiceApiKey=Depends(_active_key)):
     if request.query_params:
         raise HTTPException(422,detail={'code':'invalid_financial_filters','message':'A complete scoped financial snapshot is required.'})
-    # This is complete authority. Missing handed-off rows could be interpreted
-    # as deletion by receivers, so preserve their existing records and fail closed.
-    held = await db.scalar(select(SourceDebtHandoff.id).where(
-        SourceDebtHandoff.tenant_id==key.tenant_id,
-        or_(SourceDebtHandoff.customer_id==key.customer_id,SourceDebtHandoff.source_customer_id==key.customer_id)).limit(1))
-    if held:
-        raise HTTPException(409,detail={"code":"external_manual_accounting_hold",
-            "message":"This customer has externally reconciled source debt. Automatic complete financial export is held; preserve existing accounting records."})
     # The active unique index is canonical. Include a draft then deny it; never
     # select an older visible invoice just because the actual active one is hidden.
     base_ids=(select(RepairOrder.id)
@@ -76,7 +68,7 @@ async def repair_financial_manifest(request:Request,response:Response,
         .order_by(RepairOrder.id).limit(MAX_REPAIR_HISTORY_ROWS+1)).subquery()
     # One SQL statement materializes invoice, settlement and all attempts from
     # one MVCC snapshot, even if a payment commits while this request runs.
-    joined=(await db.execute(select(RepairOrder,Vehicle,Invoice,HistoricalInvoiceMapping,InvoiceSettlement,InvoicePaymentAttempt)
+    joined=(await db.execute(select(RepairOrder,Vehicle,Invoice,HistoricalInvoiceMapping,InvoiceSettlement,InvoicePaymentAttempt,select(SourceDebtHandoff.id).where(SourceDebtHandoff.tenant_id==key.tenant_id,SourceDebtHandoff.source_dbn_invoice_id==Invoice.id,SourceDebtHandoff.source_repair_order_id==RepairOrder.id).correlate(Invoice,RepairOrder).limit(1).scalar_subquery())
         .join(base_ids,base_ids.c.id==RepairOrder.id)
         .join(Vehicle,and_(Vehicle.id==RepairOrder.vehicle_id,Vehicle.tenant_id==key.tenant_id))
         .outerjoin(Invoice,and_(Invoice.repair_order_id==RepairOrder.id,Invoice.tenant_id==key.tenant_id,Invoice.status!=InvoiceStatus.CANCELLED,Invoice.accounting_policy!="source_collection_hold"))
@@ -87,7 +79,10 @@ async def repair_financial_manifest(request:Request,response:Response,
     if len(joined)>MAX_JOINED_FINANCIAL_ROWS:
         raise HTTPException(409,detail={'code':'financial_snapshot_too_large','message':'Complete financial snapshot exceeds its limit.'})
     grouped={}
-    for order,vehicle,invoice,mapping,settlement,attempt in joined:
+    for order,vehicle,invoice,mapping,settlement,attempt,held in joined:
+        if (held and invoice and not invoice.deleted_at and not invoice.is_internal and not invoice.voided_at and invoice.status!=InvoiceStatus.DRAFT
+            and (invoice.billed_customer_id==key.customer_id or (invoice.billed_customer_id is None and mapping and mapping.target_customer_id==key.customer_id))):
+            raise HTTPException(409,detail={"code":"external_manual_accounting_hold","message":"An admitted source invoice requires external manual accounting. Preserve existing receiver records."})
         group=grouped.setdefault(order.id,[order,vehicle,invoice,mapping,settlement,[]])
         if (group[2].id if group[2] else None)!=(invoice.id if invoice else None):
             raise HTTPException(409,detail={'code':'ambiguous_current_invoice','message':'Current invoice requires review.'})

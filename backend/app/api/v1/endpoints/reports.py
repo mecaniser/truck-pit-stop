@@ -3,6 +3,7 @@ breakdowns, parts profitability, inventory valuation, and service-type
 performance, all filterable by date range (This Year/Quarter/Month/Week,
 last-period equivalents, or a custom range).
 """
+from app.services.source_collection_reporting import confirmed_collection_receipt_clause,receipt_gross_expression
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Dict, List, Literal, Optional, Tuple
@@ -10,7 +11,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, func, select
+from sqlalchemy import or_, and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.date_ranges import REPORT_DATE_PRESETS, DateRange, resolve_date_range
@@ -76,6 +77,8 @@ class DashboardMetric(BaseModel):
 
 
 class ReportsDashboardResponse(BaseModel):
+    source_collection_unallocated_receipts: str = "0.00"
+    source_collection_attribution_note: Optional[str] = None
     range_start: date
     range_end: date
     revenue_interval: Literal["day", "week", "month"] = "week"
@@ -168,17 +171,24 @@ async def get_reports_dashboard(
         .join(RepairOrder, Invoice.repair_order_id == RepairOrder.id)
         .where(
             Invoice.tenant_id == tenant_id,
-            Invoice.accounting_policy != "source_collection_hold",
+            Payment.tenant_id == tenant_id,
+            RepairOrder.tenant_id == tenant_id,
             Invoice.is_internal.is_(False),
             Invoice.deleted_at.is_(None),
             Invoice.status != InvoiceStatus.CANCELLED,
             Payment.deleted_at.is_(None),
             Payment.status == PaymentStatus.COMPLETED,
+            or_(Invoice.accounting_policy!="source_collection_hold",confirmed_collection_receipt_clause()),
             Payment.created_at >= rng.utc_start,
             Payment.created_at < rng.utc_end,
         )
     )
     paid_rows = result.all()
+    from app.services.source_collection_reporting import collection_economics,collection_receipt_components
+    collection_ids=[invoice.id for _,invoice,_ in paid_rows if invoice.accounting_policy=="source_collection_hold"]
+    economics=await collection_economics(db,collection_ids)
+    components=await collection_receipt_components(db,[payment for payment,invoice,_ in paid_rows if invoice.accounting_policy=="source_collection_hold"])
+    unallocated_receipts=Decimal("0.00")
 
     order_ids = list({ro.id for _, _, ro in paid_rows})
     parts_cost_by_order: Dict[UUID, Decimal] = {}
@@ -222,17 +232,27 @@ async def get_reports_dashboard(
         # share. Guard a zero/missing total so a payment against a $0 invoice
         # cannot divide by zero.
         invoice_total = _money(invoice.total_amount)
-        received = _money(payment.amount)
+        received = _money(components[payment.id]["gross"]) if invoice.accounting_policy=="source_collection_hold" and payment.id in components else _money(payment.amount)
         share = (received / invoice_total) if invoice_total > 0 else Decimal("0.00")
 
-        parts_rev = _money(order.total_parts_cost) * share
-        labor_rev = _money(order.total_labor_cost) * share
-        fees = (_money(invoice.shop_supplies_amount) + _money(invoice.service_fee_amount)) * share
+        collection=invoice.accounting_policy=="source_collection_hold"
+        component=components.get(payment.id) if collection else None
+        archived=economics.get(invoice.id) if collection and component else None
+        if collection:
+            share=component['principal']/archived['total'] if archived else Decimal(0)
+            if not archived:unallocated_receipts+=received
+        parts_rev = (archived['parts'] if archived else Decimal(0) if collection else _money(order.total_parts_cost)) * share
+        labor_rev = (archived["labor"] if archived else Decimal(0) if collection else _money(order.total_labor_cost)) * share
+        fees = (archived["fees"] if archived else Decimal(0) if collection else (_money(invoice.shop_supplies_amount) + _money(invoice.service_fee_amount))) * share
+        if archived:fees+=component["fee"]
         # Sales tax is collected on behalf of the state and is not revenue, so
         # strip its share out of the cash received — the same rule ETS uses for
         # NET SALES (labor + parts + fees - discounts, tax excluded).
-        net_sales = received - (_money(invoice.tax_amount) * share)
-        parts_cost = parts_cost_by_order.get(order.id, Decimal("0.00")) * share
+        net_sales = received - ((archived["tax"] if archived else Decimal(0) if collection else _money(invoice.tax_amount)) * share)
+        if archived:
+            net_sales-=component["fee_tax"]
+            unallocated_receipts+=component["unapplied"]
+        parts_cost = (archived["parts_cost"] if archived else Decimal(0)) * share if collection else parts_cost_by_order.get(order.id, Decimal("0.00")) * share
         parts_profit = parts_rev - parts_cost
 
         total_revenue += net_sales
@@ -250,7 +270,7 @@ async def get_reports_dashboard(
             parts_profit_by_week[idx] += parts_profit
             # Count each invoice once even when it is settled by several
             # payments, otherwise instalments inflate the job counts.
-            if invoice.id not in counted_invoices:
+            if not collection and invoice.id not in counted_invoices:
                 counted_invoices.add(invoice.id)
                 if order.total_parts_cost and order.total_parts_cost > 0:
                     part_sales_by_week[idx] += 1
@@ -280,9 +300,10 @@ async def get_reports_dashboard(
     ets_invoiced_date_by_ro: Dict[UUID, date] = dict(ets_dated_result.all())
 
     order_paid_date = {ro.id: (rng.local_date(pay.created_at) if pay.created_at else rng.start)
-                       for pay, _inv, ro in paid_rows}
+                       for pay, _inv, ro in paid_rows if _inv.accounting_policy!="source_collection_hold"}
     hours_ro_dates: Dict[UUID, date] = {}
     for oid in order_ids:
+        if oid not in order_paid_date and oid not in ets_invoiced_date_by_ro:continue
         ets_date = ets_invoiced_date_by_ro.get(oid)
         if ets_date is not None:
             # This RO's real invoice date wins even though a payment landed
@@ -332,6 +353,8 @@ async def get_reports_dashboard(
     revenue_trend = [TrendPoint(label=revenue_buckets[i][2], value=str(v)) for i, v in enumerate(revenue_by_period)]
 
     return ReportsDashboardResponse(
+        source_collection_unallocated_receipts=str(unallocated_receipts),
+        source_collection_attribution_note="Source collection receipts are included; category attribution is unavailable for uncorroborated original itemization." if unallocated_receipts else None,
         range_start=rng.start,
         range_end=rng.end,
         revenue_interval=revenue_interval,
@@ -710,7 +733,14 @@ class TaxRow(BaseModel):
     tax_collected: str
 
 
+class SourceCollectionTaxReconciliation(BaseModel):
+    receipt_count: int
+    required: bool
+    accounting_owner: str = "external_manual"
+    note: Optional[str] = None
+
 class ReportsTaxResponse(BaseModel):
+    source_collection_tax_reconciliation: SourceCollectionTaxReconciliation
     range_start: date
     range_end: date
     rows: List[TaxRow]
@@ -751,7 +781,12 @@ async def get_reports_tax(
             tax_collected=str(tax_collected),
         ))
 
-    return ReportsTaxResponse(range_start=rng.start, range_end=rng.end, rows=rows)
+    from app.db.models.source_debt_handoff import SourceDebtHandoff
+    receipt_count=await db.scalar(select(func.count(func.distinct(Payment.id))).join(Invoice,and_(Invoice.id==Payment.invoice_id,Invoice.tenant_id==Payment.tenant_id)).join(SourceDebtHandoff,and_(SourceDebtHandoff.native_invoice_id==Invoice.id,SourceDebtHandoff.id==Invoice.source_debt_handoff_id,SourceDebtHandoff.tenant_id==Invoice.tenant_id,SourceDebtHandoff.customer_id==Invoice.billed_customer_id)).where(
+        Payment.tenant_id==tenant_id,confirmed_collection_receipt_clause(),Invoice.accounting_policy=="source_collection_hold",Invoice.source=="ets_collection_handoff",
+        Invoice.deleted_at.is_(None),Payment.deleted_at.is_(None),receipt_gross_expression()>0,Payment.status.in_([PaymentStatus.COMPLETED,PaymentStatus.REFUNDED]),Payment.created_at>=rng.utc_start,Payment.created_at<rng.utc_end)) or 0
+    reconciliation=SourceCollectionTaxReconciliation(receipt_count=receipt_count,required=bool(receipt_count),note="Tax associated with linked ETS invoices requires external reconciliation and is not included in this report total." if receipt_count else None)
+    return ReportsTaxResponse(range_start=rng.start, range_end=rng.end, rows=rows,source_collection_tax_reconciliation=reconciliation)
 
 
 # ---------------------------------------------------------------------------

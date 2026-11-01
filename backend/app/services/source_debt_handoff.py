@@ -60,16 +60,14 @@ async def source_proof(db, tenant_id, invoice_id, customer_id, *, allow_bill_to_
         raise
     except Exception as exc:
         fail('source_evidence_unavailable','A fresh complete source observation is required: '+str(exc)[:100])
-    remote_identity_present=any(k in latest for k in ('source_customer_id','source_customer_uuid','source_customer_deleted','source_customer_binding_kind'))
-    if customer.id!=source_customer.id or remote_identity_present:
-        try:
-            UUID(latest.get('source_customer_uuid',''))
-            valid_source_customer=(latest.get('source_customer_binding_kind')=='embedded_service_customer' and latest.get('source_customer_deleted') is False
-                and str(latest.get('source_customer_id'))==str(getattr(source_customer,'ets_external_id',None)))
-        except (ValueError,TypeError,AttributeError):
-            valid_source_customer=False
-        if not valid_source_customer:
-            fail('source_customer_evidence_unavailable','Fresh digest-bound original ETS customer proof is required for a different portal bill-to.')
+    try:
+        UUID(latest.get('source_customer_uuid',''))
+        valid_source_customer=(latest.get('source_customer_binding_kind')=='embedded_service_customer' and latest.get('source_customer_deleted') is False
+            and str(latest.get('source_customer_id'))==str(getattr(source_customer,'ets_external_id',None)))
+    except (ValueError,TypeError,AttributeError):
+        valid_source_customer=False
+    if not valid_source_customer:
+        fail('source_customer_evidence_unavailable','Fresh digest-bound original ETS customer proof is required for collection.')
     # Exactly one source invoice for the entire source service, including soft archives.
     siblings=list((await db.scalars(select(RepairOrder).where(RepairOrder.tenant_id==tenant_id,
         RepairOrder.source==SOURCE,RepairOrder.order_number.like(f"ETS-{latest['service_id']}-%")))).all())
@@ -106,8 +104,13 @@ def proposal(proof):
         original_invoice_date=proof['invoice'].ets_invoiced_at.isoformat() if proof['invoice'].ets_invoiced_at else None)
 
 async def preview(db,tenant_id,invoice_id,customer_id):
-    existing=await db.scalar(select(SourceDebtHandoff).where(SourceDebtHandoff.tenant_id==tenant_id,SourceDebtHandoff.source_dbn_invoice_id==invoice_id,SourceDebtHandoff.customer_id==customer_id))
+    existing=await db.scalar(select(SourceDebtHandoff).where(SourceDebtHandoff.tenant_id==tenant_id,SourceDebtHandoff.source_dbn_invoice_id==invoice_id))
     existing_summary=await summary(db,existing) if existing else None
+    if existing and existing.customer_id!=customer_id:
+        auth=existing.bill_to_authorization
+        return dict(eligibility='held',hold_reasons=['existing_bill_to_binding'],proposal=None,existing_handoff=existing_summary,
+            bill_to_review=dict(required=False,source_customer_id=str(existing.source_customer_id),source_ets_customer_id=auth.get('source_ets_customer_id'),
+                target_customer_id=str(existing.customer_id),source_legal_name=auth.get('original_bill_to_name'),target_legal_name=auth.get('target_bill_to_name'),authorization_mode=auth.get('mode')))
     try:
         proof=await source_proof(db,tenant_id,invoice_id,customer_id,allow_bill_to_review=True)
         source_customer=proof.get('source_customer',proof['customer'])

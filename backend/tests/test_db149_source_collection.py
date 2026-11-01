@@ -14,8 +14,9 @@ from test_db048_invoice_settlements import _financial_context
 
 async def context(db,monkeypatch):
     tenant,owner,customer,invoice=await _financial_context(db,monkeypatch,principal=Decimal('1000'),fee=Decimal('0'))
+    customer.ets_external_id='97052'
     now=datetime.now(timezone.utc)
-    latest={'service_internal_id':'506423','invoice_id':'468019','invoice_number':'1687','service_id':'1821','payment_lines':[]}
+    latest={'service_internal_id':'506423','invoice_id':'468019','invoice_number':'1687','service_id':'1821','payment_lines':[],'source_customer_id':'97052','source_customer_uuid':str(uuid4()),'source_customer_deleted':False,'source_customer_binding_kind':'embedded_service_customer'}
     proof=dict(invoice=invoice,order=invoice.repair_order,customer=customer,latest=latest,envelope={'observations':[{'evidence':latest}]},digest='a'*64,revision='b'*64,allocations={},shop='shop',summary=NS(total_amount=Decimal('1000'),recorded_completed_amount=Decimal('400'),recorded_remaining_amount=Decimal('600'),observed_at=now))
     monkeypatch.setattr(svc,'source_proof',AsyncMock(return_value=proof))
     body=PrepareRequest(source_invoice_id=invoice.id,target_customer_id=customer.id,expected_source_capture_sha256='a'*64,expected_source_revision='b'*64,acknowledge_dbn_primary=True)
@@ -220,6 +221,7 @@ async def test_complete_financial_export_explicit_hold_no_receiver_deletion(db_s
     from fastapi import Response,HTTPException
     from starlette.requests import Request
     t,a,c,original,p,b=await context(db_session,monkeypatch)
+    original.billed_customer_id=c.id
     await svc.prepare(db_session,t.id,a,b,'prepare')
     request=Request({'type':'http','query_string':b''})
     with pytest.raises(HTTPException) as exc:
@@ -298,6 +300,10 @@ async def test_reviewed_different_portal_billto_exact_membership_and_history(db_
     target_prepare.bill_to_review=BillToReview(mode='owner_same_legal_entity',source_customer_id=source.id,target_customer_id=target.id,attested_same_legal_entity=True,confirmation_reference='Owner instruction for exact ETS1687',reason='Same legal business, use existing portal account')
     row=await svc.prepare(db_session,t.id,a,target_prepare,'prepare')
     assert row.source_customer_id==source.id and row.customer_id==target.id
+    reopen=await svc.preview(db_session,t.id,original.id,source.id)
+    assert reopen['existing_handoff']['id']==str(row.id)
+    assert reopen['proposal'] is None and reopen['eligibility']=='held'
+    assert reopen['bill_to_review']['target_customer_id']==str(target.id)
     assert row.bill_to_authorization['actor_user_id']==str(a.id)
     assert row.bill_to_authorization_sha256==svc.hash_body(row.bill_to_authorization)
     assert await db_session.scalar(select(func.count()).select_from(Invoice))==1
@@ -402,6 +408,9 @@ async def test_real_source_proof_requires_original_remote_customer_for_alias(db_
     with pytest.raises(SettlementDomainError) as exc:
         await real_proof(db_session,t.id,original.id,target.id,allow_bill_to_review=True)
     assert exc.value.code=='source_customer_evidence_unavailable'
+    with pytest.raises(SettlementDomainError) as exc:
+        await real_proof(db_session,t.id,original.id,source.id,allow_bill_to_review=True)
+    assert exc.value.code=='source_customer_evidence_unavailable'
     facts=envelope['observations'][0]['evidence']
     facts.update(source_customer_id='97052',source_customer_uuid=str(uuid4()),source_customer_deleted=False,source_customer_binding_kind='embedded_service_customer')
     envelope['observations'][0]['sha256']=_digest(facts)
@@ -423,6 +432,103 @@ async def test_real_source_proof_requires_original_remote_customer_for_alias(db_
             with pytest.raises(SettlementDomainError) as exc:
                 await real_proof(db_session,t.id,original.id,bill_to,allow_bill_to_review=True)
             assert exc.value.code=='source_customer_evidence_unavailable'
+    facts.clear();facts.update(good);envelope['observations'][0]['sha256']=_digest(facts)
+    actual=await real_proof(db_session,t.id,original.id,source.id,allow_bill_to_review=True)
+    same=b.model_copy(update={'expected_source_capture_sha256':actual['digest'],'expected_source_revision':actual['revision']})
+    await svc.prepare(db_session,t.id,a,same,'same-customer-uuid')
+    facts['source_customer_uuid']=str(uuid4());envelope['observations'][0]['sha256']=_digest(facts)
+    with pytest.raises(SettlementDomainError) as exc:
+        await real_proof(db_session,t.id,original.id,source.id)
+    assert exc.value.code=='source_bill_to_changed'
+    for key in ('source_customer_id','source_customer_uuid','source_customer_deleted','source_customer_binding_kind'):facts.pop(key,None)
+    envelope['observations'][0]['sha256']=_digest(facts)
+    with pytest.raises(SettlementDomainError) as exc:
+        await real_proof(db_session,t.id,original.id,source.id)
+    assert exc.value.code=='source_customer_evidence_unavailable'
     with pytest.raises(SettlementDomainError) as exc:
         await real_proof(db_session,uuid4(),original.id,target.id,allow_bill_to_review=True)
     assert exc.value.status_code==404
+
+@pytest.mark.asyncio
+async def test_cash_receipts_original_economics_tax_scope_and_no_opening_receipt(db_session,monkeypatch):
+    from app.api.v1.endpoints import reports,dashboard
+    from app.db.models.payment import Payment,PaymentStatus,PaymentMethod
+    from app.db.models.source_debt_handoff import SourceReceiptLink,EtsReceiptUpdateTask
+    from app.db.models.invoice_settlement import InvoiceSettlement
+    from app.services.invoice_settlement_service import create_attempt,confirm_attempt
+    from sqlalchemy import Date,cast as original_cast
+    monkeypatch.setattr(dashboard,'cast',lambda expression,target:func.date(expression) if target is Date else original_cast(expression,target))
+    t,a,c,original,p,b=await context(db_session,monkeypatch)
+    original.shop_supplies_amount=Decimal('100');original.tax_amount=Decimal('100')
+    original.line_items_snapshot={'labor':[{'total_cost':'400'}],'parts':[{'total_price':'400','unit_cost':'200','quantity':1}]}
+    row=await svc.prepare(db_session,t.id,a,b,'prepare');p['summary'].observed_at=datetime.now(timezone.utc)+timedelta(seconds=1)
+    row,_=await svc.activate(db_session,row,a,SourceVersionRequest(expected_version=1,expected_source_capture_sha256='a'*64,expected_source_revision='b'*64),'activate')
+    native=await db_session.get(Invoice,row.native_invoice_id)
+    async def report():return await reports.get_reports_dashboard(range='this_year',from_date=None,to_date=None,db=db_session,current_user=a)
+    assert Decimal((await report()).revenue.value)==0
+    settlement=await db_session.scalar(select(InvoiceSettlement).where(InvoiceSettlement.invoice_id==native.id))
+    settlement.max_card_fee=Decimal('60');settlement.max_card_fee_tax=Decimal('30')
+    attempt=await create_attempt(db_session,invoice=native,tenant=t,customer_id=c.id,actor=a,amount=Decimal('200'),rail='card',expected_settlement_version=settlement.version,idempotency_key='report-card',source='customer_portal',subject_type='customer',subject_id=c.id)
+    confirmed=await confirm_attempt(db_session,attempt_id=attempt.attempt.id,tenant=t,actor=a,expected_attempt_version=attempt.attempt.version,idempotency_key='report-confirm',received_principal=Decimal('200'),reference='pi_report',provider_charge_id='ch_report',provider_event_id='evt_report')
+    external=Payment(id=uuid4(),tenant_id=t.id,invoice_id=native.id,payment_number='ETS-REPORT-100',amount=Decimal('100'),method=PaymentMethod.OTHER,status=PaymentStatus.COMPLETED,source='ets_external_receipt')
+    db_session.add(external);await db_session.flush()
+    db_session.add(SourceReceiptLink(tenant_id=t.id,handoff_id=row.id,ets_shop_id=row.ets_shop_id,ets_invoice_internal_id=row.ets_invoice_internal_id,source_allocation_id='external100',source_payment_id='payment100',source_revision='b'*64,source_capture_sha256='a'*64,content_sha256='c'*64,amount=Decimal('100'),effective_at=external.created_at,origin='ets_external',native_payment_id=external.id))
+    db_session.add_all([
+        Payment(tenant_id=t.id,invoice_id=native.id,payment_number='UNCONFIRMED-99',amount=Decimal('99'),method=PaymentMethod.OTHER,status=PaymentStatus.PENDING),
+        Payment(tenant_id=t.id,invoice_id=native.id,payment_number='INVALID-COMPLETED-99',amount=Decimal('99'),method=PaymentMethod.OTHER,status=PaymentStatus.COMPLETED),
+    ])
+    result=await report()
+    assert Decimal(result.revenue.value)==Decimal('290')
+    assert Decimal(result.labor_revenue.value)==Decimal('120')
+    assert Decimal(result.part_revenue.value)==Decimal('120')
+    assert Decimal(result.fees_revenue.value)==Decimal('50')
+    assert Decimal(result.parts_profit.value)==Decimal('60')
+    assert Decimal(result.services_finalized.value)==0
+    assert Decimal(result.invoiced_hours.value)==0
+    tax=await reports.get_reports_tax(range='this_year',from_date=None,to_date=None,db=db_session,current_user=a)
+    assert tax.rows==[] and tax.source_collection_tax_reconciliation.receipt_count==2
+    assert tax.source_collection_tax_reconciliation.required
+    assert Decimal((await dashboard.get_dashboard_stats(db=db_session,current_user=a)).revenue.this_month)==Decimal('330')
+    # A manually mirrored acknowledgement is a link, never another cash receipt.
+    task=await db_session.scalar(select(EtsReceiptUpdateTask).where(EtsReceiptUpdateTask.payment_id==confirmed.payment.id))
+    db_session.add(SourceReceiptLink(tenant_id=t.id,handoff_id=row.id,ets_shop_id=row.ets_shop_id,ets_invoice_internal_id=row.ets_invoice_internal_id,source_allocation_id='ack200',source_payment_id='payment200',source_revision='b'*64,source_capture_sha256='a'*64,content_sha256='d'*64,amount=Decimal('200'),effective_at=confirmed.payment.created_at,origin='dbn_ack',native_payment_id=confirmed.payment.id,task_id=task.id))
+    assert Decimal((await report()).revenue.value)==Decimal('290')
+    original.line_items_snapshot=None
+    unallocated=await report()
+    assert Decimal(unallocated.revenue.value)==Decimal('330')
+    assert Decimal(unallocated.source_collection_unallocated_receipts)==Decimal('330')
+    assert unallocated.source_collection_attribution_note
+    saved=external.created_at
+    external.created_at=saved.replace(year=saved.year-1)
+    outside=await reports.get_reports_tax(range='this_year',from_date=None,to_date=None,db=db_session,current_user=a)
+    assert outside.source_collection_tax_reconciliation.receipt_count==1
+    external.created_at=saved;external.deleted_at=datetime.now(timezone.utc)
+    deleted=await reports.get_reports_tax(range='this_year',from_date=None,to_date=None,db=db_session,current_user=a)
+    assert deleted.source_collection_tax_reconciliation.receipt_count==1
+    external.deleted_at=None
+    confirmed.payment.status=PaymentStatus.REFUNDED
+    tax=await reports.get_reports_tax(range='this_year',from_date=None,to_date=None,db=db_session,current_user=a)
+    assert tax.source_collection_tax_reconciliation.receipt_count==2
+
+@pytest.mark.asyncio
+async def test_complete_financial_target_only_unrelated_snapshot_is_unchanged(db_session,monkeypatch):
+    from app.db.models.customer import Customer
+    from app.api.v1.endpoints.fleet_repair_financial_exports import repair_financial_manifest
+    from test_db048_invoice_settlements import _add_eligible_invoice
+    from fastapi import Response
+    from starlette.requests import Request
+    from app.schemas.source_debt_handoff import BillToReview
+    t,a,source,original,p,b=await context(db_session,monkeypatch)
+    target=Customer(tenant_id=t.id,first_name='Existing',last_name='Portal',email='twenty@example.test')
+    db_session.add(target);await db_session.flush()
+    for _ in range(20):
+        unrelated=await _add_eligible_invoice(db_session,tenant=t,customer=target,reference_invoice=original,with_shadow_settlement=False)
+        unrelated.billed_customer_id=target.id
+    request=Request({'type':'http','query_string':b''});key=NS(tenant_id=t.id,customer_id=target.id)
+    before=await repair_financial_manifest(request,Response(),db=db_session,key=key)
+    p.update(source_customer=source,customer=target)
+    reviewed=b.model_copy(update={'target_customer_id':target.id,'bill_to_review':BillToReview(mode='owner_same_legal_entity',source_customer_id=source.id,target_customer_id=target.id,attested_same_legal_entity=True,confirmation_reference='Owner approved exact invoice',reason='Same legal entity')})
+    row=await svc.prepare(db_session,t.id,a,reviewed,'prepare')
+    after=await repair_financial_manifest(request,Response(),db=db_session,key=key)
+    assert before==after and before['count']==20
+    assert (await svc.preview(db_session,t.id,original.id,source.id))['existing_handoff']['id']==str(row.id)
