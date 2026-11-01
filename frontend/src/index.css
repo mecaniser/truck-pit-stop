@@ -2815,16 +2815,68 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item {
+  position: relative;
+  height: 44px;
+  padding-block: 8px;
+  border-radius: 10px;
   color: var(--workspace-muted) !important;
   border-color: transparent !important;
   background-color: transparent !important;
+  box-shadow: none;
 }
 
+/* Smaller, quieter relatives of the main rail's machined glyphs. */
+.db-presentation-new .db-my-shop-nav-glyph {
+  display: grid;
+  place-items: center;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--workspace-muted);
+  background: linear-gradient(145deg, var(--surface-overlay), var(--surface-canvas));
+  box-shadow: 0 1px 2px rgb(19 35 61 / .12), inset 0 1px color-mix(in srgb, var(--workspace-text) 8%, transparent);
+}
+.db-presentation-new .db-my-shop-nav-glyph > svg { stroke-width: 1.7; }
+
 .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item[aria-current='page'] {
-  color: var(--personal-accent-foreground) !important;
-  border-color: color-mix(in srgb, var(--personal-accent-400) 62%, var(--workspace-border)) !important;
-  background-color: var(--personal-accent-600) !important;
-  box-shadow: 0 5px 12px -8px color-mix(in srgb, var(--personal-accent-900, var(--product-navy-900)) 68%, transparent) !important;
+  color: var(--workspace-text) !important;
+  background-color: color-mix(in srgb, var(--workspace-text) 6%, var(--surface-canvas)) !important;
+}
+.db-presentation-new .db-my-shop-nav-item[aria-current='page'] .db-my-shop-nav-glyph {
+  color: var(--workspace-text);
+  background: color-mix(in srgb, var(--product-copper-400) 14%, var(--surface-overlay));
+}
+.db-presentation-new .db-my-shop-nav-item::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  left: calc(50% - 11px);
+  width: 22px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--product-copper-500);
+  opacity: 0;
+  pointer-events: none;
+}
+.db-presentation-new .db-my-shop-nav-item[aria-current='page']::after { opacity: 1; }
+
+/* Administration and insights stay available, but below operational sections. */
+.db-presentation-new .db-my-shop-nav-cluster-secondary .db-my-shop-nav-glyph {
+  flex-basis: 22px;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  box-shadow: none;
+}
+.db-presentation-new .db-my-shop-workspace .db-my-shop-nav-cluster-secondary .db-my-shop-nav-item[aria-current='page'] {
+  background-color: transparent !important;
+}
+.db-presentation-new .db-my-shop-nav-cluster-secondary .db-my-shop-nav-item::after { background: var(--workspace-muted); }
+
+@media (forced-colors: active) {
+  .db-presentation-new .db-my-shop-nav-glyph { box-shadow: none; border: 1px solid ButtonText; }
+  .db-presentation-new .db-my-shop-nav-item[aria-current='page']::after { background: Highlight; forced-color-adjust: none; }
 }
 
 .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item:focus-visible {
@@ -2834,16 +2886,14 @@ html::-webkit-scrollbar-thumb:hover {
 
 @media (hover: hover) and (pointer: fine) {
   .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item:not([aria-current='page']):hover {
-    color: var(--personal-accent-500) !important;
-    border-color: color-mix(in srgb, var(--personal-accent-500) 34%, var(--border-subtle)) !important;
-    background-color: color-mix(in srgb, var(--personal-accent-500) 8%, var(--surface-raised)) !important;
+    color: var(--workspace-text) !important;
+    background-color: color-mix(in srgb, var(--workspace-text) 4%, var(--surface-canvas)) !important;
   }
 }
 
 @container my-shop (max-width: 41.999rem) {
   .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item {
-    border-color: var(--workspace-border) !important;
-    background-color: var(--surface-raised) !important;
+    justify-content: flex-start;
   }
 }
 

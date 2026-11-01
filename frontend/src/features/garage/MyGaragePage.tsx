@@ -43,7 +43,9 @@ function GarageLinks({ sections }: { sections: GarageSection[] }) {
         }`
       }
     >
-      <section.icon aria-hidden="true" className="h-4 w-4 shrink-0" />
+      <span aria-hidden="true" className="db-my-shop-nav-glyph">
+        <section.icon className="h-4 w-4 shrink-0" />
+      </span>
       <span aria-hidden="true" className="db-my-shop-nav-label db-my-shop-nav-label-short whitespace-nowrap">
         {section.shortLabel}
       </span>
