@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { ControlButton } from '@/components/ui/Controls'
 import { createPortal } from 'react-dom'
 
 export function ImportedBillingTooltip({ children, icon, description, tone }: {
@@ -45,7 +46,7 @@ export function ImportedBillingTooltip({ children, icon, description, tone }: {
     }
   }, [open, dismiss])
   return <>
-    <button ref={trigger} type="button" data-db-control="icon" aria-label="ETS billing details" aria-description={description}
+    <ControlButton ref={trigger} type="button" controlKind="icon" aria-label="ETS billing details" aria-description={description}
       aria-describedby={open ? id : undefined} aria-expanded={open} data-severity={tone}
       className="db-imported-billing-indicator inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-600"
       onPointerEnter={event => { if (event.pointerType !== 'touch') { cancel(); setOpen(true) } }}
@@ -54,7 +55,7 @@ export function ImportedBillingTooltip({ children, icon, description, tone }: {
       onBlur={dismiss}
       onClick={() => { cancel(); if (pinned.current) dismiss(); else { pinned.current = true; setOpen(true) } }}>
       {icon}
-    </button>
+    </ControlButton>
     {open && createPortal(<div ref={panel} id={id} role="tooltip" aria-label="ETS billing details"
       className="db-imported-billing-tooltip fixed z-[100] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl p-4 text-left text-xs shadow-lg"
       style={{ ...position, maxHeight: 'calc(100dvh - 32px)' }} onPointerEnter={cancel} onPointerLeave={leave}>
