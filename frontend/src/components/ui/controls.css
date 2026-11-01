@@ -53,7 +53,8 @@ body:has([data-db-touch-controls]), [data-db-touch-controls] { --control-height:
 /* One ring on the painted boundary, inset so scroll containers cannot clip it.
    Important rules in this layer beat legacy page rings and Tailwind shadows. */
 [data-db-control]:not([data-db-control='content']):focus-visible,
-[data-db-control-shell]:has(> [data-db-control]:focus-visible) {
+[data-db-control-shell='proxy']:has(> [data-db-control]:focus-visible),
+[data-db-control-shell='field']:has(> [data-db-control='field']:focus-visible) {
   outline: 2px solid var(--control-focus-color, var(--workspace-text, currentColor)) !important;
   outline-offset: -2px !important;
   box-shadow: none !important;
@@ -87,7 +88,11 @@ body:has([data-db-touch-controls]), [data-db-touch-controls] { --control-height:
   border: 0 !important;
   background: transparent !important;
 }
-[data-db-control-shell] > [data-db-control]:focus {
+/* A trailing action keeps its own focus target. Compensate the shell border
+   without reducing its hit area or making the field taller when it appears. */
+[data-db-control-shell='field'] > [data-db-control='icon'] { margin-block: -1px !important; }
+[data-db-control-shell='proxy'] > [data-db-control]:focus,
+[data-db-control-shell='field'] > [data-db-control='field']:focus {
   outline: none !important;
   box-shadow: none !important;
 }

@@ -21,7 +21,8 @@ async page => {
           if (!await control.isVisible()) continue
           await control.focus()
           const result = await control.evaluate(e => {
-            const shell = e.parentElement.matches('[data-db-control-shell]') ? e.parentElement : e
+            const compound = e.parentElement.matches('[data-db-control-shell="proxy"]') || (e.dataset.dbControl === 'field' && e.parentElement.matches('[data-db-control-shell="field"]'))
+            const shell = compound ? e.parentElement : e
             const r = e.getBoundingClientRect(), b = shell.getBoundingClientRect()
             const s = getComputedStyle(shell), inputStyle = getComputedStyle(e)
             const floor = parseFloat(s.getPropertyValue('--control-height'))

@@ -40,7 +40,7 @@ function Catalog() {
             <div data-db-control-shell="proxy" className="db-repair-orders-new__status-select" style={{ display: 'block' }}><ControlButton type="button" aria-label="Legacy status trigger">All statuses</ControlButton></div>
             <ControlButton type="button" className="focus:ring-2 focus:ring-orange-500">Overdue</ControlButton>
           </div>
-          {['db-parts-workbench__search', 'db-parts-operations__search', 'db-shop-search-field', 'db-labor-book-time__search', 'fld-search', 'proximity-search', 'driver-profile-search', 'wo-svc-search'].map(name => <label key={name} data-db-control-shell="field" className={name} style={{ display: 'flex', alignItems: 'center', border: '1px solid currentColor' }}><Plus aria-hidden="true" size={16} /><ControlInput aria-label={name} placeholder="Search" style={{ width: '100%', minWidth: 0 }} /></label>)}
+          {['db-parts-workbench__search', 'db-parts-operations__search', 'db-shop-search-field', 'db-labor-book-time__search', 'fld-search', 'proximity-search', 'driver-profile-search', 'wo-svc-search'].map(name => <label key={name} data-db-control-shell="field" className={name} style={{ display: 'flex', alignItems: 'center', border: '1px solid currentColor' }}><Plus aria-hidden="true" size={16} /><ControlInput aria-label={name} placeholder="Search" style={{ width: '100%', minWidth: 0 }} />{name === 'db-labor-book-time__search' && <ControlButton controlKind="icon" type="button" aria-label="Clear fixture search"><Plus aria-hidden="true" /></ControlButton>}</label>)}
         </section>
         <section style={{ marginTop: 28, display: 'grid', gap: 16 }} aria-label="Field controls">
           <h2>Fields and menus</h2>
