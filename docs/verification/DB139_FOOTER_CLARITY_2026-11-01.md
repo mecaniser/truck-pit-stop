@@ -60,5 +60,7 @@ Focused suite: importedBilling, PriceBuilderPanel.pending-feedback and
 RepairOrdersPage.imported-billing.128 tests, including exact decimal precision,
 malformed/unknown/zero amounts, source/session holds, touch and native billing.
 TypeScript/production build, scoped lint and diff check recorded in the PR.
+Local checks pass:128 tests, TypeScript/Vite build, changed-source lint (7 files) and diff check.
+[Draft PR740](https://github.com/mecaniser/truck-pit-stop/pull/740).
 No merge or production deployment is claimed. Protected CI and release remain
 pending. Local-only preview entry files are not part of the product diff.
