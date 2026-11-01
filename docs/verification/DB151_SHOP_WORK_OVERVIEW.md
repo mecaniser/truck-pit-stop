@@ -93,3 +93,20 @@ Shop Work backend endpoint/service/schema/tests, navigation helper and WebSocket
 Local integration validation: production TypeScript/Vite build and shared-control guard pass; affected regression run passes39files/684tests across dashboard, record destinations, customers, inventory/purchasing, repair orders, imported footer and controls. A fresh independent reviewer returns no blocking findings and passes4files/67focusedtests (overlapping the broader run, not additive). No new signed-in browser acceptance is claimed for this merge-only reconciliation; original signed-in flows are recorded above and protected integration CI remains required. Changed-source lint and final exact-head CI pending at this checkpoint.
 
 Existing owner remains accountable for concurrent presentation refinements. Publish only using a fresh remote-head check and normal fast-forward push; preserve any newer owner commit. No PR approval, merge, deployment or production writes.
+
+## Source-status UI correction — 2026-11-01
+
+User review rejected the native full-width source disclosure. The correction follows the Fast UI lane: existing read contract and authorization remain unchanged.
+
+- Compact named status sits beside the attention count. It uses the existing Headless UI popover and semantic warning/appearance tokens. No extra banner, default disclosure marker, or duplicate account footer.
+- Partial/unavailable sources retain a visible status and one owner-workspace action inside the anchored explanation. Verified overflow still has its workspace route. Restricted/disabled sources remain absent. Unknown balances never become zero or confirmed collectibles.
+- 29 focused Overview and Dashboard presentation tests pass, including zero active jobs, unknown accounts, multiple failures, restricted/disabled sources, actual overflow, destination identity, and keyboard Escape/focus return. Changed-source ESLint passes; Impeccable detector reports no findings.
+- Actual signed-in local API-backed Quiet QA tenant: zero active jobs, five actions and an upcoming PO remain visible. Account status opens Customers with the Shop Work return context, and Back restores Overview. Escape restores trigger focus; explicit Close and outside click dismiss correctly.
+- Desktop and390px visual acceptance: mobile page width390; panel bounds x27–367, no horizontal overflow. Temporary viewport reset. Synthetic QA records are persisted in the dedicated local clone; no mock UI data or production mutations.
+- [Desktop](assets/db151/status-heading.png), [mobile details](assets/db151/status-mobile.png).
+
+This UI follow-up supersedes the source-disclosure visuals in earlier screenshots. PR736 stays draft; no merge/deploy. Previous CI evidence belongs to the prior head and is not evidence for this follow-up head.
+
+Follow-up `npm run build` (TypeScript + Vite) passed. Routine existing bundle-size/Browserslist warnings remain; no build failure.
+
+Remote owner published10de849b during reconciliation. It is preserved as a merge parent; the source-status popover, overflow deduplication, new tests and signed-in screenshots survive. Its native buttons are reconciled to shared ControlButton, with explicit shared geometry on the Headless UI trigger. Fresh affected checks and independent re-review required for this combined head.
