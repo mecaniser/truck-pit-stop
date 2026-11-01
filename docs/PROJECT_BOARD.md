@@ -1,3 +1,5 @@
+> **DB-139 shared billing / PR731 REVIEW (2026-11-01):** [PR731](https://github.com/mecaniser/truck-pit-stop/pull/731), implementation a27c48b5. Final independent QA/Security GO includes the Night contrast correction and parent runtime evidence. Protected Quality gates queued; not merged/deployed. Local5202 remains aligned/browser-verified; production acceptance pending authorized release.
+
 > **DB-139 shared ETS invoice context / REVIEW, LOCAL ACCEPTANCE PASSED (2026-11-01), Backend & Integrations:**125 backend+152 frontend checks, TypeScript/build, changed-source lint and independent source/security/automated QA GO. Actual signed-in Day/Night desktop/mobile shared paid/partial/unpaid status and remaining verified; Night ledger contrast corrected. Isolated5202/API18021 aligned/browser-verified. No accounting/export/importer writes; no duplicate invoices/payments. [Receipt](verification/DB139_SHARED_ETS_BILLING.md). Protected CI/PR and authorized release pending.
 
 

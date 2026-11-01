@@ -19,3 +19,5 @@ Signed-in actual local browser: six fictional related rows show paid $0.00 remai
 ## Release boundaries
 
 No merge/deploy or production financial change performed. Protected CI/PR state recorded in board. Rollback is application code only; no data migration/backfill. Production acceptance must verify actual sibling rows after authorized release. Importer consolidation remains separate and held; this display correction does not mark parent B4 complete.
+
+PR731: https://github.com/mecaniser/truck-pit-stop/pull/731. Implementation a27c48b5. Final independent review accepted the contrast correction and parent runtime evidence, with no blocking findings. Protected CI pending; no merge/deploy.
