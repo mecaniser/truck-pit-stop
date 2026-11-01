@@ -1,9 +1,9 @@
 import './repairOrderSchedule.css'
 import './repairOrderControls.css'
 import './importedBilling.css'
-import { importedMoney, importedPaymentLabel, type ImportedBilling } from './importedBilling'
+import { importedMoney, importedPaymentLabel, importedBillingSeverity, type ImportedBilling } from './importedBilling'
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
-import { Check, ChevronDown, ChevronRight, Plus } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Plus, TriangleAlert } from 'lucide-react'
 import { StaffSearchField } from '@/components/ui'
 import { REPAIR_ORDERS_QUEUE_LABEL, type RepairOrdersQueueOrigin } from './repairOrdersPresentation'
 
@@ -376,6 +376,7 @@ export default function RepairOrdersLedger({
             tabIndex={0}
           >
             {rows.map((row) => {
+              const billingSeverity = row.importedBilling ? importedBillingSeverity(row.importedBilling) : null
               const briefId = `repair-order-brief-${row.id}`
               const workRequestId = `${briefId}-work-request`
               const isOpenInWorkspace = selectedId === row.id
@@ -434,12 +435,12 @@ export default function RepairOrdersLedger({
                       </span>
                       {requestOnRow && <span className="db-repair-orders-ledger__work">{row.description}</span>}
                       <span className="db-repair-orders-ledger__money">
-                        <strong>{row.total}</strong>
+                        <strong>{row.total}{billingSeverity?.tone === 'warning' && <span className="db-imported-billing-ledger-warning" role="img" aria-label={billingSeverity.description} title={billingSeverity.description}><TriangleAlert className="h-3.5 w-3.5" aria-hidden="true" /></span>}</strong>
                         {!row.deadline && <small>{row.updated}</small>}
                       </span>
-                      {row.importedBilling && <span className="db-imported-billing-row" aria-label="ETS invoice payment status">
-                        <span>{importedPaymentLabel(row.importedBilling.payment_status)}</span>
-                        <span>Remaining <strong>{importedMoney(row.importedBilling.payment_status === 'unverified' ? null : row.importedBilling.recorded_remaining_amount)}</strong></span>
+                      {row.importedBilling && (row.importedBilling.payment_status !== 'unverified' || row.importedBilling.shared_invoice) && <span className="db-imported-billing-row" aria-label="ETS invoice payment status">
+                        {row.importedBilling.payment_status !== 'unverified' && <span>{importedPaymentLabel(row.importedBilling.payment_status)}</span>}
+                        {billingSeverity?.remaining !== 'Unavailable' && <span>Remaining <strong>{importedMoney(row.importedBilling.recorded_remaining_amount)}</strong></span>}
                         {row.importedBilling.shared_invoice && <span>Shared ETS invoice</span>}
                       </span>}
                       {row.deadline && <span className="db-order-schedule-deadline db-order-schedule-ledger-date" data-overdue={row.overdue || undefined} title={row.deadline}>{row.deadline}</span>}

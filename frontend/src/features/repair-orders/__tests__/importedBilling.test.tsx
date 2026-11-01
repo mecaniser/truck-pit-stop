@@ -42,6 +42,56 @@ describe('Imported ETS billing', () => {
     expect(screen.getAllByText(importedMoney(completed)).length).toBeGreaterThan(0)
     expect(screen.getAllByText(importedMoney(remaining)).length).toBeGreaterThan(0)
   })
+  it.each([
+    ['paid', false, 'healthy', 'Paid in ETS'],
+    ['paid', true, 'warning', 'Review needed'],
+    ['partially_paid', false, 'warning', 'Partially paid in ETS'],
+    ['unpaid', false, 'warning', 'Unpaid in ETS'],
+    ['unverified', false, 'warning', 'Payment unverified'],
+  ] as const)('uses accessible %s severity with review=%s', (status, review, severity, description) => {
+    render(<ImportedBillingDetails billing={{ ...paid, payment_status: status, review_required: review }} />)
+    const indicator = screen.getByRole('button', { name: 'ETS billing details' })
+    expect(indicator).toHaveAttribute('data-severity', severity)
+    expect(indicator.getAttribute('title')).toContain(description)
+    expect(indicator.getAttribute('aria-description')).toContain(description)
+  })
+  it.each([null, 'invalid', '1.00'])('does not mark a paid invoice healthy with an unsupported remaining balance %s', remaining => {
+    render(<ImportedBillingDetails billing={{ ...paid, recorded_remaining_amount: remaining }} />)
+    expect(screen.getByRole('button', { name: 'ETS billing details' })).toHaveAttribute('data-severity', 'warning')
+  })
+  it('calls an unknown remaining amount unavailable rather than implying debt', async () => {
+    render(<ImportedBillingDetails billing={{ ...paid, recorded_remaining_amount: null }} />)
+    await userEvent.click(screen.getByRole('button', { name: 'ETS billing details' }))
+    expect(screen.getByText('Balance unavailable')).toBeVisible()
+    expect(screen.queryByText('Payment remaining')).not.toBeInTheDocument()
+  })
+  it.each(['total_amount', 'recorded_completed_amount'] as const)('does not show healthy when %s is missing', field => {
+    render(<ImportedBillingDetails billing={{ ...paid, [field]: null }} />)
+    expect(screen.getByRole('button', { name: 'ETS billing details' })).toHaveAttribute('data-severity', 'warning')
+    expect(screen.getByRole('button', { name: 'ETS billing details' }).getAttribute('aria-description')).toContain('Payment details unavailable')
+  })
+  it('shows a warning heading and specific identity conflict explanation even for a paid invoice', async () => {
+    render(<ImportedBillingDetails billing={{ ...paid, review_required: true, review_reasons: ['shared_job_identity_conflict'] }} />)
+    await userEvent.click(screen.getByRole('button', { name: 'ETS billing details' }))
+    expect(screen.getByText('Review needed')).toHaveAttribute('data-severity', 'warning')
+    expect(screen.getByText('Related operations have different customer or vehicle identities. Shared billing needs review.')).toBeVisible()
+    expect(screen.queryByText('Payment verified')).not.toBeInTheDocument()
+  })
+  it('shows a healthy payment heading in the opened details', async () => {
+    render(<ImportedBillingDetails billing={paid} />)
+    await userEvent.click(screen.getByRole('button', { name: 'ETS billing details' }))
+    expect(screen.getByText('Payment verified')).toHaveAttribute('data-severity', 'healthy')
+  })
+  it('keeps unknown total as the only unavailable summary until details open', async () => {
+    get.mockResolvedValue({ data: { ...paid, invoice_id: null, total_amount: null, payment_status: 'unverified', recorded_completed_amount: null, recorded_remaining_amount: null, review_required: true } })
+    renderQuery()
+    await waitFor(() => expect(get).toHaveBeenCalledOnce())
+    expect(screen.getAllByText('Unavailable')).toHaveLength(1)
+    expect(screen.queryByText('Payment unverified')).not.toBeInTheDocument()
+    expect(screen.queryByText('Remaining')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'ETS billing details' }))
+    expect(screen.getByText('Payment unverified')).toBeVisible()
+  })
   it('explains the shared whole-job balance without requiring the popover', async () => {
     render(<ImportedBillingDetails billing={{ ...paid, shared_invoice: true, invoice_repair_order_number: 'ETS-9001-123-2' }} />)
     expect(screen.getByText('Shared ETS invoice · whole-job balance')).toBeVisible()
@@ -52,7 +102,8 @@ describe('Imported ETS billing', () => {
   it('does not expose stale remaining amounts when status is unverified', () => {
     render(<ImportedBillingDetails billing={{ ...paid, payment_status: 'unverified' }} />)
     expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
-    expect(screen.getByText('Unavailable')).toBeVisible()
+    expect(screen.queryByText('Unavailable')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ETS billing details' })).toHaveAttribute('data-severity', 'warning')
   })
   it('labels an observed source snapshot without claiming QuickBooks reconciliation', async () => {
     get.mockResolvedValue({ data: { ...paid, evidence_basis: 'ets_source_snapshot', observed_at: '2026-10-18T20:00:00Z' } })
@@ -74,9 +125,10 @@ describe('Imported ETS billing', () => {
   })
   it('does not replace missing amounts with zero', async () => {
     render(<ImportedBillingDetails />)
-    expect(screen.getByText('Payment unverified')).toBeVisible()
+    expect(screen.queryByText('Payment unverified')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ETS billing details' })).toHaveAttribute('data-severity', 'warning')
     await userEvent.click(screen.getByRole('button', { name: 'ETS billing details' }))
-    expect(screen.getAllByText('Unavailable')).toHaveLength(3)
+    expect(screen.getAllByText('Unavailable')).toHaveLength(2)
     expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
   })
   it('opens by keyboard and dismisses with Escape or an outside click', async () => {
@@ -98,7 +150,8 @@ describe('Imported ETS billing', () => {
     get.mockRejectedValue(new Error('503'))
     renderQuery()
     expect(await screen.findByRole('alert')).toHaveTextContent('Billing unavailable')
-    expect(screen.getByText('Payment unverified')).toBeVisible()
+    expect(screen.queryByText('Payment unverified')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ETS billing details' })).toHaveAttribute('data-severity', 'warning')
     expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
     expect(get).toHaveBeenCalledWith('/repair-orders/order-1/imported-billing', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
@@ -109,7 +162,8 @@ describe('Imported ETS billing', () => {
     view.changeOrder('order-2')
     expect(screen.queryByText('Paid in ETS')).not.toBeInTheDocument()
     expect(screen.queryByText('$534.41')).not.toBeInTheDocument()
-    expect(screen.getByText('Payment unverified')).toBeVisible()
+    expect(screen.queryByText('Payment unverified')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ETS billing details' })).toHaveAttribute('data-severity', 'warning')
     await waitFor(() => expect(get).toHaveBeenCalledTimes(2))
     act(() => useAuthStore.setState({ authSessionEpoch: 2 }))
     await waitFor(() => expect(get).toHaveBeenCalledTimes(3))
