@@ -44,7 +44,7 @@ async def test_cash_query_has_all_tenant_and_receipt_boundaries():
 
 @pytest.mark.asyncio
 async def test_cash_sum_uses_receipt_amounts_and_fallback_customer_name():
-    records = [receipt("0.10"), receipt("0.20", company=None)]
+    records = [(*receipt("0.10"), Decimal("0.10")), (*receipt("0.20", company=None), Decimal("0.20"))]
     db = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(all=lambda: records)))
     total, rows = await cash_receipts_for_range(db, uuid4(),
         DateRange(start=date(2026, 9, 1), end=date(2026, 9, 11)))

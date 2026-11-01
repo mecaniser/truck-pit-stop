@@ -89,7 +89,7 @@ def compatible_invoice_history_digests(invoice, *, value_overrides=None, charge_
     # value may have been absent from the signed encoding; a non-NULL value
     # must always remain bound to the digest. Include both migration orders.
     legacy_null_fields = tuple(name for name in (
-        "qbo_shop_activation_id", "billed_customer_id",
+        "qbo_shop_activation_id", "billed_customer_id", "source_debt_handoff_id",
     ) if (value_overrides[name] if value_overrides and name in value_overrides
           else getattr(invoice, name)) is None)
     return {

@@ -187,9 +187,9 @@ async def get_reports_dashboard(
     )
     paid_rows = result.all()
     from app.services.source_collection_reporting import collection_economics,collection_receipt_components
-    collection_ids=[invoice.id for _,invoice,_ in paid_rows if invoice.accounting_policy=="source_collection_hold"]
+    collection_ids=[invoice.id for _,invoice,_ in paid_rows if getattr(invoice,"accounting_policy","standard")=="source_collection_hold"]
     economics=await collection_economics(db,collection_ids)
-    components=await collection_receipt_components(db,[payment for payment,invoice,_ in paid_rows if invoice.accounting_policy=="source_collection_hold"])
+    components=await collection_receipt_components(db,[payment for payment,invoice,_ in paid_rows if getattr(invoice,"accounting_policy","standard")=="source_collection_hold"])
     unallocated_receipts=Decimal("0.00")
     unapplied_receipts=Decimal("0.00")
     parts_profit_pending=False
@@ -236,10 +236,10 @@ async def get_reports_dashboard(
         # share. Guard a zero/missing total so a payment against a $0 invoice
         # cannot divide by zero.
         invoice_total = _money(invoice.total_amount)
-        received = _money(components[payment.id]["gross"]) if invoice.accounting_policy=="source_collection_hold" and payment.id in components else _money(payment.amount)
+        received = _money(components[payment.id]["gross"]) if getattr(invoice,"accounting_policy","standard")=="source_collection_hold" and payment.id in components else _money(payment.amount)
         share = (received / invoice_total) if invoice_total > 0 else Decimal("0.00")
 
-        collection=invoice.accounting_policy=="source_collection_hold"
+        collection=getattr(invoice,"accounting_policy","standard")=="source_collection_hold"
         component=components.get(payment.id) if collection else None
         archived=economics.get(invoice.id) if collection and component else None
         if collection:
@@ -309,7 +309,7 @@ async def get_reports_dashboard(
     ets_invoiced_date_by_ro: Dict[UUID, date] = dict(ets_dated_result.all())
 
     order_paid_date = {ro.id: (rng.local_date(pay.created_at) if pay.created_at else rng.start)
-                       for pay, _inv, ro in paid_rows if _inv.accounting_policy!="source_collection_hold"}
+                       for pay, _inv, ro in paid_rows if getattr(_inv,"accounting_policy","standard")!="source_collection_hold"}
     hours_ro_dates: Dict[UUID, date] = {}
     for oid in order_ids:
         if oid not in order_paid_date and oid not in ets_invoiced_date_by_ro:continue

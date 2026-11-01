@@ -1420,7 +1420,7 @@ async def resend_invoice(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         )
-    if invoice.accounting_policy != "source_collection_hold" and (invoice.source == "easy_truck_shop_import" or order.source == "easy_truck_shop_import"):
+    if getattr(invoice,"accounting_policy","standard") != "source_collection_hold" and (invoice.source == "easy_truck_shop_import" or order.source == "easy_truck_shop_import"):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Imported ETS invoices cannot be resent")
     if invoice.status == InvoiceStatus.CANCELLED:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot resend a voided invoice")

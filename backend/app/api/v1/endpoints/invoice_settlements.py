@@ -131,10 +131,10 @@ async def invoice_for_principal(
     if (
         not invoice
         or not invoice.repair_order
-        or (invoice.repair_order.deleted_at is not None and invoice.accounting_policy != "source_collection_hold")
+        or (invoice.repair_order.deleted_at is not None and getattr(invoice,"accounting_policy","standard") != "source_collection_hold")
     ):
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
-    if invoice.accounting_policy == "source_collection_hold":
+    if getattr(invoice,"accounting_policy","standard") == "source_collection_hold":
         from app.services.source_debt_handoff import invoice_handoff
         handoff=await invoice_handoff(db,invoice,check_source=False)
         if principal.role == UserRole.CUSTOMER and principal.customer_id != handoff.customer_id:
@@ -144,7 +144,7 @@ async def invoice_for_principal(
     tenant = (await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id, Tenant.is_active.is_(True)))).scalar_one_or_none()
     if not tenant:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
-    return invoice, tenant, handoff.customer_id if invoice.accounting_policy == "source_collection_hold" else invoice.repair_order.customer_id
+    return invoice, tenant, handoff.customer_id if getattr(invoice,"accounting_policy","standard") == "source_collection_hold" else invoice.repair_order.customer_id
 
 
 def _public_provider_status(readiness) -> str:
@@ -215,10 +215,10 @@ async def settlement_summary(
     ).execution_options(populate_existing=True))
     if invoice is None or settlement.tenant_id != tenant.id:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
-    if invoice.accounting_policy == "source_collection_hold":
+    if getattr(invoice,"accounting_policy","standard") == "source_collection_hold":
         actions.apply_customer_credit = actions.resolve_overpayment = actions.retry_accounting = False
         actions.authorize_early_release = False
-    if invoice and invoice.accounting_policy == HISTORICAL_HOLD:
+    if invoice and getattr(invoice,"accounting_policy","standard") == HISTORICAL_HOLD:
         actions.apply_customer_credit = False
         actions.retry_accounting = False
         from app.services.new_receipt_accounting import require_clean_historical_balance
