@@ -2,11 +2,11 @@ import PlatformSelect from '@/components/PlatformSelect'
 import { pricingError, pricingMoney } from '@/features/parts-pricing/contract'
 import PartPolicySummary from '@/features/parts-pricing/PartPolicySummary'
 /* eslint-disable react-refresh/only-export-components -- Session-scoped purchase preparation is shared with Purchasing. */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { Archive, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Boxes, Camera, ChevronRight, ChevronsUpDown, EllipsisVertical, History, MapPin, Package, Pencil, Plus, Search, Settings2, ShoppingCart, Trash2, X } from 'lucide-react'
+import { Archive, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Boxes, Camera, ChevronRight, EllipsisVertical, History, MapPin, Package, Pencil, Plus, Search, Settings2, ShoppingCart, Trash2, X } from 'lucide-react'
 
 import PartsPricingSettings from '@/features/parts-pricing/PartsPricingSettings'
 import PartPricingPolicy from '@/features/parts-pricing/PartPricingPolicy'
@@ -41,19 +41,14 @@ const FIRST_SORT_DIRECTION: Record<PartSort, SortDirection> = {
   reorder: 'desc',
 }
 
-const COMPACT_SORT_OPTIONS: Array<{ sort: Exclude<PartSort, 'catalog'>; direction: SortDirection; label: string }> = [
-  { sort: 'name', direction: 'asc', label: 'Part name A–Z' },
-  { sort: 'name', direction: 'desc', label: 'Part name Z–A' },
-  { sort: 'available', direction: 'asc', label: 'Available low to high' },
-  { sort: 'available', direction: 'desc', label: 'Available high to low' },
-  { sort: 'location', direction: 'asc', label: 'Bin location A–Z' },
-  { sort: 'location', direction: 'desc', label: 'Bin location Z–A' },
-  { sort: 'cost', direction: 'desc', label: 'Unit cost high to low' },
-  { sort: 'cost', direction: 'asc', label: 'Unit cost low to high' },
-  { sort: 'value', direction: 'desc', label: 'Stock value high to low' },
-  { sort: 'value', direction: 'asc', label: 'Stock value low to high' },
-  { sort: 'reorder', direction: 'desc', label: 'Reorder urgency high to low' },
-  { sort: 'reorder', direction: 'asc', label: 'Reorder urgency low to high' },
+const PART_SORT_FIELDS: Array<{ value: PartSort; label: string }> = [
+  { value: 'catalog', label: 'Catalog order' },
+  { value: 'name', label: 'Part name' },
+  { value: 'available', label: 'Available' },
+  { value: 'location', label: 'Bin location' },
+  { value: 'cost', label: 'Unit cost' },
+  { value: 'value', label: 'Stock value' },
+  { value: 'reorder', label: 'Reorder urgency' },
 ]
 
 const INSPECTOR_VIEWS: Array<{ id: InspectorView; label: string }> = [
@@ -497,14 +492,8 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   const [allPartsCount, setAllPartsCount] = useState<number | null>(null)
   const [addPartOpen, setAddPartOpen] = useState(false)
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
-  const [compactSortOpen, setCompactSortOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const compactSortMenu = useRef<HTMLDivElement>(null)
-  const compactSortTrigger = useRef<HTMLButtonElement>(null)
-  const compactCatalogReset = useRef<HTMLButtonElement>(null)
-  const compactSortRefs = useRef<Array<HTMLButtonElement | null>>([])
-  const headerSortFocus = useRef<Exclude<PartSort, 'catalog'> | null>(null)
   const selectionMembership = useRef('')
   const reorderPreselection = useRef<{ context: string; pages: Set<string> }>({ context: '', pages: new Set() })
 
@@ -611,62 +600,21 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
     })
   }, [direction, partsQuery.data, preselectionContext, sort, workspaceView])
 
-  useEffect(() => {
-    if (!compactSortOpen) return
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (compactSortMenu.current?.contains(event.target as Node)) return
-      setCompactSortOpen(false)
-    }
-    document.addEventListener('pointerdown', closeOnOutsidePointer)
-    return () => document.removeEventListener('pointerdown', closeOnOutsidePointer)
-  }, [compactSortOpen])
-
-  useLayoutEffect(() => {
-    if (!compactSortOpen) return
-    compactCatalogReset.current?.focus({ preventScroll: true })
-  }, [compactSortOpen])
-
-  useLayoutEffect(() => {
-    if (!headerSortFocus.current || partsQuery.isLoading) return
-    const field = headerSortFocus.current
-    const control = document.querySelector<HTMLButtonElement>(`[data-parts-sort-field='${field}']`)
-    control?.focus({ preventScroll: true })
-    headerSortFocus.current = null
-  }, [partsQuery.data, partsQuery.isLoading])
-
-  const closeCompactSort = (restoreFocus: boolean) => {
-    setCompactSortOpen(false)
-    if (restoreFocus) compactSortTrigger.current?.focus({ preventScroll: true })
-  }
-
-  const chooseSort = (nextSort: PartSort, nextDirection: SortDirection, closeMenu = false) => {
+  const chooseSort = (nextSort: PartSort, nextDirection: SortDirection) => {
     if (nextSort !== sort || nextDirection !== direction) {
       setSort(nextSort)
       setDirection(nextDirection)
       setPartsSequence((current) => current + 1)
     }
-    if (closeMenu) closeCompactSort(true)
   }
 
-  const toggleHeaderSort = (nextSort: Exclude<PartSort, 'catalog'>) => {
-    const nextDirection = sort === nextSort ? direction === 'asc' ? 'desc' : 'asc' : FIRST_SORT_DIRECTION[nextSort]
-    headerSortFocus.current = nextSort
-    chooseSort(nextSort, nextDirection)
-  }
+  const sortDirectionLabel = sort === 'catalog' ? 'Default order'
+    : sort === 'name' || sort === 'location' ? direction === 'asc' ? 'A–Z' : 'Z–A'
+    : sort === 'reorder' ? direction === 'asc' ? 'Least urgent' : 'Most urgent'
+    : direction === 'asc' ? 'Lowest first' : 'Highest first'
 
   const chooseDensity = (nextDensity: LedgerDensity) => {
     setDensity(nextDensity)
-  }
-
-  const moveCompactSortFocus = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
-    let nextIndex: number | null = null
-    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') nextIndex = (index + 1) % COMPACT_SORT_OPTIONS.length
-    if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') nextIndex = (index - 1 + COMPACT_SORT_OPTIONS.length) % COMPACT_SORT_OPTIONS.length
-    if (event.key === 'Home') nextIndex = 0
-    if (event.key === 'End') nextIndex = COMPACT_SORT_OPTIONS.length - 1
-    if (nextIndex === null) return
-    event.preventDefault()
-    compactSortRefs.current[nextIndex]?.focus()
   }
 
   const selectView = (view: WorkspaceView) => {
@@ -917,43 +865,30 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
         <button type="button" aria-pressed={density === 'comfortable'} onClick={() => chooseDensity('comfortable')}>Comfortable</button>
         <button type="button" aria-pressed={density === 'compact'} onClick={() => chooseDensity('compact')}>Compact</button>
       </div>
-      {sort !== 'catalog' && <button className="db-parts-workbench__catalog-reset is-desktop" type="button" aria-label="Reset to catalog order" onClick={() => chooseSort('catalog', 'asc')}>Catalog order</button>}
-      <div ref={compactSortMenu} className="db-parts-workbench__compact-sort-menu" onKeyDown={(event) => {
-        if (event.key !== 'Escape' || !compactSortOpen) return
-        event.preventDefault()
-        event.stopPropagation()
-        closeCompactSort(true)
-      }}>
-        <button ref={compactSortTrigger} type="button" aria-label="Sort parts" aria-expanded={compactSortOpen} aria-controls="parts-compact-sort-popover" onClick={() => {
-          setCompactSortOpen((current) => !current)
-        }}><ChevronsUpDown aria-hidden="true" /><span>Sort</span></button>
-        {compactSortOpen && <div id="parts-compact-sort-popover" className="db-parts-workbench__compact-sort-popover" role="dialog" aria-label="Sort parts">
-          <div className="db-parts-workbench__compact-sort-row">
-            <span id="parts-ledger-sort-label">Sort</span>
-            <div className="db-parts-workbench__sort-controls">
-              <button ref={compactCatalogReset} className="db-parts-workbench__catalog-reset" type="button" aria-pressed={sort === 'catalog'} onClick={() => chooseSort('catalog', 'asc', true)}>Catalog order</button>
-              <div className="db-parts-workbench__compact-sort" role="radiogroup" aria-labelledby="parts-ledger-sort-label">
-                {COMPACT_SORT_OPTIONS.map((option, index) => {
-                  const selected = sort === option.sort && direction === option.direction
-                  const hasSelectedCompactSort = COMPACT_SORT_OPTIONS.some((candidate) => sort === candidate.sort && direction === candidate.direction)
-                  return <button key={`${option.sort}-${option.direction}`} ref={(node) => { compactSortRefs.current[index] = node }} type="button" role="radio" aria-checked={selected} tabIndex={selected || !hasSelectedCompactSort && index === 0 ? 0 : -1} onKeyDown={(event) => moveCompactSortFocus(event, index)} onClick={() => chooseSort(option.sort, option.direction, true)}>{option.label}</button>
-                })}
-              </div>
-            </div>
-          </div>
-        </div>}
-      </div>
+
     </div>}
 
     {workspaceView === 'activity'
       ? <ActivityWorkspace />
       : <div className={`db-parts-workbench__body is-${density}${mobileDetailOpen ? ' is-mobile-detail' : ''}`}>
         <div className="db-parts-workbench__ledger-workspace">
+          <div className="db-parts-workbench__sorting" role="group" aria-label="Parts sorting">
+            <label htmlFor="parts-sort-field">Sort by</label>
+            <PlatformSelect id="parts-sort-field" aria-label="Sort by" value={sort} onChange={(event) => {
+              const nextSort = event.target.value as PartSort
+              chooseSort(nextSort, nextSort === sort ? direction : FIRST_SORT_DIRECTION[nextSort])
+            }}>
+              {PART_SORT_FIELDS.map((field) => <option key={field.value} value={field.value}>{field.label}</option>)}
+            </PlatformSelect>
+            <button type="button" className="db-parts-workbench__sort-direction" aria-label={`Sort direction: ${sortDirectionLabel}`} disabled={sort === 'catalog'} onClick={() => chooseSort(sort, direction === 'asc' ? 'desc' : 'asc')}>
+              {direction === 'asc' ? <ArrowUp aria-hidden="true" /> : <ArrowDown aria-hidden="true" />}<span>{sortDirectionLabel}</span>
+            </button>
+          </div>
           {manage && checkedParts.size > 0 && <div className="db-parts-workbench__bulk" role="region" aria-label="Selected parts actions">
             <strong>{checkedParts.size} {checkedParts.size === 1 ? 'part' : 'parts'} selected</strong>
             <div><button type="button" onClick={clearChecked}>Clear selection</button><button type="button" onClick={prepareChecked}>Add to purchase list<ArrowRight aria-hidden="true" /></button></div>
           </div>}
-          <PartLedger page={partsPage} loading={partsQuery.isLoading} loadingMore={partsQuery.isFetchingNextPage} failed={partsQuery.isError && !partsQuery.data} manage={manage} salesEnabled={counterSalesEnabled} selectedId={selectedId} checkedIds={new Set(checkedParts.keys())} density={density} sort={sort} direction={direction} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onSort={toggleHeaderSort} onCheck={toggleChecked} onSelect={selectPart} onSell={(id) => navigate(`/dashboard/garage/inventory/sales?new=1&part=${encodeURIComponent(id)}`)} onRetry={() => void partsQuery.refetch()} onLoadMore={() => void partsQuery.fetchNextPage()} />
+          <PartLedger page={partsPage} loading={partsQuery.isLoading} loadingMore={partsQuery.isFetchingNextPage} failed={partsQuery.isError && !partsQuery.data} manage={manage} salesEnabled={counterSalesEnabled} selectedId={selectedId} checkedIds={new Set(checkedParts.keys())} density={density} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onCheck={toggleChecked} onSelect={selectPart} onSell={(id) => navigate(`/dashboard/garage/inventory/sales?new=1&part=${encodeURIComponent(id)}`)} onRetry={() => void partsQuery.refetch()} onLoadMore={() => void partsQuery.fetchNextPage()} />
         </div>
         <PartInspector part={detailQuery.data} loading={detailQuery.isLoading} failed={detailQuery.isError} manage={manage} prepared={Boolean(detailQuery.data && preparedPartIds.has(detailQuery.data.id))} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onBack={() => setMobileDetailOpen(false)} onRetry={() => void detailQuery.refetch()} onAdjust={updatePart} onReceive={receiveStock} onUpdateIdentity={updatePartIdentity} onUploadPhoto={uploadPartPhoto} onRemovePhoto={removePartPhoto} onPrepare={addToPreparation} onPurchasing={() => navigate('/dashboard/garage/purchasing')} onOpenPurchaseOrder={(id) => navigate(`/dashboard/garage/purchasing?view=orders&purchase_order=${encodeURIComponent(id)}`)} onOpenRepair={(id) => navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}`)} />
       </div>}
@@ -968,18 +903,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   </section>
 }
 
-function SortableColumnHeader({ label, columnClass, field, sort, direction, onSort }: { label: string; columnClass: string; field: Exclude<PartSort, 'catalog'>; sort: PartSort; direction: SortDirection; onSort: (field: Exclude<PartSort, 'catalog'>) => void }) {
-  const active = sort === field
-  const nextDirection = active ? direction === 'asc' ? 'desc' : 'asc' : FIRST_SORT_DIRECTION[field]
-  return <span className={`${columnClass} is-sortable`} role="columnheader" aria-sort={active ? direction === 'asc' ? 'ascending' : 'descending' : undefined}>
-    <button type="button" data-parts-sort-field={field} aria-label={`${label}: sort ${nextDirection === 'asc' ? 'ascending' : 'descending'}`} onClick={() => onSort(field)}>
-      <span>{label}</span>
-      {active ? direction === 'asc' ? <ArrowUp aria-hidden="true" /> : <ArrowDown aria-hidden="true" /> : <ChevronsUpDown aria-hidden="true" />}
-    </button>
-  </span>
-}
-
-function PartLedger({ page, loading, loadingMore, failed, manage, salesEnabled, selectedId, checkedIds, density, sort, direction, logoUrl, companyName, onSort, onCheck, onSelect, onSell, onRetry, onLoadMore }: { page?: Page<PartRecord>; loading: boolean; loadingMore: boolean; failed: boolean; manage: boolean; salesEnabled: boolean; selectedId: string | null; checkedIds: Set<string>; density: LedgerDensity; sort: PartSort; direction: SortDirection; logoUrl: string | null; companyName: string | null; onSort: (field: Exclude<PartSort, 'catalog'>) => void; onCheck: (part: PartRecord, checked: boolean) => void; onSelect: (id: string) => void; onSell: (id: string) => void; onRetry: () => void; onLoadMore: () => void }) {
+function PartLedger({ page, loading, loadingMore, failed, manage, salesEnabled, selectedId, checkedIds, density, logoUrl, companyName, onCheck, onSelect, onSell, onRetry, onLoadMore }: { page?: Page<PartRecord>; loading: boolean; loadingMore: boolean; failed: boolean; manage: boolean; salesEnabled: boolean; selectedId: string | null; checkedIds: Set<string>; density: LedgerDensity; logoUrl: string | null; companyName: string | null; onCheck: (part: PartRecord, checked: boolean) => void; onSelect: (id: string) => void; onSell: (id: string) => void; onRetry: () => void; onLoadMore: () => void }) {
   const [openActions, setOpenActions] = useState<string | null>(null)
   useEffect(() => {
     if (!openActions) return
@@ -999,22 +923,19 @@ function PartLedger({ page, loading, loadingMore, failed, manage, salesEnabled, 
   if (failed) return <div className="db-parts-workbench__state" role="alert">Parts could not be loaded.<button type="button" onClick={onRetry}>Retry</button></div>
   if (!page?.items.length) return <div className="db-parts-workbench__state"><strong>No parts match this view.</strong><span>Change the search or catalog filter to see more.</span></div>
   return <div className={`db-parts-workbench__ledger is-${density}${manage ? '' : ' is-read-only'}`} role="table" aria-label={`${page.total} matching parts`}>
-    <div className="db-parts-workbench__table-head" role="row">
+    <div className="sr-only" role="row">
       {manage && <span role="columnheader" aria-label="Select part" />}
-      <SortableColumnHeader label="Part / Description" columnClass="is-description" field="name" sort={sort} direction={direction} onSort={onSort} />
-      <SortableColumnHeader label="Available" columnClass="is-available" field="available" sort={sort} direction={direction} onSort={onSort} />
-      <SortableColumnHeader label="Bin location" columnClass="is-bin" field="location" sort={sort} direction={direction} onSort={onSort} />
-      <SortableColumnHeader label="Unit cost" columnClass="is-cost" field="cost" sort={sort} direction={direction} onSort={onSort} />
-      <SortableColumnHeader label="Stock value" columnClass="is-value" field="value" sort={sort} direction={direction} onSort={onSort} />
-      <span className="is-supplier" role="columnheader">Preferred supplier</span>
-      <SortableColumnHeader label="Remarks" columnClass="is-remarks" field="reorder" sort={sort} direction={direction} onSort={onSort} />
+      {['Part / Description', 'Available', 'Bin location', 'Unit cost', 'Stock value', 'Preferred supplier', 'Remarks'].map((label) => <span key={label} role="columnheader">{label}</span>)}
     </div>
     <div className="db-parts-workbench__rows" role="rowgroup">
       {page.items.map((part) => {
         const eligible = isManuallySelectable(part)
         const selected = selectedId === part.id
         const remark = partRemark(part)
-        return <div key={part.id} role="row" aria-selected={selected} className={`db-parts-workbench__row${selected ? ' is-selected' : ''}${!eligible ? ' is-ineligible' : ''}`} data-selected-surface={selected ? 'true' : undefined}>
+        return <div key={part.id} role="row" aria-selected={selected} className={`db-parts-workbench__row${selected ? ' is-selected' : ''}${!eligible ? ' is-ineligible' : ''}`} data-selected-surface={selected ? 'true' : undefined} onClick={(event) => {
+          if (!(event.target instanceof Element) || !event.currentTarget.contains(event.target) || event.target.closest('button,input,label,a,[role="menu"]')) return
+          onSelect(part.id)
+        }}>
           {manage && <span role="cell" className="db-parts-workbench__check" onClick={(event) => event.stopPropagation()}>{eligible && <label><input type="checkbox" aria-label={`Select ${part.name} for purchase preparation`} checked={checkedIds.has(part.id)} onClick={(event) => event.stopPropagation()} onChange={(event) => onCheck(part, event.target.checked)} /></label>}</span>}
           <span role="cell" className="db-parts-workbench__part-cell">
             <button type="button" className="db-parts-workbench__row-select" aria-current={selected ? 'true' : undefined} aria-controls="selected-part-inspector" onClick={() => onSelect(part.id)}>
@@ -1024,12 +945,14 @@ function PartLedger({ page, loading, loadingMore, failed, manage, salesEnabled, 
             <PartPhoto part={part} logoUrl={logoUrl} companyName={companyName} />
             {salesEnabled && eligible && <span className="db-parts-workbench__row-actions" data-row-actions={part.id} onClick={(event) => event.stopPropagation()}><button type="button" aria-label={`More actions for ${part.name}`} aria-haspopup="menu" aria-expanded={openActions === part.id} onClick={() => setOpenActions((current) => current === part.id ? null : part.id)}><EllipsisVertical aria-hidden="true" /></button>{openActions === part.id && <span role="menu" aria-label={`Actions for ${part.name}`}><button type="button" role="menuitem" onClick={() => { setOpenActions(null); onSell(part.id) }}>Sell part</button></span>}</span>}
           </span>
-          <strong role="cell" data-label="Available" className="is-available">{part.available_to_sell_packages ?? part.available_packages}</strong>
-          <span role="cell" data-label="Bin location" className="is-bin">{part.location ? `Bin ${part.location}` : 'Bin not set'}</span>
-          <strong role="cell" data-label="Unit cost" className="is-cost">{formatMoney(money(part.average_unit_cost))}</strong>
-          <strong role="cell" data-label="Stock value" className="is-value">{formatStockValue(part)}</strong>
-          <span role="cell" data-label="Preferred supplier" className={`is-supplier${!part.preferred_source ? ' is-unassigned' : ''}`}>{part.preferred_source?.supplier_name || 'Unassigned'}</span>
-          <span role="cell" data-label="Remarks" className={`db-parts-workbench__remark is-remarks${remark === '—' ? ' is-empty' : ''}`}>{remark !== '—' && <i aria-hidden="true" />}{remark}</span>
+          <div className="db-parts-workbench__row-facts" role="presentation">
+            <strong role="cell" data-label="Available" className="is-available"><span>Available</span> {part.available_to_sell_packages ?? part.available_packages}</strong>
+            <span role="cell" data-label="Bin location" className="is-bin">{part.location ? `Bin ${part.location}` : 'Bin not set'}</span>
+            <strong role="cell" data-label="Unit cost" className="is-cost"><span>Cost</span> {formatMoney(money(part.average_unit_cost))}</strong>
+            <strong role="cell" data-label="Stock value" className="is-value"><span>Value</span> {formatStockValue(part)}</strong>
+            <span role="cell" data-label="Preferred supplier" className={`is-supplier${!part.preferred_source ? ' is-unassigned' : ''}`}>{part.preferred_source?.supplier_name || 'Unassigned'}</span>
+            <span role="cell" data-label="Remarks" className={`db-parts-workbench__remark is-remarks${remark === '—' ? ' is-empty' : ''}`}>{remark !== '—' && <i aria-hidden="true" />}{remark}</span>
+          </div>
         </div>
       })}
     </div>

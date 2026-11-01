@@ -21,3 +21,5 @@ Screenshots: [Shop Work desktop](db150-pane-spacing/shop-desktop.png), [mobile](
 http://127.0.0.1:5199/dashboard?selected=3858e180-0a2b-40d4-a2f0-b3c37ac3da7f&queue=needs_action&work_view=active aligned and browser-verified. Inventory branch/PR727 and5198/API8015 preserved. Focused shared-layout PR only; not merged/deployed. Status Review.
 
 Draft PR #729: https://github.com/mecaniser/truck-pit-stop/pull/729. Protected CI pending; local source and runtime QA passed.
+
+Release integration: PR727 merged6224b6f8 after all seven CI jobs passed. PR729 earlier c1cfb1ce passed all seven jobs; merge inventory main into final pane branch, preserve both board histories, and require fresh exact-head CI before landing. User authorizes deployment and read-only production workflows.
