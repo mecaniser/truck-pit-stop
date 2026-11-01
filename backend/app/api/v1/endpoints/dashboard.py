@@ -1296,7 +1296,8 @@ async def get_dashboard_stats(
     paid_rows = result.all()
     from app.services.source_collection_reporting import collection_economics,collection_receipt_components
     economics=await collection_economics(db,[row.invoice_id for row in paid_rows if row.accounting_policy=="source_collection_hold"])
-    collection_payments=(await db.scalars(select(Payment).where(Payment.tenant_id==tenant_id,Payment.id.in_([row.payment_id for row in paid_rows if row.accounting_policy=="source_collection_hold"])))).all()
+    collection_payment_ids=[row.payment_id for row in paid_rows if row.accounting_policy=="source_collection_hold"]
+    collection_payments=(await db.scalars(select(Payment).where(Payment.tenant_id==tenant_id,Payment.id.in_(collection_payment_ids)))).all() if collection_payment_ids else []
     components=await collection_receipt_components(db,collection_payments)
     profit_unallocated=Decimal("0.00")
 
