@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import MyGaragePage from '../MyGaragePage'
 
@@ -37,6 +37,29 @@ function hrefs(group: HTMLElement) {
 }
 
 describe('DB-043 container-adaptive Shop navigation', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', class {
+      observe() {}
+      disconnect() {}
+    })
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('uses one marker that snaps on entry and travels on forward and backward route changes', async () => {
+    const user = userEvent.setup()
+    const { container } = renderGarage()
+    const marker = container.querySelector('.db-my-shop-nav-marker')!
+    expect(marker).toHaveAttribute('aria-hidden', 'true')
+    expect(marker).toHaveAttribute('data-animate', 'false')
+    for (const name of ['Labor Book Time', 'Inventory', 'Team']) {
+      await user.click(screen.getByRole('link', { name, exact: true }))
+      expect(container.querySelectorAll('.db-my-shop-nav-marker')).toHaveLength(1)
+      expect(container.querySelector('.db-my-shop-nav-marker')).toBe(marker)
+      expect(marker).toHaveAttribute('data-animate', 'true')
+      expect(marker).toHaveAttribute('data-tertiary', String(name === 'Team'))
+      expect(screen.getByRole('link', { name, exact: true })).toHaveAttribute('aria-current', 'page')
+    }
+  })
   it('uses one semantic navigation while preserving the operational and secondary groups', () => {
     renderGarage()
 

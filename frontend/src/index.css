@@ -2825,58 +2825,40 @@ html::-webkit-scrollbar-thumb:hover {
   box-shadow: none;
 }
 
-/* Smaller, quieter relatives of the main rail's machined glyphs. */
+/* Plain secondary navigation; one shared marker follows the selected route. */
+.db-my-shop-nav-marker { display: none; }
+.db-presentation-new .db-my-shop-navigation { position: relative; }
 .db-presentation-new .db-my-shop-nav-glyph {
   display: grid;
   place-items: center;
-  flex: 0 0 26px;
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
-  color: var(--workspace-muted);
-  background: linear-gradient(145deg, var(--surface-overlay), var(--surface-canvas));
-  box-shadow: 0 1px 2px rgb(19 35 61 / .12), inset 0 1px color-mix(in srgb, var(--workspace-text) 8%, transparent);
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  color: inherit;
 }
 .db-presentation-new .db-my-shop-nav-glyph > svg { stroke-width: 1.7; }
-
 .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item[aria-current='page'] {
   color: var(--workspace-text) !important;
-  background-color: color-mix(in srgb, var(--workspace-text) 6%, var(--surface-canvas)) !important;
 }
-.db-presentation-new .db-my-shop-nav-item[aria-current='page'] .db-my-shop-nav-glyph {
-  color: var(--workspace-text);
-  background: color-mix(in srgb, var(--product-copper-400) 14%, var(--surface-overlay));
-}
-.db-presentation-new .db-my-shop-nav-item::after {
-  content: '';
+.db-presentation-new .db-my-shop-nav-marker {
+  display: block;
   position: absolute;
-  bottom: 2px;
-  left: calc(50% - 11px);
-  width: 22px;
+  top: 0;
+  left: 0;
   height: 2px;
-  border-radius: 2px;
   background: var(--product-copper-500);
-  opacity: 0;
   pointer-events: none;
+  opacity: 0;
 }
-.db-presentation-new .db-my-shop-nav-item[aria-current='page']::after { opacity: 1; }
-
-/* Administration and insights stay available, but below operational sections. */
-.db-presentation-new .db-my-shop-nav-cluster-secondary .db-my-shop-nav-glyph {
-  flex-basis: 22px;
-  width: 22px;
-  height: 22px;
-  background: transparent;
-  box-shadow: none;
+.db-presentation-new .db-my-shop-nav-marker[data-animate='true'] {
+  transition: transform 240ms cubic-bezier(.16, 1, .3, 1), width 240ms cubic-bezier(.16, 1, .3, 1);
 }
-.db-presentation-new .db-my-shop-workspace .db-my-shop-nav-cluster-secondary .db-my-shop-nav-item[aria-current='page'] {
-  background-color: transparent !important;
+.db-presentation-new .db-my-shop-nav-marker[data-tertiary='true'] { background: var(--workspace-muted); }
+@media (prefers-reduced-motion: reduce) {
+  .db-presentation-new .db-my-shop-nav-marker[data-animate='true'] { transition: none; }
 }
-.db-presentation-new .db-my-shop-nav-cluster-secondary .db-my-shop-nav-item::after { background: var(--workspace-muted); }
-
 @media (forced-colors: active) {
-  .db-presentation-new .db-my-shop-nav-glyph { box-shadow: none; border: 1px solid ButtonText; }
-  .db-presentation-new .db-my-shop-nav-item[aria-current='page']::after { background: Highlight; forced-color-adjust: none; }
+  .db-presentation-new .db-my-shop-nav-marker { background: Highlight; forced-color-adjust: none; }
 }
 
 .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item:focus-visible {
@@ -2887,7 +2869,7 @@ html::-webkit-scrollbar-thumb:hover {
 @media (hover: hover) and (pointer: fine) {
   .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item:not([aria-current='page']):hover {
     color: var(--workspace-text) !important;
-    background-color: color-mix(in srgb, var(--workspace-text) 4%, var(--surface-canvas)) !important;
+
   }
 }
 

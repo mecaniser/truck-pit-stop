@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from 'react'
 import { NavLink, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { BarChart3, Boxes, ClipboardList, Clock3, ShoppingCart, Wrench, type LucideIcon } from 'lucide-react'
 import ServicesManagementPage from '@/features/dashboard/ServicesManagementPage'
@@ -57,12 +58,51 @@ function GarageLinks({ sections }: { sections: GarageSection[] }) {
 }
 
 function GarageNav() {
+  const { pathname } = useLocation()
+  const navigationRef = useRef<HTMLElement>(null)
+  const markerRef = useRef<HTMLSpanElement>(null)
+  const previousPath = useRef<string>()
+
+  useLayoutEffect(() => {
+    const navigation = navigationRef.current
+    const marker = markerRef.current
+    if (!navigation || !marker) return
+    const position = (animate: boolean) => {
+      const selected = navigation.querySelector<HTMLElement>('[aria-current="page"]')
+      if (!selected) {
+        marker.style.opacity = '0'
+        return
+      }
+      const navRect = navigation.getBoundingClientRect()
+      const rect = selected.getBoundingClientRect()
+      marker.dataset.animate = String(animate)
+      marker.dataset.tertiary = String(Boolean(selected.closest('.db-my-shop-nav-cluster-secondary')))
+      marker.style.width = `${Math.max(0, rect.width - 20)}px`
+      marker.style.transform = `translate(${rect.left - navRect.left - navigation.clientLeft + 10}px, ${rect.bottom - navRect.top - navigation.clientTop - 2}px)`
+      marker.style.opacity = '1'
+    }
+    position(previousPath.current !== undefined && previousPath.current !== pathname)
+    previousPath.current = pathname
+    // Resize/layout changes snap to the new geometry; route changes travel from
+    // the marker's current position, including when clicks interrupt a slide.
+    let initialResize = true
+    const observer = new ResizeObserver(() => {
+      if (initialResize) { initialResize = false; return }
+      position(false)
+    })
+    observer.observe(navigation)
+    navigation.querySelectorAll('.db-my-shop-nav-item').forEach(item => observer.observe(item))
+    return () => observer.disconnect()
+  }, [pathname])
+
   return (
     <nav
+      ref={navigationRef}
       aria-label="Shop sections"
       data-shop-menu-layout="container-adaptive"
       className="db-my-shop-navigation shrink-0 p-2"
     >
+      <span ref={markerRef} className="db-my-shop-nav-marker" aria-hidden="true" />
       <div className="db-my-shop-nav-groups scrollbar-dark">
         <div
           role="group"
