@@ -22,8 +22,8 @@ Desktop fine-pointer controls have a 34px minimum height; mobile/coarse-pointer,
 
 ## Runtime receipt — 2026-11-01
 
-- Worktree: `/Users/sergio_m1_promax/.codex/worktrees/shared-controls`; implementation `0872112bc9ce9a0055807e65bd2c7389983e86be` includes main4645ea6a; rendered source and branch indicator browser-verified.
-- Frontend: `http://127.0.0.1:5235`, Vite PID79709, cwd is this worktree's `frontend`; isolated dependencies.
+- Worktree: `/Users/sergio_m1_promax/.codex/worktrees/shared-controls`; runtime-stamped `df00b2cb1e43eab84882087f75730536832a601b` includes main4645ea6a; rendered source and branch indicator browser-verified. Subsequent receipt-only commits do not alter the served application.
+- Frontend: `http://db-controls.localhost:5235`, Vite PID84189, cwd is this worktree's `frontend`; isolated dependencies.
 - Backend: `http://127.0.0.1:8035`, container `dieselbridge_api_shared-controls`, image `truck-pit-stop-api`, bind mount this worktree's `backend` to `/app`.
 - Approved local configuration: PostgreSQL `truckpitstop_db042_qa`, Redis DB12, schema head/current `196_historical_owner_self_review`. Existing sandbox/provider settings preserved; no migration or reseed.
 - Direct and frontend-proxied `/health/ready` report database and Redis ready. Task origin added only to this isolated API's CORS allowlist. Existing5173/8000 services untouched.
@@ -34,3 +34,7 @@ Not merged or deployed. Protected PR CI and release approval remain required.
 ## Review handoff
 
 [Draft PR735](https://github.com/mecaniser/truck-pit-stop/pull/735). Latest-main conflict was confined to delivery-board history; both histories retained. Team and inventory desktop/mobile screenshots refreshed after integration. Mobile Team actions measure44px with no page overflow. DB-152 supersedes the initially allocated DB-151 identifier because a concurrently merged Team item used DB-151. Screenshot folder `db151/` retains its original evidence paths.
+
+### Preview session correction — 2026-11-01 19:34 UTC
+
+The127.0.0.1 browser session later failed with `Refresh session does not match`. Cookies are shared by hostname across ports, while persisted frontend tokens are origin-specific. Moved the user preview to `http://db-controls.localhost:5235` to isolate cookies from other local previews; ports unchanged. Updated only this task API CORS origins and FRONTEND_URL, preserving database/provider settings. Direct/proxied readiness passed. Normal fictional-account login and page reload both reached Shop Work. Remember me stores the email, not the password. No application auth logic changed.
