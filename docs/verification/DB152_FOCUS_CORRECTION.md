@@ -31,4 +31,4 @@ Acceptance: one visible outline on the actual boundary, matched wrapper/child he
 
 ## Release
 
-Pending exact-head changed-source lint, protected CI, merge, deployed commit and production browser acceptance. Do not mark Done until those exist.
+PR: https://github.com/mecaniser/truck-pit-stop/pull/745. Baseline-aware lint passed all13 changed TypeScript files with no new violations. Final production build passed; pointer-focus shadow regression also passed. Pending protected CI, merge, deployed commit and production browser acceptance. Do not mark Done until those exist.
