@@ -38,3 +38,22 @@ Not merged or deployed. Protected PR CI and release approval remain required.
 ### Preview session correction — 2026-11-01 19:34 UTC
 
 The127.0.0.1 browser session later failed with `Refresh session does not match`. Cookies are shared by hostname across ports, while persisted frontend tokens are origin-specific. Moved the user preview to `http://db-controls.localhost:5235` to isolate cookies from other local previews; ports unchanged. Updated only this task API CORS origins and FRONTEND_URL, preserving database/provider settings. Direct/proxied readiness passed. Normal fictional-account login and page reload both reached Shop Work. Remember me stores the email, not the password. No application auth logic changed.
+
+## Production release — 2026-11-01
+
+Status: **Done**. Owner: Frontend & UX, Fast UI lane. User explicitly authorized CI completion, merge, deployment and read-only production verification.
+
+- PR: [#735](https://github.com/mecaniser/truck-pit-stop/pull/735), merged2026-11-01 20:11:18 UTC (15:11:18 EST).
+- Tested PR head: `91e30d6d15890f2052d65f84db4de3d1d1074147`. [All seven Quality gates passed](https://github.com/mecaniser/truck-pit-stop/actions/runs/41344475831): migration graph, backend, full backend, dependencies, frontend checks, full frontend and Playwright smoke. Production build and95 focused integration tests also passed locally after preserving current-main invoice behavior.
+- Merge SHA: `ce756d231fa86c8f69c98b2d119d16a706ee0a2a`.
+- Railway production web deployment: `13c28a03-99c7-497d-9a41-12dc777ce524`, SUCCESS, source SHA matches merge.
+- Both `www.dieselbridge.com/build-version` and `api.dieselbridge.com/build-version` returned the merge SHA; built_at2026-11-01T20:13:31.943Z. Both readiness endpoints returned ready, database/Redis healthy.
+- Authenticated production repair-order ledger and the same order were inspected before/after. Before: issue filter44px, refresh44×31px, Add issue34px. After at1440px viewport: all34px high, refresh34×34px. At390px: all44px high, refresh44×44px; no page overflow.
+- Open/Resolved filter selection, restore Open, refresh, Add issue dialog open and close passed. No form was saved and no production business records changed.
+- Inventory Add Part and Sort by controls, and customer search measure34px on desktop; no page overflow. Shared markers rendered in the deployed DOM. No application exceptions/error log entries during the acceptance interactions.
+- Local native keyboard semantics tests remain green. Production browser automation could not deliver the Enter key reliably, so production keyboard activation is not claimed; production click/filter/dialog/focus-return and responsive measurements are verified. The dialog returned focus to Add issue, visible in screenshots.
+- Browser automation stalled on an old tab reload; a fresh authenticated tab loaded and completed acceptance. This was a tool navigation issue, not an application failure.
+
+Visual evidence and measurements are retained in the local release artifact folder `/Users/sergio_m1_promax/.codex/visualizations/2026/11/01/01a1987c-744f-7bf2-a2e7-bb9ab22a7190/`: `controls-production-before.png`, `controls-production-after.png`, `controls-production-mobile.png` and `controls-production-measurements.json`. Screenshots are cropped to controls and contain no customer records. The numerical results and interaction outcomes are recorded above; the release-record PR changes Markdown only.
+
+No API, migration, permission or financial contract changes; no independent specialist gate required by the Fast UI lane. Rollback, if needed, is a focused revert PR for735; no data rollback is necessary.

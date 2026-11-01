@@ -82,3 +82,14 @@ Actual signed-in browser regression passed in the isolated busy QA tenant: open 
 ![Restored QA repair appears on Overview](assets/db151/overview-after-restore.png)
 
 Second CI run41343482346 on `5b46bd39` passed protected checks/Playwright but exposed an overstrict new test assertion (2073pass/1failure): a workspace observer legitimately repopulated a fresh deleted snapshot after eviction. Independent source/log review confirmed it was not stale live data. The test invariant is refined to prove a warm live snapshot before delete and only deleted snapshots afterward, retaining immediate Restore UI and no active-panel requests. Application source is unchanged by this test refinement.
+
+
+## PR736 integration with shared controls and current main — 2026-11-01
+
+Conflict integration is isolated at task-3/dbn736-integration; the active implementation owner's worktree and unpublished Overview refinement remain untouched. Integrates main8021b355 (PR735 shared controls and PR740 simplified ETS footer), plus documentation-only5213d328 release receipt. Eight frontend conflicts preserve both Shop Work query scopes/record returns and main's shared control wrappers. New Overview and return buttons use ControlButton. The merged ETS tooltip also uses ControlButton with icon kind, preserving forwarded ref, pointer/focus/keyboard handlers and ARIA while passing the native-control guard.
+
+Shop Work backend endpoint/service/schema/tests, navigation helper and WebSocket code remain byte-identical to the original published93771ebb parent. No auth, financial, migration or tenant contract is changed by reconciliation.
+
+Local integration validation: production TypeScript/Vite build and shared-control guard pass; affected regression run passes39files/684tests across dashboard, record destinations, customers, inventory/purchasing, repair orders, imported footer and controls. A fresh independent reviewer returns no blocking findings and passes4files/67focusedtests (overlapping the broader run, not additive). No new signed-in browser acceptance is claimed for this merge-only reconciliation; original signed-in flows are recorded above and protected integration CI remains required. Changed-source lint and final exact-head CI pending at this checkpoint.
+
+Existing owner remains accountable for concurrent presentation refinements. Publish only using a fresh remote-head check and normal fast-forward push; preserve any newer owner commit. No PR approval, merge, deployment or production writes.
