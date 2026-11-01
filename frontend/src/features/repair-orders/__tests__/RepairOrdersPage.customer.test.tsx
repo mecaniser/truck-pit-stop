@@ -43,8 +43,9 @@ beforeEach(() => {
 })
 function setup(initialEntry: string | string[] = '/dashboard?selected=order-1&queue=on_floor&customer=customer-1') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={Array.isArray(initialEntry) ? initialEntry : [initialEntry]}><Routes><Route path='/dashboard/customers' element={<CustomersPage />} /><Route path='/dashboard/*' element={<RepairOrdersPage />} /></Routes><Probe /></MemoryRouter></QueryClientProvider>)
-  return client
+  const view = () => <QueryClientProvider client={client}><MemoryRouter initialEntries={Array.isArray(initialEntry) ? initialEntry : [initialEntry]}><Routes><Route path='/dashboard/customers' element={<CustomersPage />} /><Route path='/dashboard/*' element={<RepairOrdersPage />} /></Routes><Probe /></MemoryRouter></QueryClientProvider>
+  const rendered = render(view())
+  return Object.assign(client, { rerenderView: () => rendered.rerender(view()) })
 }
 it('names the embedded customer workspace and returns to the same repair-order queue', async () => {
   setup()
@@ -342,20 +343,20 @@ it.each([{ id: 'wrong-truck' }, { tenant_id: 'other-tenant' }])('rejects an exac
 it('scopes exact-truck cache to tenant, actor, role and auth session', async () => {
   const client = setup('/dashboard?selected=order-1&queue=on_floor&customer=customer-1&customer_vehicle=vehicle-1')
   expect(await screen.findByText(vehicle.vin)).toBeVisible()
-  expect(client.getQueryData(['customerVehicles', 'customer-1', 'selected', 'tenant-1', 'actor-1', 'garage_owner', 1, 'vehicle-1'])).toEqual(vehicle)
+  expect(client.getQueriesData({ queryKey: ['customerVehicles', 'customer-1', 'selected', 'tenant-1', 'actor-1', 'garage_owner', 1, 'vehicle-1'] }).map(([, data]) => data)).toEqual([vehicle])
   const base = api.get.getMockImplementation()!
   let resolveNew!: (value: { data: typeof vehicle }) => void
   api.get.mockImplementation((url: string, options?: { params?: { vehicle_id?: string } }) => url === '/vehicles/vehicle-1' ? new Promise(resolve => { resolveNew = resolve }) : base(url, options))
   await act(async () => {
     authState.user = { id: 'actor-2', tenant_id: 'tenant-1', role: 'garage_admin' }
     authState.authSessionEpoch = 2
-    client.setQueryData(['customer', 'customer-1'], { ...customer, phone: '555-010-0002' })
+    client.rerenderView()
   })
   expect(await screen.findByText('Loading vehicle history…')).toBeVisible()
   expect(screen.queryByText(vehicle.vin)).not.toBeInTheDocument()
   await act(async () => resolveNew({ data: vehicle }))
   expect(await screen.findByText(vehicle.vin)).toBeVisible()
-  expect(client.getQueryData(['customerVehicles', 'customer-1', 'selected', 'tenant-1', 'actor-2', 'garage_admin', 2, 'vehicle-1'])).toEqual(vehicle)
+  expect(client.getQueriesData({ queryKey: ['customerVehicles', 'customer-1', 'selected', 'tenant-1', 'actor-2', 'garage_admin', 2, 'vehicle-1'] }).map(([, data]) => data)).toEqual([vehicle])
 })
 
 it('keeps enriched owner and operating-authority facts when opening the exact truck', async () => {

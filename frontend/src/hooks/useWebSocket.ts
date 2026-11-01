@@ -237,6 +237,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           // Keep an unmounted dashboard stale without making its queue request
           // from the repair-order workspace. DashboardHome refetches on mount.
           queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
+          queryClient.invalidateQueries({ queryKey: ['shop-work-overview'] })
           queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
 
           // Route to notification manager
@@ -270,6 +271,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['quote'] })
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
           queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
+          queryClient.invalidateQueries({ queryKey: ['shop-work-overview'] })
           queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
           if (onNotificationRef.current && data.quote_number) {
             onNotificationRef.current({
@@ -285,6 +287,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['quote'] })
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
           queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
+          queryClient.invalidateQueries({ queryKey: ['shop-work-overview'] })
           if (onNotificationRef.current && data.quote_number) {
             onNotificationRef.current({
               type: 'quote_declined',
@@ -299,6 +302,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['invoice'] })
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
           queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
+          queryClient.invalidateQueries({ queryKey: ['shop-work-overview'] })
           queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
           if (onNotificationRef.current && data.invoice_number) {
             onNotificationRef.current({
@@ -347,6 +351,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['mechanic-board-team'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-board-detail'] })
           queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
+          queryClient.invalidateQueries({ queryKey: ['shop-work-overview'] })
           break
 
         case 'mechanic_attendance_update':
@@ -356,6 +361,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['mechanic-board-team'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-board-detail'] })
           queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
+          queryClient.invalidateQueries({ queryKey: ['shop-work-overview'] })
           break
 
         case 'mechanic_idle_alert':

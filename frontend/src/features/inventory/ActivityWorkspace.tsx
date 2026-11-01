@@ -1,3 +1,5 @@
+import { shopWorkQueryScope } from '@/features/dashboard/shopWorkNavigation'
+import { useAuthStore } from '@/stores/authStore'
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -194,8 +196,10 @@ function sourceLink(source: ActivityEvent['source']) {
 }
 
 export function PartLifecycleSummary({ inventoryId }: { inventoryId: string }) {
+  const queryScope = useAuthStore(state => shopWorkQueryScope(state.user, state.authSessionEpoch))
   const query = useQuery<LifecycleSummary>({
-    queryKey: ['parts-operations', 'lifecycle-summary', inventoryId],
+    queryKey: ['parts-operations', 'lifecycle-summary', inventoryId, queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get(`/parts-operations/parts/${inventoryId}/lifecycle-summary`)).data,
     retry: false,
   })
@@ -214,6 +218,7 @@ export function PartLifecycleSummary({ inventoryId }: { inventoryId: string }) {
 }
 
 export default function ActivityWorkspace({ inventoryId, compact = false }: { inventoryId?: string; compact?: boolean }) {
+  const queryScope = useAuthStore(state => shopWorkQueryScope(state.user, state.authSessionEpoch))
   const [draft, setDraft] = useState<ActivityFilters>(EMPTY_FILTERS)
   const [filters, setFilters] = useState<ActivityFilters>(EMPTY_FILTERS)
   const [cursors, setCursors] = useState<Array<string | null>>([null])
@@ -234,7 +239,8 @@ export default function ActivityWorkspace({ inventoryId, compact = false }: { in
     limit: compact ? 20 : 50,
   }), [compact, cursor, filters, inventoryId])
   const query = useQuery<CursorPage<ActivityEvent>>({
-    queryKey: ['parts-operations', 'activity-events', params],
+    queryKey: ['parts-operations', 'activity-events', params, queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get('/parts-operations/activity-events', { params })).data,
     retry: false,
   })

@@ -1,3 +1,4 @@
+import { shopWorkQueryScope } from '@/features/dashboard/shopWorkNavigation'
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { Children, cloneElement, isValidElement, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
@@ -252,10 +253,12 @@ function reconcileVisibleId<T>(currentId: string | null, items: T[], getId: (ite
  * existing catalog instead of receiving a client-side approximation.
  */
 export function PartsOperationsGate({ legacy }: { legacy: ReactNode }) {
+  const queryScope = useAuthStore(state => shopWorkQueryScope(state.user, state.authSessionEpoch))
   const role = useAuthStore((state) => state.user?.role)
   const mayRead = role === 'garage_owner' || role === 'garage_admin' || role === 'receptionist'
   const availability = useQuery<Summary>({
-    queryKey: operationKeys.summary,
+    queryKey: [...operationKeys.summary, queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get('/parts-operations/summary')).data,
     enabled: mayRead,
     retry: false,
@@ -274,10 +277,11 @@ export function PartsOperationsGate({ legacy }: { legacy: ReactNode }) {
   return <PartsOperationsWorkspace summary={availability.data} />
 }
 
-export default function PartsOperationsWorkspace({ summary, initialTab = 'demand', initialPurchaseOrderId = null, purchaseOrderMode = 'all', visibleTabs, embedded = false }: { summary: Summary; initialTab?: OperationsTab; initialPurchaseOrderId?: string | null; purchaseOrderMode?: PurchaseOrderMode; visibleTabs?: OperationsTab[]; embedded?: boolean }) {
+export default function PartsOperationsWorkspace({ summary, initialTab = 'demand', initialPurchaseOrderId = null, initialReturnId = null, initialCoreId = null, initialCustodyView, onCustodyViewChange, onRecordSelect, purchaseOrderMode = 'all', visibleTabs, embedded = false }: { summary: Summary; initialTab?: OperationsTab; initialPurchaseOrderId?: string | null; initialReturnId?: string | null; initialCoreId?: string | null; initialCustodyView?: 'returns' | 'cores'; onCustodyViewChange?: (view: 'returns' | 'cores') => void; onRecordSelect?: (kind: 'purchase_order' | 'return' | 'core', id: string) => void; purchaseOrderMode?: PurchaseOrderMode; visibleTabs?: OperationsTab[]; embedded?: boolean }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const { data: tenantBranding } = useTenantBranding()
+  const queryScope = useAuthStore(state => shopWorkQueryScope(state.user, state.authSessionEpoch))
   const role = useAuthStore((state) => state.user?.role)
   const canMutate = isMutationRole(role)
   const partImageBranding: PartImageBranding = {
@@ -289,9 +293,9 @@ export default function PartsOperationsWorkspace({ summary, initialTab = 'demand
   const [selectedDemandId, setSelectedDemandId] = useState<string | null>(null)
   const [selectedInventoryId, setSelectedInventoryId] = useState<string | null>(null)
   const [selectedPOId, setSelectedPOId] = useState<string | null>(initialPurchaseOrderId)
-  const [selectedReturnId, setSelectedReturnId] = useState<string | null>(null)
-  const [selectedCoreId, setSelectedCoreId] = useState<string | null>(null)
-  const [custodyView, setCustodyView] = useState<'returns' | 'cores'>('returns')
+  const [selectedReturnId, setSelectedReturnId] = useState<string | null>(initialReturnId)
+  const [selectedCoreId, setSelectedCoreId] = useState<string | null>(initialCoreId)
+  const [custodyView, setCustodyView] = useState<'returns' | 'cores'>(initialCustodyView ?? (initialCoreId && !initialReturnId ? 'cores' : 'returns'))
   const [demandSearch, setDemandSearch] = useState('')
   const [demandFilter, setDemandFilter] = useState<DemandFilter>('all')
   const [inventorySearch, setInventorySearch] = useState('')
@@ -327,14 +331,14 @@ export default function PartsOperationsWorkspace({ summary, initialTab = 'demand
     }
   }
 
-  const demandQuery = useQuery<CompletePage<DemandItem>>({ queryKey: operationKeys.demand, queryFn: () => fetchCompletePage<DemandItem>('/parts-operations/demand'), enabled: tab === 'demand', retry: false })
-  const inventoryQuery = useQuery<CompletePage<InventoryItem>>({ queryKey: operationKeys.inventory, queryFn: () => fetchCompletePage<InventoryItem>('/inventory'), enabled: tab === 'demand' || tab === 'inventory', retry: false })
-  const poQuery = useQuery<CompletePage<PurchaseOrder>>({ queryKey: operationKeys.purchaseOrders, queryFn: () => fetchCompletePage<PurchaseOrder>('/parts-operations/purchase-orders'), enabled: tab === 'purchase-orders', retry: false })
-  const returnsQuery = useQuery<CompletePage<ReturnItem>>({ queryKey: operationKeys.returns, queryFn: () => fetchCompletePage<ReturnItem>('/parts-operations/returns'), enabled: tab === 'returns-cores', retry: false })
-  const coresQuery = useQuery<CompletePage<Core>>({ queryKey: operationKeys.cores, queryFn: () => fetchCompletePage<Core>('/parts-operations/cores'), enabled: tab === 'returns-cores', retry: false })
-  const activityQuery = useQuery<CompletePage<Movement>>({ queryKey: operationKeys.activity, queryFn: () => fetchCompletePage<Movement>('/parts-operations/activity'), enabled: tab === 'inventory' || tab === 'activity', retry: false })
-  const poDetail = useQuery<PurchaseOrderDetail>({ queryKey: ['parts-operations', 'purchase-order', selectedPOId], queryFn: async () => (await api.get(`/parts-operations/purchase-orders/${selectedPOId}`)).data, enabled: tab === 'purchase-orders' && Boolean(selectedPOId), retry: false })
-  const returnDetail = useQuery<ReturnDetail>({ queryKey: ['parts-operations', 'return', selectedReturnId], queryFn: async () => (await api.get(`/parts-operations/returns/${selectedReturnId}`)).data, enabled: tab === 'returns-cores' && custodyView === 'returns' && Boolean(selectedReturnId), retry: false })
+  const demandQuery = useQuery<CompletePage<DemandItem>>({ queryKey: [...operationKeys.demand, queryScope], placeholderData: undefined, queryFn: () => fetchCompletePage<DemandItem>('/parts-operations/demand'), enabled: tab === 'demand', retry: false })
+  const inventoryQuery = useQuery<CompletePage<InventoryItem>>({ queryKey: [...operationKeys.inventory, queryScope], placeholderData: undefined, queryFn: () => fetchCompletePage<InventoryItem>('/inventory'), enabled: tab === 'demand' || tab === 'inventory', retry: false })
+  const poQuery = useQuery<CompletePage<PurchaseOrder>>({ queryKey: [...operationKeys.purchaseOrders, queryScope], placeholderData: undefined, queryFn: () => fetchCompletePage<PurchaseOrder>('/parts-operations/purchase-orders'), enabled: tab === 'purchase-orders', retry: false })
+  const returnsQuery = useQuery<CompletePage<ReturnItem>>({ queryKey: [...operationKeys.returns, queryScope], placeholderData: undefined, queryFn: () => fetchCompletePage<ReturnItem>('/parts-operations/returns'), enabled: tab === 'returns-cores', retry: false })
+  const coresQuery = useQuery<CompletePage<Core>>({ queryKey: [...operationKeys.cores, queryScope], placeholderData: undefined, queryFn: () => fetchCompletePage<Core>('/parts-operations/cores'), enabled: tab === 'returns-cores', retry: false })
+  const activityQuery = useQuery<CompletePage<Movement>>({ queryKey: [...operationKeys.activity, queryScope], placeholderData: undefined, queryFn: () => fetchCompletePage<Movement>('/parts-operations/activity'), enabled: tab === 'inventory' || tab === 'activity', retry: false })
+  const poDetail = useQuery<PurchaseOrderDetail>({ queryKey: ['parts-operations', 'purchase-order', selectedPOId, queryScope], placeholderData: undefined, queryFn: async () => (await api.get(`/parts-operations/purchase-orders/${selectedPOId}`)).data, enabled: tab === 'purchase-orders' && Boolean(selectedPOId), retry: false })
+  const returnDetail = useQuery<ReturnDetail>({ queryKey: ['parts-operations', 'return', selectedReturnId, queryScope], placeholderData: undefined, queryFn: async () => (await api.get(`/parts-operations/returns/${selectedReturnId}`)).data, enabled: tab === 'returns-cores' && custodyView === 'returns' && Boolean(selectedReturnId), retry: false })
 
   const demand = demandQuery.data?.items ?? EMPTY_DEMAND
   const inventory = inventoryQuery.data?.items ?? EMPTY_INVENTORY
@@ -388,13 +392,13 @@ export default function PartsOperationsWorkspace({ summary, initialTab = 'demand
       setSelectedInventoryId(first?.id ?? null)
       setSelectionNotice(first ? inventoryAnnouncement(first) : '')
     } else if (next === 'purchase-orders') {
-      const first = visiblePurchaseOrders[0] || null
-      setSelectedPOId(first?.id ?? null)
+      const first = (initialPurchaseOrderId ? visiblePurchaseOrders.find(item => item.id === initialPurchaseOrderId) : visiblePurchaseOrders[0]) || null
+      setSelectedPOId(initialPurchaseOrderId ?? first?.id ?? null)
       setSelectionNotice(first ? purchaseOrderAnnouncement(first) : '')
     } else if (next === 'returns-cores') {
-      const first = returns[0] || null
+      const first = (initialReturnId ? returns.find(item => item.id === initialReturnId) : returns[0]) || null
       setCustodyView('returns')
-      setSelectedReturnId(first?.id ?? null)
+      setSelectedReturnId(initialReturnId ?? first?.id ?? null)
       setSelectionNotice(first ? returnAnnouncement(first) : '')
     } else {
       setSelectionNotice('')
@@ -402,13 +406,14 @@ export default function PartsOperationsWorkspace({ summary, initialTab = 'demand
   }
   const selectCustodyView = (next: 'returns' | 'cores') => {
     setCustodyView(next)
+    onCustodyViewChange?.(next)
     if (next === 'returns') {
-      const first = returns[0] || null
-      setSelectedReturnId(first?.id ?? null)
+      const first = (initialReturnId ? returns.find(item => item.id === initialReturnId) : returns[0]) || null
+      setSelectedReturnId(initialReturnId ?? first?.id ?? null)
       setSelectionNotice(first ? returnAnnouncement(first) : '')
     } else {
-      const first = cores[0] || null
-      setSelectedCoreId(first?.id ?? null)
+      const first = (initialCoreId ? cores.find(item => item.id === initialCoreId) : cores[0]) || null
+      setSelectedCoreId(initialCoreId ?? first?.id ?? null)
       setSelectionNotice(first ? coreAnnouncement(first) : '')
     }
   }
@@ -442,31 +447,31 @@ export default function PartsOperationsWorkspace({ summary, initialTab = 'demand
   }, [filteredInventory, inventoryQuery.isError, inventoryQuery.isLoading, selectedInventoryId, tab])
 
   useLayoutEffect(() => {
-    if (tab !== 'purchase-orders' || poQuery.isLoading || poQuery.isError) return
+    if (initialPurchaseOrderId || tab !== 'purchase-orders' || poQuery.isLoading || poQuery.isError) return
     const nextId = reconcileVisibleId(selectedPOId, visiblePurchaseOrders, (item) => item.id)
     if (nextId === selectedPOId) return
     setSelectedPOId(nextId)
     const next = visiblePurchaseOrders.find((item) => item.id === nextId)
     setSelectionNotice(next ? purchaseOrderAnnouncement(next) : '')
-  }, [poQuery.isError, poQuery.isLoading, selectedPOId, tab, visiblePurchaseOrders])
+  }, [initialPurchaseOrderId, poQuery.isError, poQuery.isLoading, selectedPOId, tab, visiblePurchaseOrders])
 
   useLayoutEffect(() => {
-    if (tab !== 'returns-cores' || custodyView !== 'returns' || returnsQuery.isLoading || returnsQuery.isError) return
+    if (initialReturnId || tab !== 'returns-cores' || custodyView !== 'returns' || returnsQuery.isLoading || returnsQuery.isError) return
     const nextId = reconcileVisibleId(selectedReturnId, returns, (item) => item.id)
     if (nextId === selectedReturnId) return
     setSelectedReturnId(nextId)
     const next = returns.find((item) => item.id === nextId)
     setSelectionNotice(next ? returnAnnouncement(next) : '')
-  }, [custodyView, returns, returnsQuery.isError, returnsQuery.isLoading, selectedReturnId, tab])
+  }, [initialReturnId, custodyView, returns, returnsQuery.isError, returnsQuery.isLoading, selectedReturnId, tab])
 
   useLayoutEffect(() => {
-    if (tab !== 'returns-cores' || custodyView !== 'cores' || coresQuery.isLoading || coresQuery.isError) return
+    if (initialCoreId || tab !== 'returns-cores' || custodyView !== 'cores' || coresQuery.isLoading || coresQuery.isError) return
     const nextId = reconcileVisibleId(selectedCoreId, cores, (item) => item.id)
     if (nextId === selectedCoreId) return
     setSelectedCoreId(nextId)
     const next = cores.find((item) => item.id === nextId)
     setSelectionNotice(next ? coreAnnouncement(next) : '')
-  }, [cores, coresQuery.isError, coresQuery.isLoading, custodyView, selectedCoreId, tab])
+  }, [initialCoreId, cores, coresQuery.isError, coresQuery.isLoading, custodyView, selectedCoreId, tab])
 
   const updateDemandSearch = (value: string) => setDemandSearch(value)
   const updateDemandFilter = (value: DemandFilter) => setDemandFilter(value)
@@ -481,7 +486,7 @@ export default function PartsOperationsWorkspace({ summary, initialTab = 'demand
   const saveInventoryControls = async (itemId: string, patch: InventoryControlPatch) => {
     const response = await api.put(`/inventory/${itemId}`, patch)
     const updated = response.data as InventoryItem
-    queryClient.setQueryData<CompletePage<InventoryItem>>(operationKeys.inventory, (current) => current
+    queryClient.setQueryData<CompletePage<InventoryItem>>([...operationKeys.inventory, queryScope], (current) => current
       ? { ...current, items: current.items.map((item) => item.id === updated.id ? updated : item) }
       : current)
     void queryClient.invalidateQueries({ queryKey: operationKeys.inventory, refetchType: 'none' })
@@ -531,8 +536,8 @@ export default function PartsOperationsWorkspace({ summary, initialTab = 'demand
     <div className="db-parts-operations__content">
       {tab === 'demand' && (demandQuery.isError ? <PanelFailure label="Demand could not be loaded." onRetry={() => void demandQuery.refetch()} /> : <section id="parts-panel-demand" className="db-parts-operations__panel" role="tabpanel" aria-label="Demand"><p className="db-parts-operations__panel-context">Review shortages, replenishment, and unlinked demand before creating a draft purchase order.</p><DemandPanel demand={filteredDemand} totalDemand={demandQuery.data?.total ?? demand.length} inventory={inventory} imageBranding={partImageBranding} canMutate={canMutate} selected={selectedDemand} query={demandSearch} filter={demandFilter} pending={pendingAction === `po-create-${selectedDemand?.inventory_id}`} onQuery={updateDemandSearch} onFilter={updateDemandFilter} onSelect={(item) => { setSelectedDemandId(item.inventory_id); announce(demandAnnouncement(item)) }} onCreate={async (body) => call(`po-create-${body.inventoryId}`, (key) => api.post('/parts-operations/purchase-orders', body.payload, { headers: { 'Idempotency-Key': key } }), 'Draft purchase order created.')} onOpenRepair={(id) => navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}`)} /></section>)}
       {tab === 'inventory' && (inventoryQuery.isError ? <PanelFailure label="Inventory could not be loaded." onRetry={() => void inventoryQuery.refetch()} /> : <section id="parts-panel-inventory" className="db-parts-operations__panel" role="tabpanel" aria-label="Inventory"><InventoryPanel inventory={filteredInventory} totalInventory={inventoryStockFilter === 'archived' ? inventory.filter(isArchived).length : inventory.filter((item) => !isArchived(item)).length} imageBranding={partImageBranding} activity={activity} activityError={activityQuery.isError} onRetryActivity={() => void activityQuery.refetch()} selected={selectedInventory} canMutate={canMutate} query={inventorySearch} filter={inventoryStockFilter} sort={inventorySort} onQuery={updateInventorySearch} onFilter={updateInventoryFilter} onSort={updateInventorySort} onReset={resetInventoryView} onSelect={(item) => { setSelectedInventoryId(item.id); announce(inventoryAnnouncement(item)) }} onSave={saveInventoryControls} /></section>)}
-      {tab === 'purchase-orders' && (poQuery.isError ? <PanelFailure label="Purchase orders could not be loaded." onRetry={() => void poQuery.refetch()} /> : <section id="parts-panel-purchase-orders" className="db-parts-operations__panel" role="tabpanel" aria-label="Purchase orders"><p className="db-parts-operations__panel-context">{purchaseOrderMode === 'receiving' ? 'Record deliveries against submitted purchase orders. Drafts stay in Purchase orders until they are submitted.' : 'Review supplier approval and receive quantities against the selected purchase order.'}</p><PurchaseOrdersPanel items={visiblePurchaseOrders} selectedId={selectedPOId} detail={poDetail.data} detailError={poDetail.isError} onRetryDetail={() => void poDetail.refetch()} canMutate={canMutate} pendingAction={pendingAction} emptyLabel={purchaseOrderMode === 'receiving' ? 'No submitted purchase orders are waiting for receipt.' : undefined} onSelect={(id) => { setSelectedPOId(id); const selected = visiblePurchaseOrders.find((item) => item.id === id); if (selected) announce(purchaseOrderAnnouncement(selected)) }} onOpenDemand={() => embedded ? navigate('/dashboard/garage/inventory') : selectTab('demand')} onSubmit={(po) => call(`po-submit-${po.id}`, (key) => api.post(`/parts-operations/purchase-orders/${po.id}/submit`, { expected_version: po.version }, { headers: { 'Idempotency-Key': key } }), 'Purchase order submitted.')} onReceive={(po, lines) => call(`po-receipt-${po.id}`, (key) => api.post(`/parts-operations/purchase-orders/${po.id}/receipts`, { expected_version: po.version, received_at: new Date().toISOString(), lines }, { headers: { 'Idempotency-Key': key } }), 'Purchase received and inventory updated.')} /></section>)}
-      {tab === 'returns-cores' && <section id="parts-panel-returns-cores" className="db-parts-operations__panel" role="tabpanel" aria-label="Returns and cores"><p className="db-parts-operations__panel-context">Choose supplier returns or core custody, then work the selected record.</p><ReturnsCoresPanel view={custodyView} onView={selectCustodyView} returns={returns} returnsError={returnsQuery.isError} onRetryReturns={() => void returnsQuery.refetch()} cores={cores} coresError={coresQuery.isError} onRetryCores={() => void coresQuery.refetch()} selectedReturn={returnDetail.data} selectedReturnId={selectedReturnId} returnDetailError={returnDetail.isError} onRetryReturnDetail={() => void returnDetail.refetch()} selectedCore={selectedCore} canMutate={canMutate} pendingAction={pendingAction} onSelectReturn={(id) => { setSelectedReturnId(id); const selected = returns.find((item) => item.id === id); if (selected) announce(returnAnnouncement(selected)) }} onSelectCore={(id) => { setSelectedCoreId(id); const selected = cores.find((item) => item.id === id); if (selected) announce(coreAnnouncement(selected)) }} onOpenDemand={() => embedded ? navigate('/dashboard/garage/inventory') : selectTab('demand')} onRecover={(core) => call(`core-recover-${core.id}`, (key) => api.post(`/parts-operations/cores/${core.id}/recover`, { expected_version: core.version }, { headers: { 'Idempotency-Key': key } }), 'Core recovery recorded.')} onCreateCoreReturn={(core) => call(`core-return-${core.id}`, (key) => api.post('/parts-operations/returns', { kind: 'core', supplier_id: core.supplier_id, reason: 'Core return', lines: [{ core_obligation_id: core.id, quantity: core.quantity, expected_credit: '0.00' }] }, { headers: { 'Idempotency-Key': key } }), 'Core return draft created.')} onReturnAction={(row, action) => call(`return-${action}-${row.id}`, (key) => api.post(`/parts-operations/returns/${row.id}/${action}`, { expected_version: row.version, ...(action === 'reverse' ? { reason: 'Return correction' } : {}) }, { headers: { 'Idempotency-Key': key } }), action === 'reverse' ? 'Return reversal recorded.' : `Return ${action}ed.`)} /></section>}
+      {tab === 'purchase-orders' && (poQuery.isError ? <PanelFailure label="Purchase orders could not be loaded." onRetry={() => void poQuery.refetch()} /> : <section id="parts-panel-purchase-orders" className="db-parts-operations__panel" role="tabpanel" aria-label="Purchase orders"><p className="db-parts-operations__panel-context">{purchaseOrderMode === 'receiving' ? 'Record deliveries against submitted purchase orders. Drafts stay in Purchase orders until they are submitted.' : 'Review supplier approval and receive quantities against the selected purchase order.'}</p><PurchaseOrdersPanel items={visiblePurchaseOrders} selectedId={selectedPOId} detail={purchaseOrderMode === 'receiving' && poDetail.data && !['submitted', 'partially_received'].includes(poDetail.data.status) ? undefined : poDetail.data} detailError={poDetail.isError || Boolean(purchaseOrderMode === 'receiving' && poDetail.data && !['submitted', 'partially_received'].includes(poDetail.data.status))} onRetryDetail={() => void poDetail.refetch()} canMutate={canMutate} pendingAction={pendingAction} emptyLabel={purchaseOrderMode === 'receiving' ? 'No submitted purchase orders are waiting for receipt.' : undefined} onSelect={(id) => { setSelectedPOId(id); onRecordSelect?.('purchase_order', id); const selected = visiblePurchaseOrders.find((item) => item.id === id); if (selected) announce(purchaseOrderAnnouncement(selected)) }} onOpenDemand={() => embedded ? navigate('/dashboard/garage/inventory') : selectTab('demand')} onSubmit={(po) => call(`po-submit-${po.id}`, (key) => api.post(`/parts-operations/purchase-orders/${po.id}/submit`, { expected_version: po.version }, { headers: { 'Idempotency-Key': key } }), 'Purchase order submitted.')} onReceive={(po, lines) => call(`po-receipt-${po.id}`, (key) => api.post(`/parts-operations/purchase-orders/${po.id}/receipts`, { expected_version: po.version, received_at: new Date().toISOString(), lines }, { headers: { 'Idempotency-Key': key } }), 'Purchase received and inventory updated.')} /></section>)}
+      {tab === 'returns-cores' && <section id="parts-panel-returns-cores" className="db-parts-operations__panel" role="tabpanel" aria-label="Returns and cores"><p className="db-parts-operations__panel-context">Choose supplier returns or core custody, then work the selected record.</p>{custodyView === 'cores' && selectedCoreId && !coresQuery.isLoading && !coresQuery.isError && !selectedCore && <p role="alert">This core obligation is unavailable.</p>}<ReturnsCoresPanel view={custodyView} onView={selectCustodyView} returns={returns} returnsError={returnsQuery.isError} onRetryReturns={() => void returnsQuery.refetch()} cores={cores} coresError={coresQuery.isError} onRetryCores={() => void coresQuery.refetch()} selectedReturn={returnDetail.data} selectedReturnId={selectedReturnId} returnDetailError={returnDetail.isError} onRetryReturnDetail={() => void returnDetail.refetch()} selectedCore={selectedCore} canMutate={canMutate} pendingAction={pendingAction} onSelectReturn={(id) => { setSelectedReturnId(id); onRecordSelect?.('return', id); const selected = returns.find((item) => item.id === id); if (selected) announce(returnAnnouncement(selected)) }} onSelectCore={(id) => { setSelectedCoreId(id); onRecordSelect?.('core', id); const selected = cores.find((item) => item.id === id); if (selected) announce(coreAnnouncement(selected)) }} onOpenDemand={() => embedded ? navigate('/dashboard/garage/inventory') : selectTab('demand')} onRecover={(core) => call(`core-recover-${core.id}`, (key) => api.post(`/parts-operations/cores/${core.id}/recover`, { expected_version: core.version }, { headers: { 'Idempotency-Key': key } }), 'Core recovery recorded.')} onCreateCoreReturn={(core) => call(`core-return-${core.id}`, (key) => api.post('/parts-operations/returns', { kind: 'core', supplier_id: core.supplier_id, reason: 'Core return', lines: [{ core_obligation_id: core.id, quantity: core.quantity, expected_credit: '0.00' }] }, { headers: { 'Idempotency-Key': key } }), 'Core return draft created.')} onReturnAction={(row, action) => call(`return-${action}-${row.id}`, (key) => api.post(`/parts-operations/returns/${row.id}/${action}`, { expected_version: row.version, ...(action === 'reverse' ? { reason: 'Return correction' } : {}) }, { headers: { 'Idempotency-Key': key } }), action === 'reverse' ? 'Return reversal recorded.' : `Return ${action}ed.`)} /></section>}
       {tab === 'activity' && (activityQuery.isError ? <PanelFailure label="Inventory changes could not be loaded." onRetry={() => void activityQuery.refetch()} /> : <section id="parts-panel-activity" className="db-parts-operations__panel" role="tabpanel" aria-label="Activity"><p className="db-parts-operations__panel-context">See what changed, when it changed, and what caused it.</p><ActivityPanel movements={activity} onOpenRepair={(id) => navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}`)} /></section>)}
     </div>
 

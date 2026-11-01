@@ -44,6 +44,8 @@ function EtsHistoryBalance({ value }: { value?: string }) {
  */
 export type CustomerDetailPanelProps = {
   selectedCustomer: Customer
+  requestedView?: 'overview' | 'history' | 'account'
+  onViewChange?: (view: 'overview' | 'history' | 'account') => void
   detailTab: 'overview' | 'history'
   setDetailTab: (tab: 'overview' | 'history') => void
   expandedHistoryId: string | null
@@ -105,6 +107,8 @@ export type CustomerDetailPanelProps = {
 
 export default function CustomerDetailPanel({
   selectedCustomer,
+  requestedView,
+  onViewChange,
   detailTab,
   setDetailTab,
   expandedHistoryId,
@@ -151,8 +155,8 @@ export default function CustomerDetailPanel({
   const user = useAuthStore(state => state.user)
   const canReadAccount = user?.role === 'garage_owner'
     || (user?.role === 'garage_admin' && user.permissions?.payments === true)
-  const [accountOpen, setAccountOpen] = useState(false)
-  useEffect(() => setAccountOpen(false), [selectedCustomer.id])
+  const [accountOpen, setAccountOpen] = useState(requestedView === 'account' && canReadAccount)
+  useEffect(() => setAccountOpen(requestedView === 'account' && canReadAccount), [selectedCustomer.id, requestedView, canReadAccount])
   useEffect(() => { if (!canReadAccount) setAccountOpen(false) }, [canReadAccount])
   return (
     <div className="db-customer-record">
@@ -173,7 +177,7 @@ export default function CustomerDetailPanel({
       <div className="db-customer-record__tabs" role="group" aria-label="Customer views">
         <ControlButton controlKind="action"
           type="button"
-          onClick={() => { setAccountOpen(false); setDetailTab('overview') }}
+          onClick={() => { setAccountOpen(false); setDetailTab('overview'); onViewChange?.('overview') }}
           aria-pressed={!accountOpen && detailTab === 'overview'}
           className={`px-4  text-sm font-medium -mb-px border-b-2 transition-colors ${
             !accountOpen && detailTab === 'overview'
@@ -185,7 +189,7 @@ export default function CustomerDetailPanel({
         </ControlButton>
         <ControlButton controlKind="action"
           type="button"
-          onClick={() => { setAccountOpen(false); setDetailTab('history') }}
+          onClick={() => { setAccountOpen(false); setDetailTab('history'); onViewChange?.('history') }}
           aria-pressed={!accountOpen && detailTab === 'history'}
           className={`px-4  text-sm font-medium -mb-px border-b-2 transition-colors ${
             !accountOpen && detailTab === 'history'
@@ -197,7 +201,7 @@ export default function CustomerDetailPanel({
         </ControlButton>
         {canReadAccount && <ControlButton controlKind="action"
           type="button"
-          onClick={() => setAccountOpen(true)}
+          onClick={() => { setAccountOpen(true); onViewChange?.('account') }}
           aria-pressed={accountOpen}
           className={`px-4  text-sm font-medium -mb-px border-b-2 transition-colors ${
             accountOpen
@@ -207,6 +211,7 @@ export default function CustomerDetailPanel({
         >Account</ControlButton>}
       </div>
 
+      {requestedView === 'account' && !canReadAccount && <p role="alert">Account review is not available with your permissions.</p>}
       {accountOpen && canReadAccount && <CustomerAccount key={selectedCustomer.id} customerId={selectedCustomer.id} />}
 
       {!accountOpen && detailTab === 'history' && historyError ? <div role="alert">Could not load customer history. <ControlButton type="button" onClick={onRetryHistory}>Retry customer history</ControlButton></div> : !accountOpen && detailTab === 'history' ? (
