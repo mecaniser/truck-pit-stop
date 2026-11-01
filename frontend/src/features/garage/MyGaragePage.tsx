@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from 'react'
 import { NavLink, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { BarChart3, Boxes, ClipboardList, Clock3, ShoppingCart, Wrench, type LucideIcon } from 'lucide-react'
 import ServicesManagementPage from '@/features/dashboard/ServicesManagementPage'
@@ -30,11 +31,17 @@ const SECONDARY_SECTIONS: GarageSection[] = [
 ]
 
 function GarageLinks({ sections }: { sections: GarageSection[] }) {
+  const [activations, setActivations] = useState<Record<string, number>>({})
   return sections.map(section => (
     <NavLink
       key={section.to}
       to={section.to}
       aria-label={section.label}
+      data-shop-section={section.to}
+      onClick={event => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        setActivations(current => ({ ...current, [section.to]: (current[section.to] ?? 0) + 1 }))
+      }}
       className={({ isActive }) =>
         `db-my-shop-nav-item flex min-h-11 items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-medium transition-[color,background-color,border-color] duration-150 sm:text-sm ${
           isActive
@@ -43,7 +50,9 @@ function GarageLinks({ sections }: { sections: GarageSection[] }) {
         }`
       }
     >
-      <section.icon aria-hidden="true" className="h-4 w-4 shrink-0" />
+      <span key={activations[section.to] ?? 0} aria-hidden="true" className="db-my-shop-nav-glyph" data-activated={Boolean(activations[section.to])}>
+        <section.icon className="h-4 w-4 shrink-0" />
+      </span>
       <span aria-hidden="true" className="db-my-shop-nav-label db-my-shop-nav-label-short whitespace-nowrap">
         {section.shortLabel}
       </span>
@@ -55,12 +64,52 @@ function GarageLinks({ sections }: { sections: GarageSection[] }) {
 }
 
 function GarageNav() {
+  const { pathname } = useLocation()
+  const navigationRef = useRef<HTMLElement>(null)
+  const markerRef = useRef<HTMLSpanElement>(null)
+  const previousPath = useRef<string>()
+
+  useLayoutEffect(() => {
+    const navigation = navigationRef.current
+    const marker = markerRef.current
+    if (!navigation || !marker) return
+    const position = (animate: boolean) => {
+      const selected = navigation.querySelector<HTMLElement>('[aria-current="page"]')
+      if (!selected) {
+        marker.style.opacity = '0'
+        return
+      }
+      const navRect = navigation.getBoundingClientRect()
+      const rect = selected.getBoundingClientRect()
+      marker.dataset.shopSection = selected.dataset.shopSection
+      marker.dataset.animate = String(animate)
+      marker.dataset.tertiary = String(Boolean(selected.closest('.db-my-shop-nav-cluster-secondary')))
+      marker.style.width = `${Math.max(0, rect.width - 20)}px`
+      marker.style.transform = `translate(${rect.left - navRect.left - navigation.clientLeft + 10}px, ${rect.bottom - navRect.top - navigation.clientTop - 2}px)`
+      marker.style.opacity = '1'
+    }
+    position(previousPath.current !== undefined && previousPath.current !== pathname)
+    previousPath.current = pathname
+    // Resize/layout changes snap to the new geometry; route changes travel from
+    // the marker's current position, including when clicks interrupt a slide.
+    let initialResize = true
+    const observer = new ResizeObserver(() => {
+      if (initialResize) { initialResize = false; return }
+      position(false)
+    })
+    observer.observe(navigation)
+    navigation.querySelectorAll('.db-my-shop-nav-item').forEach(item => observer.observe(item))
+    return () => observer.disconnect()
+  }, [pathname])
+
   return (
     <nav
+      ref={navigationRef}
       aria-label="Shop sections"
       data-shop-menu-layout="container-adaptive"
       className="db-my-shop-navigation shrink-0 p-2"
     >
+      <span ref={markerRef} className="db-my-shop-nav-marker" aria-hidden="true" />
       <div className="db-my-shop-nav-groups scrollbar-dark">
         <div
           role="group"
