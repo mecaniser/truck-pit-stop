@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { fireEvent, render, screen, within, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, within, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import WipAgingPanel from '../WipAgingPanel'
@@ -89,7 +89,7 @@ describe('A2 Shop Work aging', () => {
     render(<Harness />)
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     const trigger = screen.getByRole('button', { name: 'Filters' })
-    trigger.focus()
+    act(() => trigger.focus())
     await user.keyboard('{Enter}')
     expect(screen.getByRole('dialog', { name: 'Active work filters' })).toBeInTheDocument()
     await user.keyboard('{Escape}')
@@ -161,8 +161,25 @@ describe('A2 Shop Work aging', () => {
     testState.data = { ...fixture, summary: { ...fixture.summary, total_jobs: 0 }, filtered_total: 0, items: [], has_more: false }
     render(<Harness />)
     expect(screen.getByText('No active jobs in this view')).toBeInTheDocument()
-    expect(screen.getByText('Completed work and payment follow-up stay in Closeout.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Next active jobs' })).toBeDisabled()
+    expect(screen.getByText('Overview shows other shop tasks. Completed work and payment follow-up stay in Closeout.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next active jobs' })).not.toBeInTheDocument()
+  })
+  it('removes inert controls from a truly empty queue but preserves unknown-filter recovery', () => {
+    testState.data = { ...fixture, summary: { ...fixture.summary, total_jobs: 0, unknown_wait_jobs: 0 }, filtered_total: 0, items: [], has_more: false }
+    const { unmount } = render(<Harness />)
+    expect(screen.queryByRole('button', { name: 'All active 0' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /filter unknown wait timing/ })).not.toBeInTheDocument()
+    unmount()
+    render(<Harness initial={{ ...DEFAULT_WIP_FILTERS, timing: 'unknown', search: 'missing', offset: 50 }} />)
+    expect(screen.getByRole('button', { name: /filter unknown wait timing/ })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'Clear search and filters' }))
+    expect(testState.options.queryKey[3]).toMatchObject(DEFAULT_WIP_FILTERS)
+  })
+  it('keeps pagination available when the last page becomes empty', () => {
+    testState.data = { ...fixture, items: [], filtered_total: 50, offset: 50, has_more: false }
+    render(<Harness initial={{ ...DEFAULT_WIP_FILTERS, offset: 50 }} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Previous active jobs' }))
+    expect(testState.options.queryKey[3]).toMatchObject({ offset: 0 })
   })
   it('fetches only the additive read endpoint with a cancellable request', async () => {
     testState.get.mockResolvedValue({ data: fixture })

@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, keepPreviousData } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 const auth = vi.hoisted(() => ({ user: { id: 'actor-1', tenant_id: 'tenant-1', role: 'garage_owner' }, authSessionEpoch: 1 }))
@@ -73,4 +73,47 @@ it('refreshes the selected order summary as its promise becomes overdue without 
   await act(async () => { await vi.advanceTimersByTimeAsync(10) })
   expect(screen.getByTestId('schedule-summary')).toHaveTextContent('Overdue')
   expect(api.get.mock.calls.filter(([url]) => url === '/repair-orders/order-1/workspace').length).toBeGreaterThan(1)
+})
+
+
+it('returns an Overview-origin exact repair order to Overview on close', async () => {
+  mount('/dashboard/repair-orders?selected=order-1&shop_work=overview')
+  fireEvent.click(await screen.findByRole('button', { name: 'Close repair order' }))
+  expect(screen.getByTestId('location')).toHaveTextContent('/dashboard?work_view=overview')
+})
+
+it('offers a fixed Overview return while preserving the requested repair ID', async () => {
+  mount('/dashboard/repair-orders?selected=order-1&shop_work=overview&return=https://evil.test')
+  await screen.findByRole('button', { name: 'Close repair order' })
+  expect(screen.getByTestId('location')).toHaveTextContent('selected=order-1')
+  fireEvent.click(screen.getByRole('button', { name: 'Back to Shop Work' }))
+  expect(screen.getByTestId('location')).toHaveTextContent('/dashboard?work_view=overview')
+})
+
+
+it('clears a selected repair workspace across tenant identity changes before the new request is denied', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity, placeholderData: keepPreviousData } } })
+  const view = () => <QueryClientProvider client={client}><MemoryRouter initialEntries={['/dashboard/repair-orders?selected=order-1&shop_work=overview']}><RepairOrdersPage /><Probe /></MemoryRouter></QueryClientProvider>
+  const { rerender, unmount } = render(view())
+  expect(await screen.findByRole('button', { name: 'Close repair order' })).toBeInTheDocument()
+  let deny: (reason: unknown) => void = () => undefined
+  const pending = new Promise((_, reject) => { deny = reject })
+  const original = api.get.getMockImplementation()!
+  api.get.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+    if (url === '/repair-orders') return Promise.resolve({ data: { items: [], total: 0, has_more: false } })
+    if (url === '/repair-orders/order-1/workspace') return pending
+    return original(url, config)
+  })
+  auth.user = { ...auth.user, id: 'actor-b', tenant_id: 'tenant-b' }
+  auth.authSessionEpoch = 3
+  rerender(view())
+  expect(screen.queryByRole('button', { name: 'Close repair order' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Open repair order RO-1' })).not.toBeInTheDocument()
+  await act(async () => { deny({ response: { status: 404 } }); await pending.catch(() => undefined) })
+  await waitFor(() => expect(screen.getByTestId('location')).not.toHaveTextContent('selected=order-1'))
+  expect(screen.queryByRole('button', { name: 'Close repair order' })).not.toBeInTheDocument()
+  unmount()
+  client.clear()
+  auth.user = { id: 'actor-1', tenant_id: 'tenant-1', role: 'garage_owner' }
+  auth.authSessionEpoch = 1
 })

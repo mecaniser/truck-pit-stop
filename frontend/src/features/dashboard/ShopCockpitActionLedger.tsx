@@ -4,6 +4,7 @@ import '../repair-orders/repairOrderSchedule.css'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import {
   History,
+  LayoutDashboard,
   LayoutList,
   Plus,
   RefreshCw,
@@ -11,6 +12,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { elapsedSince, shortDuration } from '@/lib/elapsed'
+import './shopWorkPolish.css'
 
 export type ActionQueueLane = 'needs_action' | 'on_floor' | 'ready_to_close' | 'closed_today'
 type ActionQueueFilter = 'all' | ActionQueueLane
@@ -110,6 +112,9 @@ export default function ShopCockpitActionLedger({
   initialLaneFilter = 'all',
   activeWork,
   workView = 'active',
+  overview,
+  activeCount,
+  closeoutUnavailable = false,
   onWorkViewChange,
 }: {
   projection: ActionQueueProjection
@@ -134,8 +139,11 @@ export default function ShopCockpitActionLedger({
   onValueScopeChange?: (scope: { lane: ActionQueueFilter; search: string }) => void
   initialLaneFilter?: ActionQueueFilter
   activeWork?: ReactNode
-  workView?: 'active' | 'closeout'
-  onWorkViewChange?: (view: 'active' | 'closeout') => void
+  overview?: ReactNode
+  activeCount?: number | null
+  closeoutUnavailable?: boolean
+  workView?: 'overview' | 'active' | 'closeout'
+  onWorkViewChange?: (view: 'overview' | 'active' | 'closeout') => void
 }) {
   const baseLanes = useMemo<LaneDefinition[]>(() => [
     {
@@ -179,7 +187,8 @@ export default function ShopCockpitActionLedger({
     projection.orders_needing_action_has_more
     && pendingPaymentOrders.length === projection.orders_needing_action.length
   )
-  const closeoutCountLabel = `${closeoutCount}${closeoutHasMore ? '+' : ''}`
+  const closeoutCountLabel = closeoutUnavailable ? '—' : `${closeoutCount}${closeoutHasMore ? '+' : ''}`
+  const showingOverview = Boolean(overview) && workView === 'overview' && queueView === 'queue'
   const showingActive = hasActiveWork && workView === 'active' && queueView === 'queue'
   const allRows = useMemo(
     () => lanes.flatMap((lane) => lane.orders.map((order) => ({ order, lane: lane.key }))),
@@ -213,7 +222,7 @@ export default function ShopCockpitActionLedger({
   }
 
   return (
-    <section className={`db-shop-work-new db-operating-surface${activeWork ? ' db-shop-work-new--compact' : ''}`} aria-labelledby="shop-work-title">
+    <section className={`db-shop-work-new db-operating-surface${activeWork ? ' db-shop-work-new--compact' : ''}${overview ? ' db-shop-work-new--overview-enabled' : ''}`} aria-labelledby="shop-work-title">
       <header className="db-shop-work-new__header db-operating-page-header">
         <div>
           <h1 id="shop-work-title">Shop Work</h1>
@@ -262,10 +271,11 @@ export default function ShopCockpitActionLedger({
         <header className="db-action-ledger__caption">
           <div className="db-action-ledger__caption-text">
             <div className="db-shop-work-new__view-switch" aria-label="Shop Work view">
-              {activeWork && <ControlButton controlKind="action" type="button" aria-pressed={showingActive} onClick={() => { onWorkViewChange?.('active'); onQueueViewChange('queue') }}><LayoutList aria-hidden="true" />Active work</ControlButton>}
+              {overview && <ControlButton controlKind="action" type="button" aria-pressed={showingOverview} onClick={() => { onWorkViewChange?.('overview'); onQueueViewChange('queue') }}><LayoutDashboard aria-hidden="true" />Overview</ControlButton>}
+              {activeWork && <ControlButton controlKind="action" type="button" aria-pressed={showingActive} onClick={() => { onWorkViewChange?.('active'); onQueueViewChange('queue') }}><LayoutList aria-hidden="true" />Active work{activeCount !== undefined && <span>{activeCount ?? '—'}</span>}</ControlButton>}
               <ControlButton controlKind="action"
                 type="button"
-                aria-pressed={queueView === 'queue' && !showingActive}
+                aria-pressed={queueView === 'queue' && !showingActive && !showingOverview}
                 onClick={() => { onWorkViewChange?.('closeout'); onQueueViewChange('queue') }}
               >
                 {!activeWork && <LayoutList aria-hidden="true" />}
@@ -287,14 +297,14 @@ export default function ShopCockpitActionLedger({
             {!activeWork && <h2>{queueView === 'activity' ? 'Activity' : 'Action Ledger'}</h2>}
           </div>
           <div className="db-action-ledger__caption-summary" aria-live="polite">
-            {!showingActive && (!activeWork || laneFilter !== 'needs_action') && <span className="db-action-ledger__caption-value">
+            {queueView === 'queue' && !showingActive && !showingOverview && (!activeWork || laneFilter !== 'needs_action') && <span className="db-action-ledger__caption-value">
               <span>{activeWork ? 'Closeout work value' : searchQuery.trim() ? 'Matching work value' : 'Work value'}</span>
               <strong>
                 {valueSummaryLoading
                   ? 'Calculating…'
                   : valueSummaryError
                     ? 'Unavailable'
-                    : currency(valueSummary?.order_value ?? '0.00')}
+                    : valueSummary ? currency(valueSummary.order_value) : '—'}
               </strong>
             </span>}
             <span className="db-action-ledger__caption-meta">{lastUpdatedLabel || 'Updated recently'}</span>
@@ -303,7 +313,7 @@ export default function ShopCockpitActionLedger({
 
         {/* Queue-only controls: the chips and search filter the queue, so
             they leave with it. */}
-        {queueView === 'queue' && !showingActive && (
+        {queueView === 'queue' && !showingActive && !showingOverview && (
           <div className="db-shop-work-new__toolbar">
             <div className="db-shop-work-new__lane-tabs" role="tablist" aria-label="Work queues">
             {!activeWork && <ControlButton controlKind="content"
@@ -343,17 +353,17 @@ export default function ShopCockpitActionLedger({
 
       {queueView === 'activity' ? (
         <div className="db-shop-work-new__activity db-operating-surface__scroller">{activityFeed}</div>
-      ) : showingActive ? activeWork : (
+      ) : showingOverview ? overview : showingActive ? activeWork : (
         <>
           {/* The scroller wraps the card so the scrollbar sits outside the
               border; the caption above stays pinned. */}
           <div className="db-operating-surface__scroller">
-          <section className="db-action-ledger db-operating-surface__card" aria-label="Server-backed work queue">
+          <section className="db-action-ledger db-operating-surface__card" aria-label="Work queue">
             <div className="db-action-ledger__rows">
               {visibleRows.length === 0 ? (
                 <div className="db-action-ledger__empty" role="status">
                   <strong>{activeWork ? 'No closeout matches this view' : totalCount === 0 ? 'No work is waiting' : 'No work matches this view'}</strong>
-                  <span>{totalCount === 0 ? 'New repair orders will appear in their canonical queue.' : 'Choose another queue or clear the search.'}</span>
+                  <span>{totalCount === 0 ? 'Completed work and payment follow-up will appear here.' : 'Choose another queue or clear the search.'}</span>
                 </div>
               ) : visibleRows.map(({ order, lane }) => {
                 return (
@@ -363,10 +373,11 @@ export default function ShopCockpitActionLedger({
                     className="db-action-ledger__row"
                     aria-label={`Open ${order.order_number} in Repair Orders`}
                     onClick={() => onOpenRecord(order.id, lane)}
+                    data-single-lane={laneFilter !== 'all' || undefined}
                     data-order-id={order.id}
                     data-lane={lane}
                   >
-                    <span className={`db-action-ledger__lane db-action-ledger__lane--${lane}`}>{activeWork && lane === 'needs_action' ? 'Payment review' : LANE_LABEL[lane]}</span>
+                    {laneFilter === 'all' && <span className={`db-action-ledger__lane db-action-ledger__lane--${lane}`}>{activeWork && lane === 'needs_action' ? 'Payment review' : LANE_LABEL[lane]}</span>}
                     <span className="db-action-ledger__identity">
                       <strong>{order.customer_name}</strong>
                       <span>{[order.vehicle_info, order.vehicle_unit_number ? `Unit ${order.vehicle_unit_number}` : null].filter(Boolean).join(' · ')}</span>

@@ -31,7 +31,7 @@ export default function SearchAddBar({
   
   return (
     <div className={`db-search-add-bar flex items-center gap-2 sm:gap-3 flex-nowrap ${className}`}>
-      <div className={`db-search-add-bar__field relative flex-1 min-w-0 ${inputWidthClass}`}>
+      <div data-db-control-shell="proxy" className={`db-search-add-bar__field relative flex-1 min-w-0 ${inputWidthClass}`}>
         <ControlInput
           type="text"
           value={value}

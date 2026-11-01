@@ -1057,7 +1057,7 @@ export function AssignDriverModal({ truck, driverPhone, onClose }: { truck: Boar
               </div>
             ) : (
               <>
-                <label className="driver-profile-search"><Search size={16} /><ControlInput type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search drivers" aria-label="Search driver profiles" /></label>
+                <label data-db-control-shell="field" className="driver-profile-search"><Search size={16} /><ControlInput type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search drivers" aria-label="Search driver profiles" /></label>
                 <div className="driver-profile-list">
                   {(drivers.isLoading || legacyContacts.isLoading) && <div className="driver-profile-empty"><Spinner size="sm" /> Loading drivers…</div>}
                   {(drivers.isError || legacyContacts.isError) && <div className="driver-profile-empty">Driver records could not be loaded. Close this panel and try again.</div>}

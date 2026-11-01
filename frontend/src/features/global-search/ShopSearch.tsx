@@ -76,7 +76,7 @@ function ShopSearchDialog({ session, role, onClose }: { session: string; role: s
           <DialogTitle>Search shop</DialogTitle>
           <ControlButton controlKind="icon" type="button" onClick={onClose} aria-label="Close search" className="db-shop-search-close"><X className="h-5 w-5" aria-hidden="true" /></ControlButton>
         </header>
-        <div className="db-shop-search-field">
+        <div data-db-control-shell="field" className="db-shop-search-field">
           <Search className="h-5 w-5 shrink-0" aria-hidden="true" />
           <ControlInput ref={inputRef} aria-label="Search shop records" aria-describedby="shop-search-hint" value={input} maxLength={100} onChange={event => setInput(event.target.value)} autoComplete="off" spellCheck={false} placeholder="Name, unit, VIN, RO number or part" />
         </div>

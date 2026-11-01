@@ -1,7 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router-dom'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useAuthStore } from '@/stores/authStore'
+import { garageOwnerSession } from '@/test-fixtures/db035/staffSession'
 
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -46,8 +48,6 @@ import type { PartsUsage, RepairOrderHistoryEvent } from '../../../types'
 import REPAIR_ORDER_CSS from '../../../index.css?inline'
 import RepairOrdersPage from '../RepairOrdersPage'
 import { buildPartHistoryEvents } from '../repairOrderHistory'
-import { scopedOrderDetailKey } from '@/features/operation-execution/notesPrivacy'
-import { useAuthStore } from '@/stores/authStore'
 
 function renderPage(
   initialEntries: string[] = ['/'],
@@ -77,10 +77,14 @@ function LocationProbe() {
 }
 
 describe('RepairOrdersPage request cancellation', () => {
+  beforeEach(() => {
+    useAuthStore.setState({ user: garageOwnerSession, isAuthenticated: true, logoutInProgress: false })
+  })
   afterEach(() => {
     apiMocks.get.mockReset()
     apiMocks.post.mockReset()
     themeState.presentationVariant = 'legacy'
+    useAuthStore.setState({ user: null, isAuthenticated: false })
   })
 
   it('switches only the Repair Orders presentation while preserving the same page API', async () => {
@@ -501,7 +505,7 @@ describe('RepairOrdersPage request cancellation', () => {
     await waitFor(() => expect(screen.getByTestId('workspace-stage')).toHaveTextContent('in_progress'))
     expect(screen.getByTestId('workspace-review-mode')).toHaveTextContent('false')
     // Simulate a previously visited History cache, now inactive like the real workspace.
-    const historyKey = scopedOrderDetailKey('repair-order-detail', 'live-order', useAuthStore.getState().user, useAuthStore.getState().authSessionEpoch)
+    const historyKey = queryClient.getQueryCache().findAll({ queryKey: ['repair-order-detail', 'live-order'] })[0].queryKey
     queryClient.setQueryData(historyKey, { ...order, labor_items: [], parts_usage: [], history_events: [] })
     order = { ...order, status: 'pending_review', updated_at: '2026-10-13T12:01:00Z' }
     await act(async () => { await queryClient.invalidateQueries({ queryKey: ['repair-order-workspace', 'live-order'] }) })
@@ -593,7 +597,8 @@ describe('RepairOrdersPage request cancellation', () => {
   })
 
   it('creates a repair order without asking staff for campaign IDs or clearing machine attribution', async () => {
-    apiMocks.get.mockImplementation((url: string) => {
+    apiMocks.get.mockImplementation((url: string, config?: { params?: { vehicle_id?: string } }) => {
+      if (url === '/customers/customer-1/pricing-preview') return Promise.resolve({ data: { schema_version: 1, customer_id: 'customer-1', vehicle_id: config?.params?.vehicle_id ?? null, expected_pricing_policy: 'test-policy', policy_kind: 'external', projection: 'shop', labor: { source: 'shop', rate: '100.00' }, parts: { source: 'shop', mode: 'catalog' } } })
       if (url === '/repair-orders') return Promise.resolve({ data: { items: [], total: 0, has_more: false } })
       if (url === '/customers/typeahead') return Promise.resolve({ data: [{
         id: 'customer-1', first_name: 'Elis', last_name: 'Logistics', company_name: 'ELIS LOGISTICS LLC',
@@ -617,6 +622,7 @@ describe('RepairOrdersPage request cancellation', () => {
     fireEvent.click(screen.getByRole('button', { name: /choose a customer/i }))
     fireEvent.mouseDown(await screen.findByText('ELIS LOGISTICS LLC'))
     fireEvent.click(await screen.findByRole('button', { name: /select freightliner cascadia · unit 204/i }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create Repair Order' })).toBeEnabled())
     fireEvent.click(screen.getByRole('button', { name: 'Create Repair Order' }))
 
     await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/repair-orders', expect.any(Object)))
