@@ -21,3 +21,13 @@ Screenshots: [desktop](db042-panel-spacing/desktop.png), [mobile](db042-panel-sp
 2026-11-01: Vite5200 PID26374 cwd this checkout/frontend; API8017 dieselbridge_api_inventory-panel-spacing mounts this checkout/backend. Proxy targets8017; direct/proxied readiness DB/Redis healthy. Existing fictional truckpitstop_db042_qa schema196_historical_owner_self_review matches source head, no migration/reseed; Redis12 and no workers started. Approved backend env symlink and existing fictional QA sign-in used without copying or printing credentials. Prior5198/5199 runtimes preserved. Startup metadata is base9d72b777; changed source verified through actual12px gap/16px radii and user journeys.
 
 http://127.0.0.1:5200/dashboard/garage/inventory aligned and browser-verified. Status Review; focused PR/CI pending, not merged/deployed.
+
+## Roomier selected-part workspace
+
+User extends this same panel layout PR: the wrapping-name list no longer needs nearly all wide-screen space. Side-by-side grid is now60% list/40% inspector, with28rem inspector minimum; remove the fixed28rem maximum. Retain12px gap,16px outer corners and compact control heights. Overlay/mobile breakpoints unchanged.
+
+Measured with expanded navigation:1680px viewport gives852px list/568px inspector;1920px gives996px/664px;2394px gives1280.39px/853.59px. Every gap12px and no page horizontal overflow. All four tabs open; wide editor fields expand to405px while height remains30px. Editor Cancel works.1280px overlay remains448px absolute sheet;390px full-page inspector remains355px with16px radius, all tabs/Cancel/Back and fact-tap reopening pass without overflow. Temporary emulation cleared.
+
+75/75 focused tests and TypeScript/Vite build pass after the ratio change; diff check clean. CSS-only, no changed TypeScript lint/test additions. No catalog/stock writes. Same5200/API8017 runtime ownership and readiness reverified; new ratio browser-verified.
+
+Screenshots: [wide workspace](db042-panel-spacing/wide-workspace.png), [wide editor](db042-panel-spacing/wide-editor.png), [mobile](db042-panel-spacing/wide-layout-mobile.png). Extend draft PR730; updated-head CI pending, not deployed.

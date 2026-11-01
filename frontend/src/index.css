@@ -7665,6 +7665,6 @@ html.customer-portal-active {
  .db-presentation-new .db-parts-workbench__inspector { overflow:auto; }
 }
 @container parts-workbench (min-width:80.01rem) {
- .db-parts-workbench__body { column-gap:12px; }
+ .db-parts-workbench__body { grid-template-columns:minmax(0,3fr) minmax(28rem,2fr); column-gap:12px; }
  .db-parts-workbench__ledger-workspace,.db-parts-workbench__ledger { border-inline-end:0; }
 }
