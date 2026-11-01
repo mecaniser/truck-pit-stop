@@ -61,4 +61,12 @@ Owner backend verification:76 passed across Overview, incumbent WIP and parts op
 
 ## Release status
 
-Local implementation verified. Independent QA and Security GO for implementation and supplied local-runtime evidence; final TypeScript and production build passed. Draft PR and protected CI recorded after publication. Not merged or deployed. Production acceptance remains a release gate; local serving is not production delivery.
+Local implementation verified. Independent QA and Security GO for implementation and supplied local-runtime evidence; final TypeScript and production build passed. Changed-source lint passed across23 files. Draft PR and protected CI recorded after publication. Not merged or deployed. Production acceptance remains a release gate; local serving is not production delivery.
+
+## Integrated checkout receipt
+
+Current main through `4645ea6a` was integrated without conflicts as `48b39c98a57c1e9033ad76e869af2dfaa190367b`. The new base changes imported-billing handling and Team styles; no Overview source conflict. Backend76 tests and production build were rerun successfully on the integrated checkout. Changed-source lint against current main reports no new violations across23 files.
+
+Only the task Vite process was gracefully restarted: PID84934 on5215, same implementation frontend cwd; validated branch/SHA stamp now `codex/shop-work-overview@48b39c9`. API container8041 still mounts the same implementation backend and reads local `truckpitstop_db151`, schema196. Direct/proxied readiness passed. Signed-in browser rechecked the quiet shop: Active0, Closeout2, five operational actions, expected delivery and correct new stamp. Local runtime is **aligned and browser-verified**. Later documentation-only receipt commits do not change served application code.
+
+![Integrated overview](assets/db151/overview-integrated.png)
