@@ -74,15 +74,20 @@ describe('deleted repair-order workspace', () => {
   it('reopens a deleted order immediately after a warm History visit, without stale detail or panel requests', async () => {
     deleted = false
     const client = mount(); const user = userEvent.setup()
+    const workspaceSnapshots = () => client.getQueriesData<{ id: string; deleted_at: string | null }>({ queryKey: ['repair-order-workspace', order.id] })
     await user.click(await screen.findByRole('button', { name: 'History', exact: true }))
     await waitFor(() => expect(api.get).toHaveBeenCalledWith('/repair-orders/order-116/detail', expect.anything()))
+    await waitFor(() => expect(workspaceSnapshots().some(([, data]) => data?.deleted_at === null)).toBe(true))
     await user.click(screen.getByRole('button', { name: 'Order actions', exact: true }))
     await user.click(screen.getByRole('button', { name: 'Delete', exact: true }))
     await user.click(screen.getByRole('button', { name: 'Delete order', exact: true }))
     await waitFor(() => expect(screen.queryByRole('region', { name: '#QA116', exact: true })).not.toBeInTheDocument())
-    // A disabled observer may recreate an empty cache entry; no scoped data may survive.
+    // History must be evicted. A workspace observer may already have refetched
+    // valid deleted metadata; only the stale live projection must not survive.
     expect(client.getQueriesData({ queryKey: ['repair-order-detail', order.id] }).filter(([, data]) => data !== undefined)).toEqual([])
-    expect(client.getQueriesData({ queryKey: ['repair-order-workspace', order.id] }).filter(([, data]) => data !== undefined)).toEqual([])
+    for (const [, snapshot] of workspaceSnapshots()) {
+      if (snapshot !== undefined) expect(snapshot).toMatchObject({ id: order.id, deleted_at: deletedOrder.deleted_at })
+    }
     api.get.mockClear()
     await user.click(screen.getByRole('button', { name: 'Deleted', exact: true }))
     await user.click(await screen.findByRole('button', { name: 'Open repair order QA116', exact: true }))

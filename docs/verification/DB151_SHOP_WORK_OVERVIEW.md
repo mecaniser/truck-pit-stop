@@ -80,3 +80,5 @@ Correction: delete evicts the workspace prefix across authorization scopes; the 
 Actual signed-in browser regression passed in the isolated busy QA tenant: open History for draft1068, soft-delete through the existing action, return to Overview (Active3→2/actions7→6), immediately reopen exact1068 via Deleted filter (Deleted/Restore controls, no active editor), restore it, then return to Overview (Active3/actions7 and the estimate action restored). No invoice, payment or provider mutation.
 
 ![Restored QA repair appears on Overview](assets/db151/overview-after-restore.png)
+
+Second CI run41343482346 on `5b46bd39` passed protected checks/Playwright but exposed an overstrict new test assertion (2073pass/1failure): a workspace observer legitimately repopulated a fresh deleted snapshot after eviction. Independent source/log review confirmed it was not stale live data. The test invariant is refined to prove a warm live snapshot before delete and only deleted snapshots afterward, retaining immediate Restore UI and no active-panel requests. Application source is unchanged by this test refinement.

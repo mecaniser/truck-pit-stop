@@ -3054,3 +3054,6 @@ DB-151 CI gate / RETURNED TO FRONTEND (2026-11-01): PR736 head `aee27512` passed
 
 
 DB-151 CI correction / RECHECKING: scoped RO workspace eviction and missing-actor/logout guard fix the full-suite regression. Owner31affected tests pass; actual local warm-History soft-delete/immediate-reopen/restore passes and Overview counts/actions refresh3→2→3 correctly. Cancellation test now uses authenticated pricing-preview prerequisites. Fresh independent expanded RO review and CI required; no merge/deploy.
+
+
+DB-151 CI assertion refinement: second run on `5b46bd39` passed protected checks and Playwright; full frontend2073pass/1failure was the newly added empty-cache assertion. Independent review confirms the retained record was a fresh deleted snapshot, not stale active data. Application correction remains accepted; test now needs to prove a warm live snapshot before deletion and no nondeleted snapshot afterward while retaining immediate Restore/no-active-panel checks. No application change or production action.
