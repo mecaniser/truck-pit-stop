@@ -1336,7 +1336,7 @@ async def get_dashboard_stats(
         if collection:
             component=components.get(row.payment_id)
             archived=economics.get(row.invoice_id) if component else None
-            if archived:
+            if archived and archived["parts_cost"] is not None:
                 share=component['principal']/archived['total']
                 parts_margin=(archived['parts']-archived['parts_cost'])*share
                 labor_revenue=archived['labor']*share

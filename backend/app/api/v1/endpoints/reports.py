@@ -11,7 +11,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, and_, func, select
+from sqlalchemy import or_, and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.date_ranges import REPORT_DATE_PRESETS, DateRange, resolve_date_range
@@ -78,6 +78,8 @@ class DashboardMetric(BaseModel):
 
 class ReportsDashboardResponse(BaseModel):
     source_collection_unallocated_receipts: str = "0.00"
+    source_collection_unapplied_receipts: str = "0.00"
+    source_collection_parts_profit_attribution_pending: bool = False
     source_collection_attribution_note: Optional[str] = None
     range_start: date
     range_end: date
@@ -189,6 +191,8 @@ async def get_reports_dashboard(
     economics=await collection_economics(db,collection_ids)
     components=await collection_receipt_components(db,[payment for payment,invoice,_ in paid_rows if invoice.accounting_policy=="source_collection_hold"])
     unallocated_receipts=Decimal("0.00")
+    unapplied_receipts=Decimal("0.00")
+    parts_profit_pending=False
 
     order_ids = list({ro.id for _, _, ro in paid_rows})
     parts_cost_by_order: Dict[UUID, Decimal] = {}
@@ -250,10 +254,15 @@ async def get_reports_dashboard(
         # NET SALES (labor + parts + fees - discounts, tax excluded).
         net_sales = received - ((archived["tax"] if archived else Decimal(0) if collection else _money(invoice.tax_amount)) * share)
         if archived:
-            net_sales-=component["fee_tax"]
-            unallocated_receipts+=component["unapplied"]
-        parts_cost = (archived["parts_cost"] if archived else Decimal(0)) * share if collection else parts_cost_by_order.get(order.id, Decimal("0.00")) * share
-        parts_profit = parts_rev - parts_cost
+            net_sales-=component["fee_tax"]+component["unapplied"]
+            unapplied_receipts+=component["unapplied"]
+        if collection:
+            if not archived:net_sales=Decimal(0)
+            cost_known=bool(archived and archived['parts_cost'] is not None)
+            parts_profit=(archived['parts']-archived['parts_cost'])*share if cost_known else Decimal(0)
+            parts_profit_pending=parts_profit_pending or not cost_known
+        else:
+            parts_profit=parts_rev-parts_cost_by_order.get(order.id,Decimal("0.00"))*share
 
         total_revenue += net_sales
         total_labor += labor_rev
@@ -354,7 +363,9 @@ async def get_reports_dashboard(
 
     return ReportsDashboardResponse(
         source_collection_unallocated_receipts=str(unallocated_receipts),
-        source_collection_attribution_note="Source collection receipts are included; category attribution is unavailable for uncorroborated original itemization." if unallocated_receipts else None,
+        source_collection_unapplied_receipts=str(unapplied_receipts),
+        source_collection_parts_profit_attribution_pending=parts_profit_pending,
+        source_collection_attribution_note="Additional gross source receipts await net sales, tax and cost attribution and are not included in the verified net total." if unallocated_receipts else None,
         range_start=rng.start,
         range_end=rng.end,
         revenue_interval=revenue_interval,
@@ -411,10 +422,10 @@ class CashReceiptRow(BaseModel):
 
 async def cash_receipts_for_range(db, tenant_id, rng):
     result = await db.execute(
-        select(Payment, Invoice, Customer)
+        select(Payment, Invoice, Customer,receipt_gross_expression())
         .join(Invoice, Payment.invoice_id == Invoice.id)
         .join(RepairOrder, Invoice.repair_order_id == RepairOrder.id)
-        .join(Customer, RepairOrder.customer_id == Customer.id)
+        .join(Customer, case((Invoice.accounting_policy=="source_collection_hold",Invoice.billed_customer_id),else_=RepairOrder.customer_id) == Customer.id)
         .where(
             Payment.tenant_id == tenant_id,
             Invoice.tenant_id == tenant_id,
@@ -422,6 +433,7 @@ async def cash_receipts_for_range(db, tenant_id, rng):
             Customer.tenant_id == tenant_id,
             Payment.method == PaymentMethod.CASH,
             Payment.status == PaymentStatus.COMPLETED,
+            or_(Invoice.accounting_policy!="source_collection_hold",confirmed_collection_receipt_clause()),
             Invoice.is_internal.is_(False),
             Payment.created_at >= rng.utc_start,
             Payment.created_at < rng.utc_end,
@@ -433,8 +445,8 @@ async def cash_receipts_for_range(db, tenant_id, rng):
         payment_id=payment.id, payment_number=payment.payment_number,
         invoice_number=invoice.invoice_number,
         customer_name=customer.company_name or f"{customer.first_name} {customer.last_name}".strip(),
-        received_at=payment.created_at, received_on=rng.local_date(payment.created_at), amount=str(_money(payment.amount)),
-    ) for payment, invoice, customer in result.all()]
+        received_at=payment.created_at, received_on=rng.local_date(payment.created_at), amount=str(_money(gross)),
+    ) for payment, invoice, customer,gross in result.all()]
     return str(sum((_money(row.amount) for row in rows), Decimal('0.00'))), rows
 
 

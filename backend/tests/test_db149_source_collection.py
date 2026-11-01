@@ -495,9 +495,16 @@ async def test_cash_receipts_original_economics_tax_scope_and_no_opening_receipt
     assert Decimal((await report()).revenue.value)==Decimal('290')
     original.line_items_snapshot=None
     unallocated=await report()
-    assert Decimal(unallocated.revenue.value)==Decimal('330')
+    assert Decimal(unallocated.revenue.value)==Decimal('0')
     assert Decimal(unallocated.source_collection_unallocated_receipts)==Decimal('330')
     assert unallocated.source_collection_attribution_note
+    from test_db048_invoice_settlements import _add_eligible_invoice
+    ordinary=await _add_eligible_invoice(db_session,tenant=t,customer=c,reference_invoice=original,with_shadow_settlement=False)
+    ordinary.subtotal=ordinary.total_amount=Decimal('100')
+    db_session.add(Payment(tenant_id=t.id,invoice_id=ordinary.id,payment_number='ORDINARY-NET-100',amount=Decimal('100'),method=PaymentMethod.OTHER,status=PaymentStatus.COMPLETED))
+    mixed=await report()
+    assert Decimal(mixed.revenue.value)==Decimal('100')
+    assert Decimal(mixed.source_collection_unallocated_receipts)==Decimal('330')
     saved=external.created_at
     external.created_at=saved.replace(year=saved.year-1)
     outside=await reports.get_reports_tax(range='this_year',from_date=None,to_date=None,db=db_session,current_user=a)
@@ -532,3 +539,72 @@ async def test_complete_financial_target_only_unrelated_snapshot_is_unchanged(db
     after=await repair_financial_manifest(request,Response(),db=db_session,key=key)
     assert before==after and before['count']==20
     assert (await svc.preview(db_session,t.id,original.id,source.id))['existing_handoff']['id']==str(row.id)
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('unit_cost,quantity',[(None,1),('-1',1),('NaN',1),('200',None),('200',0),('0',1)])
+async def test_unknown_or_invalid_original_cost_is_not_zero_margin(db_session,monkeypatch,unit_cost,quantity):
+    from app.services.source_collection_reporting import collection_economics
+    t,a,c,original,p,b=await context(db_session,monkeypatch)
+    original.line_items_snapshot={'labor':[{'total_cost':'600'}],'parts':[{'total_price':'400','unit_cost':unit_cost,'quantity':quantity}]}
+    row=await svc.prepare(db_session,t.id,a,b,'prepare');p['summary'].observed_at=datetime.now(timezone.utc)+timedelta(seconds=1)
+    row,_=await svc.activate(db_session,row,a,SourceVersionRequest(expected_version=1,expected_source_capture_sha256='a'*64,expected_source_revision='b'*64),'activate')
+    economics=(await collection_economics(db_session,[row.native_invoice_id]))[row.native_invoice_id]
+    invalid=unit_cost!='0'
+    assert (economics['parts_cost'] is None) is invalid
+    from app.db.models.payment import Payment,PaymentMethod,PaymentStatus
+    from app.db.models.source_debt_handoff import SourceReceiptLink
+    from app.api.v1.endpoints import reports
+    payment=Payment(id=uuid4(),tenant_id=t.id,invoice_id=row.native_invoice_id,payment_number='COST-PROOF',amount=Decimal('100'),method=PaymentMethod.OTHER,status=PaymentStatus.COMPLETED)
+    db_session.add(payment);await db_session.flush()
+    db_session.add(SourceReceiptLink(tenant_id=t.id,handoff_id=row.id,ets_shop_id=row.ets_shop_id,ets_invoice_internal_id=row.ets_invoice_internal_id,source_allocation_id='costproof',source_payment_id='costproof',source_revision='b'*64,source_capture_sha256='a'*64,content_sha256='c'*64,amount=Decimal('100'),effective_at=payment.created_at,origin='ets_external',native_payment_id=payment.id))
+    report=await reports.get_reports_dashboard(range='this_year',from_date=None,to_date=None,db=db_session,current_user=a)
+    assert Decimal(report.revenue.value)==Decimal('100')
+    assert report.source_collection_parts_profit_attribution_pending is invalid
+    assert Decimal(report.parts_profit.value)==(Decimal('0') if invalid else Decimal('40'))
+    assert Decimal(report.source_collection_unallocated_receipts)==0
+
+@pytest.mark.asyncio
+async def test_manual_overreceipt_actual_gross_and_unapplied_liability(db_session,monkeypatch):
+    from app.services.invoice_settlement_service import create_attempt,confirm_attempt
+    from app.db.models.invoice_settlement import InvoiceSettlement
+    from app.db.models.source_debt_handoff import EtsReceiptUpdateTask
+    from app.api.v1.endpoints import reports,dashboard
+    from sqlalchemy import Date,cast as original_cast
+    monkeypatch.setattr(dashboard,'cast',lambda expression,target:func.date(expression) if target is Date else original_cast(expression,target))
+    t,a,c,original,p,b=await context(db_session,monkeypatch)
+    from app.db.models.customer import Customer
+    from app.schemas.source_debt_handoff import BillToReview
+    source_customer=c
+    c=Customer(tenant_id=t.id,first_name='Reviewed',last_name='B',company_name='Existing B',email='cash-b@example.test')
+    db_session.add(c);await db_session.flush()
+    p.update(source_customer=source_customer,customer=c)
+    b=b.model_copy(update={'target_customer_id':c.id,'bill_to_review':BillToReview(mode='owner_same_legal_entity',source_customer_id=source_customer.id,target_customer_id=c.id,attested_same_legal_entity=True,confirmation_reference='Owner exact invoice',reason='Same legal business')})
+    original.shop_supplies_amount=Decimal('100');original.tax_amount=Decimal('100')
+    original.line_items_snapshot={'labor':[{'total_cost':'400'}],'parts':[{'total_price':'400','unit_cost':'200','quantity':1}]}
+    row=await svc.prepare(db_session,t.id,a,b,'prepare');p['summary'].observed_at=datetime.now(timezone.utc)+timedelta(seconds=1)
+    row,_=await svc.activate(db_session,row,a,SourceVersionRequest(expected_version=1,expected_source_capture_sha256='a'*64,expected_source_revision='b'*64),'activate')
+    native=await db_session.get(Invoice,row.native_invoice_id)
+    settlement=await db_session.scalar(select(InvoiceSettlement).where(InvoiceSettlement.invoice_id==native.id))
+    pending=await create_attempt(db_session,invoice=native,tenant=t,customer_id=c.id,actor=a,amount=Decimal('200'),rail='check',expected_settlement_version=settlement.version,idempotency_key='manual-over',source='staff_manual',subject_type='staff',subject_id=a.id)
+    confirmed=await confirm_attempt(db_session,attempt_id=pending.attempt.id,tenant=t,actor=a,expected_attempt_version=pending.attempt.version,idempotency_key='manual-over-confirm',received_principal=Decimal('250'),reference='MANUAL-250')
+    task=await db_session.scalar(select(EtsReceiptUpdateTask).where(EtsReceiptUpdateTask.payment_id==confirmed.payment.id))
+    assert task.received_amount==Decimal('250') and task.principal_amount==Decimal('200') and task.unapplied_amount==Decimal('50')
+    assert pending.attempt.provider_charge_amount==Decimal('200')
+    report=await reports.get_reports_dashboard(range='this_year',from_date=None,to_date=None,db=db_session,current_user=a)
+    assert Decimal(report.revenue.value)==Decimal('180')
+    assert Decimal(report.source_collection_unapplied_receipts)==Decimal('50')
+    assert Decimal(report.source_collection_unallocated_receipts)==0
+    assert Decimal((await dashboard.get_dashboard_stats(db=db_session,current_user=a)).revenue.this_month)==Decimal('250')
+    from app.db.models.payment import PaymentMethod
+    # Read fixture for a verified physical cash receipt; no collection cash action is enabled.
+    confirmed.payment.method=PaymentMethod.CASH
+    rng=await reports._resolve_range(db_session,t.id,'this_year',None,None)
+    cash,receipts=await reports.cash_receipts_for_range(db_session,t.id,rng)
+    assert Decimal(cash)==Decimal('250') and len(receipts)==1
+    assert receipts[0].customer_id==c.id and receipts[0].customer_name=='Existing B'
+    assert original.repair_order.customer_id==source_customer.id
+    original.line_items_snapshot=None
+    unknown=await reports.get_reports_dashboard(range='this_year',from_date=None,to_date=None,db=db_session,current_user=a)
+    assert Decimal(unknown.revenue.value)==0
+    assert Decimal(unknown.source_collection_unallocated_receipts)==Decimal('250')
+    assert Decimal(unknown.source_collection_unapplied_receipts)==0

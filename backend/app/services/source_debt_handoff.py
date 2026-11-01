@@ -327,10 +327,11 @@ async def record_native_receipt(db,invoice,payment,attempt,actor=None):
     if not row:return None
     old=await db.scalar(select(EtsReceiptUpdateTask).where(EtsReceiptUpdateTask.tenant_id==row.tenant_id,EtsReceiptUpdateTask.payment_id==payment.id))
     if old:return old
+    from app.services.source_collection_reporting import confirmed_receipt_gross
     principal=money(attempt.applied_principal_amount)
     if principal<=ZERO:return None
     task=EtsReceiptUpdateTask(id=uuid4(),tenant_id=row.tenant_id,handoff_id=row.id,invoice_id=invoice.id,payment_id=payment.id,attempt_id=attempt.id,
-        principal_amount=principal,received_amount=money(attempt.provider_charge_amount),fee_amount=money(attempt.applied_card_fee_amount)+money(attempt.applied_card_fee_tax_amount),
+        principal_amount=principal,received_amount=money(confirmed_receipt_gross(attempt)),fee_amount=money(attempt.applied_card_fee_amount)+money(attempt.applied_card_fee_tax_amount),
         unapplied_amount=money(attempt.unapplied_amount),currency='USD',effective_at=attempt.confirmed_at or datetime.now(timezone.utc),expected_source_revision=row.source_revision,
         state='pending_manual',version=1)
     db.add(task);row.version+=1;await db.flush()
