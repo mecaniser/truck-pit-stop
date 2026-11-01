@@ -117,3 +117,10 @@ Final changed-source lint passes across25files against main5213d328. Git diff ch
 
 
 All seven Quality gates jobs passed on published integrationaa180375, run41347288886: migration/scope, backend critical, frontend dependencies/checks, full backend, full frontend, Playwright smoke. During that run main advanced to72aaee69 (PR743 billing-warning explanations and the same tooltip wrapper). Its only code conflict is equivalent ControlButton prop ordering; resolved exactly to main. Both board histories retained, with main's current lead entry kept first to reduce future prepend collisions. PR743 warning helpers/tests/styles are preserved. Affected regression/build/lint and new exact-head CI required after this necessary main integration; previous green remains historical evidence.
+
+
+## Authorized release preparation — sequenced hold
+
+November1: User authorizes safe release through the curated queue; orchestrator explicitly directs741 first and requires confirmation that main is stable before736 merge. Latest mainaa549f2e (PR744 retired duplicate display) merges automatically with no conflicts. Existing ShopWork backend logic remains unchanged;70in-memory backend tests covering overview and retired display pass. No deployment configuration or migration changes in this advancement.
+
+The implementation owner is concurrently refining further ShopWork UI and has not published that sweep. It is not included or claimed verified here. Read-only production auth/me confirms the genuine active owner92059ce6… in TruckPitStop tenant828acd84…. No credentials extracted; the temporary preflight tab was closed. Published736 remainsdecaf8dd/draft with7/7CI success. This local main advancement is not a final release candidate until741/main confirmation, the owner handoff and exact-head checks. No ready/merge/deploy/approval or business writes.
