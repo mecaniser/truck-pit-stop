@@ -236,7 +236,7 @@ async def send_invoice_payment_confirmation_email(
 """
 
     collection = await source_collection_for_invoice(db, invoice)
-    if collection and not collection.get("is_source_history"):
+    if collection:
         from app.services.source_debt_handoff import collection_email_html
         html_body = collection_email_html(invoice, collection, payment_summary, invoice_access_url, tenant)
 

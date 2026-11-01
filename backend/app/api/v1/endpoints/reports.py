@@ -168,6 +168,7 @@ async def get_reports_dashboard(
         .join(RepairOrder, Invoice.repair_order_id == RepairOrder.id)
         .where(
             Invoice.tenant_id == tenant_id,
+            Invoice.accounting_policy != "source_collection_hold",
             Invoice.is_internal.is_(False),
             Invoice.deleted_at.is_(None),
             Invoice.status != InvoiceStatus.CANCELLED,
@@ -269,6 +270,7 @@ async def get_reports_dashboard(
         .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
         .where(
             Invoice.tenant_id == tenant_id,
+            Invoice.accounting_policy != "source_collection_hold",
             Invoice.is_internal.is_(False),
             Invoice.deleted_at.is_(None),
             Invoice.status != InvoiceStatus.CANCELLED,
@@ -442,6 +444,7 @@ async def get_reports_sales(
         .join(Customer, RepairOrder.customer_id == Customer.id)
         .where(
             Invoice.tenant_id == tenant_id,
+            Invoice.accounting_policy != "source_collection_hold",
             Invoice.status == InvoiceStatus.PAID,
             Invoice.is_internal.is_(False),
             Invoice.paid_at >= rng.utc_start,
@@ -571,6 +574,7 @@ async def get_reports_fees(
     result = await db.execute(
         select(Invoice.shop_supplies_amount, Invoice.service_fee_amount).where(
             Invoice.tenant_id == tenant_id,
+            Invoice.accounting_policy != "source_collection_hold",
             Invoice.status == InvoiceStatus.PAID,
             Invoice.is_internal.is_(False),
             Invoice.paid_at >= rng.utc_start,
@@ -730,6 +734,7 @@ async def get_reports_tax(
     result = await db.execute(
         select(func.coalesce(func.sum(Invoice.tax_amount), 0)).where(
             Invoice.tenant_id == tenant_id,
+            Invoice.accounting_policy != "source_collection_hold",
             Invoice.status == InvoiceStatus.PAID,
             Invoice.is_internal.is_(False),
             Invoice.paid_at >= rng.utc_start,
@@ -793,6 +798,7 @@ async def get_reports_parts(
         .join(RepairOrder, Invoice.repair_order_id == RepairOrder.id)
         .where(
             Invoice.tenant_id == tenant_id,
+            Invoice.accounting_policy != "source_collection_hold",
             Invoice.status == InvoiceStatus.PAID,
             Invoice.is_internal.is_(False),
             Invoice.paid_at >= rng.utc_start,
@@ -964,6 +970,7 @@ async def get_reports_service_types(
             Labor.tenant_id == tenant_id,
             RepairOrder.tenant_id == tenant_id,
             Invoice.tenant_id == tenant_id,
+            Invoice.accounting_policy != "source_collection_hold",
             Invoice.status == InvoiceStatus.PAID,
             Invoice.is_internal.is_(False),
             Invoice.paid_at >= rng.utc_start,
@@ -1062,6 +1069,7 @@ async def get_reports_internal(
         .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
         .where(
             Invoice.tenant_id == tenant_id,
+            Invoice.accounting_policy != "source_collection_hold",
             Invoice.is_internal.is_(True),
             Invoice.created_at >= rng.utc_start,
             Invoice.created_at < rng.utc_end,
@@ -1104,6 +1112,7 @@ async def get_reports_internal(
             Labor.tenant_id == tenant_id,
             RepairOrder.tenant_id == tenant_id,
             Invoice.tenant_id == tenant_id,
+            Invoice.accounting_policy != "source_collection_hold",
             Invoice.is_internal.is_(True),
             Invoice.created_at >= rng.utc_start,
             Invoice.created_at < rng.utc_end,
@@ -1343,6 +1352,7 @@ async def get_analytics_accounts(
         ))
         .where(
             Invoice.tenant_id == tenant_id,
+            Invoice.accounting_policy != "source_collection_hold",
             RepairOrder.tenant_id == tenant_id,
             Customer.tenant_id == tenant_id,
             RepairOrder.deleted_at.is_(None),
@@ -1427,6 +1437,7 @@ async def get_analytics_quote_funnel(
         .join(Quote, Quote.repair_order_id == Invoice.repair_order_id)
         .where(
             Invoice.tenant_id == tenant_id,
+            Invoice.accounting_policy != "source_collection_hold",
             Quote.is_approved.is_(True),
             Quote.created_at >= rng.utc_start,
             Quote.created_at < rng.utc_end,

@@ -9,6 +9,7 @@ from app.api.v1.endpoints.fleet_repair_history_exports import _digest,_utc,MAX_R
 from app.core.dependencies import get_db
 from app.db.models.fleet_invoice_api_key import FleetInvoiceApiKey
 from app.db.models.historical_invoice_export import HistoricalInvoiceMapping
+from app.db.models.source_debt_handoff import SourceDebtHandoff
 from app.db.models.invoice import Invoice,InvoiceStatus
 from app.db.models.repair_order import RepairOrder,RepairOrderStatus
 from app.db.models.vehicle import Vehicle
@@ -57,6 +58,14 @@ async def repair_financial_manifest(request:Request,response:Response,
     db:AsyncSession=Depends(get_db),key:FleetInvoiceApiKey=Depends(_active_key)):
     if request.query_params:
         raise HTTPException(422,detail={'code':'invalid_financial_filters','message':'A complete scoped financial snapshot is required.'})
+    # This is complete authority. Missing handed-off rows could be interpreted
+    # as deletion by receivers, so preserve their existing records and fail closed.
+    held = await db.scalar(select(SourceDebtHandoff.id).where(
+        SourceDebtHandoff.tenant_id==key.tenant_id,
+        SourceDebtHandoff.customer_id==key.customer_id).limit(1))
+    if held:
+        raise HTTPException(409,detail={"code":"external_manual_accounting_hold",
+            "message":"This customer has externally reconciled source debt. Automatic complete financial export is held; preserve existing accounting records."})
     # The active unique index is canonical. Include a draft then deny it; never
     # select an older visible invoice just because the actual active one is hidden.
     base_ids=(select(RepairOrder.id)

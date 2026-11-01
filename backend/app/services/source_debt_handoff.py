@@ -413,12 +413,24 @@ def collection_email_html(invoice,collection,payment_summary,invoice_access_url,
     from html import escape
     from app.services.invoice_payment_presentation import payment_summary_html
     from app.services.invoice_review_service import invoice_review_html
+    history=bool(collection.get('is_source_history'))
+    if history:
+        from app.services.invoice_payment_presentation import InvoicePaymentSummary
+        balance=collection.get('balance_due')
+        payment_summary=InvoicePaymentSummary(state='unknown',note='Historical source copy; not a separate payment request. Current linked DBN balance: '+('$'+balance if balance is not None else 'needs shop verification'))
+    title='Historical source invoice' if history else 'Collection copy'
     number=escape(str(collection.get('source_invoice_number','')))
     date=escape(str(collection.get('original_invoice_date') or '')[:10])
-    return (f'<h2>Collection copy — {escape(invoice.invoice_number)}</h2>'
+    return (f'<h2>{title} — {escape(invoice.invoice_number)}</h2>'
         f'<p>Original ETS invoice {number} · Original date: {date}</p>'
         f'<p>Original issued total: ${Decimal(collection["original_issued_total"]):,.2f} · Prior ETS payments / credits: ${Decimal(collection["source_prior_allocated"]):,.2f}</p>'
         f'<p>Transferred balance: <b>${Decimal(collection["opening_principal"]):,.2f}</b>. Balance includes original charges. This copy is not a new sale or tax invoice.</p>'
         +payment_summary_html(payment_summary)
         +f'<p><a href="{escape(invoice_access_url,quote=True)}">View current invoice and receipt</a></p>'
         +invoice_review_html(tenant,invoice))
+
+def accounting_export_allowed_clause():
+    """Incremental feeds retain receiver records but emit no externally owned debt."""
+    return and_(Invoice.accounting_policy != COLLECTION_POLICY,
+        ~select(SourceDebtHandoff.id).where(SourceDebtHandoff.tenant_id==Invoice.tenant_id,
+            or_(SourceDebtHandoff.source_dbn_invoice_id==Invoice.id,SourceDebtHandoff.native_invoice_id==Invoice.id)).correlate(Invoice).exists())

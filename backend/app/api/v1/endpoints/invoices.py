@@ -233,7 +233,7 @@ def _build_invoice_email_html(
     payment_summary=None,
     source_collection=None,
 ) -> str:
-    if source_collection and not source_collection.get("is_source_history"):
+    if source_collection:
         from app.services.source_debt_handoff import collection_email_html
         return collection_email_html(invoice, source_collection, payment_summary, invoice_access_url, tenant)
     shop_name = tenant.name if tenant else "Your Shop"

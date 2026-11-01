@@ -24,7 +24,7 @@ from app.db.models.repair_order import RepairOrder
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
-from app.services.source_debt_handoff import source_collection_for_invoice
+from app.services.source_debt_handoff import source_collection_for_invoice, accounting_export_allowed_clause
 from app.api.v1.endpoints.invoices import _load_line_items
 from app.services.invoice_charge_state import effective_tax_exempt
 from app.services.pdf_service import generate_invoice_pdf
@@ -146,7 +146,7 @@ async def revoke_key(
 def _scope(key: FleetInvoiceApiKey):
     return (
         Invoice.tenant_id == key.tenant_id,
-        Invoice.accounting_policy != "source_collection_hold",
+        accounting_export_allowed_clause(),
         RepairOrder.tenant_id == key.tenant_id,
         or_(Invoice.billed_customer_id == key.customer_id,
             and_(Invoice.billed_customer_id.is_(None),

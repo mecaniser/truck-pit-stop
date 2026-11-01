@@ -316,6 +316,7 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
     policy = load_native_record_policy()
     classifications = {}
     verified_collection_ids = set()
+    collection_review_reasons = {}
     from app.services.source_debt_handoff import is_collection, invoice_handoff
     from app.services.invoice_settlement_service import SettlementDomainError
     for candidate, _order, _bill_to in invoices:
@@ -324,6 +325,10 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
                 handoff = await invoice_handoff(db, candidate, check_source=False)
                 if handoff.customer_id == customer_id and handoff.owner_acknowledged_at:
                     verified_collection_ids.add(candidate.id)
+                    try:
+                        await invoice_handoff(db, candidate, require_active=True)
+                    except SettlementDomainError as exc:
+                        collection_review_reasons[candidate.id] = exc.code
             except SettlementDomainError:
                 pass
     trusted_credit_invoice_ids = set()
@@ -359,6 +364,7 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
 
     buckets = {key: ZERO for key in (*BUCKETS, "undated_due")}
     collectible = ZERO
+    held_collection_balance = ZERO
     review_native = review_ets = 0
     unverified_native_invoices = 0
     reviewed_attestation_count = 0
@@ -459,10 +465,19 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
             principal = money(settlement.principal_total) if basis == "native_settlement" else verified_attestation.principal
             confirmed = money(settlement.confirmed_principal) if basis == "native_settlement" else verified_attestation.confirmed
             remaining = max(ZERO, money(principal - confirmed))
-            collectible = money(collectible + remaining)
+            if invoice.id in collection_review_reasons:
+                held_collection_balance = money(held_collection_balance + remaining)
+                review_native += 1
+                unverified_native_invoices += 1
+            else:
+                collectible = money(collectible + remaining)
             due = (invoice.due_date.replace(tzinfo=invoice.due_date.tzinfo or timezone.utc)
                    .astimezone(local_zone).date()) if invoice.due_date else None
-            buckets[bucket_for(due, as_of)] = money(buckets[bucket_for(due, as_of)] + remaining)
+            if invoice.id not in collection_review_reasons:
+                buckets[bucket_for(due, as_of)] = money(buckets[bucket_for(due, as_of)] + remaining)
+        collection_held = source == "native" and invoice.id in collection_review_reasons
+        if collection_held:
+            source = source_by_invoice[invoice.id] = "review_required"
         occurred = invoice.created_at if source != "ets_history" else None
         rows.append(_row("invoice", source, invoice.id, occurred,
                          "created_at" if occurred else ("ets_invoiced_at" if invoice.ets_invoiced_at else "source_date_unavailable"), invoice.id,
@@ -470,8 +485,10 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
                          f"/dashboard/repair-orders?selected={order.id}",
                          source_date=invoice.ets_invoiced_at if source == "ets_history" else None,
                          invoice_number=invoice.invoice_number))
-        rows[-1]["principal_total"] = _money(principal) if source == "native" else None
-        rows[-1]["settled_principal"] = _money(confirmed) if source == "native" else None
+        if collection_held:
+            rows[-1]["review_reason"] = "Source collection requires reconciliation: " + collection_review_reasons[invoice.id]
+        rows[-1]["principal_total"] = _money(principal) if source == "native" or collection_held else None
+        rows[-1]["settled_principal"] = _money(confirmed) if source == "native" or collection_held else None
         rows[-1]["reconciliation_basis"] = basis if source == "native" else None
     for payment in payments:
         if payment.invoice_id in masked_invoice_ids:
@@ -512,6 +529,8 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
         "as_of_date": as_of.isoformat(), "generated_at": now.isoformat(), "currency": "USD",
         "customer": {"id": str(customer.id), "name": name},
         "native": {"collectible": _money(collectible),
+                   "held_collection_balance": _money(held_collection_balance),
+                   "collection_review_count": len(collection_review_reasons),
                    "collectible_complete": (policy.available and unverified_native_invoices == 0
                                             and held_credit_families == 0),
                    "unverified_invoice_count": unverified_native_invoices,

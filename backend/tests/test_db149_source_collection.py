@@ -169,6 +169,10 @@ async def test_collection_provider_gate_and_accounting_exclusions(db_session,mon
     body=svc.collection_email_html(native,result,InvoicePaymentSummary(state='unpaid',applied_amount='0.00',balance_due='600.00',basis='settlement'),'https://example.test/invoice',t)
     assert 'Transferred balance' in body and '600.00' in body and 'new sale or tax invoice' in body
     assert 'Qty/Hrs' not in body and '>Labor<' not in body
+    history=svc.collection_email_html(original,{**result,'is_source_history':True,'balance_due':'0.00'},InvoicePaymentSummary(state='unpaid',balance_due='600.00'),'https://example.test/history',t)
+    assert 'Historical source invoice' in history
+    assert 'Current linked DBN balance: $0.00' in history
+    assert 'not a separate payment request' in history
 
 @pytest.mark.asyncio
 async def test_dashboard_revenue_links_payment_invoice_and_tenant(db_session,monkeypatch):
@@ -192,7 +196,7 @@ async def test_dashboard_revenue_links_payment_invoice_and_tenant(db_session,mon
     assert Decimal(result.revenue.this_month)==Decimal('100')
 
 @pytest.mark.asyncio
-async def test_accounting_export_keeps_source_excludes_collection_copy(db_session,monkeypatch):
+async def test_accounting_export_holds_linked_debt_preserves_unhanded_source(db_session,monkeypatch):
     from app.api.v1.endpoints.fleet_invoice_exports import _invoice_query
     t,a,c,original,p,b=await context(db_session,monkeypatch)
     original.billed_customer_id=c.id
@@ -200,4 +204,49 @@ async def test_accounting_export_keeps_source_excludes_collection_copy(db_sessio
     p['summary'].observed_at=datetime.now(timezone.utc)+timedelta(seconds=1)
     row,_=await svc.activate(db_session,row,a,SourceVersionRequest(expected_version=1,expected_source_capture_sha256='a'*64,expected_source_revision='b'*64),'activate')
     exported=(await db_session.execute(_invoice_query(NS(tenant_id=t.id,customer_id=c.id)))).all()
-    assert [item[0].id for item in exported]==[original.id]
+    assert exported == []  # No duplicate invoice, stale original update, or tombstone.
+    from test_db048_invoice_settlements import _add_eligible_invoice
+    untouched=await _add_eligible_invoice(db_session,tenant=t,customer=c,reference_invoice=original,with_shadow_settlement=False)
+    untouched.billed_customer_id=c.id
+    untouched.source='easy_truck_shop_import'
+    exported=(await db_session.execute(_invoice_query(NS(tenant_id=t.id,customer_id=c.id)))).all()
+    assert [item[0].id for item in exported]==[untouched.id]
+    assert original.total_amount==Decimal('1000')
+
+@pytest.mark.asyncio
+async def test_complete_financial_export_explicit_hold_no_receiver_deletion(db_session,monkeypatch):
+    from app.api.v1.endpoints.fleet_repair_financial_exports import repair_financial_manifest
+    from fastapi import Response,HTTPException
+    from starlette.requests import Request
+    t,a,c,original,p,b=await context(db_session,monkeypatch)
+    await svc.prepare(db_session,t.id,a,b,'prepare')
+    request=Request({'type':'http','query_string':b''})
+    with pytest.raises(HTTPException) as exc:
+        await repair_financial_manifest(request,Response(),db=db_session,key=NS(tenant_id=t.id,customer_id=c.id))
+    assert exc.value.status_code==409
+    assert exc.value.detail['code']=='external_manual_accounting_hold'
+    # Another bill-to in the same tenant is outside the held customer scope.
+    result=await repair_financial_manifest(request,Response(),db=db_session,key=NS(tenant_id=t.id,customer_id=uuid4()))
+    assert result['items']==[]
+
+@pytest.mark.asyncio
+async def test_conflicted_collection_retains_known_balance_with_receivable_hold(db_session,monkeypatch):
+    from app.services.customer_receivables import account_snapshot
+    from app.db.models.invoice_settlement import InvoiceSettlement
+    t,a,c,original,p,b=await context(db_session,monkeypatch)
+    t.timezone='America/New_York'
+    row=await svc.prepare(db_session,t.id,a,b,'prepare')
+    p['summary'].observed_at=datetime.now(timezone.utc)+timedelta(seconds=1)
+    row,_=await svc.activate(db_session,row,a,SourceVersionRequest(expected_version=1,expected_source_capture_sha256='a'*64,expected_source_revision='b'*64),'activate')
+    settlement=await db_session.scalar(select(InvoiceSettlement).where(InvoiceSettlement.invoice_id==row.native_invoice_id))
+    settlement.confirmed_principal=Decimal('300')
+    row.state='source_conflict'
+    snapshot=await account_snapshot(db_session,tenant_id=t.id,customer_id=c.id)
+    assert snapshot['native']['collectible']=='0.00'
+    assert snapshot['native']['held_collection_balance']=='300.00'
+    assert snapshot['native']['collection_review_count']==1
+    assert snapshot['native']['review_required_count']==1
+    assert snapshot['native']['unverified_invoice_count']==1
+    transaction=next(r for r in snapshot['transactions'] if r['kind']=='invoice')
+    assert transaction['remaining_principal']=='300.00'
+    assert transaction['source_owner']=='review_required'
