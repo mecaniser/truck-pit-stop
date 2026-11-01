@@ -47,3 +47,7 @@ Frontend56 focused tests across8 files and TypeScript pass. Tax UI/CSV warnings 
 Draft PR750: https://github.com/mecaniser/truck-pit-stop/pull/750. Current-main1c9c5cb9 integrated inc6864b11; board-only conflict preserved both histories. Independent merge delta GO:186 backend and64 frontend regression tests pass; migration197 unchanged and prior actual PostgreSQL gate remains applicable. Independent final reporting delta20/20 tests GO. Final build (shared controls, TypeScript, Vite) and baseline-aware lint across18 changed frontend files pass atc6864b11. Required GitHub Quality gates run41357782091 is in progress, not passing evidence yet.
 
 No source or customer mutation has occurred. Current review output remains fictional/not issued. Live customer sign-in, bounded fresh evidence, source ownership cutover and actual invoice-specific readiness are distinct outstanding acceptance steps; never submit a payment to prove a control works.
+
+## Required CI failure and correction
+
+Run41357867159 at0a077784 failed the existing empty-dashboard query-budget assertion (13queries versus12) while598 checks passed in that partition. Commit259fad50 skips the unnecessary collection Payment query when no collection payment IDs exist. The original budget is unchanged; owner29 dashboard and collection reporting checks pass. Independent delta review and a new exact-head CI result remain required.
