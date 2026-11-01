@@ -3045,3 +3045,6 @@ DB-151 implementation handoff (2026-11-01): Architecture contract accepted; Back
 
 
 DB-151 local implementation / IN REVIEW (2026-11-01), Frontend & UX accountable: real read model and canonical destination adapters implemented under [contract](contracts/db151-shop-work-overview.md). Independent QA/Security GO after cache/freshness/navigation corrections;239 final frontend tests,76 owner backend tests, TypeScript/build pass. Actual signed-in busy/quiet/empty, exact-record, return, ordering handoff, source-incomplete, tenant-switch and390px/day/night checks pass. Destination caches now isolate authorization identity and maintain scoped optimistic updates. [Verification and screenshots](verification/DB151_SHOP_WORK_OVERVIEW.md). Draft PR/protected CI pending; no merge/deploy, not Done.
+
+
+DB-151 / DRAFT PR PUBLISHED: [PR736](https://github.com/mecaniser/truck-pit-stop/pull/736), `codex/shop-work-overview`; current main integrated without conflicts. Local read-model76 tests, independent frontend239 tests, TypeScript/build, changed-source lint23files and signed-in runtime acceptance pass. Independent Security/QA GO. Protected CI pending; Frontend & UX accountable. No merge/deploy and not Done.

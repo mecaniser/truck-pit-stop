@@ -61,7 +61,7 @@ Owner backend verification:76 passed across Overview, incumbent WIP and parts op
 
 ## Release status
 
-Local implementation verified. Independent QA and Security GO for implementation and supplied local-runtime evidence; final TypeScript and production build passed. Changed-source lint passed across23 files. Draft PR and protected CI recorded after publication. Not merged or deployed. Production acceptance remains a release gate; local serving is not production delivery.
+Local implementation verified. Independent QA and Security GO for implementation and supplied local-runtime evidence; final TypeScript and production build passed. Changed-source lint passed across23 files. [Draft PR736](https://github.com/mecaniser/truck-pit-stop/pull/736) is published; protected CI is pending. No merge/deployment authorization or action. Not merged or deployed. Production acceptance remains a release gate; local serving is not production delivery.
 
 ## Integrated checkout receipt
 
