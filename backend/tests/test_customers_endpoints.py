@@ -183,3 +183,41 @@ async def test_deleting_a_truck_that_does_not_exist_still_says_not_found(client,
     )
     assert r.status_code == 404
     assert r.json()["detail"] == "Vehicle not found"
+
+
+@pytest.mark.asyncio
+async def test_balance_http_surfaces_separate_ets_and_ignore_legacy_projection(client, staff_token, db_session):
+    from decimal import Decimal
+    from uuid import UUID, uuid4
+    from app.db.models.vehicle import Vehicle
+    from app.db.models.invoice import Invoice, InvoiceStatus
+    from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+    from app.db.models.payment import Payment, PaymentStatus, PaymentMethod
+    from app.db.models.customer_read_model import CustomerReadModel
+    token, tid = staff_token
+    tenant_id = UUID(tid)
+    customer = Customer(id=uuid4(), tenant_id=tenant_id, first_name='Paid', last_name='Fleet', company_name='Paid Fleet', email='paid-fleet@example.com')
+    vehicle = Vehicle(id=uuid4(), tenant_id=tenant_id, customer_id=customer.id, make='Volvo', model='VNR')
+    db_session.add_all([customer, vehicle]); await db_session.flush()
+    for historical in (False, True):
+        ro = RepairOrder(id=uuid4(), tenant_id=tenant_id, customer_id=customer.id, vehicle_id=vehicle.id,
+                         order_number=uuid4().hex, status=RepairOrderStatus.INVOICED)
+        db_session.add(ro); await db_session.flush()
+        invoice = Invoice(id=uuid4(), tenant_id=tenant_id, repair_order_id=ro.id, invoice_number=uuid4().hex,
+                          subtotal=Decimal('100'), total_amount=Decimal('103.50'), service_fee_amount=Decimal('3.50'),
+                          status=InvoiceStatus.SENT if historical else InvoiceStatus.PAID,
+                          source='easy_truck_shop_import' if historical else None)
+        db_session.add(invoice); await db_session.flush()
+        if not historical:
+            db_session.add(Payment(id=uuid4(), tenant_id=tenant_id, invoice_id=invoice.id, payment_number=uuid4().hex,
+                                   amount=Decimal('100'), status=PaymentStatus.COMPLETED, method=PaymentMethod.CASH))
+    db_session.add(CustomerReadModel(customer_id=customer.id, tenant_id=tenant_id, invoice_total=Decimal('207'), payment_total=Decimal('100'), vehicle_count=1))
+    await db_session.commit()
+    headers = {'Authorization': f'Bearer {token}'}
+    for url in [f'{CUSTOMERS_URL}/{customer.id}', f'{CUSTOMERS_URL}?sort=balance&order=desc', f'{CUSTOMERS_URL}/{customer.id}/vehicles']:
+        response = await client.get(url, headers=headers)
+        assert response.status_code == 200, response.text
+        body = response.json()
+        row = body[0] if isinstance(body, list) else body
+        assert Decimal(str(row['balance'])) == 0
+        assert Decimal(str(row['legacy_ets_balance'])) == Decimal('103.50')

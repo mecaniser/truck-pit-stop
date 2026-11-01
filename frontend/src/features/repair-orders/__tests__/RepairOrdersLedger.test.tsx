@@ -119,6 +119,29 @@ const renderLedger = (overrides: Partial<React.ComponentProps<typeof RepairOrder
 }
 
 describe('DB-035 Stage 4 Repair Orders presentation', () => {
+  it.each([
+    ['paid', '0.00', 'Paid in ETS', '$0.00'],
+    ['partially_paid', '434.41', 'Partially paid in ETS', '$434.41'],
+    ['unpaid', '534.41', 'Unpaid in ETS', '$534.41'],
+    ['unverified', null, 'Payment unverified', 'Unavailable'],
+  ] as const)('shows shared invoice %s status and remaining without changing work status', (status, remaining, label, formatted) => {
+    renderLedger({ rows: [{ ...rows[0], status: 'Completed', importedBilling: {
+      source: 'easy_truck_shop_import', evidence_basis: 'ets_source_snapshot', reconciliation_status: 'not_checked',
+      payment_status: status, recorded_remaining_amount: remaining, shared_invoice: true,
+      review_required: status === 'unverified', review_reasons: [],
+    } }] })
+    expect(within(screen.getByRole('article', { name: 'Repair order RO-1017' })).getByText('Completed')).toBeVisible()
+    expect(screen.getByText(label)).toBeVisible()
+    expect(within(screen.getByLabelText('ETS invoice payment status')).getByText(formatted)).toBeVisible()
+    expect(screen.getByText('Shared ETS invoice')).toBeVisible()
+  })
+
+  it('does not introduce ETS payment labels for native rows', () => {
+    renderLedger()
+    expect(screen.queryByLabelText('ETS invoice payment status')).not.toBeInTheDocument()
+    expect(screen.getByText('$4,280.50')).toBeVisible()
+  })
+
   it('can hide a mixed native/imported aggregate without hiding individual order amounts', () => {
     renderLedger({ hideValueSummary: true, valueSummary: { order_count: 63, order_value: '102345.67' } })
     expect(screen.queryByText('Filtered order value')).not.toBeInTheDocument()

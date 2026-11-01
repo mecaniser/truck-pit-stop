@@ -35,11 +35,24 @@ describe('Imported ETS billing', () => {
   ] as const)('shows %s imported payment evidence separately from work state', async (status, completed, remaining, label) => {
     render(<ImportedBillingDetails billing={{ ...paid, payment_status: status, recorded_completed_amount: completed, recorded_remaining_amount: remaining }} />)
     expect(screen.getByText(label)).toBeVisible()
+    expect(screen.getByText(importedMoney(remaining))).toBeVisible()
     expect(screen.queryByText('Imported ETS records · QuickBooks not checked')).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'ETS billing details' }))
     expect(screen.getByText('Imported ETS records · QuickBooks not checked')).toBeVisible()
     expect(screen.getAllByText(importedMoney(completed)).length).toBeGreaterThan(0)
     expect(screen.getAllByText(importedMoney(remaining)).length).toBeGreaterThan(0)
+  })
+  it('explains the shared whole-job balance without requiring the popover', async () => {
+    render(<ImportedBillingDetails billing={{ ...paid, shared_invoice: true, invoice_repair_order_number: 'ETS-9001-123-2' }} />)
+    expect(screen.getByText('Shared ETS invoice · whole-job balance')).toBeVisible()
+    expect(screen.getByText('$0.00')).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'ETS billing details' }))
+    expect(screen.getByText('Invoice belongs to ETS-9001-123-2; shown across related operations, counted once.')).toBeVisible()
+  })
+  it('does not expose stale remaining amounts when status is unverified', () => {
+    render(<ImportedBillingDetails billing={{ ...paid, payment_status: 'unverified' }} />)
+    expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
+    expect(screen.getByText('Unavailable')).toBeVisible()
   })
   it('labels an observed source snapshot without claiming QuickBooks reconciliation', async () => {
     get.mockResolvedValue({ data: { ...paid, evidence_basis: 'ets_source_snapshot', observed_at: '2026-10-18T20:00:00Z' } })
@@ -63,7 +76,7 @@ describe('Imported ETS billing', () => {
     render(<ImportedBillingDetails />)
     expect(screen.getByText('Payment unverified')).toBeVisible()
     await userEvent.click(screen.getByRole('button', { name: 'ETS billing details' }))
-    expect(screen.getAllByText('Unavailable')).toHaveLength(2)
+    expect(screen.getAllByText('Unavailable')).toHaveLength(3)
     expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
   })
   it('opens by keyboard and dismisses with Escape or an outside click', async () => {
@@ -78,7 +91,8 @@ describe('Imported ETS billing', () => {
     expect(trigger).toHaveFocus()
     await user.click(trigger)
     await user.click(screen.getByRole('button', { name: 'Outside' }))
-    expect(screen.queryByText('Remaining')).not.toBeInTheDocument()
+    expect(screen.queryByText('ETS invoice on file · no new invoice')).not.toBeInTheDocument()
+    expect(screen.getByText('Remaining')).toBeVisible()
   })
   it('fetches the read-only scoped endpoint and holds on error', async () => {
     get.mockRejectedValue(new Error('503'))

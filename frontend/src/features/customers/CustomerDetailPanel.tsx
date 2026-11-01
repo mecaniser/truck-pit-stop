@@ -25,6 +25,11 @@ import CustomerBusinessSettings from './CustomerBusinessSettings'
 import CustomerAccount from './CustomerAccount'
 import './customer-workspace.css'
 
+function EtsHistoryBalance({ value }: { value?: string }) {
+  if (value == null || numericBalance(value) === 0) return null
+  return <span className="db-customer-ets-balance">ETS history {numericBalance(value) < 0 ? 'credit ' : ''}{balanceAmountLabel(value)} · unverified</span>
+}
+
 /**
  * A customer's record: summary, contacts, notes, trucks, and service history.
  *
@@ -156,9 +161,10 @@ export default function CustomerDetailPanel({
           {selectedCustomer.email && <a href={`mailto:${selectedCustomer.email}`}><Mail aria-hidden="true" /><span>{selectedCustomer.email}</span></a>}
           {!selectedCustomer.phone && !selectedCustomer.email && <span className="text-gray-500">No company contact details</span>}
         </div>
-        <div className="db-customer-record__balance" aria-label="Listed balance, mixed sources">
-          <span>{numericBalance(selectedCustomer.balance) < 0 ? 'Listed credit' : 'Listed balance'} · mixed sources</span>
+        <div className="db-customer-record__balance" aria-label="Customer balance due">
+          <span>{numericBalance(selectedCustomer.balance) < 0 ? 'Credit' : 'Balance due'} · DieselBridge</span>
           <strong className={balanceLabelClass(selectedCustomer.balance)}>{selectedCustomer.balance != null ? balanceAmountLabel(selectedCustomer.balance) : '—'}</strong>
+          <EtsHistoryBalance value={selectedCustomer.legacy_ets_balance} />
         </div>
       </div>
       {onCreateOrder && <div className="db-customer-record__work-actions"><button ref={createOrderButtonRef} type="button" onClick={onCreateOrder}><Plus aria-hidden="true" />New repair order</button></div>}
@@ -458,8 +464,11 @@ export default function CustomerDetailPanel({
                               {vehicle.color && <span>{vehicle.color}</span>}
                             </span>
                           </div>
-                          <span className={`db-customer-trucks__balance ${balanceLabelClass(vehicle.balance)}`}>
-                            {vehicle.balance != null ? balanceLabel(vehicle.balance) : '—'}
+                          <span className="db-customer-trucks__balances">
+                            <span className={`db-customer-trucks__balance ${balanceLabelClass(vehicle.balance)}`}>
+                              {vehicle.balance != null ? balanceLabel(vehicle.balance) : '—'}
+                            </span>
+                            <EtsHistoryBalance value={vehicle.legacy_ets_balance} />
                           </span>
                           <ChevronRight aria-hidden="true" />
                         </button>
@@ -549,17 +558,16 @@ export default function CustomerDetailPanel({
                           )}
                         </div>
                       </div>
-                      {vehicleBalance !== 0 && (
-                        <div className="mt-3 border-t border-gray-200 pt-2">
+                      <div className="mt-3 border-t border-gray-200 pt-2">
                           <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
                             vehicleBalance > 0
                               ? 'bg-amber-100 text-amber-800'
-                              : 'bg-emerald-100 text-emerald-800'
+                              : vehicleBalance < 0 ? 'bg-emerald-100 text-emerald-800' : 'text-gray-600'
                           }`}>
-                            {balanceLabel(vehicle.balance)}
+                            {vehicle.balance != null ? balanceLabel(vehicle.balance) : '—'}
                           </span>
-                        </div>
-                      )}
+                          <EtsHistoryBalance value={vehicle.legacy_ets_balance} />
+                      </div>
                     </button>
                     <div className="db-customer-truck-card__actions absolute right-2 top-2 flex items-center gap-1 opacity-100 xl:opacity-0 xl:transition-opacity xl:group-hover:opacity-100 xl:group-focus-within:opacity-100">
                       <button

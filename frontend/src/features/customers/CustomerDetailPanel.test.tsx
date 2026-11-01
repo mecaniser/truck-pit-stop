@@ -20,7 +20,7 @@ const openTruck = vi.fn()
 function Harness({ record = customer, ...overrides }: Partial<CustomerDetailPanelProps> & { record?: Customer }) {
   const [tab, setTab] = useState<'overview' | 'history'>('overview')
   const [expanded, setExpanded] = useState<string | null>(null)
-  const groups = useCustomerVehicleGroups({ selectedCustomer: record, customerVehicles: [truck], vehicleRelationshipSearch: '', vehicleRelationshipFilter: 'all' })
+  const groups = useCustomerVehicleGroups({ selectedCustomer: record, customerVehicles: overrides.customerVehicles ?? [truck], vehicleRelationshipSearch: '', vehicleRelationshipFilter: 'all' })
   return <CustomerDetailPanel selectedCustomer={record} detailTab={tab} setDetailTab={setTab} expandedHistoryId={expanded} setExpandedHistoryId={setExpanded}
     HistoryRoDetail={() => <p>Saved repair details</p>} customerVehicles={[truck]} customerContacts={[]}
     customerHistory={{ stats: { total_orders: 1, completed_orders: 1, lifetime_spend: '145', lifetime_savings: '0' }, items: [{ id: 'ro-a', order_number: 'RO-101', status: 'completed', total_cost: '145', savings: '0', vehicle_year: 2021, vehicle_make: 'Freightliner', vehicle_model: 'Cascadia', vehicle_unit_number: 'C-001', created_at: null, work_completed_at: null }] }}
@@ -82,11 +82,30 @@ describe('compact customer record', () => {
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
     expect(api.put).not.toHaveBeenCalled()
   })
-  it.each([['-50', 'Listed credit', '$50.00'], [undefined, 'Listed balance', '—']])('keeps %s balance meaning without calling mixed-source data collectible', (balance, label, amount) => {
+  it.each([['-50', 'Credit', '$50.00'], [undefined, 'Balance due', '—']])('keeps %s balance meaning', (balance, label, amount) => {
     setup({ selectedCustomer: { ...customer, balance } as Customer })
-    const balanceRegion = screen.getByLabelText('Listed balance, mixed sources')
+    const balanceRegion = screen.getByLabelText('Customer balance due')
     expect(balanceRegion).toHaveTextContent(label!)
     expect(balanceRegion).toHaveTextContent(amount!)
+  })
+  it.each(['list', 'grid'] as const)('separates historical ETS amounts from paid cash balances in %s view', (vehiclesViewMode) => {
+    setup({ vehiclesViewMode, selectedCustomer: { ...customer, balance: '0.00', legacy_ets_balance: '2058.12' },
+      customerVehicles: [{ ...truck, balance: '0.00', legacy_ets_balance: '968.91' }] })
+    expect(screen.getByLabelText('Customer balance due')).toHaveTextContent('Balance due · DieselBridge$0.00')
+    expect(screen.getByText('ETS history $2,058.12 · unverified')).toBeVisible()
+    expect(screen.getByText('ETS history $968.91 · unverified')).toBeVisible()
+    expect(screen.getAllByText('$0.00')).toHaveLength(2)
+    expect(screen.queryByText(/^Due /)).not.toBeInTheDocument()
+  })
+  it.each(['list', 'grid'] as const)('preserves genuine debt separately from ETS history in %s view', (vehiclesViewMode) => {
+    setup({ vehiclesViewMode, customerVehicles: [{ ...truck, legacy_ets_balance: '968.91' }] })
+    expect(screen.getByText('Due $145.00')).toBeVisible()
+    expect(screen.getByText('ETS history $968.91 · unverified')).toBeVisible()
+  })
+  it.each(['list', 'grid'] as const)('keeps unknown equipment balance unknown in %s view', (vehiclesViewMode) => {
+    setup({ vehiclesViewMode, customerVehicles: [{ ...truck, balance: undefined, legacy_ets_balance: '968.91' }] })
+    expect(within(screen.getByRole('button', { name: /Open .*C-001/ })).getByText('—')).toBeVisible()
+    expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
   })
   it('shows history load failure with retry instead of fabricated empty totals', () => {
     const retry = vi.fn()
