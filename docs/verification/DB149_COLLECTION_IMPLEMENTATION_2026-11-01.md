@@ -51,3 +51,9 @@ No source or customer mutation has occurred. Current review output remains ficti
 ## Required CI failure and correction
 
 Run41357867159 at0a077784 failed the existing empty-dashboard query-budget assertion (13queries versus12) while598 checks passed in that partition. Commit259fad50 skips the unnecessary collection Payment query when no collection payment IDs exist. The original budget is unchanged; owner29 dashboard and collection reporting checks pass. Independent delta review and a new exact-head CI result remain required.
+
+## Full-suite compatibility gate
+
+Run41358449881 atc8ac2239 passed migration graph, critical backend, frontend checks, full frontend and Playwright smoke. Full backend failed12 with4600pass: older owner-attested cash/tax audit snapshot compatibility, incomplete customer/invoice notification/import guard fixtures and cash-report row contract mocks. Backend owner is investigating; independent Security is checking the legacy hash correction. This is a release blocker, not dismissed as informational. No production actions occurred.
+
+Correctioncdb2e7d3: owner119 tests across failing files plusDB149 pass. Independent security65 checks pass for persisted pre142/null compatibility and explicit nonNULL/changed lineage hash denial. Current canonical digest stays unchanged; legacy omission of source_debt_handoff_id is allowed only whileNULL, retaining ancestor snapshot/tax/money/tenant checks. Other fixes align ordinary fixture attributes and cash-report4-column row contract. Fresh full CI pending; no release claim.
