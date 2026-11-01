@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/stores/authStore'
 import type { User } from '@/types'
 import { importedBillingWarnings } from '../importedBillingWarnings'
+import { ImportedBillingSourceLink } from '../ImportedBillingSourceLink'
 import { ImportedBillingDetails } from '../ImportedBillingDetails'
 import { importedMoney, useImportedBilling, type ImportedBilling } from '../importedBilling'
 
@@ -216,6 +217,31 @@ describe('Imported ETS billing', () => {
     expect(screen.getByRole('tooltip')).toHaveTextContent('ETS reported a billing review reason: future review code.')
     expect(importedBillingWarnings(paid)).toEqual([])
     expect(importedBillingWarnings({ ...paid, review_required: true })).toContain('ETS flagged this invoice for review without providing a reason.')
+  })
+  it('keeps source verification outside the tooltip and keyboard reachable', async () => {
+    const user=userEvent.setup()
+    render(<ImportedBillingDetails billing={{...paid, review_required:true, source_invoice_url:'https://easytruck.shop/shop1/services/007001/invoice'}} />)
+    const trigger=screen.getByRole('button',{name:'ETS billing details'})
+    const link=screen.getByRole('link',{name:/Verify in ETS/})
+    expect(link).toHaveAttribute('target','_blank')
+    expect(link).toHaveAttribute('rel','noopener noreferrer')
+    expect(link).toHaveAttribute('href','https://easytruck.shop/shop1/services/007001/invoice')
+    await user.tab()
+    expect(trigger).toHaveFocus()
+    await user.tab()
+    expect(link).toHaveFocus()
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+  it.each(['https://evil.example/shop1/services/1/invoice','javascript:alert(1)','https://easytruck.shop/../services/1/invoice','https://easytruck.shop/shop1/services/1/invoice?token=secret','https://evil@easytruck.shop/shop1/services/1/invoice'])('does not render unsafe source link %s', url => {
+    render(<ImportedBillingSourceLink url={url}/>)
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+  })
+  it('hides source links during failure or healthy summary', () => {
+    const billing={...paid,source_invoice_url:'https://easytruck.shop/shop1/services/7001/invoice'}
+    const view=render(<ImportedBillingDetails billing={billing}/>)
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    view.rerender(<ImportedBillingDetails billing={{...billing,review_required:true}} failed/>)
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
   })
   it('does not fetch for a native order', () => {
     renderQuery('native-order', false)

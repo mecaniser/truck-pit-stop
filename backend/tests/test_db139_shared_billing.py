@@ -72,6 +72,7 @@ async def test_shared_status_offpage_owner_and_no_financial_writes(db_session, m
         assert len(statements) <= 4
         for order in orders:
             result = await billing.load_imported_billing(db_session, order)
+            assert result.source_invoice_url == 'https://easytruck.shop/shop1/services/7001/invoice'
             assert result.payment_status == status
             assert result.invoice_id == inv.id and result.shared_invoice
             assert result.invoice_repair_order_id == inv.repair_order_id
@@ -197,6 +198,7 @@ async def test_identity_conflict_preserves_only_direct_partial_invoice_owner(db_
             assert result.recorded_remaining_amount == Decimal("434.40")
         else:
             # Even the sibling whose identity agrees with owner cannot borrow.
+            assert result.source_invoice_url is None
             assert result.invoice_id is None and result.total_amount is None
             assert result.payment_status == "unverified"
             assert result.recorded_remaining_amount is None
@@ -229,6 +231,7 @@ async def test_direct_owner_preservation_never_bypasses_other_holds(db_session, 
         assert result.payment_status == "unverified" and result.recorded_remaining_amount is None
         assert not result.shared_invoice
         if conflict not in {"refund", "stale"} or order.id != inv.repair_order_id:
+            assert result.source_invoice_url is None
             assert result.invoice_id is None and result.total_amount is None
 
 

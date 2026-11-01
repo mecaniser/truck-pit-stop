@@ -11,6 +11,7 @@ class ImportedBillingResponse(BaseModel):
     source: Literal["easy_truck_shop_import"] = "easy_truck_shop_import"
     invoice_id: UUID | None = None
     invoice_number: str | None = None
+    source_invoice_url: str | None = None
     invoice_repair_order_id: UUID | None = None
     invoice_repair_order_number: str | None = None
     shared_invoice: bool = False
