@@ -123,7 +123,6 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     ['paid', '0.00', 'Paid in ETS', '$0.00'],
     ['partially_paid', '434.41', 'Partially paid in ETS', '$434.41'],
     ['unpaid', '534.41', 'Unpaid in ETS', '$534.41'],
-    ['unverified', null, 'Payment unverified', 'Unavailable'],
   ] as const)('shows shared invoice %s status and remaining without changing work status', (status, remaining, label, formatted) => {
     renderLedger({ rows: [{ ...rows[0], status: 'Completed', importedBilling: {
       source: 'easy_truck_shop_import', evidence_basis: 'ets_source_snapshot', reconciliation_status: 'not_checked',
@@ -134,6 +133,20 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(screen.getByText(label)).toBeVisible()
     expect(within(screen.getByLabelText('ETS invoice payment status')).getByText(formatted)).toBeVisible()
     expect(screen.getByText('Shared ETS invoice')).toBeVisible()
+  })
+
+  it('keeps unknown invoice total without duplicate unavailable labels and exposes an accessible warning', () => {
+    renderLedger({ rows: [{ ...rows[0], total: 'Unavailable', importedBilling: {
+      source: 'easy_truck_shop_import', evidence_basis: 'imported_records', reconciliation_status: 'not_checked',
+      payment_status: 'unverified', recorded_remaining_amount: null, shared_invoice: false,
+      review_required: true, review_reasons: [],
+    } }] })
+    const row = screen.getByRole('article', { name: 'Repair order RO-1017' })
+    expect(within(row).getAllByText('Unavailable')).toHaveLength(1)
+    expect(within(row).queryByText('Payment unverified')).not.toBeInTheDocument()
+    expect(within(row).queryByText('Remaining')).not.toBeInTheDocument()
+    expect(within(row).getByRole('img', { name: 'Review needed · Payment unverified' })).toBeVisible()
+    expect(within(row).getByRole('button', { name: 'Open repair order RO-1017' })).toBeVisible()
   })
 
   it('does not introduce ETS payment labels for native rows', () => {
