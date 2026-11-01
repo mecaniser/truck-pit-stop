@@ -2815,35 +2815,135 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item {
+  position: relative;
+  height: 44px;
+  padding-block: 8px;
+  border-radius: 10px;
   color: var(--workspace-muted) !important;
   border-color: transparent !important;
   background-color: transparent !important;
+  box-shadow: none;
 }
 
-.db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item[aria-current='page'] {
-  color: var(--personal-accent-foreground) !important;
-  border-color: color-mix(in srgb, var(--personal-accent-400) 62%, var(--workspace-border)) !important;
-  background-color: var(--personal-accent-600) !important;
-  box-shadow: 0 5px 12px -8px color-mix(in srgb, var(--personal-accent-900, var(--product-navy-900)) 68%, transparent) !important;
+/* Transparent secondary tabs and colored glyphs share one moving marker. */
+.db-my-shop-nav-marker { display: none; }
+.db-presentation-new .db-my-shop-navigation { position: relative; }
+.db-presentation-new .db-my-shop-nav-glyph {
+  display: grid;
+  place-items: center;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--shop-icon-color);
+  background: transparent;
+  box-shadow: none;
 }
+.db-presentation-new .db-my-shop-nav-glyph > svg { width: 17px; height: 17px; stroke-width: 1.7; }
+:is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='inventory'] { --shop-icon-color: #dfc8a0; }
+:is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='purchasing'] { --shop-icon-color: #88c9ff; }
+:is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='services'] { --shop-icon-color: #9cdbbf; }
+:is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='labor-book-time'] { --shop-icon-color: #ffac77; }
+:is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='mechanics'] { --shop-icon-color: #c3b2ff; }
+:is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='analytics'] { --shop-icon-color: #85d5df; }
+
+/* Keep the unbacked icon strokes legible on light surfaces. */
+.db-presentation-new[data-appearance-mode='light'] :is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='inventory'] { --shop-icon-color: #80602c; }
+.db-presentation-new[data-appearance-mode='light'] :is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='purchasing'] { --shop-icon-color: #24679a; }
+.db-presentation-new[data-appearance-mode='light'] :is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='services'] { --shop-icon-color: #287450; }
+.db-presentation-new[data-appearance-mode='light'] :is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='labor-book-time'] { --shop-icon-color: #a45425; }
+.db-presentation-new[data-appearance-mode='light'] :is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='mechanics'] { --shop-icon-color: #7354a2; }
+.db-presentation-new[data-appearance-mode='light'] :is(.db-my-shop-nav-item, .db-my-shop-nav-marker)[data-shop-section='analytics'] { --shop-icon-color: #237580; }
+.db-presentation-new .db-my-shop-nav-cluster-secondary .db-my-shop-nav-glyph {
+  flex-basis: 24px;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
+.db-presentation-new .db-my-shop-nav-cluster-secondary .db-my-shop-nav-glyph > svg { width: 16px; height: 16px; }
+.db-presentation-new[data-appearance-mode='high_contrast'] .db-my-shop-nav-glyph {
+  color: var(--workspace-text);
+  box-shadow: none;
+}
+@media (forced-colors: active) {
+  .db-presentation-new .db-my-shop-nav-glyph {
+    color: ButtonText;
+    background: transparent;
+    box-shadow: none;
+  }
+}
+.db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item[aria-current='page'] {
+  color: var(--workspace-text) !important;
+}
+.db-presentation-new .db-my-shop-nav-marker {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 2px;
+  background: var(--shop-icon-color);
+  pointer-events: none;
+  opacity: 0;
+}
+.db-presentation-new .db-my-shop-nav-marker[data-animate='true'] {
+  transition: transform 240ms cubic-bezier(.16, 1, .3, 1), width 240ms cubic-bezier(.16, 1, .3, 1);
+}
+.db-presentation-new[data-appearance-mode='high_contrast'] .db-my-shop-nav-marker { background: var(--workspace-text); }
+@media (prefers-reduced-motion: reduce) {
+  .db-presentation-new .db-my-shop-nav-marker[data-animate='true'] { transition: none; }
+}
+@media (forced-colors: active) {
+  .db-presentation-new .db-my-shop-nav-marker { background: Highlight; forced-color-adjust: none; }
+}
+
+/* Activation-only, purpose-specific strokes; no idle or hover loops. */
+@media (prefers-reduced-motion: no-preference) {
+  .db-presentation-new [data-shop-section='inventory'] .db-my-shop-nav-glyph[data-activated='true'] > svg {
+    animation: db-shop-stack 480ms cubic-bezier(.16, 1, .3, 1) both;
+  }
+  .db-presentation-new [data-shop-section='purchasing'] .db-my-shop-nav-glyph[data-activated='true'] > svg {
+    animation: db-shop-cart 480ms cubic-bezier(.16, 1, .3, 1) both;
+  }
+  .db-presentation-new [data-shop-section='services'] .db-my-shop-nav-glyph[data-activated='true'] > svg path:is(:nth-of-type(2), :nth-of-type(3)) {
+    stroke-dasharray: 6;
+    animation: db-shop-write 540ms ease-out both;
+  }
+  .db-presentation-new [data-shop-section='services'] .db-my-shop-nav-glyph[data-activated='true'] > svg path:nth-of-type(3) { animation-delay: 120ms; }
+  .db-presentation-new [data-shop-section='labor-book-time'] .db-my-shop-nav-glyph[data-activated='true'] > svg path {
+    transform-origin: 12px 12px;
+    animation: db-shop-clock 600ms cubic-bezier(.16, 1, .3, 1) both;
+  }
+  .db-presentation-new [data-shop-section='mechanics'] .db-my-shop-nav-glyph[data-activated='true'] > svg {
+    transform-origin: 50% 50%;
+    animation: db-shop-wrench 480ms ease-out both;
+  }
+  .db-presentation-new [data-shop-section='analytics'] .db-my-shop-nav-glyph[data-activated='true'] > svg path:not(:first-child) {
+    transform-origin: center bottom;
+    animation: db-shop-chart 480ms cubic-bezier(.16, 1, .3, 1) both;
+  }
+}
+@keyframes db-shop-stack { 0% { transform: translateY(-3px) scale(.9); } 65% { transform: translateY(1px) scale(1); } 100% { transform: none; } }
+@keyframes db-shop-cart { 0% { transform: translateX(-7px) rotate(-8deg); } 100% { transform: none; } }
+@keyframes db-shop-write { 0% { stroke-dashoffset: 6; } 100% { stroke-dashoffset: 0; } }
+@keyframes db-shop-clock { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes db-shop-wrench { 0%, 100% { transform: rotate(0deg); } 45% { transform: rotate(-24deg); } }
+@keyframes db-shop-chart { from { transform: scaleY(.35); } to { transform: scaleY(1); } }
 
 .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item:focus-visible {
   outline: 2px solid var(--personal-accent-400);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item:not([aria-current='page']):hover {
-    color: var(--personal-accent-500) !important;
-    border-color: color-mix(in srgb, var(--personal-accent-500) 34%, var(--border-subtle)) !important;
-    background-color: color-mix(in srgb, var(--personal-accent-500) 8%, var(--surface-raised)) !important;
+    color: var(--workspace-text) !important;
+
   }
 }
 
 @container my-shop (max-width: 41.999rem) {
   .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item {
-    border-color: var(--workspace-border) !important;
-    background-color: var(--surface-raised) !important;
+    justify-content: flex-start;
   }
 }
 
@@ -7383,13 +7483,14 @@ html.customer-portal-active {
 .db-parts-workbench__supplier-name,.db-parts-workbench__source-name { overflow-wrap:anywhere; }
 
 
-/* DB-150: one shared 12px gutter separates navigation from the working
-   surface. Page content adds no second inset or enclosing frame. */
-.db-presentation-new .db-staff-main:has(.db-parts-workbench, .db-customers-workspace, .db-repair-orders-workspace--new, .db-shop-work-new) {
+/* DB-150 / DB-043: the shared My Shop shell owns its 12px gutter,
+   including while a section loads or fails. Switching sections must not move
+   the breadcrumb or navigation. Page content adds no second inset. */
+.db-presentation-new .db-staff-main:has(.db-my-shop-workspace, .db-customers-workspace, .db-repair-orders-workspace--new, .db-shop-work-new) {
   padding-inline: 12px !important;
   padding-top: 12px !important;
 }
-.db-presentation-new .db-staff-main:has(.db-parts-workbench, .db-customers-workspace, .db-repair-orders-workspace--new, .db-shop-work-new) > .db-staff-content {
+.db-presentation-new .db-staff-main:has(.db-my-shop-workspace, .db-customers-workspace, .db-repair-orders-workspace--new, .db-shop-work-new) > .db-staff-content {
   padding-inline: 0;
 }
 .db-presentation-new .db-parts-workbench { padding: 0; }
@@ -7414,7 +7515,7 @@ html.customer-portal-active {
 }
 
 @media (min-width: 960px) {
-  .db-presentation-new .db-staff-main:has(.db-parts-workbench, .db-customers-workspace, .db-repair-orders-workspace--new, .db-shop-work-new) { padding-bottom: 0 !important; }
+  .db-presentation-new .db-staff-main:has(.db-my-shop-workspace, .db-customers-workspace, .db-repair-orders-workspace--new, .db-shop-work-new) { padding-bottom: 0 !important; }
 }
 
 
