@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, Paperclip, X } from 'lucide-react'
@@ -174,29 +175,29 @@ function ScopedReceipts({ vehicleId, recordId, recordVersion, voidedAt, provider
     }
   }
   return <div className="db-receipts">
-    <button ref={disclosure} type="button" aria-expanded={open} aria-label={`Receipts for ${providerName}`} disabled={busy} onClick={() => setOpen(value => !value)}><ChevronRight size={14} className={open ? 'rotate-90' : ''} aria-hidden="true" /><Paperclip size={14} aria-hidden="true" />Receipts</button>
+    <ControlButton controlKind="action" ref={disclosure} type="button" aria-expanded={open} aria-label={`Receipts for ${providerName}`} disabled={busy} onClick={() => setOpen(value => !value)}><ChevronRight size={14} className={open ? 'rotate-90' : ''} aria-hidden="true" /><Paperclip size={14} aria-hidden="true" />Receipts</ControlButton>
     {open && <div className="db-receipts__panel">
       {message && <p role="status">{message}</p>}
       {query.isPending && <p role="status">Loading receipts…</p>}
-      {query.isError && <div role="alert">Could not load receipts. <button type="button" disabled={busy || query.isFetching} onClick={() => void query.refetch()}>Retry receipts</button></div>}
+      {query.isError && <div role="alert">Could not load receipts. <ControlButton type="button" disabled={busy || query.isFetching} onClick={() => void query.refetch()}>Retry receipts</ControlButton></div>}
       {readOnly && <p className="db-receipts__muted">Restore this service to upload, download or change receipts.</p>}
       <div className="db-receipts__toolbar">
         <input ref={fileInput} className="db-receipts__file-input" type="file" aria-label="Receipt file" accept={RECEIPT_ACCEPT} disabled={unavailable || readOnly || Boolean(action) || atCapacity} onChange={event => {
           const selected = event.target.files?.[0] ?? null
           setFile(selected); attempt.current = null; setConflict(false); setLatest(null); setMessage(''); setError(selected ? receiptFileError(selected) ?? '' : '')
         }} />
-        <button type="button" disabled={unavailable || readOnly || Boolean(action) || atCapacity} onClick={() => fileInput.current?.click()}>Choose file</button>
+        <ControlButton type="button" disabled={unavailable || readOnly || Boolean(action) || atCapacity} onClick={() => fileInput.current?.click()}>Choose file</ControlButton>
         <span className="db-receipts__muted">PDF, JPEG, PNG · 5 MiB max{data ? ` · ${data.retained_count}/${data.max_files} retained` : ''}</span>
         <label className="db-receipts__toggle"><input type="checkbox" checked={includeRemoved} disabled={busy || Boolean(action)} onChange={event => setIncludeRemoved(event.target.checked)} />Show removed</label>
       </div>
       {atCapacity && <p className="db-receipts__muted">Receipt storage is full. Removed files still count and can be restored.</p>}
       {file && <div className="db-receipts__selection"><span>{file.name} · {receiptSize(file.size)}</span><div className="db-receipts__buttons">
-        <button type="button" disabled={busy || Boolean(action)} onClick={() => { clearFile(); attempt.current = null; setError(''); setConflict(false); setLatest(null) }}>Clear selection</button>
-        <button type="button" disabled={unavailable || readOnly || Boolean(action) || conflict || Boolean(receiptFileError(file))} onClick={() => void save(null)}>{busy && !action ? 'Uploading…' : attempt.current?.kind === 'upload' ? 'Retry upload' : 'Upload receipt'}</button>
+        <ControlButton type="button" disabled={busy || Boolean(action)} onClick={() => { clearFile(); attempt.current = null; setError(''); setConflict(false); setLatest(null) }}>Clear selection</ControlButton>
+        <ControlButton type="button" disabled={unavailable || readOnly || Boolean(action) || conflict || Boolean(receiptFileError(file))} onClick={() => void save(null)}>{busy && !action ? 'Uploading…' : attempt.current?.kind === 'upload' ? 'Retry upload' : 'Upload receipt'}</ControlButton>
       </div></div>}
       {error && <p role="alert">{error}</p>}
-      {conflict && <button type="button" disabled={busy || query.isFetching} onClick={() => void refresh()}>Refresh receipts / record</button>}
-      {latest && <div className="db-receipts__latest"><p>Latest service version {latest.record_version}{latest.record_voided_at ? ' · Voided' : ''}. Your selection is kept.</p><button type="button" disabled={busy || Boolean(latest.record_voided_at)} onClick={adoptLatest}>Use refreshed version</button></div>}
+      {conflict && <ControlButton type="button" disabled={busy || query.isFetching} onClick={() => void refresh()}>Refresh receipts / record</ControlButton>}
+      {latest && <div className="db-receipts__latest"><p>Latest service version {latest.record_version}{latest.record_voided_at ? ' · Voided' : ''}. Your selection is kept.</p><ControlButton type="button" disabled={busy || Boolean(latest.record_voided_at)} onClick={adoptLatest}>Use refreshed version</ControlButton></div>}
       {data && <>
         {!data.items.length && <p className="db-receipts__muted">{data.retained_count ? 'No active receipts. Check Show removed.' : 'No receipts attached.'}</p>}
         <ul className="db-receipts__list">{data.items.map(receipt => <li key={receipt.id}>
@@ -205,20 +206,20 @@ function ScopedReceipts({ vehicleId, recordId, recordVersion, voidedAt, provider
             <p className="db-receipts__muted">Uploaded by {receipt.created_by_name || 'Staff'} · <time dateTime={receipt.created_at}>{dateLabel(receipt.created_at)}</time></p>
             {receipt.removed_at && <p className="db-receipts__muted">Removed by {receipt.updated_by_name || 'Staff'} · <time dateTime={receipt.removed_at}>{dateLabel(receipt.removed_at)}</time></p>}
           </div><div className="db-receipts__buttons">
-            {receipt.removed_at ? <button type="button" aria-label={`Restore ${receipt.filename}`} disabled={unavailable || readOnly || Boolean(action)} onClick={event => { const next: Action = { kind: 'restore', receipt }; beginAction(next, event.currentTarget); void save(next) }}>Restore</button> : <>
-              <button type="button" aria-label={`Download ${receipt.filename}`} disabled={unavailable || readOnly || Boolean(action)} onClick={() => void download(receipt)}>Download</button>
-              <button type="button" aria-label={`Remove ${receipt.filename}`} disabled={unavailable || readOnly || Boolean(action)} onClick={event => beginAction({ kind: 'remove', receipt }, event.currentTarget)}>Remove</button>
+            {receipt.removed_at ? <ControlButton type="button" aria-label={`Restore ${receipt.filename}`} disabled={unavailable || readOnly || Boolean(action)} onClick={event => { const next: Action = { kind: 'restore', receipt }; beginAction(next, event.currentTarget); void save(next) }}>Restore</ControlButton> : <>
+              <ControlButton type="button" aria-label={`Download ${receipt.filename}`} disabled={unavailable || readOnly || Boolean(action)} onClick={() => void download(receipt)}>Download</ControlButton>
+              <ControlButton type="button" aria-label={`Remove ${receipt.filename}`} disabled={unavailable || readOnly || Boolean(action)} onClick={event => beginAction({ kind: 'remove', receipt }, event.currentTarget)}>Remove</ControlButton>
             </>}
           </div></div>
           <ReceiptHistory receipt={receipt} path={path} prefix={prefix} isCurrent={isCurrent} />
         </li>)}</ul>
       </>}
-      {action && query.isError && <button type="button" disabled={busy} onClick={closeAction}>Close receipt action</button>}
+      {action && query.isError && <ControlButton type="button" disabled={busy} onClick={closeAction}>Close receipt action</ControlButton>}
       {action && !query.isError && <form aria-label={action.kind === 'remove' ? 'Remove receipt' : 'Restore receipt'} className="db-receipts__confirmation" onSubmit={event => { event.preventDefault(); void save() }} onKeyDown={event => { if (event.key === 'Escape' && !busy) { event.preventDefault(); event.stopPropagation(); closeAction() } }}>
-        <div className="db-receipts__toolbar"><strong>{action.kind === 'remove' ? 'Remove receipt' : 'Restore receipt'}</strong><button className="db-receipts__close" type="button" aria-label="Close receipt action" disabled={busy} onClick={closeAction}><X size={16} aria-hidden="true" /></button></div>
+        <div className="db-receipts__toolbar"><strong>{action.kind === 'remove' ? 'Remove receipt' : 'Restore receipt'}</strong><ControlButton controlKind="icon" className="db-receipts__close" type="button" aria-label="Close receipt action" disabled={busy} onClick={closeAction}><X size={16} aria-hidden="true" /></ControlButton></div>
         <p>{action.receipt.filename}</p>
         {action.kind === 'remove' && <><p className="db-receipts__muted">The file and its history are kept. You can restore it from Show removed.</p><label>Removal reason<textarea ref={reasonInput} required maxLength={500} rows={2} value={reason} disabled={busy} onChange={event => { const next = event.target.value; setReason(next); if (next.trim() !== attempt.current?.reason) attempt.current = null }} /></label></>}
-        <div className="db-receipts__buttons"><button type="button" disabled={busy} onClick={closeAction}>Cancel</button><button type="submit" disabled={unavailable || readOnly || conflict}>{busy ? 'Saving…' : action.kind === 'remove' ? 'Remove receipt' : 'Retry restore'}</button></div>
+        <div className="db-receipts__buttons"><ControlButton type="button" disabled={busy} onClick={closeAction}>Cancel</ControlButton><ControlButton type="submit" disabled={unavailable || readOnly || conflict}>{busy ? 'Saving…' : action.kind === 'remove' ? 'Remove receipt' : 'Retry restore'}</ControlButton></div>
       </form>}
     </div>}
   </div>
@@ -238,12 +239,12 @@ function ReceiptHistory({ receipt, path, prefix, isCurrent }: { receipt: Receipt
       return result
     },
   })
-  return <div className="db-receipts__history"><button type="button" aria-expanded={open} aria-label={`Receipt history for ${receipt.filename}`} onClick={() => setOpen(value => !value)}><ChevronRight size={14} className={open ? 'rotate-90' : ''} aria-hidden="true" />History</button>
+  return <div className="db-receipts__history"><ControlButton controlKind="action" type="button" aria-expanded={open} aria-label={`Receipt history for ${receipt.filename}`} onClick={() => setOpen(value => !value)}><ChevronRight size={14} className={open ? 'rotate-90' : ''} aria-hidden="true" />History</ControlButton>
     {open && <>
       {history.isPending && <p role="status">Loading receipt history…</p>}
-      {history.isError && <div role="alert">Could not load receipt history. <button type="button" onClick={() => void history.refetch()}>Retry receipt history</button></div>}
+      {history.isError && <div role="alert">Could not load receipt history. <ControlButton type="button" onClick={() => void history.refetch()}>Retry receipt history</ControlButton></div>}
       {history.data && !history.isError && <><ol>{history.data.items.map(event => <li key={event.id}><p><strong>{{ upload: 'Uploaded', remove: 'Removed', restore: 'Restored' }[event.action]}</strong> · {event.actor_name || 'Staff'} · <time dateTime={event.created_at}>{dateLabel(event.created_at)}</time></p>{event.reason && <p>{event.reason}</p>}</li>)}</ol>
-        {(page > 0 || history.data.has_more) && <div className="db-receipts__buttons"><button type="button" disabled={!page || history.isFetching} onClick={() => setPage(value => value - 1)}>Newer changes</button><button type="button" disabled={!history.data.has_more || history.isFetching} onClick={() => setPage(value => value + 1)}>Older changes</button></div>}
+        {(page > 0 || history.data.has_more) && <div className="db-receipts__buttons"><ControlButton type="button" disabled={!page || history.isFetching} onClick={() => setPage(value => value - 1)}>Newer changes</ControlButton><ControlButton type="button" disabled={!history.data.has_more || history.isFetching} onClick={() => setPage(value => value + 1)}>Older changes</ControlButton></div>}
       </>}
     </>}
   </div>

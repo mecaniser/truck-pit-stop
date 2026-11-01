@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { CheckCircle, FileText } from 'lucide-react'
 import type { Quote, RepairOrderHistoryEvent } from '@/types'
 import { AuthorizationHistoryList, AuthorizationSummary } from '@/features/quotes/AuthorizationSummary'
@@ -99,23 +100,23 @@ export default function CustomerAuthorizationCard({
 
       {!showDeclineForm ? (
         <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-          <button
+          <ControlButton
             type="button"
             onClick={onApprove}
             disabled={approvePending || declinePending}
-            className="flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 font-medium text-white transition-colors hover:bg-violet-500 disabled:bg-gray-500"
+            className="flex  flex-1 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4  font-medium text-white transition-colors hover:bg-violet-500 disabled:bg-gray-500"
           >
             <CheckCircle className="h-5 w-5" />
             {approvePending ? 'Authorizing…' : authorizationDecisionLabel(quote)}
-          </button>
-          <button
+          </ControlButton>
+          <ControlButton
             type="button"
             onClick={onShowDecline}
             disabled={approvePending || declinePending}
-            className="min-h-[44px] flex-1 rounded-xl border border-white/20 bg-white/10 px-4 py-3 font-medium text-white transition-colors hover:bg-white/20 disabled:opacity-50"
+            className=" flex-1 rounded-xl border border-white/20 bg-white/10 px-4  font-medium text-white transition-colors hover:bg-white/20 disabled:opacity-50"
           >
             Decline this revision
-          </button>
+          </ControlButton>
         </div>
       ) : (
         <div className="mt-4 space-y-3">
@@ -131,22 +132,22 @@ export default function CustomerAuthorizationCard({
             rows={3}
           />
           <div className="flex flex-col gap-3 sm:flex-row">
-            <button
+            <ControlButton
               type="button"
               onClick={onDecline}
               disabled={declinePending || approvePending}
-              className="min-h-[44px] flex-1 rounded-xl bg-violet-600 px-4 py-3 font-medium text-white transition-colors hover:bg-violet-500 disabled:bg-gray-500"
+              className=" flex-1 rounded-xl bg-violet-600 px-4  font-medium text-white transition-colors hover:bg-violet-500 disabled:bg-gray-500"
             >
               {declinePending ? 'Sending…' : 'Confirm decline'}
-            </button>
-            <button
+            </ControlButton>
+            <ControlButton
               type="button"
               onClick={onCancelDecline}
               disabled={declinePending}
-              className="min-h-[44px] rounded-xl bg-white/10 px-4 py-3 font-medium text-white transition-colors hover:bg-white/20 disabled:opacity-50"
+              className=" rounded-xl bg-white/10 px-4  font-medium text-white transition-colors hover:bg-white/20 disabled:opacity-50"
             >
               Keep reviewing
-            </button>
+            </ControlButton>
           </div>
         </div>
       )}

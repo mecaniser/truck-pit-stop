@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useId, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown } from 'lucide-react'
@@ -57,7 +58,7 @@ export default function IncidentHistory({ incidentId }: { incidentId: string }) 
 
   return (
     <div style={{ marginTop: 8 }}>
-      <button
+      <ControlButton controlKind="action"
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
@@ -70,7 +71,7 @@ export default function IncidentHistory({ incidentId }: { incidentId: string }) 
       >
         {open ? 'Hide history' : 'Show history'}
         <ChevronDown size={13} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s ease' }} />
-      </button>
+      </ControlButton>
       {open && (
         events.isLoading ? (
           <div style={{ marginTop: 6, fontSize: 12, color: 'var(--muted)' }}><Spinner size="xs" /> Loading history…</div>

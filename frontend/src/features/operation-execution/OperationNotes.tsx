@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, MessageSquare, Plus } from 'lucide-react'
@@ -81,17 +82,17 @@ function ScopedOperationNotes({ orderId, laborId, description, expanded = true, 
   const muted = dark ? 'text-zinc-400' : 'text-slate-500'
   const control = `db-operation-note-action inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2 text-xs font-semibold disabled:opacity-50 ${dark ? 'text-zinc-200 hover:bg-zinc-800' : 'text-slate-700 hover:bg-slate-100'}`
   return <section aria-label={`Operation notes: ${description}`} className={`db-operation-notes min-w-0 px-2 pb-1 ${dark ? 'text-zinc-100' : 'text-slate-800'}`}>
-    <button type="button" aria-expanded={open} aria-controls={`operation-notes-${laborId}`} className={control}
+    <ControlButton controlKind="action" type="button" aria-expanded={open} aria-controls={`operation-notes-${laborId}`} className={control}
       onClick={() => setOpen(value => !value)}>
       <ChevronRight size={14} className={open ? 'rotate-90' : ''} /><MessageSquare size={14} />Operation notes
       {query.data && !query.isError && query.data.items.length > 0 && <span className="tabular-nums">{query.data.items.length}</span>}
       {draft && !open && <span className={muted}>Draft</span>}
-    </button>
+    </ControlButton>
     {open && <div id={`operation-notes-${laborId}`} className="min-w-0 space-y-2 pt-1">
       <p className={`text-xs ${muted}`}>Shop only · Not shown on invoices or customer views.</p>
       {query.isPending && <p role="status" className="text-xs">Loading operation notes…</p>}
       {query.isError && <div role="alert" className={`text-xs ${dark ? 'text-red-300' : 'text-red-700'}`}>
-        Operation notes could not be refreshed. <button type="button" className={`${control} underline`} disabled={query.isFetching} onClick={() => void query.refetch()}>{query.isFetching ? 'Retrying…' : 'Retry notes'}</button>
+        Operation notes could not be refreshed. <ControlButton type="button" className={`${control} underline`} disabled={query.isFetching} onClick={() => void query.refetch()}>{query.isFetching ? 'Retrying…' : 'Retry notes'}</ControlButton>
       </div>}
       {query.data && !query.isError && <>
         {query.data.items.length === 0 && !query.isError && <p className={`text-xs ${muted}`}>No operation notes yet.</p>}
@@ -105,7 +106,7 @@ function ScopedOperationNotes({ orderId, laborId, description, expanded = true, 
           </li>)}
         </ul>
         {!query.data.can_add && <p className={`text-xs ${muted}`}>{query.data.read_only_reason || 'Operation notes are read-only.'}</p>}
-        {!composing && query.data.can_add && <button type="button" className={control} disabled={query.isError || query.isFetching} onClick={() => { setComposing(true); setSaved(false) }}><Plus size={14} />Add operation note</button>}
+        {!composing && query.data.can_add && <ControlButton type="button" className={control} disabled={query.isError || query.isFetching} onClick={() => { setComposing(true); setSaved(false) }}><Plus size={14} />Add operation note</ControlButton>}
       </>}
       {composing && <form className="space-y-2" onSubmit={event => { event.preventDefault(); submit() }}>
         <label htmlFor={`operation-note-draft-${laborId}`} className="block break-words text-xs font-semibold [overflow-wrap:anywhere]">Note for {description}</label>
@@ -116,11 +117,11 @@ function ScopedOperationNotes({ orderId, laborId, description, expanded = true, 
         {error && <p role="alert" className={`break-words text-xs ${dark ? 'text-red-300' : 'text-red-700'}`}>{error}</p>}
         <div className="flex flex-wrap items-center justify-end gap-2">
           <span className={`mr-auto text-xs tabular-nums ${muted}`}>{draft.length}/4000</span>
-          <button type="button" disabled={mutation.isPending} className={control} onClick={() => { setComposing(false); setDraft(''); setError(''); attempt.current = null }}>Cancel</button>
-          <button type="submit" disabled={mutation.isPending || !draft.trim() || !canSubmit || query.isError || query.isFetching}
+          <ControlButton type="button" disabled={mutation.isPending} className={control} onClick={() => { setComposing(false); setDraft(''); setError(''); attempt.current = null }}>Cancel</ControlButton>
+          <ControlButton type="submit" disabled={mutation.isPending || !draft.trim() || !canSubmit || query.isError || query.isFetching}
             className="db-operation-note-action inline-flex items-center justify-center whitespace-nowrap rounded-md bg-orange-600 px-3 text-xs font-semibold text-white hover:bg-orange-700 disabled:opacity-50">
             {mutation.isPending ? 'Saving…' : error ? 'Retry save' : 'Save note'}
-          </button>
+          </ControlButton>
         </div>
       </form>}
       {saved && <p role="status" className={`text-xs ${dark ? 'text-emerald-300' : 'text-emerald-700'}`}>Operation note saved.</p>}

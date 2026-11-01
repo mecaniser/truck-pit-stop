@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useEffect, useState, Fragment } from 'react'
 import { Spinner, LoadingLine } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
@@ -255,13 +256,13 @@ export default function SuppliersPage() {
                           <p className="text-base font-semibold text-white">{supplier.name}</p>
                         </div>
                         {isAdmin && (
-                          <button
+                          <ControlButton
                             type="button"
                             onClick={() => setEditing(supplier)}
                             className="text-amber-200 hover:text-white text-xs font-semibold"
                           >
                             Edit
-                          </button>
+                          </ControlButton>
                         )}
                       </div>
                       <div className="space-y-1 text-xs text-gray-200">
@@ -290,7 +291,7 @@ export default function SuppliersPage() {
                         <div className="flex items-center gap-2 text-xs">
                           {confirmingDeleteId === supplier.id ? (
                             <>
-                              <button
+                              <ControlButton
                                 type="button"
                                 onClick={() => handleDelete(supplier)}
                                 className="inline-flex items-center gap-1 font-semibold text-red-200 hover:text-red-100"
@@ -298,19 +299,19 @@ export default function SuppliersPage() {
                               >
                                 <Trash2 className="w-4 h-4" />
                                 Confirm
-                              </button>
-                              <button
+                              </ControlButton>
+                              <ControlButton
                                 type="button"
                                 onClick={() => setConfirmingDeleteId(null)}
                                 className="inline-flex items-center gap-1 font-semibold text-gray-300 hover:text-white"
                                 disabled={deleteMutation.isPending}
                               >
                                 Cancel
-                              </button>
+                              </ControlButton>
                             </>
                           ) : (
                             <>
-                              <button
+                              <ControlButton
                                 type="button"
                                 onClick={() => {
                                   setEditing(supplier)
@@ -320,8 +321,8 @@ export default function SuppliersPage() {
                               >
                                 <Pencil className="w-4 h-4" />
                                 Edit
-                              </button>
-                              <button
+                              </ControlButton>
+                              <ControlButton
                                 type="button"
                                 onClick={() => setConfirmingDeleteId(supplier.id)}
                                 className="inline-flex items-center gap-1 font-semibold text-red-200 hover:text-red-100"
@@ -329,7 +330,7 @@ export default function SuppliersPage() {
                               >
                                 <Trash2 className="w-4 h-4" />
                                 Delete
-                              </button>
+                              </ControlButton>
                             </>
                           )}
                         </div>
@@ -380,7 +381,7 @@ export default function SuppliersPage() {
                                         : 'translate-x-0 opacity-100'
                                     }`}
                                   >
-                                    <button
+                                    <ControlButton
                                       type="button"
                                       onClick={() => {
                                         setEditing(supplier)
@@ -390,8 +391,8 @@ export default function SuppliersPage() {
                                     >
                                       <Pencil className="w-4 h-4" />
                                       Edit
-                                    </button>
-                                    <button
+                                    </ControlButton>
+                                    <ControlButton
                                       type="button"
                                       onClick={() => setConfirmingDeleteId(supplier.id)}
                                       className="inline-flex items-center gap-1 text-xs font-semibold text-red-200 hover:text-red-100"
@@ -399,7 +400,7 @@ export default function SuppliersPage() {
                                     >
                                       <Trash2 className="w-4 h-4" />
                                       Delete
-                                    </button>
+                                    </ControlButton>
                                   </div>
                                   <div
                                     className={`absolute right-0 top-0 flex items-center gap-2 transition-all duration-200 ease-out ${
@@ -408,7 +409,7 @@ export default function SuppliersPage() {
                                         : 'translate-x-full opacity-0 pointer-events-none'
                                     }`}
                                   >
-                                    <button
+                                    <ControlButton
                                       type="button"
                                       onClick={() => handleDelete(supplier)}
                                       className="inline-flex items-center gap-1 text-xs font-semibold text-red-200 hover:text-red-100"
@@ -416,15 +417,15 @@ export default function SuppliersPage() {
                                     >
                                       <Trash2 className="w-4 h-4" />
                                       Confirm
-                                    </button>
-                                    <button
+                                    </ControlButton>
+                                    <ControlButton
                                       type="button"
                                       onClick={() => setConfirmingDeleteId(null)}
                                       className="inline-flex items-center gap-1 text-xs font-semibold text-gray-300 hover:text-white"
                                       disabled={deleteMutation.isPending}
                                     >
                                       Cancel
-                                    </button>
+                                    </ControlButton>
                                   </div>
                                 </div>
                               </td>
@@ -470,13 +471,13 @@ export default function SuppliersPage() {
                           )}
                         </div>
                         {isAdmin && (
-                          <button
+                          <ControlButton
                             type="button"
                             onClick={() => setEditing(supplier)}
                             className="text-amber-200 hover:text-white text-xs font-semibold"
                           >
                             Edit
-                          </button>
+                          </ControlButton>
                         )}
                       </div>
                       <div className="mt-3 space-y-1 text-sm text-gray-200">
@@ -502,7 +503,7 @@ export default function SuppliersPage() {
                                 : 'translate-x-0 opacity-100'
                             }`}
                           >
-                            <button
+                            <ControlButton
                               type="button"
                               onClick={() => {
                                 setEditing(supplier)
@@ -512,8 +513,8 @@ export default function SuppliersPage() {
                             >
                               <Pencil className="w-4 h-4" />
                               Edit
-                            </button>
-                            <button
+                            </ControlButton>
+                            <ControlButton
                               type="button"
                               onClick={() => setConfirmingDeleteId(supplier.id)}
                               className="inline-flex items-center gap-1 font-semibold text-red-200 hover:text-red-100"
@@ -521,7 +522,7 @@ export default function SuppliersPage() {
                             >
                               <Trash2 className="w-4 h-4" />
                               Delete
-                            </button>
+                            </ControlButton>
                           </div>
                           <div
                             className={`absolute right-0 top-0 flex items-center gap-2 transition-all duration-200 ease-out ${
@@ -530,7 +531,7 @@ export default function SuppliersPage() {
                                 : 'translate-x-full opacity-0 pointer-events-none'
                             }`}
                           >
-                            <button
+                            <ControlButton
                               type="button"
                               onClick={() => handleDelete(supplier)}
                               className="inline-flex items-center gap-1 font-semibold text-red-200 hover:text-red-100"
@@ -538,15 +539,15 @@ export default function SuppliersPage() {
                             >
                               <Trash2 className="w-4 h-4" />
                               Confirm
-                            </button>
-                            <button
+                            </ControlButton>
+                            <ControlButton
                               type="button"
                               onClick={() => setConfirmingDeleteId(null)}
                               className="inline-flex items-center gap-1 font-semibold text-gray-200 hover:text-white"
                               disabled={deleteMutation.isPending}
                             >
                               Cancel
-                            </button>
+                            </ControlButton>
                           </div>
                         </div>
                       )}
@@ -575,11 +576,11 @@ export default function SuppliersPage() {
         <form className="space-y-3" onSubmit={handleSubmit(onSubmit)}>
           <label className="text-sm text-gray-700 space-y-1 block">
             <span>Name</span>
-            <input
+            <ControlInput
               type="text"
               {...register('name')}
               disabled={!isAdmin || isSaving}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="w-full rounded-lg border border-gray-200 px-3  text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
               placeholder="Acme Parts Co."
             />
             {errors.name && <p className="text-xs text-red-600">{errors.name.message}</p>}
@@ -588,23 +589,23 @@ export default function SuppliersPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="text-sm text-gray-700 space-y-1 block">
               <span>Primary contact</span>
-              <input
+              <ControlInput
                 type="text"
                 {...register('contact_name')}
                 disabled={!isAdmin || isSaving}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full rounded-lg border border-gray-200 px-3  text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
                 placeholder="Contact name"
               />
             </label>
 
             <label className="text-sm text-gray-700 space-y-1 block">
               <span>Phone</span>
-              <input
+              <ControlInput
                 type="tel"
                 {...register('phone')}
                 onChange={(e) => setValue('phone', formatUSPhone(e.target.value), { shouldValidate: true })}
                 disabled={!isAdmin || isSaving}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full rounded-lg border border-gray-200 px-3  text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
                 placeholder="(555) 123-4567"
               />
             </label>
@@ -649,26 +650,26 @@ export default function SuppliersPage() {
             )}
             <div className="space-y-2">
               {editing && (
-                <button
+                <ControlButton
                   type="button"
                   onClick={() => {
                     setEditing(null)
                     reset({ name: '', address: '', phone: '', contact_name: '', notes: '' })
                   }}
-                  className="w-full px-4 py-2 rounded-lg text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200"
+                  className="w-full px-4  rounded-lg text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200"
                   disabled={isSaving}
                 >
                   Cancel edit
-                </button>
+                </ControlButton>
               )}
-              <button
+              <ControlButton
                 type="submit"
                 disabled={!isAdmin || isSaving}
-                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-60"
+                className="w-full inline-flex items-center justify-center gap-2 px-4  rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-60"
               >
                 {(isSaving || deleteMutation.isPending) && <Spinner size="xs" />}
                 {editing ? 'Save changes' : 'Add supplier'}
-              </button>
+              </ControlButton>
             </div>
           </div>
         </form>

@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -140,7 +141,7 @@ export function MotiveConnectionCard({ companyId, trucks = [], canManageGrants =
   const eligibleTrucks = scopedTrucks.isError ? [] : scopedTrucks.data?.items ?? []
   return <section className="motive-card" aria-label="Motive connection">
     <div className="motive-heading"><div><h3>Motive</h3><p>Connect your fleet’s truck devices.</p></div><span className="motive-status">{connection.isPending ? 'Loading…' : data ? catchingUp ? 'Sync in progress' : labels[data.status] : 'Unavailable'}</span></div>
-    {connection.isError && <div role="alert"><p>{motiveError(connection.error)}</p><button className="dbtn dbtn-ghost" onClick={() => connection.refetch()}>Retry</button></div>}
+    {connection.isError && <div role="alert"><p>{motiveError(connection.error)}</p><ControlButton className="dbtn dbtn-ghost" onClick={() => connection.refetch()}>Retry</ControlButton></div>}
     {data && !connection.isError && <>
       {data.status === 'not_configured' && <p>We’re completing Motive setup. You can connect this company once access is ready.</p>}
       {data.company && <p>Connected company: <strong>{data.company.name || data.company.id}</strong></p>}
@@ -149,22 +150,22 @@ export function MotiveConnectionCard({ companyId, trucks = [], canManageGrants =
       {connected && <p className="motive-muted">Last successful sync: {time(data.last_sync_at)}</p>}
       {data.last_reconciled_at && <p className="motive-muted">Last complete reconciliation: {time(data.last_reconciled_at)}</p>}
       <div className="motive-actions">
-        {(data.status !== 'connected' && data.status !== 'provider_error') && <button className="dbtn dbtn-yellow" disabled={!data.can_connect || busy} onClick={() => { setNotice(''); connect.mutate() }}><Link2 size={16} />{data.status === 'reconnect_required' ? 'Reconnect Motive' : 'Connect Motive'}</button>}
+        {(data.status !== 'connected' && data.status !== 'provider_error') && <ControlButton className="dbtn dbtn-yellow" disabled={!data.can_connect || busy} onClick={() => { setNotice(''); connect.mutate() }}><Link2 size={16} />{data.status === 'reconnect_required' ? 'Reconnect Motive' : 'Connect Motive'}</ControlButton>}
         {connected && <>
-          <button className="dbtn dbtn-ghost" disabled={busy || coolingDown || !data.configured || data.status === 'reconnect_required'} onClick={() => { setNotice(''); sync.mutate() }}><RefreshCw size={16} />{sync.isPending ? 'Syncing…' : 'Sync now'}</button>
-          <button className="dbtn dbtn-ghost" disabled={busy} onClick={() => setConfirmDisconnect(true)}><Unplug size={16} />Disconnect</button>
+          <ControlButton className="dbtn dbtn-ghost" disabled={busy || coolingDown || !data.configured || data.status === 'reconnect_required'} onClick={() => { setNotice(''); sync.mutate() }}><RefreshCw size={16} />{sync.isPending ? 'Syncing…' : 'Sync now'}</ControlButton>
+          <ControlButton className="dbtn dbtn-ghost" disabled={busy} onClick={() => setConfirmDisconnect(true)}><Unplug size={16} />Disconnect</ControlButton>
         </>}
       </div>
       {connected && coolingDown && <p className="motive-muted">Next sync available: {time(data.next_sync_at ?? null)}</p>}
       {confirmDisconnect && <div className="motive-confirm" role="group" aria-label="Confirm disconnect">
         <p>Disconnect Motive for this company? New data collection will stop. Saved readings follow the data retention policy.</p>
-        <div className="motive-actions"><button className="dbtn dbtn-ghost" disabled={busy} onClick={() => setConfirmDisconnect(false)}>Keep connected</button><button className="dbtn dbtn-yellow" disabled={busy} onClick={() => disconnect.mutate()}>Confirm disconnect</button></div>
+        <div className="motive-actions"><ControlButton className="dbtn dbtn-ghost" disabled={busy} onClick={() => setConfirmDisconnect(false)}>Keep connected</ControlButton><ControlButton className="dbtn dbtn-yellow" disabled={busy} onClick={() => disconnect.mutate()}>Confirm disconnect</ControlButton></div>
       </div>}
       {data.last_sync_counts && <p className="motive-muted">{data.last_sync_counts.discovered} Motive vehicles · {data.last_sync_counts.mapped} mapped · {data.last_sync_counts.updated} readings updated{data.last_sync_counts.rejected > 0 ? ` · ${data.last_sync_counts.rejected} readings unavailable` : ''}</p>}
       {connected && <div className="motive-trucks"><h4>Truck mappings</h4><p>Review the Motive vehicles and their installed devices, then confirm each truck match.</p>
-        {scopedTrucks.isError && <p role="alert">Could not load this company’s trucks. <button className="dbtn dbtn-ghost" onClick={() => scopedTrucks.refetch()}>Retry mapping options</button></p>}
+        {scopedTrucks.isError && <p role="alert">Could not load this company’s trucks. <ControlButton className="dbtn dbtn-ghost" onClick={() => scopedTrucks.refetch()}>Retry mapping options</ControlButton></p>}
         {vehicles.isPending && <p role="status">Loading trucks…</p>}
-        {vehicles.isError && <p role="alert">Could not load Motive trucks. <button className="dbtn dbtn-ghost" onClick={() => vehicles.refetch()}>Retry trucks</button></p>}
+        {vehicles.isError && <p role="alert">Could not load Motive trucks. <ControlButton className="dbtn dbtn-ghost" onClick={() => vehicles.refetch()}>Retry trucks</ControlButton></p>}
         {vehicles.data?.items.length === 0 && <p>No Motive vehicles discovered yet. Select Sync now to retrieve them.</p>}
         {!vehicles.isError && vehicles.data?.items.map((remote) => {
           const selected = selections[remote.provider_vehicle_id] ?? remote.vehicle_id ?? ''
@@ -179,7 +180,7 @@ export function MotiveConnectionCard({ companyId, trucks = [], canManageGrants =
               <option value="">Not mapped</option>
               {remote.vehicle_id && !eligibleTrucks.some((truck) => truck.id === remote.vehicle_id) && <option value={remote.vehicle_id} disabled>Previous truck (no longer in fleet)</option>}
               {eligibleTrucks.map((truck) => <option key={truck.id} value={truck.id}>{truck.unit_number || truck.vin || truck.id}{remote.match_candidates.some((candidate) => candidate.vehicle_id === truck.id) ? ' (VIN match)' : ''}</option>)}
-            </PlatformSelect><button className="dbtn dbtn-ghost" disabled={busy || scopedTrucks.isError || scopedTrucks.isPending || selected === (remote.vehicle_id ?? '')} onClick={() => binding.mutate({ remoteId: remote.provider_vehicle_id, vehicleId: selected })}>Save mapping</button></div>
+            </PlatformSelect><ControlButton className="dbtn dbtn-ghost" disabled={busy || scopedTrucks.isError || scopedTrucks.isPending || selected === (remote.vehicle_id ?? '')} onClick={() => binding.mutate({ remoteId: remote.provider_vehicle_id, vehicleId: selected })}>Save mapping</ControlButton></div>
             {remote.vehicle_id && !eligibleTrucks.some((truck) => truck.id === remote.vehicle_id) && <p role="alert">The mapped truck is no longer in this fleet. Remove or update its mapping.</p>}
             {remote.vehicle_id && <p className="motive-muted">{reading
               ? <>Motive location · {freshness} · {time(reading.location.located_at)}<br />{reading.location.lat.toFixed(5)}, {reading.location.lng.toFixed(5)}{reading.speed_mph != null ? ` · Recorded speed: ${reading.speed_mph.toFixed(1)} mph` : ''}</>
@@ -228,7 +229,7 @@ export function MotiveIntegrationWorkspace({ initialCompanyId = '' }: { initialC
       <option value="">Choose a company</option>{options.map((company) => <option key={company.id} value={company.id}>{company.company_name}</option>)}
     </PlatformSelect>
     {companies.isPending && <p role="status">Loading companies…</p>}
-    {companies.isError && <p role="alert">Could not load your authorized companies. <button className="dbtn dbtn-ghost" onClick={() => companies.refetch()}>Retry</button></p>}
+    {companies.isError && <p role="alert">Could not load your authorized companies. <ControlButton className="dbtn dbtn-ghost" onClick={() => companies.refetch()}>Retry</ControlButton></p>}
     {companies.isSuccess && options.length === 0 && <p>{user?.role === 'customer' ? 'Ask your shop administrator to grant Motive access for your fleet company.' : 'Enable a fleet company before connecting Motive.'}</p>}
     {selected && <MotiveConnectionCard key={`${user?.id}:${user?.tenant_id}:${selected}`} companyId={selected} canManageGrants={Boolean(options.find((c) => c.id === selected)?.can_manage_grants)} />}
   </div>

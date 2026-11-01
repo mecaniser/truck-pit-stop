@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useCookieSessionBootstrap } from './lib/useCookieSessionBootstrap'
 import SessionRecoveryNotice from './components/SessionRecoveryNotice'
 import StaleDeployNotice from './components/StaleDeployNotice'
@@ -241,16 +242,16 @@ export function AppToaster() {
               {icon}
               <span className="min-w-0 whitespace-normal break-words">{message}</span>
               {t.type !== 'loading' && (
-                <button
+                <ControlButton controlKind="icon"
                   type="button"
                   onClick={() => toast.dismiss(t.id)}
                   aria-label="Dismiss notification"
-                  className="ml-1 -mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+                  className="ml-1 -mr-1 flex  w-8 shrink-0 items-center justify-center rounded-md text-white/60 hover:text-white hover:bg-white/10 transition-colors"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
-                </button>
+                </ControlButton>
               )}
             </>
           )}

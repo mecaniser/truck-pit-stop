@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { Fragment, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowRight, ChevronLeft, ChevronRight, ChevronDown, Clock3, MapPin, Route, Truck } from 'lucide-react'
@@ -85,14 +86,14 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
       <div className="trips-toolbar">
       <div className="trips-time-controls">
         <div className="trips-presets" role="group" aria-label="Trip time span">
-          {([['day', 'Day', 'Today'], ['week', 'Week', 'Monday through today'], ['month', 'Month', 'This month through today'], ['year', 'Year', 'This year through today']] as const).map(([preset, label, title]) => <button key={preset} type="button" title={title} aria-pressed={filters.preset === preset} onClick={() => update({ ...tripPreset(preset), preset })}>{label}</button>)}
-          <button type="button" aria-pressed={custom} aria-expanded={custom} aria-controls="trip-custom-dates" onClick={() => update({ preset: 'custom' })}>Custom</button>
+          {([['day', 'Day', 'Today'], ['week', 'Week', 'Monday through today'], ['month', 'Month', 'This month through today'], ['year', 'Year', 'This year through today']] as const).map(([preset, label, title]) => <ControlButton controlKind="action" key={preset} type="button" title={title} aria-pressed={filters.preset === preset} onClick={() => update({ ...tripPreset(preset), preset })}>{label}</ControlButton>)}
+          <ControlButton controlKind="action" type="button" aria-pressed={custom} aria-expanded={custom} aria-controls="trip-custom-dates" onClick={() => update({ preset: 'custom' })}>Custom</ControlButton>
         </div>
         {navigable && <div className="trips-period-navigation" role="group" aria-label={`${navigable === 'week' ? 'Week' : 'Month'} navigation`}>
-          <button type="button" aria-label={`Previous ${navigable}`} title={`Previous ${navigable}`} onClick={() => update(adjacentTripPeriod(navigable, filters.start, -1))}><ChevronLeft size={18} /></button>
+          <ControlButton controlKind="icon" type="button" aria-label={`Previous ${navigable}`} title={`Previous ${navigable}`} onClick={() => update(adjacentTripPeriod(navigable, filters.start, -1))}><ChevronLeft size={18} /></ControlButton>
           <span aria-live="polite">{periodDate(filters.start)} – {periodDate(filters.end)}</span>
-          <button type="button" aria-label={`Next ${navigable}`} title={`Next ${navigable}`} disabled={atCurrentPeriod} onClick={() => update(adjacentTripPeriod(navigable, filters.start, 1))}><ChevronRight size={18} /></button>
-          <button type="button" className="trips-current-period" disabled={atCurrentPeriod} onClick={() => update(tripPreset(navigable))}>This {navigable}</button>
+          <ControlButton controlKind="icon" type="button" aria-label={`Next ${navigable}`} title={`Next ${navigable}`} disabled={atCurrentPeriod} onClick={() => update(adjacentTripPeriod(navigable, filters.start, 1))}><ChevronRight size={18} /></ControlButton>
+          <ControlButton type="button" className="trips-current-period" disabled={atCurrentPeriod} onClick={() => update(tripPreset(navigable))}>This {navigable}</ControlButton>
         </div>}
         {custom && <div className="trips-custom-dates" id="trip-custom-dates">
           <DatePicker compact showDayDetails={false} id="trip-start" label="From" value={filters.start} max={validDay(filters.end) ? filters.end : undefined} onChange={start => update({ start, preset: 'custom' })} />
@@ -104,19 +105,19 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
         <span className="trips-range-label">{day(`${filters.start}T12:00:00`)} – {day(`${filters.end}T12:00:00`)}</span>
       </div>
       </div>
-      {!validDates ? <p role="alert">Choose a date range of up to 366 days.</p> : !validVehicle ? <p role="alert">This truck is no longer available. Select another truck.</p> : query.isPending ? <p role="status" className="trips-message">Loading trips…</p> : query.isError ? <div role="alert" className="trips-message">Trips could not be loaded. <button type="button" className="dbtn" onClick={() => query.refetch()}>Retry</button></div> : query.data && <>
+      {!validDates ? <p role="alert">Choose a date range of up to 366 days.</p> : !validVehicle ? <p role="alert">This truck is no longer available. Select another truck.</p> : query.isPending ? <p role="status" className="trips-message">Loading trips…</p> : query.isError ? <div role="alert" className="trips-message">Trips could not be loaded. <ControlButton type="button" className="dbtn" onClick={() => query.refetch()}>Retry</ControlButton></div> : query.data && <>
         <p className="trips-coverage" title="Dates show the earliest and latest imported departures. Gaps may remain.">Imported {query.data.imported_start && query.data.imported_end ? `${importedDay(query.data.imported_start)}–${importedDay(query.data.imported_end)}` : 'trips'} <span>· {number(query.data.summary.trip_count)} driving segments</span></p>
         <div className="trips-totals" aria-label="Imported trip totals">
-          <div><Truck size={18} />{selectedTruck ? <button type="button" className="trip-truck-link" onClick={() => onOpenTruck(selectedTruck.id)}><strong>Truck {selectedTruck.unit_number}</strong><small>View truck <ArrowRight size={14} /></small></button> : <span><strong>{number(query.data.summary.truck_count)}</strong><small>Reporting trucks</small></span>}</div>
+          <div><Truck size={18} />{selectedTruck ? <ControlButton type="button" className="trip-truck-link" onClick={() => onOpenTruck(selectedTruck.id)}><strong>Truck {selectedTruck.unit_number}</strong><small>View truck <ArrowRight size={14} /></small></ControlButton> : <span><strong>{number(query.data.summary.truck_count)}</strong><small>Reporting trucks</small></span>}</div>
           <div><Route size={18} /><span><strong>Partial</strong><small>Import coverage</small></span></div>
           <div><MapPin size={18} /><span><strong>{number(query.data.summary.distance_miles)} <em>mi</em></strong><small>Distance</small></span></div>
           <div><Clock3 size={18} /><span><strong>{duration(query.data.summary.driving_seconds)}</strong><small>Driving</small></span></div>
         </div>
         {query.data.total === 0 && !fuelQuery.data?.length ? <div className="trips-empty"><div className="trips-source-fuel-status">
-          {fuelQuery.isPending ? <span role="status">Loading Motive fuel reports…</span> : fuelQuery.isError ? <span role="status">Fuel reports unavailable. <button type="button" onClick={() => fuelQuery.refetch()}>Retry fuel</button></span> : <><span>Motive fuel · partial reports</span><SourceFuel records={fuelQuery.data || []} /></>}
+          {fuelQuery.isPending ? <span role="status">Loading Motive fuel reports…</span> : fuelQuery.isError ? <span role="status">Fuel reports unavailable. <ControlButton type="button" onClick={() => fuelQuery.refetch()}>Retry fuel</ControlButton></span> : <><span>Motive fuel · partial reports</span><SourceFuel records={fuelQuery.data || []} /></>}
         </div><Route size={28} /><h3>No imported trips</h3><p>No trip history has been imported for this selection.</p></div> : <>
           <TripOverview fuelSummary={<div className="trips-source-fuel-status">
-          {fuelQuery.isPending ? <span role="status">Loading Motive fuel reports…</span> : fuelQuery.isError ? <span role="status">Fuel reports unavailable. <button type="button" onClick={() => fuelQuery.refetch()}>Retry fuel</button></span> : <><span>Motive fuel · partial reports</span><SourceFuel records={fuelQuery.data || []} medianVehicleIds={selectedTruck ? undefined : trucks.map(truck => truck.id)} /></>}
+          {fuelQuery.isPending ? <span role="status">Loading Motive fuel reports…</span> : fuelQuery.isError ? <span role="status">Fuel reports unavailable. <ControlButton type="button" onClick={() => fuelQuery.refetch()}>Retry fuel</ControlButton></span> : <><span>Motive fuel · partial reports</span><SourceFuel records={fuelQuery.data || []} medianVehicleIds={selectedTruck ? undefined : trucks.map(truck => truck.id)} /></>}
         </div>} key={`${filters.vehicleId}:${filters.start}:${filters.end}:${timezone}:${filters.preset}`} data={query.data} fuelStatus={fuelQuery.isError ? 'error' : fuelQuery.isPending ? 'loading' : 'ready'} fuelRecords={fuelQuery.data || []} preset={filters.preset} trucks={selectedTruck ? [selectedTruck] : trucks} timezone={timezone} selected={!!selectedTruck} onSelectTruck={vehicleId => update({ vehicleId })} renderDetails={(items, endpoints) => <TripDetails endpoints={endpoints} items={items} data={query.data!} trucks={trucks} selected={!!selectedTruck} timezone={timezone} />} />
         </>}
       </>}
@@ -173,14 +174,14 @@ function TripList({ data, trucks, selected, timezone, offset, setOffset, collaps
         const open = activeDay === group.label
         const panelId = `day-${group.trips[0].id}`
         return <section className="trip-day-group" key={group.label}>
-          <h3><button className="trip-day-toggle" type="button" aria-expanded={open} aria-controls={panelId} onClick={() => { setOpenDay(open ? '' : group.label); setExpanded(null) }}>
+          <h3><ControlButton controlKind="action" className="trip-day-toggle" type="button" aria-expanded={open} aria-controls={panelId} onClick={() => { setOpenDay(open ? '' : group.label); setExpanded(null) }}>
             <span>{group.label}</span><span className="trip-day-totals">{group.trips.length} trips{data.total > data.items.length ? ' shown' : ''}<strong>{number(group.trips.reduce((sum, trip) => sum + trip.distance_miles, 0))} mi</strong><span>{duration(group.trips.reduce((sum, trip) => sum + trip.driving_seconds, 0))}</span></span><ChevronDown size={16} className={open ? 'is-open' : ''} />
-          </button></h3>
+          </ControlButton></h3>
           {open && <div id={panelId}>{group.trips.map(trip => renderTrip(trip, data.items.indexOf(trip)))}</div>}
         </section>
       }) : data.items.map(renderTrip)}
     </div>
-          {data.total > 50 && <div className="trips-pagination"><button type="button" className="dbtn" disabled={offset === 0} onClick={() => { setOffset(Math.max(0, offset - 50)); setExpanded(null) }}>Previous</button><span>{offset + 1}–{Math.min(offset + 50, data.total)} of {data.total}</span><button type="button" className="dbtn" disabled={offset + 50 >= data.total} onClick={() => { setOffset(offset + 50); setExpanded(null) }}>Next</button></div>}
+          {data.total > 50 && <div className="trips-pagination"><ControlButton type="button" className="dbtn" disabled={offset === 0} onClick={() => { setOffset(Math.max(0, offset - 50)); setExpanded(null) }}>Previous</ControlButton><span>{offset + 1}–{Math.min(offset + 50, data.total)} of {data.total}</span><ControlButton type="button" className="dbtn" disabled={offset + 50 >= data.total} onClick={() => { setOffset(offset + 50); setExpanded(null) }}>Next</ControlButton></div>}
   </>
 }
 

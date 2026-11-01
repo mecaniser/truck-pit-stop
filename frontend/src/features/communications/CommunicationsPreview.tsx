@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import MessageSettings from "./MessageSettings";
 import InboxSelect from "./InboxSelect";
 import CustomerRepairContext from "./CustomerRepairContext";
@@ -380,7 +381,7 @@ export default function CommunicationsPreview({
             </h1>
           </div>
           <div className="page-actions">
-            <button
+            <ControlButton
               ref={channelsButtonRef}
               aria-label="Settings"
               className="subtle-button"
@@ -388,8 +389,8 @@ export default function CommunicationsPreview({
             >
               <Settings2 size={16} />
               <span>Settings</span>
-            </button>
-            <button
+            </ControlButton>
+            <ControlButton
               className="primary-button"
               aria-label={connection ? "Open conversation" : "New message"}
               title={connection ? "Open conversation" : "New message"}
@@ -400,7 +401,7 @@ export default function CommunicationsPreview({
             >
               <Plus size={17} />
               <span>{connection ? "Open conversation" : "New message"}</span>
-            </button>
+            </ControlButton>
           </div>
         </header>
         <div
@@ -418,43 +419,43 @@ export default function CommunicationsPreview({
                     ["inquiries", "New inquiries"],
                   ] as const
                 ).map(([value, label]) => (
-                  <button
+                  <ControlButton controlKind="action"
                     key={value}
                     aria-pressed={view === value}
                     onClick={() => setView(value)}
                   >
                     {label}
                     <span>{counts[value]}</span>
-                  </button>
+                  </ControlButton>
                 ))}
               </div>
               <label className="search-field">
                 <Search size={16} />
-                <input
+                <ControlInput
                   aria-label="Search conversations"
                   placeholder="Search name, truck, or message"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                 />
                 {search && (
-                  <button
+                  <ControlButton controlKind="icon"
                     aria-label="Clear search"
                     onClick={() => setSearch("")}
                   >
                     <X size={14} />
-                  </button>
+                  </ControlButton>
                 )}
               </label>
               <div className="channel-filters" aria-label="Filter by channel">
                 {(["all", "sms", "whatsapp", "telegram"] as const).map(
                   (value) => (
-                    <button
+                    <ControlButton controlKind="action"
                       key={value}
                       aria-pressed={channel === value}
                       onClick={() => setChannel(value)}
                     >
                       {value === "all" ? "All" : channelLabels[value]}
-                    </button>
+                    </ControlButton>
                   ),
                 )}
               </div>
@@ -467,24 +468,24 @@ export default function CommunicationsPreview({
                       ? "Open an existing conversation"
                       : "Choose a sample contact"}
                   </strong>
-                  <button
+                  <ControlButton controlKind="icon"
                     aria-label="Close new message"
                     onClick={() => setShowNew(false)}
                   >
                     <X size={16} />
-                  </button>
+                  </ControlButton>
                 </div>
                 {rows
                   .filter((row) => row.channel === "sms")
                   .map((row) => (
-                    <button
+                    <ControlButton
                       key={row.id}
                       onClick={() => selectConversation(row)}
                     >
                       <UserRound size={15} />
                       {row.customerName}
                       <ChevronRight size={14} />
-                    </button>
+                    </ControlButton>
                   ))}
               </div>
             )}
@@ -499,7 +500,7 @@ export default function CommunicationsPreview({
             </div>
             <div className="thread-rows">
               {visible.map((row) => (
-                <button
+                <ControlButton controlKind="action"
                   className={`thread-row ${row.id === selectedId ? "selected" : ""}`}
                   key={row.id}
                   onClick={() => selectConversation(row)}
@@ -542,14 +543,14 @@ export default function CommunicationsPreview({
                       )}
                     </span>
                   </span>
-                </button>
+                </ControlButton>
               ))}
               {!visible.length && (
                 <div className="empty-list">
                   <Inbox size={27} />
                   <strong>No conversations here</strong>
                   <span>Try another filter or search.</span>
-                  <button
+                  <ControlButton
                     onClick={() => {
                       setSearch("");
                       setChannel("all");
@@ -557,7 +558,7 @@ export default function CommunicationsPreview({
                     }}
                   >
                     Clear filters
-                  </button>
+                  </ControlButton>
                 </div>
               )}
             </div>
@@ -575,13 +576,13 @@ export default function CommunicationsPreview({
             aria-label={`Conversation with ${selected.customerName}`}
           >
             <header className="conversation-header">
-              <button
+              <ControlButton controlKind="icon"
                 className="mobile-back icon-button"
                 aria-label="Back to conversations"
                 onClick={() => setMobileThread(false)}
               >
                 <ArrowLeft size={20} />
-              </button>
+              </ControlButton>
               <span className="avatar header-avatar">
                 {initials(selected.customerName)}
               </span>
@@ -594,7 +595,7 @@ export default function CommunicationsPreview({
                 {selected.conversationKind === "inquiry" && <span>CallRail · To {selected.context.senderNumber}</span>}
               </div>
               <div className="conversation-actions">
-                <button
+                <ControlButton
                   aria-label={
                     selected.status === "resolved" ? "Reopen" : "Resolve"
                   }
@@ -610,15 +611,15 @@ export default function CommunicationsPreview({
                   <span>
                     {selected.status === "resolved" ? "Reopen" : "Resolve"}
                   </span>
-                </button>
-                <button
+                </ControlButton>
+                <ControlButton controlKind="icon"
                   className="icon-button context-toggle"
                   aria-label="Toggle customer details"
                   aria-pressed={showContext}
                   onClick={() => setShowContext(!showContext)}
                 >
                   <Info size={19} />
-                </button>
+                </ControlButton>
               </div>
             </header>
             <div className="conversation-toolbar">
@@ -642,7 +643,7 @@ export default function CommunicationsPreview({
                       );
                   }} />
               </label>
-              {selected.conversationKind !== "inquiry" && <button
+              {selected.conversationKind !== "inquiry" && <ControlButton controlKind="action"
                 className={`automation-toggle ${showAutomation ? "active" : ""}`}
                 aria-pressed={showAutomation}
                 onClick={() => setShowAutomation(!showAutomation)}
@@ -650,7 +651,7 @@ export default function CommunicationsPreview({
                 <Bell size={13} />
                 <span>Service updates</span>
                 <span className="switch-track" />
-              </button>}
+              </ControlButton>}
             </div>
             {failed && (
               <div className="delivery-alert">
@@ -660,24 +661,24 @@ export default function CommunicationsPreview({
                     ? "Delivery needs verification"
                     : "One message was not delivered"}
                 </span>
-                <button
+                <ControlButton
                   onClick={() =>
                     setDetailsId(detailsId === failed.id ? null : failed.id)
                   }
                 >
                   Details <ChevronDown size={12} />
-                </button>
+                </ControlButton>
               </div>
             )}
             <div className="message-scroll">
               <div className="message-stack">
                 {connection && selected.messagesHasMore && (
-                  <button
+                  <ControlButton
                     className="subtle-button"
                     onClick={() => connection.onOlder(selected.id)}
                   >
                     Load older messages
-                  </button>
+                  </ControlButton>
                 )}
                 {messages.map((message, index) => (
                   <Fragment key={message.id}>
@@ -698,7 +699,7 @@ export default function CommunicationsPreview({
                             Service update<span>{time(message.createdAt)}</span>
                           </span>
                           <p>{message.body}</p>
-                          <button
+                          <ControlButton
                             className="delivery-detail"
                             onClick={() =>
                               setDetailsId(
@@ -709,7 +710,7 @@ export default function CommunicationsPreview({
                             <DeliveryStatus status={message.deliveryStatus} />
                             {message.deliveryStatus}
                             <ChevronDown size={11} />
-                          </button>
+                          </ControlButton>
                         </div>
                       ) : (
                         <>
@@ -773,9 +774,9 @@ export default function CommunicationsPreview({
                         ? "Customers will start a chat with your shop bot, then replies will appear here."
                         : "Connect a business sender to receive customer messages in this inbox."}
                     </p>
-                    <button onClick={() => setShowConnections(true)}>
+                    <ControlButton onClick={() => setShowConnections(true)}>
                       View channel setup <ArrowUpRight size={14} />
-                    </button>
+                    </ControlButton>
                   </div>
                 )}
                 <div ref={endRef} />
@@ -793,7 +794,7 @@ export default function CommunicationsPreview({
                     A send request needs confirmation. Your original message is
                     preserved.
                   </span>
-                  <button
+                  <ControlButton
                     className="subtle-button"
                     disabled={
                       connection.busy || connection.canRecover === false
@@ -801,7 +802,7 @@ export default function CommunicationsPreview({
                     onClick={connection.onRecover}
                   >
                     Check original send
-                  </button>
+                  </ControlButton>
                 </div>
               )}
               <div className="composer-heading">
@@ -846,14 +847,14 @@ export default function CommunicationsPreview({
                 />
                 <div className="composer-controls">
                   <div className="reply-options">
-                    <button
+                    <ControlButton controlKind="action"
                       aria-expanded={showReplies}
                       onClick={() => setShowReplies(!showReplies)}
                     >
                       <MessageSquare size={15} />
                       Saved replies
                       <ChevronDown size={12} />
-                    </button>
+                    </ControlButton>
                     <span className={draft.trim().length > maxLength ? "over-limit" : ""}>
                       {draft.length}/{maxLength}
                     </span>
@@ -866,7 +867,7 @@ export default function CommunicationsPreview({
                     : `${selected.context.senderMode === "initiation" ? "Sending" : "Replying"} from ${selected.context.senderNumber}`}
                 </p>
               )}
-                  <button
+                  <ControlButton
                     className="primary-button send-button"
                     disabled={
                       !canCompose(composeConversation, draft) ||
@@ -877,7 +878,7 @@ export default function CommunicationsPreview({
                   >
                     <Send size={15} />
                     {connection ? "Send SMS" : "Send preview"}
-                  </button>
+                  </ControlButton>
                   </div>
                 </div>
                 {showReplies && (
@@ -887,7 +888,7 @@ export default function CommunicationsPreview({
                       "We’re checking on the parts ETA and will update you shortly.",
                       "Thanks for the update. I’ll pass this along to the technician.",
                     ].map((reply) => (
-                      <button
+                      <ControlButton
                         key={reply}
                         onClick={() => {
                           updateDraft(draft ? `${draft}\n${reply}` : reply);
@@ -896,7 +897,7 @@ export default function CommunicationsPreview({
                         }}
                       >
                         {reply}
-                      </button>
+                      </ControlButton>
                     ))}
                   </div>
                 )}
@@ -910,13 +911,13 @@ export default function CommunicationsPreview({
           <aside className="customer-context" aria-label="Customer details">
             <header>
               <h3>Contact details</h3>
-              <button
+              <ControlButton controlKind="icon"
                 className="icon-button close-context"
                 aria-label="Close customer details"
                 onClick={() => setShowContext(false)}
               >
                 <X size={17} />
-              </button>
+              </ControlButton>
             </header>
             <div className="customer-context-scroll">
             {!connection?.canManageCustomerContext && <>
@@ -1002,12 +1003,12 @@ export default function CommunicationsPreview({
             <>
               <Check size={15} />
               {feedback}
-              <button
+              <ControlButton controlKind="icon"
                 aria-label="Dismiss notification"
                 onClick={() => setFeedback("")}
               >
                 <X size={14} />
-              </button>
+              </ControlButton>
             </>
           )}
         </div>

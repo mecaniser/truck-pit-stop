@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import type { Suggestion, SuggestionTheme } from './useSuggestions'
 
 /** Shared dropdown list rendered under SuggestingTextarea / SuggestingInput. */
@@ -40,7 +41,7 @@ export default function SuggestionDropdown({
         </div>
       )}
       {suggestions.map((s, i) => (
-        <button
+        <ControlButton controlKind="content"
           key={s.text}
           type="button"
           role="option"
@@ -63,7 +64,7 @@ export default function SuggestionDropdown({
           <span style={{ flexShrink: 0, fontSize: 11, color: theme.mutedText }}>
             {s.times_used} {s.times_used === 1 ? 'use' : 'uses'}
           </span>
-        </button>
+        </ControlButton>
       ))}
     </div>
   )

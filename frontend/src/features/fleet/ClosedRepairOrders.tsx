@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -26,11 +27,11 @@ export default function ClosedRepairOrders({ trucks, onOpenRepairOrder }: {
     <p className="empty-note">Recent closed repair orders and PM from the selected truck’s service history.</p>
     {!selected ? <div className="tgrid-empty">Choose a truck to view its closed repair orders.</div>
       : history.isLoading ? <div role="status" className="tgrid-empty">Loading closed repair orders…</div>
-      : history.isError ? <div role="alert" className="tgrid-empty">Closed repair orders could not be loaded. <button className="sbtn" onClick={() => { void history.refetch() }}>Retry</button></div>
+      : history.isError ? <div role="alert" className="tgrid-empty">Closed repair orders could not be loaded. <ControlButton className="sbtn" onClick={() => { void history.refetch() }}>Retry</ControlButton></div>
       : !orders.length ? <div className="tgrid-empty">No closed repair orders in this truck’s recent service history.</div>
-      : <div className="list-rows">{orders.map((order) => <button key={order.id} className="lrow" onClick={() => onOpenRepairOrder(order.id)}>
+      : <div className="list-rows">{orders.map((order) => <ControlButton key={order.id} className="lrow" onClick={() => onOpenRepairOrder(order.id)}>
         <span>{order.kind} · {order.summary || 'Completed service'}</span>
         <span>{order.date ? new Date(order.date).toLocaleDateString() : ''} · Closed</span>
-      </button>)}</div>}
+      </ControlButton>)}</div>}
   </div>
 }

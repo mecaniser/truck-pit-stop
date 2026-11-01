@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { Pencil, Trash2, User } from 'lucide-react'
 
 import WorkspaceActionOverflow from '@/components/WorkspaceActionOverflow'
@@ -27,28 +28,28 @@ export default function CustomerDetailFooter({
   return (
     <div className="db-customer-actions flex items-center justify-between">
       <WorkspaceActionOverflow label="Customer actions">{close => <div className="flex items-center gap-2">
-        <button
+        <ControlButton
           onClick={() => { close(); handleDeleteClick(selectedCustomer) }}
-          className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium flex items-center gap-2"
+          className="px-4  text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium flex items-center gap-2"
         >
           <Trash2 className="w-4 h-4" />
           Delete
-        </button>
-        <button
+        </ControlButton>
+        <ControlButton
           onClick={() => { close(); onMerge() }}
-          className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-sm font-medium flex items-center gap-2"
+          className="px-4  text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-sm font-medium flex items-center gap-2"
         >
           <User className="w-4 h-4" />
           Merge
-        </button>
+        </ControlButton>
       </div>}</WorkspaceActionOverflow>
-      <button
+      <ControlButton
         onClick={handleEditFromDetail}
-        className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+        className="px-5  bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
       >
         <Pencil className="w-4 h-4" />
         Edit Customer
-      </button>
+      </ControlButton>
     </div>
   )
 }

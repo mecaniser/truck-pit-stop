@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { MapPin, RefreshCw } from 'lucide-react'
@@ -29,12 +30,12 @@ function ReadingInfo({ label, reading, children, className = '' }: { label: stri
     return () => { document.removeEventListener('pointerdown', dismiss); window.removeEventListener('resize', positionTip); window.removeEventListener('scroll', positionTip, true) }
   }, [open])
   return <>
-    <button ref={button} type="button" className={`truck-reading ${className}`} aria-label={`${label}: reading information`} aria-expanded={open} aria-describedby={open ? id : undefined}
+    <ControlButton controlKind="action" ref={button} type="button" className={`truck-reading ${className}`} aria-label={`${label}: reading information`} aria-expanded={open} aria-describedby={open ? id : undefined}
       onClick={() => { setPinned(!pinned); setOpen(!pinned) }}
       onPointerEnter={(event) => { if (event.pointerType === 'mouse') setOpen(true) }} onPointerLeave={() => { if (!pinned) setOpen(false) }}
       onBlur={() => { setOpen(false); setPinned(false) }} onKeyDown={(event) => { if (event.key === 'Escape') { setOpen(false); setPinned(false); event.stopPropagation() } }}>
       {children}
-    </button>
+    </ControlButton>
     {open && createPortal(<div id={id} role="tooltip" className="truck-reading-tooltip" style={position}>{readingCaption(reading)}</div>, document.body)}
   </>
 }
@@ -83,7 +84,7 @@ export function PullMotiveReading({ truck }: { truck: BoardTruck }) {
     onError: () => setNotice('Could not refresh Motive. Check your connection and access in Integrations, then retry.'),
   })
   if (!['garage_owner', 'garage_admin'].includes(role || '') || !companyId) return null
-  return <div className="truck-motive-pull"><button type="button" className="dbtn dbtn-ghost" disabled={pull.isPending} onClick={() => { setNotice(''); pull.mutate() }}><RefreshCw size={14} />{pull.isPending ? 'Checking Motive…' : 'Pull from Motive'}</button>{notice && <p role="status" className="telemetry-muted">{notice}</p>}</div>
+  return <div className="truck-motive-pull"><ControlButton type="button" className="dbtn dbtn-ghost" disabled={pull.isPending} onClick={() => { setNotice(''); pull.mutate() }}><RefreshCw size={14} />{pull.isPending ? 'Checking Motive…' : 'Pull from Motive'}</ControlButton>{notice && <p role="status" className="telemetry-muted">{notice}</p>}</div>
 }
 
 export function TruckVitals({ truck }: { truck: BoardTruck }) {
