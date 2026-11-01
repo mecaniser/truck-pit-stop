@@ -522,3 +522,9 @@ buttons/text-like fields outside the primitive internals and public landing page
 Run the Vite-only catalog at `/tests/control-catalog.html` to inspect aligned
 controls, disabled states, keyboard menus and responsive wrapping. It contains
 only local component state and performs no business mutations.
+
+### Compound control boundaries
+
+Use `data-db-control-shell="proxy"` for a wrapper around a complete bordered ControlInput or trigger (for example an absolutely positioned search icon). Use `data-db-control-shell="field"` when the wrapper owns the border and contains an unbordered ControlInput plus an icon. The shell follows content height, uses the shared radius, and owns the single keyboard focus outline. Do not give either wrapper a fixed height or a separate focus shadow. Keep help text and field labels outside this boundary. Standalone actions and inputs own their own outline. Focus is inset by 2px so scroll containers cannot clip it; forced colors use Highlight. Content controls retain their surface-specific focus treatment.
+
+Toolbar height aliases must reference `var(--control-height)`; `lint:controls` checks every application stylesheet. Text can grow beyond the minimum height. Shells and adjacent actions must remain vertically centered at enlarged text settings.

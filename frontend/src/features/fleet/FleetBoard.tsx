@@ -283,7 +283,7 @@ export default function FleetBoard({
             </div>
             {tab === 'trucks' && (
             <>
-            {!(ordersActive && orderView === 'closed') && <div className="fld-search">
+            {!(ordersActive && orderView === 'closed') && <div data-db-control-shell="field" className="fld-search">
               <Search size={16} />
               <ControlInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search unit, VIN, plate, driver, make…" />
             </div>}

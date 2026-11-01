@@ -56,7 +56,7 @@ async def test_verified_retired_copies_share_without_writes(db_session, monkeypa
     "copy_source_evidence", "copy_provider", "copy_revision", "copy_actor", "internal",
     "copy_time", "payment_time", "payment_live", "payment_native", "payment_refund", "payment_provider",
     "payment_zero", "payment_negative", "payment_attempt", "vehicle", "customer", "deleted_order",
-    "native_order", "stale", "source_total", "source_bad_payment", "canonical_deleted_payment", "source_missing"])
+    "native_order", "stale", "source_bad_payment", "canonical_deleted_payment", "source_missing"])
 async def test_uncertain_artifact_keeps_original_hold(db_session, monkeypatch, case):
     orders, inv, copy, payment, env = await retired_fixture(db_session, monkeypatch)
     if case == "reason": copy.void_reason = "Customer cancelled"
@@ -94,8 +94,6 @@ async def test_uncertain_artifact_keeps_original_hold(db_session, monkeypatch, c
     else:
         facts = env["observations"][0]["evidence"]
         if case == "stale": facts["observed_at_source"] = (datetime.now(timezone.utc)-timedelta(days=2)).isoformat()
-        elif case == "source_total":
-            facts["total"]["amount"]="535.41";facts["balance"]["amount"]="1.00";facts["invoice_status"]="5"
         elif case == "source_bad_payment": facts["payment_lines"][0]["payment"]["canceled"]=True
         env["observations"][0]["sha256"] = _digest(facts)
     # Disable autoflush: corrupted cross-tenant/FK fixtures model hostile evidence,

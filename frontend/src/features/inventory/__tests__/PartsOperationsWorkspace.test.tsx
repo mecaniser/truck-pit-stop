@@ -15,7 +15,7 @@ vi.mock('@/lib/api', () => ({ default: { get: apiMocks.get, post: apiMocks.post,
 vi.mock('@/stores/authStore', () => ({ useAuthStore: (selector: (state: { user: { role: string } }) => unknown) => selector({ user: { role: authState.role } }) }))
 vi.mock('@/hooks/useTenantBranding', () => ({ default: () => ({ data: { name: brandingState.name, logo_url: brandingState.logoUrl } }) }))
 
-import { PartsOperationsGate } from '../PartsOperationsWorkspace'
+import PartsOperationsWorkspace, { PartsOperationsGate } from '../PartsOperationsWorkspace'
 
 const oilFilter = fixture.read_contract.expected_oil_filter_demand
 const inventoryItem = { ...fixture.inventory[0], tenant_id: fixture.tenant_ids.primary, description: null, category: 'Filters', core_charge: '0.00', selling_price: '20.00', supplier_name: 'Fleet Parts Co', supplier_contact: null, image_url: null, location: 'A-01', is_placeholder: false, created_at: fixture.frozen_at, updated_at: fixture.frozen_at } as const
@@ -619,5 +619,62 @@ describe('DB-038 Parts Operations workspace', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Demand could not be loaded')
     await user.click(screen.getByRole('button', { name: 'Retry' }))
     expect(await screen.findByRole('button', { name: /Oil filter/i })).toBeInTheDocument()
+  })
+})
+
+
+describe('DB-151 exact purchasing destinations', () => {
+  afterEach(() => { apiMocks.get.mockReset(); apiMocks.post.mockReset(); apiMocks.put.mockReset() })
+  function openRecord(props: Partial<React.ComponentProps<typeof PartsOperationsWorkspace>>) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(<QueryClientProvider client={client}><MemoryRouter><PartsOperationsWorkspace summary={{ low_stock_count: 0, open_purchase_order_count: 2 }} embedded {...props} /></MemoryRouter></QueryClientProvider>)
+  }
+  it('opens the requested PO rather than the first loaded record', async () => {
+    installSelectionLifecycleFixture()
+    openRecord({ initialTab: 'purchase-orders', initialPurchaseOrderId: 'po-second' })
+    expect(await screen.findByRole('heading', { name: 'PO-SECOND' })).toBeInTheDocument()
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/parts-operations/purchase-orders/po-first')
+  })
+  it('does not substitute the first PO for a missing or forbidden requested PO', async () => {
+    installSelectionLifecycleFixture()
+    const original = apiMocks.get.getMockImplementation()!
+    apiMocks.get.mockImplementation((url, ...args) => url.endsWith('/missing') ? Promise.reject({ response: { status: 404 } }) : original(url, ...args))
+    openRecord({ initialTab: 'purchase-orders', initialPurchaseOrderId: 'missing' })
+    expect(await screen.findByText('This purchase order could not be loaded.')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'PO-FIRST' })).not.toBeInTheDocument()
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/parts-operations/purchase-orders/po-first')
+  })
+  it('keeps a draft requested in Receiving unavailable instead of receiving another PO', async () => {
+    installSelectionLifecycleFixture()
+    openRecord({ initialTab: 'purchase-orders', initialPurchaseOrderId: 'po-second', purchaseOrderMode: 'receiving' })
+    expect(await screen.findByText('This purchase order could not be loaded.')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'PO-FIRST' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Submit purchase order' })).not.toBeInTheDocument()
+  })
+  it('initializes the exact return', async () => {
+    installSelectionLifecycleFixture()
+    openRecord({ initialTab: 'returns-cores', initialReturnId: 'return-second' })
+    expect(await screen.findByRole('heading', { name: 'RET-SECOND' })).toBeInTheDocument()
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/parts-operations/returns/return-first')
+  })
+  it('keeps a missing requested return unavailable without requesting the first return', async () => {
+    installSelectionLifecycleFixture()
+    const original = apiMocks.get.getMockImplementation()!
+    apiMocks.get.mockImplementation((url, ...args) => url.endsWith('/missing') ? Promise.reject({ response: { status: 403 } }) : original(url, ...args))
+    openRecord({ initialTab: 'returns-cores', initialReturnId: 'missing' })
+    expect(await screen.findByText('This vendor return could not be loaded.')).toBeInTheDocument()
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/parts-operations/returns/return-first')
+  })
+  it('never selects another core when the requested core is missing', async () => {
+    installSelectionLifecycleFixture()
+    openRecord({ initialTab: 'returns-cores', initialCoreId: 'missing' })
+    expect(await screen.findByText('This core obligation is unavailable.')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Engine oil core' })).not.toBeInTheDocument()
+  })
+  it('opens the exact core custody record', async () => {
+    installSelectionLifecycleFixture()
+    openRecord({ initialTab: 'returns-cores', initialCoreId: 'core-second' })
+    expect(await screen.findByRole('heading', { name: 'Fuel filter core' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Cores', exact: true })).toHaveAttribute('aria-selected', 'true')
   })
 })

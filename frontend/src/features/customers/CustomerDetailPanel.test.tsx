@@ -8,8 +8,10 @@ import CustomerDetailFooter from './CustomerDetailFooter'
 import { useCustomerVehicleGroups } from './useCustomerVehicleGroups'
 import type { Customer, Vehicle } from '@/types'
 
+const auth = vi.hoisted(() => ({ role: 'garage_owner', payments: false }))
+vi.mock('./CustomerAccount', () => ({ default: ({ customerId }: { customerId: string }) => <div data-testid="account-workspace">Account for {customerId}</div> }))
 vi.mock('@/stores/authStore', () => ({
-  useAuthStore: (select: (s: unknown) => unknown) => select({ user: { role: 'garage_owner', tenant_id: 'tenant-a', id: 'owner-a' } }),
+  useAuthStore: (select: (s: unknown) => unknown) => select({ user: { role: auth.role, permissions: { payments: auth.payments }, tenant_id: 'tenant-a', id: 'owner-a' } }),
   getAuthenticatedSessionIdentity: () => 'test-session',
 }))
 const api = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn() }))
@@ -193,4 +195,27 @@ it('preserves truthful successful empty states', () => {
   expect(screen.getByText('No vehicles on file')).toBeVisible()
   expect(screen.getByText('Using company contact details above.')).toBeVisible()
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
+
+describe('DB-151 Account destination permissions', () => {
+  it('opens the existing Account view for the exact requested customer', () => {
+    setup({ requestedView: 'account' })
+    expect(screen.getByTestId('account-workspace')).toHaveTextContent('Account for customer-a')
+    expect(screen.getByRole('button', { name: 'Account', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  })
+  it.each(['garage_admin', 'receptionist'])('does not open Account for %s without payments permission', (role) => {
+    auth.role = role
+    try {
+      setup({ requestedView: 'account' })
+      expect(screen.queryByTestId('account-workspace')).not.toBeInTheDocument()
+      expect(screen.getByRole('alert')).toHaveTextContent('not available with your permissions')
+    } finally { auth.role = 'garage_owner' }
+  })
+  it('reports tab changes to preserve the route during refresh and browser back', async () => {
+    const onViewChange = vi.fn()
+    setup({ requestedView: 'account', onViewChange })
+    await userEvent.click(screen.getByRole('button', { name: 'History', exact: true }))
+    expect(onViewChange).toHaveBeenCalledWith('history')
+  })
 })
