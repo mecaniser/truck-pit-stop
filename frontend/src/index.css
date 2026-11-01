@@ -7557,3 +7557,11 @@ html.customer-portal-active {
    name/SKU band. The text and fact lines share one stable left edge. */
 .db-parts-workbench .db-parts-workbench__part-cell > .db-parts-workbench__photo-trigger { inset-inline-start:calc(var(--parts-row-check-size) + 20px); inset-block-start:50%; }
 .db-parts-workbench .db-parts-workbench__ledger.is-read-only .db-parts-workbench__photo-trigger { inset-inline-start:18px; }
+
+/* The opening cue uses the same whole-record axis as checkbox and photo. */
+.db-parts-workbench .db-parts-workbench__row-select { position:static; padding-inline-end:36px; }
+.db-parts-workbench .db-parts-workbench__row-cue { position:absolute; inset-inline-end:12px; inset-block-start:50%; translate:0 -50%; transform:none; }
+.db-parts-workbench .db-parts-workbench__row-facts { padding-inline-end:36px; }
+.db-parts-workbench .db-parts-workbench__part-cell:has(.db-parts-workbench__row-actions) .db-parts-workbench__row-cue { inset-inline-end:56px; }
+.db-parts-workbench .db-parts-workbench__part-cell:has(.db-parts-workbench__row-actions) .db-parts-workbench__row-select,
+.db-parts-workbench .db-parts-workbench__row:has(.db-parts-workbench__row-actions) .db-parts-workbench__row-facts { padding-inline-end:80px; }
