@@ -1,3 +1,4 @@
+import { clearFormDrafts } from '@/lib/formDrafts'
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -203,6 +204,7 @@ function DriverHome() {
           <p>Confirm custody, complete your pre-trip inspection, and report conditions as they happen.</p>
         </div>
         <ControlButton controlKind="icon" type="button" className="driver-icon-button" onClick={async () => {
+          clearFormDrafts()
           try { await api.post('/auth/workos/logout') } finally { clearSession(); window.location.assign('/driver/login') }
         }} aria-label="Sign out"><LogOut /></ControlButton>
       </header>

@@ -1,3 +1,4 @@
+import ReadFailure from '../../components/ReadFailure'
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { pricingError, pricingMoney } from '@/features/parts-pricing/contract'
@@ -382,7 +383,7 @@ function LegacyInventoryPage() {
     return () => clearTimeout(t)
   }, [searchQuery])
 
-  const { data: inventory, isLoading } = useQuery<InventoryItem[]>({
+  const { data: inventory, isPending: isLoading, isError: listError, isFetching: listFetching, refetch: retryList } = useQuery<InventoryItem[]>({
     // Server-side search: ilike + separator-squashed + pg_trgm typo tolerance
     // ("gaskit" finds "gasket"). Keyed on the debounced term so results and
     // cache stay per-search.
@@ -1521,13 +1522,15 @@ function LegacyInventoryPage() {
         )}
       </div>
 
-      {filteredInventory?.length === 0 && (searchQuery || showLowStock) && (
+      {listError && <ReadFailure subject="inventory" retrying={listFetching} onRetry={() => void retryList()} />}
+
+      {!listError && filteredInventory?.length === 0 && (searchQuery || showLowStock) && (
         <div className="text-center py-12 text-white/70">
           No parts match your filters. Try adjusting your search.
         </div>
       )}
 
-      {(!inventory || inventory.length === 0) && !searchQuery && !showLowStock && (
+      {!listError && (!inventory || inventory.length === 0) && !searchQuery && !showLowStock && (
         <div className="text-center py-12 text-white/70">
           No inventory found. Add your first part to get started.
         </div>

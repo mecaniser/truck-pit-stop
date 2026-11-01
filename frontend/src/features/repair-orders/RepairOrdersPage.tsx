@@ -1,3 +1,7 @@
+import { z } from 'zod'
+import { useFormDraftRecovery } from '@/hooks/useFormDraftRecovery'
+import DraftRecoveryNotice from '@/components/DraftRecoveryNotice'
+import { draftIdentity } from '@/lib/formDrafts'
 import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { usePricingCommand } from '@/features/parts-pricing/usePricingCommand'
@@ -125,6 +129,13 @@ type VehicleTypeaheadItem = {
   vin: string | null
   last_known_mileage?: number | null
 }
+
+const intakeDraftSchema = z.object({
+  customerId: z.string(), vehicleId: z.string(), description: z.string().max(10000), mileage: z.string().max(30),
+  showNewVehicle: z.boolean(), services: z.array(z.string().max(500)).max(100),
+  customer: z.object({ first_name: z.string(), last_name: z.string(), company_name: z.string(), email: z.string(), phone: z.string() }),
+  vehicle: z.object({ make: z.string(), model: z.string(), year: z.string(), vin: z.string(), unit_number: z.string(), mileage: z.string() }),
+})
 
 type ServiceTypeaheadItem = {
   id: string
@@ -434,6 +445,11 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     unit_number: '',
     mileage: '',
   })
+  const intakeDraft = useFormDraftRecovery('repair-intake', isModalOpen, {
+    customerId: selectedCustomerId, vehicleId: selectedVehicleId, description, mileage: mileageIn,
+    showNewVehicle: showNewVehicleForm, customer: newCustomer, vehicle: newVehicle,
+    services: selectedServiceOptions.map(service => service.name),
+  }, intakeDraftSchema)
   const [formErrors, setFormErrors] = useState<RepairOrderFormErrors>({})
   const [isDecodingNewVehicleVin, setIsDecodingNewVehicleVin] = useState(false)
   const lastDecodedNewVehicleVin = useRef('')
@@ -2828,6 +2844,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   }))
 
   const resetModal = () => {
+    intakeDraft.clear()
     setSelectedCustomerId('')
     setSelectedVehicleId('')
     setCustomerQuery('')
@@ -2981,6 +2998,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     const pricingOwner = pricingIdentity()
     const reviewedPricing = intakePricing.confirmation()
     let submittedPricingContext: { customerId: string; vehicleId: string } | undefined
+    intakeDraft.markSubmitting()
     submittingOrder.current = true
     setIsSubmitting(true)
 
@@ -3101,6 +3119,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         },
       )
 
+      intakeDraft.clear()
       createdForServices.current = createdOrderWithPresentation
       if (selectedServicePayload.length > 0) {
         const pending = selectedServicePayload.map(service => ({ ...service, status: 'pending' as const }))
@@ -3256,6 +3275,21 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const pricingNotice = <>{servicePricing.dialog}{legacyPartPricing.dialog}{serviceRecoveryNotice}</>
   return (
     <div className={`db-repair-orders-workspace flex flex-col h-full ${presentationVariant === 'new' ? 'db-repair-orders-workspace--new' : ''} ${presentationVariant === 'new' && isDetailOpen && selectedOrder ? 'db-repair-orders-workspace--detail-open' : ''}`}>
+      {intakeDraft.candidate && !isModalOpen && <DraftRecoveryNotice subject="repair-order intake" uncertain={intakeDraft.candidate.uncertain} discard={intakeDraft.clear} restore={async () => {
+        const draft = intakeDraft.restoreData()
+        const owner = draftIdentity(useAuthStore.getState().user)
+        const customer = draft.customerId && draft.customerId !== 'add_new' ? (await api.get(`/customers/${draft.customerId}`)).data : null
+        const vehicle = draft.vehicleId ? (await api.get(`/vehicles/${draft.vehicleId}`)).data : null
+        if (!owner || draftIdentity(useAuthStore.getState().user) !== owner) throw new Error('Session changed')
+        intakeDraft.restoreData()
+        resetModal()
+        setSelectedCustomerId(draft.customerId); setSelectedCustomerOption(customer)
+        setSelectedVehicleId(draft.vehicleId); setSelectedVehicleOption(vehicle)
+        setDescription(draft.description); setMileageIn(draft.mileage)
+        setShowNewVehicleForm(draft.showNewVehicle); setNewCustomer(draft.customer); setNewVehicle(draft.vehicle)
+        if (draft.services.length) setFormErrors({ root: `Draft restored. Reselect services to review current pricing: ${draft.services.join(', ')}` })
+        setIsModalOpen(true)
+      }} />}
       {maintenanceFinalization.dialog}
       {maintenanceRemoval.dialog}
 

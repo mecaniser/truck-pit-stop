@@ -1,3 +1,8 @@
+import { z } from 'zod'
+import { useFormDraftRecovery } from '@/hooks/useFormDraftRecovery'
+import DraftRecoveryNotice from '@/components/DraftRecoveryNotice'
+import { draftIdentity } from '@/lib/formDrafts'
+import { useAuthStore } from '@/stores/authStore'
 import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import React, { useCallback, useRef, useState } from 'react'
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react'
@@ -78,6 +83,33 @@ const emptyForm: CustomerFormData = {
   vehicle_mileage: '',
   vehicle_notes: '',
 }
+
+const customerDraftSchema = z.object({ customerId: z.string().nullable(), fields: z.object({
+  first_name: z.string().max(10000),
+  last_name: z.string().max(10000),
+  company_name: z.string().max(10000),
+  email: z.string().max(10000),
+  phone: z.string().max(10000),
+  billing_address_line1: z.string().max(10000),
+  billing_address_line2: z.string().max(10000),
+  billing_city: z.string().max(10000),
+  billing_state: z.string().max(10000),
+  billing_zip: z.string().max(10000),
+  billing_country: z.string().max(10000),
+  notes: z.string().max(10000),
+  usdot_number: z.string().max(10000),
+  mc_number: z.string().max(10000),
+  no_vehicle: z.boolean(),
+  vehicle_vin: z.string().max(10000),
+  vehicle_make: z.string().max(10000),
+  vehicle_model: z.string().max(10000),
+  vehicle_year: z.string().max(10000),
+  vehicle_unit_number: z.string().max(10000),
+  vehicle_license_plate: z.string().max(10000),
+  vehicle_color: z.string().max(10000),
+  vehicle_mileage: z.string().max(10000),
+  vehicle_notes: z.string().max(10000),
+}) })
 
 const US_STATES = [
   { code: '', name: 'Select State' },
@@ -230,6 +262,7 @@ export default function CustomerFormModals({
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [formData, setFormData] = useState<CustomerFormData>(emptyForm)
+  const customerDraft = useFormDraftRecovery('customer', isModalOpen, { customerId: editingCustomer?.id ?? null, fields: formData }, customerDraftSchema)
   const [deleteConfirmCustomer, setDeleteConfirmCustomer] = useState<Customer | null>(null)
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false)
   const [mergeSearchQuery, setMergeSearchQuery] = useState('')
@@ -405,6 +438,7 @@ const closeMergeModal = () => {
 }
 
 const resetForm = () => {
+  customerDraft.clear()
   setEditingCustomer(null)
   setFormData(emptyForm)
   lastDecodedInitialVehicleVin.current = ''
@@ -470,6 +504,7 @@ const handleSubmit = (e: React.FormEvent) => {
     }
   }
 
+  customerDraft.markSubmitting()
   if (editingCustomer) {
     // For updates, only send customer fields
     const payload = {
@@ -1128,6 +1163,7 @@ const renderCustomerForm = (onCancel: () => void) => (
   controlsRef.current = {
     openCreate: openCreateModal,
     openEdit: (customer: Customer) => {
+      customerDraft.clear()
       populateFormFromCustomer(customer)
       setEditingCustomer(customer)
       setIsModalOpen(true)
@@ -1142,6 +1178,22 @@ const renderCustomerForm = (onCancel: () => void) => (
   // centred correctly and then cut to the panel's rounded rectangle.
   return createPortal(
     <>
+      {customerDraft.candidate && !isModalOpen && <div className="fixed bottom-4 left-4 right-4 z-[130] mx-auto max-w-xl"><DraftRecoveryNotice subject="customer form" uncertain={customerDraft.candidate.uncertain} discard={customerDraft.clear} restore={async () => {
+        const draft = customerDraft.restoreData()
+        const owner = draftIdentity(useAuthStore.getState().user)
+        if (draft.customerId) {
+          const { data: customer } = await api.get<Customer>(`/customers/${draft.customerId}`)
+          if (!owner || draftIdentity(useAuthStore.getState().user) !== owner) throw new Error('Session changed')
+          customerDraft.restoreData()
+          populateFormFromCustomer(customer)
+          setFormData(previous => ({ ...previous, ...draft.fields }))
+        } else {
+          setEditingCustomer(null)
+          setFormData({ ...emptyForm, ...draft.fields })
+        }
+        customerDraft.clear()
+        setIsModalOpen(true)
+      }} /></div>}
       {isModalOpen && (
         <Dialog open onClose={closeModal} className="db-customer-editor-overlay fixed inset-0 z-[120] overflow-y-auto">
           <div className="db-customer-editor-layout flex min-h-full items-center justify-center p-4">
