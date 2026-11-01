@@ -13,6 +13,37 @@
 - External receipt effective time requires trusted source UTC semantics; ambiguous dates hold reconciliation rather than creating a receipt in the observation period.
 - Target-only evidence refresh must bypass all normal importer money writers; default dry-run and exact tenant/source identity/digest checks precede any metadata-only persistence. No production execution follows from implementation authority.
 
+## Frozen V1 dashboard correction — verified NET versus actual GROSS (November 1)
+
+**This overrides earlier fallback wording that put unattributed source gross into netrevenue.** Existing `/reports/dashboard.revenue.value` and its trend are **verified net sales/revenue**, not a cash-in-bank or gross receipts metric. Never sum ordinarynet100 with unknowntaxsourcegross330 and call430revenue. A footnote cannot repair mismatched units.
+
+### Small response contract and math
+
+- Preserve`revenue.value`/revenue.trend as ordinary existingnet plus only sourcecollection **verified net** contributions. If sourceoriginaleconomics or validatedreceiptcomponentallocation is unavailable/invalid, its sourcegross contributes0 to this verifiedsubtotal, not a fabricatednet0 for the receipt itself. Retain entire actualreceiptgross separately. Samebasis applies to trendpoints and average; no unallocatedgross is injected into their buckets.
+- Existing`source_collection_unallocated_receipts:USDstring` is the selected-period sum of actual sourcecollectiongross whose **net attribution is unresolved**. It is separate from, and **not included in**,`revenue.value`. Unknownsourcegross330 + ordinaryverifiednet100 => revenue100,unallocated330,not430. All-sourceunknown => verifiedsubtotal0 with prominentpartial/unallocated disclosure, not an all-revenue-is-zero claim. Default0.00.
+- Existing`source_collection_attribution_note:string|null` whenunallocated>0 is exactly:`"Additional gross source receipts await net sales, tax and cost attribution and are not included in the verified net total."` When0 use null unless another independent attributionwarning applies. Never say Includedsourcecollections for this field.
+- Add`source_collection_unapplied_receipts:USDstring="0.00"` only for **known unapplied sourcecollection funds**, separately classified from unresolvednetgross and from netrevenue. Knownexcess receipt250/principal200/unapplied50 doesnot turn250into200cash; gross250remains actualcash,principal200settlesdebt,unapplied50heldforresolution. Whenreceipt neteconomicsunknownandfull250alreadyinunallocatedgross, do not alsocount50inunapplieddashboardbucket (no overlappinggrossdisclosure). If economicsknown, show verifiednetfromprincipal/feeaftertax, plus knownunapplied50 separately. Nativeprincipal must use authoritative attempt.applied_principal_amount, not allreceivedcash or quotedprincipal alone.
+- Add`source_collection_parts_profit_attribution_pending:boolean=false` when sourcepartsprofit cannot be established because originalcost is absent,invalid,negative,NaN or notattributable. Do not coerce missing/invalidcost to0 and inventfullmargin. Existing parts_profit.value/trend may contain only verifiedparts-profit contributions; with thisflagtrue it is a partialverifiedsubtotal,notfinalprofit. Validknownnetrevenue canstillbeinrevenue whilecost/profitremainsunknown.
+- Verifiedoriginaleconomiccategoryallocation uses appliedsourceprincipal/originalissuedtotal,notopeningremaining. Exclude knownprocessorfeetax/sourceoriginaltax and unappliedfunds from net; processorfee net and its tax remain separate components. A missingamount incomponents is unknown,notzero. Actualgross/dashboardcashstats includeallconfirmedreceivedfunds once irrespective of currentnetattribution; opening0,DBN330received330cash,manualETSack0. A separateknownnet290 is not gross330 and cannotreplacecashstats.
+
+### UI / exported interpretation (root owns)
+
+Ifunallocated>0, hero label **"Verified net revenue (partial)"** and above/besidechart display **"Additional gross source receipts: $330.00"** usingactualfieldamount, followed byservernote. Trends/tooltips/average sayverifiednet andremainpartial; do not label the unknownsource330 asrevenue0 or includedit. Existing ordinary/fullyverified periods retain their normalnet label and totals. Thedisclosure must bevisible withoutopeningdetails.
+
+Ifunapplied>0, display **"Unapplied funds received: $50.00 — held separately and not included in net revenue."** This is realcash awaitingresolution,notanothernewreceipt or taxestimate. Ifpartsprofitpending, label **"Verified parts profit (partial)"** and explain **"Some source invoice costs are unavailable; total profit cannot yet be determined."** Existingknownparts-profit may remainvisible asverifiedsubtotal. Do not show a definitiveprofit/margin forunknowncost.
+
+AnydashboardCSV/download/share output includingnet metrics must retainpartiallabel andseparateunallocatedgross/unapplied/profitpending fields; never flatten them into a singlemixed430total. Thisclarification doesnotchangethe earlierwhole-paid SalesTax externalmanualwarning or ordinarytaxrecognition.
+
+### Required minimal fixtures
+
+1. Ordinarynet100 + sourcegross330/nooriginaleconomics => verifiednet100,unallocatedgross330,partialtruebyamount; dashboardcashstatsgrossincludes330once; nosourcecategory/profitguesses.
+2. Verifiedsourcegross330/sourceprincipal290/knownfeetaxetc derivesverifiednet290peractualfixture => net adds290,unallocated0; grossstatsadds330. Originalratio denominator1000notopening600.
+3. Manualreceived250/quoteprincipal200/authoritativeapplied200/unapplied50: actualcash250,principal200,unapplied50; no payment250applied against200debt,no secondackreceipt. Ifeconomicsknownunappliedfield50andunallocated0; ifunknownunallocated250andunappliedfield0toavoid overlap.
+4. Unknown/negative/NaN originalparts_cost never0: trueprofitpending,verifiedprofitexcludesunknownportion evenwhenknownnetisusable. Truevalidatedzerocost mayyieldfullmargin only if0isproven.
+5. All-sourceunknown hero showsverifiednetpartial0 plus additionalgross330 prominently; no falselycompletezero-sales/no-taxclaim. Pending/failed/opening/ack/foreign/outofperiodreceipts excluded; bothnetandgrossperiodidentitiesconsistent.
+
+No financial writer, feecharge, historicalsource economics rewrite or taxposting is authorized by this reporting correction.
+
 ## Frozen V1 report/tax clarification — actual receipts versus transferred debt (November 1)
 
 This clarifies report semantics and supersedes any earlier instruction that broadly excludes **actual collection receipts** from existing cash-basis reports. It creates no writer and no new tax assessment.

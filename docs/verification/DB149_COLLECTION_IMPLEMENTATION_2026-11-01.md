@@ -1,6 +1,6 @@
 # DB-149 collection implementation verification — November 1, 2026
 
-Status: implementation evidence; final integrated independent gate, protected CI, deployment and live activation are not yet complete. Backend & Integrations is accountable. No production financial records were written and no payment/provider request or customer message was sent.
+Status: independent local PostgreSQL/security gate GO at8275f16b; final frontend delta, protected CI, deployment and live activation remain separate gates. Backend & Integrations is accountable. No production financial records were written and no payment/provider request or customer message was sent.
 
 ## Exact user outcome and source facts
 
@@ -28,7 +28,7 @@ Actual PDF renderer fixtures were rendered with Poppler and visually inspected: 
 
 ## Required release / activation boundaries
 
-Current-main merge, final focused checks/build, fresh independent PostgreSQL migration/race/security gate and protected PR CI remain required. Migration197 is unreleased and introduces immutable handoff/receipt linkage and source-money fences. Populated downgrade must refuse rather than erase debt history.
+Current main b28bac1a was integrated in0104e81d. Independent PostgreSQL/security GO at8275f16b covers62 focused tests, fresh migration197 and empty down/up, archived evidence bootstrap, reviewed A→B prepare/activation, native receipt/task/exact echo/external receipt, concurrent exact-once attempts, six SQL adversarial denials and populated-downgrade refusal. Full authenticated browser acceptance and protected PR CI remain required; final frontend build is being recorded separately. Migration197 is unreleased and introduces immutable handoff/receipt linkage and source-money fences. Populated downgrade must refuse rather than erase debt history.
 
 Deploying code is not activation. Verify API/frontend and ETS collector fence versions before any prepare. Do not run full nightly sync to refresh one invoice. Use reviewed target-only read and evidence-only persistence with exact tenant/source/customer/version/digest checks, no importer financial writers. Activation needs source proof after collector ownership acknowledgment, positive verified remaining debt, no uncertain provider/source payment and the exact reviewed target.
 
@@ -37,3 +37,7 @@ DBN is the primary collector. Confirmed DBN receipts create a durable manual ETS
 Incremental accounting feeds suppress original handed-off debt and collection copies without tombstones. Complete-feed holds are constrained to a source row that was already financially authorized by that key's existing query; a target customer alone cannot pause unrelated records. The configured target production feed has20 unrelated eligible invoice identities; before/after snapshot continuity must be verified. No downstream successful cost import was inferred from key usage.
 
 Before activation, ordinary code rollback with zero handoffs can leave schema197 unused. After a handoff/receipt exists, retain source/importer/payment fences and financial rows; do not blindly downgrade, delete links or retry provider/ETS entries. Recovery must preserve confirmed provider results and use audited reconciliation/forward fixes.
+
+## Final integration delta
+
+Frontend56 focused tests across8 files and TypeScript pass. Tax UI/CSV warnings and explicit gross/net/unapplied/profit scope were independently reviewed. Reviewer returned unqualified partial chart/average wording; the owner corrected shared series/tooltip, average and insight labels and added rendered assertions. Final delta checks and exact PR head remain recorded at release, not inferred from these earlier passes. The final268.44 fictional PDF was rendered and visually inspected with original October19 due and October20 service dates. No production writes or provider calls occurred.
