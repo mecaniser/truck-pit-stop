@@ -237,3 +237,23 @@ lock contention; and rollback of deliberately malicious related-customer writes.
 The middle preparation row is explicitly a synthetic fixture; actual migration197
 service preparation/activation acceptance remains the independent service gate.
 No production bootstrap or other production operation was executed.
+
+### Independent archived-source bootstrap correction
+
+The independent full-migration service rehearsal found the bootstrap ownership
+guard was stricter than the frozen handoff contract: it rejected a soft-archived
+source repair order even with exact verified live ETS lineage. The bootstrap
+now permits that archive only within the existing exact imported source,
+tenant, invoice, customer and fresh proof checks. It never clears the repair
+order archive timestamp or changes its work/status. Missing or non-imported
+repair orders, cancelled records, deleted original invoices/customers and
+identity mismatches still hold. This supersedes the earlier blanket reference
+to rejecting every deleted source record; a soft-archived historical source
+repair order is the explicit exception.
+
+Disposable PostgreSQL38PASS includes an archived-source read-only dry run and
+commit with identical full repair-order/customer/financial fingerprints and a
+retained archive timestamp, plus hard missing/wrong-source/cancelled negatives.
+Independent full migration197 bootstrap→prepare→activate acceptance remains a
+separate reviewer gate; these focused subset fixtures cannot prove compatibility
+with every existing DB048 integrity trigger. No production action occurred.

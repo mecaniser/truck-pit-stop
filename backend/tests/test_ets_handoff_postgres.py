@@ -175,7 +175,7 @@ def test_real_bootstrap_dry_run_then_prepare_fixture_then_postack_refresh(pg):
         assert ops.latest_source_evidence(c.fetchone()[0])['source_customer_id']=='97052'
 
 
-@pytest.mark.parametrize('change',['tenant','customer','public_id','uuid','deleted','manifest','capture_source','envelope_hash','fact_hash','prior_customer_drift','deleted_order','deleted_invoice','deleted_customer'])
+@pytest.mark.parametrize('change',['tenant','customer','public_id','uuid','deleted','manifest','capture_source','envelope_hash','fact_hash','prior_customer_drift','missing_order','wrong_order_source','cancelled_order','deleted_invoice','deleted_customer'])
 def test_real_bootstrap_identity_and_drift_holds(pg,change):
     conn,_=pg;b,_p,doc,old,order=bootstrap_fixture(conn)
     if change=='tenant':b.tenant_id=uuid4()
@@ -194,7 +194,9 @@ def test_real_bootstrap_identity_and_drift_holds(pg,change):
                 old['observations'][0]['sha256']=ops._digest(facts)
                 b.expected_envelope_sha256=ops.digest(old);b.expected_evidence_sha256=old['observations'][0]['sha256']
                 c.execute('UPDATE invoices SET ets_source_evidence=%s',(psycopg2.extras.Json(old),))
-            elif change=='deleted_order':c.execute('UPDATE repair_orders SET deleted_at=now()')
+            elif change=='missing_order':c.execute('DELETE FROM repair_orders')
+            elif change=='wrong_order_source':c.execute("UPDATE repair_orders SET source='native'")
+            elif change=='cancelled_order':c.execute("UPDATE repair_orders SET status='cancelled'")
             elif change=='deleted_invoice':c.execute('UPDATE invoices SET deleted_at=now()')
             elif change=='deleted_customer':c.execute('UPDATE customers SET deleted_at=now()')
         conn.commit()
@@ -230,3 +232,20 @@ def test_real_bootstrap_never_bypasses_permanent_handoff(pg,state,deleted):
     conn.commit()
     with pytest.raises(ValueError,match='Canonical handoff exists'):ops.bootstrap(conn,b,doc)
     conn.rollback()
+
+
+def test_real_bootstrap_accepts_proven_archived_source_without_restoring_order(pg):
+    conn,_=pg;b,_p,doc,_old,order=bootstrap_fixture(conn)
+    with conn.cursor() as c:
+        c.execute('UPDATE repair_orders SET deleted_at=now() WHERE id=%s',(order,))
+    conn.commit()
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as c:
+        before=ops.fingerprint(c,b.tenant_id,[b.invoice_id],[order],[b.source_customer_id])
+    conn.rollback();b.commit=False;conn.set_session(readonly=True)
+    assert ops.bootstrap(conn,b,doc)['mode']=='bootstrap-dry-run'
+    conn.rollback();conn.set_session(readonly=False);b.commit=True
+    assert ops.bootstrap(conn,b,doc)['financial_state_unchanged'];conn.commit()
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as c:
+        assert ops.fingerprint(c,b.tenant_id,[b.invoice_id],[order],[b.source_customer_id])==before
+        c.execute('SELECT deleted_at FROM repair_orders WHERE id=%s',(order,))
+        assert c.fetchone()['deleted_at'] is not None

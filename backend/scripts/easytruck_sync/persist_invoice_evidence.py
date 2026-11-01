@@ -111,8 +111,9 @@ def bootstrap(conn, args, document):
             WHERE i.id=%s AND i.tenant_id=%s"""+(' FOR UPDATE OF i,ro,c' if args.commit else ''), (args.invoice_id,args.tenant_id))
         invoice=cur.fetchone()
         if (not invoice or invoice['source']!='easy_truck_shop_import'
+                # Historical source RO soft archival is allowed; never restore it.
                 or invoice['order_source']!='easy_truck_shop_import'
-                or any(invoice[k] is not None for k in ['deleted_at','order_deleted_at','customer_deleted_at'])
+                or any(invoice[k] is not None for k in ['deleted_at','customer_deleted_at'])
                 or invoice['status']=='cancelled' or invoice['order_status']=='cancelled'
                 or invoice['voided_at'] is not None or invoice['is_internal'] or invoice['is_internal_fleet']
                 or str(invoice['customer_id'])!=str(args.source_customer_id)
