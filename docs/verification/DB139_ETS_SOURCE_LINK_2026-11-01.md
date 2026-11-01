@@ -36,3 +36,11 @@ remain in output/ets1887-audit and are not part of Git. No production changes.
 
 This feature is not merged or deployed until separately released. Financial
 reconciliation of the existing stored invoice is outside this implementation.
+
+Independent final QA GO: a1ecb1264f00515848eaa4ba45baef50e7d6d58b; no blocking
+findings. Reviewer independently checked source isolation/URL safety/unchanged
+financial semantics,23 backend and7 frontend tests, actual Tab access and
+desktop34px/mobile44px component geometry. Final full npm build and changed-source
+lint pass. [Draft PR746](https://github.com/mecaniser/truck-pit-stop/pull/746).
+Subsequent commit records only this documentation/board evidence; application
+source is byte-identical to independently approved candidate. No release claimed.
