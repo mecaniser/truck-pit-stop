@@ -284,3 +284,11 @@
 }
 
 .db-vehicle-history-filters [aria-haspopup="listbox"] { min-width: 148px; }
+
+.db-customer-trucks__balances { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 0; }
+.db-customer-record .db-customer-ets-balance { display: block; color: var(--customer-muted); font-size: calc(var(--font-size-body, 16px) * .75); font-weight: 400; white-space: normal; }
+@media (max-width: 640px) {
+  .db-customer-record__balance { flex-wrap: wrap; }
+  .db-customer-record__balance .db-customer-ets-balance { flex-basis: 100%; }
+  .db-customer-trucks__balances { align-items: flex-start; }
+}
