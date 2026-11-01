@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useState } from 'react'
 import { Spinner } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -334,23 +335,23 @@ export default function PendingEnrollmentsPage() {
                     rows={3}
                   />
                   <div className="flex gap-2 mt-3">
-                    <button
+                    <ControlButton
                       onClick={() => {
                         setRejectingId(null)
                         setRejectReason('')
                       }}
-                      className="px-4 py-2 bg-gold-500/10 hover:bg-gold-500/20 text-gold-400 border border-gold-500/30 rounded-lg text-sm transition-colors"
+                      className="px-4  bg-gold-500/10 hover:bg-gold-500/20 text-gold-400 border border-gold-500/30 rounded-lg text-sm transition-colors"
                     >
                       Cancel
-                    </button>
-                    <button
+                    </ControlButton>
+                    <ControlButton
                       onClick={() => handleReject(enrollment.id)}
                       disabled={rejectMutation.isPending}
-                      className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm transition-colors disabled:opacity-50 flex items-center gap-2"
+                      className="px-4  bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm transition-colors disabled:opacity-50 flex items-center gap-2"
                     >
                       {rejectMutation.isPending && <Spinner size="xs" />}
                       Confirm Rejection
-                    </button>
+                    </ControlButton>
                   </div>
                 </div>
               )}
@@ -358,22 +359,22 @@ export default function PendingEnrollmentsPage() {
               {/* Actions */}
               {enrollment.enrollment_status === 'pending' && rejectingId !== enrollment.id && (
                 <div className="mt-6 pt-4 border-t border-gold-500/10 flex gap-2">
-                  <button
+                  <ControlButton
                     onClick={() => approveMutation.mutate(enrollment.id)}
                     disabled={approveMutation.isPending}
-                    className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm transition-colors disabled:opacity-50 flex items-center gap-2"
+                    className="px-4  bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm transition-colors disabled:opacity-50 flex items-center gap-2"
                   >
                     {approveMutation.isPending && <Spinner size="xs" />}
                     <CheckCircle className="w-4 h-4" />
                     Approve
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton
                     onClick={() => setRejectingId(enrollment.id)}
-                    className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm transition-colors flex items-center gap-2"
+                    className="px-4  bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm transition-colors flex items-center gap-2"
                   >
                     <XCircle className="w-4 h-4" />
                     Reject
-                  </button>
+                  </ControlButton>
                 </div>
               )}
 

@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -199,7 +200,7 @@ export function PartLifecycleSummary({ inventoryId }: { inventoryId: string }) {
     retry: false,
   })
   if (query.isPending) return <div className="db-activity__summary-state" role="status">Loading lifecycle summary…</div>
-  if (query.isError) return <div className="db-activity__summary-state" role="alert">Lifecycle summary could not be loaded.<button type="button" onClick={() => void query.refetch()}>Retry</button></div>
+  if (query.isError) return <div className="db-activity__summary-state" role="alert">Lifecycle summary could not be loaded.<ControlButton type="button" onClick={() => void query.refetch()}>Retry</ControlButton></div>
   const summary = query.data
   return <section className="db-activity__lifecycle" aria-labelledby={`part-lifecycle-${inventoryId}`}>
     <div className="db-activity__section-heading"><h3 id={`part-lifecycle-${inventoryId}`}>Lifecycle summary</h3><time dateTime={summary.as_of}>As of {new Date(summary.as_of).toLocaleString()}</time></div>
@@ -285,29 +286,29 @@ export default function ActivityWorkspace({ inventoryId, compact = false }: { in
   return <section className={`db-activity${compact ? ' is-compact' : ' db-operating-surface__scroller'}`} aria-labelledby={inventoryId ? `part-activity-${inventoryId}` : 'inventory-activity-title'}>
     <div className="db-activity__heading">
       <div><h2 id={inventoryId ? `part-activity-${inventoryId}` : 'inventory-activity-title'}>{inventoryId ? 'Part activity' : 'Inventory activity'}</h2>{!compact && <p>A searchable record of catalog, stock, repair, purchasing, returns, and recorded part sales.</p>}</div>
-      <button type="button" disabled={exporting} onClick={() => void exportCsv()}><Download aria-hidden="true" />{exporting ? 'Preparing…' : 'Export CSV'}</button>
+      <ControlButton type="button" disabled={exporting} onClick={() => void exportCsv()}><Download aria-hidden="true" />{exporting ? 'Preparing…' : 'Export CSV'}</ControlButton>
     </div>
     <form className="db-activity__filters" aria-label="Filter activity" onSubmit={(event) => { event.preventDefault(); apply() }}>
       <div className="db-activity__filter-primary">
-        <label className="is-search"><Search aria-hidden="true" /><span className="sr-only">Search Activity</span><input type="search" value={draft.search} minLength={2} maxLength={200} onChange={(event) => setDraft((current) => ({ ...current, search: event.target.value }))} placeholder={compact ? 'Search activity' : 'Search parts, people, reasons, or sources'} /></label>
+        <label className="is-search"><Search aria-hidden="true" /><span className="sr-only">Search Activity</span><ControlInput type="search" value={draft.search} minLength={2} maxLength={200} onChange={(event) => setDraft((current) => ({ ...current, search: event.target.value }))} placeholder={compact ? 'Search activity' : 'Search parts, people, reasons, or sources'} /></label>
         <label className="db-activity__category"><span className="sr-only">Category</span><PlatformSelect aria-label="Category" value={draft.category} onChange={(event) => setDraft((current) => ({ ...current, category: event.target.value as ActivityFilters['category'] }))}>{CATEGORIES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</PlatformSelect></label>
         {!compact && <details ref={advancedRef} className="db-activity__advanced">
           <summary><SlidersHorizontal aria-hidden="true" /><span>Advanced</span>{advancedFilterCount > 0 && <strong aria-label={`${advancedFilterCount} advanced filters selected`}>{advancedFilterCount}</strong>}<ChevronDown aria-hidden="true" /></summary>
           <div className="db-activity__advanced-fields">
-            <label><span>Event types</span><input aria-label="Event types" aria-describedby={eventTypeHelpId} value={draft.eventType} onChange={(event) => setDraft((current) => ({ ...current, eventType: event.target.value }))} placeholder="Example: stock.adjusted" /><small id={eventTypeHelpId}>Separate multiple event types with commas.</small></label>
+            <label><span>Event types</span><ControlInput aria-label="Event types" aria-describedby={eventTypeHelpId} value={draft.eventType} onChange={(event) => setDraft((current) => ({ ...current, eventType: event.target.value }))} placeholder="Example: stock.adjusted" /><small id={eventTypeHelpId}>Separate multiple event types with commas.</small></label>
             <label><span>Source</span><PlatformSelect value={draft.sourceType} onChange={(event) => setDraft((current) => ({ ...current, sourceType: event.target.value }))}>{SOURCE_TYPES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</PlatformSelect></label>
-            <label><span>Actor reference</span><input value={draft.actorId} onChange={(event) => setDraft((current) => ({ ...current, actorId: event.target.value }))} placeholder="Optional UUID" /></label>
-            <label><span>Source reference</span><input value={draft.sourceId} onChange={(event) => setDraft((current) => ({ ...current, sourceId: event.target.value }))} placeholder="Optional UUID" /></label>
-            <label><span>From</span><input type="datetime-local" value={draft.from} onChange={(event) => setDraft((current) => ({ ...current, from: event.target.value }))} /></label>
-            <label><span>To</span><input type="datetime-local" value={draft.to} onChange={(event) => setDraft((current) => ({ ...current, to: event.target.value }))} /></label>
+            <label><span>Actor reference</span><ControlInput value={draft.actorId} onChange={(event) => setDraft((current) => ({ ...current, actorId: event.target.value }))} placeholder="Optional UUID" /></label>
+            <label><span>Source reference</span><ControlInput value={draft.sourceId} onChange={(event) => setDraft((current) => ({ ...current, sourceId: event.target.value }))} placeholder="Optional UUID" /></label>
+            <label><span>From</span><ControlInput type="datetime-local" value={draft.from} onChange={(event) => setDraft((current) => ({ ...current, from: event.target.value }))} /></label>
+            <label><span>To</span><ControlInput type="datetime-local" value={draft.to} onChange={(event) => setDraft((current) => ({ ...current, to: event.target.value }))} /></label>
           </div>
         </details>}
-        <div className="db-activity__filter-actions"><button type="button" disabled={!appliedFilterCount && !Object.values(draft).some((value) => value.trim())} onClick={clear}>Reset</button><button type="submit">Apply{appliedFilterCount > 0 ? ` (${appliedFilterCount})` : ''}</button></div>
+        <div className="db-activity__filter-actions"><ControlButton type="button" disabled={!appliedFilterCount && !Object.values(draft).some((value) => value.trim())} onClick={clear}>Reset</ControlButton><ControlButton type="submit">Apply{appliedFilterCount > 0 ? ` (${appliedFilterCount})` : ''}</ControlButton></div>
       </div>
     </form>
     {exportError && <p className="db-activity__error" role="alert">{exportError}</p>}
     {query.isPending && <div className="db-activity__state" role="status">Loading Activity…</div>}
-    {query.isError && <div className="db-activity__state" role="alert">Activity could not be loaded.<button type="button" onClick={() => void query.refetch()}>Retry</button></div>}
+    {query.isError && <div className="db-activity__state" role="alert">Activity could not be loaded.<ControlButton type="button" onClick={() => void query.refetch()}>Retry</ControlButton></div>}
     {!query.isPending && !query.isError && !query.data.items.length && <div className="db-activity__state"><strong>No events match these filters.</strong><span>Clear or broaden the filters to see more lifecycle history.</span></div>}
     {!!query.data?.items.length && <div className="db-activity__ledger-head"><strong>Recent activity</strong><span>{query.data.items.length} shown</span></div>}
     {!!query.data?.items.length && <div className="db-activity__ledger db-operating-surface__card" role="feed" aria-busy={query.isFetching}>
@@ -321,7 +322,7 @@ export default function ActivityWorkspace({ inventoryId, compact = false }: { in
         </div>
         <div className="db-activity__event-source">{sourceLink(event.source)}<time dateTime={event.occurred_at}>{new Date(event.occurred_at).toLocaleString()}</time></div>
       </article> })}
-      <div className="db-activity__pager"><span aria-live="polite">Showing {query.data.items.length} activity records</span><div><button type="button" disabled={cursors.length === 1 || query.isFetching} onClick={() => setCursors((current) => current.slice(0, -1))}><ArrowLeft aria-hidden="true" />Previous</button><button type="button" disabled={!query.data.next_cursor || query.isFetching} onClick={() => query.data.next_cursor && setCursors((current) => [...current, query.data.next_cursor])}>Next<ArrowRight aria-hidden="true" /></button></div></div>
+      <div className="db-activity__pager"><span aria-live="polite">Showing {query.data.items.length} activity records</span><div><ControlButton type="button" disabled={cursors.length === 1 || query.isFetching} onClick={() => setCursors((current) => current.slice(0, -1))}><ArrowLeft aria-hidden="true" />Previous</ControlButton><ControlButton type="button" disabled={!query.data.next_cursor || query.isFetching} onClick={() => query.data.next_cursor && setCursors((current) => [...current, query.data.next_cursor])}>Next<ArrowRight aria-hidden="true" /></ControlButton></div></div>
     </div>}
   </section>
 }

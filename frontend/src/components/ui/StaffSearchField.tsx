@@ -1,3 +1,4 @@
+import { ControlInput } from '@/components/ui/Controls'
 import type { ChangeEventHandler } from 'react'
 import { Search } from 'lucide-react'
 
@@ -23,7 +24,7 @@ export default function StaffSearchField({
       <label className="db-staff-search-field">
         <span className="sr-only">{accessibleLabel}</span>
         <Search aria-hidden="true" />
-        <input
+        <ControlInput
           type="search"
           value={value}
           onChange={onChange}

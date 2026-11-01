@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useEffect, useId, useRef, useState } from 'react'
 import { Minus, Plus } from 'lucide-react'
 import { formatHoursMinutes } from '@/lib/durationFormat'
@@ -145,7 +146,7 @@ export default function DurationStepper({
       role="group"
       aria-label={ariaLabel}
     >
-      <button
+      <ControlButton controlKind="icon"
         type="button"
         disabled={disabled || totalMinutes <= floor}
         onPointerDown={(e) => e.preventDefault()}
@@ -155,8 +156,8 @@ export default function DurationStepper({
         className={`flex items-center justify-center rounded-l-lg disabled:opacity-40 ${t.btn}`}
       >
         <Minus className="h-3.5 w-3.5" />
-      </button>
-      <input
+      </ControlButton>
+      <ControlInput
         type="text"
         inputMode="decimal"
         disabled={disabled}
@@ -197,7 +198,7 @@ export default function DurationStepper({
           Enter hours (1.5) or h:mm (1:30){floor > 0 ? `, at least ${floor} minutes` : ''}.
         </span>
       )}
-      <button
+      <ControlButton controlKind="icon"
         type="button"
         disabled={disabled}
         onPointerDown={(e) => e.preventDefault()}
@@ -207,7 +208,7 @@ export default function DurationStepper({
         className={`flex items-center justify-center rounded-r-lg disabled:opacity-40 ${t.btn}`}
       >
         <Plus className="h-3.5 w-3.5" />
-      </button>
+      </ControlButton>
     </span>
   )
 }

@@ -1,3 +1,4 @@
+import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import React, { useState } from 'react'
 import type { AxiosError } from 'axios'
 import { createPortal } from 'react-dom'
@@ -207,23 +208,23 @@ const renderContactForm = () => (
     <div className="grid grid-cols-2 gap-4">
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
-        <input
+        <ControlInput
           type="text"
           name="first_name"
           value={contactFormData.first_name}
           onChange={handleContactInputChange}
-          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+          className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
           placeholder="John"
         />
       </div>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-        <input
+        <ControlInput
           type="text"
           name="last_name"
           value={contactFormData.last_name}
           onChange={handleContactInputChange}
-          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+          className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
           placeholder="Doe"
         />
       </div>
@@ -232,12 +233,12 @@ const renderContactForm = () => (
     {/* Role */}
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-      <input
+      <ControlInput
         type="text"
         name="role"
         value={contactFormData.role}
         onChange={handleContactInputChange}
-        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+        className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
         placeholder="Dispatcher, Owner, Driver..."
       />
     </div>
@@ -246,23 +247,23 @@ const renderContactForm = () => (
     <div className="grid grid-cols-2 gap-4">
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-        <input
+        <ControlInput
           type="email"
           name="email"
           value={contactFormData.email}
           onChange={handleContactInputChange}
-          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+          className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
           placeholder="john@example.com"
         />
       </div>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-        <input
+        <ControlInput
           type="tel"
           name="phone"
           value={contactFormData.phone}
           onChange={handleContactInputChange}
-          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+          className="w-full px-4  border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
           placeholder="(555) 123-4567"
         />
       </div>
@@ -295,24 +296,24 @@ const renderContactForm = () => (
 
     {/* Actions */}
     <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
-      <button
+      <ControlButton
         type="button"
         onClick={closeContactModal}
-        className="px-5 py-2.5 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+        className="px-5  text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
       >
         Cancel
-      </button>
-      <button
+      </ControlButton>
+      <ControlButton
         type="submit"
         disabled={createContactMutation.isPending || updateContactMutation.isPending}
-        className="px-5 py-2.5 disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+        className="px-5  disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
         style={{ backgroundColor: accentColors[500] }}
       >
         {(createContactMutation.isPending || updateContactMutation.isPending) && (
           <Spinner size="xs" className="border-white/40 border-t-white" />
         )}
         {editingContact ? 'Save Changes' : 'Add Contact'}
-      </button>
+      </ControlButton>
     </div>
   </form>
 )
@@ -345,12 +346,12 @@ const renderContactForm = () => (
                       for {selectedCustomer.company_name || `${selectedCustomer.first_name} ${selectedCustomer.last_name}`}
                     </p>
                   </div>
-                  <button
+                  <ControlButton
                     onClick={closeContactModal}
                     className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                   >
                     <X className="w-5 h-5 text-gray-500" />
-                  </button>
+                  </ControlButton>
                 </div>
               </div>
 
@@ -390,22 +391,22 @@ const renderContactForm = () => (
               </p>
 
               <div className="flex items-center justify-end gap-3">
-                <button
+                <ControlButton
                   onClick={() => setDeleteConfirmContact(null)}
-                  className="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+                  className="px-4  text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
                 >
                   Cancel
-                </button>
-                <button
+                </ControlButton>
+                <ControlButton
                   onClick={confirmDeleteContact}
                   disabled={deleteContactMutation.isPending}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                  className="px-4  bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
                 >
                   {deleteContactMutation.isPending && (
                     <Spinner size="xs" className="border-white/40 border-t-white" />
                   )}
                   Delete Contact
-                </button>
+                </ControlButton>
               </div>
             </div>
           </div>

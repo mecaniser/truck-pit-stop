@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { pricingError } from '@/features/parts-pricing/contract'
 import { checklistOpenEvent } from '@/features/service-checklists/queries'
 import OrderChecklist from '@/features/service-checklists/OrderChecklist'
@@ -89,9 +90,9 @@ function Sheet({ title, onClose, children }: {
       >
         <div className="fleet-sheet-head">
           <strong>{title}</strong>
-          <button type="button" className="icon-hit" onClick={onClose} aria-label="Close">
+          <ControlButton controlKind="icon" type="button" className="icon-hit" onClick={onClose} aria-label="Close">
             <X size={18} />
-          </button>
+          </ControlButton>
         </div>
         <div className="fleet-sheet-body">{children}</div>
       </div>
@@ -214,13 +215,13 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
             <strong>Repair order could not be loaded</strong>
             <span>Your work was not changed. Check the connection and try again.</span>
           </div>
-          <button
+          <ControlButton
             type="button"
             className="query-retry"
             onClick={() => { void detailQuery.refetch(); void summaryQuery.refetch() }}
           >
             <RotateCcw size={14} /> Try again
-          </button>
+          </ControlButton>
         </div>
       </Shell>
     )
@@ -258,16 +259,16 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
             <strong>{money(num(summary.total_cost))}</strong>
           </div>
           {!started ? (
-            <button
+            <ControlButton
               type="button"
               className="dbtn dbtn-yellow"
               disabled={startWork.isPending}
               onClick={() => startWork.mutate()}
             >
               {startWork.isPending ? <Spinner size="xs" /> : <Play size={16} />} Start work
-            </button>
+            </ControlButton>
           ) : detail.status === 'in_progress' ? (
-            <button
+            <ControlButton
               type="button"
               className="dbtn dbtn-yellow"
               disabled={Boolean(completionBlocked)}
@@ -275,7 +276,7 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
               onClick={() => setCompleteOpen(true)}
             >
               <Check size={16} /> Complete
-            </button>
+            </ControlButton>
           ) : null}
         </div>
         {detail.status === 'in_progress' && completionBlocked && <p id="fleet-completion-requirement" role="status" className="fleet-ro-completion-requirement">{completionBlocked}</p>}
@@ -326,7 +327,7 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
                   <h3>Add work</h3>
                   <div className="wo-builder-tabs" role="tablist" aria-label="What to add">
                     {(['operation', 'part'] as AddMode[]).map((mode) => (
-                      <button
+                      <ControlButton controlKind="content"
                         key={mode}
                         type="button"
                         role="tab"
@@ -335,14 +336,14 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
                         onClick={() => { setAddMode(mode); setTerm('') }}
                       >
                         {mode === 'operation' ? 'Operation' : 'Part'}
-                      </button>
+                      </ControlButton>
                     ))}
                   </div>
                 </div>
 
                 <div className="wo-svc-search">
                   <Search size={16} aria-hidden="true" />
-                  <input
+                  <ControlInput
                     value={term}
                     onChange={(event) => setTerm(event.target.value)}
                     placeholder={addMode === 'operation'
@@ -393,13 +394,13 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
                   </small>
                 </div>
                 {canEdit && !addOpen && (
-                  <button
+                  <ControlButton
                     type="button"
                     className="dbtn dbtn-ghost"
                     onClick={() => setAddOpen(true)}
                   >
                     <Plus size={15} /> Add more work
-                  </button>
+                  </ControlButton>
                 )}
               </section>
             )}
@@ -413,7 +414,7 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
             <section>
               <div className="wo-draft-section-head">
                 <div className="fleet-ro-viewtabs" role="tablist" aria-label="Repair order view">
-                  <button
+                  <ControlButton controlKind="content"
                     type="button"
                     role="tab"
                     aria-selected={view === 'work'}
@@ -422,8 +423,8 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
                   >
                     Work &amp; parts
                     <span>{itemCount}</span>
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton controlKind="content"
                     type="button"
                     role="tab"
                     aria-selected={view === 'activity'}
@@ -432,7 +433,7 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
                   >
                     Activity
                     {historyEvents.length > 0 && <span>{historyEvents.length}</span>}
-                  </button>
+                  </ControlButton>
                 </div>
               </div>
 
@@ -522,13 +523,13 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
                 Soft delete, so the record survives and can be restored. */}
             {canEdit && (
               <section className="fleet-ro-abandon">
-                <button
+                <ControlButton
                   type="button"
                   className="dbtn dbtn-danger"
                   onClick={() => setConfirmDelete(true)}
                 >
                   <Trash2 size={15} /> Delete this repair order
-                </button>
+                </ControlButton>
               </section>
             )}
           </div>
@@ -698,18 +699,18 @@ function ComplaintSection({ orderId, description, canEdit }: {
           the shop's list, these are a fixed set with no search to fall back on. */}
       <div ref={chipRowRef} className="wo-chips wo-chips-scroll" data-at-start="true" data-at-end="false">
         {COMPLAINT_CHIPS.map((chip) => (
-          <button
+          <ControlButton
             type="button"
             key={chip}
             className="wo-chip"
             onClick={() => append(chip)}
           >
             <Plus size={13} /> {chip}
-          </button>
+          </ControlButton>
         ))}
       </div>
       {dirty && (
-        <button
+        <ControlButton
           type="button"
           className="dbtn dbtn-yellow"
           style={{ marginTop: 10 }}
@@ -719,7 +720,7 @@ function ComplaintSection({ orderId, description, canEdit }: {
           })}
         >
           {saveDescription.isPending ? <Spinner size="xs" /> : <Check size={15} />} Save complaint
-        </button>
+        </ControlButton>
       )}
     </section>
   )
@@ -773,7 +774,7 @@ function PmScopeSection({ orderId, vehicleId, canEdit }: {
         ) : (catalog ?? []).map((service) => {
           const on = selected === service.service_id
           return (
-            <button
+            <ControlButton controlKind="content"
               type="button"
               key={service.service_id}
               role="radio"
@@ -787,14 +788,14 @@ function PmScopeSection({ orderId, vehicleId, canEdit }: {
               {service.duration_minutes
                 ? <span className="pm-svc-dur">{service.duration_minutes}m</span>
                 : null}
-            </button>
+            </ControlButton>
           )
         })}
       </div>
       {canEdit ? (
         <>
           {dirty && (
-            <button
+            <ControlButton
               type="button"
               className="dbtn dbtn-yellow"
               style={{ marginTop: 10 }}
@@ -804,10 +805,10 @@ function PmScopeSection({ orderId, vehicleId, canEdit }: {
               })}
             >
               {setPmServices.isPending ? <Spinner size="xs" /> : <Check size={15} />} Save PM scope
-            </button>
+            </ControlButton>
           )}
           {!dirty && differsFromDefault && (
-            <button
+            <ControlButton
               type="button"
               className="dbtn dbtn-ghost"
               style={{ marginTop: 10 }}
@@ -816,7 +817,7 @@ function PmScopeSection({ orderId, vehicleId, canEdit }: {
             >
               {saveDefault.isPending ? <Spinner size="xs" /> : <Check size={15} />}
               {" Make this the truck's default PM"}
-            </button>
+            </ControlButton>
           )}
         </>
       ) : (
@@ -850,7 +851,7 @@ function LineRow({ line, parts, canEdit, execution, executionDisabled, technicia
       <div className="wo-builder-line">
         <span className="wo-builder-kind">Work</span>
         <div>
-          <button
+          <ControlButton controlKind="action"
             type="button"
             className="fleet-ro-line-open"
             onClick={() => setOpen((value) => !value)}
@@ -861,13 +862,13 @@ function LineRow({ line, parts, canEdit, execution, executionDisabled, technicia
               {formatHoursMinutes(hours)}
               {parts.length > 0 && ` · ${parts.length} part${parts.length === 1 ? '' : 's'}`}
             </small>
-          </button>
+          </ControlButton>
         </div>
         <b>{formatHoursMinutes(hours)}</b>
         {canEdit ? (
-          <button type="button" className="icon-hit" onClick={onRemove} aria-label={`Remove ${line.description}`}>
+          <ControlButton controlKind="icon" type="button" className="icon-hit" onClick={onRemove} aria-label={`Remove ${line.description}`}>
             <Trash2 size={16} />
-          </button>
+          </ControlButton>
         ) : <span />}
         {execution && <div className="fleet-ro-operation-status"><OperationExecutionStatus item={execution} /></div>}
       </div>
@@ -928,7 +929,7 @@ function PartRow({ part, canEdit, nested, onQuantity, onRemove }: {
       <div className="wo-builder-part-copy">
         <strong>{part.inventory_name}</strong>
         <small>{part.inventory_sku}</small>
-        {error && <small role="alert">{error} Saved quantity {num(part.quantity)}. <button type="button" disabled={saving} onClick={() => { if (draft !== null) void commit(draft) }}>Retry</button></small>}
+        {error && <small role="alert">{error} Saved quantity {num(part.quantity)}. <ControlButton type="button" disabled={saving} onClick={() => { if (draft !== null) void commit(draft) }}>Retry</ControlButton></small>}
       </div>
       {canEdit ? (
         <QuantityStepper
@@ -947,9 +948,9 @@ function PartRow({ part, canEdit, nested, onQuantity, onRemove }: {
         <b className="wo-builder-part-quantity">{num(part.quantity)}</b>
       )}
       {canEdit ? (
-        <button type="button" className="icon-hit" disabled={saving} onClick={onRemove} aria-label={`Remove ${part.inventory_name}`}>
+        <ControlButton controlKind="icon" type="button" className="icon-hit" disabled={saving} onClick={onRemove} aria-label={`Remove ${part.inventory_name}`}>
           <Trash2 size={16} />
-        </button>
+        </ControlButton>
       ) : <span />}
     </div>
   )
@@ -1018,14 +1019,14 @@ function OperationResult({ candidate, pending, onAdd }: {
           ariaLabel={`Labor time for ${candidate.name}`}
         />
       )}
-      <button
+      <ControlButton
         type="button"
         className="dbtn dbtn-ghost"
         disabled={pending}
         onClick={() => onAdd(candidate, isCustom ? hours : bookTime)}
       >
         <Plus size={15} /> Add
-      </button>
+      </ControlButton>
     </li>
   )
 }
@@ -1058,16 +1059,16 @@ function PartResults({ term, options, pending, onAdd, onAdHoc }: {
                       : 'none on hand'}
                 </small>
               </div>
-              <button type="button" className="dbtn dbtn-ghost" disabled={pending} onClick={() => onAdd(option)}>
+              <ControlButton type="button" className="dbtn dbtn-ghost" disabled={pending} onClick={() => onAdd(option)}>
                 <Plus size={15} /> Add
-              </button>
+              </ControlButton>
             </li>
           ))}
         </ul>
       )}
-      <button type="button" className="dbtn dbtn-ghost" style={{ marginTop: 10 }} onClick={onAdHoc}>
+      <ControlButton type="button" className="dbtn dbtn-ghost" style={{ marginTop: 10 }} onClick={onAdHoc}>
         <Box size={15} /> Part not in inventory
-      </button>
+      </ControlButton>
     </>
   )
 }
@@ -1090,11 +1091,11 @@ function AdHocPartSheet({ pending, onClose, onSubmit }: {
     <Sheet title="Part not in inventory" onClose={onClose}>
       <label className="fleet-ro-field">
         <span>Part name</span>
-        <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Air line fitting" />
+        <ControlInput value={name} onChange={(event) => setName(event.target.value)} placeholder="Air line fitting" />
       </label>
       <label className="fleet-ro-field">
         <span>Part number <small>optional</small></span>
-        <input value={sku} onChange={(event) => setSku(event.target.value)} placeholder="e.g. 0532668000" />
+        <ControlInput value={sku} onChange={(event) => setSku(event.target.value)} placeholder="e.g. 0532668000" />
       </label>
       <div className="fleet-ro-field">
         <span>Quantity</span>
@@ -1112,14 +1113,14 @@ function AdHocPartSheet({ pending, onClose, onSubmit }: {
             one — a zero would leave a zero-priced part behind for whoever uses
             it next, and understate what this truck cost. */}
         <span>What it cost</span>
-        <input
+        <ControlInput
           value={cost}
           onChange={(event) => setCost(event.target.value)}
           inputMode="decimal"
           placeholder="0.00"
         />
       </label>
-      <button
+      <ControlButton
         type="button"
         className="dbtn dbtn-yellow"
         style={{ width: '100%', marginTop: 8 }}
@@ -1129,7 +1130,7 @@ function AdHocPartSheet({ pending, onClose, onSubmit }: {
         })}
       >
         {pending ? <Spinner size="xs" /> : <Plus size={16} />} Add part
-      </button>
+      </ControlButton>
     </Sheet>
   )
 }
@@ -1151,7 +1152,7 @@ function CompleteSheet({ currentMileage, pending, blockedReason, onClose, onSubm
         <span>
           Odometer out <small>optional</small>
         </span>
-        <input
+        <ControlInput
           value={mileage}
           onChange={(event) => setMileage(event.target.value)}
           inputMode="numeric"
@@ -1160,7 +1161,7 @@ function CompleteSheet({ currentMileage, pending, blockedReason, onClose, onSubm
       </label>
       {invalid && <p className="wo-builder-empty-note">Enter a whole number of miles.</p>}
       {blockedReason && <p role="status" className="fleet-ro-completion-requirement">{blockedReason}</p>}
-      <button
+      <ControlButton
         type="button"
         className="dbtn dbtn-yellow"
         style={{ width: '100%', marginTop: 8 }}
@@ -1168,7 +1169,7 @@ function CompleteSheet({ currentMileage, pending, blockedReason, onClose, onSubm
         onClick={() => { if (!blockedReason) onSubmit(parsed) }}
       >
         {pending ? <Spinner size="xs" /> : <Check size={16} />} Complete
-      </button>
+      </ControlButton>
     </Sheet>
   )
 }

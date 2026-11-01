@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { Dialog, DialogPanel, DialogTitle } from "@headlessui/react";
 import InboxSelect from "./InboxSelect";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -33,14 +34,14 @@ export default function CustomerRepairContext({ conversation, beforeNavigate, se
   }, [conversation.id, retry]);
   return <section className="crm-context" aria-label="Customer and repair history">
 
-    {error ? <div role="alert" className="crm-error">{error}<button type="button" onClick={() => setRetry(n => n + 1)}>Retry</button></div> : !context ? <p role="status" className="crm-muted"><Loader2 size={14} className="crm-spin" /> Loading customer…</p> : <>
-      <div className="crm-contact-card"><div className="crm-heading"><strong className="crm-person">{context.contact ? personLabel(context.contact) : conversation.customerName}</strong>{context.can_manage && context.contact && <button type="button" className="crm-text-button" onClick={() => setEditing("link")}>Change link</button>}</div>
+    {error ? <div role="alert" className="crm-error">{error}<ControlButton type="button" onClick={() => setRetry(n => n + 1)}>Retry</ControlButton></div> : !context ? <p role="status" className="crm-muted"><Loader2 size={14} className="crm-spin" /> Loading customer…</p> : <>
+      <div className="crm-contact-card"><div className="crm-heading"><strong className="crm-person">{context.contact ? personLabel(context.contact) : conversation.customerName}</strong>{context.can_manage && context.contact && <ControlButton type="button" className="crm-text-button" onClick={() => setEditing("link")}>Change link</ControlButton>}</div>
       {context.customer && <p className="crm-company">{context.customer.company_name || context.customer.display_name}</p>}
       {context.contact?.role && <p className="crm-role">{context.contact.role}</p>}
       <p className="crm-contact-number">{conversation.identityLabel}</p>
       {conversation.sendPolicy.reason === "opted_out" && <p className="context-warning">SMS opted out</p>}
       {!context.contact && <p className="crm-muted">{context.link_state === "unavailable" ? "Linked customer unavailable." : context.customer ? "Choose the person for this conversation." : "No customer linked."}</p>}
-      {context.can_manage && !context.contact && <div className="crm-actions"><button type="button" onClick={() => setEditing("link")}><Link2 size={14} />Link customer</button>{conversation.conversationKind === "inquiry" && <button type="button" onClick={() => setEditing("create")}><Plus size={14} />Add customer</button>}</div>}
+      {context.can_manage && !context.contact && <div className="crm-actions"><ControlButton type="button" onClick={() => setEditing("link")}><Link2 size={14} />Link customer</ControlButton>{conversation.conversationKind === "inquiry" && <ControlButton type="button" onClick={() => setEditing("create")}><Plus size={14} />Add customer</ControlButton>}</div>}
       {children}</div>
       <RepairLists key={`${context.version}:${context.contact?.id ?? "none"}`} id={conversation.id} context={context} beforeNavigate={beforeNavigate} refreshContext={() => setRetry(n => n + 1)} />
     </>}
@@ -99,12 +100,12 @@ function RepairLists({id, context, beforeNavigate, refreshContext}: {id: string;
   }
   return <div className="crm-history">
     <div className="crm-tabs" role="group" aria-label="Repair scope">
-      <button type="button" aria-pressed={scope === "contact"} onClick={() => {setScope("contact"); setStatus("active");}}>Contact</button>
-      <button type="button" disabled={!context.fleet_available} aria-pressed={scope === "fleet"} onClick={() => {setScope("fleet"); setStatus("all");}}>Fleet history</button>
+      <ControlButton controlKind="action" type="button" aria-pressed={scope === "contact"} onClick={() => {setScope("contact"); setStatus("active");}}>Contact</ControlButton>
+      <ControlButton controlKind="action" type="button" disabled={!context.fleet_available} aria-pressed={scope === "fleet"} onClick={() => {setScope("fleet"); setStatus("all");}}>Fleet history</ControlButton>
     </div>
     <div className="crm-heading"><h4>{scope === "contact" ? "Contact repairs" : "Fleet repairs"}</h4><InboxSelect label="Repair status" value={status} onChange={value => setStatus(value as RepairStatus)} options={[{value: "active", label: "Active"}, {value: "history", label: "History"}, {value: "all", label: "All"}]} /></div>
     {scope === "fleet" && <p className="crm-muted">All repairs for {context.customer?.company_name || "this customer"}.</p>}
-    {error && <div role="alert" className="crm-error">{error}<button type="button" onClick={() => setRetry(n => n + 1)}>Retry</button></div>}
+    {error && <div role="alert" className="crm-error">{error}<ControlButton type="button" onClick={() => setRetry(n => n + 1)}>Retry</ControlButton></div>}
     {!repairs && !error && <p role="status" className="crm-muted"><Loader2 size={14} className="crm-spin" />Loading repairs…</p>}
     {repairs && !repairs.items.length && <p className="crm-muted">{scope === "contact" && !context.contact ? "Link a person to see their repairs." : scope === "contact" ? "No linked repairs in this view." : "No fleet repairs in this view."}</p>}
     {repairs?.items.map(order => <article className="crm-repair" key={order.id}>
@@ -113,15 +114,15 @@ function RepairLists({id, context, beforeNavigate, refreshContext}: {id: string;
       {order.vehicle && <p><Truck size={13}/>{vehicleLabel(order.vehicle)}</p>}
       {order.description && <p className="crm-description">{order.description}</p>}
       <time dateTime={order.created_at}>{new Date(order.created_at).toLocaleDateString()}</time>
-      {scope === "fleet" && context.contact && context.can_manage && <div>{order.linked_to_contact ? <span className="crm-linked">Linked to contact</span> : <button type="button" className="crm-text-button" disabled={busy} onClick={() => setLinkTarget(order)}><Link2 size={12}/>Link to contact</button>}</div>}
+      {scope === "fleet" && context.contact && context.can_manage && <div>{order.linked_to_contact ? <span className="crm-linked">Linked to contact</span> : <ControlButton type="button" className="crm-text-button" disabled={busy} onClick={() => setLinkTarget(order)}><Link2 size={12}/>Link to contact</ControlButton>}</div>}
     </article>)}
-    {repairs?.has_more && <button type="button" className="crm-more" disabled={busy} onClick={() => void more("repairs")}>Load more repairs</button>}
+    {repairs?.has_more && <ControlButton type="button" className="crm-more" disabled={busy} onClick={() => void more("repairs")}>Load more repairs</ControlButton>}
     <h4>{scope === "contact" ? "Serviced trucks" : "Fleet trucks"}</h4>
     {!vehicles && !error && <p className="crm-muted">Loading trucks…</p>}
     {vehicles && !vehicles.items.length && <p className="crm-muted">{scope === "contact" ? "No trucks from linked repairs yet." : "No fleet trucks."}</p>}
     {vehicles?.items.map(vehicle => <p className="crm-truck" key={vehicle.id}><Truck size={15}/>{vehicleLabel(vehicle)}</p>)}
-    {vehicles?.has_more && <button type="button" className="crm-more" disabled={busy} onClick={() => void more("vehicles")}>Load more trucks</button>}
-    <Dialog open={!!linkTarget} onClose={() => {if (!busy) setLinkTarget(null);}} className="crm-dialog"><div className="crm-backdrop"/><div className="crm-dialog-position"><DialogPanel className="crm-dialog-panel"><DialogTitle>Link repair to contact</DialogTitle><p>Link {linkTarget?.order_number} to {context.contact ? personLabel(context.contact) : "this contact"}?</p><p className="crm-muted">This adds the repair and its truck to this contact’s history.</p>{error && <p role="alert" className="crm-error">{error}</p>}<div className="crm-dialog-actions"><button type="button" disabled={busy} onClick={() => setLinkTarget(null)}>Cancel</button><button type="button" className="crm-primary" disabled={busy} onClick={() => void linkRepair()}>{busy ? "Linking…" : "Confirm link"}</button></div></DialogPanel></div></Dialog>
+    {vehicles?.has_more && <ControlButton type="button" className="crm-more" disabled={busy} onClick={() => void more("vehicles")}>Load more trucks</ControlButton>}
+    <Dialog open={!!linkTarget} onClose={() => {if (!busy) setLinkTarget(null);}} className="crm-dialog"><div className="crm-backdrop"/><div className="crm-dialog-position"><DialogPanel className="crm-dialog-panel"><DialogTitle>Link repair to contact</DialogTitle><p>Link {linkTarget?.order_number} to {context.contact ? personLabel(context.contact) : "this contact"}?</p><p className="crm-muted">This adds the repair and its truck to this contact’s history.</p>{error && <p role="alert" className="crm-error">{error}</p>}<div className="crm-dialog-actions"><ControlButton type="button" disabled={busy} onClick={() => setLinkTarget(null)}>Cancel</ControlButton><ControlButton type="button" className="crm-primary" disabled={busy} onClick={() => void linkRepair()}>{busy ? "Linking…" : "Confirm link"}</ControlButton></div></DialogPanel></div></Dialog>
   </div>;
 }
 
@@ -182,23 +183,23 @@ function LinkCustomerDialog({conversation, context, initialMode, close, saved, r
     finally {lock.current = false; if (alive.current) setBusy(false);}
   }
   return <Dialog open onClose={() => {if (!busy) close();}} className="crm-dialog"><div className="crm-backdrop"/><div className="crm-dialog-position"><DialogPanel className="crm-dialog-panel">
-    <div className="crm-heading"><DialogTitle>{mode === "create" ? "Add customer" : "Link customer"}</DialogTitle><button type="button" aria-label="Close customer linking" disabled={busy} onClick={close}><X size={18}/></button></div>
-    {conversation.conversationKind === "inquiry" && <div className="crm-tabs"><button type="button" disabled={busy || uncertain} aria-pressed={mode === "link"} onClick={() => {setMode("link"); setConfirmed(false);}}>Existing customer</button><button type="button" disabled={busy || uncertain} aria-pressed={mode === "create"} onClick={() => {setMode("create"); setConfirmed(false);}}>New customer</button></div>}
+    <div className="crm-heading"><DialogTitle>{mode === "create" ? "Add customer" : "Link customer"}</DialogTitle><ControlButton controlKind="icon" type="button" aria-label="Close customer linking" disabled={busy} onClick={close}><X size={18}/></ControlButton></div>
+    {conversation.conversationKind === "inquiry" && <div className="crm-tabs"><ControlButton controlKind="action" type="button" disabled={busy || uncertain} aria-pressed={mode === "link"} onClick={() => {setMode("link"); setConfirmed(false);}}>Existing customer</ControlButton><ControlButton controlKind="action" type="button" disabled={busy || uncertain} aria-pressed={mode === "create"} onClick={() => {setMode("create"); setConfirmed(false);}}>New customer</ControlButton></div>}
     <form noValidate={uncertain} onSubmit={event => void submit(event)}>
       {uncertain && <p role="status" className="crm-muted">A previous save needs confirmation. Retry reuses that exact request.</p>}
       <fieldset disabled={busy || uncertain} onChange={() => setConfirmed(false)}>
         {mode === "link" && <>
-          {conversation.conversationKind === "inquiry" && <><label>Find customer<input value={query} maxLength={200} onChange={e => setQuery(e.target.value)} placeholder="Company or customer name"/></label><div className="crm-options" aria-label="Customer results">{customers.map(item => <button type="button" key={item.id} aria-pressed={customer?.id === item.id} onClick={() => {setCustomer(item); setNewPerson(false); setConfirmed(false);}}>{item.company_name}<small>{item.display_name}</small></button>)}</div></>}
+          {conversation.conversationKind === "inquiry" && <><label>Find customer<ControlInput value={query} maxLength={200} onChange={e => setQuery(e.target.value)} placeholder="Company or customer name"/></label><div className="crm-options" aria-label="Customer results">{customers.map(item => <ControlButton controlKind="action" type="button" key={item.id} aria-pressed={customer?.id === item.id} onClick={() => {setCustomer(item); setNewPerson(false); setConfirmed(false);}}>{item.company_name}<small>{item.display_name}</small></ControlButton>)}</div></>}
           {customer && <><p className="crm-chosen">Customer: <strong>{customer.company_name || customer.display_name}</strong></p><div className="crm-person-field"><span>Person</span><InboxSelect label="Person" disabled={busy || uncertain} value={newPerson ? "new" : contactId} onChange={value => {setConfirmed(false); setNewPerson(value === "new"); setContactId(value === "new" ? "" : value);}} options={[{value: "", label: "Choose contact"}, ...contacts.map(person => ({value: person.id, label: `${personLabel(person)}${person.role ? ` · ${person.role}` : ""}`})), {value: "new", label: "Add a person"}]} /></div>{contactsMore && <p className="crm-muted">Showing the first 100 contacts. Manage additional contacts in Customers.</p>}</>}
         </>}
-        {mode === "create" && <label>Company<input required maxLength={255} value={company} onChange={e => setCompany(e.target.value)}/></label>}
-        {createPerson && <><div className="crm-form-row"><label>First name<input required={mode === "create"} maxLength={100} value={first} onChange={e => setFirst(e.target.value)}/></label><label>Last name<input required={mode === "create"} maxLength={100} value={last} onChange={e => setLast(e.target.value)}/></label></div><label>Role<input maxLength={100} value={role} onChange={e => setRole(e.target.value)} placeholder="Driver, dispatcher, owner…"/></label><label>Email<input type="email" required={mode === "create"} maxLength={255} value={email} onChange={e => setEmail(e.target.value)}/></label><label>Phone<input type="tel" maxLength={30} value={phone} onChange={e => setPhone(e.target.value)}/></label><p className="crm-muted">Phone is an editable suggestion, not verified ownership.</p></>}
+        {mode === "create" && <label>Company<ControlInput required maxLength={255} value={company} onChange={e => setCompany(e.target.value)}/></label>}
+        {createPerson && <><div className="crm-form-row"><label>First name<ControlInput required={mode === "create"} maxLength={100} value={first} onChange={e => setFirst(e.target.value)}/></label><label>Last name<ControlInput required={mode === "create"} maxLength={100} value={last} onChange={e => setLast(e.target.value)}/></label></div><label>Role<ControlInput maxLength={100} value={role} onChange={e => setRole(e.target.value)} placeholder="Driver, dispatcher, owner…"/></label><label>Email<ControlInput type="email" required={mode === "create"} maxLength={255} value={email} onChange={e => setEmail(e.target.value)}/></label><label>Phone<ControlInput type="tel" maxLength={30} value={phone} onChange={e => setPhone(e.target.value)}/></label><p className="crm-muted">Phone is an editable suggestion, not verified ownership.</p></>}
       </fieldset>
       {loading && <p role="status" className="crm-muted">Loading options…</p>}
       {error && <p role="alert" className="crm-error">{error}</p>}
       <label className="crm-confirm"><input type="checkbox" checked={confirmed} disabled={busy} onChange={e => setConfirmed(e.target.checked)}/>I confirm this customer and person belong with this conversation.</label>
       <p className="crm-muted">Reply number, drafts and SMS consent stay unchanged.</p>
-      <div className="crm-dialog-actions"><button type="button" disabled={busy} onClick={close}>Cancel</button><button type="submit" className="crm-primary" disabled={!ready}>{busy ? "Saving…" : uncertain ? "Retry save" : mode === "create" ? "Create and link" : "Confirm link"}</button></div>
+      <div className="crm-dialog-actions"><ControlButton type="button" disabled={busy} onClick={close}>Cancel</ControlButton><ControlButton type="submit" className="crm-primary" disabled={!ready}>{busy ? "Saving…" : uncertain ? "Retry save" : mode === "create" ? "Create and link" : "Confirm link"}</ControlButton></div>
     </form>
   </DialogPanel></div></Dialog>;
 }

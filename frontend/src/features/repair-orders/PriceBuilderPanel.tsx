@@ -1,3 +1,4 @@
+import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { useAdHocPartCommand } from '@/features/parts-pricing/useAdHocPartCommand'
 import { usePricingCommand } from '@/features/parts-pricing/usePricingCommand'
@@ -548,14 +549,14 @@ function LaborLineEditor({
   return (
     <>
       <div className="mb-2 flex items-center gap-1.5">
-        <input
+        <ControlInput
           aria-label="Labor description"
           defaultValue={line.description}
           onBlur={(e) => {
             const value = e.target.value.trim()
             if (value !== line.description) onUpdate({ description: value })
           }}
-          className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+          className="flex-1 rounded-md border border-gray-300 px-2  text-sm"
         />
       </div>
       {/* Duration + rate use the shared steppers (step time by 15m, rate by $1).
@@ -684,15 +685,15 @@ function StockShortageCallout({
           Inventory shows {availableLabel}; this order requests {requestedLabel}{packageNote}. Short by {shortfallLabel}.
         </span>
       </p>
-      <button
+      <ControlButton
         type="button"
         onClick={onOverride}
         disabled={overridePending || addPending}
-        className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-red-300 bg-white px-2.5 py-1.5 font-bold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-red-300 bg-white px-2.5  font-bold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {overridePending && <Spinner size="xs" label={spinnerLabel} />}
         {overridePending ? pendingLabel : actionLabel}
-      </button>
+      </ControlButton>
     </div>
   )
 }
@@ -787,15 +788,15 @@ function PartPricePopover({ part, disabled, saving, onApply }: { part: PartsUsag
   } })
   const editable = !disabled && (part.pricing?.can_override ?? ['garage_owner', 'garage_admin', 'receptionist'].includes(role ?? ''))
   return <Popover as="span" className="inline-block">{({ close }) => <>
-    <PopoverButton type="button" onClick={() => { setDraft(Number(part.unit_price).toFixed(2)); setReason(''); setAction('manual'); setError(null); setOpened(true) }} className="db-part-price h-8 min-w-[84px] whitespace-nowrap rounded-lg border bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-xs text-gray-900 shadow-sm border-gray-200">{money(part.unit_price)} <ChevronDown className="ml-1 inline h-3 w-3 text-gray-400" /></PopoverButton>
+    <PopoverButton data-db-control="action" type="button" onClick={() => { setDraft(Number(part.unit_price).toFixed(2)); setReason(''); setAction('manual'); setError(null); setOpened(true) }} className="db-part-price h-8 min-w-[84px] whitespace-nowrap rounded-lg border bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-xs text-gray-900 shadow-sm border-gray-200">{money(part.unit_price)} <ChevronDown className="ml-1 inline h-3 w-3 text-gray-400" /></PopoverButton>
     <PopoverPanel anchor="bottom end" focus aria-label={`Part pricing for ${part.inventory_name}`} className="db-part-price-panel db-parts-pricing z-[70] w-[min(340px,calc(100vw-32px))] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-[14px] border border-gray-200 p-3 text-sm shadow-xl [--anchor-gap:4px] [--anchor-padding:16px]">
-      <div className="db-parts-pricing__toolbar"><strong>{part.inventory_name}</strong><button type="button" aria-label="Close part pricing" onClick={() => { setOpened(false); close() }}><X size={16} /></button></div>
+      <div className="db-parts-pricing__toolbar"><strong>{part.inventory_name}</strong><ControlButton controlKind="icon" type="button" aria-label="Close part pricing" onClick={() => { setOpened(false); close() }}><X size={16} /></ControlButton></div>
       <p className="db-parts-pricing__muted">Saved charge {pricingMoney(part.unit_price)} · {priceSourceLabel(part.pricing?.current_source, part.pricing?.policy_source)} · Saved default {pricingMoney(part.pricing?.default_unit_price ?? part.list_price)}</p>
       {manager && <><p className="db-parts-pricing__muted">Actual cost {details.data ? details.data.actual_cost_known ? pricingMoney(details.data.actual_unit_cost) : 'Unknown' : '—'}</p>{details.isError && <p role="alert">Saved pricing details unavailable.</p>}{!details.isError && details.data && <p className="db-parts-pricing__muted">{details.data.matrix ? `${details.data.matrix.name} · Revision ${details.data.matrix.revision} · ${details.data.matrix.band.markup_percent}% markup` : details.data.fixed_catalog_price ? 'Fixed catalog price' : 'No saved matrix'} · Basis {pricingMoney(details.data.pricing_basis)} · Minimum {pricingMoney(details.data.effective_minimum)}{details.data.override && <> · {details.data.override.reason} · {new Date(details.data.override.occurred_at).toLocaleString()}</>}</p>}</>}
-      {editable && <><label>Customer price<input inputMode="decimal" value={draft} disabled={saving} onChange={event => { setDraft(event.target.value); setAction('manual') }} /></label>{action === 'manual' && <label>Override reason<input value={reason} maxLength={500} disabled={saving} onChange={event => setReason(event.target.value)} placeholder="Required for a price change" /></label>}
-      <div className="db-parts-pricing__actions"><button type="button" disabled={saving} onClick={() => { setDraft(part.pricing?.default_unit_price ?? part.list_price ?? part.unit_price); setAction('list') }}>List</button><button type="button" disabled={saving || part.unit_cost === null} onClick={() => { setDraft(part.unit_cost ?? ''); setAction('stock') }}>Stock</button><button type="button" disabled={saving} onClick={async () => {
+      {editable && <><label>Customer price<ControlInput inputMode="decimal" value={draft} disabled={saving} onChange={event => { setDraft(event.target.value); setAction('manual') }} /></label>{action === 'manual' && <label>Override reason<ControlInput value={reason} maxLength={500} disabled={saving} onChange={event => setReason(event.target.value)} placeholder="Required for a price change" /></label>}
+      <div className="db-parts-pricing__actions"><ControlButton type="button" disabled={saving} onClick={() => { setDraft(part.pricing?.default_unit_price ?? part.list_price ?? part.unit_price); setAction('list') }}>List</ControlButton><ControlButton type="button" disabled={saving || part.unit_cost === null} onClick={() => { setDraft(part.unit_cost ?? ''); setAction('stock') }}>Stock</ControlButton><ControlButton type="button" disabled={saving} onClick={async () => {
         try { const amount = enteredMoney(draft); if (amount === null) throw new Error('Enter a customer price.'); if (action === 'manual' && amount === part.unit_price) { setOpened(false); close(); return } if (action === 'manual' && reason.trim().length < 3) throw new Error('Enter an override reason of at least 3 characters.'); await onApply({ price_action: action, ...(action === 'manual' ? { unit_price: amount, price_override_reason: reason.trim() } : {}) }); setOpened(false); close() } catch (cause) { setError(pricingError(cause, cause instanceof Error ? cause.message : 'Price could not be saved.')) }
-      }}>{saving ? 'Applying…' : 'Apply'}</button></div></>}
+      }}>{saving ? 'Applying…' : 'Apply'}</ControlButton></div></>}
       {error && <p role="alert">{error}</p>}
     </PopoverPanel>
   </>}</Popover>
@@ -1437,7 +1438,7 @@ export default function PriceBuilderPanel({
   const isEditableStatus = summary?.can_edit_work ?? !INTERNAL_FROZEN_STATUSES.includes(orderStatus)
   const canMutate = canEdit && !isEtsImported && !isDeleted && !isLocked && isEditableStatus
   const canManageHold = !!workHoldOrder && canMutate && !isDeleted && !hasInvoice && canManageWorkHold(staffRole, workHoldOrder)
-  const holdAction = (beforeOpen?: () => void) => canManageHold && <button type="button" onClick={() => { beforeOpen?.(); setHoldDialogOrderId(orderId) }} className="db-stage-action inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">{isOnHold ? 'Release hold' : 'Put on hold'}</button>
+  const holdAction = (beforeOpen?: () => void) => canManageHold && <ControlButton type="button" onClick={() => { beforeOpen?.(); setHoldDialogOrderId(orderId) }} className="db-stage-action inline-flex  items-center justify-center whitespace-nowrap rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">{isOnHold ? 'Release hold' : 'Put on hold'}</ControlButton>
   useEffect(() => {
     if (!focusedOperationId || !summary?.lines.some((line) => line.id === focusedOperationId)) return
     const key = `operation-${focusedOperationId}`
@@ -1736,59 +1737,59 @@ export default function PriceBuilderPanel({
                     onSubmit={(event) => { event.preventDefault(); addAdHocPart.mutate({ ...draft, sourceLineId }) }}
                   >
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">New part</p>
-                    <input
+                    <ControlInput
                       ref={adHocNameRef}
                       value={draft.name}
                       onChange={(e) => { adHocNameClaimed.current = true; setAdHocDraft({ ...draft, name: e.target.value }) }}
                       placeholder="Part name"
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500"
+                      className="w-full rounded-lg border border-gray-300 px-3  text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500"
                     />
                     <div className="grid grid-cols-2 gap-2">
-                      <input
+                      <ControlInput
                         value={draft.sku}
                         onChange={(e) => setAdHocDraft({ ...draft, sku: e.target.value })}
                         placeholder="Part number (optional)"
-                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500"
+                        className="rounded-lg border border-gray-300 px-3  text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500"
                       />
-                      <input
+                      <ControlInput
                         value={draft.quantity}
                         inputMode="decimal"
                         onChange={(e) => setAdHocDraft({ ...draft, quantity: e.target.value })}
                         placeholder="Qty"
-                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500"
+                        className="rounded-lg border border-gray-300 px-3  text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500"
                       />
-                      <input
+                      <ControlInput
                         value={draft.cost}
                         inputMode="decimal"
                         onChange={(e) => setAdHocDraft({ ...draft, cost: e.target.value })}
                         placeholder="Unit cost"
-                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500"
+                        className="rounded-lg border border-gray-300 px-3  text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500"
                       />
-                      <input
+                      <ControlInput
                         value={draft.price}
                         inputMode="decimal"
                         onChange={(e) => setAdHocDraft({ ...draft, price: e.target.value })}
                         placeholder="Selling price"
-                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500"
+                        className="rounded-lg border border-gray-300 px-3  text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500"
                       />
                     </div>
                     <p className="text-[11px] text-gray-500">Saved to the catalogue as a placeholder, so the next job can find it.</p>
                     <div className="flex items-center gap-2">
-                      <button
+                      <ControlButton
                         type="submit"
                         disabled={!draft.name.trim() || !draft.price.trim() || addAdHocPart.isPending}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-orange-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-orange-600 px-3  text-sm font-semibold text-white disabled:opacity-50"
                       >
                         {addAdHocPart.isPending ? <Spinner size="xs" /> : null}
                         {addAdHocPart.isPending ? 'Adding…' : 'Add to order'}
-                      </button>
-                      <button
+                      </ControlButton>
+                      <ControlButton
                         type="button"
                         onClick={() => setAdHocDraft(null)}
-                        className="rounded-lg px-2 py-2 text-sm font-semibold text-gray-500 hover:text-gray-700"
+                        className="rounded-lg px-2  text-sm font-semibold text-gray-500 hover:text-gray-700"
                       >
                         Cancel
-                      </button>
+                      </ControlButton>
                     </div>
                   </form>
     )
@@ -2343,40 +2344,40 @@ export default function PriceBuilderPanel({
         <details key={orderId} className="db-workspace-pricing">
           <summary className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-xs font-semibold">Pricing <ChevronUp className="h-3.5 w-3.5" /></summary>
         <div ref={footerDetailsRef} className="relative mb-3 flex flex-wrap items-center gap-2">
-          <button
+          <ControlButton controlKind="content"
             type="button"
             onClick={() => { setFooterDetailsOpen((open) => open === 'parts' ? null : 'parts'); setDiscountsOpen(false) }}
             className="db-summary-pill rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700 hover:bg-blue-100"
           >
             Parts {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(summary?.parts_total)}
-          </button>
-          <button
+          </ControlButton>
+          <ControlButton controlKind="content"
             type="button"
             onClick={() => { setFooterDetailsOpen((open) => open === 'labor' ? null : 'labor'); setDiscountsOpen(false) }}
             className="db-summary-pill rounded-full bg-orange-50 px-3 py-1 text-xs font-bold text-orange-700 hover:bg-orange-100"
           >
             Labor {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(effectiveLaborTotal)}
-          </button>
+          </ControlButton>
           {/* Discounts / Customer saves add noise at $0 — only show them once
               they carry a value. While still loading, keep them (showing "…") so
               the footer doesn't reflow when the numbers land. */}
           {(isInitialSummaryLoad || summaryLoadFailed || discountTotal > 0.005) && (
-            <button
+            <ControlButton controlKind="content"
               type="button"
               onClick={() => { setFooterDetailsOpen((open) => open === 'discounts' ? null : 'discounts'); setDiscountsOpen(false) }}
               className="db-summary-pill rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700 hover:bg-red-100"
             >
               Discounts -{isInitialSummaryLoad || summaryLoadFailed ? '…' : money(discountTotal)}
-            </button>
+            </ControlButton>
           )}
           {(isInitialSummaryLoad || summaryLoadFailed || customerSavesTotal > 0.005) && (
-            <button
+            <ControlButton controlKind="content"
               type="button"
               onClick={() => { setFooterDetailsOpen((open) => open === 'savings' ? null : 'savings'); setDiscountsOpen(false) }}
               className="db-summary-pill rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-100"
             >
               Customer saves {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(customerSavesTotal)}
-            </button>
+            </ControlButton>
           )}
           {footerDetailsOpen && (
             <div className="absolute bottom-full left-0 z-20 mb-2 w-[min(380px,calc(100vw-40px))] rounded-[14px] border border-gray-200 bg-white p-4 shadow-[0_10px_30px_rgba(20,25,35,.10)]">
@@ -2385,7 +2386,7 @@ export default function PriceBuilderPanel({
           )}
           {!hasInvoice && (
             <span className="ml-auto inline-flex" title={!canMutate ? lockContextMessage : undefined}>
-              <button
+              <ControlButton
                 ref={discountsButtonRef}
                 type="button"
                 onClick={() => {
@@ -2397,10 +2398,10 @@ export default function PriceBuilderPanel({
                   setFooterDetailsOpen(null)
                 }}
                 disabled={!canMutate}
-                className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                className="whitespace-nowrap rounded-lg border border-gray-200 px-3 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               >
                 Discounts & pricing
-              </button>
+              </ControlButton>
             </span>
           )}
           {!hasInvoice && discountsOpen && (
@@ -2410,9 +2411,9 @@ export default function PriceBuilderPanel({
             >
               <div className="mb-3 flex items-center justify-between">
                 <p className="font-semibold text-gray-900">Discounts & pricing</p>
-                <button type="button" aria-label="Close discounts and pricing" onClick={() => setDiscountsOpen(false)} className="rounded-md p-1 text-slate-600 hover:bg-gray-100">
+                <ControlButton controlKind="icon" type="button" aria-label="Close discounts and pricing" onClick={() => setDiscountsOpen(false)} className="rounded-md p-1 text-slate-600 hover:bg-gray-100">
                   <X className="h-4 w-4" />
-                </button>
+                </ControlButton>
               </div>
               <fieldset className="mb-3" disabled={discountsSaving}>
                 <legend className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-600">Parts pricing</legend>
@@ -2454,14 +2455,14 @@ export default function PriceBuilderPanel({
                     onChange={setLaborDiscount}
                     disabled={discountsSaving}
                   />
-                  <button
+                  <ControlButton
                     type="button"
                     onClick={() => setLaborDiscount('')}
                     disabled={!laborDiscount}
-                    className="h-9 rounded-lg px-2 text-xs font-semibold text-slate-600 hover:bg-gray-100 hover:text-gray-900 disabled:text-slate-600 disabled:opacity-100"
+                    className=" rounded-lg px-2 text-xs font-semibold text-slate-600 hover:bg-gray-100 hover:text-gray-900 disabled:text-slate-600 disabled:opacity-100"
                   >
                     Reset
-                  </button>
+                  </ControlButton>
                 </span>
               </div>
               <div className="mb-3 flex items-center justify-between gap-3 text-sm">
@@ -2473,31 +2474,31 @@ export default function PriceBuilderPanel({
                     onChange={setOrderDiscount}
                     disabled={discountsSaving}
                   />
-                  <button
+                  <ControlButton
                     type="button"
                     onClick={() => setOrderDiscount('')}
                     disabled={!orderDiscount}
-                    className="h-9 rounded-lg px-2 text-xs font-semibold text-slate-600 hover:bg-gray-100 hover:text-gray-900 disabled:text-slate-600 disabled:opacity-100"
+                    className=" rounded-lg px-2 text-xs font-semibold text-slate-600 hover:bg-gray-100 hover:text-gray-900 disabled:text-slate-600 disabled:opacity-100"
                   >
                     Reset
-                  </button>
+                  </ControlButton>
                 </span>
               </div>
               <p className="mb-2 text-[11px] text-slate-500">Available discount: labor {money(maxLaborDiscount)} · order {money(maxOrderDiscount)}</p>
               {discountValidation && <p role="alert" className="mb-2 text-xs text-amber-800">{discountValidation}</p>}
               <div className="flex items-center justify-between border-t border-gray-100 pt-3">
                 <span className="text-xs font-semibold text-emerald-700">Customer saves {draftCustomerSavesTotal.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</span>
-                <button
+                <ControlButton
                   type="button"
                   disabled={discountsSaving || !pricingAdjustmentsChanged || !!discountValidation}
                   onClick={async () => {
                     if (await savePricingAdjustments()) setDiscountsOpen(false)
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3  text-xs font-bold text-white disabled:opacity-60"
                 >
                   {discountsSaving && <Spinner size="xs" />}
                   {discountsSaving ? 'Applying…' : 'Apply'}
-                </button>
+                </ControlButton>
               </div>
             </div>
           )}
@@ -2506,14 +2507,14 @@ export default function PriceBuilderPanel({
   )
   const operationProgress = <>
             {!isFinalizedOrder && operationExecution.allowed && (operationExecution.isError ? <span className="text-xs text-red-700">Operation status unverified</span> : operationExecution.data && operationExecution.data.summary.tracked > 0 ? (
-              <button type="button" className="min-h-8 max-w-44 text-left text-xs font-medium text-slate-600 underline decoration-dotted underline-offset-2" onClick={() => {
+              <ControlButton controlKind="content" type="button" className="min-h-8 max-w-44 text-left text-xs font-medium text-slate-600 underline decoration-dotted underline-offset-2" onClick={() => {
                 const next = operationExecution.data.items.find(item => item.status === 'pending') || operationExecution.data.items[0]
                 if (next) openLinkedOperation(next.labor_id)
-              }}>{operationExecution.data.summary.remaining > 0 ? `${operationExecution.data.summary.remaining} operation${operationExecution.data.summary.remaining === 1 ? '' : 's'} remaining` : `Operations ${operationExecution.data.summary.completed}/${operationExecution.data.summary.tracked} complete`}</button>
+              }}>{operationExecution.data.summary.remaining > 0 ? `${operationExecution.data.summary.remaining} operation${operationExecution.data.summary.remaining === 1 ? '' : 's'} remaining` : `Operations ${operationExecution.data.summary.completed}/${operationExecution.data.summary.tracked} complete`}</ControlButton>
             ) : null)}
   </>
   const invoiceSecondaryActions = <>
-                  <button
+                  <ControlButton
                     type="button"
                     onClick={() => onResendInvoice?.()}
                     disabled={invoiceActionPending || !onResendInvoice}
@@ -2522,9 +2523,9 @@ export default function PriceBuilderPanel({
                   >
                     <Mail className="h-4 w-4 shrink-0" />
                     <span>{invoiceFinanciallyPaid ? 'Resend copy' : 'Resend invoice'}</span>
-                  </button>
+                  </ControlButton>
                   {!invoiceFinanciallyPaid && !invoice?.pending_zelle_confirmation && onVoidInvoice && (
-                    <button
+                    <ControlButton
                       type="button"
                       onClick={onVoidInvoice}
                       disabled={invoiceActionPending}
@@ -2534,7 +2535,7 @@ export default function PriceBuilderPanel({
                     >
                       <RotateCcw className="h-4 w-4 shrink-0" />
                       <span>Revise invoice</span>
-                    </button>
+                    </ControlButton>
                   )}
   </>
   const technicianActions = <>
@@ -2553,7 +2554,7 @@ export default function PriceBuilderPanel({
   </>
   const customerIdentity = <>
               {onOpenCustomer ? (
-                <button
+                <ControlButton controlKind="content"
                   type="button"
                   onClick={onOpenCustomer}
                   title={`Open ${customerName || 'customer'}`}
@@ -2562,7 +2563,7 @@ export default function PriceBuilderPanel({
                   <Building2 className="h-3.5 w-3.5" />
                   {customerName || 'Customer'}
                   {isFleetMember && <Star className="h-3.5 w-3.5 flex-none fill-current text-amber-300" aria-label="Fleet member" />}
-                </button>
+                </ControlButton>
               ) : (
                 <span className="inline-flex items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-white ring-1 ring-white/20">
                   <Building2 className="h-3.5 w-3.5" />
@@ -2573,10 +2574,10 @@ export default function PriceBuilderPanel({
   </>
   const orderNavigation = <>
             {(isDeleted || !['invoiced', 'paid'].includes(orderStatus)) && (
-              <button type="button" onClick={onToggleDangerActions} aria-expanded={showDangerActions} aria-label="Order actions" title="Order actions" className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/14 text-white ring-1 ring-white/20">⋯</button>
+              <ControlButton controlKind="icon" type="button" onClick={onToggleDangerActions} aria-expanded={showDangerActions} aria-label="Order actions" title="Order actions" className="inline-flex  w-9 items-center justify-center rounded-full bg-white/14 text-white ring-1 ring-white/20">⋯</ControlButton>
             )}
             {onPrev && (
-              <button
+              <ControlButton controlKind="icon"
                 type="button"
                 onClick={onPrev}
                 disabled={prevDisabled}
@@ -2584,7 +2585,7 @@ export default function PriceBuilderPanel({
                 aria-label="Previous repair order"
               >
                 <ChevronRight className="h-4 w-4 rotate-180" />
-              </button>
+              </ControlButton>
             )}
             {navigationLabel && (
               <span className="whitespace-nowrap rounded-full bg-white/14 px-3.5 py-1.5 font-['JetBrains_Mono',monospace] text-sm font-semibold tabular-nums text-white/90">
@@ -2592,7 +2593,7 @@ export default function PriceBuilderPanel({
               </span>
             )}
             {onNext && (
-              <button
+              <ControlButton controlKind="icon"
                 type="button"
                 onClick={onNext}
                 disabled={nextDisabled}
@@ -2600,7 +2601,7 @@ export default function PriceBuilderPanel({
                 aria-label="Next repair order"
               >
                 <ChevronRight className="h-4 w-4" />
-              </button>
+              </ControlButton>
             )}
   </>
 
@@ -2622,7 +2623,7 @@ export default function PriceBuilderPanel({
             <Popover key={`vehicle-${orderId}`} className="db-job-identity">
               {({ open, close }) => <>
                 <h2 className="db-job-title">
-                  <PopoverButton title="Customer and vehicle details" className="db-job-vehicle">
+                  <PopoverButton data-db-control="action" title="Customer and vehicle details" className="db-job-vehicle">
                     <Truck className="h-5 w-5 shrink-0" />
                     <span>{[vehicleUnit, vehicleLabel].filter(Boolean).join(' · ') || 'Truck'}</span>
                     <ChevronDown className={`h-4 w-4 shrink-0 ${open ? 'rotate-180' : ''}`} />
@@ -2631,7 +2632,7 @@ export default function PriceBuilderPanel({
                 <PopoverPanel anchor="bottom start" focus aria-label="Truck and customer details" className="db-job-details z-[100] w-[min(560px,calc(100vw-32px))] max-h-[min(480px,calc(100dvh-100px))] overflow-y-auto rounded-xl bg-white p-4 text-gray-900 shadow-lg ring-1 ring-gray-200 [--anchor-gap:8px] [--anchor-padding:16px]">
                   <div className="mb-3 flex items-center justify-between gap-2">
                     <h3 tabIndex={0} data-autofocus className="font-semibold outline-none">Truck and customer</h3>
-                    <button type="button" onClick={() => close()} aria-label="Close truck and customer details" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-gray-100"><X className="h-4 w-4" /></button>
+                    <ControlButton controlKind="icon" type="button" onClick={() => close()} aria-label="Close truck and customer details" className="flex  w-11 shrink-0 items-center justify-center rounded-lg hover:bg-gray-100"><X className="h-4 w-4" /></ControlButton>
                   </div>
                   <div className="grid gap-3 text-sm sm:grid-cols-2">
                     <div>
@@ -2648,7 +2649,7 @@ export default function PriceBuilderPanel({
                     </div>
                     <OrderIntakeDetails key={orderId} mileageIn={mileageIn} mileageOut={mileageOut} mileageInCarried={mileageInCarried} poNumber={poNumber} orderTypeLabel={orderTypeLabel} canEdit={canMutate && !isDeleted && !['completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus)} onSave={onSaveIntake} />
                   </div>
-                  {onOpenVehicleHistory && !isDeleted && <button type="button" className="mt-3 inline-flex min-h-11 items-center gap-2 whitespace-nowrap rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { close(); onOpenVehicleHistory() }}><History className="h-4 w-4" aria-hidden="true" />View vehicle history</button>}
+                  {onOpenVehicleHistory && !isDeleted && <ControlButton type="button" className="mt-3 inline-flex  items-center gap-2 whitespace-nowrap rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { close(); onOpenVehicleHistory() }}><History className="h-4 w-4" aria-hidden="true" />View vehicle history</ControlButton>}
                 </PopoverPanel>
               </>}
             </Popover>
@@ -2680,14 +2681,14 @@ export default function PriceBuilderPanel({
           <div className="db-job-navigation flex flex-wrap items-center justify-end gap-2">
             {!compactWorkspace && orderNavigation}
             {onClose && (
-              <button
+              <ControlButton controlKind="icon"
                 type="button"
                 onClick={onClose}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/14 text-white ring-1 ring-white/20 hover:bg-white/20"
                 aria-label="Close repair order"
               >
                 <X className="h-5 w-5" />
-              </button>
+              </ControlButton>
             )}
           </div>
         </div>
@@ -2712,14 +2713,14 @@ export default function PriceBuilderPanel({
             <span className="text-gray-300" aria-hidden="true">→</span>
             <WorkflowInfoStep key={`review-${orderId}`} stage="review" label="Quality review" className={orderStatus === 'pending_review' ? 'bg-orange-500 text-white' : ['completed', 'invoiced', 'paid'].includes(orderStatus) ? 'bg-emerald-100 text-emerald-700' : 'text-gray-500'} info={workflowInfo} status={orderStatus} reviewDraft={reviewNotesValue} />
             {onQuoteAction && canMutate && (
-              <button
+              <ControlButton controlKind="action"
                 ref={desktopQuoteActionRef}
                 type="button"
                 onClick={handleQuoteActionClick}
                 data-authorization-quote-action="true"
                 disabled={quoteActionBlocked || quoteActionPending}
                 title={quoteButtonDisabledReason}
-                className={`ml-auto hidden h-8 items-center gap-1.5 rounded-lg border px-2.5 font-semibold transition-colors disabled:opacity-50 sm:inline-flex ${
+                className={`ml-auto hidden  items-center gap-1.5 rounded-lg border px-2.5 font-semibold transition-colors disabled:opacity-50 sm:inline-flex ${
                   quoteActionReadyToSend
                     ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm hover:bg-emerald-700'
                     : 'border-amber-200 bg-white text-amber-800 hover:bg-amber-50'
@@ -2727,20 +2728,20 @@ export default function PriceBuilderPanel({
               >
                 {quoteActionPending ? <Spinner size="xs" /> : <FileText className="h-3.5 w-3.5" />}
                 {quoteActionPending ? 'Working…' : quoteActionLabel}
-              </button>
+              </ControlButton>
             )}
           </WorkflowInfoGroup>
         </div>
         {onQuoteAction && canMutate && (
           <div className="border-b border-gray-100 bg-white px-5 pb-2 pt-0 sm:hidden">
-            <button
+            <ControlButton controlKind="action"
               ref={mobileQuoteActionRef}
               type="button"
               onClick={handleQuoteActionClick}
               data-authorization-quote-action="true"
               disabled={quoteActionBlocked || quoteActionPending}
               title={quoteButtonDisabledReason}
-              className={`inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border px-4 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 disabled:opacity-50 ${
+              className={`inline-flex  w-full items-center justify-center gap-2 rounded-xl border px-4 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 disabled:opacity-50 ${
                 quoteActionReadyToSend
                   ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm hover:bg-emerald-700'
                   : 'border-amber-200 bg-white text-amber-800 hover:bg-amber-50'
@@ -2748,7 +2749,7 @@ export default function PriceBuilderPanel({
             >
               {quoteActionPending ? <Spinner size="xs" /> : <FileText className="h-4 w-4" />}
               {quoteActionPending ? 'Working…' : quoteActionLabel}
-            </button>
+            </ControlButton>
           </div>
         )}
         </>
@@ -2762,15 +2763,15 @@ export default function PriceBuilderPanel({
           <div className="db-intake-heading mb-1 flex items-center justify-between gap-2">
             <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Work Requested</p>
             {onSaveDescription && !isDeleted && !descriptionEditing && (
-              <button
+              <ControlButton controlKind="action"
                 type="button"
                 onClick={() => { setDescriptionDraft(description || ''); setDescriptionEditing(true) }}
                 aria-label={description && description.trim() ? 'Edit work requested' : 'Add work requested'}
-                className="db-inline-text-action inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-semibold text-orange-700 hover:bg-orange-50"
+                className="db-inline-text-action inline-flex items-center gap-1 rounded-md px-1.5  text-xs font-semibold text-orange-700 hover:bg-orange-50"
               >
                 <Pencil className="h-3.5 w-3.5" />
                 {description && description.trim() ? 'Edit' : 'Add'}
-              </button>
+              </ControlButton>
             )}
           </div>
           {descriptionEditing ? (
@@ -2784,24 +2785,24 @@ export default function PriceBuilderPanel({
                 className="w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-200"
               />
               <div className="flex items-center justify-end gap-2">
-                <button
+                <ControlButton
                   type="button"
                   onClick={() => { setDescriptionEditing(false); setDescriptionDraft('') }}
-                  className="db-inline-text-action rounded-lg px-3 py-1.5 text-xs font-semibold text-gray-500 hover:text-gray-700"
+                  className="db-inline-text-action rounded-lg px-3  text-xs font-semibold text-gray-500 hover:text-gray-700"
                 >
                   Cancel
-                </button>
-                <button
+                </ControlButton>
+                <ControlButton
                   type="button"
                   disabled={descriptionSaving || descriptionDraft.trim() === (description || '').trim()}
                   onClick={async () => {
                     await onSaveDescription?.(descriptionDraft.trim() || null)
                     setDescriptionEditing(false)
                   }}
-                  className="db-inline-text-action rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                  className="db-inline-text-action rounded-lg bg-orange-600 px-3  text-xs font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
                 >
                   {descriptionSaving ? 'Saving…' : 'Save'}
-                </button>
+                </ControlButton>
               </div>
             </div>
           ) : description && description.trim() ? (
@@ -2848,7 +2849,7 @@ export default function PriceBuilderPanel({
       {hasInvoice && invoice && (
         <div className="rounded-2xl border border-purple-200 bg-purple-50/70 p-3">
           <div className="flex items-center gap-2">
-            <button
+            <ControlButton controlKind="content"
               type="button"
               onClick={() => setInvoiceDetailsOpen((open) => !open)}
               className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
@@ -2884,23 +2885,23 @@ export default function PriceBuilderPanel({
                 </span>
                 <ChevronRight className={`h-4 w-4 text-purple-500 transition-transform ${invoiceDetailsOpen ? 'rotate-90' : ''}`} />
               </span>
-            </button>
+            </ControlButton>
 
             {canForceVoid && onForceVoidOrder && !isDeleted && (
               <Menu as="div" className="shrink-0">
-                <MenuButton ref={invoiceActionsRef} type="button" aria-label="Invoice actions" title="Invoice actions" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-purple-700 hover:bg-purple-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-700">
+                <MenuButton data-db-control="icon" ref={invoiceActionsRef} type="button" aria-label="Invoice actions" title="Invoice actions" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-purple-700 hover:bg-purple-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-700">
                   <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
                 </MenuButton>
                 <MenuItems anchor="bottom end" modal={false} aria-label="Invoice actions" className="z-[100] w-56 max-w-[calc(100vw-32px)] rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-lg outline-none [--anchor-gap:6px] [--anchor-padding:16px]">
                   <MenuItem>
-                    <button type="button" onClick={() => {
+                    <ControlButton controlKind="content" type="button" onClick={() => {
                       // The menu item unmounts; restore dialog focus to its stable trigger.
                       invoiceActionsRef.current?.focus()
                       setForceVoidOpen(true)
                     }} className="flex min-h-11 w-full items-center gap-2 whitespace-nowrap rounded-lg px-3 text-left font-medium text-red-700 data-[focus]:bg-red-50">
                       <CircleSlash className="h-4 w-4 shrink-0" aria-hidden="true" />
                       Void entire order…
-                    </button>
+                    </ControlButton>
                   </MenuItem>
                 </MenuItems>
               </Menu>
@@ -2996,22 +2997,22 @@ export default function PriceBuilderPanel({
           </div>
 
           <div className="flex justify-end gap-2">
-            <button
+            <ControlButton
               type="button"
               onClick={() => setArmWoComplete(false)}
-              className="inline-flex h-9 items-center rounded-lg border border-gray-200 px-3 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+              className="inline-flex  items-center rounded-lg border border-gray-200 px-3 text-sm font-semibold text-gray-600 hover:bg-gray-50"
             >
               Cancel
-            </button>
-            <button
+            </ControlButton>
+            <ControlButton
               type="button"
               disabled={adminCompleteWorkPending}
               onClick={onAdminCompleteWork}
-              className="inline-flex h-9 items-center gap-2 rounded-lg bg-yellow-500 px-3 text-sm font-bold text-white hover:bg-yellow-600 disabled:bg-gray-300"
+              className="inline-flex  items-center gap-2 rounded-lg bg-yellow-500 px-3 text-sm font-bold text-white hover:bg-yellow-600 disabled:bg-gray-300"
             >
               {adminCompleteWorkPending ? <Spinner size="xs" /> : <CheckCircle className="h-4 w-4" />}
               {adminCompleteWorkPending ? 'Completing...' : 'Mark completed'}
-            </button>
+            </ControlButton>
           </div>
         </div>
       )}
@@ -3030,33 +3031,33 @@ export default function PriceBuilderPanel({
 
           <label className="mb-3 block text-sm">
             <span className="mb-1 block font-semibold text-yellow-800">Mileage out</span>
-            <input
+            <ControlInput
               type="text"
               inputMode="numeric"
               value={woMileageOut}
               onChange={(e) => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setWoMileageOut(v) }}
               placeholder={mileageIn != null ? `Odometer at return (in: ${mileageIn.toLocaleString()} mi)` : 'Odometer reading at vehicle return'}
-              className="h-10 w-full rounded-lg border border-yellow-200 bg-white px-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-yellow-400 focus:ring-2 focus:ring-yellow-200"
+              className=" w-full rounded-lg border border-yellow-200 bg-white px-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-yellow-400 focus:ring-2 focus:ring-yellow-200"
             />
           </label>
 
           <div className="flex justify-end gap-2">
-            <button
+            <ControlButton
               type="button"
               onClick={() => setArmWoComplete(false)}
-              className="inline-flex h-9 items-center rounded-lg border border-gray-200 px-3 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+              className="inline-flex  items-center rounded-lg border border-gray-200 px-3 text-sm font-semibold text-gray-600 hover:bg-gray-50"
             >
               Cancel
-            </button>
-            <button
+            </ControlButton>
+            <ControlButton
               type="button"
               disabled={completeWorkOrderPending}
               onClick={() => onCompleteWorkOrder?.(woMileageOut.trim() === '' ? null : Number(woMileageOut))}
-              className="inline-flex h-9 items-center gap-2 rounded-lg bg-yellow-500 px-3 text-sm font-bold text-white hover:bg-yellow-600 disabled:bg-gray-300"
+              className="inline-flex  items-center gap-2 rounded-lg bg-yellow-500 px-3 text-sm font-bold text-white hover:bg-yellow-600 disabled:bg-gray-300"
             >
               {completeWorkOrderPending ? <Spinner size="xs" /> : <CheckCircle className="h-4 w-4" />}
               {completeWorkOrderPending ? 'Finalizing…' : 'Finalize & Send Invoice'}
-            </button>
+            </ControlButton>
           </div>
         </div>
       )}
@@ -3079,24 +3080,24 @@ export default function PriceBuilderPanel({
 
           <label className="mb-3 block text-sm">
             <span className="mb-1 block font-semibold text-orange-800">Mileage out</span>
-            <input
+            <ControlInput
               type="text"
               inputMode="numeric"
               value={mileageOutValue}
               onChange={(e) => onMileageOutChange?.(e.target.value)}
               placeholder={mileageIn != null ? `Odometer at return (in: ${mileageIn.toLocaleString()} mi)` : 'Odometer reading at vehicle return'}
-              className="h-10 w-full rounded-lg border border-orange-200 bg-white px-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-200"
+              className=" w-full rounded-lg border border-orange-200 bg-white px-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-200"
             />
           </label>
 
-          <button
+          <ControlButton
             type="button"
             onClick={onToggleReviewNotes}
             className="inline-flex items-center gap-1.5 text-sm font-semibold text-orange-800 hover:text-orange-900"
           >
             <ChevronRight className={`h-4 w-4 transition-transform ${showReviewNotes ? 'rotate-90' : ''}`} />
             Add review notes <span className="font-normal text-orange-500">(optional)</span>
-          </button>
+          </ControlButton>
           {showReviewNotes && (
             <textarea
               value={reviewNotesValue}
@@ -3124,7 +3125,7 @@ export default function PriceBuilderPanel({
               ['saved_labor', Tag, 'Labor'],
               ['history', History, 'History'],
             ] as const).map(([key, Icon, label]) => (
-              <button
+              <ControlButton controlKind="action"
                 key={key}
                 type="button"
                 onClick={() => {
@@ -3134,20 +3135,20 @@ export default function PriceBuilderPanel({
                   if (key === 'history') onHistoryOpen?.()
                 }}
                 aria-pressed={addType === key}
-                className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 ${
+                className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5  ${
                   addType === key ? 'bg-orange-500 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50'
                 }`}
               >
                 <Icon className="h-3.5 w-3.5 shrink-0" />
                 <span>{label}</span>
-              </button>
+              </ControlButton>
             ))}
           </div>
           )}
           {addType !== 'history' && (
           <div className="relative min-w-[240px] flex-1 basis-[240px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-            <input
+            <ControlInput
               type="text"
               value={searchTerm}
               onFocus={() => setPaletteOpen(true)}
@@ -3160,10 +3161,10 @@ export default function PriceBuilderPanel({
                 addType === 'saved_labor' ? 'Search labor book time — e.g. DPF filter replacement…' :
                 'Add part — search inventory by name or SKU…'
               }
-              className="db-workspace-search h-11 w-full rounded-lg border border-gray-100 bg-gray-50 pl-9 pr-10 text-sm text-slate-950 placeholder:text-slate-500 outline-none focus-visible:border-slate-400 focus-visible:ring-1 focus-visible:ring-slate-300"
+              className="db-workspace-search  w-full rounded-lg border border-gray-100 bg-gray-50 pl-9 pr-10 text-sm text-slate-950 placeholder:text-slate-500 outline-none focus-visible:border-slate-400 focus-visible:ring-1 focus-visible:ring-slate-300"
             />
             {searchTerm && (
-              <button
+              <ControlButton controlKind="icon"
                 type="button"
                 onClick={() => {
                   // Clear the search and cancel any in-progress new-labor entry.
@@ -3175,7 +3176,7 @@ export default function PriceBuilderPanel({
                 className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
               >
                 <X className="h-4 w-4" />
-              </button>
+              </ControlButton>
             )}
           </div>
           )}
@@ -3230,13 +3231,13 @@ export default function PriceBuilderPanel({
                           {isAddNew && (
                             <>
                               {' · '}
-                              <button
+                              <ControlButton
                                 type="button"
                                 onClick={forkToLaborBookTime}
                                 className="font-semibold text-orange-700 hover:text-orange-800 hover:underline"
                               >
                                 or save it as labor book time →
-                              </button>
+                              </ControlButton>
                             </>
                           )}
                           {c.provider === 'service_catalog' && (
@@ -3263,18 +3264,18 @@ export default function PriceBuilderPanel({
                             est. {formatHoursMinutes(c.estimated_hours)}
                           </span>
                         )}
-                        <button
+                        <ControlButton controlKind="action"
                           type="button"
                           onClick={() => applyRepairOp.mutate({
                             candidate: c,
                             estimatedHours: isAddNew ? bookTimeHours : undefined,
                           })}
                           disabled={!canMutate || applyRepairOp.isPending || (isAddNew && !bookTimeHours)}
-                          className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-orange-600 text-white shadow-sm transition-colors hover:bg-orange-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 disabled:bg-slate-300"
+                          className="inline-flex  w-10 items-center justify-center rounded-xl bg-orange-600 text-white shadow-sm transition-colors hover:bg-orange-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 disabled:bg-slate-300"
                           aria-label={isAddingThisOperation ? `Adding ${c.name}` : isAddNew ? 'Add operation' : 'Apply operation'}
                         >
                           {isAddingThisOperation ? <Spinner size="xs" label={`Adding ${c.name}`} /> : <Plus className="h-4 w-4" />}
-                        </button>
+                        </ControlButton>
                       </div>
                     </div>
                   )
@@ -3307,20 +3308,20 @@ export default function PriceBuilderPanel({
                           {formatHoursMinutes(entry.normalized_hours)} · {scope.primary} · {scope.secondary}
                         </p>
                       </div>
-                      <button
+                      <ControlButton controlKind="action"
                         type="button"
                         onClick={() => applyLaborBookEntry.mutate(entry)}
                         disabled={!canMutate || applyLaborBookEntry.isPending}
-                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-600 text-white shadow-sm transition-colors hover:bg-orange-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 disabled:bg-slate-300"
+                        className="inline-flex  w-10 shrink-0 items-center justify-center rounded-xl bg-orange-600 text-white shadow-sm transition-colors hover:bg-orange-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 disabled:bg-slate-300"
                         aria-label={isAddingThisLaborBookEntry ? `Adding ${entry.operation_name}` : `Add ${entry.operation_name}`}
                       >
                         {isAddingThisLaborBookEntry ? <Spinner size="xs" label={`Adding ${entry.operation_name}`} /> : <Plus className="h-4 w-4" />}
-                      </button>
+                      </ControlButton>
                     </div>
                   )
                 })}
                 {!laborBookEntriesFetching && laborBookEntries.length > 0 && laborBookSearchTerm.length >= 2 && !showLaborBookTimeForm && (
-                  <button
+                  <ControlButton
                     type="button"
                     onClick={() => {
                       setShowLaborBookTimeForm(true)
@@ -3329,11 +3330,11 @@ export default function PriceBuilderPanel({
                         operation_name: laborBookSearchTerm,
                       }))
                     }}
-                    className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-orange-300 bg-orange-50 px-3 py-2 text-xs font-bold text-orange-700 hover:bg-orange-100"
+                    className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-orange-300 bg-orange-50 px-3  text-xs font-bold text-orange-700 hover:bg-orange-100"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     Add another truck / engine variant
-                  </button>
+                  </ControlButton>
                 )}
                 {!laborBookEntriesFetching && laborBookSearchTerm.length >= 2 && (laborBookEntries.length === 0 || showLaborBookTimeForm) && (
                   <div className="rounded-xl bg-orange-50 p-3 shadow-[inset_3px_0_0_#ef8a12]">
@@ -3342,35 +3343,35 @@ export default function PriceBuilderPanel({
                         <p className="text-sm font-semibold text-gray-900">
                           Add "{laborBookTimeForm.operation_name || laborBookSearchTerm}" as new labor book time
                           {' · '}
-                          <button
+                          <ControlButton
                             type="button"
                             onClick={forkBackToOperation}
                             className="font-semibold text-orange-700 hover:text-orange-800 hover:underline"
                           >
                             or keep it as a regular service →
-                          </button>
+                          </ControlButton>
                         </p>
                         <p className="mt-0.5 text-xs text-gray-500">
                           Save the verified book hours and truck application, then add it to this repair order.
                         </p>
                       </div>
                       {showLaborBookTimeForm && laborBookEntries.length > 0 && (
-                        <button
+                        <ControlButton controlKind="icon"
                           type="button"
                           onClick={() => setShowLaborBookTimeForm(false)}
                           className="rounded-lg p-1 text-gray-400 hover:bg-white hover:text-gray-700"
                           aria-label="Close new labor book time form"
                         >
                           <X className="h-4 w-4" />
-                        </button>
+                        </ControlButton>
                       )}
                     </div>
                     <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                      <input
+                      <ControlInput
                         value={laborBookTimeForm.operation_name}
                         onChange={(e) => setLaborBookTimeForm((current) => ({ ...current, operation_name: e.target.value }))}
                         placeholder="Labor name"
-                        className="h-9 rounded-lg border border-orange-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
+                        className=" rounded-lg border border-orange-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
                       />
                       {/* One control: reads out as "1h 45m", steps by 15 min,
                           stores decimal hours under the hood. */}
@@ -3388,54 +3389,54 @@ export default function PriceBuilderPanel({
                       className="mt-2 w-full rounded-lg border border-orange-200 bg-white px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-orange-200"
                     />
                     <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                      <input
+                      <ControlInput
                         value={laborBookTimeForm.vehicle_year}
                         onChange={(e) => setLaborBookTimeForm((current) => ({ ...current, vehicle_year: e.target.value }))}
                         placeholder="Year"
-                        className="h-9 rounded-lg border border-orange-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
+                        className=" rounded-lg border border-orange-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
                       />
-                      <input
+                      <ControlInput
                         value={laborBookTimeForm.vehicle_make}
                         onChange={(e) => setLaborBookTimeForm((current) => ({ ...current, vehicle_make: e.target.value }))}
                         placeholder="Make"
-                        className="h-9 rounded-lg border border-orange-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
+                        className=" rounded-lg border border-orange-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
                       />
-                      <input
+                      <ControlInput
                         value={laborBookTimeForm.vehicle_model}
                         onChange={(e) => setLaborBookTimeForm((current) => ({ ...current, vehicle_model: e.target.value }))}
                         placeholder="Model"
-                        className="h-9 rounded-lg border border-orange-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
+                        className=" rounded-lg border border-orange-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
                       />
                     </div>
                     <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                      <input
+                      <ControlInput
                         value={laborBookTimeForm.engine}
                         onChange={(e) => setLaborBookTimeForm((current) => ({ ...current, engine: e.target.value }))}
                         placeholder="Engine"
-                        className="h-9 rounded-lg border border-orange-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
+                        className=" rounded-lg border border-orange-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
                       />
-                      <input
+                      <ControlInput
                         value={laborBookTimeForm.fuel_type}
                         onChange={(e) => setLaborBookTimeForm((current) => ({ ...current, fuel_type: e.target.value }))}
                         placeholder="Fuel"
-                        className="h-9 rounded-lg border border-orange-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
+                        className=" rounded-lg border border-orange-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
                       />
-                      <input
+                      <ControlInput
                         value={laborBookTimeForm.engine_displacement_l}
                         onChange={(e) => setLaborBookTimeForm((current) => ({ ...current, engine_displacement_l: e.target.value }))}
                         placeholder="Displacement L"
-                        className="h-9 rounded-lg border border-orange-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
+                        className=" rounded-lg border border-orange-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
                       />
                     </div>
                     <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
-                      <input
+                      <ControlInput
                         value={laborBookTimeForm.vin_sample}
                         onChange={(e) => {
                           setLaborBookTimeForm((current) => ({ ...current, vin_sample: e.target.value.toUpperCase() }))
                           setVinDecodeStatus(null)
                         }}
                         placeholder="Optional VIN helper"
-                        className="h-9 min-w-0 flex-1 rounded-lg border border-orange-200 bg-white px-3 text-sm uppercase outline-none focus:ring-2 focus:ring-orange-200"
+                        className=" min-w-0 flex-1 rounded-lg border border-orange-200 bg-white px-3 text-sm uppercase outline-none focus:ring-2 focus:ring-orange-200"
                       />
                       {(decodeLaborBookVin.isPending || vinDecodeStatus) && (
                         <span
@@ -3458,23 +3459,23 @@ export default function PriceBuilderPanel({
                           )}
                         </span>
                       )}
-                      <button
+                      <ControlButton
                         type="button"
                         onClick={() => decodeLaborBookVin.mutate()}
                         disabled={decodeLaborBookVin.isPending}
-                        className="h-9 rounded-lg border border-orange-200 bg-white px-3 text-xs font-bold text-gray-700 hover:bg-orange-100 disabled:opacity-60"
+                        className=" rounded-lg border border-orange-200 bg-white px-3 text-xs font-bold text-gray-700 hover:bg-orange-100 disabled:opacity-60"
                       >
                         {decodeLaborBookVin.isPending ? 'Decoding…' : 'Decode VIN'}
-                      </button>
-                      <button
+                      </ControlButton>
+                      <ControlButton
                         type="button"
                         onClick={() => createAndApplyLaborBookTime.mutate()}
                         disabled={!canMutate || createAndApplyLaborBookTime.isPending}
-                        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-gray-900 px-3 text-xs font-bold text-white disabled:bg-gray-300"
+                        className="inline-flex  items-center justify-center gap-1.5 rounded-lg bg-gray-900 px-3 text-xs font-bold text-white disabled:bg-gray-300"
                       >
                         {createAndApplyLaborBookTime.isPending && <Spinner size="xs" label="Saving labor book time" />}
                         {createAndApplyLaborBookTime.isPending ? 'Saving…' : 'Save & add'}
-                      </button>
+                      </ControlButton>
                     </div>
                   </div>
                 )}
@@ -3537,15 +3538,15 @@ export default function PriceBuilderPanel({
                                 })
                               }}
                             />
-                            <button
+                            <ControlButton controlKind="action"
                               type="button"
                               onClick={() => addPart.mutate(addRequest)}
                               disabled={!canMutate || addPart.isPending}
-                              className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-orange-600 text-white shadow-sm transition-colors hover:bg-orange-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 disabled:bg-slate-300"
+                              className="inline-flex  w-10 items-center justify-center rounded-xl bg-orange-600 text-white shadow-sm transition-colors hover:bg-orange-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 disabled:bg-slate-300"
                               aria-label={isAddingThisPart ? `Adding ${item.name}` : `Add ${item.name}`}
                             >
                               {isAddingThisPart ? <Spinner size="xs" label={`Adding ${item.name}`} /> : <Plus className="h-4 w-4" />}
-                            </button>
+                            </ControlButton>
                           </div>
                         </div>
                         {!isEtsImported && shortage && (
@@ -3608,13 +3609,13 @@ export default function PriceBuilderPanel({
                     return (
                       <p className="px-2 py-3 text-sm text-red-600">
                         Couldn't search inventory.{' '}
-                        <button
+                        <ControlButton
                           type="button"
                           onClick={() => queryClient.invalidateQueries({ queryKey: ['inventory-typeahead', inventorySearchTerm] })}
                           className="font-semibold underline hover:no-underline"
                         >
                           Retry
-                        </button>
+                        </ControlButton>
                       </p>
                     )
                   }
@@ -3627,13 +3628,13 @@ export default function PriceBuilderPanel({
                       <div className="px-2 py-3">
                         {!matches.length && <p className="text-sm text-gray-500">No parts match this search.</p>}
                         {canMutate && (
-                          <button
+                          <ControlButton
                             type="button"
                             onClick={() => setAdHocDraft({ name: searchTerm.trim(), sku: '', price: '', cost: '', quantity: '1' })}
                             className="text-sm font-semibold text-orange-700 underline-offset-2 hover:underline"
                           >
                             Add &ldquo;{searchTerm.trim()}&rdquo; as a new part
-                          </button>
+                          </ControlButton>
                         )}
                       </div>
                       {matches.map((item, index) => renderItemRow(item, index))}
@@ -3832,22 +3833,22 @@ export default function PriceBuilderPanel({
                   <Plus className="h-4 w-4" aria-hidden="true" />
                   Add part to this operation
                 </span>
-                <button
+                <ControlButton controlKind="icon"
                   type="button"
                   onClick={() => setOperationPartPickerLineId(null)}
                   className="rounded-md p-1 text-gray-400 hover:bg-white hover:text-gray-700"
                   aria-label="Close part picker"
                 >
                   <X className="h-4 w-4" />
-                </button>
+                </ControlButton>
               </div>
               <div className="relative mb-2">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <input
+                <ControlInput
                   value={operationPartSearchByLineId[line.id] || ''}
                   onChange={(e) => setOperationPartSearchByLineId((current) => ({ ...current, [line.id]: e.target.value }))}
                   placeholder="Search parts, or type a name to add a new one"
-                  className="h-10 w-full rounded-lg border border-orange-200 bg-white pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
+                  className=" w-full rounded-lg border border-orange-200 bg-white pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
                 />
               </div>
               {!hasSearchTerm ? (
@@ -3855,7 +3856,7 @@ export default function PriceBuilderPanel({
                   operationSuggestions.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5 px-1 pb-1">
                       {operationSuggestions.map((suggestion) => (
-                        <button
+                        <ControlButton controlKind="content"
                           key={suggestion.inventory_id}
                           type="button"
                           disabled={!canMutate || addPart.isPending}
@@ -3869,7 +3870,7 @@ export default function PriceBuilderPanel({
                         >
                           <Plus className="h-3 w-3 text-orange-600" aria-hidden="true" />
                           {suggestion.name}
-                        </button>
+                        </ControlButton>
                       ))}
                     </div>
                   ) : (
@@ -3881,26 +3882,26 @@ export default function PriceBuilderPanel({
               ) : inventoryErrored ? (
                 <p className="px-1 py-2 text-sm text-red-600">
                   Couldn't search inventory.{' '}
-                  <button
+                  <ControlButton
                     type="button"
                     onClick={() => queryClient.invalidateQueries({ queryKey: ['inventory-typeahead', inventorySearchTerm] })}
                     className="font-semibold underline hover:no-underline"
                   >
                     Retry
-                  </button>
+                  </ControlButton>
                 </p>
               ) : adHocDraft ? renderAdHocForm(operationPartPickerLineId) : (
                 <div className="space-y-1">
                   <div className="px-1 py-2">
                     {!matches.length && <p className="text-sm text-gray-500">No parts match this search.</p>}
                     {canMutate && (
-                      <button
+                      <ControlButton
                         type="button"
                         onClick={() => setAdHocDraft({ name: (operationPartSearchByLineId[line.id] || '').trim(), sku: '', price: '', cost: '', quantity: '1' })}
                         className="db-inline-text-action text-sm font-semibold text-orange-700 underline-offset-2 hover:underline"
                       >
                         Add &ldquo;{(operationPartSearchByLineId[line.id] || '').trim()}&rdquo; as a new part
-                      </button>
+                      </ControlButton>
                     )}
                   </div>
                   {matches.map((item) => {
@@ -3947,15 +3948,15 @@ export default function PriceBuilderPanel({
                                 })
                               }}
                             />
-                            <button
+                            <ControlButton controlKind="action"
                               type="button"
                               onClick={() => addPart.mutate(addRequest)}
                               disabled={!canMutate || addPart.isPending}
-                              className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-orange-600 text-white shadow-sm transition-colors hover:bg-orange-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 disabled:bg-slate-300"
+                              className="inline-flex  w-10 items-center justify-center rounded-xl bg-orange-600 text-white shadow-sm transition-colors hover:bg-orange-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 disabled:bg-slate-300"
                               aria-label={isAddingThisPart ? `Adding ${item.name} to ${line.description}` : `Add ${item.name} to ${line.description}`}
                             >
                               {isAddingThisPart ? <Spinner size="xs" label={`Adding ${item.name} to ${line.description}`} /> : <Plus className="h-4 w-4" />}
-                            </button>
+                            </ControlButton>
                           </div>
                         </div>
                         {shortage && (
@@ -4021,13 +4022,13 @@ export default function PriceBuilderPanel({
             <div className="rounded-xl border border-dashed border-red-200 bg-red-50/40 px-4 py-6 text-center">
               <p className="font-semibold text-gray-900">Couldn't load this order's work &amp; labor.</p>
               <p className="mt-1 text-sm text-gray-500">This isn't necessarily an empty order — the request failed.</p>
-              <button
+              <ControlButton
                 type="button"
                 onClick={() => refetchSummary()}
-                className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700"
+                className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3  text-xs font-bold text-white hover:bg-red-700"
               >
                 Retry
-              </button>
+              </ControlButton>
             </div>
           )
         }
@@ -4065,7 +4066,7 @@ export default function PriceBuilderPanel({
                 const Icon = line.source_service_id ? Wrench : line.line_type === 'flat_service' ? Gauge : Tag
                 return (
                   <div key={line.id} className="py-1">
-                    <button
+                    <ControlButton controlKind="content"
                       id={`operation-trigger-${line.id}`}
                       type="button"
                       onClick={() => toggleLine(line.id)}
@@ -4097,7 +4098,7 @@ export default function PriceBuilderPanel({
                           </span>
                         </>}
                       </span>
-                    </button>
+                    </ControlButton>
                     {line.recommendation_source && <RecommendationSourceLink source={line.recommendation_source} currentDescription={line.description} />}
                     {isOpen && (
                       <div id={`service-line-${line.id}`} className="db-workspace-line-details ml-3 space-y-2 pb-2 pr-2">
@@ -4116,7 +4117,7 @@ export default function PriceBuilderPanel({
                           <div className="mb-2 flex items-center justify-between gap-2">
                             <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-600">Labor</span>
                             {canMutate && (
-                              <button
+                              <ControlButton
                                 type="button"
                                 onClick={() => removeLine.mutate({
                                   lineId: line.id,
@@ -4125,10 +4126,10 @@ export default function PriceBuilderPanel({
                                   keptParts: (partsByLine.get(line.id) || []).length,
                                 })}
                                 disabled={removeLine.isPending}
-                                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                className="inline-flex items-center gap-1 rounded-md px-2  text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
                               >
                                 <Trash2 className="h-3.5 w-3.5" /> Remove
-                              </button>
+                              </ControlButton>
                             )}
                           </div>
                           {renderLaborEditor(line)}
@@ -4136,15 +4137,15 @@ export default function PriceBuilderPanel({
                         {groupedParts.length > 0 && renderPartsRows(groupedParts)}
                         {isAddingPartHere && <PendingWorkRows message="Adding part to this operation…" />}
                         {operationPartPickerLineId !== line.id && (
-                          <button
+                          <ControlButton
                             type="button"
                             disabled={!canMutate || addPart.isPending}
                             onClick={() => setOperationPartPickerLineId(line.id)}
-                            className="db-op-part-trigger inline-flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-gray-300 px-3 py-2.5 text-sm font-semibold text-gray-600 hover:border-orange-300 hover:text-orange-700 disabled:opacity-50"
+                            className="db-op-part-trigger inline-flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-gray-300 px-3  text-sm font-semibold text-gray-600 hover:border-orange-300 hover:text-orange-700 disabled:opacity-50"
                           >
                             {isAddingPartHere ? <Spinner size="xs" label="Adding part to this operation" /> : <Plus className="h-4 w-4" />}
                             {isAddingPartHere ? 'Adding part…' : 'Add part to this operation'}
-                          </button>
+                          </ControlButton>
                         )}
                         {renderOperationPartPicker(line, groupedParts)}
                       </div>
@@ -4195,7 +4196,7 @@ export default function PriceBuilderPanel({
           onOpenOperation: openLinkedOperation,
         }) : recommendedWorkPanel}
         {showRecommendedServicesPanel && (
-          <button
+          <ControlButton controlKind="content"
             type="button"
             onClick={() => toggleSecondaryPanel('recommended')}
             aria-expanded={recommendedOpen}
@@ -4214,17 +4215,17 @@ export default function PriceBuilderPanel({
               <span className="px-3 text-xs font-semibold text-orange-700">add from inspection</span>
               <ChevronRight className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${recommendedOpen ? 'rotate-90' : ''}`} />
             </span>
-          </button>
+          </ControlButton>
         )}
         {showRecommendedServicesPanel && recommendedOpen && (
           <div className="rounded-xl bg-gray-50 p-3">
-            {!recommendationsReadOnly && <button
+            {!recommendationsReadOnly && <ControlButton
               type="button"
               onClick={onToggleAddRecommendedService}
-              className="mb-3 inline-flex items-center gap-1 rounded-lg bg-white px-3 py-2 text-xs font-bold text-orange-700 ring-1 ring-gray-200"
+              className="mb-3 inline-flex items-center gap-1 rounded-lg bg-white px-3  text-xs font-bold text-orange-700 ring-1 ring-gray-200"
             >
               <Plus className="h-3.5 w-3.5" /> Add recommended service
-            </button>}
+            </ControlButton>}
             {!recommendationsReadOnly && showAddRecommendedService && recommendedServiceForm && onRecommendedServiceFormChange && (
               <div className="mb-3 space-y-2 rounded-xl border border-gray-200 bg-white p-3">
                 <textarea
@@ -4244,24 +4245,24 @@ export default function PriceBuilderPanel({
                     <option value="soon">Soon</option>
                     <option value="monitor">Monitor</option>
                   </PlatformSelect>
-                  <input
+                  <ControlInput
                     type="number"
                     value={recommendedServiceForm.estimated_cost}
                     onChange={(e) => onRecommendedServiceFormChange({ ...recommendedServiceForm, estimated_cost: e.target.value })}
                     placeholder="Est. cost"
-                    className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                    className="rounded-lg border border-gray-200 px-3  text-sm"
                   />
                 </div>
                 <div className="flex gap-2">
-                  <button type="button" onClick={onToggleAddRecommendedService} className="flex-1 rounded-lg bg-gray-100 py-2 text-sm font-semibold text-gray-600">Cancel</button>
-                  <button
+                  <ControlButton type="button" onClick={onToggleAddRecommendedService} className="flex-1 rounded-lg bg-gray-100  text-sm font-semibold text-gray-600">Cancel</ControlButton>
+                  <ControlButton
                     type="button"
                     disabled={!recommendedServiceForm.description.trim() || addRecommendedPending}
                     onClick={onAddRecommendedService}
-                    className="flex-1 rounded-lg bg-orange-500 py-2 text-sm font-bold text-white disabled:bg-gray-300"
+                    className="flex-1 rounded-lg bg-orange-500  text-sm font-bold text-white disabled:bg-gray-300"
                   >
                     Add
-                  </button>
+                  </ControlButton>
                 </div>
               </div>
             )}
@@ -4290,16 +4291,16 @@ export default function PriceBuilderPanel({
                     </div>
                     {!svc.is_resolved && (!recommendationsReadOnly || svc.conversion?.can_resolve) && (
                       <div className="flex shrink-0 gap-1">
-                        <button
+                        <ControlButton
                           type="button"
                           onClick={() => onResolveRecommendedService?.(svc.id)}
                           disabled={resolveRecommendedPending || (!!svc.conversion && !svc.conversion.can_resolve)}
                           title={svc.conversion && !svc.conversion.can_resolve ? 'Complete the linked work before resolving this recommendation.' : undefined}
-                          className="rounded-lg px-2 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                          className="rounded-lg px-2  text-xs font-bold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
                         >
                           Resolve
-                        </button>
-                        {!svc.conversion && <button
+                        </ControlButton>
+                        {!svc.conversion && <ControlButton controlKind="icon"
                           type="button"
                           onClick={() => onDeleteRecommendedService?.(svc.id)}
                           disabled={deleteRecommendedPending}
@@ -4307,7 +4308,7 @@ export default function PriceBuilderPanel({
                           aria-label="Delete recommended service"
                         >
                           <Trash2 className="h-4 w-4" />
-                        </button>}
+                        </ControlButton>}
                       </div>
                     )}
                   </li>
@@ -4320,7 +4321,7 @@ export default function PriceBuilderPanel({
         )}
 
         {onAddNote && (
-          <button
+          <ControlButton controlKind="content"
             type="button"
             onClick={() => toggleSecondaryPanel('notes')}
             aria-expanded={notesOpen}
@@ -4341,7 +4342,7 @@ export default function PriceBuilderPanel({
               </span>
               <ChevronRight className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${notesOpen ? 'rotate-90' : ''}`} />
             </span>
-          </button>
+          </ControlButton>
         )}
         {onAddNote && notesOpen && (
           <div className="space-y-2 rounded-xl bg-gray-50 p-3">
@@ -4365,14 +4366,14 @@ export default function PriceBuilderPanel({
                           {note.audience === 'customer' ? 'On invoice' : 'Shop only'}
                         </span>
                         {note.canDelete && onDeleteNote && (
-                          <button
+                          <ControlButton controlKind="icon"
                             type="button"
                             onClick={() => onDeleteNote(note.id)}
                             aria-label="Delete this note"
                             className="db-notes-action rounded-md p-1 text-gray-300 transition-colors hover:bg-gray-100 hover:text-gray-600"
                           >
                             <X className="h-3.5 w-3.5" />
-                          </button>
+                          </ControlButton>
                         )}
                       </span>
                     </div>
@@ -4383,18 +4384,18 @@ export default function PriceBuilderPanel({
             )}
 
             {!noteComposerOpen ? (
-              <button
+              <ControlButton
                 type="button"
                 onClick={() => setNoteComposerOpen(true)}
-                className="db-notes-action inline-flex items-center gap-1 rounded-lg bg-white px-3 py-2 text-xs font-bold text-orange-700 ring-1 ring-gray-200"
+                className="db-notes-action inline-flex items-center gap-1 rounded-lg bg-white px-3  text-xs font-bold text-orange-700 ring-1 ring-gray-200"
               >
                 <Plus className="h-3.5 w-3.5" /> Add note
-              </button>
+              </ControlButton>
             ) : (
               <div className="space-y-2 rounded-xl bg-white p-3 ring-1 ring-gray-200">
                 <div className="inline-flex rounded-lg bg-gray-50 p-0.5 ring-1 ring-gray-200" role="tablist">
                   {([['shop', 'Shop only'], ['customer', 'On the invoice']] as const).map(([key, label]) => (
-                    <button
+                    <ControlButton controlKind="content"
                       key={key}
                       type="button"
                       role="tab"
@@ -4405,7 +4406,7 @@ export default function PriceBuilderPanel({
                       }`}
                     >
                       {label}
-                    </button>
+                    </ControlButton>
                   ))}
                 </div>
                 <textarea
@@ -4423,14 +4424,14 @@ export default function PriceBuilderPanel({
                     {noteAudience === 'customer' ? 'Appears on the invoice.' : 'Shop only — the customer never sees this.'}
                   </p>
                   <span className="inline-flex items-center gap-2">
-                    <button
+                    <ControlButton
                       type="button"
                       onClick={() => { setNoteComposerOpen(false); setNoteDraft('') }}
-                      className="db-notes-action rounded-lg px-3 py-1.5 text-xs font-semibold text-gray-500 hover:text-gray-700"
+                      className="db-notes-action rounded-lg px-3  text-xs font-semibold text-gray-500 hover:text-gray-700"
                     >
                       Cancel
-                    </button>
-                    <button
+                    </ControlButton>
+                    <ControlButton
                       type="button"
                       disabled={!noteDraft.trim() || notesSaving}
                       onClick={async () => {
@@ -4440,10 +4441,10 @@ export default function PriceBuilderPanel({
                         setNoteDraft('')
                         setNoteComposerOpen(false)
                       }}
-                      className="db-notes-action rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                      className="db-notes-action rounded-lg bg-orange-600 px-3  text-xs font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
                     >
                       {notesSaving ? 'Posting…' : 'Post note'}
-                    </button>
+                    </ControlButton>
                   </span>
                 </div>
               </div>
@@ -4457,7 +4458,7 @@ export default function PriceBuilderPanel({
             whole section is hidden. */}
         {!isDeleted && (!isFinalized || (repairPhotosData !== undefined && repairPhotos.length > 0)) && (
           <div className="db-workspace-photos">
-            <button
+            <ControlButton controlKind="content"
               type="button"
               onClick={() => toggleSecondaryPanel('photos')}
               className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap text-left"
@@ -4493,20 +4494,20 @@ export default function PriceBuilderPanel({
                   <ChevronDown className={`h-4 w-4 transition-transform ${photosOpen ? 'rotate-180' : ''}`} />
                 </span>
               </span>
-            </button>
+            </ControlButton>
             {photosOpen && (
               <div className="mt-3 border-t border-gray-100 pt-3">
                 {/* Upload only while the order is open — a finalized order's photos
                     are a fixed record; they should have been added before closing. */}
                 {!isFinalized && (
                   <div className="flex flex-col gap-2 sm:flex-row">
-                    <input
+                    <ControlInput
                       type="text"
                       value={photoCaption}
                       onChange={(event) => setPhotoCaption(event.target.value)}
                       maxLength={500}
                       placeholder="Optional photo note"
-                      className="h-10 min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-sm outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                      className=" min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-sm outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
                     />
                     <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold text-gray-700 transition hover:border-orange-300 hover:bg-orange-50">
                       <Camera className="h-4 w-4 text-orange-600" />
@@ -4559,7 +4560,7 @@ export default function PriceBuilderPanel({
                           <p className="mt-0.5 text-[10px] text-white/75">{photo.uploader_name}</p>
                         </div>
                         {!isFinalized && (
-                          <button
+                          <ControlButton controlKind="icon"
                             type="button"
                             onClick={() => deletePhotoMutation.mutate(photo.id)}
                             disabled={deletePhotoMutation.isPending}
@@ -4567,7 +4568,7 @@ export default function PriceBuilderPanel({
                             aria-label="Delete repair photo"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          </ControlButton>
                         )}
                       </div>
                     ))}
@@ -4591,10 +4592,10 @@ export default function PriceBuilderPanel({
       <div className="db-workspace-footer z-10 border-t border-gray-200 bg-white/95 px-3 py-4 shadow-[0_-10px_30px_rgba(20,25,35,.08)] backdrop-blur sm:px-5">
         {isDeleted ? <div className="db-workspace-actions flex items-center justify-between gap-3">
           <span className="text-sm font-medium text-slate-600">Deleted order</span>
-          {onRestoreOrder && <button type="button" onClick={onRestoreOrder} disabled={restorePending} className="db-stage-action db-stage-action--primary min-h-11">
+          {onRestoreOrder && <ControlButton type="button" onClick={onRestoreOrder} disabled={restorePending} className="db-stage-action db-stage-action--primary ">
             {restorePending ? <Spinner size="xs" /> : <RotateCcw className="h-4 w-4" />}
             {restorePending ? 'Restoring…' : 'Restore order'}
-          </button>}
+          </ControlButton>}
         </div> : <>
         {!compactWorkspace && pricingControls}
         <div className="db-workspace-actions flex flex-wrap items-center justify-between gap-3">
@@ -4610,13 +4611,13 @@ export default function PriceBuilderPanel({
                   {(totalMotionActive || isInitialSummaryLoad) && <Spinner size="xs" />}
                   {isEtsImported ? 'Invoice total' : summaryLoadFailed ? 'Failed to load' : isInitialSummaryLoad ? 'Loading' : totalMotionActive ? 'Calculating' : 'Order Total'}
                   {summaryLoadFailed && (
-                    <button
+                    <ControlButton controlKind="content"
                       type="button"
                       onClick={() => refetchSummary()}
                       className="ml-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700 hover:bg-red-200"
                     >
                       Retry
-                    </button>
+                    </ControlButton>
                   )}
                 </p>
               </div>
@@ -4633,15 +4634,15 @@ export default function PriceBuilderPanel({
             {(!isInternalOrder || hasInvoice || completionMode) && (
               isEtsImported ? null : canCreateInvoice ? (
                 <div className="relative">
-                  <button
+                  <ControlButton
                     type="button"
                     onClick={onToggleInvoiceCreateOptions}
                     disabled={invoiceCreatePending}
-                    className="inline-flex h-11 items-center gap-2 rounded-xl bg-indigo-600 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(79,70,229,.26)] hover:bg-indigo-700 disabled:bg-gray-300"
+                    className="inline-flex  items-center gap-2 rounded-xl bg-indigo-600 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(79,70,229,.26)] hover:bg-indigo-700 disabled:bg-gray-300"
                   >
                     {invoiceCreatePending ? <Spinner size="xs" /> : <FileText className="h-4 w-4" />}
                     {invoiceCreatePending ? 'Creating...' : 'Create Invoice'}
-                  </button>
+                  </ControlButton>
                   {showInvoiceCreateOptions && (
                     <div className="absolute bottom-full right-0 z-30 mb-2 w-[min(340px,calc(100vw-40px))] rounded-[14px] border border-gray-200 bg-white p-4 text-left shadow-[0_10px_30px_rgba(20,25,35,.14)]">
                       <div className="mb-3 flex items-start justify-between gap-3">
@@ -4649,14 +4650,14 @@ export default function PriceBuilderPanel({
                           <p className="font-semibold text-gray-950">Invoice recipient and due date</p>
                           <p className="text-xs text-gray-500">Choose which connected company receives this invoice.</p>
                         </div>
-                        <button
+                        <ControlButton controlKind="icon"
                           type="button"
                           onClick={onToggleInvoiceCreateOptions}
                           className="rounded-md p-1 text-gray-400 hover:bg-gray-100"
                           aria-label="Close invoice due date options"
                         >
                           <X className="h-4 w-4" />
-                        </button>
+                        </ControlButton>
                       </div>
                       <div className="space-y-2">
                         {invoiceRecipientOptions.length > 0 && (
@@ -4673,7 +4674,7 @@ export default function PriceBuilderPanel({
                             </PlatformSelect>
                           </label>
                         )}
-                        <button
+                        <ControlButton controlKind="content"
                           type="button"
                           onClick={() => onCreateInvoice?.(null, invoiceRecipientId || undefined)}
                           disabled={invoiceCreatePending}
@@ -4684,7 +4685,7 @@ export default function PriceBuilderPanel({
                             <span className="block text-xs text-indigo-700">Create invoice immediately with today's due date.</span>
                           </span>
                           <FileText className="h-4 w-4 text-indigo-600" />
-                        </button>
+                        </ControlButton>
                         <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
                           <DatePicker
                             surface="light"
@@ -4693,15 +4694,15 @@ export default function PriceBuilderPanel({
                             onChange={(day) => onInvoiceDueDateChange?.(day)}
                             min={new Date().toISOString().split('T')[0]}
                           />
-                          <button
+                          <ControlButton
                             type="button"
                             onClick={() => onCreateInvoice?.(invoiceDueDateValue || null, invoiceRecipientId || undefined)}
                             disabled={invoiceCreatePending || !invoiceDueDateValue}
-                            className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 text-sm font-bold text-white hover:bg-indigo-700 disabled:bg-gray-300"
+                            className="mt-3 inline-flex  w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 text-sm font-bold text-white hover:bg-indigo-700 disabled:bg-gray-300"
                           >
                             {invoiceCreatePending && <Spinner size="xs" />}
                             Create invoice with due date
-                          </button>
+                          </ControlButton>
                         </div>
                       </div>
                     </div>
@@ -4710,7 +4711,7 @@ export default function PriceBuilderPanel({
               ) : hasInvoice && invoice ? (
                 <div className="db-invoice-actions">
                   {!invoiceFinanciallyPaid && (
-                    <button
+                    <ControlButton
                       type="button"
                       onClick={() => onRecordPayment?.()}
                       disabled={invoiceActionPending || !onRecordPayment}
@@ -4719,23 +4720,23 @@ export default function PriceBuilderPanel({
                     >
                       <CreditCard className="h-4 w-4 shrink-0" />
                       <span>{invoice.pending_zelle_confirmation ? compactWorkspace ? 'Confirm Zelle' : 'Confirm Zelle payment' : 'Record payment'}</span>
-                    </button>
+                    </ControlButton>
                   )}
                   {!compactWorkspace ? invoiceSecondaryActions : invoiceFinanciallyPaid && (
-                    <button type="button" onClick={() => onResendInvoice?.()} disabled={invoiceActionPending || !onResendInvoice} className="db-stage-action db-stage-action--primary"><Mail className="h-4 w-4 shrink-0" />Resend copy</button>
+                    <ControlButton type="button" onClick={() => onResendInvoice?.()} disabled={invoiceActionPending || !onResendInvoice} className="db-stage-action db-stage-action--primary"><Mail className="h-4 w-4 shrink-0" />Resend copy</ControlButton>
                   )}
                 </div>
               ) : completionMode ? (
-                <button
+                <ControlButton controlKind="action"
                   type="button"
                   onClick={onApproveCompletion}
                   aria-label="Finalize & Send Invoice"
                   disabled={completionPending || !onApproveCompletion}
-                  className="inline-flex h-11 items-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(22,163,74,.28)] hover:bg-green-700 disabled:bg-gray-300"
+                  className="inline-flex  items-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(22,163,74,.28)] hover:bg-green-700 disabled:bg-gray-300"
                 >
                   {completionPending ? <Spinner size="xs" /> : <CheckCircle className="h-4 w-4" />}
                   {completionPending ? 'Finalizing...' : compactWorkspace ? 'Finalize' : 'Finalize & Send Invoice'}
-                </button>
+                </ControlButton>
               ) : canEdit && !isDeleted && canManageTechnician && !hasAssignedTechnician
                 && ['draft', 'quoted', 'declined', 'approved'].includes(orderStatus)
                 && ((onAssignTechnician && availableTechnicians.length > 0) || canOverrideTechnicianAssignment) ? (
@@ -4765,50 +4766,50 @@ export default function PriceBuilderPanel({
             {(!compactWorkspace || isOnHold) && holdAction()}
             {!compactWorkspace && technicianActions}
             {canAdminCompleteBypassedWork && !isDeleted && !isOnHold && !armWoComplete && (
-              <button
+              <ControlButton
                 type="button"
                 onClick={() => setArmWoComplete(true)}
-                className="inline-flex h-11 items-center gap-2 rounded-xl bg-yellow-500 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(234,179,8,.28)] hover:bg-yellow-600"
+                className="inline-flex  items-center gap-2 rounded-xl bg-yellow-500 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(234,179,8,.28)] hover:bg-yellow-600"
               >
                 <CheckCircle className="h-4 w-4" />
                 {compactWorkspace ? 'Complete' : 'Mark Completed'}
-              </button>
+              </ControlButton>
             )}
             {isInternalOrder && !isDeleted && (
               ['draft', 'assigned', 'acknowledged'].includes(orderStatus) ? (
-                <button
+                <ControlButton
                   type="button"
                   disabled={startWorkOrderPending || !onStartWorkOrder}
                   onClick={onStartWorkOrder}
-                  className="inline-flex h-11 items-center gap-2 rounded-xl bg-amber-500 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(245,158,11,.28)] hover:bg-amber-600 disabled:bg-gray-300"
+                  className="inline-flex  items-center gap-2 rounded-xl bg-amber-500 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(245,158,11,.28)] hover:bg-amber-600 disabled:bg-gray-300"
                 >
                   {startWorkOrderPending ? <Spinner size="xs" /> : <Play className="h-4 w-4" />}
                   {startWorkOrderPending ? 'Starting...' : 'Start Work'}
-                </button>
+                </ControlButton>
               ) : orderStatus === 'in_progress' && !isOnHold && !armWoComplete ? (
-                <button
+                <ControlButton
                   type="button"
                   onClick={() => { setWoMileageOut(mileageIn != null ? String(mileageIn) : ''); setArmWoComplete(true) }}
-                  className="inline-flex h-11 items-center gap-2 rounded-xl bg-yellow-500 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(234,179,8,.28)] hover:bg-yellow-600"
+                  className="inline-flex  items-center gap-2 rounded-xl bg-yellow-500 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(234,179,8,.28)] hover:bg-yellow-600"
                 >
                   <CheckCircle className="h-4 w-4" />
                   {compactWorkspace ? 'Finalize' : 'Finalize & Invoice'}
-                </button>
+                </ControlButton>
               ) : orderStatus === 'completed' ? (
                 <span className="db-internal-complete-state inline-flex items-center gap-3">
                   <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-green-700">
                     <CheckCircle className="h-4 w-4" /> Completed
                   </span>
                   {/* Reopen an internal WO so more labor/parts can be added. */}
-                  <button
+                  <ControlButton
                     type="button"
                     disabled={reopenPending || !onReopenWorkOrder}
                     onClick={onReopenWorkOrder}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    className="inline-flex  items-center gap-1.5 rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                   >
                     {reopenPending ? <Spinner size="xs" /> : <RotateCcw className="h-3.5 w-3.5" />}
                     {reopenPending ? 'Reopening…' : 'Reopen'}
-                  </button>
+                  </ControlButton>
                 </span>
               ) : null
             )}
@@ -4835,7 +4836,7 @@ export default function PriceBuilderPanel({
           geometry never shifts (no inline accordion pushing content down). */}
       {showDangerActions && (isDeleted || !['invoiced', 'paid'].includes(orderStatus)) && (
         <div className="absolute inset-0 z-40 flex flex-col justify-end">
-          <button
+          <ControlButton controlKind="content"
             type="button"
             aria-label="Close danger zone"
             onClick={onToggleDangerActions}
@@ -4846,14 +4847,14 @@ export default function PriceBuilderPanel({
               <span className="inline-flex items-center gap-2 text-sm font-semibold text-red-700">
                 <AlertTriangle className="h-4 w-4" /> Danger zone
               </span>
-              <button
+              <ControlButton controlKind="icon"
                 type="button"
                 onClick={onToggleDangerActions}
                 aria-label="Close"
-                className="flex h-8 w-8 items-center justify-center rounded-md text-red-600 hover:bg-red-100"
+                className="flex  w-8 items-center justify-center rounded-md text-red-600 hover:bg-red-100"
               >
                 <X className="h-4 w-4" />
-              </button>
+              </ControlButton>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-4">
               {isDeleted ? (
@@ -4866,15 +4867,15 @@ export default function PriceBuilderPanel({
                       return 'This order is deleted. Restore to bring it back.'
                     })()}
                   </p>
-                  <button
+                  <ControlButton
                     type="button"
                     disabled={restorePending || !onRestoreOrder}
                     onClick={onRestoreOrder}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-4  text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
                   >
                     <RotateCcw className="h-4 w-4" />
                     {restorePending ? 'Restoring...' : 'Restore order'}
-                  </button>
+                  </ControlButton>
                 </>
               ) : (
                 <>
@@ -4882,14 +4883,14 @@ export default function PriceBuilderPanel({
                     Delete removes this order from your active lists. Nothing is destroyed —
                     it can be restored later from the Deleted filter.
                   </p>
-                  <button
+                  <ControlButton
                     type="button"
                     disabled={deletePending}
                     onClick={onDeleteOrder}
-                    className="w-full rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                    className="w-full rounded-lg bg-red-600 px-4  text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
                   >
                     {deletePending ? 'Deleting...' : 'Delete'}
-                  </button>
+                  </ControlButton>
                 </>
               )}
             </div>

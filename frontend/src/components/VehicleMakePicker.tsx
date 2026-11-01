@@ -1,3 +1,4 @@
+import { ControlInput } from '@/components/ui/Controls'
 import { useEffect, useMemo, useState } from 'react'
 import BaseSelect, { BaseSelectOption } from './BaseSelect'
 
@@ -122,11 +123,11 @@ export default function VehicleMakePicker({ value, onChange, label = 'Make', err
       />
       {selection === 'custom' ? (
         <div className="mt-2">
-          <input
+          <ControlInput
             name="make"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors ${error ? 'border-red-400' : 'border-gray-300'}`}
+            className={`w-full px-4  border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors ${error ? 'border-red-400' : 'border-gray-300'}`}
             placeholder="e.g., Peterbilt or custom make"
             required
           />

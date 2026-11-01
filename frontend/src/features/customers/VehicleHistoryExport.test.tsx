@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -39,7 +40,7 @@ describe('vehicle service-history export', () => {
     expect(api.get).not.toHaveBeenCalled()
   })
   it.each(['mechanic', 'driver', 'customer', 'fleet_manager', 'super_admin'])('hides the export for %s while preserving existing order action', role => {
-    auth(role); render(<VehicleHistoryExport vehicle={vehicle}><button>New repair order</button></VehicleHistoryExport>)
+    auth(role); render(<VehicleHistoryExport vehicle={vehicle}><ControlButton>New repair order</ControlButton></VehicleHistoryExport>)
     expect(screen.queryByRole('button', { name: 'Export history' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'New repair order' })).toBeVisible(); expect(api.get).not.toHaveBeenCalled()
   })
@@ -131,7 +132,7 @@ describe('vehicle service-history export', () => {
     const handler = (event: KeyboardEvent) => { if (event.key === 'Escape') drawerEscape() }
     document.addEventListener('keydown', handler)
     try {
-      render(<><VehicleHistoryExport vehicle={vehicle} /><div role="dialog"><button>Other dialog action</button></div></>)
+      render(<><VehicleHistoryExport vehicle={vehicle} /><div role="dialog"><ControlButton>Other dialog action</ControlButton></div></>)
       await open(); await userEvent.keyboard('{Escape}')
       expect(drawerEscape).not.toHaveBeenCalled(); expect(screen.queryByRole('form')).not.toBeInTheDocument()
       await open(); screen.getByRole('button', { name: 'Other dialog action' }).focus()

@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useMemo, useState } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Check, ChevronRight, CircleDollarSign, Clock3, Wrench } from 'lucide-react'
@@ -182,7 +183,7 @@ export default function PortalDashboardPage() {
               </p>
               <div className="mt-5 grid gap-2 sm:flex">
                 {oldest && (
-                  <Link
+                  <Link data-db-control="action"
                     to={`/portal/invoices/${oldest.invoice.id}`}
                     state={{ paymentOrigin: 'Dashboard', invoiceQueue: unpaid.map(item => item.invoice.id) }}
                     className="flex h-[46px] items-center justify-center rounded-xl bg-[#8b7cf7] px-5 text-sm font-extrabold text-[#0e1118] hover:brightness-110"
@@ -191,7 +192,7 @@ export default function PortalDashboardPage() {
                   </Link>
                 )}
                 {oldest && unpaid.length > 1 && (
-                  <Link
+                  <Link data-db-control="action"
                     to={`/portal/invoices/${oldest.invoice.id}`}
                     state={{ paymentOrigin: 'Dashboard' }}
                     className="flex h-[46px] items-center justify-center rounded-xl border border-[#272d3d] bg-[#191d2a] px-5 text-sm font-bold text-[#c9cdd8] hover:border-[#343b52]"
@@ -209,7 +210,7 @@ export default function PortalDashboardPage() {
               </div>
               <Money className="mt-2 block text-[36px] font-extrabold tracking-[-0.02em] sm:text-[42px]">$0.00</Money>
               <p className="mt-1 text-xs text-[#9aa1b3]">{pmRemaining ? `Next PM due in about ${pmRemaining.toLocaleString()} miles.` : 'No outstanding invoices.'}</p>
-              <Link to="/portal/services" className="mt-5 inline-flex h-[46px] items-center justify-center rounded-xl border border-[#272d3d] bg-[#191d2a] px-5 text-sm font-bold text-[#c9cdd8]">
+              <Link data-db-control="action" to="/portal/services" className="mt-5 inline-flex h-[46px] items-center justify-center rounded-xl border border-[#272d3d] bg-[#191d2a] px-5 text-sm font-bold text-[#c9cdd8]">
                 Book a service
               </Link>
             </>
@@ -381,7 +382,7 @@ export default function PortalDashboardPage() {
             <div className="flex items-center justify-between gap-2">
               <span className="hidden text-xs text-[#8b92a5] sm:inline">Sorted by days overdue</span>
               {selecting && selected.length > 0 && (
-                <Link
+                <Link data-db-control="action"
                   to={`/portal/invoices/${selected[0].invoice.id}`}
                   state={{ paymentOrigin: 'Dashboard', invoiceQueue: selected.map(item => item.invoice.id) }}
                   className="inline-flex h-[44px] items-center rounded-lg bg-[#8b7cf7] px-3.5 text-xs font-extrabold text-[#0e1118] sm:h-[34px]"
@@ -389,16 +390,16 @@ export default function PortalDashboardPage() {
                   Pay {selected.length} · {formatMoney(selectedTotal)}
                 </Link>
               )}
-              <button
+              <ControlButton
                 type="button"
                 onClick={() => {
                   setSelecting(current => !current)
                   setSelectedIds([])
                 }}
-                className="h-[44px] rounded-lg border border-[#8b7cf7] bg-[#8b7cf7]/10 px-3.5 text-xs font-extrabold text-[#c9bfff] sm:h-[34px]"
+                className=" rounded-lg border border-[#8b7cf7] bg-[#8b7cf7]/10 px-3.5 text-xs font-extrabold text-[#c9bfff] "
               >
                 {selecting ? 'Done' : 'Select & pay'}
-              </button>
+              </ControlButton>
             </div>
           </div>
           <div className="space-y-1.5 p-2.5">
@@ -410,14 +411,14 @@ export default function PortalDashboardPage() {
                   {level !== 'none' && <span className={`absolute inset-y-0 left-0 w-1 ${level === 'critical' ? 'bg-[#ff6b6e]' : 'bg-[#f0b959]'}`} />}
                   <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-3 py-3 pl-4 sm:grid-cols-[auto_210px_1fr_84px_auto] sm:px-3.5 sm:py-2.5 sm:pl-[18px]">
                     {selecting && (
-                      <button
+                      <ControlButton controlKind="action"
                         type="button"
                         aria-label={`${isSelected ? 'Deselect' : 'Select'} invoice ${invoice.invoice_number}`}
                         onClick={() => toggleInvoice(invoice.id)}
-                        className={`flex h-5 w-5 items-center justify-center rounded border ${isSelected ? 'border-[#8b7cf7] bg-[#8b7cf7] text-[#0e1118]' : 'border-[#343b52]'}`}
+                        className={`flex  w-5 items-center justify-center rounded border ${isSelected ? 'border-[#8b7cf7] bg-[#8b7cf7] text-[#0e1118]' : 'border-[#343b52]'}`}
                       >
                         {isSelected && <Check className="h-3.5 w-3.5" />}
-                      </button>
+                      </ControlButton>
                     )}
                     <div className="min-w-0">
                       <p className="truncate text-[13px] font-bold">{order?.order_number || invoice.invoice_number}</p>
@@ -436,7 +437,7 @@ export default function PortalDashboardPage() {
                     </div>
                     <Money className="text-right text-sm font-extrabold">{formatMoney(invoice.total_amount)}</Money>
                     {!selecting && (
-                      <Link
+                      <Link data-db-control="action"
                         to={`/portal/invoices/${invoice.id}`}
                         state={{ paymentOrigin: 'Dashboard' }}
                         className="flex h-[44px] items-center justify-center rounded-lg bg-[#8b7cf7] px-4 text-xs font-extrabold text-[#0e1118] sm:h-[34px]"

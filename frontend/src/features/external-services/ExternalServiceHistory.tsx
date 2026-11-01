@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useId, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, Plus } from 'lucide-react'
@@ -75,19 +76,19 @@ function ScopedHistory({ vehicleId, scope }: { vehicleId: string; scope: (string
   const accessDenied = [401, 403, 404].includes((query.error as { response?: { status?: number } } | null)?.response?.status ?? 0)
   return <section aria-label="Outside-shop service history" className="db-external-services">
     <div className="db-external-services__heading"><h3>Outside-shop history{query.data && !query.isError && !searching ? ` (${query.data.total}${debouncedSearch ? ' matching' : ''})` : ''}</h3>
-      <button ref={addButton} type="button" disabled={Boolean(editor) || searching || !query.data || query.isError || query.isFetching} onClick={event => openEditor({ kind: 'create' }, event.currentTarget)}><Plus size={14} aria-hidden="true" />Add outside service</button>
+      <ControlButton ref={addButton} type="button" disabled={Boolean(editor) || searching || !query.data || query.isError || query.isFetching} onClick={event => openEditor({ kind: 'create' }, event.currentTarget)}><Plus size={14} aria-hidden="true" />Add outside service</ControlButton>
     </div>
     <p className="db-external-services__muted">Work performed elsewhere · Not billed by this shop.</p>
     <div className="db-external-services__search">
-      <input ref={searchInput} type="search" aria-label="Search outside-shop history" aria-describedby={searchHint} placeholder="Shop, work, or reference" maxLength={200} value={search} disabled={Boolean(editor)} onChange={event => changeSearch(event.target.value)} />
+      <ControlInput ref={searchInput} type="search" aria-label="Search outside-shop history" aria-describedby={searchHint} placeholder="Shop, work, or reference" maxLength={200} value={search} disabled={Boolean(editor)} onChange={event => changeSearch(event.target.value)} />
       <span id={searchHint} className="sr-only">Search all outside-shop records for this vehicle by shop, work performed, or reference.</span>
-      {search && <button type="button" disabled={Boolean(editor)} onClick={clearSearch}>Clear search</button>}
+      {search && <ControlButton type="button" disabled={Boolean(editor)} onClick={clearSearch}>Clear search</ControlButton>}
       <label className="db-external-services__toggle"><input type="checkbox" checked={includeVoided} disabled={Boolean(editor)} onChange={event => { setIncludeVoided(event.target.checked); setPage(0) }} />Show voided</label>
     </div>
     {message && <p role="status" className="db-external-services__success">{message}</p>}
     {(searching || query.isPending) && <p role="status">{normalizedSearch ? 'Searching outside-shop history…' : 'Loading outside-shop history…'}</p>}
-    {!searching && query.isError && <div role="alert">Could not load outside-shop history. <button type="button" disabled={query.isFetching} onClick={() => void query.refetch()}>Retry outside history</button></div>}
-    {editor && accessDenied && <button type="button" onClick={closeEditor}>Close service editor</button>}
+    {!searching && query.isError && <div role="alert">Could not load outside-shop history. <ControlButton type="button" disabled={query.isFetching} onClick={() => void query.refetch()}>Retry outside history</ControlButton></div>}
+    {editor && accessDenied && <ControlButton type="button" onClick={closeEditor}>Close service editor</ControlButton>}
     {editor && !accessDenied && <ServiceEditor key={`${editor.kind}:${editor.record?.id ?? 'new'}`} editor={editor} path={path} vehicleId={vehicleId} disabled={query.isError || query.isFetching} onCancel={closeEditor}
       onWriteError={() => { void client.invalidateQueries({ queryKey: prefix }) }}
       refresh={async () => { const result = await query.refetch(); if (result.isError) throw new Error('Could not refresh the record.'); return result.data?.items.find(item => item.id === editor.record?.id) }}
@@ -105,16 +106,16 @@ function ScopedHistory({ vehicleId, scope }: { vehicleId: string; scope: (string
         <p className="db-external-services__description">{record.description}</p>
         {(record.odometer !== null || record.reference) && <p className="db-external-services__meta">{record.odometer !== null && <span>{record.odometer.toLocaleString()} mi</span>}{record.reference && <span>Ref: {record.reference}</span>}</p>}
         <div className="db-external-services__actions"><span className="db-external-services__muted">Recorded by {record.created_by_name || 'Staff'}</span>
-          {record.voided_at ? <button type="button" disabled={Boolean(editor) || query.isFetching} aria-label={`Restore service from ${record.provider_name}`} onClick={event => openEditor({ kind: 'restore', record }, event.currentTarget)}>Restore</button> : <>
-            <button type="button" disabled={Boolean(editor) || query.isFetching} aria-label={`Edit service from ${record.provider_name}`} onClick={event => openEditor({ kind: 'update', record }, event.currentTarget)}>Edit</button>
-            <button type="button" disabled={Boolean(editor) || query.isFetching} aria-label={`Void service from ${record.provider_name}`} onClick={event => openEditor({ kind: 'void', record }, event.currentTarget)}>Void</button>
+          {record.voided_at ? <ControlButton type="button" disabled={Boolean(editor) || query.isFetching} aria-label={`Restore service from ${record.provider_name}`} onClick={event => openEditor({ kind: 'restore', record }, event.currentTarget)}>Restore</ControlButton> : <>
+            <ControlButton type="button" disabled={Boolean(editor) || query.isFetching} aria-label={`Edit service from ${record.provider_name}`} onClick={event => openEditor({ kind: 'update', record }, event.currentTarget)}>Edit</ControlButton>
+            <ControlButton type="button" disabled={Boolean(editor) || query.isFetching} aria-label={`Void service from ${record.provider_name}`} onClick={event => openEditor({ kind: 'void', record }, event.currentTarget)}>Void</ControlButton>
           </>}
         </div>
         <ExternalServiceReceipts vehicleId={vehicleId} recordId={record.id} recordVersion={record.version} voidedAt={record.voided_at} providerName={record.provider_name} disabled={Boolean(editor) || query.isFetching} />
         <RecordHistory record={record} path={path} scope={scope} />
       </li>)}</ul>
       {(page > 0 || query.data.has_more) && <nav aria-label="Outside service pages" className="db-external-services__actions">
-        <button type="button" disabled={!page || query.isFetching || Boolean(editor)} onClick={() => setPage(value => value - 1)}>Previous services</button><span>Page {page + 1}</span><button type="button" disabled={!query.data.has_more || query.isFetching || Boolean(editor)} onClick={() => setPage(value => value + 1)}>Next services</button>
+        <ControlButton type="button" disabled={!page || query.isFetching || Boolean(editor)} onClick={() => setPage(value => value - 1)}>Previous services</ControlButton><span>Page {page + 1}</span><ControlButton type="button" disabled={!query.data.has_more || query.isFetching || Boolean(editor)} onClick={() => setPage(value => value + 1)}>Next services</ControlButton>
       </nav>}
     </>}
   </section>
@@ -166,12 +167,12 @@ function ServiceEditor({ editor, path, vehicleId, disabled, onCancel, onSaved, o
   return <form aria-label={title} className="db-external-services__editor" onSubmit={event => { event.preventDefault(); void submit() }} onKeyDown={event => { if (event.key === 'Escape' && !pending) { event.preventDefault(); event.stopPropagation(); onCancel() } }}>
     <h4>{title}</h4>
     {isFields ? <div className="db-external-services__fields">
-      <label>Outside shop<input autoFocus required maxLength={160} value={draft.provider_name} disabled={pending} onChange={event => field('provider_name', event.target.value)} /></label>
-      <label>Service date<input type="date" required min="1900-01-01" value={draft.service_date} disabled={pending} onChange={event => field('service_date', event.target.value)} /></label>
+      <label>Outside shop<ControlInput autoFocus required maxLength={160} value={draft.provider_name} disabled={pending} onChange={event => field('provider_name', event.target.value)} /></label>
+      <label>Service date<ControlInput type="date" required min="1900-01-01" value={draft.service_date} disabled={pending} onChange={event => field('service_date', event.target.value)} /></label>
       <label className="db-external-services__wide">Work performed<textarea rows={3} required maxLength={4000} value={draft.description} disabled={pending} onChange={event => field('description', event.target.value)} /></label>
-      <label>Mileage at service<input inputMode="numeric" placeholder="Optional" value={draft.odometer} disabled={pending} onChange={event => field('odometer', event.target.value)} /></label>
-      <label>Reported cost (USD)<input inputMode="decimal" placeholder="Unknown" value={draft.reported_cost} disabled={pending} onChange={event => field('reported_cost', event.target.value)} /></label>
-      <label className="db-external-services__wide">Reference<input maxLength={100} placeholder="Optional invoice or work reference" value={draft.reference} disabled={pending} onChange={event => field('reference', event.target.value)} /></label>
+      <label>Mileage at service<ControlInput inputMode="numeric" placeholder="Optional" value={draft.odometer} disabled={pending} onChange={event => field('odometer', event.target.value)} /></label>
+      <label>Reported cost (USD)<ControlInput inputMode="decimal" placeholder="Unknown" value={draft.reported_cost} disabled={pending} onChange={event => field('reported_cost', event.target.value)} /></label>
+      <label className="db-external-services__wide">Reference<ControlInput maxLength={100} placeholder="Optional invoice or work reference" value={draft.reference} disabled={pending} onChange={event => field('reference', event.target.value)} /></label>
       <p className="db-external-services__wide db-external-services__muted">Historical record only. Current mileage, maintenance schedule and billing stay unchanged.</p>
     </div> : <>
       <p>{editor.record?.provider_name} · {dateLabel(editor.record!.service_date)}</p>
@@ -179,11 +180,11 @@ function ServiceEditor({ editor, path, vehicleId, disabled, onCancel, onSaved, o
       {editor.kind === 'void' && <label>Reason<textarea autoFocus rows={2} required maxLength={500} disabled={pending} value={reason} onChange={event => setReason(event.target.value)} /></label>}
     </>}
     {error && <p role="alert">{error}</p>}
-    {conflict && editor.record && <button type="button" disabled={pending || disabled} onClick={async () => { try { const record = await refresh(); if (!record) throw new Error('This record is no longer in this list. Cancel and reopen it from the current history.'); setLatest(record) } catch (failure) { setError((failure as Error).message) } }}>Refresh record</button>}
+    {conflict && editor.record && <ControlButton type="button" disabled={pending || disabled} onClick={async () => { try { const record = await refresh(); if (!record) throw new Error('This record is no longer in this list. Cancel and reopen it from the current history.'); setLatest(record) } catch (failure) { setError((failure as Error).message) } }}>Refresh record</ControlButton>}
     {latest && <aside className="db-external-services__latest"><strong>Latest saved version {latest.version}{latest.voided_at ? ' · Voided' : ''}</strong><p>{latest.provider_name} · {dateLabel(latest.service_date)}</p><p>{latest.description}</p><p>{costLabel(latest.reported_cost)}{latest.odometer !== null ? ` · ${latest.odometer.toLocaleString()} mi` : ''}{latest.reference ? ` · ${latest.reference}` : ''}</p>
-      <button type="button" disabled={Boolean(latest.voided_at) !== (editor.kind === 'restore')} onClick={() => { setVersion(latest.version); attempt.current = null; setConflict(false); setError(''); setLatest(null) }}>Apply to latest version</button>
+      <ControlButton type="button" disabled={Boolean(latest.voided_at) !== (editor.kind === 'restore')} onClick={() => { setVersion(latest.version); attempt.current = null; setConflict(false); setError(''); setLatest(null) }}>Apply to latest version</ControlButton>
     </aside>}
-    <div className="db-external-services__actions"><button type="button" disabled={pending} onClick={onCancel}>Cancel</button><button type="submit" autoFocus={editor.kind === 'restore'} disabled={pending || disabled || unchanged} className="db-external-services__primary">{pending ? 'Saving…' : error ? 'Retry save' : editor.kind === 'void' ? 'Void service' : editor.kind === 'restore' ? 'Restore service' : 'Save service'}</button></div>
+    <div className="db-external-services__actions"><ControlButton type="button" disabled={pending} onClick={onCancel}>Cancel</ControlButton><ControlButton type="submit" autoFocus={editor.kind === 'restore'} disabled={pending || disabled || unchanged} className="db-external-services__primary">{pending ? 'Saving…' : error ? 'Retry save' : editor.kind === 'void' ? 'Void service' : editor.kind === 'restore' ? 'Restore service' : 'Save service'}</ControlButton></div>
   </form>
 }
 
@@ -198,12 +199,12 @@ function RecordHistory({ record, path, scope }: { record: ServiceRecord; path: s
     },
   })
   const labels = { create: 'Recorded', update: 'Edited', void: 'Voided', restore: 'Restored' }
-  return <div className="db-external-services__audit"><button type="button" aria-expanded={open} aria-label={`Change history for ${record.provider_name}`} onClick={() => setOpen(value => !value)}><ChevronRight size={14} className={open ? 'rotate-90' : ''} aria-hidden="true" />Change history</button>
+  return <div className="db-external-services__audit"><ControlButton controlKind="action" type="button" aria-expanded={open} aria-label={`Change history for ${record.provider_name}`} onClick={() => setOpen(value => !value)}><ChevronRight size={14} className={open ? 'rotate-90' : ''} aria-hidden="true" />Change history</ControlButton>
     {open && <>
       {history.isPending && <p role="status">Loading changes…</p>}
-      {history.isError && <div role="alert">Could not load changes. <button type="button" onClick={() => void history.refetch()}>Retry changes</button></div>}
+      {history.isError && <div role="alert">Could not load changes. <ControlButton type="button" onClick={() => void history.refetch()}>Retry changes</ControlButton></div>}
       {history.data && !history.isError && <><ol>{history.data.items.map(event => <li key={event.id}><div><strong>{labels[event.action]}</strong> · {event.actor_name || 'Staff'} · <time dateTime={event.created_at}>{new Date(event.created_at).toLocaleString()}</time></div>{event.reason && <p>{event.reason}</p>}<p>{dateLabel(event.snapshot.service_date)} · {event.snapshot.provider_name}</p><p className="db-external-services__description">{event.snapshot.description}</p><p>{costLabel(event.snapshot.reported_cost)}{event.snapshot.odometer !== null ? ` · ${event.snapshot.odometer.toLocaleString()} mi` : ''}{event.snapshot.reference ? ` · Ref: ${event.snapshot.reference}` : ''}</p></li>)}</ol>
-        {(page > 0 || history.data.has_more) && <nav aria-label={`Changes for ${record.provider_name}`} className="db-external-services__actions"><button type="button" disabled={!page || history.isFetching} onClick={() => setPage(value => value - 1)}>Newer changes</button><button type="button" disabled={!history.data.has_more || history.isFetching} onClick={() => setPage(value => value + 1)}>Older changes</button></nav>}
+        {(page > 0 || history.data.has_more) && <nav aria-label={`Changes for ${record.provider_name}`} className="db-external-services__actions"><ControlButton type="button" disabled={!page || history.isFetching} onClick={() => setPage(value => value - 1)}>Newer changes</ControlButton><ControlButton type="button" disabled={!history.data.has_more || history.isFetching} onClick={() => setPage(value => value + 1)}>Older changes</ControlButton></nav>}
       </>}
     </>}
   </div>

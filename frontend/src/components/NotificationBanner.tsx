@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 /**
  * NotificationBanner Component
  * 
@@ -119,12 +120,12 @@ export default function NotificationBanner({
     <div className="space-y-2 mb-4">
       {banners.length > 1 && onDismissAll && (
         <div className="flex justify-end">
-          <button
+          <ControlButton
             onClick={onDismissAll}
             className="text-xs text-gray-400 hover:text-white transition-colors"
           >
             Dismiss all
-          </button>
+          </ControlButton>
         </div>
       )}
       
@@ -149,20 +150,20 @@ export default function NotificationBanner({
             
             <div className="flex items-center gap-2 shrink-0">
               {action && (
-                <button
+                <ControlButton
                   onClick={action.onClick}
-                  className="px-3 py-1 text-sm bg-white/10 hover:bg-white/20 rounded-md transition-colors"
+                  className="px-3  text-sm bg-white/10 hover:bg-white/20 rounded-md transition-colors"
                 >
                   {action.label}
-                </button>
+                </ControlButton>
               )}
-              <button
+              <ControlButton controlKind="icon"
                 onClick={() => onDismiss(banner.id)}
                 className="p-1 hover:bg-white/10 rounded transition-colors"
                 aria-label="Dismiss"
               >
                 <X className="w-4 h-4" />
-              </button>
+              </ControlButton>
             </div>
           </div>
         )

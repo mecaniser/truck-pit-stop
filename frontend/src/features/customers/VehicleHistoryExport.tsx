@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Download } from 'lucide-react'
 import DatePicker from '@/components/DatePicker'
@@ -110,7 +111,7 @@ function ExportControls({ vehicle, scope, children }: Props & { scope: string })
   }
   return <div ref={container} className="db-vehicle-export">
     <div className="db-customer-record__work-actions">
-      <button ref={trigger} type="button" aria-expanded={open} aria-controls={formId} onClick={() => open ? close() : setOpen(true)}><Download aria-hidden="true" />Export history</button>
+      <ControlButton controlKind="action" ref={trigger} type="button" aria-expanded={open} aria-controls={formId} onClick={() => open ? close() : setOpen(true)}><Download aria-hidden="true" />Export history</ControlButton>
       {children}
     </div>
     {open && <form id={formId} aria-label="Export vehicle service history" onSubmit={event => { event.preventDefault(); void download() }} onKeyDown={event => { if (event.key === 'Escape' && event.defaultPrevented) event.stopPropagation() }}>
@@ -120,11 +121,11 @@ function ExportControls({ vehicle, scope, children }: Props & { scope: string })
         <DatePicker key={`from-${pending}`} label="History from" value={from} min="1900-01-01" max="9999-12-31" disabled={pending} showDayDetails={false} surface="light" onChange={value => { setFrom(value); setError(''); setSuccess('') }} />
         <DatePicker key={`to-${pending}`} label="History to" value={to} min="1900-01-01" max="9999-12-31" disabled={pending} showDayDetails={false} surface="light" onChange={value => { setTo(value); setError(''); setSuccess('') }} />
       </div>
-      {(from || to) && <button className="db-vehicle-export__clear" type="button" disabled={pending} onClick={() => { setFrom(''); setTo(''); setError(''); setSuccess('') }}>Clear dates</button>}
+      {(from || to) && <ControlButton className="db-vehicle-export__clear" type="button" disabled={pending} onClick={() => { setFrom(''); setTo(''); setError(''); setSuccess('') }}>Clear dates</ControlButton>}
       <p className="db-vehicle-export__hint">Leave dates blank for all history. Unknown service dates use the record-created date and are labeled in the file. Internal notes and prices are excluded.</p>
       {error && <p role="alert">{error}</p>}
       {success && <p role="status">{success}</p>}
-      <div className="db-vehicle-export__actions"><button type="button" onClick={close}>Cancel</button><button type="submit" disabled={pending}><Download aria-hidden="true" />{pending ? 'Preparing…' : error ? 'Retry download' : 'Download CSV'}</button></div>
+      <div className="db-vehicle-export__actions"><ControlButton type="button" onClick={close}>Cancel</ControlButton><ControlButton type="submit" disabled={pending}><Download aria-hidden="true" />{pending ? 'Preparing…' : error ? 'Retry download' : 'Download CSV'}</ControlButton></div>
     </form>}
   </div>
 }

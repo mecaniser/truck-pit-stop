@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, Clock3, RefreshCw } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -69,14 +70,14 @@ export default function AccountingReconciliationPanel({
                 {link.error && <p className="mt-0.5 truncate text-xs text-red-700">{link.error}</p>}
               </div>
               {canRetry && (
-                <button
+                <ControlButton
                   type="button"
                   disabled={retryMutation.isPending}
                   onClick={() => retryMutation.mutate(link.id)}
-                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-xs font-extrabold text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                  className="inline-flex  items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-xs font-extrabold text-slate-800 hover:bg-slate-50 disabled:opacity-50"
                 >
                   <RefreshCw className="h-3.5 w-3.5" />Retry sync
-                </button>
+                </ControlButton>
               )}
             </li>
           ))}

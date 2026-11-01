@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Spinner } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
@@ -616,61 +617,61 @@ function ServicesManagementWorkspace() {
           />
         </div>
         <div className="relative shrink-0" ref={menuRef}>
-          <button
+          <ControlButton controlKind="icon"
             onClick={() => setShowMenu((v) => !v)}
             className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-gray-400 hover:text-gray-200 border border-white/15 transition-colors"
             title="Catalog options"
           >
             <Settings className="w-4 h-4" />
-          </button>
+          </ControlButton>
           {showMenu && (
             <div className="absolute right-0 top-full mt-1 w-56 bg-[#1a2030] border border-white/15 rounded-lg shadow-xl z-50 overflow-hidden">
               {showClearConfirm ? (
                 <div className="p-2 space-y-1">
                   <p className="text-xs text-gray-400 px-2 py-1">Clear all services?</p>
-                  <button
+                  <ControlButton controlKind="content"
                     onClick={() => clearMutation.mutate()}
                     disabled={clearMutation.isPending}
                     className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-white/10 rounded-md disabled:opacity-50"
                   >
                     {clearMutation.isPending ? 'Clearing…' : 'Yes, clear all'}
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton controlKind="content"
                     onClick={() => setShowClearConfirm(false)}
                     className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-white/10 rounded-md"
                   >
                     Cancel
-                  </button>
+                  </ControlButton>
                 </div>
               ) : (
                 <>
-                  <button
+                  <ControlButton
                     onClick={() => {
                       preloadMutation.mutate()
                       setShowMenu(false)
                     }}
                     disabled={preloadMutation.isPending}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
+                    className="w-full flex items-center gap-2.5 px-3  text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
                   >
                     <Download className="w-3.5 h-3.5 shrink-0" />
                     {preloadMutation.isPending ? 'Loading…' : 'Load defaults'}
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton controlKind="action"
                     onClick={() => regenerateDescriptionLibraryMutation.mutate()}
                     disabled={regenerateDescriptionLibraryMutation.isPending}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
+                    className="w-full flex items-center gap-2.5 px-3  text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
                     title="Rebuild repair-order description suggestions from your work-order history"
                   >
                     <Sparkles className="w-3.5 h-3.5 shrink-0" />
                     {regenerateDescriptionLibraryMutation.isPending ? 'Queuing…' : 'Refresh RO suggestions'}
-                  </button>
-                  <button
+                  </ControlButton>
+                  <ControlButton
                     onClick={() => setShowClearConfirm(true)}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-red-400 hover:bg-white/10"
+                    className="w-full flex items-center gap-2.5 px-3  text-sm text-red-400 hover:bg-white/10"
                   >
                     <Trash2 className="w-3.5 h-3.5 shrink-0" />
                     Clear all
-                  </button>
+                  </ControlButton>
                 </>
               )}
             </div>
@@ -759,12 +760,12 @@ function ServicesManagementWorkspace() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button
+                          <ControlButton
                             onClick={() => startEdit(service)}
                             className="text-amber-400 hover:text-amber-300 text-sm font-medium"
                           >
                             Edit
-                          </button>
+                          </ControlButton>
                         </td>
                       </tr>
                     )
@@ -841,12 +842,12 @@ function ServicesManagementWorkspace() {
                         </span>
                       </div>
                     </div>
-                    <button
+                    <ControlButton
                       onClick={() => startEdit(service)}
-                      className="w-full px-3 py-2 text-sm font-medium text-amber-200 bg-amber-500/10 border border-amber-400/40 rounded-lg hover:bg-amber-500/20 transition"
+                      className="w-full px-3  text-sm font-medium text-amber-200 bg-amber-500/10 border border-amber-400/40 rounded-lg hover:bg-amber-500/20 transition"
                     >
                       Edit
-                    </button>
+                    </ControlButton>
                   </div>
                 )
               })}
@@ -900,7 +901,7 @@ function ServicesManagementWorkspace() {
                     </p>
                   )}
                 </div>
-                <button
+                <ControlButton controlKind="icon"
                   type="button"
                   onClick={cancelEdit}
                   disabled={createMutation.isPending || isClosingService}
@@ -914,7 +915,7 @@ function ServicesManagementWorkspace() {
                   aria-label="Close service form"
                 >
                   <X className="w-5 h-5" />
-                </button>
+                </ControlButton>
               </div>
 
               <div className="p-5 space-y-5 overflow-y-auto flex-1">
@@ -953,12 +954,12 @@ function ServicesManagementWorkspace() {
                     {addingCategory && (
                       <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
                         <p className="text-xs font-semibold text-gray-600 uppercase">New Category</p>
-                        <input
+                        <ControlInput
                           type="text"
                           value={newCategoryName}
                           onChange={(e) => setNewCategoryName(e.target.value)}
                           placeholder="e.g. Electrical"
-                          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                          className="w-full rounded-lg border border-gray-200 px-3  text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
                           autoFocus
                         />
                         {categoryError && (
@@ -974,15 +975,15 @@ function ServicesManagementWorkspace() {
                           Preventive maintenance category (services here are offered on fleet PM work orders)
                         </label>
                         <div className="flex items-center gap-2">
-                          <button
+                          <ControlButton
                             type="button"
                             onClick={() => createCategoryMutation.mutate(newCategoryName)}
                             disabled={!newCategoryName.trim() || createCategoryMutation.isPending}
-                            className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-50"
+                            className="px-3  rounded-lg text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-50"
                           >
                             {createCategoryMutation.isPending ? 'Adding…' : 'Add Category'}
-                          </button>
-                          <button
+                          </ControlButton>
+                          <ControlButton
                             type="button"
                             onClick={() => {
                               setAddingCategory(false)
@@ -990,10 +991,10 @@ function ServicesManagementWorkspace() {
                               setNewCategoryIsPm(false)
                               setCategoryError(null)
                             }}
-                            className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-100"
+                            className="px-3  rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-100"
                           >
                             Cancel
-                          </button>
+                          </ControlButton>
                         </div>
                       </div>
                     )}
@@ -1038,21 +1039,21 @@ function ServicesManagementWorkspace() {
                     <label className="block text-xs font-medium text-gray-500 mb-1">Icon (emoji)</label>
                     <input type="hidden" {...register('icon')} />
                     <div className="grid grid-cols-6 gap-2">
-                      <button
+                      <ControlButton
                         type="button"
                         onClick={() => setValue('icon', '', { shouldValidate: true })}
-                        className={`py-2 text-sm font-semibold rounded-lg border transition ${
+                        className={` text-sm font-semibold rounded-lg border transition ${
                           !selectedIcon ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-gray-200 hover:border-amber-300'
                         }`}
                       >
                         None
-                      </button>
+                      </ControlButton>
                       {iconOptions.map((opt) => (
-                        <button
+                        <ControlButton controlKind="action"
                           key={opt}
                           type="button"
                           onClick={() => setValue('icon', opt, { shouldValidate: true })}
-                          className={`py-2 text-lg rounded-lg border transition ${
+                          className={` text-lg rounded-lg border transition ${
                             selectedIcon === opt
                               ? 'border-amber-500 bg-amber-50 shadow-sm'
                               : 'border-gray-200 hover:border-amber-300'
@@ -1060,7 +1061,7 @@ function ServicesManagementWorkspace() {
                           aria-pressed={selectedIcon === opt}
                         >
                           {opt}
-                        </button>
+                        </ControlButton>
                       ))}
                     </div>
                   </div>
@@ -1161,7 +1162,7 @@ function ServicesManagementWorkspace() {
                               <span className="w-20 text-right text-sm font-semibold text-gray-700">
                                 ${Number(part.line_total).toFixed(2)}
                               </span>
-                              <button
+                              <ControlButton controlKind="icon"
                                 type="button"
                                 onClick={() =>
                                   deletePartMutation.mutate({
@@ -1174,7 +1175,7 @@ function ServicesManagementWorkspace() {
                                 aria-label={`Remove ${part.name}`}
                               >
                                 <Trash2 className="w-4 h-4" />
-                              </button>
+                              </ControlButton>
                             </div>
                             )
                           })}
@@ -1225,7 +1226,7 @@ function ServicesManagementWorkspace() {
                               />
                             )
                           })()}
-                          <button
+                          <ControlButton
                             type="button"
                             onClick={() => {
                               if (!partPickerInventoryId) return
@@ -1241,11 +1242,11 @@ function ServicesManagementWorkspace() {
                               })
                             }}
                             disabled={!partPickerInventoryId || addPartMutation.isPending}
-                            className="ml-auto inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-50"
+                            className="ml-auto inline-flex items-center gap-1 px-3  rounded-lg text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-50"
                           >
                             <Plus className="w-3.5 h-3.5" />
                             Add
-                          </button>
+                          </ControlButton>
                         </div>
                         {partError && <p className="text-xs text-red-600">{partError}</p>}
                       </div>
@@ -1291,22 +1292,22 @@ function ServicesManagementWorkspace() {
                   <span />
                 )}
                 <div className="flex gap-3">
-                  <button
+                  <ControlButton
                     type="button"
                     onClick={cancelEdit}
                     disabled={createMutation.isPending || isClosingService}
-                    className="px-5 py-2 bg-white/10 hover:bg-white/20 text-gray-700 rounded-lg text-sm font-medium"
+                    className="px-5  bg-white/10 hover:bg-white/20 text-gray-700 rounded-lg text-sm font-medium"
                   >
                     {isClosingService ? 'Saving…' : editingService ? 'Done' : 'Cancel'}
-                  </button>
+                  </ControlButton>
                   {!editingService && (
-                    <button
+                    <ControlButton
                       type="submit"
                       disabled={createMutation.isPending}
-                      className="px-5 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 text-white font-semibold rounded-lg text-sm"
+                      className="px-5  bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 text-white font-semibold rounded-lg text-sm"
                     >
                       {createMutation.isPending ? 'Creating…' : 'Create Service'}
-                    </button>
+                    </ControlButton>
                   )}
                 </div>
               </div>

@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { RefreshCw } from 'lucide-react'
 import { useStaleDeploy } from '../lib/staleDeploy'
 
@@ -18,13 +19,13 @@ export default function StaleDeployNotice() {
         <p className="text-sm font-semibold">A new version of DieselBridge is available</p>
         <p className="mt-1 text-sm leading-5">Reload to finish updating. Anything you have typed but not saved will be lost.</p>
       </div>
-      <button
+      <ControlButton
         type="button"
-        className="flex min-h-11 items-center gap-2 rounded-lg border border-sky-700 px-3 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-800"
+        className="flex  items-center gap-2 rounded-lg border border-sky-700 px-3 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-800"
         onClick={() => window.location.reload()}
       >
         <RefreshCw size={16} aria-hidden="true" />Reload now
-      </button>
+      </ControlButton>
     </aside>
   )
 }

@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { errorMessage } from "./api";
@@ -74,9 +75,9 @@ export default function SMSConsentPanel({
     !busy;
   return (
     <section className="sms-consent">
-      <button type="button" className="sms-permissions-toggle" aria-expanded={expanded} aria-controls={panelId} onClick={() => setExpanded(value => !value)}>
+      <ControlButton controlKind="action" type="button" className="sms-permissions-toggle" aria-expanded={expanded} aria-controls={panelId} onClick={() => setExpanded(value => !value)}>
         <span>SMS permissions</span><ChevronDown size={14} aria-hidden="true" className={expanded ? "is-expanded" : ""} />
-      </button>
+      </ControlButton>
       {records[0]?.status === "withdrawn" && <p className="context-warning">SMS consent withdrawn</p>}
       {error && <p role="alert" className="sms-error">{error}</p>}
       <div id={panelId} hidden={!expanded}>
@@ -87,14 +88,14 @@ export default function SMSConsentPanel({
             : "No recorded consent"
           : "Loading consent…"}
       </p>
-      <button className="subtle-button" onClick={() => setEditing(!editing)}>
+      <ControlButton className="subtle-button" onClick={() => setEditing(!editing)}>
         {editing ? "Close evidence form" : "Record consent evidence"}
-      </button>
+      </ControlButton>
       {editing && (
         <div className="sms-consent-form">
           <label>
             Evidence source
-            <input
+            <ControlInput
               value={source}
               onChange={(e) => setSource(e.target.value)}
               placeholder="Signed service intake"
@@ -102,14 +103,14 @@ export default function SMSConsentPanel({
           </label>
           <label>
             Disclosure version
-            <input
+            <ControlInput
               value={version}
               onChange={(e) => setVersion(e.target.value)}
             />
           </label>
           <label>
             Collected at
-            <input
+            <ControlInput
               type="datetime-local"
               value={collected}
               onChange={(e) => setCollected(e.target.value)}
@@ -124,20 +125,20 @@ export default function SMSConsentPanel({
             I verified this customer’s explicit consent or withdrawal evidence.
           </label>
           <div className="sms-consent-actions">
-            <button
+            <ControlButton
               className="subtle-button"
               disabled={!ready}
               onClick={() => void record("granted")}
             >
               Record grant
-            </button>
-            <button
+            </ControlButton>
+            <ControlButton
               className="subtle-button"
               disabled={!ready}
               onClick={() => void record("withdrawn")}
             >
               Record withdrawal
-            </button>
+            </ControlButton>
           </div>
         </div>
       )}

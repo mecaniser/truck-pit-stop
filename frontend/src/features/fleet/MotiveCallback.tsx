@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '@/lib/api'
@@ -41,7 +42,7 @@ export default function MotiveCallback() {
     <section className="max-w-md space-y-4" aria-label="Motive authorization">
       <h1 className="text-xl font-semibold">Connect Motive</h1>
       <p role={failed ? 'alert' : 'status'}>{message}</p>
-      {failed && <button className="rounded-lg bg-amber-300 text-slate-950 px-4 py-3" onClick={() => navigate(user?.role === 'customer' ? '/portal/integrations' : '/fleet?integrations=motive', { replace: true })}>Return to integrations</button>}
+      {failed && <ControlButton className="rounded-lg bg-amber-300 text-slate-950 px-4 " onClick={() => navigate(user?.role === 'customer' ? '/portal/integrations' : '/fleet?integrations=motive', { replace: true })}>Return to integrations</ControlButton>}
     </section>
   </main>
 }

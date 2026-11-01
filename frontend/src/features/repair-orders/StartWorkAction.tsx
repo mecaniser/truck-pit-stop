@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
 import { ChevronUp, Play, UserRound, X } from 'lucide-react'
 import { Spinner } from '@/components/ui'
@@ -23,7 +24,7 @@ export default function StartWorkAction({
     <Popover className="relative">
       {({ close }) => (
         <>
-          <PopoverButton
+          <PopoverButton data-db-control="action"
             disabled={pending}
             aria-busy={pending}
             aria-label={startPending ? 'Starting…' : assignmentPending ? 'Assigning…' : `${title}…`}
@@ -41,9 +42,9 @@ export default function StartWorkAction({
           >
             <div className="mb-3 flex items-center justify-between gap-2">
               <h3 className="text-base font-bold">{title}</h3>
-              <button type="button" onClick={() => close()} aria-label={`Close ${title.toLowerCase()} options`} className="-mr-2 inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100">
+              <ControlButton controlKind="icon" type="button" onClick={() => close()} aria-label={`Close ${title.toLowerCase()} options`} className="-mr-2 inline-flex  w-11 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100">
                 <X className="h-4 w-4" aria-hidden="true" />
-              </button>
+              </ControlButton>
             </div>
             {onAssign && (
               <div>
@@ -52,7 +53,7 @@ export default function StartWorkAction({
                 {technicians.length > 0 ? (
                   <div className="mt-2 max-h-48 overflow-y-auto">
                     {technicians.map((tech) => (
-                      <button
+                      <ControlButton controlKind="content"
                         key={tech.mechanic_id}
                         type="button"
                         disabled={pending}
@@ -61,7 +62,7 @@ export default function StartWorkAction({
                       >
                         <span className="min-w-0 break-words">{tech.mechanic_name}</span>
                         <span className="shrink-0 text-xs font-normal text-gray-600">{tech.load.toFixed(0)}% load</span>
-                      </button>
+                      </ControlButton>
                     ))}
                   </div>
                 ) : <p className="mt-2 text-sm text-gray-600">No technicians available to assign.</p>}
@@ -69,7 +70,7 @@ export default function StartWorkAction({
             )}
             {onStartWithoutTechnician && (
               <div className={onAssign ? 'mt-3 border-t border-gray-200 pt-3' : ''}>
-                <button
+                <ControlButton controlKind="content"
                   type="button"
                   disabled={pending}
                   onClick={() => { onStartWithoutTechnician(); close() }}
@@ -77,7 +78,7 @@ export default function StartWorkAction({
                 >
                   <Play className="h-4 w-4 shrink-0" aria-hidden="true" />
                   Start without a technician
-                </button>
+                </ControlButton>
                 <p className="mt-2 text-xs text-gray-600">Start work now. You can assign someone later.</p>
               </div>
             )}

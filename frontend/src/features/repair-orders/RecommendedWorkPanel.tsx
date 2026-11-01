@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation } from 'react-router-dom'
@@ -89,11 +90,11 @@ function RecommendedWorkContext({ tenantId, vehicleId, customerId, contextOrderI
     <section className="db-prior-recommendations w-full min-w-0 bg-white" aria-label={noCurrentOrder ? 'Recommendations from repair orders' : 'Open recommendations for this truck'}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold !text-gray-900">{noCurrentOrder ? 'Recommendations from repair orders' : 'Open recommendations for this truck'}</h3>
-        <button type="button" onClick={() => { void query.refetch() }} disabled={query.isFetching}
-          className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+        <ControlButton controlKind="action" type="button" onClick={() => { void query.refetch() }} disabled={query.isFetching}
+          className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2  text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-50"
           aria-label="Refresh recommendations">
           <RotateCcw className="h-3.5 w-3.5" /> Refresh
-        </button>
+        </ControlButton>
       </div>
       <div role="status" aria-live="polite">
         {query.isPending && <p className="py-3 text-sm !text-gray-600">Loading recommendations…</p>}
@@ -101,7 +102,7 @@ function RecommendedWorkContext({ tenantId, vehicleId, customerId, contextOrderI
       </div>
       {query.isError && <div role="alert" className="mt-3 text-sm text-red-700">
         {page ? 'Could not refresh recommendations. Showing the last loaded page.' : 'Could not load recommendations.'}
-        <button type="button" className="ml-2 whitespace-nowrap underline" onClick={() => { void query.refetch() }}>Retry</button>
+        <ControlButton type="button" className="ml-2 whitespace-nowrap underline" onClick={() => { void query.refetch() }}>Retry</ControlButton>
       </div>}
       {page && !query.isError && page.total === 0 && <p className="pt-1 text-xs !text-gray-600">{noCurrentOrder ? 'No open recommendations from repair orders.' : 'No open recommendations on other orders.'}</p>}
       {!!page?.items.length && <ul className="mt-1 divide-y divide-gray-100">
@@ -113,7 +114,7 @@ function RecommendedWorkContext({ tenantId, vehicleId, customerId, contextOrderI
             </div>
             <p className="break-words text-sm text-gray-900">{item.description}</p>
           </div>
-          <Link to={recommendationLink(location.pathname, location.search, item.source_order.id, { recommendation: item.id })}
+          <Link data-db-control="action" to={recommendationLink(location.pathname, location.search, item.source_order.id, { recommendation: item.id })}
             aria-label={`Open source order ${item.source_order.order_number}`}
             className="db-prior-source inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1 py-1 text-xs font-medium text-gray-700 underline decoration-gray-300 underline-offset-4 hover:bg-gray-50">
             {item.source_order.order_number}<ArrowUpRight className="h-3.5 w-3.5" />
@@ -128,14 +129,14 @@ function RecommendedWorkContext({ tenantId, vehicleId, customerId, contextOrderI
           {page ? `${page.items.length ? skip + 1 : 0}–${Math.min(skip + page.items.length, page.total)} of ${page.total}` : `Page ${Math.floor(skip / PAGE_SIZE) + 1}`}
         </span>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setSkip(Math.max(0, skip - PAGE_SIZE))} disabled={skip === 0}
-            className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-2 py-1 text-xs disabled:opacity-40">
+          <ControlButton type="button" onClick={() => setSkip(Math.max(0, skip - PAGE_SIZE))} disabled={skip === 0}
+            className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-2  text-xs disabled:opacity-40">
             <ChevronLeft className="h-3.5 w-3.5" /> Previous
-          </button>
-          <button type="button" onClick={() => setSkip(skip + PAGE_SIZE)} disabled={!page || skip + PAGE_SIZE >= page.total || query.isFetching}
-            className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-2 py-1 text-xs disabled:opacity-40">
+          </ControlButton>
+          <ControlButton type="button" onClick={() => setSkip(skip + PAGE_SIZE)} disabled={!page || skip + PAGE_SIZE >= page.total || query.isFetching}
+            className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-2  text-xs disabled:opacity-40">
             Next <ChevronRight className="h-3.5 w-3.5" />
-          </button>
+          </ControlButton>
         </div>
       </div>}
     </section>

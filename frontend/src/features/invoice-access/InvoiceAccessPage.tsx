@@ -1,3 +1,4 @@
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { currentInvoicePaymentSummary } from '@/lib/invoicePaymentPresentation'
 import InvoicePaymentSummary from '@/components/InvoicePaymentSummary'
 import { invoicePaymentLabels } from '@/lib/invoicePaymentLabels'
@@ -153,10 +154,10 @@ function GuestPaymentForm({
     <form onSubmit={handleSubmit} className="space-y-4">
       <PaymentElement />
       {error && <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg border border-red-200">{error}</div>}
-      <button
+      <ControlButton
         type="submit"
         disabled={!stripe || isProcessing}
-        className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg flex items-center justify-center gap-2"
+        className="w-full  bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg flex items-center justify-center gap-2"
       >
         {isProcessing ? (
           <>
@@ -169,7 +170,7 @@ function GuestPaymentForm({
             Pay Now
           </>
         )}
-      </button>
+      </ControlButton>
     </form>
   )
 }
@@ -206,24 +207,24 @@ function PortalEnrollmentSection({
       </p>
 
       {hasPortalAccount ? (
-        <button
+        <ControlButton
           onClick={onOpenPortal}
           disabled={isPending || !canUsePortalToken}
-          className="w-full py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 text-white font-semibold rounded-lg"
+          className="w-full  bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 text-white font-semibold rounded-lg"
         >
           {isPending ? 'Opening portal...' : 'Open My Portal'}
-        </button>
+        </ControlButton>
       ) : (
         <div className="space-y-3">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Set Password</label>
             <div className="relative">
               <Lock className="w-4 h-4 text-gray-400 absolute left-3 top-3.5" />
-              <input
+              <ControlInput
                 type="password"
                 value={password}
                 onChange={(e) => onPasswordChange(e.target.value)}
-                className={`w-full pl-9 pr-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${
+                className={`w-full pl-9 pr-3  border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${
                   passwordValidationError ? 'border-red-300 bg-red-50/30' : 'border-gray-300'
                 }`}
                 placeholder="8+ chars, upper/lower/digit/special"
@@ -237,13 +238,13 @@ function PortalEnrollmentSection({
               </p>
             )}
           </div>
-          <button
+          <ControlButton
             onClick={onCreatePortal}
             disabled={!password || !!passwordValidationError || isPending || !canUsePortalToken}
-            className="w-full py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 text-white font-semibold rounded-lg"
+            className="w-full  bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 text-white font-semibold rounded-lg"
           >
             {isPending ? 'Creating account...' : 'Create Portal Account'}
-          </button>
+          </ControlButton>
         </div>
       )}
 
@@ -494,14 +495,14 @@ export default function InvoiceAccessPage() {
             <p className="text-xs text-blue-600 font-medium mb-0.5">Send exact amount</p>
             <span className="font-bold text-gray-900 text-lg">{formatMoney(invoice.zelle_amount)}</span>
           </div>
-          <button
+          <ControlButton
             type="button"
             onClick={() => copyToClipboard(parseFloat(invoice.zelle_amount).toFixed(2), 'amount')}
             className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
           >
             {copiedKey === 'amount' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
             {copiedKey === 'amount' ? 'Copied' : 'Copy'}
-          </button>
+          </ControlButton>
         </div>
         {(invoice.zelle_phone || invoice.zelle_email) && (() => {
           const recipient = invoice.zelle_phone || invoice.zelle_email!
@@ -512,14 +513,14 @@ export default function InvoiceAccessPage() {
                 <p className="text-xs text-blue-600 font-medium mb-0.5">{label}</p>
                 <span className="text-sm text-gray-800 truncate block">{recipient}</span>
               </div>
-              <button
+              <ControlButton
                 type="button"
                 onClick={() => copyToClipboard(recipient, 'recipient')}
                 className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
               >
                 {copiedKey === 'recipient' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
                 {copiedKey === 'recipient' ? 'Copied' : 'Copy'}
-              </button>
+              </ControlButton>
             </div>
           )
         })()}
@@ -528,26 +529,26 @@ export default function InvoiceAccessPage() {
             <p className="text-xs text-blue-600 font-medium mb-0.5">Memo</p>
             <p className="text-sm text-gray-800 font-medium">#{invoice.invoice_number}</p>
           </div>
-          <button
+          <ControlButton
             type="button"
             onClick={() => copyToClipboard(`#${invoice.invoice_number}`, 'memo')}
             className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
           >
             {copiedKey === 'memo' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
             {copiedKey === 'memo' ? 'Copied' : 'Copy'}
-          </button>
+          </ControlButton>
         </div>
       </div>
       {invoice.zelle_qr_image && (
         <div className="mb-3">
-          <button
+          <ControlButton
             type="button"
             onClick={() => setShowQrCode(v => !v)}
             className="flex items-center gap-1 text-xs text-blue-600 underline underline-offset-2 mb-2"
           >
             <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showQrCode ? 'rotate-180' : ''}`} />
             {showQrCode ? 'Hide QR code' : 'Show QR code (scan from another phone)'}
-          </button>
+          </ControlButton>
           {showQrCode && (
             <div className="bg-white border border-blue-100 rounded-lg p-3 flex justify-center">
               <img src={invoice.zelle_qr_image} alt="Zelle QR" className="w-44 h-44 object-contain" />
@@ -561,13 +562,13 @@ export default function InvoiceAccessPage() {
         </div>
       ) : (
         <div className="space-y-2">
-          <button
+          <ControlButton
             onClick={() => submitZelleMutation.mutate()}
             disabled={submitZelleMutation.isPending}
-            className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg"
+            className="w-full  bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg"
           >
             {submitZelleMutation.isPending ? 'Submitting...' : 'I Sent Payment via Zelle'}
-          </button>
+          </ControlButton>
           <p className="text-xs text-blue-700">
             Staff will confirm receipt. If unconfirmed, they receive reminders at 24h and 48h.
           </p>
@@ -594,7 +595,7 @@ export default function InvoiceAccessPage() {
             {invoice.due_date ? ` • Due ${format(new Date(invoice.due_date), 'MMM d, yyyy')}` : ''}
           </p>
           <div className="flex gap-2 mt-3 print:hidden">
-            <a
+            <a data-db-control="action"
               href={`/api/v1/invoice-access/pdf/${token}`}
               download
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100"
@@ -602,7 +603,7 @@ export default function InvoiceAccessPage() {
               <Download className="w-4 h-4" />
               Download PDF
             </a>
-            <a
+            <a data-db-control="action"
               href={`/api/v1/invoice-access/pdf/${token}?print_view=true`}
               target="_blank"
               rel="noopener noreferrer"
@@ -612,7 +613,7 @@ export default function InvoiceAccessPage() {
               <Printer className="w-4 h-4" />
               Print
             </a>
-            <button
+            <ControlButton
               onClick={() => {
                 const url = window.location.href
                 if (navigator.share) {
@@ -621,11 +622,11 @@ export default function InvoiceAccessPage() {
                   navigator.clipboard.writeText(url).then(() => toast.success('Link copied!'))
                 }
               }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100"
+              className="inline-flex items-center gap-1.5 px-3  text-sm font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100"
             >
               <Share2 className="w-4 h-4" />
               Share
-            </button>
+            </ControlButton>
           </div>
         </div>
 
@@ -769,23 +770,23 @@ export default function InvoiceAccessPage() {
                     <p className="text-sm text-amber-800 mb-4">
                       Your account is ready. Open your portal to review and pay this invoice securely.
                     </p>
-                    <button
+                    <ControlButton
                       onClick={() => openPortalFromCurrentFlow()}
                       disabled={createPortalMutation.isPending || !portalTokenForCreate}
-                      className="w-full py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 text-white font-semibold rounded-lg"
+                      className="w-full  bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 text-white font-semibold rounded-lg"
                     >
                       {createPortalMutation.isPending ? 'Opening portal...' : 'Open My Portal'}
-                    </button>
+                    </ControlButton>
                   </section>
                   <div>
-                    <button
+                    <ControlButton
                       type="button"
                       onClick={() => setShowZelle(v => !v)}
                       className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800"
                     >
                       <ChevronDown className={`w-4 h-4 transition-transform ${showZelle ? 'rotate-180' : ''}`} />
                       Pay with Zelle instead
-                    </button>
+                    </ControlButton>
                     {showZelle && zellePanel}
                   </div>
                 </>
@@ -799,13 +800,13 @@ export default function InvoiceAccessPage() {
                         Pay Online Now
                       </h3>
                       {!showPayment ? (
-                        <button
+                        <ControlButton
                           onClick={() => createIntentMutation.mutate(token)}
                           disabled={createIntentMutation.isPending}
-                          className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg"
+                          className="w-full  bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg"
                         >
                           {createIntentMutation.isPending ? 'Preparing checkout...' : 'Continue to Secure Payment'}
-                        </button>
+                        </ControlButton>
                       ) : stripeOptions && stripeInstance ? (
                         <Elements stripe={stripeInstance} options={stripeOptions}>
                           <GuestPaymentForm
@@ -832,7 +833,7 @@ export default function InvoiceAccessPage() {
                     </section>
                   )}
                   <div>
-                    <button
+                    <ControlButton
                       type="button"
                       onClick={() => setShowZelle(v => !v)}
                       className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800"
@@ -842,7 +843,7 @@ export default function InvoiceAccessPage() {
                       {parseFloat(invoice.service_fee_amount) > 0 && (
                         <span className="text-blue-500 text-xs"> (save ${parseFloat(invoice.service_fee_amount).toFixed(2)} in fees)</span>
                       )}
-                    </button>
+                    </ControlButton>
                     {showZelle && zellePanel}
                   </div>
                   <PortalEnrollmentSection

@@ -96,7 +96,7 @@ describe('CustomerAuthorizationCard', () => {
     renderCard()
 
     const approve = screen.getByRole('button', { name: 'Authorize additional work' })
-    expect(approve).toHaveClass('min-h-[44px]')
+    expect(approve).toHaveAttribute('data-db-control', 'action')
     expect(approve.parentElement).toHaveClass('flex-col', 'sm:flex-row')
   })
 })

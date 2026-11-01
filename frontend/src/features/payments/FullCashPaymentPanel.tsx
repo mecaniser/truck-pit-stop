@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -88,21 +89,21 @@ export default function FullCashPaymentPanel({ invoiceId, summary, onUpdated, on
       <label htmlFor={noteId} className="block text-xs font-semibold text-slate-600">Receipt note (optional)</label>
       <textarea id={noteId} value={note} maxLength={1000} disabled={pending || request.current !== null} onChange={event => setNote(event.target.value)} rows={2} className="w-full rounded-xl border border-slate-200 bg-white p-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 disabled:opacity-70" />
       {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-      <button type="button" disabled={pending || !allowed} onClick={() => void confirm()} className="min-h-11 w-full rounded-xl bg-emerald-800 px-4 py-3 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2 disabled:opacity-50">
+      <ControlButton type="button" disabled={pending || !allowed} onClick={() => void confirm()} className=" w-full rounded-xl bg-emerald-800 px-4  text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2 disabled:opacity-50">
         {pending ? 'Recording cash…' : `Confirm ${formatMoney(summary.principal_total)} cash received`}
-      </button>
+      </ControlButton>
       <p className="text-xs text-slate-500">Confirm only after the shop has received the full cash amount.</p>
     </div>
 
   if (children) return children({ selected: expanded, select: choose, allowed, pending, reason, confirmation })
 
   return <section className="rounded-2xl border border-slate-200 bg-white p-4 text-slate-950" aria-label="Full cash payment">
-    <button type="button" disabled={!allowed || pending} aria-expanded={expanded} aria-controls={panelId}
+    <ControlButton controlKind="content" type="button" disabled={!allowed || pending} aria-expanded={expanded} aria-controls={panelId}
       onClick={() => choose(!expanded)} className="flex min-h-11 w-full items-center gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 disabled:cursor-not-allowed">
       <Banknote className="h-5 w-5 shrink-0 text-slate-500" aria-hidden="true" />
       <span className="flex-1"><span className="block text-sm font-bold">Cash</span><span className="block text-xs text-slate-500">Full payment only</span></span>
       <span className="text-xs font-semibold text-slate-500">{allowed ? expanded ? 'Cancel' : 'Choose cash' : 'Unavailable'}</span>
-    </button>
+    </ControlButton>
     {!allowed && reason && <p className="mt-2 text-xs leading-relaxed text-slate-600">{reason}</p>}
     {confirmation}
   </section>

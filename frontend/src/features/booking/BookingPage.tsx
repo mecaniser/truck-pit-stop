@@ -1,3 +1,4 @@
+import { ControlButton } from '@/components/ui/Controls'
 import { useState, useEffect } from 'react'
 import { Spinner, LoadingLine } from '@/components/ui'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -123,12 +124,12 @@ export default function BookingPage() {
     <div className="max-w-2xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <button
+        <ControlButton
           onClick={() => navigate('/portal/services')}
           className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
         >
           <ArrowLeft className="w-5 h-5 text-gray-400" />
-        </button>
+        </ControlButton>
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-white">Book {service.name}</h1>
           <p className="text-gray-400 text-sm">
@@ -177,7 +178,7 @@ export default function BookingPage() {
             {vehicles && vehicles.length > 0 ? (
               <div className="space-y-2">
                 {vehicles.map((vehicle) => (
-                  <button
+                  <ControlButton controlKind="content"
                     key={vehicle.id}
                     onClick={() => setSelectedVehicle(vehicle.id)}
                     className={`w-full p-4 rounded-lg border text-left transition-all ${
@@ -197,20 +198,20 @@ export default function BookingPage() {
                         </div>
                       </div>
                     </div>
-                  </button>
+                  </ControlButton>
                 ))}
               </div>
             ) : (
               <p className="text-gray-400">No vehicles registered. Please add a vehicle first.</p>
             )}
 
-            <button
+            <ControlButton
               onClick={() => setStep('datetime')}
               disabled={!selectedVehicle}
-              className="w-full rounded-[11px] bg-[#8b7cf7] py-3 font-extrabold text-[#0e1118] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+              className="w-full rounded-[11px] bg-[#8b7cf7]  font-extrabold text-[#0e1118] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Continue
-            </button>
+            </ControlButton>
           </div>
         )}
 
@@ -225,7 +226,7 @@ export default function BookingPage() {
               <div className="overflow-x-auto -mx-5 px-5">
                 <div className="flex gap-2 min-w-max">
                   {nextDays.map((date) => (
-                    <button
+                    <ControlButton controlKind="content"
                       key={date.toISOString()}
                       onClick={() => {
                         setSelectedDate(date)
@@ -240,7 +241,7 @@ export default function BookingPage() {
                       <div className="text-xs uppercase">{format(date, 'EEE')}</div>
                       <div className="text-lg font-bold">{format(date, 'd')}</div>
                       <div className="text-xs">{format(date, 'MMM')}</div>
-                    </button>
+                    </ControlButton>
                   ))}
                 </div>
               </div>
@@ -254,11 +255,11 @@ export default function BookingPage() {
               ) : (
                 <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
                   {timeSlots?.map((slot) => (
-                    <button
+                    <ControlButton
                       key={slot.time}
                       onClick={() => slot.available && setSelectedTime(slot.time)}
                       disabled={!slot.available}
-                      className={`py-2 px-3 rounded-lg text-sm font-medium transition-all ${
+                      className={` px-3 rounded-lg text-sm font-medium transition-all ${
                         selectedTime === slot.time
                           ? 'bg-[#8b7cf7] text-[#0e1118]'
                           : slot.available
@@ -267,7 +268,7 @@ export default function BookingPage() {
                       }`}
                     >
                       {slot.time}
-                    </button>
+                    </ControlButton>
                   ))}
                 </div>
               )}
@@ -275,20 +276,20 @@ export default function BookingPage() {
 
             <div className="flex gap-3">
               {service.requires_vehicle && (
-                <button
+                <ControlButton
                   onClick={() => setStep('vehicle')}
-                  className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors"
+                  className="flex-1  bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors"
                 >
                   Back
-                </button>
+                </ControlButton>
               )}
-              <button
+              <ControlButton
                 onClick={() => setStep('confirm')}
                 disabled={!selectedTime}
-                className="flex-1 rounded-[11px] bg-[#8b7cf7] py-3 font-extrabold text-[#0e1118] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex-1 rounded-[11px] bg-[#8b7cf7]  font-extrabold text-[#0e1118] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Continue
-              </button>
+              </ControlButton>
             </div>
           </div>
         )}
@@ -344,19 +345,19 @@ export default function BookingPage() {
             </div>
 
             <div className="flex gap-3">
-              <button
+              <ControlButton
                 onClick={() => setStep('datetime')}
-                className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors"
+                className="flex-1  bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors"
               >
                 Back
-              </button>
-              <button
+              </ControlButton>
+              <ControlButton
                 onClick={() => createAppointment.mutate()}
                 disabled={createAppointment.isPending}
-                className="flex-1 rounded-[11px] bg-[#8b7cf7] py-3 font-extrabold text-[#0e1118] hover:brightness-110 disabled:opacity-50"
+                className="flex-1 rounded-[11px] bg-[#8b7cf7]  font-extrabold text-[#0e1118] hover:brightness-110 disabled:opacity-50"
               >
                 {createAppointment.isPending ? 'Creating...' : 'Proceed to Payment'}
-              </button>
+              </ControlButton>
             </div>
           </div>
         )}
@@ -384,13 +385,13 @@ export default function BookingPage() {
               </div>
             </div>
 
-            <button
+            <ControlButton
               onClick={() => confirmPayment.mutate()}
               disabled={confirmPayment.isPending}
-              className="w-full rounded-[11px] bg-[#8b7cf7] py-3 font-extrabold text-[#0e1118] hover:brightness-110 disabled:opacity-50"
+              className="w-full rounded-[11px] bg-[#8b7cf7]  font-extrabold text-[#0e1118] hover:brightness-110 disabled:opacity-50"
             >
               {confirmPayment.isPending ? 'Processing...' : 'Complete Payment'}
-            </button>
+            </ControlButton>
           </div>
         )}
 
@@ -426,18 +427,18 @@ export default function BookingPage() {
             </div>
 
             <div className="flex gap-3 pt-4">
-              <button
+              <ControlButton
                 onClick={() => navigate('/portal/appointments')}
-                className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors"
+                className="flex-1  bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors"
               >
                 View Appointments
-              </button>
-              <button
+              </ControlButton>
+              <ControlButton
                 onClick={() => navigate('/portal')}
-                className="flex-1 rounded-[11px] bg-[#8b7cf7] py-3 font-extrabold text-[#0e1118] hover:brightness-110"
+                className="flex-1 rounded-[11px] bg-[#8b7cf7]  font-extrabold text-[#0e1118] hover:brightness-110"
               >
                 Back to Dashboard
-              </button>
+              </ControlButton>
             </div>
           </div>
         )}
