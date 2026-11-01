@@ -1,3 +1,7 @@
+> **DB-043 matching selector/purposeful motion / LOCAL REVIEW (2026-11-01), Frontend & UX:** Marker matches selected glyph color. One-shot stacking/cart/writing/clock-hand/wrench/chart animations replay on activation; reduced motion stays still. Browser verifies six colors/animations, corrected clock path, writing-only lines, mobile containment;18 tests/lint/diff pass. TypeScript/Vite build passes. Same draft PR728; no merge/deploy.
+
+> **DB-043 colored marker/purposeful icon motion / IN PROGRESS (2026-11-01), Frontend & UX:** User requests marker match selected glyph and one-shot purpose-specific activation animation. Acceptance: marker follows theme-aware icon color; Inventory stacks, cart rolls in, Services writes, clock hands rotate once; tertiary wrench/chart animate quietly; repeat/keyboard activation works, reduced motion stays still, no layout change. Same PR728; no release.
+
 > **DB-043 bare colored icons / LOCAL VERIFIED, REVIEW (2026-11-01), Frontend & UX:** Removed all icon backgrounds/shadows, including selection. Colors retained with legible light-theme tones; dimensions/sliding marker unchanged. Browser verifies six transparent/no-image/no-shadow glyphs,390px44px targets/no overflow. Same PR728; no merge/deploy.
 
 > **DB-043 bare colored icons / IN PROGRESS (2026-11-01), Frontend & UX:** User removes icon backgrounds. Remove resting/selected housing and shadow; retain individual colors, existing dimensions and sliding marker. Darken bare strokes on light surfaces for contrast. Same PR728; no release.

@@ -45,3 +45,13 @@ Signed-in browser confirms all six distinct computed colors and28/24px dimension
 
 User requests removal of icon backgrounds. Removed resting/selected gradients, shadows and high-contrast housing borders. Individual colors retained with darker light-theme strokes; sizing and moving marker unchanged. Browser confirms all six glyph backgrounds transparent, background-image none, shadow none, including selected Services.390px targets remain44px with no document overflow. [Current screenshot](db043-nav/bare-colored-icons.png). Same aligned local runtime; no data changes. CSS-only; existing17 component tests from preceding change remain applicable. Final production build and diff check recorded below.
 TypeScript/Vite build and diff check pass. Draft PR728 updated; no release.
+
+## Icon-matched marker and activation motion — 2026-11-01
+
+User requests underline match selected icon and purpose-specific animation. Marker shares section color tokens with glyphs, including light/dark/high-contrast handling. Activation remounts only the aria-hidden glyph, preserving link identity/focus and allowing repeat click or Enter replay. Modified navigation does not trigger animation. No idle/hover loop.
+
+Inventory settles its stack, Purchasing rolls in, Services draws two clipboard writing lines with120ms stagger, Book Time hands rotate360° once while clock face stays still, Team turns its wrench, Analytics grows chart bars. Animations last480–660ms and end at original geometry. Reduced motion disables all icon animation and marker transition.
+
+Signed-in browser: six marker colors exactly equal glyph colors. All six animation selectors verified against rendered SVG. Initial clock selector incorrectly expected a polyline; fixed to the actual path, then verified one iteration at12px/12px origin, circle animation none. Services animates only its two writing paths, not clipboard/bullets. Reduced-motion emulation reports zero animated glyph descendants and0s marker transition.390px targets44px, no document overflow; overrides reset. [Current screenshot](db043-nav/purposeful-icons.png). Same aligned5173/API8019 runtime, no record/preference changes.
+
+18 focused tests pass, including repeat/keyboard glyph replay without replacing focused link. Changed TSX/test lint and diff check pass. TypeScript/Vite production build passes. Draft PR728, no deployment.

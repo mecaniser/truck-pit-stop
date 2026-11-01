@@ -60,6 +60,22 @@ describe('DB-043 container-adaptive Shop navigation', () => {
       expect(screen.getByRole('link', { name, exact: true })).toHaveAttribute('aria-current', 'page')
     }
   })
+  it('replays decorative motion for repeat and keyboard activation without replacing the link', async () => {
+    const user = userEvent.setup()
+    renderGarage()
+    const link = screen.getByRole('link', { name: 'Inventory', exact: true })
+    const initial = link.querySelector('.db-my-shop-nav-glyph')
+    expect(initial).toHaveAttribute('data-activated', 'false')
+    await user.click(link)
+    const first = link.querySelector('.db-my-shop-nav-glyph')
+    expect(first).not.toBe(initial)
+    expect(first).toHaveAttribute('data-activated', 'true')
+    await user.keyboard('{Enter}')
+    expect(link.querySelector('.db-my-shop-nav-glyph')).not.toBe(first)
+    expect(link).toHaveFocus()
+    expect(screen.getByRole('link', { name: 'Inventory', exact: true })).toBe(link)
+  })
+
   it('uses one semantic navigation while preserving the operational and secondary groups', () => {
     renderGarage()
 
