@@ -46,8 +46,6 @@ import type { PartsUsage, RepairOrderHistoryEvent } from '../../../types'
 import REPAIR_ORDER_CSS from '../../../index.css?inline'
 import RepairOrdersPage from '../RepairOrdersPage'
 import { buildPartHistoryEvents } from '../repairOrderHistory'
-import { scopedOrderDetailKey } from '@/features/operation-execution/notesPrivacy'
-import { useAuthStore } from '@/stores/authStore'
 
 function renderPage(
   initialEntries: string[] = ['/'],
@@ -501,7 +499,7 @@ describe('RepairOrdersPage request cancellation', () => {
     await waitFor(() => expect(screen.getByTestId('workspace-stage')).toHaveTextContent('in_progress'))
     expect(screen.getByTestId('workspace-review-mode')).toHaveTextContent('false')
     // Simulate a previously visited History cache, now inactive like the real workspace.
-    const historyKey = scopedOrderDetailKey('repair-order-detail', 'live-order', useAuthStore.getState().user, useAuthStore.getState().authSessionEpoch)
+    const historyKey = queryClient.getQueryCache().findAll({ queryKey: ['repair-order-detail', 'live-order'] })[0].queryKey
     queryClient.setQueryData(historyKey, { ...order, labor_items: [], parts_usage: [], history_events: [] })
     order = { ...order, status: 'pending_review', updated_at: '2026-10-13T12:01:00Z' }
     await act(async () => { await queryClient.invalidateQueries({ queryKey: ['repair-order-workspace', 'live-order'] }) })

@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, keepPreviousData } from '@tanstack/react-query'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -11,6 +11,7 @@ const apiMocks = vi.hoisted(() => ({
   put: vi.fn(),
   post: vi.fn(),
 }))
+const actorState = vi.hoisted(() => ({ user: { role: 'garage_owner', tenant_id: 'tenant-a', id: 'actor-a', permissions: { payments: true } }, epoch: 1 }))
 const themeState = vi.hoisted(() => ({ presentationVariant: 'new' as 'legacy' | 'new' }))
 
 vi.mock('../../lib/api', () => ({
@@ -30,8 +31,10 @@ vi.mock('../../contexts/ThemeContext', () => ({
 }))
 
 vi.mock('../../stores/authStore', () => ({
-  useAuthStore: (selector: (state: { user: { role: string } }) => unknown) => selector({ user: { role: 'garage_owner' } }),
+  useAuthStore: (selector: (state: { user: typeof actorState.user; authSessionEpoch: number }) => unknown) => selector({ user: actorState.user, authSessionEpoch: actorState.epoch }),
 }))
+
+vi.mock('./CustomerAccount', () => ({ default: ({ customerId }: { customerId: string }) => <div data-testid="linked-account">Account for {customerId}</div> }))
 
 import CustomersPage from './CustomersPage'
 import STAFF_CSS from '../../index.css?inline'
@@ -544,4 +547,53 @@ it('shows the pricing merge guard without clearing the duplicate or adding merge
   expect(await within(dialog).findByRole('alert')).toHaveTextContent('Pricing history prevents merging these accounts.')
   expect(dialog).toHaveTextContent('Miles Freight'); expect(within(dialog).getByRole('button', { name: 'Back', exact: true })).toBeEnabled()
   expect(apiMocks.post).toHaveBeenCalledExactlyOnceWith('/customers/merge', { winner_id: 'customer-1', loser_id: 'customer-2' })
+})
+
+
+describe('DB-151 customer account route and return', () => {
+  afterEach(() => { apiMocks.get.mockReset() })
+  it('loads the exact customer outside the current page, opens Account and preserves origin when switching views', async () => {
+    installApiFixture([customer])
+    renderPage('/dashboard/customers?selected=customer-2&tab=account&shop_work=overview')
+    expect(await screen.findByTestId('linked-account')).toHaveTextContent('Account for customer-2')
+    expect(apiMocks.get).toHaveBeenCalledWith('/customers/customer-2')
+    await userEvent.click(screen.getByRole('button', { name: 'Overview', exact: true }))
+    expect(screen.getByTestId('customers-location')).toHaveTextContent('selected=customer-2&tab=overview&shop_work=overview')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Back to Shop Work' })[0])
+    expect(screen.getByTestId('customers-location')).toHaveTextContent('?work_view=overview')
+  })
+  it('retains a safe return when the exact customer is unavailable', async () => {
+    installApiFixture([customer])
+    const original = apiMocks.get.getMockImplementation()!
+    apiMocks.get.mockImplementation((url, ...args) => url === '/customers/missing-customer' ? Promise.reject({ response: { status: 404 } }) : original(url, ...args))
+    renderPage('/dashboard/customers?selected=missing-customer&tab=account&shop_work=overview')
+    await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/customers/missing-customer'))
+    expect(screen.queryByTestId('linked-account')).not.toBeInTheDocument()
+    await userEvent.click(screen.getAllByRole('button', { name: 'Back to Shop Work' })[0])
+    expect(screen.getByTestId('customers-location')).toHaveTextContent('?work_view=overview')
+  })
+})
+
+
+it('does not show a cached customer or Account from another tenant while the exact route is denied', async () => {
+  installApiFixture([customer])
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity, placeholderData: keepPreviousData } } })
+  const view = () => <QueryClientProvider client={client}><MemoryRouter initialEntries={['/dashboard/customers?selected=customer-1&tab=account&shop_work=overview']}><CustomersPage /></MemoryRouter></QueryClientProvider>
+  const { rerender, unmount } = render(view())
+  expect(await screen.findByTestId('linked-account')).toHaveTextContent('Account for customer-1')
+  let deny: (reason: unknown) => void = () => undefined
+  const pending = new Promise((_, reject) => { deny = reject })
+  apiMocks.get.mockImplementation((url: string) => url === '/customers' ? Promise.resolve({ data: { items: [], total: 0, has_more: false } }) : pending)
+  actorState.user = { ...actorState.user, tenant_id: 'tenant-b', id: 'actor-b' }
+  actorState.epoch = 3
+  rerender(view())
+  expect(screen.queryByTestId('linked-account')).not.toBeInTheDocument()
+  expect(screen.queryByText('Northline Logistics')).not.toBeInTheDocument()
+  await act(async () => { deny({ response: { status: 404 } }); await pending.catch(() => undefined) })
+  await waitFor(() => expect(screen.queryByTestId('linked-account')).not.toBeInTheDocument())
+  expect(screen.getAllByRole('button', { name: 'Back to Shop Work' }).length).toBeGreaterThan(0)
+  unmount()
+  client.clear()
+  actorState.user = { role: 'garage_owner', tenant_id: 'tenant-a', id: 'actor-a', permissions: { payments: true } }
+  actorState.epoch = 1
 })

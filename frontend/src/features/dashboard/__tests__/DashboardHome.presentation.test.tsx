@@ -1,8 +1,12 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { QueryClient, QueryClientProvider, keepPreviousData } from '@tanstack/react-query'
 import DashboardHome from '../DashboardHome'
 import { garageOwnerSession } from '../../../test-fixtures/db035/staffSession'
+
+const apiMock = vi.hoisted(() => ({ get: vi.fn() }))
+vi.mock('../../../lib/api', () => ({ default: apiMock }))
 
 const testState = vi.hoisted(() => ({
   presentationVariant: 'new' as 'new' | 'legacy',
@@ -10,6 +14,13 @@ const testState = vi.hoisted(() => ({
   locationSearch: '',
   locationState: null as { shopWorkQueue: string; shopWorkView?: string } | null,
   invalidateQueries: vi.fn(),
+  overviewRefetch: vi.fn(),
+  overviewError: false,
+  actor: null as (typeof garageOwnerSession & { permissions?: Record<string, boolean> }) | null,
+  epoch: 1,
+  signedOut: false,
+  realQueries: false,
+  queryKeys: [] as unknown[][],
   query: {
     data: undefined as Record<string, unknown> | undefined,
     isLoading: false,
@@ -23,17 +34,21 @@ vi.mock('react-router-dom', () => ({
   useNavigate: () => testState.navigate,
   useLocation: () => ({ state: testState.locationState, search: testState.locationSearch }),
 }))
-vi.mock('@tanstack/react-query', () => ({
-  useQuery: ({ queryKey }: { queryKey: string[] }) => queryKey[0] === 'dashboard-wip-aging'
+vi.mock('@tanstack/react-query', async () => {
+  const actual = await vi.importActual<typeof import('@tanstack/react-query')>('@tanstack/react-query')
+  return { ...actual,
+  useQuery: (options: { queryKey: unknown[] }) => { const { queryKey } = options; testState.queryKeys.push(queryKey); if (testState.realQueries && ['shop-work-overview', 'dashboard-action-queue', 'dashboard-daily-workset'].includes(queryKey[0] as string)) return actual.useQuery(options); return queryKey[0] === 'shop-work-overview'
+    ? { ...testState.query, data: { as_of: '2026-11-01T15:00:00Z', timezone: 'America/New_York', scope: 'shop', active_jobs: 1, sources: [], actions: [], upcoming: [], actions_total: 0, upcoming_total: 0, has_more_actions: false, has_more_upcoming: false }, refetch: testState.overviewRefetch, error: testState.overviewError ? new Error('overview offline') : null }
+    : queryKey[0] === 'dashboard-wip-aging'
     ? { ...testState.query, data: wipFixture, isError: false }
     : queryKey[0] === 'activity-feed'
       ? { ...testState.query, data: { items: Array.from({ length: 20 }, (_, id) => ({ id: String(id) })), has_more: true }, isError: false }
-      : testState.query,
-  useQueryClient: () => ({ invalidateQueries: testState.invalidateQueries }),
-}))
+      : testState.query },
+  useQueryClient: () => testState.realQueries ? actual.useQueryClient() : ({ invalidateQueries: testState.invalidateQueries }),
+} })
 vi.mock('../../../stores/authStore', () => ({
-  useAuthStore: (selector?: (state: { user: typeof garageOwnerSession; authSessionEpoch: number }) => unknown) => {
-    const state = { user: garageOwnerSession, authSessionEpoch: 1 }
+  useAuthStore: (selector?: (state: { user: typeof garageOwnerSession | null; authSessionEpoch: number }) => unknown) => {
+    const state = { user: testState.signedOut ? null : testState.actor ?? garageOwnerSession, authSessionEpoch: testState.epoch }
     return selector ? selector(state) : state
   },
 }))
@@ -144,6 +159,13 @@ describe('DashboardHome DB-035 presentation boundary', () => {
   beforeEach(() => {
     testState.presentationVariant = 'new'
     testState.navigate.mockReset()
+    testState.overviewError = false
+    testState.overviewRefetch.mockReset()
+    testState.actor = null
+    testState.epoch = 1
+    testState.signedOut = false
+    testState.realQueries = false
+    testState.queryKeys = []
     testState.locationSearch = ''
     testState.locationState = null
     testState.invalidateQueries.mockReset()
@@ -164,11 +186,80 @@ describe('DashboardHome DB-035 presentation boundary', () => {
     expect(testState.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['activity-feed'] })
   })
 
-  it('defaults to active work and opens the canonical workspace in place', () => {
+  it.each(['shop-work-overview', 'dashboard-action-queue', 'dashboard-daily-workset', 'value-summary'])('isolates cached %s data after same-actor role, payment grant, and session changes', (prefix) => {
+    const { rerender } = render(<DashboardHome />)
+    const latestKey = () => testState.queryKeys.filter(key => prefix === 'value-summary' ? key[1] === 'value-summary' : key[0] === prefix && key[1] !== 'value-summary').at(-1)
+    const owner = latestKey()
+    testState.actor = { ...garageOwnerSession, role: 'garage_admin', permissions: { payments: true } }
+    rerender(<DashboardHome />)
+    const admin = latestKey()
+    expect(admin).not.toEqual(owner)
+    testState.actor = { ...testState.actor, permissions: { payments: false } }
+    testState.overviewError = true
+    rerender(<DashboardHome />)
+    const revoked = latestKey()
+    expect(revoked).not.toEqual(admin)
+    testState.epoch = 2
+    rerender(<DashboardHome />)
+    expect(latestKey()).not.toEqual(revoked)
+  })
+
+  it('does not retain prior tenant Closeout rows, badge, or totals during same-browser signout and signin', async () => {
+    testState.realQueries = true
+    const clearDaily = { ...dashboardFixture, needs_attention: { items: [], has_more: false }, on_floor: { items: [], has_more: false }, ready_to_close: { items: [], has_more: false }, closed_today: { items: [], has_more: false } }
+    let resolveClear: (value: { data: typeof clearDaily }) => void = () => undefined
+    const clearResponse = new Promise<{ data: typeof clearDaily }>(resolve => { resolveClear = resolve })
+    apiMock.get.mockImplementation((url: string) => {
+      if (url === '/dashboard/daily-workset') return testState.actor?.tenant_id === 'clear-tenant' ? clearResponse : Promise.resolve({ data: dashboardFixture })
+      if (url === '/dashboard/shop-work-overview') return Promise.resolve({ data: { as_of: '2026-11-01T15:00:00Z', timezone: 'America/New_York', scope: 'shop', active_jobs: 0, sources: [], actions: [], upcoming: [], actions_total: 0, upcoming_total: 0, has_more_actions: false, has_more_upcoming: false } })
+      if (url === '/dashboard/daily-workset/value-summary') return Promise.resolve({ data: { order_count: testState.actor?.tenant_id === 'clear-tenant' ? 0 : 1, order_value: testState.actor?.tenant_id === 'clear-tenant' ? '0' : '1840.25', currency: 'USD', amount_basis: 'repair_order_net' } })
+      throw new Error(`Unexpected request ${url}`)
+    })
+    // Retain the real query cache and a global previous-data default across logins.
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity, placeholderData: keepPreviousData } } })
+    const view = () => <QueryClientProvider client={client}><DashboardHome /></QueryClientProvider>
+    const { rerender, unmount } = render(view())
+    fireEvent.click(await screen.findByRole('button', { name: /^Closeout 1/ }))
+    expect(await screen.findByRole('button', { name: 'Open RO-1009 in Repair Orders' })).toBeInTheDocument()
+    await waitFor(() => expect(apiMock.get).toHaveBeenCalledWith('/dashboard/daily-workset/value-summary', expect.anything()))
+    testState.signedOut = true
+    testState.epoch = 2
+    rerender(view())
+    expect(screen.queryByRole('button', { name: 'Open RO-1009 in Repair Orders' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Closeout 1/ })).not.toBeInTheDocument()
+    testState.actor = { ...garageOwnerSession, tenant_id: 'clear-tenant', id: 'clear-actor' }
+    testState.signedOut = false
+    testState.epoch = 3
+    rerender(view())
+    expect(screen.queryByRole('button', { name: 'Open RO-1009 in Repair Orders' })).not.toBeInTheDocument()
+    expect(screen.queryByText('$1,840.25')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Closeout 1/ })).not.toBeInTheDocument()
+    await act(async () => { resolveClear({ data: clearDaily }); await clearResponse })
+    expect(await screen.findByRole('button', { name: /^Closeout 0/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open RO-1009 in Repair Orders' })).not.toBeInTheDocument()
+    expect(client.getQueryCache().findAll({ queryKey: ['dashboard-daily-workset'] }).length).toBeGreaterThan(2)
+    unmount()
+    client.clear()
+  })
+
+  it('refreshes on entering Overview and keeps its stale timestamp separate from Closeout', () => {
+    testState.overviewError = true
+    render(<DashboardHome />)
+    expect(screen.getByRole('alert')).toHaveTextContent('Last checked')
+    expect(screen.getByRole('button', { name: /Refresh Shop Work/ })).toHaveAttribute('aria-label', expect.stringContaining('Checked'))
+    fireEvent.click(screen.getByRole('button', { name: /^Active work/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Overview', exact: true }))
+    expect(testState.overviewRefetch).toHaveBeenCalledOnce()
+    testState.overviewError = false
+  })
+
+  it('defaults to Overview and preserves active-work navigation to the canonical workspace in place', () => {
     render(<DashboardHome />)
 
     expect(screen.getByRole('heading', { name: 'Shop Work' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Active work' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Overview' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: /^Active work/ }))
+    expect(screen.getByRole('button', { name: /^Active work/ })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.queryByText('Payment Due')).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Shop Cockpit' })).not.toBeInTheDocument()
 
@@ -187,18 +278,19 @@ describe('DashboardHome DB-035 presentation boundary', () => {
     expect(screen.getByRole('button', { name: 'Open RO-1009 in Repair Orders' })).toBeInTheDocument()
     expect(screen.queryByText('Work in progress')).not.toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: /On the Floor/ })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Active work' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Active work/ }))
     expect(screen.getByText('Work in progress')).toBeInTheDocument()
     expect(screen.queryByText('Payment Due')).not.toBeInTheDocument()
   })
 
   it('restores external Closeout navigation without losing the active-work filter', () => {
     const { rerender } = render(<DashboardHome />)
+    fireEvent.click(screen.getByRole('button', { name: /^Active work/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Parts 0' }))
     testState.locationState = { shopWorkQueue: 'ready_to_close' }
     rerender(<DashboardHome />)
     expect(screen.getByRole('button', { name: /^Closeout \d/ })).toHaveAttribute('aria-pressed', 'true')
-    fireEvent.click(screen.getByRole('button', { name: 'Active work' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Active work/ }))
     expect(screen.getByRole('button', { name: 'Parts 0' })).toHaveAttribute('aria-pressed', 'true')
   })
 
@@ -251,6 +343,7 @@ describe('DashboardHome DB-035 presentation boundary', () => {
   })
 
   it('uses presentation-specific loading and error states without changing refresh behavior', () => {
+    testState.locationSearch = '?work_view=active'
     testState.query = { ...testState.query, data: undefined, isLoading: true }
     const { rerender } = render(<DashboardHome />)
     expect(screen.getByLabelText('Loading Shop Work')).toBeInTheDocument()

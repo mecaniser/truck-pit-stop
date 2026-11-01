@@ -39,6 +39,8 @@ import RecentActivityFeed from './RecentActivityFeed'
 import { useActivityFeed, activityCountLabel } from './activityFeedQuery'
 import ShopCockpitActionLedger, { type ActionQueueLane } from './ShopCockpitActionLedger'
 import WipAgingPanel from './WipAgingPanel'
+import ShopWorkOverview, { type ShopWorkOverviewData } from './ShopWorkOverview'
+import { shopWorkDestinationUrl } from './shopWorkNavigation'
 import { DEFAULT_WIP_FILTERS, type WipFilters } from './wipAging'
 import RepairOrdersPage from '../repair-orders/RepairOrdersPage'
 import { elapsedSince, shortDuration } from '@/lib/elapsed'
@@ -400,7 +402,10 @@ function OrderCard({
 }
 
 export default function DashboardHome() {
-  const { user } = useAuthStore()
+  const { user, authSessionEpoch } = useAuthStore()
+  // Queue rows and value summaries must never outlive their authorization scope.
+  const dashboardIdentity = [user?.tenant_id, user?.id, user?.role, user?.permissions?.payments === true, authSessionEpoch] as const
+  const hasDashboardActor = Boolean(user?.tenant_id && user?.id)
   const { accentColors, fontSize, presentationVariant } = useTheme()
   const navigate = useNavigate()
   const location = useLocation()
@@ -422,14 +427,20 @@ export default function DashboardHome() {
   const teamCapacityTouchStartY = useRef<number | null>(null)
   const teamCapacityDidSwipe = useRef(false)
   const [queueView, setQueueView] = useState<'queue' | 'activity'>('queue')
-  const [workView, setWorkView] = useState<'active' | 'closeout'>(() => new URLSearchParams(location.search).get('work_view') === 'closeout' || ['ready_to_close', 'closed_today'].includes(new URLSearchParams(location.search).get('queue') || '') ? 'closeout' : 'active')
+  const [workView, setWorkView] = useState<'overview' | 'active' | 'closeout'>(() => {
+    const params = new URLSearchParams(location.search)
+    const view = params.get('work_view')
+    if (view === 'overview' || view === 'active' || view === 'closeout') return view
+    if (['ready_to_close', 'closed_today'].includes(params.get('queue') || '')) return 'closeout'
+    return params.has('selected') || ['needs_action', 'on_floor'].includes(params.get('queue') || '') ? 'active' : 'overview'
+  })
   const [wipFilters, setWipFilters] = useState<WipFilters>(DEFAULT_WIP_FILTERS)
   const returnedShopWorkQueue = (location.state as { shopWorkQueue?: ActionQueueLane } | null)?.shopWorkQueue
   const requestedShopWorkQueue = new URLSearchParams(location.search).get('queue')
-  const requestedShopWorkView = (location.state as { shopWorkView?: string } | null)?.shopWorkView || new URLSearchParams(location.search).get('work_view')
+  const requestedShopWorkView = new URLSearchParams(location.search).get('work_view') || (location.state as { shopWorkView?: string } | null)?.shopWorkView
   useEffect(() => {
     if (selectedShopWorkRecord) return
-    if (requestedShopWorkView === 'active' || requestedShopWorkView === 'closeout') {
+    if (requestedShopWorkView === 'overview' || requestedShopWorkView === 'active' || requestedShopWorkView === 'closeout') {
       setWorkView(requestedShopWorkView)
     } else if (['ready_to_close', 'closed_today'].includes(returnedShopWorkQueue || requestedShopWorkQueue || '')) {
       setWorkView('closeout')
@@ -486,12 +497,13 @@ export default function DashboardHome() {
   // The home screen is an action queue. Capacity and financial reporting live
   // on their dedicated screens and are not loaded during routine navigation.
   const { data: stats, isLoading: loading, error: queryError, isFetching: isRefreshing, dataUpdatedAt } = useQuery<DashboardStats>({
-    queryKey: ['dashboard-action-queue'],
+    queryKey: ['dashboard-action-queue', ...dashboardIdentity],
+    placeholderData: undefined,
     queryFn: async () => {
       const response = await api.get('/dashboard/action-queue')
       return response.data
     },
-    enabled: presentationVariant !== 'new',
+    enabled: hasDashboardActor && presentationVariant !== 'new',
     refetchInterval: query => scheduleRefreshInterval([...(query.state.data?.orders_needing_action ?? []), ...(query.state.data?.orders_on_floor ?? []), ...(query.state.data?.orders_ready_to_close ?? [])]),
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true, // Refresh when tab becomes visible
@@ -513,9 +525,10 @@ export default function DashboardHome() {
     isFetching: isDailyWorkbenchRefreshing,
     dataUpdatedAt: dailyWorkbenchUpdatedAt,
   } = useQuery<DailyWorkbench>({
-    queryKey: ['dashboard-daily-workset'],
+    queryKey: ['dashboard-daily-workset', ...dashboardIdentity],
+    placeholderData: undefined,
     queryFn: async () => (await api.get('/dashboard/daily-workset')).data,
-    enabled: presentationVariant === 'new' && !selectedShopWorkRecord,
+    enabled: hasDashboardActor && presentationVariant === 'new' && !selectedShopWorkRecord,
     refetchInterval: query => scheduleRefreshInterval(query.state.data ? [query.state.data.needs_attention, query.state.data.on_floor, query.state.data.ready_to_close, query.state.data.closed_today].flatMap(queue => queue.items) : []),
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
@@ -523,15 +536,28 @@ export default function DashboardHome() {
     refetchOnMount: true,
     staleTime: 60 * 1000,
   })
+  const overviewQuery = useQuery<ShopWorkOverviewData>({
+    queryKey: ['shop-work-overview', ...dashboardIdentity],
+    placeholderData: undefined,
+    queryFn: async () => (await api.get('/dashboard/shop-work-overview')).data,
+    enabled: hasDashboardActor && presentationVariant === 'new' && !selectedShopWorkRecord,
+    staleTime: 0,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    retry: false,
+  })
   const shopValueSummaryQuery = useQuery<OrderValueSummary>({
-    queryKey: ['dashboard-daily-workset', 'value-summary', shopValueScope.lane, debouncedShopValueSearch],
+    queryKey: ['dashboard-daily-workset', 'value-summary', ...dashboardIdentity, shopValueScope.lane, debouncedShopValueSearch],
+    placeholderData: undefined,
     queryFn: async () => (await api.get('/dashboard/daily-workset/value-summary', {
       params: {
         lane: shopValueScope.lane,
         ...(debouncedShopValueSearch ? { search: debouncedShopValueSearch } : {}),
       },
     })).data,
-    enabled: presentationVariant === 'new' && !selectedShopWorkRecord && queueView === 'queue' && workView === 'closeout',
+    enabled: hasDashboardActor && presentationVariant === 'new' && !selectedShopWorkRecord && queueView === 'queue' && workView === 'closeout',
     staleTime: 15_000,
     retry: false,
   })
@@ -542,6 +568,7 @@ export default function DashboardHome() {
   
   const handleManualRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
+    queryClient.invalidateQueries({ queryKey: ['shop-work-overview'] })
     queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
     queryClient.invalidateQueries({ queryKey: ['dashboard-wip-aging'] })
     queryClient.invalidateQueries({ queryKey: ['dashboard-daily-workset'] })
@@ -858,7 +885,7 @@ export default function DashboardHome() {
     : null
   const activeLastUpdated = activeUpdatedAt ? new Date(activeUpdatedAt) : null
 
-  if (activeLoading) {
+  if (activeLoading && !(presentationVariant === 'new' && workView === 'overview')) {
     if (presentationVariant === 'new') {
       return (
         <section className="db-shop-work-new db-shop-work-new--state" aria-busy="true" aria-label="Loading Shop Work">
@@ -875,7 +902,7 @@ export default function DashboardHome() {
     )
   }
 
-  if (activeError) {
+  if (activeError && !(presentationVariant === 'new' && workView === 'overview')) {
     if (presentationVariant === 'new') {
       return (
         <section className="db-shop-work-new db-shop-work-new--state" role="alert">
@@ -925,14 +952,39 @@ export default function DashboardHome() {
       <ShopCockpitActionLedger
         projection={projection}
         workView={workView}
-        onWorkViewChange={setWorkView}
+        onWorkViewChange={(view) => {
+          if (view === 'overview' && workView !== 'overview') void overviewQuery.refetch()
+          setWorkView(view)
+          const params = new URLSearchParams(location.search)
+          params.set('work_view', view)
+          if (view !== 'closeout') params.delete('queue')
+          navigate(`/dashboard?${params.toString()}`, { replace: true })
+        }}
+        activeCount={overviewQuery.data?.active_jobs ?? null}
+        closeoutUnavailable={!!dailyWorkbenchError || isDailyWorkbenchLoading}
+        overview={<ShopWorkOverview
+          data={overviewQuery.data}
+          loading={overviewQuery.isLoading}
+          failed={!!overviewQuery.error}
+          refreshing={overviewQuery.isFetching}
+          onRetry={() => { void overviewQuery.refetch() }}
+          onOpen={destination => navigate(shopWorkDestinationUrl(destination))}
+          onWorkspace={path => {
+            const [pathname, search = ''] = path.split('?')
+            const params = new URLSearchParams(search)
+            params.set('shop_work', 'overview')
+            navigate(`${pathname}?${params}`)
+          }}
+        />}
         activeWork={<WipAgingPanel filters={wipFilters} onFiltersChange={setWipFilters} onOpenRecord={openRecord} />}
         isManager={isManager}
         canViewActivity={canViewActivity}
         queueView={queueView}
         activityCount={activityCount}
-        isRefreshing={activeRefreshing}
-        lastUpdatedLabel={activeLastUpdated ? `Updated ${formatLastUpdated(activeLastUpdated)}` : 'Updated recently'}
+        isRefreshing={activeRefreshing || overviewQuery.isFetching}
+        lastUpdatedLabel={workView === 'overview'
+          ? overviewQuery.data?.as_of ? `Checked ${formatLastUpdated(new Date(overviewQuery.data.as_of))}` : 'Not checked yet'
+          : activeLastUpdated ? `Updated ${formatLastUpdated(activeLastUpdated)}` : 'Updated recently'}
         quickOrderExpanded={showQuickForm}
         notificationRegion={(
           <NotificationBanner

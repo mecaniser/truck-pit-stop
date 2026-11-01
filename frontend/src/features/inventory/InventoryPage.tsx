@@ -1,3 +1,4 @@
+import { shopWorkReturnUrl, shopWorkQueryScope } from '@/features/dashboard/shopWorkNavigation'
 import PlatformSelect from '@/components/PlatformSelect'
 import { pricingError, pricingMoney } from '@/features/parts-pricing/contract'
 import PartPolicySummary from '@/features/parts-pricing/PartPolicySummary'
@@ -6,8 +7,8 @@ import PartPricingPolicy from '@/features/parts-pricing/PartPricingPolicy'
 import { createPortal } from 'react-dom'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { LoadingLine } from '@/components/ui'
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
-import { useSearchParams } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Link, useSearchParams } from 'react-router-dom'
 import api from '../../lib/api'
 import { InventoryItem, Supplier, UnitType } from '../../types'
 import { ArrowRight, Camera, Check, ChevronDown, Download, ImageOff, MapPin, PackageCheck, Pencil, Plus, Settings, Sparkles, Trash2, X } from 'lucide-react'
@@ -294,6 +295,7 @@ function LegacyInventoryPage() {
   const fallbackPartImageUrl = tenantBranding?.logo_url || null
   const [searchParams, setSearchParams] = useSearchParams()
   const user = useAuthStore(state => state.user)
+  const queryScope = useAuthStore(state => shopWorkQueryScope(state.user, state.authSessionEpoch))
   const linkedItemId = searchParams.get('selected')
   const [pricingSettingsOpen, setPricingSettingsOpen] = useState(false)
   const [pricingPart, setPricingPart] = useState<InventoryItem | null>(null)
@@ -385,7 +387,7 @@ function LegacyInventoryPage() {
     // Server-side search: ilike + separator-squashed + pg_trgm typo tolerance
     // ("gaskit" finds "gasket"). Keyed on the debounced term so results and
     // cache stay per-search.
-    queryKey: ['inventory', debouncedSearch],
+    queryKey: ['inventory', debouncedSearch, queryScope],
     queryFn: async () => {
       const pageSize = 100
       let skip = 0
@@ -406,17 +408,19 @@ function LegacyInventoryPage() {
       }
       return all
     },
-    placeholderData: keepPreviousData,
+    placeholderData: (previous, query) => query?.queryKey.includes(queryScope) ? previous : undefined,
   })
 
   const { data: syncStatus } = useQuery<{ ets_last_synced_at: string | null }>({
-    queryKey: ['inventory-sync-status'],
+    queryKey: ['inventory-sync-status', queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get('/inventory/sync-status')).data,
     staleTime: 60_000,
   })
 
   const { data: suppliers } = useQuery<Supplier[]>({
-    queryKey: ['suppliers'],
+    queryKey: ['suppliers', queryScope],
+    placeholderData: undefined,
     queryFn: async () => {
       const pageSize = 100
       let skip = 0
@@ -433,7 +437,8 @@ function LegacyInventoryPage() {
   })
 
   const linkedItemQuery = useQuery<InventoryItem>({
-    queryKey: ['inventory-search-selection', user?.tenant_id, user?.id, linkedItemId],
+    queryKey: ['inventory-search-selection', user?.tenant_id, user?.id, linkedItemId, queryScope],
+    placeholderData: undefined,
     queryFn: async ({ signal }) => (await api.get(`/inventory/${linkedItemId}`, { signal })).data,
     enabled: !!linkedItemId,
     retry: false,
@@ -444,8 +449,10 @@ function LegacyInventoryPage() {
     if (!linkedItemId || linkedItemQuery.data?.id !== linkedItemId) return
     setSelectedItem(linkedItemQuery.data)
     const params = new URLSearchParams(searchParams)
-    params.delete('selected')
-    setSearchParams(params, { replace: true })
+    if (!shopWorkReturnUrl(params)) {
+      params.delete('selected')
+      setSearchParams(params, { replace: true })
+    }
   }, [linkedItemId, linkedItemQuery.data, searchParams, setSearchParams])
 
   const filteredInventory = useMemo(() => {
@@ -2162,5 +2169,8 @@ function LegacyInventoryPage() {
 }
 
 export default function InventoryPage() {
-  return <PartsInventoryGate legacy={<LegacyInventoryPage />} />
+  const queryScope = useAuthStore(state => shopWorkQueryScope(state.user, state.authSessionEpoch))
+  const [params] = useSearchParams()
+  const returnUrl = shopWorkReturnUrl(params)
+  return <>{returnUrl && <Link className="inline-flex min-h-11 items-center px-3 text-sm font-semibold underline" to={returnUrl}>Back to Shop Work</Link>}<PartsInventoryGate key={queryScope} legacy={<LegacyInventoryPage />} /></>
 }

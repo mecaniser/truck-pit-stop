@@ -1352,6 +1352,14 @@ async def create_category(body: CategoryInput, idempotency_key: Optional[str] = 
     return output
 
 
+def _purchase_order_quantities(lines) -> dict:
+    """Shared incumbent list quantities; no inventory or payment inference."""
+    ordered = sum(int(line.ordered_quantity) for line in lines)
+    received = sum(int(line.received_quantity) for line in lines)
+    return {"ordered_quantity": ordered, "received_quantity": received,
+            "remaining_quantity": max(0, ordered - received)}
+
+
 @router.get("/purchase-orders")
 async def list_purchase_orders(
     status_filter: Optional[POStatusFilter] = Query(default=None, alias="status"),
@@ -1389,14 +1397,11 @@ async def list_purchase_orders(
         if search_filter and search_filter not in f"{row.po_number} {row.notes or ''} {supplier.name if supplier else ''}".casefold():
             continue
         lines = lines_by_po[row.id]
-        ordered = sum(int(line.ordered_quantity) for line in lines)
-        received = sum(int(line.received_quantity) for line in lines)
         values.append({
             "id": str(row.id), "po_number": row.po_number, "supplier_id": str(row.supplier_id),
             "supplier": _supplier_summary(supplier), "status": row.status, "version": row.version,
             "expected_at": row.expected_at.isoformat() if row.expected_at else None,
-            "line_count": len(lines), "ordered_quantity": ordered, "received_quantity": received,
-            "remaining_quantity": max(0, ordered - received),
+            "line_count": len(lines), **_purchase_order_quantities(lines),
             "created_at": row.created_at.isoformat(),
         })
     values.sort(key=lambda value: (value["created_at"], value["id"]), reverse=True)
