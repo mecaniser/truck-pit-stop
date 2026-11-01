@@ -4608,7 +4608,7 @@ export default function PriceBuilderPanel({
                   summaryLoadFailed ? 'text-red-600' : totalMotionActive || isInitialSummaryLoad ? 'text-orange-700' : 'text-gray-400'
                 }`}>
                   {(totalMotionActive || isInitialSummaryLoad) && <Spinner size="xs" />}
-                  {isEtsImported ? 'ETS invoice total' : summaryLoadFailed ? 'Failed to load' : isInitialSummaryLoad ? 'Loading' : totalMotionActive ? 'Calculating' : 'Order Total'}
+                  {isEtsImported ? 'Invoice total' : summaryLoadFailed ? 'Failed to load' : isInitialSummaryLoad ? 'Loading' : totalMotionActive ? 'Calculating' : 'Order Total'}
                   {summaryLoadFailed && (
                     <button
                       type="button"
