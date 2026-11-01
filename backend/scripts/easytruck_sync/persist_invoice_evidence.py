@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One prepared debt's evidence only; default read-only plan, never import money."""
+"""Exact source invoice evidence only; default read-only plan, never import money."""
 import argparse
 import hashlib
 import json
@@ -49,7 +49,7 @@ def validate_capture(document, tenant_id, handoff, now):
     return evidence
 
 
-def fingerprint(cur, tenant_id, invoice_ids):
+def fingerprint(cur, tenant_id, invoice_ids, order_ids=None, customer_ids=None):
     # Raw server JSON text keeps exact cents. Do not include the one metadata
     # column this operation is explicitly authorized to change.
     scopes = {
@@ -72,7 +72,91 @@ def fingerprint(cur, tenant_id, invoice_ids):
     for table,(scope,exclude) in scopes.items():
         cur.execute(f"SELECT COALESCE(jsonb_agg(to_jsonb(t){exclude} ORDER BY id)::text,'[]') AS snapshot FROM {table} t WHERE tenant_id=%s AND {scope}", (tenant_id, invoice_ids))
         result[table] = hashlib.sha256(cur.fetchone()['snapshot'].encode()).hexdigest()
+    for table, ids in [('repair_orders', order_ids), ('customers', customer_ids)]:
+        if ids:
+            cur.execute(f"SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY id)::text,'[]') AS snapshot FROM {table} t WHERE tenant_id=%s AND id=ANY(%s)", (tenant_id, ids))
+            result[table] = hashlib.sha256(cur.fetchone()['snapshot'].encode()).hexdigest()
     return result
+
+
+def bootstrap(conn, args, document):
+    """Add first remote-customer proof before prepare, never bypass a handoff."""
+    required = ['expected_envelope_sha256', 'expected_evidence_sha256',
+                'ets_shop_id', 'source_service_number', 'ets_service_internal_id',
+                'ets_invoice_internal_id', 'source_invoice_number', 'source_customer_id',
+                'expected_source_customer_id', 'expected_source_customer_uuid']
+    if any(getattr(args, k, None) is None for k in required):
+        raise ValueError('Bootstrap requires exact reviewed source identities and evidence digests')
+    if getattr(args, 'handoff_id', None) or getattr(args, 'expected_version', None):
+        raise ValueError('Bootstrap cannot use handoff mode')
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        if args.commit:
+            key=int.from_bytes(hashlib.sha256(f'dieselbridge:financial:v1:{args.tenant_id}'.encode()).digest()[:8], 'big', signed=True)
+            cur.execute('SELECT pg_try_advisory_xact_lock(%s) AS acquired', (key,))
+            if not cur.fetchone()['acquired']:
+                raise ValueError('Tenant financial processing is busy')
+        # All states, including closed/deleted, permanently exclude bootstrap.
+        cur.execute("""SELECT EXISTS(SELECT 1 FROM source_debt_handoffs WHERE tenant_id=%s
+            AND (source_dbn_invoice_id=%s OR (ets_shop_id=%s AND ets_invoice_internal_id=%s)
+                OR (source_service_number=%s AND source_invoice_number=%s))) AS present""",
+            (args.tenant_id,args.invoice_id,args.ets_shop_id,args.ets_invoice_internal_id,
+             args.source_service_number,args.source_invoice_number))
+        if cur.fetchone()['present']:
+            raise ValueError('Canonical handoff exists; versioned handoff evidence mode required')
+        cur.execute("""SELECT i.id,i.invoice_number,i.source,i.deleted_at,i.ets_source_evidence,
+            i.status,i.voided_at,i.is_internal,i.repair_order_id,ro.customer_id,ro.source AS order_source,ro.deleted_at AS order_deleted_at,
+            ro.status AS order_status,ro.order_number,c.ets_external_id,c.is_internal_fleet,c.deleted_at AS customer_deleted_at
+            FROM invoices i JOIN repair_orders ro ON ro.id=i.repair_order_id AND ro.tenant_id=i.tenant_id
+            JOIN customers c ON c.id=ro.customer_id AND c.tenant_id=ro.tenant_id
+            WHERE i.id=%s AND i.tenant_id=%s"""+(' FOR UPDATE OF i,ro,c' if args.commit else ''), (args.invoice_id,args.tenant_id))
+        invoice=cur.fetchone()
+        if (not invoice or invoice['source']!='easy_truck_shop_import'
+                or invoice['order_source']!='easy_truck_shop_import'
+                or any(invoice[k] is not None for k in ['deleted_at','order_deleted_at','customer_deleted_at'])
+                or invoice['status']=='cancelled' or invoice['order_status']=='cancelled'
+                or invoice['voided_at'] is not None or invoice['is_internal'] or invoice['is_internal_fleet']
+                or str(invoice['customer_id'])!=str(args.source_customer_id)
+                or invoice['invoice_number']!='ETSINV-'+args.source_invoice_number
+                or not invoice['order_number'].startswith('ETS-'+args.source_service_number+'-')
+                or str(invoice['ets_external_id'])!=args.expected_source_customer_id):
+            raise ValueError('Bootstrap source invoice or original customer ownership mismatch')
+        envelope=invoice['ets_source_evidence']
+        if digest(envelope)!=args.expected_envelope_sha256:
+            raise ValueError('Source envelope changed')
+        current=latest_source_evidence(envelope)
+        rows=envelope.get('observations',[]) if isinstance(envelope,dict) else []
+        if (not rows or rows[-1].get('sha256')!=args.expected_evidence_sha256
+                or _digest(rows[-1].get('evidence'))!=args.expected_evidence_sha256 or not current):
+            raise ValueError('Existing source evidence digest mismatch')
+        identity={k:str(getattr(args,k)) for k in ['ets_shop_id','source_service_number','ets_service_internal_id','ets_invoice_internal_id','source_invoice_number']}
+        identity['owner_acknowledged_at']=datetime.min.replace(tzinfo=timezone.utc)
+        evidence=validate_capture(document,args.tenant_id,identity,datetime.now(timezone.utc))
+        keys={'ets_shop_id':'ets_shop_id','service_id':'source_service_number','service_internal_id':'ets_service_internal_id',
+              'invoice_service_id':'ets_service_internal_id','invoice_id':'ets_invoice_internal_id','invoice_number':'source_invoice_number'}
+        if any(current.get(k)!=identity[v] for k,v in keys.items()):
+            raise ValueError('Existing source evidence identity mismatch')
+        if (evidence.get('source_customer_binding_kind')!='embedded_service_customer'
+                or evidence.get('source_customer_deleted') is not False
+                or evidence.get('source_customer_id')!=args.expected_source_customer_id
+                or evidence.get('source_customer_uuid')!=str(args.expected_source_customer_uuid).lower()
+                or (current.get('source_customer_uuid') and current['source_customer_uuid']!=evidence['source_customer_uuid'])
+                or (current.get('source_customer_id') and current['source_customer_id']!=evidence['source_customer_id'])):
+            raise ValueError('Fresh source customer proof mismatch or drift')
+        updated=append_source_evidence(envelope,evidence)
+        if updated==envelope or updated.get('revision_capacity_exceeded') or latest_source_evidence(updated)!=evidence:
+            raise ValueError('New source confirmation was not retained')
+        row=updated['observations'][-1]
+        if row['sha256']!=_digest(row['evidence']):
+            raise ValueError('Source digest verification failed')
+        if args.commit:
+            before=fingerprint(cur,args.tenant_id,[args.invoice_id],[invoice['repair_order_id']],[invoice['customer_id']])
+            cur.execute('UPDATE invoices SET ets_source_evidence=%s WHERE tenant_id=%s AND id=%s',
+                        (psycopg2.extras.Json(updated),args.tenant_id,args.invoice_id))
+            if cur.rowcount!=1 or fingerprint(cur,args.tenant_id,[args.invoice_id],[invoice['repair_order_id']],[invoice['customer_id']])!=before:
+                raise ValueError('Financial state changed; evidence update rolled back')
+        return dict(mode='bootstrap-commit' if args.commit else 'bootstrap-dry-run',
+                    prior_envelope_sha256=digest(envelope),next_envelope_sha256=digest(updated),
+                    source_invoice_number=args.source_invoice_number,source_observed_at=evidence['observed_at_source'],financial_state_unchanged=True)
 
 
 def persist(conn, args, document):
@@ -120,14 +204,25 @@ def persist(conn, args, document):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    for name in ['tenant-id','handoff-id','invoice-id']: parser.add_argument('--'+name,type=UUID,required=True)
+    for name in ['tenant-id','invoice-id']: parser.add_argument('--'+name,type=UUID,required=True)
+    parser.add_argument('--handoff-id',type=UUID)
+    parser.add_argument('--bootstrap',action='store_true')
+    parser.add_argument('--expected-evidence-sha256')
+    parser.add_argument('--source-customer-id',type=UUID)
+    parser.add_argument('--expected-source-customer-uuid',type=UUID)
+    for name in ['ets-shop-id','source-service-number','ets-service-internal-id','ets-invoice-internal-id','source-invoice-number','expected-source-customer-id']:
+        parser.add_argument('--'+name)
     parser.add_argument('--capture',type=Path,required=True)
     parser.add_argument('--expected-capture-sha256')
     parser.add_argument('--expected-envelope-sha256')
     parser.add_argument('--expected-version',type=int)
     parser.add_argument('--commit',action='store_true')
     a=parser.parse_args()
-    if a.commit and (not a.expected_capture_sha256 or not a.expected_envelope_sha256 or not a.expected_version):
+    if a.bootstrap and (not a.expected_capture_sha256 or not a.expected_envelope_sha256 or not a.expected_evidence_sha256):
+        parser.error('Bootstrap requires exact capture, envelope and existing fact digests')
+    if not a.bootstrap and not a.handoff_id:
+        parser.error('Versioned handoff ID required outside bootstrap mode')
+    if a.commit and (not a.expected_capture_sha256 or not a.expected_envelope_sha256 or (not a.bootstrap and not a.expected_version)):
         parser.error('Commit requires exact capture/envelope digests and handoff version')
     raw=a.capture.read_bytes()
     if len(raw)>262144 or a.capture.stat().st_mode & 0o077:
@@ -142,7 +237,7 @@ def main():
     psycopg2.extras.register_uuid()
     with psycopg2.connect(url) as conn:
         conn.set_session(isolation_level='SERIALIZABLE',readonly=not a.commit)
-        report=persist(conn,a,document)
+        report=bootstrap(conn,a,document) if a.bootstrap else persist(conn,a,document)
         report['capture_sha256']=capture_sha
         if a.commit: conn.commit()
         else: conn.rollback()

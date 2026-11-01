@@ -192,3 +192,48 @@ Updated checks: Python36PASS, Node6PASS, disposable PostgreSQL12PASS. The added
 PG case proves missing-proof cross-customer hold, preservation of changed
 customer identity and unchanged financial fingerprints. No production capture,
 metadata write, identity reassignment or financial mutation was executed.
+
+### Evidence bootstrap before preparation
+
+Strict remote customer proof is required before creating a handoff. Legacy
+captures lack that proof, so the evidence-only command now has an explicit
+`--bootstrap` path after migration197 exists. It requires no canonical handoff
+for the invoice or exact remote debt in any state, including closed/deleted.
+After preparation only the existing versioned handoff mode is permitted.
+
+Bootstrap requires original imported invoice/repair-order/customer identity in
+the same tenant, original source customer UUID and ETS public ID, reviewed remote
+customer UUID, exact service/invoice IDs, complete singleton manifest and fresh
+source proof. Deleted, cancelled, voided, internal or mismatched identities hold.
+Existing envelope and last immutable fact digests must match. The owner-only
+capture file is separately bound by its SHA256 before database access.
+
+Example supplements to the existing persistence command (placeholders are
+reviewed values, not permission to infer them from names or vehicle ownership):
+
+```sh
+--bootstrap --ets-shop-id sh_15mw458gpRl487OF \
+--source-service-number 1821 --ets-service-internal-id 506423 \
+--ets-invoice-internal-id 468019 --source-invoice-number 1687 \
+--source-customer-id '<original ETS customer DB UUID>' \
+--expected-source-customer-id 97052 \
+--expected-source-customer-uuid '<reviewed remote customer UUID>' \
+--expected-capture-sha256 '<private capture file SHA256>' \
+--expected-envelope-sha256 '<current envelope SHA256>' \
+--expected-evidence-sha256 '<current last observation SHA256>'
+```
+
+Default remains serializable read-only dry-run. Only explicit `--commit` takes
+the tenant financial lock and updates the original invoice evidence column.
+Before/after fingerprints include financial rows plus the entire original repair
+order and customer rows, so even incidental trigger changes to billing identity
+roll back. No invoice creation, settlement/payment, customer or repair-order
+mutation, importer execution or provider action is performed.
+
+Disposable PostgreSQL35PASS covers bootstrap dry-run, evidence commit, subsequent
+prepared fixture and post-acknowledgement versioned refresh; foreign/deleted/
+identity/digest/customer drift holds; all permanent handoff states reject bypass;
+lock contention; and rollback of deliberately malicious related-customer writes.
+The middle preparation row is explicitly a synthetic fixture; actual migration197
+service preparation/activation acceptance remains the independent service gate.
+No production bootstrap or other production operation was executed.

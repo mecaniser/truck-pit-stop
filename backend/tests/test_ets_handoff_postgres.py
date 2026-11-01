@@ -125,3 +125,108 @@ def test_real_cross_customer_legacy_holds_and_proven_drift_is_retained(pg):
         latest=ops.latest_source_evidence(c.fetchone()[0])
     assert latest['source_customer_id']=='97053'
     assert result['next_envelope_sha256']!=result['prior_envelope_sha256']
+
+
+def bootstrap_fixture(conn):
+    args,doc,old=seed(conn)
+    customer=uuid4()
+    with conn.cursor() as c:
+        c.execute('SELECT source_repair_order_id FROM source_debt_handoffs WHERE id=%s',(args.handoff_id,));order=c.fetchone()[0]
+        c.execute('DELETE FROM source_debt_handoffs WHERE id=%s',(args.handoff_id,))
+        c.execute('ALTER TABLE invoices ADD COLUMN voided_at timestamptz, ADD COLUMN is_internal boolean DEFAULT false')
+        c.execute('CREATE TABLE customers(id uuid PRIMARY KEY,tenant_id uuid,ets_external_id text,deleted_at timestamptz,is_internal_fleet boolean DEFAULT false)')
+        c.execute("CREATE TABLE repair_orders(id uuid PRIMARY KEY,tenant_id uuid,customer_id uuid,source text,order_number text,deleted_at timestamptz,status text DEFAULT 'closed')")
+        c.execute('INSERT INTO customers(id,tenant_id,ets_external_id,deleted_at) VALUES(%s,%s,%s,NULL)',(customer,args.tenant_id,'97052'))
+        c.execute('INSERT INTO repair_orders(id,tenant_id,customer_id,source,order_number,deleted_at) VALUES(%s,%s,%s,%s,%s,NULL)',(order,args.tenant_id,customer,'easy_truck_shop_import','ETS-1821-97052'))
+    conn.commit()
+    bootstrap=SimpleNamespace(**vars(args));bootstrap.handoff_id=None;bootstrap.bootstrap=True
+    bootstrap.source_customer_id=customer;bootstrap.expected_source_customer_id='97052'
+    bootstrap.expected_source_customer_uuid='02104722-a300-48a5-ba98-0eab3b2fb32e'
+    bootstrap.expected_version=None;bootstrap.expected_evidence_sha256=old['observations'][-1]['sha256']
+    for key,value in dict(ets_shop_id='shop',source_service_number='1821',ets_service_internal_id='506423',ets_invoice_internal_id='468019',source_invoice_number='1687').items():setattr(bootstrap,key,value)
+    doc['sourceEvidence'].update(source_customer_id='97052',source_customer_uuid=bootstrap.expected_source_customer_uuid,source_customer_deleted=False,source_customer_binding_kind='embedded_service_customer')
+    return bootstrap,args,doc,old,order
+
+
+def test_real_bootstrap_dry_run_then_prepare_fixture_then_postack_refresh(pg):
+    conn,_=pg;b,prepared,doc,old,order=bootstrap_fixture(conn)
+    b.commit=False;conn.set_session(readonly=True)
+    assert ops.bootstrap(conn,b,doc)['mode']=='bootstrap-dry-run'
+    conn.rollback();conn.set_session(readonly=False)
+    with conn.cursor() as c:
+        c.execute('SELECT ets_source_evidence FROM invoices WHERE id=%s',(b.invoice_id,));assert c.fetchone()[0]==old
+    conn.rollback();b.commit=True
+    assert ops.bootstrap(conn,b,doc)['financial_state_unchanged'];conn.commit()
+    with conn.cursor() as c:
+        c.execute('SELECT ets_source_evidence FROM invoices WHERE id=%s',(b.invoice_id,));updated=c.fetchone()[0]
+        # Synthetic prepared fixture represents service handoff creation. Its
+        # authority/activation acceptance belongs to the actual service PG gate.
+        ack=datetime.now(timezone.utc)-timedelta(seconds=5)
+        c.execute('INSERT INTO source_debt_handoffs VALUES(%s,%s,%s,%s,NULL,%s,%s,%s,%s,%s,%s,1,%s,NULL)',(prepared.handoff_id,b.tenant_id,b.invoice_id,order,'shop','506423','468019','1821','1687',ack,'prepared'))
+    conn.commit();prepared.expected_envelope_sha256=ops.digest(updated)
+    with pytest.raises(ValueError,match='Canonical handoff exists'):ops.bootstrap(conn,b,doc)
+    conn.rollback()
+    doc['sourceEvidence']['observed_at_source']=(datetime.now(timezone.utc)-timedelta(seconds=1)).isoformat()
+    assert ops.persist(conn,prepared,doc)['financial_state_unchanged'];conn.commit()
+    with conn.cursor() as c:
+        c.execute('SELECT amount FROM payments');assert str(c.fetchone()[0])=='10'
+        c.execute('SELECT count(*) FROM invoices');assert c.fetchone()[0]==1
+        c.execute('SELECT ets_source_evidence FROM invoices WHERE id=%s',(b.invoice_id,))
+        assert ops.latest_source_evidence(c.fetchone()[0])['source_customer_id']=='97052'
+
+
+@pytest.mark.parametrize('change',['tenant','customer','public_id','uuid','deleted','manifest','capture_source','envelope_hash','fact_hash','prior_customer_drift','deleted_order','deleted_invoice','deleted_customer'])
+def test_real_bootstrap_identity_and_drift_holds(pg,change):
+    conn,_=pg;b,_p,doc,old,order=bootstrap_fixture(conn)
+    if change=='tenant':b.tenant_id=uuid4()
+    elif change=='customer':b.source_customer_id=uuid4()
+    elif change=='public_id':doc['sourceEvidence']['source_customer_id']='97053'
+    elif change=='uuid':doc['sourceEvidence']['source_customer_uuid']=str(uuid4())
+    elif change=='deleted':doc['sourceEvidence']['source_customer_deleted']=True
+    elif change=='manifest':doc['sourceEvidence']['invoice_manifest']['invoice_ids'].append('other')
+    elif change=='capture_source':doc['sourceEvidence']['invoice_id']='wrong'
+    elif change=='envelope_hash':b.expected_envelope_sha256='wrong'
+    elif change=='fact_hash':b.expected_evidence_sha256='wrong'
+    else:
+        with conn.cursor() as c:
+            if change=='prior_customer_drift':
+                facts=old['observations'][0]['evidence'];facts.update(source_customer_id='97051',source_customer_uuid=b.expected_source_customer_uuid,source_customer_deleted=False,source_customer_binding_kind='embedded_service_customer')
+                old['observations'][0]['sha256']=ops._digest(facts)
+                b.expected_envelope_sha256=ops.digest(old);b.expected_evidence_sha256=old['observations'][0]['sha256']
+                c.execute('UPDATE invoices SET ets_source_evidence=%s',(psycopg2.extras.Json(old),))
+            elif change=='deleted_order':c.execute('UPDATE repair_orders SET deleted_at=now()')
+            elif change=='deleted_invoice':c.execute('UPDATE invoices SET deleted_at=now()')
+            elif change=='deleted_customer':c.execute('UPDATE customers SET deleted_at=now()')
+        conn.commit()
+    with pytest.raises(ValueError):ops.bootstrap(conn,b,doc)
+    conn.rollback()
+    with conn.cursor() as c:
+        c.execute('SELECT ets_source_evidence FROM invoices');assert c.fetchone()[0]==old
+
+
+def test_real_bootstrap_financial_lock_and_related_row_rollback(pg):
+    conn,connect=pg;b,_p,doc,old,order=bootstrap_fixture(conn);other=connect()
+    with other.cursor() as c:importer._lock_source_money(c,b.tenant_id)
+    with pytest.raises(ValueError,match='busy'):ops.bootstrap(conn,b,doc)
+    conn.rollback();other.rollback()
+    with conn.cursor() as c:
+        c.execute("CREATE FUNCTION bad_customer() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN UPDATE customers SET ets_external_id='WRONG'; RETURN NEW; END $$")
+        c.execute('CREATE TRIGGER simulate_customer_write AFTER UPDATE ON invoices FOR EACH ROW EXECUTE FUNCTION bad_customer()')
+    conn.commit()
+    with pytest.raises(ValueError,match='Financial state changed'):ops.bootstrap(conn,b,doc)
+    conn.rollback()
+    with conn.cursor() as c:
+        c.execute('SELECT ets_external_id FROM customers');assert c.fetchone()[0]=='97052'
+        c.execute('SELECT ets_source_evidence FROM invoices');assert c.fetchone()[0]==old
+
+
+@pytest.mark.parametrize('state',['prepared','active','source_conflict','closed'])
+@pytest.mark.parametrize('deleted',[False,True])
+def test_real_bootstrap_never_bypasses_permanent_handoff(pg,state,deleted):
+    conn,_=pg;b,prepared,doc,old,order=bootstrap_fixture(conn)
+    with conn.cursor() as c:
+        # Different local invoice UUID still fences the same remote debt.
+        c.execute('INSERT INTO source_debt_handoffs VALUES(%s,%s,%s,%s,NULL,%s,%s,%s,%s,%s,now(),1,%s,%s)',(prepared.handoff_id,b.tenant_id,uuid4(),order,'shop','506423','468019','1821','1687',state,datetime.now(timezone.utc) if deleted else None))
+    conn.commit()
+    with pytest.raises(ValueError,match='Canonical handoff exists'):ops.bootstrap(conn,b,doc)
+    conn.rollback()
