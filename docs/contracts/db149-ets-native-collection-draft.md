@@ -13,6 +13,40 @@
 - External receipt effective time requires trusted source UTC semantics; ambiguous dates hold reconciliation rather than creating a receipt in the observation period.
 - Target-only evidence refresh must bypass all normal importer money writers; default dry-run and exact tenant/source identity/digest checks precede any metadata-only persistence. No production execution follows from implementation authority.
 
+## Frozen V1 report/tax clarification — actual receipts versus transferred debt (November 1)
+
+This clarifies report semantics and supersedes any earlier instruction that broadly excludes **actual collection receipts** from existing cash-basis reports. It creates no writer and no new tax assessment.
+
+### Cash-basis revenue and categories
+
+Existing revenue/dashboard cash-basis Payment reports include every actual confirmed sourcecollection receipt **once**: opening transfer0; DBN200confirmed + distinctETS100verifiedreceipt =300 cash; manualETSackofDBN200 =0additional. Do not include transferred opening principal as receipt or revenue. Actual sourcecollection receipts use the original issued economics as the category denominator, not opening remaining: original1000/prior400/opening600 thennewreceipt200 allocates original labor/parts/fees/tax/discount proportions using200/1000,not200/600. Use digest-bound original amounts once and never derive original categories from the collectioncarryforwardline. Prior source400 remains its historical source period, not copied into new Payment rows. No new job/labor/hour/work/revenue-sale/conversion event is created by opening the copy. Historical original and native receipt identities stay bound to one debt.
+
+If original itemization/tax attribution is missing or inconsistent, preserve the real gross receipt in total cashreceived exactly once and classify component attribution as unavailable/unallocated; do not invent zero tax/labor or silently drop actualcash. Optional DBN processorfees and sourceprincipal stay separate under existing receipt-fee semantics. Partial/refund/unapplied handling must use actual authoritative receipt/ledger evidence, not invoicePAIDstatus or collectiondocumenttax0.
+
+### Keep whole-paid-invoice Sales Tax report semantics, expose its source-tax scope
+
+`GET /api/v1/reports/tax` currently sums wholeInvoice.tax_amount on ordinary paid invoices byInvoice.paid_at. V1 does **not** rewrite it into per-paymenttax recognition, mark originalETSInvoice paid merely because nativecopy settled, change historical paid_at, or count the zero-tax collectioncopy as a new tax-free sale. OriginalETS tax accounting is explicitly **EXTERNAL_MANUAL** under the chosen operational policy. A zero collectiondocumenttax field is a non-sale document implementation fact, never proof the original repair had no tax.
+
+Add an additive response field:
+
+`source_collection_tax_reconciliation: {receipt_count:integer>=0, required:boolean, accounting_owner:"external_manual", note:string|null}`
+
+When receipt_count>0, `required:true` and exactnote:
+`"Tax associated with linked ETS invoices requires external reconciliation and is not included in this report total."`
+When0, required:false,note:null. Existing range_start/range_end/rows values and ordinary taxsum remain unchanged; no additional sourceestimatedtax row is inserted. Do not label this flag as source tax paid, taxexempt, zero liability or accountingcomplete.
+
+Count distinct actualsourcecollection `Payment.id` whose original effective receipt timestamp is inside the selected tenant-local report range converted to its existing UTCbounds; same tenant as invoice/handoff, positive real receivedamount, notdeleted, bound through a verifiedcollectioninvoice/handoff identity. Count confirmed/completed receipts and receipts subsequently refunded when their receiptconfirmation is preserved; a refund does not retroactively turn source tax into knownzero. Exclude pending/failed-onlyattempts, openingbaseline, priorETSsourceallocationsalreadyrepresentedhistorically, tasks/acklinks, fake/replayedreceipts and foreign/deleted/invalidbindings. Do not require collectioninvoice currentlyPAID (partialreceipts matter), or update its sourceoriginal. Reuse the authoritative unique receipt selection used by cashreport rather than inventing another payment-identitypath. The count is a scopewarning, not an amount or taxreturn. Refundaccounting remains externallyreconciled too.
+
+### UI and export contract
+
+Root owns GarageAnalytics SalesTax UI. Whenflag.required true, summarylabel is **"Tax recorded here"** (not an unqualified TotalTaxCollected). Display the servernote prominently below the summary plus `{receipt_count} linked ETS collection receipt(s) in this period.` If rows empty, show **"No tax recorded in this report. Tax for linked ETS collection receipts requires external reconciliation."** Do not show a barezero/no-tax message implying no originaltax. Existing ordinarytaxrows can display recordedamounts with the same exclusionnote. Other tabs may show their validated cash-taxshare but that attribution is not a posting to the whole-paid taxreport.
+
+CSV/export from this tab must preserve the warning: include a scope/reconciliation note and selected-periodreceiptcount (e.g. additional metadata rows) wheneverflagrequired; never export an unqualified zero total while UI warns of externaltax. If old API has no flag, existing behavior remains for compatibility; new server always emitsflagobject. No frontend estimate of sourcetax or balance is needed.
+
+### Required tests
+
+Originalissued1000 with verifiedoriginaltax80, prior400, opening600: openingcreates0cashand0warningreceipts; actualDBN200+ETS100 count2andcash300 once; originaltaxshare24 if valid; matchingETSackofDBN200 incrementsneither. Whole-paidtaxsum remains existingordinarytax unchanged even if original staysSENT and collectioncopyPAID/tax0; selectedperiodwarningtrue instead of claiming originaltax0. Include partialreceipt, subsequentlyrefundedconfirmedreceipt, duplicateack, pendingonly, receiptsoutsideperiod,wrongtenant/deletedbinding and no-source-receipts flagsfalse. UI/CSV regressions verify scopedlabel/note with emptyandnonemptytaxrows. No historicalsource financialmetadata,QBOtax/paymentposting or newrevenue writer is changed by this reportfix.
+
 ## Frozen V1 correction — complete financial feed hold scope (November 1)
 
 **This row/authority-scoped rule supersedes earlier whole-customer hold wording.** Inspect both sourcecustomerA and targetcustomerB feed eligibility, but do not return a company-wide409 merely because either customer participates in a handoff. No handoff or reviewed collection-billto binding grants fleet financial export authority. Preserve unrelated authorized invoices and exact complete snapshot semantics.

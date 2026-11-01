@@ -110,6 +110,12 @@ interface TaxRow {
 
 interface ReportsTaxResponse {
   rows: TaxRow[]
+  source_collection_tax_reconciliation?: {
+    receipt_count: number
+    required: boolean
+    accounting_owner: 'external_manual'
+    note: string
+  }
 }
 
 interface PartRevenueRow {
@@ -677,19 +683,27 @@ function FeesTab({ range }: { range: ReportRange }) {
 
 // ============ TAB: SALES TAX ============
 
-function TaxTab({ range }: { range: ReportRange }) {
+export function TaxTab({ range }: { range: ReportRange }) {
   const { data, isLoading } = useQuery<ReportsTaxResponse>({
     queryKey: ['reports-tax', range],
     queryFn: async () => (await api.get('/reports/tax', { params: range })).data,
   })
 
   if (isLoading || !data) return <LoadingBlock />
+  const sourceTax = data.source_collection_tax_reconciliation
+  const externalReconciliation = Boolean(sourceTax?.required && sourceTax.receipt_count > 0)
 
   const handleExport = () => {
     exportRowsToCsv(
       'sales-tax-report.csv',
-      ['Rate', 'Percentage', 'Tax Collected'],
-      data.rows.map((r) => [r.rate_label, r.percentage, r.tax_collected])
+      ['Rate', 'Percentage', externalReconciliation ? 'Tax recorded here' : 'Tax Collected'],
+      [
+        ...data.rows.map((r) => [r.rate_label, r.percentage, r.tax_collected]),
+        ...(externalReconciliation && sourceTax ? [
+          ['Report scope', sourceTax.note, ''],
+          ['Linked ETS collection receipts', sourceTax.receipt_count, 'External tax reconciliation required'],
+        ] : []),
+      ]
     )
   }
 
@@ -700,10 +714,10 @@ function TaxTab({ range }: { range: ReportRange }) {
   return (
     <div className="space-y-4">
       <Hero
-        label="Total Tax Collected"
+        label={externalReconciliation ? 'Tax recorded here' : 'Total Tax Collected'}
         value={fmtMoney(total)}
         accent={accent}
-        insight="Tax collected is a pass-through liability — it's owed to the jurisdiction, not shop revenue."
+        insight={externalReconciliation ? sourceTax?.note : "Tax collected is a pass-through liability — it's owed to the jurisdiction, not shop revenue."}
       >
         {ranked.length > 0 && (
           <div>
@@ -716,6 +730,7 @@ function TaxTab({ range }: { range: ReportRange }) {
           </div>
         )}
       </Hero>
+      {externalReconciliation && sourceTax && <p role="status" className="text-sm text-amber-200">{sourceTax.receipt_count} linked ETS collection {sourceTax.receipt_count === 1 ? 'receipt requires' : 'receipts require'} external tax reconciliation.</p>}
 
       <DetailTable title="Rate components" count={data.rows.length} onExport={handleExport}>
         <table className="w-full text-sm">
@@ -723,7 +738,7 @@ function TaxTab({ range }: { range: ReportRange }) {
             <tr>
               <th className="px-4 py-2.5 text-left font-medium">Rate</th>
               <th className="px-4 py-2.5 text-right font-medium">Percentage</th>
-              <th className="px-4 py-2.5 text-right font-medium">Tax Collected</th>
+              <th className="px-4 py-2.5 text-right font-medium">{externalReconciliation ? 'Tax recorded here' : 'Tax Collected'}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/[0.06]">
@@ -735,7 +750,7 @@ function TaxTab({ range }: { range: ReportRange }) {
               </tr>
             ))}
             {data.rows.length === 0 && (
-              <tr><td colSpan={3} className="px-4 py-8 text-center text-white/40">No tax collected in this range</td></tr>
+              <tr><td colSpan={3} className="px-4 py-8 text-center text-white/40">{externalReconciliation ? 'No tax recorded in this report. Tax for linked ETS collection receipts requires external reconciliation.' : 'No tax collected in this range'}</td></tr>
             )}
           </tbody>
         </table>
