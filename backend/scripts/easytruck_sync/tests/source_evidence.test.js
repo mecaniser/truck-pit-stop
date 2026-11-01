@@ -35,3 +35,15 @@ test('only genuine explicit UTC calendar datetimes receive verified UTC semantic
  for(const value of ['2026-10-07T07:00:00Z','2026-10-07T07:00:00.000000+00:00']) assert.equal(paymentDateSemantics(value),'source_datetime_utc');
  for(const value of ['2026-02-30T07:00:00Z','2026-10-07','2026-10-07T07:00:00','2026-10-07T07:00:00-04:00','2026-10-07T24:00:00Z']) assert.equal(paymentDateSemantics(value),'source_datetime_unverified');
 });
+
+test('customer proof comes only from exact embedded invoice association without PII',()=>{
+ const page={component:'services/show/invoice',props:{service:{id:'1821',number:'1821',int_id:506423,customer:{id:97052,uuid:'02104722-a300-48a5-ba98-0eab3b2fb32e',deleted:false,name:'PRIVATE',email:'SECRET'},invoice:{id:468019,service_id:506423}}}};
+ const result=extractSourceEvidence(JSON.stringify(page));
+ assert.equal(result.source_customer_id,'97052');assert.equal(result.source_customer_uuid,page.props.service.customer.uuid);
+ assert.equal(result.source_customer_binding_kind,'embedded_service_customer');assert.equal(result.source_customer_deleted,false);
+ assert.ok(!('source_customer_internal_id' in result));assert.ok(!JSON.stringify(result).match(/PRIVATE|SECRET/));
+ page.component='parts/index';assert.equal(extractSourceEvidence(JSON.stringify(page)),null);
+ delete page.component;assert.ok(!('source_customer_id' in extractSourceEvidence(JSON.stringify(page))));
+ page.component='services/show/invoice';delete page.props.service.customer.uuid;
+ assert.ok(!('source_customer_id' in extractSourceEvidence(JSON.stringify(page))));
+});

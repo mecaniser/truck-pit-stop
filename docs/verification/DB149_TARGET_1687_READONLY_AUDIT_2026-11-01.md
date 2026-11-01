@@ -155,3 +155,40 @@ payment. Tests use their own random schema on the disposable fixture and clean
 only that schema. No production capture, metadata commit, financial write,
 provider action, credential refresh, deploy or nightly run occurred here.
 Implementation owner cannot approve the independent QA/security/release gate.
+
+### Source customer proof extension
+
+A later read-only customer-binding check found the original repair order belongs
+to the ETS customer97052, while the existing portal account belongs to a distinct
+DBN customer record in the same tenant. Current vehicle ownership points to the
+DBN customer but is not bill-to authority. There was no historical mapping,
+verified evidence or decision for this invoice. User subsequently explicitly
+authorized the same-legal-business cross-customer bill-to; that authorization
+must be separately snapshotted by the handoff service, not inferred from names
+or vehicle ownership.
+
+Parent grounded the current source schema with a full reload of exact service1821:
+component `services/show/invoice`, linked service internal506423 and invoice468019,
+with embedded `service.customer.id` public97052, a separate customer UUID and
+`deleted:false`. The public ID matches the visible customer route. No numeric
+customer internal ID, customer number or customer shop ID is present; none is
+invented. Full reload matters because an earlier SPA data-page attribute was stale.
+
+The extractor now retains only `source_customer_id`, `source_customer_uuid`,
+`source_customer_deleted` and `source_customer_binding_kind` equal to
+`embedded_service_customer` from that exact component and association. Names,
+contact details and arbitrary customer fields are discarded. Both normalizers
+conditionally retain only complete, valid proof; legacy evidence shape and hashes
+remain unchanged. Wrong source component is rejected. A customer change is a
+new digest-bound fact revision, allowing collection validation to hold explicitly.
+
+Target capture requires the customer proof. Evidence persistence holds a
+cross-customer handoff lacking proof, while retaining a changed customer proof
+as evidence rather than silently discarding source drift. The handoff service
+must compare it with immutable approved original source customer identity;
+this parser/ops partition does not itself approve legal bill-to reassignment.
+
+Updated checks: Python36PASS, Node6PASS, disposable PostgreSQL12PASS. The added
+PG case proves missing-proof cross-customer hold, preservation of changed
+customer identity and unchanged financial fingerprints. No production capture,
+metadata write, identity reassignment or financial mutation was executed.

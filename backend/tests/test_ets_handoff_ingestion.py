@@ -94,3 +94,17 @@ def test_evidence_commit_requires_exact_post_ack_identity_and_manifest():
         bad=deepcopy(doc);bad['sourceEvidence'][key]=val
         with pytest.raises(ValueError):validate_capture(bad,tenant,handoff,now)
     with pytest.raises(ValueError):validate_capture(doc,uuid4(),handoff,now)
+
+@pytest.mark.parametrize('normalizer',[normalize_source_evidence,app_normalize])
+def test_customer_proof_is_optional_complete_and_digest_bound(normalizer):
+    from scripts.easytruck_sync.source_evidence import _digest
+    source=evidence();old=normalizer(source)
+    assert 'source_customer_id' not in old
+    proof=dict(source_customer_id='97052',source_customer_uuid='02104722-a300-48a5-ba98-0eab3b2fb32e',source_customer_deleted=False,source_customer_binding_kind='embedded_service_customer')
+    source.update(proof);source['customer_name']='PRIVATE';source['source_customer_internal_id']='GUESS'
+    out=normalizer(source)
+    assert all(out[k]==v for k,v in proof.items())
+    assert 'PRIVATE' not in str(out) and 'source_customer_internal_id' not in out
+    assert _digest(out)!=_digest(old)
+    source['source_customer_id']='97053';assert _digest(normalizer(source))!=_digest(out)
+    del source['source_customer_uuid'];assert 'source_customer_id' not in normalizer(source)

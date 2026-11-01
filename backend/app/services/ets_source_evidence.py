@@ -78,6 +78,16 @@ def normalize_source_evidence(value):
               "currency": value.get("currency") if re.fullmatch(r"[A-Z]{3}", str(value.get("currency"))) else None,
               "total": money(value.get("total")), "balance": money(value.get("balance")),
               "payment_lines_truncated": value.get("payment_lines_truncated") is True, "payment_lines": []}
+    # Optional additive proof keeps legacy evidence hashes intact. Never infer
+    # a numeric internal customer ID from the public ID or UUID.
+    if (value.get("source_customer_binding_kind") == "embedded_service_customer"
+            and re.fullmatch(r"[0-9]{1,160}", str(value.get("source_customer_id", "")))
+            and re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", str(value.get("source_customer_uuid", "")))
+            and type(value.get("source_customer_deleted")) is bool):
+        result.update(source_customer_id=str(value["source_customer_id"]),
+                      source_customer_uuid=value["source_customer_uuid"].lower(),
+                      source_customer_deleted=value["source_customer_deleted"],
+                      source_customer_binding_kind="embedded_service_customer")
     manifest = value.get("invoice_manifest")
     result["invoice_manifest"] = None
     if (isinstance(manifest, dict) and manifest.get("complete") is True

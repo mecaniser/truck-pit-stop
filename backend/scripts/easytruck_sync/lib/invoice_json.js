@@ -77,8 +77,9 @@ function paymentDateSemantics(value) {
 // This is source evidence only, never a settlement assertion. Do not retain
 // arbitrary Inertia fields: they include contacts, notes and session data.
 function extractSourceEvidence(rawDataPage) {
-  let service, user;
-  try { const props = JSON.parse(rawDataPage)?.props; service = props?.service; user = props?.user; } catch { return null; }
+  let service, user, component;
+  try { const page = JSON.parse(rawDataPage); component = page?.component; const props = page?.props; service = props?.service; user = props?.user; } catch { return null; }
+  if (component != null && component !== 'services/show/invoice') return null;
   if (!service || !service.invoice || typeof service.invoice !== 'object') return null;
   const scalar = value => (typeof value === 'string' && value.length <= 160)
     || (typeof value === 'number' && Number.isFinite(value))
@@ -90,9 +91,20 @@ function extractSourceEvidence(rawDataPage) {
   if (service.int_id == null || invoice.service_id == null
       || String(service.int_id) !== String(invoice.service_id)
       || service.id == null || String(service.id) !== String(service.number)) return null;
+  // Verified source schema: embedded service.customer.id is public customer
+  // route identity; its UUID is distinct. No internal numeric ID is supplied.
+  const customer = service.customer;
+  const customerProof = component === 'services/show/invoice' && customer
+    && /^[0-9]+$/.test(String(customer.id))
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customer.uuid || '')
+    && typeof customer.deleted === 'boolean' ? {
+      source_customer_id: String(customer.id), source_customer_uuid: customer.uuid.toLowerCase(),
+      source_customer_deleted: customer.deleted, source_customer_binding_kind: 'embedded_service_customer',
+    } : {};
   const lines = Array.isArray(invoice.payment_lines) ? invoice.payment_lines : [];
   return {
     schema_version: 1,
+    ...customerProof,
     source: 'easy_truck_shop',
     ets_shop_id: user?.current_shop_public_id && service.shop_id === user.current_shop_id ? scalar(user.current_shop_public_id) : null,
     settlement_semantics: 'unverified',

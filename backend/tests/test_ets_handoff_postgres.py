@@ -106,3 +106,22 @@ def test_real_dry_run_is_read_only_and_commit_rolls_back_financial_trigger_drift
     with conn.cursor() as c:
         c.execute('SELECT amount FROM payments');assert str(c.fetchone()[0])=='10'
         c.execute('SELECT ets_source_evidence FROM invoices WHERE id=%s',(args.invoice_id,));assert c.fetchone()[0]==old
+
+
+def test_real_cross_customer_legacy_holds_and_proven_drift_is_retained(pg):
+    conn,_=pg;args,doc,old=seed(conn)
+    with conn.cursor() as c:
+        c.execute('ALTER TABLE source_debt_handoffs ADD COLUMN source_customer_id uuid, ADD COLUMN customer_id uuid, ADD COLUMN bill_to_authorization jsonb')
+        c.execute('UPDATE source_debt_handoffs SET source_customer_id=%s,customer_id=%s,bill_to_authorization=%s',(uuid4(),uuid4(),psycopg2.extras.Json({'mode':'reviewed_same_legal_business','source_ets_customer_id':'97052'})))
+    conn.commit()
+    with pytest.raises(ValueError,match='requires captured source customer proof'):
+        ops.persist(conn,args,doc)
+    conn.rollback()
+    doc['sourceEvidence'].update(source_customer_id='97053',source_customer_uuid='02104722-a300-48a5-ba98-0eab3b2fb32e',source_customer_deleted=False,source_customer_binding_kind='embedded_service_customer')
+    result=ops.persist(conn,args,doc);conn.commit()
+    assert result['financial_state_unchanged']
+    with conn.cursor() as c:
+        c.execute('SELECT ets_source_evidence FROM invoices WHERE id=%s',(args.invoice_id,))
+        latest=ops.latest_source_evidence(c.fetchone()[0])
+    assert latest['source_customer_id']=='97053'
+    assert result['next_envelope_sha256']!=result['prior_envelope_sha256']

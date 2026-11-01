@@ -31,6 +31,13 @@ def validate_capture(document, tenant_id, handoff, now):
             'invoice_id':'ets_invoice_internal_id','invoice_number':'source_invoice_number'}
     if any(evidence.get(k) != str(handoff[v]) for k,v in keys.items()):
         raise ValueError('Capture source identity mismatch')
+    authorization = handoff.get('bill_to_authorization') or {}
+    if (authorization.get('mode') != 'same_customer' and handoff.get('source_customer_id')
+            and str(handoff.get('source_customer_id')) != str(handoff.get('customer_id'))
+            and evidence.get('source_customer_binding_kind') != 'embedded_service_customer'):
+        raise ValueError('Cross-customer handoff requires captured source customer proof')
+    # Preserve source-customer drift as a digest-bound revision; activation and
+    # receipt reconciliation compare it with immutable legal-bill-to authority.
     manifest = evidence.get('invoice_manifest') or {}
     if (manifest.get('complete') is not True or manifest.get('invoice_ids') != [str(handoff['ets_invoice_internal_id'])]
             or manifest.get('service_internal_id') != str(handoff['ets_service_internal_id'])):

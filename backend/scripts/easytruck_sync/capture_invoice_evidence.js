@@ -29,8 +29,9 @@ async function main() {
     await session.page.goto(route, {waitUntil:'networkidle',timeout:20000});
     if (new URL(session.page.url()).pathname !== new URL(route).pathname) throw new Error('Source route mismatch');
     const raw = await session.page.evaluate(() => document.querySelector('[data-page]')?.getAttribute('data-page'));
+    if (JSON.parse(raw)?.component !== 'services/show/invoice') throw new Error('Source component mismatch');
     let evidence = extractSourceEvidence(raw);
-    if (!evidence || String(evidence.ets_shop_id)!==a.shop || String(evidence.service_id)!==a['service-number']
+    if (!evidence || !evidence.source_customer_id || !evidence.source_customer_uuid || String(evidence.ets_shop_id)!==a.shop || String(evidence.service_id)!==a['service-number']
         || String(evidence.service_internal_id)!==a['service-internal-id'] || String(evidence.invoice_service_id)!==a['service-internal-id']
         || String(evidence.invoice_id)!==a['invoice-internal-id'] || String(evidence.invoice_number)!==a['invoice-number'])
       throw new Error('Source identity mismatch');
