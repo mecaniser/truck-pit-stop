@@ -294,6 +294,10 @@ async def invoice_handoff(db,invoice,*,require_active=False,check_source=True):
         proof_source=proof.get('source_customer',proof['customer'])
         if proof_source.id!=row.source_customer_id or getattr(proof_source,'ets_external_id',None)!=row.bill_to_authorization.get('source_ets_customer_id'):
             fail('source_bill_to_changed','Original source bill-to changed after review.')
+        # Native receipts may legitimately precede their ETS acknowledgement;
+        # the issued total, unlike the two systems' remaining balances, is fixed.
+        if money(proof['summary'].total_amount)!=money(row.original_issued_total):
+            fail('source_invoice_total_changed','Source invoice total changed. Reconcile before collecting another payment.')
         links=list((await db.scalars(select(SourceReceiptLink).where(SourceReceiptLink.tenant_id==row.tenant_id,SourceReceiptLink.handoff_id==row.id))).all())
         original=latest_source_evidence(row.source_capture_document)
         known={str(x['id']):hash_body(x) for x in original.get('payment_lines',[])}
