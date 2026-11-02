@@ -1,9 +1,10 @@
+import { shopWorkReturnUrl, shopWorkQueryScope } from '@/features/dashboard/shopWorkNavigation'
 import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import { canStartCustomerOrder, readCustomerDirectoryContext, repairOrderEntrySearch, type RepairOrderReturn } from '../repair-orders/repairOrderEntry'
 import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { Spinner, LoadingLine, StaffSearchField } from '@/components/ui'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import { Customer, Vehicle, Contact } from '../../types'
 import { customerDisplayName, customerPersonalName } from '../../lib/customerName'
@@ -103,10 +104,24 @@ function FleetMemberBadge({ variant = 'light' }: { variant?: 'dark' | 'light' | 
 
 
 export default function CustomersPage() {
+  const queryScope = useAuthStore(state => shopWorkQueryScope(state.user, state.authSessionEpoch))
+  return <CustomersWorkspace key={queryScope} queryScope={queryScope} />
+}
+
+function CustomersWorkspace({ queryScope }: { queryScope: string }) {
   const { accentColors, presentationVariant } = useTheme()
   const currentUser = useAuthStore((state) => state.user)
   const navigate = useNavigate()
   const location = useLocation()
+  const routeParams = new URLSearchParams(location.search)
+  const shopWorkReturn = shopWorkReturnUrl(routeParams)
+  const requestedCustomerView = routeParams.get('tab') === 'account' ? 'account' : routeParams.get('tab') === 'history' ? 'history' : 'overview'
+  const shopWorkBack = shopWorkReturn && <ControlButton type="button" className="min-h-11 shrink-0 self-start px-3 text-sm font-semibold underline" onClick={() => navigate(shopWorkReturn)}>Back to Shop Work</ControlButton>
+  const changeCustomerView = (view: 'overview' | 'history' | 'account') => {
+    const params = new URLSearchParams(location.search)
+    params.set('tab', view)
+    navigate({ pathname: location.pathname, search: `?${params}` })
+  }
   // Route-local context survives the order detour without becoming a global preference.
   const returnedOrigin = location.state?.restoreOrderOrigin as RepairOrderReturn | undefined
   const directory = returnedOrigin?.customerId === new URLSearchParams(location.search).get('selected')
@@ -148,6 +163,7 @@ export default function CustomersPage() {
   const [vehicleRelationshipFilter, setVehicleRelationshipFilter] = useState<'all' | 'owned' | 'authority'>('all')
   const [manualSelectedVehicle, setSelectedVehicleInPanel] = useState<Vehicle | null>(null)
   const [detailTab, setDetailTab] = useState<'overview' | 'history'>('overview')
+  useEffect(() => setDetailTab(requestedCustomerView === 'history' ? 'history' : 'overview'), [requestedCustomerView])
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null)
   const [workspaceFocusRequest, setWorkspaceFocusRequest] = useState(0)
   const [inspectedCustomerId, setInspectedCustomerId] = useState<string | null>(null)
@@ -201,7 +217,7 @@ export default function CustomersPage() {
   // Server-side pagination: fetch one page at a time with search + sort pushed
   // to the API, instead of loading every customer and filtering in the browser.
   const customerPageKey = (p: number) =>
-    ['customers', { page: p, search: debouncedSearch, sort: sortField, order: sortDirection }] as const
+    ['customers', { page: p, search: debouncedSearch, sort: sortField, order: sortDirection }, queryScope] as const
   const fetchCustomerPage = async (p: number) => {
     const response = await api.get('/customers', {
       params: {
@@ -218,7 +234,7 @@ export default function CustomersPage() {
   const { data: customerPage, isLoading, isPlaceholderData, isFetching, isError: customersError, refetch: refetchCustomers } = useQuery({
     queryKey: customerPageKey(page),
     queryFn: () => fetchCustomerPage(page),
-    placeholderData: keepPreviousData,
+    placeholderData: (previous, query) => query?.queryKey.includes(queryScope) ? previous : undefined,
     staleTime: 30_000,
   })
   const customers = customerPage?.items
@@ -234,7 +250,8 @@ export default function CustomersPage() {
     isError: isSelectedCustomerUnavailable,
     refetch: refetchSelectedCustomer,
   } = useQuery<Customer>({
-    queryKey: ['customer', selectedCustomerId],
+    queryKey: ['customer', selectedCustomerId, queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get(`/customers/${selectedCustomerId}`)).data,
     enabled: !!selectedCustomerId && !customerOnCurrentPage,
     retry: false,
@@ -268,7 +285,8 @@ export default function CustomersPage() {
   }, [customerOnCurrentPage, presentationVariant, selectedCustomerId, selectedCustomerRecord])
 
   const linkedVehicleQuery = useQuery<Vehicle>({
-    queryKey: ['customer-search-vehicle', currentUser?.tenant_id, currentUser?.id, selectedCustomerId, selectedVehicleId],
+    queryKey: ['customer-search-vehicle', currentUser?.tenant_id, currentUser?.id, selectedCustomerId, selectedVehicleId, queryScope],
+    placeholderData: undefined,
     queryFn: async ({ signal }) => (await api.get(`/customers/${selectedCustomerId}/vehicles/${selectedVehicleId}`, { signal })).data,
     enabled: !!selectedCustomerId && !!selectedVehicleId && selectedCustomer?.id === selectedCustomerId,
     retry: false,
@@ -286,7 +304,7 @@ export default function CustomersPage() {
     params.set('selected', selectedCustomer.id)
     if (vehicle) {
       params.set('vehicle', vehicle.id)
-      queryClient.setQueryData(['customer-search-vehicle', currentUser?.tenant_id, currentUser?.id, selectedCustomer.id, vehicle.id], vehicle)
+      queryClient.setQueryData(['customer-search-vehicle', currentUser?.tenant_id, currentUser?.id, selectedCustomer.id, vehicle.id, queryScope], vehicle)
     } else params.delete('vehicle')
     // An explicit truck choice supersedes the earlier cancelled-order return.
     navigate({ pathname: location.pathname, search: params.toString() }, { replace: true })
@@ -318,7 +336,8 @@ export default function CustomersPage() {
   // has a term).
   
   const { data: customerVehicles, isLoading: isLoadingVehicles, isError: vehiclesError, isFetching: isFetchingVehicles, refetch: refetchVehicles } = useQuery<Vehicle[]>({
-    queryKey: ['customerVehicles', selectedCustomer?.id],
+    queryKey: ['customerVehicles', selectedCustomer?.id, queryScope],
+    placeholderData: undefined,
     queryFn: async () => {
       if (!selectedCustomer?.id) return []
       const response = await api.get(`/customers/${selectedCustomer.id}/vehicles`)
@@ -350,7 +369,8 @@ export default function CustomersPage() {
   }, [location.key, location.state, selectedCustomer?.id, selectedVehicleInPanel?.id])
 
   const { data: customerContacts, isLoading: isLoadingContacts, isError: contactsError, isFetching: isFetchingContacts, refetch: refetchContacts } = useQuery<Contact[]>({
-    queryKey: ['customerContacts', selectedCustomer?.id],
+    queryKey: ['customerContacts', selectedCustomer?.id, queryScope],
+    placeholderData: undefined,
     queryFn: async () => {
       if (!selectedCustomer?.id) return []
       const response = await api.get(`/customers/${selectedCustomer.id}/contacts`)
@@ -360,7 +380,8 @@ export default function CustomersPage() {
   })
 
   const { data: customerHistory, isLoading: isLoadingHistory, isError: historyError, refetch: refetchHistory } = useQuery<CustomerHistoryResponse>({
-    queryKey: ['customerHistory', selectedCustomer?.id],
+    queryKey: ['customerHistory', selectedCustomer?.id, queryScope],
+    placeholderData: undefined,
     queryFn: async () => {
       const response = await api.get(`/customers/${selectedCustomer!.id}/history`)
       return response.data
@@ -421,6 +442,7 @@ export default function CustomersPage() {
   }
 
   const closeDetailPanel = () => {
+    if (shopWorkReturn) { navigate(shopWorkReturn); return }
     const restoreCustomerId = selectionOriginRef.current ?? selectedCustomer?.id ?? null
     setIsDetailOpen(false)
     setSelectedCustomer(null)
@@ -512,7 +534,7 @@ export default function CustomersPage() {
 
   if (isLoading) {
     return (
-      <div className="db-customers-workspace flex flex-col h-full min-h-0">
+      <div className="db-customers-workspace flex flex-col h-full min-h-0">{shopWorkBack}
         <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0${presentationVariant === 'new' ? ' db-operating-page-header' : ''}`}>
           <div>
             <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>
@@ -577,9 +599,9 @@ export default function CustomersPage() {
   }
 
   const renderCustomerInspectionBrief = (customer: Customer) => {
-    const contacts = queryClient.getQueryData<Contact[]>(['customerContacts', customer.id])
-    const vehicles = queryClient.getQueryData<Vehicle[]>(['customerVehicles', customer.id])
-    const history = queryClient.getQueryData<CustomerHistoryResponse>(['customerHistory', customer.id])
+    const contacts = queryClient.getQueryData<Contact[]>(['customerContacts', customer.id, queryScope])
+    const vehicles = queryClient.getQueryData<Vehicle[]>(['customerVehicles', customer.id, queryScope])
+    const history = queryClient.getQueryData<CustomerHistoryResponse>(['customerHistory', customer.id, queryScope])
     const primaryContact = contacts?.[0]
     const address = [
       customer.billing_address_line1,
@@ -655,7 +677,7 @@ export default function CustomersPage() {
   }
 
   return (
-    <div className={`db-customers-workspace flex flex-col h-full min-h-0${presentationVariant === 'new' && selectedCustomerId ? ' db-customers-workspace--detail-open' : ''}`}>
+    <div className={`db-customers-workspace flex flex-col h-full min-h-0${presentationVariant === 'new' && selectedCustomerId ? ' db-customers-workspace--detail-open' : ''}`}>{shopWorkBack}
       <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0${presentationVariant === 'new' ? ' db-operating-page-header' : ''}`}>
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>
@@ -1114,7 +1136,7 @@ export default function CustomersPage() {
           selectedVehicleInPanel && selectedCustomer
             ? `Back to ${customerDisplayName(selectedCustomer)}`
             : presentationVariant === 'new'
-              ? 'Back to Customers'
+              ? shopWorkReturn ? 'Back to Shop Work' : 'Back to Customers'
               : undefined
         }
         footer={
@@ -1149,6 +1171,8 @@ export default function CustomersPage() {
                   createOrderButtonRef={createOrderButtonRef}
                   onCreateOrder={canStartCustomerOrder(currentUser?.role) ? () => startCustomerOrder(selectedCustomer) : undefined}
                   selectedCustomer={selectedCustomer}
+                  requestedView={requestedCustomerView}
+                  onViewChange={changeCustomerView}
                   detailTab={detailTab}
                   setDetailTab={setDetailTab}
                   expandedHistoryId={expandedHistoryId}
@@ -1202,7 +1226,7 @@ export default function CustomersPage() {
         layout="workspace"
         onClose={closeDetailPanel}
         onBack={closeDetailPanel}
-        backLabel="Back to Customers"
+        backLabel={shopWorkReturn ? 'Back to Shop Work' : 'Back to Customers'}
         title="Customer workspace"
         headerVariant="minimal"
         hideClose

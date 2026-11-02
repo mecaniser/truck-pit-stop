@@ -1,3 +1,4 @@
+import { shopWorkReturnUrl, shopWorkDestinationUrl, shopWorkQueryScope } from '@/features/dashboard/shopWorkNavigation'
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { pricingError, pricingMoney } from '@/features/parts-pricing/contract'
@@ -449,10 +450,12 @@ function PartPhoto({ part, logoUrl, companyName, detail = false }: { part: Pick<
 }
 
 export function PartsInventoryGate({ legacy }: { legacy: ReactNode }) {
+  const queryScope = useAuthStore(state => shopWorkQueryScope(state.user, state.authSessionEpoch))
   const role = useAuthStore((state) => state.user?.role)
   const mayRead = role === 'garage_owner' || role === 'garage_admin' || role === 'receptionist'
   const availability = useQuery<Summary>({
-    queryKey: ['parts-operations', 'summary'],
+    queryKey: ['parts-operations', 'summary', queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get('/parts-operations/summary')).data,
     enabled: mayRead,
     retry: false,
@@ -465,17 +468,20 @@ export function PartsInventoryGate({ legacy }: { legacy: ReactNode }) {
     if (status === 403 || status === 404) return <>{legacy}</>
     return <div className="db-parts-workbench__gate" role="alert">Parts & inventory is temporarily unavailable. Refresh to use the existing catalog.</div>
   }
-  return <PartsInventoryWorkspace summary={availability.data} />
+  return <PartsInventoryWorkspace key={queryScope} summary={availability.data} />
 }
 
 export default function PartsInventoryWorkspace({ summary }: { summary: Summary }) {
   const [pricingSettingsOpen, setPricingSettingsOpen] = useState(false)
+  const queryScope = useAuthStore(state => shopWorkQueryScope(state.user, state.authSessionEpoch))
   const role = useAuthStore((state) => state.user?.role)
   const manage = canManage(role)
   const navigate = useNavigate()
   const { key: locationKey } = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const linkedPartId = searchParams.get('selected')
+  const shopWorkOrigin = Boolean(shopWorkReturnUrl(searchParams))
+  const purchasingUrl = `/dashboard/garage/purchasing?view=orders${shopWorkOrigin ? '&shop_work=overview' : ''}`
   const queryClient = useQueryClient()
   const { data: branding } = useTenantBranding()
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>('parts')
@@ -510,7 +516,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
     setMobileDetailOpen(true)
     if (linkedPartId) {
       const params = new URLSearchParams(searchParams)
-      params.delete('selected')
+      params.set('selected', id)
       setSearchParams(params, { replace: true })
     }
   }
@@ -539,7 +545,8 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   }), [catalogView, debouncedSearch, direction, sort, stockFilter, workspaceView])
 
   const partsQuery = useInfiniteQuery({
-    queryKey: ['parts-operations', 'parts', partParams, partsSequence],
+    queryKey: ['parts-operations', 'parts', partParams, partsSequence, queryScope],
+    placeholderData: undefined,
     queryFn: async ({ pageParam }): Promise<Page<PartRecord>> => (await api.get('/parts-operations/parts', { params: { ...partParams, skip: pageParam } })).data,
     initialPageParam: 0,
     getNextPageParam: (lastPage) => lastPage.has_more ? lastPage.skip + lastPage.limit : undefined,
@@ -547,7 +554,8 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
     retry: false,
   })
   const detailQuery = useQuery<PartDetail>({
-    queryKey: ['parts-operations', 'part', selectedId],
+    queryKey: ['parts-operations', 'part', selectedId, queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get(`/parts-operations/parts/${selectedId}`)).data,
     enabled: workspaceView !== 'activity' && Boolean(selectedId),
     retry: false,
@@ -648,7 +656,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
     setPreparedPartIds(new Set(byInventory.keys()))
     const blocked = eligible.filter((part) => !part.preferred_source).length
     setNotice(`${eligible.length} ${eligible.length === 1 ? 'part' : 'parts'} added to purchase preparation${blocked ? ` · ${blocked} still ${blocked === 1 ? 'needs' : 'need'} a supplier source` : ''}.`)
-    if (openPurchasing) navigate('/dashboard/garage/purchasing?view=orders')
+    if (openPurchasing) navigate(purchasingUrl)
   }
 
   const addToPreparation = (part: PartRecord) => prepareParts([part])
@@ -667,7 +675,8 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   // is. The sync has failed silently before — a run that aborts still leaves
   // yesterday's numbers rendering as though they were current.
   const { data: syncStatus } = useQuery<{ ets_last_synced_at: string | null }>({
-    queryKey: ['inventory-sync-status'],
+    queryKey: ['inventory-sync-status', queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get('/inventory/sync-status')).data,
     staleTime: 60_000,
   })
@@ -776,8 +785,8 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
         items: page.items.map((item) => item.id === partId ? { ...item, ...patch } : item),
       })),
     } : current)
-    queryClient.setQueryData<PartDetail>(['parts-operations', 'part', partId], (current) => current ? { ...current, ...patch } : current)
-    queryClient.setQueryData<InventoryEditorRecord>(['inventory', 'detail', partId], (current) => current ? { ...current, ...patch } : current)
+    queryClient.setQueryData<PartDetail>(['parts-operations', 'part', partId, queryScope], (current) => current ? { ...current, ...patch } : current)
+    queryClient.setQueryData<InventoryEditorRecord>(['inventory', 'detail', partId, queryScope], (current) => current ? { ...current, ...patch } : current)
   }
 
   const updatePartIdentity = async (part: PartDetail, patch: Record<string, unknown>) => {
@@ -855,7 +864,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
         Customers, Repair Orders, and Shop Work surfaces. */}
     {workspaceView !== 'activity' &&
     <div className="db-parts-workbench__toolbar">
-      <label className="db-parts-workbench__search"><Search aria-hidden="true" /><span className="sr-only">Search parts</span><ControlInput type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search part, SKU, supplier, source number, or bin" /></label>
+      <label data-db-control-shell="field" className="db-parts-workbench__search"><Search aria-hidden="true" /><span className="sr-only">Search parts</span><ControlInput type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search part, SKU, supplier, source number, or bin" /></label>
       <div className="db-parts-workbench__filters" role="group" aria-label="Stock filter">
         <ControlButton controlKind="action" type="button" aria-pressed={stockFilter === 'all'} onClick={() => { setStockFilter('all'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }}>All</ControlButton>
         <ControlButton controlKind="action" type="button" aria-pressed={stockFilter === 'below_min'} onClick={() => { setStockFilter('below_min'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }}>Needs reorder</ControlButton>
@@ -891,7 +900,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
           </div>}
           <PartLedger page={partsPage} loading={partsQuery.isLoading} loadingMore={partsQuery.isFetchingNextPage} failed={partsQuery.isError && !partsQuery.data} manage={manage} salesEnabled={counterSalesEnabled} selectedId={selectedId} checkedIds={new Set(checkedParts.keys())} density={density} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onCheck={toggleChecked} onSelect={selectPart} onSell={(id) => navigate(`/dashboard/garage/inventory/sales?new=1&part=${encodeURIComponent(id)}`)} onRetry={() => void partsQuery.refetch()} onLoadMore={() => void partsQuery.fetchNextPage()} />
         </div>
-        <PartInspector part={detailQuery.data} loading={detailQuery.isLoading} failed={detailQuery.isError} manage={manage} prepared={Boolean(detailQuery.data && preparedPartIds.has(detailQuery.data.id))} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onBack={() => setMobileDetailOpen(false)} onRetry={() => void detailQuery.refetch()} onAdjust={updatePart} onReceive={receiveStock} onUpdateIdentity={updatePartIdentity} onUploadPhoto={uploadPartPhoto} onRemovePhoto={removePartPhoto} onPrepare={addToPreparation} onPurchasing={() => navigate('/dashboard/garage/purchasing')} onOpenPurchaseOrder={(id) => navigate(`/dashboard/garage/purchasing?view=orders&purchase_order=${encodeURIComponent(id)}`)} onOpenRepair={(id) => navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}`)} />
+        <PartInspector part={detailQuery.data} loading={detailQuery.isLoading} failed={detailQuery.isError} manage={manage} prepared={Boolean(detailQuery.data && preparedPartIds.has(detailQuery.data.id))} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onBack={() => setMobileDetailOpen(false)} onRetry={() => void detailQuery.refetch()} onAdjust={updatePart} onReceive={receiveStock} onUpdateIdentity={updatePartIdentity} onUploadPhoto={uploadPartPhoto} onRemovePhoto={removePartPhoto} onPrepare={addToPreparation} onPurchasing={() => navigate(purchasingUrl)} onOpenPurchaseOrder={(id) => navigate(shopWorkOrigin ? shopWorkDestinationUrl({ kind: 'purchase_order', id, view: 'orders' }) : `/dashboard/garage/purchasing?view=orders&purchase_order=${encodeURIComponent(id)}`)} onOpenRepair={(id) => navigate(shopWorkOrigin ? shopWorkDestinationUrl({ kind: 'repair_order', id, view: null }) : `/dashboard/repair-orders?selected=${encodeURIComponent(id)}`)} />
       </div>}
     {addPartOpen && <AddPartDrawer isOpen onClose={() => setAddPartOpen(false)} onCreated={async (partName) => {
       await Promise.all([
@@ -984,6 +993,7 @@ const EMPTY_ADD_PART: AddPartForm = {
 }
 
 function AddPartDrawer({ isOpen, onClose, onCreated }: { isOpen: boolean; onClose: () => void; onCreated: (partName: string) => Promise<void> }) {
+  const queryScope = useAuthStore(state => shopWorkQueryScope(state.user, state.authSessionEpoch))
   const [form, setForm] = useState<AddPartForm>(EMPTY_ADD_PART)
   const [skuMode, setSkuMode] = useState<'automatic' | 'manual'>('automatic')
   const [saving, setSaving] = useState(false)
@@ -996,7 +1006,8 @@ function AddPartDrawer({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
   // unique canonical-SKU index that would reject the second save.
   const stem = skuMode === 'automatic' ? skuStem(form.name, form.category) : ''
   const stemQuery = useQuery<Page<PartRecord>>({
-    queryKey: ['parts-operations', 'sku-stem', stem],
+    queryKey: ['parts-operations', 'sku-stem', stem, queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get('/parts-operations/parts', { params: { search: stem, limit: 1, skip: 0 } })).data,
     enabled: isOpen && stem.length > 0,
     staleTime: 30_000,
@@ -1007,7 +1018,8 @@ function AddPartDrawer({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
     : ''
   const categoryTerm = form.category.trim()
   const categorySuggestions = useQuery<InventoryLibrarySuggestion[]>({
-    queryKey: ['inventory-category-suggestions', categoryTerm],
+    queryKey: ['inventory-category-suggestions', categoryTerm, queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get('/inventory/category-suggestions', { params: { q: categoryTerm, limit: 6 } })).data,
     enabled: isOpen && categoryTerm.length > 0,
     staleTime: 30_000,
@@ -1136,15 +1148,18 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
   const restore = useRef<'available-shortcut' | 'reorder' | null>(null)
   const identityTrigger = useRef<HTMLButtonElement>(null)
   const photoInput = useRef<HTMLInputElement>(null)
+  const queryScope = useAuthStore(state => shopWorkQueryScope(state.user, state.authSessionEpoch))
   const identityQuery = useQuery<InventoryEditorRecord>({
-    queryKey: ['inventory', 'detail', part?.id],
+    queryKey: ['inventory', 'detail', part?.id, queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get(`/inventory/${part?.id}`)).data,
     enabled: Boolean(part?.id && identityOpen),
     retry: false,
   })
   const supplierId = part?.preferred_source?.supplier_id || null
   const supplierPurchasingQuery = useQuery<SupplierPurchasing>({
-    queryKey: ['parts-operations', 'supplier-purchasing', supplierId],
+    queryKey: ['parts-operations', 'supplier-purchasing', supplierId, queryScope],
+    placeholderData: undefined,
     queryFn: async () => (await api.get(`/parts-operations/suppliers/${supplierId}/purchasing`)).data,
     enabled: Boolean(supplierId),
     retry: false,
@@ -1616,6 +1631,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
 }
 
 function SupplierSources({ part, manage, onChanged }: { part: PartDetail; manage: boolean; onChanged: () => void }) {
+  const queryScope = useAuthStore(state => shopWorkQueryScope(state.user, state.authSessionEpoch))
   const queryClient = useQueryClient()
   const addTriggerRef = useRef<HTMLButtonElement>(null)
   const sourceTriggerRefs = useRef(new Map<string, HTMLButtonElement>())
@@ -1635,7 +1651,8 @@ function SupplierSources({ part, manage, onChanged }: { part: PartDetail; manage
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const suppliersQuery = useQuery<Page<SupplierOption>>({
-    queryKey: ['suppliers', 'source-options'],
+    queryKey: ['suppliers', 'source-options', queryScope],
+    placeholderData: undefined,
     queryFn: async () => {
       const all: SupplierOption[] = []
       let page: Page<SupplierOption>

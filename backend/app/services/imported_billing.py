@@ -243,6 +243,15 @@ def _retired_display_verified(rows, canonical, summary, payments, blocked, evide
     return True
 
 
+def _verified_source_invoice_url(shop_id, service_id):
+    # This adds navigation only, after the caller verifies provenance. Invalid
+    # path segments hide the link without changing financial evidence or holds.
+    if (not isinstance(shop_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", shop_id)
+            or not isinstance(service_id, str) or not re.fullmatch(r"[0-9]{1,160}", service_id)):
+        return None
+    return f"https://easytruck.shop/{shop_id}/services/{service_id}/invoice"
+
+
 def _source_summary(invoice, envelope, order, shop_id, *, allow_paid_unapplied=False):
     """Observe source arithmetic without promoting it to settlement authority."""
     if not shop_id or not order:
@@ -324,7 +333,8 @@ def _source_summary(invoice, envelope, order, shop_id, *, allow_paid_unapplied=F
     response = ImportedBillingResponse(invoice_id=invoice.id, invoice_number=invoice.invoice_number,
         total_amount=total, recorded_completed_amount=paid, recorded_remaining_amount=balance,
         payment_status="paid" if balance == 0 else ("partially_paid" if paid > 0 else "unpaid"),
-        evidence_basis="ets_source_snapshot", observed_at=datetime.fromisoformat(observed), review_required=False)
+        evidence_basis="ets_source_snapshot", observed_at=datetime.fromisoformat(observed), review_required=False,
+        source_invoice_url=_verified_source_invoice_url(shop_id, service))
     if datetime.now(timezone.utc) - response.observed_at > timedelta(hours=24):
         response.payment_status = "unverified"
         response.recorded_completed_amount = response.recorded_remaining_amount = None

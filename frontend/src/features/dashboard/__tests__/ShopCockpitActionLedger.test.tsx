@@ -229,6 +229,22 @@ describe('DB-035 Stage 3 Action Ledger', () => {
     expect(onValueScopeChange).toHaveBeenLastCalledWith({ lane: 'on_floor', search: 'NorthStar' })
   })
 
+  it('keeps closeout value out of Activity and absent values unknown', () => {
+    const { props, rerender } = renderLedger({ activeWork: <div>Active work</div>, workView: 'closeout' })
+    expect(screen.getByText('Closeout work value').parentElement).toHaveTextContent('—')
+    rerender(<ShopCockpitActionLedger {...props} queueView="activity" valueSummary={{ order_count: 2, order_value: '100.00' }} />)
+    expect(screen.queryByText('Closeout work value')).not.toBeInTheDocument()
+    expect(screen.queryByText('$100.00')).not.toBeInTheDocument()
+  })
+  it('shows lane labels only when multiple lanes share the list', async () => {
+    const user = userEvent.setup()
+    renderLedger()
+    const row = screen.getByRole('button', { name: 'Open RO-2026-0103 in Repair Orders' })
+    expect(within(row).getByText('Ready to Close')).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'Ready to Close 1' }))
+    expect(within(row).queryByText('Ready to Close')).not.toBeInTheDocument()
+    expect(within(row).getByText('Payment Due')).toBeInTheDocument()
+  })
   it('distinguishes calculating, unavailable, and genuine zero work values', () => {
     const { rerender, props } = renderLedger({ valueSummaryLoading: true })
     expect(screen.getByText('Calculating…')).toBeInTheDocument()

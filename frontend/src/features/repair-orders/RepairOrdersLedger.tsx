@@ -2,6 +2,7 @@ import { ControlButton } from '@/components/ui/Controls'
 import './repairOrderSchedule.css'
 import './repairOrderControls.css'
 import './importedBilling.css'
+import { ImportedBillingSourceLink } from './ImportedBillingSourceLink'
 import { importedBillingWarnings } from './importedBillingWarnings'
 import { importedMoney, importedPaymentLabel, importedBillingSeverity, type ImportedBilling } from './importedBilling'
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
@@ -217,7 +218,7 @@ export default function RepairOrdersLedger({
           <h1 id="repair-orders-title">{pageTitle}</h1>
           <p>{pageDescription}</p>
         </div>
-        <ControlButton type="button" className="db-repair-orders-new__create" aria-label="New repair order" onClick={onCreateOrder} disabled={isFetching && rows.length === 0}>
+        <ControlButton controlKind="icon" type="button" className="db-repair-orders-new__create" aria-label="New repair order" onClick={onCreateOrder} disabled={isFetching && rows.length === 0}>
           <Plus aria-hidden="true" />
           <span className="db-repair-orders-new__create-label">New repair order</span>
         </ControlButton>
@@ -239,7 +240,7 @@ export default function RepairOrdersLedger({
                   only after you open it. A listbox keeps the control on one line,
                   names the active status on its face, and is themed like the rest
                   of the surface. */}
-              <div className="db-repair-orders-new__status-select" ref={statusMenu}>
+              <div data-db-control-shell="proxy" className="db-repair-orders-new__status-select" ref={statusMenu}>
                 <ControlButton controlKind="action"
                   type="button"
                   aria-haspopup="listbox"
@@ -480,6 +481,7 @@ export default function RepairOrdersLedger({
                         {billingSeverity?.tone === 'warning' && <section className="db-imported-billing-review" aria-label="Why billing needs attention">
                           <h3><TriangleAlert className="h-4 w-4" aria-hidden="true" />Billing needs attention</h3>
                           <ul>{importedBillingWarnings(row.importedBilling).map(reason => <li key={reason}>{reason}</li>)}</ul>
+                          <div className="mt-2"><ImportedBillingSourceLink url={row.importedBilling?.source_invoice_url} /></div>
                         </section>}
                         {!requestOnRow && (
                           <section className="db-repair-orders-ledger__work-request" aria-labelledby={workRequestId}>

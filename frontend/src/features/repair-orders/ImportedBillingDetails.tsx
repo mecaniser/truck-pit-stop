@@ -1,3 +1,4 @@
+import { ImportedBillingSourceLink } from './ImportedBillingSourceLink'
 import { importedBillingWarnings } from './importedBillingWarnings'
 import { ImportedBillingTooltip } from './ImportedBillingTooltip'
 import { CircleCheck, TriangleAlert } from 'lucide-react'
@@ -33,6 +34,7 @@ export function ImportedBillingDetails({ billing, failed = false }: { billing?: 
         <p className="mt-1">{billing?.evidence_basis === 'ets_source_snapshot' ? 'ETS source snapshot' : 'Imported ETS records'} · QuickBooks not checked</p>
         {observedAt && !failed && <p className="mt-1">{billing?.evidence_basis === 'ets_source_snapshot' ? 'Observed ' : 'Record updated '}<time dateTime={observedAt}>{new Date(observedAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</time></p>}
       </ImportedBillingTooltip>
+      {severity.tone === 'warning' && !failed && <ImportedBillingSourceLink url={billing?.source_invoice_url} />}
     </div>
     {failed && <p role="alert">Billing unavailable. Reopen this order to retry.</p>}
   </div>

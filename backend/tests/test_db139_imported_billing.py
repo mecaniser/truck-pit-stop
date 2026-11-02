@@ -294,3 +294,58 @@ async def test_existing_labor_list_does_not_receive_order_billing_enrichment(mon
     response = await repair_orders.list_repair_order_labor(order.id, 0, 100, False, db, user)
     assert response == [labor]
     enrichment.assert_not_awaited()
+
+
+@pytest.mark.parametrize('balance,status', [('0.00','paid'), ('534.41','unpaid')])
+@pytest.mark.parametrize('mismatch', [False, True])
+def test_verified_source_link_preserves_financial_evidence(balance, status, mismatch):
+    inv, order, envelope = snapshot_fixture(balance={'amount':balance,'currency':'USD'}, invoice_status='10' if status=='paid' else '5')
+    facts = envelope['observations'][0]['evidence']
+    if status == 'unpaid':
+        facts['payment_lines'] = []
+        inv.status = 'sent'
+    envelope['observations'][0]['sha256'] = _digest(facts)
+    if mismatch: inv.total_amount = Decimal('400.00')
+    result = summarize_imported_billing([inv], [payment(inv)] if status=='paid' else [], envelope, order=order, shop_id='shop1')
+    assert result.source_invoice_url == 'https://easytruck.shop/shop1/services/7001/invoice'
+    assert result.payment_status == status and result.total_amount == Decimal('534.41')
+    assert result.recorded_remaining_amount == Decimal(balance)
+    assert ('imported_financial_rows_differ' in result.review_reasons) == mismatch
+
+
+def test_source_link_preserves_leading_zero_service_and_does_not_add_payment_holds():
+    inv, order, envelope = snapshot_fixture(service_id='007001', ets_shop_id='..')
+    order.order_number='ETS-007001-8002'
+    result=summarize_imported_billing([inv],[payment(inv)],envelope,order=order,shop_id='..')
+    assert result.source_invoice_url is None
+    assert result.payment_status=='paid' and not result.review_required
+    envelope['observations'][0]['evidence']['ets_shop_id']='shop1'
+    envelope['observations'][0]['sha256']=_digest(envelope['observations'][0]['evidence'])
+    result=summarize_imported_billing([inv],[payment(inv)],envelope,order=order,shop_id='shop1')
+    assert result.source_invoice_url=='https://easytruck.shop/shop1/services/007001/invoice'
+
+
+@pytest.mark.parametrize('segment', ['..', '.', 'x/y', 'x\\y', '%2f', 'x?y', 'x#y', 'x:y', 'x@y', '', 'é', 'x'*161])
+def test_source_link_rejects_unsafe_path_segments(segment):
+    from app.services.imported_billing import _verified_source_invoice_url
+    assert _verified_source_invoice_url(segment,'7001') is None
+    assert _verified_source_invoice_url('shop1',segment) is None
+
+
+@pytest.mark.parametrize('problem', ['missing', 'digest', 'manifest', 'foreign_shop', 'foreign_tenant', 'ambiguous'])
+def test_source_link_absent_when_identity_or_provenance_unavailable(problem):
+    inv,order,envelope=snapshot_fixture()
+    facts=envelope['observations'][0]['evidence']
+    invoices=[inv]
+    if problem=='missing': envelope=None
+    if problem=='digest': envelope['observations'][0]['sha256']='invalid'
+    if problem=='manifest':
+        facts['invoice_manifest']['complete']=False
+        envelope['observations'][0]['sha256']=_digest(facts)
+    if problem=='foreign_shop':
+        facts['ets_shop_id']='other-shop'
+        envelope['observations'][0]['sha256']=_digest(facts)
+    if problem=='foreign_tenant': order.tenant_id=uuid4()
+    if problem=='ambiguous': invoices.append(invoice(tenant_id=inv.tenant_id))
+    result=summarize_imported_billing(invoices,[payment(inv)],envelope,order=order,shop_id='shop1')
+    assert result.source_invoice_url is None
