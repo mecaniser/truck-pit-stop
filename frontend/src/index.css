@@ -2693,6 +2693,11 @@ html::-webkit-scrollbar-thumb:hover {
   }
 }
 
+/* Full-width navigation rows share a leading edge regardless of the active chevron. */
+.db-settings-sidebar .db-settings-nav-item {
+  justify-content: flex-start;
+}
+
 /* Retained settings navigation inherits legacy zinc utilities. New presentation
    keeps its active, hover, and keyboard focus states in the current accent ramp. */
 .db-presentation-new .db-settings-nav-item[data-active='true'] {
