@@ -82,6 +82,18 @@ describe('DB-048 compatibility fallback', () => {
 })
 
 describe('SettlementSummaryCard', () => {
+  it('keeps internal accounting out of customer views while retaining payment facts', () => {
+    render(<SettlementSummaryCard audience="customer" streamlined summary={{ ...DB048_SETTLEMENT_FIXTURES.pendingZelle500.summary, accounting_sync_status: 'external_reconciliation_pending' }} />)
+    expect(screen.queryByText(/ETS|accounting|Invoice settlement|Outstanding/i)).not.toBeInTheDocument()
+    expect(screen.getByText('Pending confirmation')).toBeInTheDocument()
+    expect(screen.getByText('Available to pay')).toBeInTheDocument()
+  })
+
+  it('omits the empty repeated summary on an unpaid customer invoice', () => {
+    const { container } = render(<SettlementSummaryCard audience="customer" streamlined summary={{ ...DB048_SETTLEMENT_FIXTURES.unpaid.summary, accounting_sync_status: 'external_reconciliation_pending' }} />)
+    expect(container).toBeEmptyDOMElement()
+  })
+
   it.each(['unpaid', 'paid'] as const)('describes manual ETS accounting without inventing a payment for %s collection', state => {
     const base = DB048_SETTLEMENT_FIXTURES.unpaid.summary
     const summary = { ...base, state, accounting_sync_status: 'external_reconciliation_pending' as const,
@@ -121,6 +133,21 @@ describe('SettlementSummaryCard', () => {
 })
 
 describe('SettlementPaymentPanel', () => {
+  it('makes partial payment explicit and preserves the exact unpaid remainder without starting payment', async () => {
+    const user = userEvent.setup()
+    const summary = { ...DB048_SETTLEMENT_FIXTURES.unpaid.summary, principal_total: '268.44', outstanding_balance: '268.44', allocatable_balance: '268.44' }
+    renderWithQuery(<SettlementPaymentPanel access={{ kind: 'authenticated', invoiceId: summary.invoice_id }} summary={summary} audience="customer" tone="light" onUpdated={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Pay in full' })).toHaveAttribute('aria-pressed', 'true')
+    await user.click(screen.getByRole('button', { name: 'Pay part' }))
+    await user.type(screen.getByLabelText('Amount applied to invoice'), '100.00')
+    expect(screen.getByRole('status')).toHaveTextContent('Remaining after confirmation: $168.44')
+    expect(screen.getByRole('button', { name: 'Pay part' })).toHaveAttribute('aria-pressed', 'true')
+    expect(paymentApi.createPaymentAttempt).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Pay in full' }))
+    expect(screen.getByLabelText('Amount applied to invoice')).toHaveValue('268.44')
+    expect(screen.queryByText(/Remaining after confirmation/)).not.toBeInTheDocument()
+  })
+
   beforeEach(() => {
     paymentApi.createPaymentAttempt.mockReset()
     paymentApi.confirmPaymentAttempt.mockReset()
@@ -219,7 +246,7 @@ describe('SettlementPaymentPanel', () => {
 
     const continueButton = await screen.findByRole('button', { name: /make another payment.*\$334\.00 available/i })
     await user.click(continueButton)
-    expect(screen.getByRole('heading', { name: /choose an amount and tender/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /payment method/i })).toBeInTheDocument()
     expect(screen.getByLabelText(/amount applied/i)).toHaveValue('334.00')
   })
 

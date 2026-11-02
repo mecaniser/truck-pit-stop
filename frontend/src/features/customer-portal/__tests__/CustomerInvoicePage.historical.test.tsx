@@ -80,11 +80,11 @@ describe('historical customer invoices', () => {
       source_observed_at: '2026-11-01T02:00:00Z', source_sync_state: 'source_unavailable',
       accounting_state: 'external_reconciliation_pending', hold_reasons: ['source_stale'], collection_enabled: false,
     })
-    await screen.findByRole('heading', { name: 'Collection copy of ETS invoice 1687' })
-    expect(screen.getByRole('link', { name: 'View original ETS invoice' })).toHaveAttribute('href', '/portal/invoices/original-1687')
-    expect(screen.getByText('Oct 19, 2026')).toBeInTheDocument()
+    await screen.findByText('Invoice #1687')
+    expect(screen.queryByText(/Collection copy|Balance transferred|Paid before transfer/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'View original ETS invoice' })).not.toBeInTheDocument()
     expect(screen.queryByText('Labor / Services')).not.toBeInTheDocument()
-    expect(screen.getByText('Contact the shop to confirm payment availability for this collection copy.')).toBeInTheDocument()
+    expect(screen.getByText('Contact the shop to confirm payment availability.')).toBeInTheDocument()
     expect(screen.queryByRole('radiogroup', { name: 'Payment method' })).not.toBeInTheDocument()
     expect(mocks.get.mock.calls.some(([url]) => url.includes('/repair-orders/'))).toBe(false)
     expect(mocks.get.mock.calls.some(([url]) => url.includes('/quickbooks/'))).toBe(false)

@@ -373,7 +373,7 @@ export default function CustomerInvoicePage() {
             </p>
           )}
           <p className="flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 text-[13px] text-[#8b92a5]">
-            <span>{invoice.order_number}</span>
+            <span>{isCollectionInvoice ? `Invoice #${invoice.source_collection!.source_invoice_number}` : invoice.order_number}</span>
             <span aria-hidden="true">·</span>
             <span className="text-[#d9a521]">{invoice.vehicle_info}</span>
             <span className="rounded-full border border-violet-400/35 bg-violet-400/10 px-2.5 py-0.5 text-[11px] font-bold text-[#a78bfa]">
@@ -397,8 +397,8 @@ export default function CustomerInvoicePage() {
           </p>}
         </section>
 
-        {!isLinkedSourceHistory && <InvoicePaymentSummary summary={paymentSummary} dark />}
-        {invoice.source_collection && <SourceCollectionSummary summary={invoice.source_collection} dark originalInvoiceHref={invoice.source_collection.source_invoice_id ? `/portal/invoices/${invoice.source_collection.source_invoice_id}` : undefined} />}
+        {!isLinkedSourceHistory && !splitSettlement && <InvoicePaymentSummary summary={paymentSummary} dark />}
+        {isLinkedSourceHistory && invoice.source_collection && <SourceCollectionSummary summary={invoice.source_collection} dark originalInvoiceHref={invoice.source_collection.source_invoice_id ? `/portal/invoices/${invoice.source_collection.source_invoice_id}` : undefined} />}
 
         {isHistoricalInvoice ? (
           <section className="mt-4 rounded-[14px] border border-[#232939] bg-[#161a26] p-5" aria-labelledby="historical-invoice-title">
@@ -415,7 +415,7 @@ export default function CustomerInvoicePage() {
           || invoice.source_collection.state !== 'active'
           || ['source_conflict', 'source_unavailable'].includes(invoice.source_collection.source_sync_state)
           || legacySettlementMode) ? (
-          <p role="status" className="my-4 text-center text-sm">Contact the shop to confirm payment availability for this collection copy.</p>
+          <p role="status" className="my-4 text-center text-sm">Contact the shop to confirm payment availability.</p>
         ) : paymentSummary && ['cancelled', 'unknown'].includes(paymentSummary.state) ? (
           <p className="my-4 text-center text-sm">{paymentSummary.state === 'cancelled' ? 'This invoice is cancelled.' : 'Contact the shop to confirm your current balance before paying.'}</p>
         ) : isPaid ? (
@@ -441,6 +441,8 @@ export default function CustomerInvoicePage() {
               summary={splitSettlement}
               allocations={allocationQuery.data?.items ?? []}
               tone="dark"
+              audience="customer"
+              streamlined
             />
             <SettlementResolutionPanel
               access={settlementAccess}
@@ -631,7 +633,7 @@ export default function CustomerInvoicePage() {
         <section className="mt-4 rounded-[14px] border border-[#232939] bg-[#161a26] px-5 py-4" aria-labelledby="charge-breakdown">
           <div className="flex items-center justify-between gap-4 pb-2">
             <h2 id="charge-breakdown" className="min-w-0 truncate text-[11px] font-extrabold uppercase tracking-[0.1em] text-[#8b92a5]">
-              {isCollectionInvoice ? 'Collection balance' : `${concern} · Charges`}
+              {isCollectionInvoice ? 'Invoice' : `${concern} · Charges`}
             </h2>
             <a
               href={`/api/v1/invoices/${invoice.id}/pdf`}
@@ -643,7 +645,7 @@ export default function CustomerInvoicePage() {
             </a>
           </div>
           {cashReceipt && !isCollectionInvoice ? <CashReceiptBreakdown receipt={cashReceipt} /> : <div>
-            {(isCollectionInvoice ? [['Balance transferred', Number(invoice.subtotal)]] : [
+            {(isCollectionInvoice ? [['Invoice total', Number(invoice.source_collection!.original_issued_total)], ...(Number(invoice.source_collection!.source_prior_allocated) > 0 ? [['Payments / credits applied', -(Number(invoice.source_collection!.source_prior_allocated) + Number(splitSettlement?.confirmed_principal ?? paymentSummary?.applied_amount ?? 0))]] : [])] : [
               ...(isHistoricalInvoice ? [['Subtotal', Number(invoice.subtotal)] as [string, number]] : [['Labor / Services', labor], ['Parts', parts]]),
               ['Shop Supplies', Number(invoice.shop_supplies_amount || 0)],
               ['Tax', Number(invoice.tax_amount || 0)],

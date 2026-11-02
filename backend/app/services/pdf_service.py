@@ -228,6 +228,13 @@ def generate_invoice_pdf(
     zelle_email: Optional[str] = None,
     zelle_phone: Optional[str] = None,
 ) -> bytes:
+    collection_copy = bool(source_collection and not source_collection.get("is_source_history"))
+    if collection_copy:
+        # Display the customer's established invoice identity; retain lineage in stored records.
+        invoice_number = str(source_collection.get("source_invoice_number") or invoice_number)
+        notes = None
+        if source_collection.get("original_invoice_date"):
+            invoice_date = str(source_collection["original_invoice_date"])[:10]
     labor_items = labor_items or []
     parts_items = parts_items or []
 
@@ -270,7 +277,7 @@ def generate_invoice_pdf(
     doc.addPageTemplates([PageTemplate(id="main", frames=[frame], onPage=page_handler)])
 
     story = []
-    if source_collection:
+    if source_collection and source_collection.get("is_source_history"):
         if source_collection.get("is_source_history"):
             payment_summary = {"state":"unknown", "note":"Historical source copy. Contact the shop for current billing information; do not pay this copy separately."}
         label = "Source invoice history" if source_collection.get("is_source_history") else "Collection copy"
@@ -314,7 +321,8 @@ def generate_invoice_pdf(
         info_rows.append([_p("Service Completed", S_LABEL), _p(service_completed, S_BODY)])
     if due_date and status.lower() not in ("paid", "cancelled", "unknown"):
         info_rows.append([_p("Due Date", S_LABEL), _p(due_date, S_BOLD)])
-    info_rows.append([_p("Order #", S_LABEL), _p(order_number, S_BODY)])
+    if not collection_copy:
+        info_rows.append([_p("Order #", S_LABEL), _p(order_number, S_BODY)])
 
     info_tbl = Table(info_rows, colWidths=[1.25 * inch, 1.35 * inch])
     info_tbl.setStyle(TableStyle([
@@ -497,9 +505,9 @@ def generate_invoice_pdf(
     if collection_copy:
         COL_W = [CONTENT_W * .72, CONTENT_W * .28]
         rows = [[_p("Description", _style("collection-th", fontName="Helvetica-Bold", fontSize=8, textColor=white)),
-                 _p("Transferred balance", _style("collection-th-amount", fontName="Helvetica-Bold", fontSize=8, textColor=white, alignment=TA_RIGHT))],
-                [_p("Balance transferred from ETS invoice " + escape(str(source_collection.get("source_invoice_number", ""))), S_BODY),
-                 _p(_fmt(Decimal(source_collection["opening_principal"])), S_RIGHT_BOLD)]]
+                 _p("Amount", _style("collection-th-amount", fontName="Helvetica-Bold", fontSize=8, textColor=white, alignment=TA_RIGHT))],
+                [_p("Repair services", S_BODY),
+                 _p(_fmt(Decimal(source_collection["original_issued_total"])), S_RIGHT_BOLD)]]
         row_styles = [("BACKGROUND", (0,0), (-1,0), C_DARK), ("VALIGN", (0,0), (-1,-1), "TOP"),
                       ("TOPPADDING", (0,0), (-1,-1), 7), ("BOTTOMPADDING", (0,0), (-1,-1), 7),
                       ("LINEBELOW", (0,1), (-1,1), .25, C_BORDER)]
@@ -538,7 +546,7 @@ def generate_invoice_pdf(
     total_rows.append(total_row(tax_label, tax_amount))
     if collection_copy:
         total_rows = []
-    total_rows.append(total_row("TOTAL PAID — CASH" if cash_receipt else "TRANSFERRED BALANCE" if source_collection and not source_collection.get("is_source_history") else "INVOICE TOTAL", total_amount, bold=True, color=white))
+    total_rows.append(total_row("TOTAL PAID — CASH" if cash_receipt else "INVOICE TOTAL", Decimal(source_collection["original_issued_total"]) if collection_copy else total_amount, bold=True, color=white))
 
     sum_tbl = Table(
         total_rows,
@@ -570,7 +578,7 @@ def generate_invoice_pdf(
         payment_rows = []
         if applied is not None:
             label = "Cash received" if payment_summary.get("basis") == "cash_receipt" else "Payments / credits applied"
-            payment_rows.append(total_row(label, Decimal(applied)))
+            payment_rows.append(total_row(label, Decimal(applied) + (Decimal(source_collection["source_prior_allocated"]) if collection_copy else Decimal("0"))))
         if pending is not None:
             payment_rows.append(total_row("Awaiting confirmation", Decimal(pending)))
         if balance is not None:
