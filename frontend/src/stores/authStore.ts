@@ -1,3 +1,4 @@
+import { captureFormDrafts, clearFormDrafts } from '../lib/formDrafts'
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import api from '../lib/api'
@@ -151,6 +152,7 @@ export const useAuthStore = create<AuthState>()(
         const session = get()
         if (session.logoutInProgress) return
 
+        clearFormDrafts()
         const logoutEpoch = session.authSessionEpoch + 1
         const endpoint = session.isAuthenticated
           ? (session.authProvider === 'workos' ? '/auth/workos/logout' : '/auth/logout')
@@ -186,6 +188,7 @@ export const useAuthStore = create<AuthState>()(
         })
       },
       clearSession: () => {
+        if (!get().logoutInProgress) captureFormDrafts(get().user)
         setSessionRecovering(false)
         stopSessionKeepAlive()
         set((state) => ({

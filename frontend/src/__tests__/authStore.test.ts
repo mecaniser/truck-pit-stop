@@ -9,6 +9,7 @@ vi.mock('../lib/api', () => ({
 
 import { useAuthStore } from '../stores/authStore'
 import api from '../lib/api'
+import { draftIdentity, readFormDraft, registerDraftWriter, saveFormDraft } from '../lib/formDrafts'
 
 const fakeUser = {
   id: 'u-1',
@@ -24,6 +25,7 @@ const fakeUser = {
 
 describe('authStore', () => {
   beforeEach(() => {
+    sessionStorage.clear()
     useAuthStore.setState({
       user: null,
       token: null,
@@ -122,4 +124,50 @@ describe('authStore', () => {
       user: replacementUser,
     })
   })
+
+  it('captures unsaved fields before session expiry clears the authenticated identity', () => {
+    useAuthStore.getState().establishCookieSession(fakeUser)
+    const write = vi.fn((identity: string) => {
+      expect(useAuthStore.getState().user).toEqual(fakeUser)
+      saveFormDraft('customer', identity, { note: 'unsaved' }, true)
+    })
+    const unregister = registerDraftWriter(write)
+    try {
+      useAuthStore.getState().clearSession()
+      expect(write).toHaveBeenCalledOnce()
+      expect(readFormDraft('customer', draftIdentity(fakeUser)!)).toMatchObject({ data: { note: 'unsaved' }, uncertain: true })
+      expect(useAuthStore.getState().user).toBeNull()
+    } finally { unregister() }
+  })
+
+  it('purges drafts on explicit logout without capturing the open form again', async () => {
+    useAuthStore.getState().establishCookieSession(fakeUser)
+    saveFormDraft('customer', draftIdentity(fakeUser)!, { note: 'old' }, false)
+    const write = vi.fn()
+    const unregister = registerDraftWriter(write)
+    try {
+      await useAuthStore.getState().logout()
+      expect(write).not.toHaveBeenCalled()
+      expect(readFormDraft('customer', draftIdentity(fakeUser)!)).toBeNull()
+    } finally { unregister() }
+  })
+
+  it('keeps drafts cleared when a concurrent session rejection arrives during explicit logout', async () => {
+    useAuthStore.getState().establishCookieSession(fakeUser)
+    saveFormDraft('customer', draftIdentity(fakeUser)!, { note: 'old' }, false)
+    let resolveLogout!: () => void
+    vi.mocked(api.post).mockImplementationOnce(() => new Promise(resolve => { resolveLogout = () => resolve({}) }))
+    const write = vi.fn()
+    const unregister = registerDraftWriter(write)
+    try {
+      const promise = useAuthStore.getState().logout()
+      expect(useAuthStore.getState().logoutInProgress).toBe(true)
+      useAuthStore.getState().clearSession()
+      resolveLogout()
+      await promise
+      expect(write).not.toHaveBeenCalled()
+      expect(readFormDraft('customer', draftIdentity(fakeUser)!)).toBeNull()
+    } finally { unregister() }
+  })
+
 })

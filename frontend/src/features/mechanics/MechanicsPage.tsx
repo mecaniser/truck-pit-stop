@@ -1,3 +1,4 @@
+import ReadFailure from '../../components/ReadFailure'
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import React, { useMemo, useState, useEffect } from 'react'
@@ -128,7 +129,7 @@ export default function MechanicsPage() {
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
 
-  const { data: mechanics, isLoading } = useQuery<MechanicWithCounts[]>({
+  const { data: mechanics, isPending: isLoading, isError: listError, isFetching: listFetching, refetch: retryList } = useQuery<MechanicWithCounts[]>({
     queryKey: ['mechanic-users'],
     queryFn: async () => {
       const response = await api.get('/mechanics')
@@ -310,7 +311,7 @@ export default function MechanicsPage() {
     })
   }, [mechanicRows, search])
 
-  const { data: workItems, isLoading: workLoading } = useQuery<MechanicWorkItem[]>({
+  const { data: workItems, isPending: workLoading, isError: workError, isFetching: workFetching, refetch: retryWork } = useQuery<MechanicWorkItem[]>({
     queryKey: ['mechanic-work', expandedMechanicId],
     queryFn: async () => {
       const response = await api.get(`/mechanics/${expandedMechanicId}/work`)
@@ -593,7 +594,9 @@ export default function MechanicsPage() {
       <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
         {isLoading ? (
           <div className="p-6"><LoadingLine className="text-gray-400">Loading technicians…</LoadingLine></div>
-        ) : mechanicRows.length === 0 ? (
+        ) : listError ? (
+              <ReadFailure subject="technicians" retrying={listFetching} onRetry={() => void retryList()} />
+            ) : mechanicRows.length === 0 ? (
           <div className="text-gray-400 text-sm p-6">No technicians yet. Use Add technician to get started.</div>
         ) : filteredMechanics.length === 0 ? (
           <div className="text-gray-400 text-sm p-6">No technicians match your search.</div>
@@ -659,6 +662,8 @@ export default function MechanicsPage() {
                             </h3>
                             {workLoading ? (
                               <LoadingLine className="text-gray-400">Loading work…</LoadingLine>
+                            ) : workError ? (
+                              <ReadFailure subject="technician work" retrying={workFetching} onRetry={() => void retryWork()} />
                             ) : !workItems || workItems.length === 0 ? (
                               <p className="text-gray-400 text-sm">No work found for this technician.</p>
                             ) : (
@@ -802,7 +807,9 @@ export default function MechanicsPage() {
                 </h3>
                 {workLoading ? (
                   <LoadingLine className="text-gray-400">Loading work…</LoadingLine>
-                ) : !workItems || workItems.length === 0 ? (
+                ) : workError ? (
+                              <ReadFailure subject="technician work" retrying={workFetching} onRetry={() => void retryWork()} />
+                            ) : !workItems || workItems.length === 0 ? (
                   <p className="text-gray-400 text-sm">No work found for this technician.</p>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">

@@ -1,3 +1,4 @@
+import { startRequest, finishRequest } from './requestActivity'
 import axios from 'axios'
 import { useAuthStore } from '../stores/authStore'
 import { requestTokenRefresh, requestWorkOSSessionRefresh } from './authRefresh'
@@ -30,6 +31,7 @@ api.interceptors.request.use(
     if (token && !hasAuthHeader) {
       config.headers.Authorization = `Bearer ${token}`
     }
+    startRequest(config)
     return config
   },
   (error) => {
@@ -95,8 +97,9 @@ async function runRefreshWithRetry(
 }
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => { finishRequest(response.config); return response },
   async (error) => {
+    finishRequest(error.config)
     // React Query uses AbortSignal to cancel stale navigation requests. An
     // aborted request must not enter the 401 refresh/logout flow: it is not an
     // authentication failure and retrying it would recreate the request we

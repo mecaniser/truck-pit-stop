@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -45,4 +45,20 @@ describe('legacy inventory search deep links', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('That inventory item is unavailable with your current access.')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
+})
+
+it('shows failed catalog reads as errors and allows a safe read retry', async () => {
+  let failed = true
+  apiMocks.get.mockImplementation((url: string) => {
+    if (url === '/inventory' && failed) return Promise.reject(new Error('offline'))
+    if (url === '/inventory/part-44') return Promise.reject({ response: { status: 404 } })
+    return Promise.resolve({ data: { items: [], has_more: false } })
+  })
+  renderPage()
+  const retry = await screen.findByRole('button', { name: 'Retry inventory' })
+  expect(screen.queryByText(/No inventory found/)).not.toBeInTheDocument()
+  failed = false
+  fireEvent.click(retry)
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry inventory' })).not.toBeInTheDocument())
+  expect(apiMocks.post).not.toHaveBeenCalled()
 })

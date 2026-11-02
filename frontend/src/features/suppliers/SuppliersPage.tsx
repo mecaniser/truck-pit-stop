@@ -1,3 +1,4 @@
+import ReadFailure from '../../components/ReadFailure'
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useEffect, useState, Fragment } from 'react'
 import { Spinner, LoadingLine } from '@/components/ui'
@@ -59,7 +60,7 @@ export default function SuppliersPage() {
     return () => clearTimeout(t)
   }, [search])
 
-  const { data: suppliers, isLoading } = useQuery<Supplier[]>({
+  const { data: suppliers, isPending: isLoading, isError: listError, isFetching: listFetching, refetch: retryList } = useQuery<Supplier[]>({
     queryKey: ['suppliers', debouncedSearch],
     queryFn: async () => {
       const pageSize = 100
@@ -241,6 +242,8 @@ export default function SuppliersPage() {
             </div>
             {isLoading ? (
               <div className="p-6"><LoadingLine className="text-gray-300">Loading suppliers…</LoadingLine></div>
+            ) : listError ? (
+              <ReadFailure subject="suppliers" retrying={listFetching} onRetry={() => void retryList()} />
             ) : filteredSuppliers.length === 0 ? (
               <div className="p-6 text-sm text-gray-300">
                 No suppliers match your search. {suppliers && suppliers.length === 0 ? 'Add your first supplier with the button above.' : 'Try a different filter.'}

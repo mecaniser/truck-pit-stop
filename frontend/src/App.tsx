@@ -1,3 +1,4 @@
+import ConnectionNotice from './components/ConnectionNotice'
 import { ControlButton } from '@/components/ui/Controls'
 import { useCookieSessionBootstrap } from './lib/useCookieSessionBootstrap'
 import SessionRecoveryNotice from './components/SessionRecoveryNotice'
@@ -388,6 +389,7 @@ function App() {
       <ToastLimiter />
       <AppToaster />
       <SessionRecoveryNotice />
+      <ConnectionNotice />
       <StaleDeployNotice />
       <RouteErrorBoundary>
       <Suspense fallback={<RouteLoading />}>
