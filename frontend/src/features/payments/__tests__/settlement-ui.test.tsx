@@ -82,6 +82,25 @@ describe('DB-048 compatibility fallback', () => {
 })
 
 describe('SettlementSummaryCard', () => {
+  it.each(['unpaid', 'paid'] as const)('describes manual ETS accounting without inventing a payment for %s collection', state => {
+    const base = DB048_SETTLEMENT_FIXTURES.unpaid.summary
+    const summary = { ...base, state, accounting_sync_status: 'external_reconciliation_pending' as const,
+      confirmed_principal: state === 'paid' ? base.principal_total : '0.00',
+      outstanding_balance: state === 'paid' ? '0.00' : base.principal_total,
+      allocatable_balance: state === 'paid' ? '0.00' : base.principal_total,
+    }
+    render(<SettlementSummaryCard summary={summary} />)
+    expect(screen.getByRole('status')).toHaveTextContent('Original invoice accounting is reconciled manually with ETS.')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText(/payment (recorded|remains recorded)/i)).not.toBeInTheDocument()
+    expect(screen.getByText(state === 'paid' ? 'Paid in full' : 'Unpaid')).toBeInTheDocument()
+  })
+
+  it('retains the alert for an actual QuickBooks accounting failure', () => {
+    render(<SettlementSummaryCard summary={{ ...DB048_SETTLEMENT_FIXTURES.unpaid.summary, accounting_sync_status: 'failed' }} />)
+    expect(screen.getByRole('alert')).toHaveTextContent('QuickBooks accounting sync needs staff attention.')
+  })
+
   it('separates confirmed, pending, and card-eligible remainder', () => {
     const fixture = DB048_SETTLEMENT_FIXTURES.pendingZelle500
     render(<SettlementSummaryCard summary={fixture.summary} allocations={fixture.allocations} tone="light" />)
