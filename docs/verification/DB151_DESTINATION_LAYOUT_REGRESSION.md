@@ -92,3 +92,13 @@ Screenshots:
 - [Repair, Day](assets/db151-destinations/repair-order-day-fixed.png)
 - [Repair, phone](assets/db151-destinations/repair-order-mobile-fixed.png)
 - [Populated repair, Night](assets/db151-destinations/repair-order-populated-night-fixed.png)
+
+## Repair workflow pipeline appearance, 2026-11-02
+
+The previous Night screenshot still showed four nearly white status chips. The stage component chose literal color utilities and a workspace override forced the completed color to pale mint; anchored information panels also had their own white surface. Stages now pass semantic status (positive, current, held or waiting) and mix its ink with the workspace surface. The popup carries the selected appearance across the portal boundary. The inset outline adds no width to the desktop row.
+
+Signed-in browser check, same completed repair 1049: all four Night triggers use a dark teal fill (approximately #1a3340), with mint text (#67e8b5). The four detail panels each opened on #111f33 and dismissed on Escape with focus returned. Day mode retained light fills and white panels for the same record. At 1280px all four triggers start on the same row; at 390px each remains 44px tall and the open review panel fits x54–374 without page overflow. Restored Night mode and the default viewport. No repair-state changes.
+
+Local runtime checked 2026-11-02: Vite PID27010 / port5215 serves the implementation worktree; proxied backend port8041 mounts its backend, isolated postgres/truckpitstop_db151 at migration197. DB and Redis ready. Changed styling verified in the browser, not inferred from the startup badge. The focused workflow and price-builder suites passed (86 tests), including portal appearance and Escape focus restoration. Frontend build and shared-control check passed.
+
+[Desktop Night](assets/db151-destinations/pipeline-night.png) · [Night detail](assets/db151-destinations/pipeline-night-detail.png) · [Desktop Day](assets/db151-destinations/pipeline-day.png) · [Phone, open Night panel](assets/db151-destinations/pipeline-phone-night.png)
