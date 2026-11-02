@@ -591,7 +591,7 @@ function InvoicePaymentPanel({
           {editingAmount ? 'Pay full balance' : 'Pay partial amount'}
         </ControlButton>}
       </div>}
-      {audience === 'customer' && !cashSelected && noncashAvailable && <div className="mt-4 grid grid-cols-2 gap-2" role="group" aria-label="Payment amount choice">
+      {audience !== 'staff' && !cashSelected && noncashAvailable && <div className="mt-4 grid grid-cols-2 gap-2" role="group" aria-label="Payment amount choice">
         <ControlButton type="button" aria-pressed={!editingAmount} onClick={() => { setAmount(null); setEditingAmount(false) }} className={`whitespace-nowrap rounded-xl border px-3 text-sm font-bold ${!editingAmount ? dark ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-emerald-700 bg-emerald-50' : input}`}>Pay in full</ControlButton>
         <ControlButton type="button" aria-pressed={editingAmount} onClick={() => { setEditingAmount(true); setAmount('') }} className={`whitespace-nowrap rounded-xl border px-3 text-sm font-bold ${editingAmount ? dark ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-emerald-700 bg-emerald-50' : input}`}>Pay part</ControlButton>
       </div>}
@@ -604,7 +604,7 @@ function InvoicePaymentPanel({
             inputMode="decimal"
             autoComplete="off"
             value={currentAmount}
-            onChange={event => { setAmount(event.target.value); if (audience === 'customer') setEditingAmount(true) }}
+            onChange={event => { setAmount(event.target.value); if (audience !== 'staff') setEditingAmount(true) }}
             onBlur={() => { const normalized = normalizeMoney(currentAmount); if (normalized) setAmount(normalized) }}
             aria-invalid={currentAmount.length > 0 && !amountValid}
             aria-label="Amount applied to invoice"
@@ -616,7 +616,7 @@ function InvoicePaymentPanel({
           {currentAmount.length > 0 && !amountValid ? `Enter at least $0.01 and no more than ${formatMoney(summary.allocatable_balance)}, the amount available to pay.` : 'Card fees are calculated only on the card-funded portion.'}
         </span>
       </label>}
-      {audience === 'customer' && amountValid && (moneyToCents(currentAmount) ?? 0n) < (moneyToCents(summary.allocatable_balance) ?? 0n) && <p className={`mt-2 text-sm ${quiet}`} role="status">
+      {audience !== 'staff' && amountValid && (moneyToCents(currentAmount) ?? 0n) < (moneyToCents(summary.allocatable_balance) ?? 0n) && <p className={`mt-2 text-sm ${quiet}`} role="status">
         Remaining after confirmation: <strong className="tabular-nums">{formatMoney(centsToMoney((moneyToCents(summary.outstanding_balance) ?? 0n) - (moneyToCents(currentAmount) ?? 0n)))}</strong>
       </p>}
 

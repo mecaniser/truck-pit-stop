@@ -96,7 +96,7 @@ export default function PortalDashboardPage() {
   )
   const unpaid = useMemo(
     () => invoices
-      .filter(invoice => !['paid', 'cancelled'].includes(invoice.status))
+      .filter(invoice => invoice.source !== 'easy_truck_shop_import' && !['paid', 'cancelled'].includes(invoice.status))
       .map(invoice => ({
         invoice,
         order: orderById.get(invoice.repair_order_id),
