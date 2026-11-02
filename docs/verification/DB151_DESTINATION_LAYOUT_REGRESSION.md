@@ -102,3 +102,11 @@ Signed-in browser check, same completed repair 1049: all four Night triggers use
 Local runtime checked 2026-11-02: Vite PID27010 / port5215 serves the implementation worktree; proxied backend port8041 mounts its backend, isolated postgres/truckpitstop_db151 at migration197. DB and Redis ready. Changed styling verified in the browser, not inferred from the startup badge. The focused workflow and price-builder suites passed (86 tests), including portal appearance and Escape focus restoration. Frontend build and shared-control check passed.
 
 [Desktop Night](assets/db151-destinations/pipeline-night.png) · [Night detail](assets/db151-destinations/pipeline-night-detail.png) · [Desktop Day](assets/db151-destinations/pipeline-day.png) · [Phone, open Night panel](assets/db151-destinations/pipeline-phone-night.png)
+
+## Repair order list selector, 2026-11-02
+
+One selector now owns the list view and optional order status. A work queue is a server projection; overdue is the deadline filter on the archive; status narrows the chosen view. Customer/vehicle-scoped links stay on endpoints that support their scope. Bounded queue counts say “shown” when the server has additional rows.
+
+Signed in to the local DB151 Quiet QA shop at the reported URL: Ready to Close contained completed 1049 and invoiced 1048. Selecting Completed showed 1049 alone with “1 order”; the unfiltered lane value disappeared. Overdue + Completed returned zero. Switching to All repair orders retained Completed and 1049; browser Back restored Overdue with the same selected ID. On a 390px phone the open menu occupied x23–378 with no horizontal overflow; choosing Invoiced showed 1048 only and tapping it opened that exact order. Escape returned focus to the selector. Restored the original desktop route; no order changes.
+
+75 tests passed across ledger, route/schedule, request cancellation, and deleted-order flows. [Desktop menu](assets/db151-destinations/ledger-filter-night.png) · [Phone menu](assets/db151-destinations/ledger-filter-phone.png)

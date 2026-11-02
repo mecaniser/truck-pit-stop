@@ -253,7 +253,7 @@ describe('RepairOrdersPage request cancellation', () => {
       '/dashboard/daily-workset/value-summary',
       expect.objectContaining({ params: expect.objectContaining({ lane: 'needs_action' }) }),
     )
-    expect(screen.getByRole('button', { name: 'Repair Orders scope: Needs Action, 2 orders' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Filter repair orders: Needs Action' })).toBeInTheDocument()
     expect(screen.queryByText('2 total')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Show details for RO-QUEUE-2' }))
     expect(screen.getByTestId('repair-orders-location')).toHaveTextContent('?selected=queue-order&queue=needs_action')
@@ -261,7 +261,7 @@ describe('RepairOrdersPage request cancellation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open repair order RO-QUEUE-2' }))
     await waitFor(() => expect(screen.getByTestId('repair-orders-location')).toHaveTextContent('?selected=sibling-order&queue=needs_action'))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Repair Orders scope: Needs Action, 2 orders' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Filter repair orders: Needs Action' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'All repair orders' }))
     await waitFor(() => expect(screen.getByTestId('repair-orders-location')).toHaveTextContent('?selected=sibling-order'))
   })
