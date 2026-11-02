@@ -133,6 +133,21 @@ describe('SettlementSummaryCard', () => {
 })
 
 describe('SettlementPaymentPanel', () => {
+  it('makes partial payment explicit and preserves the exact unpaid remainder without starting payment', async () => {
+    const user = userEvent.setup()
+    const summary = { ...DB048_SETTLEMENT_FIXTURES.unpaid.summary, principal_total: '268.44', outstanding_balance: '268.44', allocatable_balance: '268.44' }
+    renderWithQuery(<SettlementPaymentPanel access={{ kind: 'authenticated', invoiceId: summary.invoice_id }} summary={summary} audience="customer" tone="light" onUpdated={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Pay in full' })).toHaveAttribute('aria-pressed', 'true')
+    await user.click(screen.getByRole('button', { name: 'Pay part' }))
+    await user.type(screen.getByLabelText('Amount applied to invoice'), '100.00')
+    expect(screen.getByRole('status')).toHaveTextContent('Remaining after confirmation: $168.44')
+    expect(screen.getByRole('button', { name: 'Pay part' })).toHaveAttribute('aria-pressed', 'true')
+    expect(paymentApi.createPaymentAttempt).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Pay in full' }))
+    expect(screen.getByLabelText('Amount applied to invoice')).toHaveValue('268.44')
+    expect(screen.queryByText(/Remaining after confirmation/)).not.toBeInTheDocument()
+  })
+
   beforeEach(() => {
     paymentApi.createPaymentAttempt.mockReset()
     paymentApi.confirmPaymentAttempt.mockReset()
