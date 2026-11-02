@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -121,7 +121,11 @@ describe('PortalDashboardPage authorization actions', () => {
       { id: 'history-1182', invoice_number: 'ETSINV-1182', source: 'easy_truck_shop_import', status: 'sent', total_amount: '314.02' } as Invoice,
       { id: 'current-1687', invoice_number: 'Invoice 1687', source: 'ets_collection_handoff', status: 'sent', total_amount: '268.44' } as Invoice,
     ])
-    expect(await screen.findByRole('link', { name: 'Pay invoices — $268.44' })).toHaveAttribute('href', '/portal/invoices/current-1687')
+    expect(await screen.findByRole('link', { name: 'Pay', exact: true })).toHaveAttribute('href', '/portal/invoices/current-1687')
+    expect(screen.getAllByRole('link', { name: 'Pay', exact: true })).toHaveLength(1)
+    expect(screen.queryByText('Action required')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Select & pay' })).not.toBeInTheDocument()
+    expect(screen.queryByText('0 past due')).not.toBeInTheDocument()
     expect(screen.queryByText(/314.02|582.46|ETSINV-1182/)).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Pay oldest first' })).not.toBeInTheDocument()
     expect(screen.getAllByRole('link').some(link => link.getAttribute('href')?.includes('history-1182'))).toBe(false)
@@ -129,14 +133,26 @@ describe('PortalDashboardPage authorization actions', () => {
 
   it('retains an ordinary native unpaid invoice as payable', async () => {
     renderDashboard([], [], 200, [{ id: 'native-unpaid', source: 'native', status: 'sent', total_amount: '100.00' } as Invoice])
-    expect(await screen.findByRole('link', { name: 'Pay invoices — $100.00' })).toHaveAttribute('href', '/portal/invoices/native-unpaid')
+    expect(await screen.findByRole('link', { name: 'Pay', exact: true })).toHaveAttribute('href', '/portal/invoices/native-unpaid')
   })
 
   it('shows only the tenant reference for the collection invoice', async () => {
     renderDashboard([], [], 200, [{ id: 'current', invoice_number: 'DBN-COL-INTERNAL-ID', source: 'ets_collection_handoff', status: 'sent', total_amount: '268.44', source_collection: { display_invoice_number: 'TPS-1687' } } as Invoice])
-    await screen.findByRole('link', { name: 'Pay invoices — $268.44' })
+    await screen.findByRole('link', { name: 'Pay', exact: true })
     expect(screen.getAllByText('Invoice TPS-1687').length).toBeGreaterThan(0)
     expect(screen.queryByText(/DBN-COL|INTERNAL-ID/)).not.toBeInTheDocument()
+  })
+
+  it('offers selection only for multiple invoices and preserves the selected queue', async () => {
+    renderDashboard([], [], 200, [{id:'a',invoice_number:'TPS-1',status:'sent',total_amount:'100.00'}, {id:'b',invoice_number:'TPS-2',status:'sent',total_amount:'200.00'}] as Invoice[])
+    const choose = await screen.findByRole('button', {name:'Select & pay'})
+    expect(screen.getAllByRole('link', {name:'Pay',exact:true})).toHaveLength(2)
+    expect(screen.queryByText('Action required')).not.toBeInTheDocument()
+    fireEvent.click(choose)
+    fireEvent.click(screen.getByRole('button',{name:'Select Invoice TPS-1'}))
+    expect(screen.getByRole('link',{name:'Pay 1 · $100.00'})).toHaveAttribute('href','/portal/invoices/a')
+    fireEvent.click(screen.getByRole('button',{name:'Done'}))
+    expect(screen.getAllByRole('link',{name:'Pay',exact:true})).toHaveLength(2)
   })
 
   it('uses recorded cash amount in recently paid and paid YTD', async () => {
