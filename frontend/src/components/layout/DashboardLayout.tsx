@@ -1,3 +1,4 @@
+import { shopWorkReturnUrl } from '@/features/dashboard/shopWorkNavigation'
 import { ControlButton } from '@/components/ui/Controls'
 import InboxLoading from "@/features/communications/InboxLoading"
 import { useWorkspaceViewport } from '@/hooks/useWorkspaceViewport'
@@ -201,11 +202,12 @@ export default function DashboardLayout() {
   }
 
   const isOnSubPage = location.pathname !== '/dashboard'
+  const overviewReturn = shopWorkReturnUrl(new URLSearchParams(location.search))
   const repairOrdersQueue = new URLSearchParams(location.search).get('queue')
   const shopWorkQueue = repairOrdersQueue === 'needs_action' || repairOrdersQueue === 'on_floor' || repairOrdersQueue === 'ready_to_close'
     ? repairOrdersQueue
     : null
-  const shopWorkBreadcrumbState = presentationVariant === 'new' && location.pathname === '/dashboard/repair-orders' && shopWorkQueue
+  const shopWorkBreadcrumbState = !overviewReturn && presentationVariant === 'new' && location.pathname === '/dashboard/repair-orders' && shopWorkQueue
     ? { shopWorkQueue }
     : undefined
   
@@ -550,7 +552,7 @@ export default function DashboardLayout() {
         {isOnSubPage && (
           <div className="db-breadcrumb mb-4 flex-shrink-0 flex items-center gap-2 text-sm">
             <Link
-              to="/dashboard"
+              to={overviewReturn || "/dashboard"}
               state={shopWorkBreadcrumbState}
               className="transition-colors flex items-center gap-1 text-gray-400 hover:text-white"
             >

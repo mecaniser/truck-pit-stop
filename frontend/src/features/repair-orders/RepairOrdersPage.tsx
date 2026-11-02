@@ -3294,7 +3294,6 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
   const pricingNotice = <>{servicePricing.dialog}{legacyPartPricing.dialog}{serviceRecoveryNotice}</>
   return (
     <div className={`db-repair-orders-workspace flex flex-col h-full ${presentationVariant === 'new' ? 'db-repair-orders-workspace--new' : ''} ${presentationVariant === 'new' && isDetailOpen && selectedOrder ? 'db-repair-orders-workspace--detail-open' : ''}`}>
-      {shopWorkReturnUrl(searchParams) && <ControlButton type="button" className="min-h-11 shrink-0 self-start px-3 text-sm font-semibold underline" onClick={() => navigate(shopWorkReturnUrl(searchParams)!)}>Back to Shop Work</ControlButton>}
       {maintenanceFinalization.dialog}
       {maintenanceRemoval.dialog}
 

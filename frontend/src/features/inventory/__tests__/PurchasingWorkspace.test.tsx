@@ -194,7 +194,10 @@ describe('DB-151 Purchasing route context', () => {
     const props = JSON.parse((await screen.findByTestId('operation-props')).textContent!)
     expect(props[prop]).toBe(id)
     if (prop === 'initialCoreId') expect(props.initialCustodyView).toBe('cores')
-    expect(screen.getByRole('button', { name: 'Back to Shop Work' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Back to Shop Work' })).not.toBeInTheDocument()
+    const surface = screen.getByRole('region', { name: 'Purchasing', exact: true })
+    expect(surface.firstElementChild).toContainElement(screen.getByRole('heading', { name: 'Purchasing', exact: true }))
+    expect(surface.children).toHaveLength(3)
   })
   it('preserves exact PO and safe origin across area changes and browser back', async () => {
     apiMocks.get.mockResolvedValue({ data: { low_stock_count: 0, open_purchase_order_count: 0 } })
@@ -204,8 +207,7 @@ describe('DB-151 Purchasing route context', () => {
     expect(JSON.parse(screen.getByTestId('operation-props').textContent!).initialPurchaseOrderId).toBe('po-requested')
     await userEvent.click(screen.getByRole('button', { name: 'Browser back' }))
     expect(screen.getByTestId('route')).toHaveTextContent('view=orders&purchase_order=po-requested&shop_work=overview')
-    await userEvent.click(screen.getByRole('button', { name: 'Back to Shop Work' }))
-    expect(screen.getByTestId('route')).toHaveTextContent('/dashboard?work_view=overview')
+    expect(screen.queryByRole('button', { name: 'Back to Shop Work' })).not.toBeInTheDocument()
   })
   it('keeps a Shop Work exit available when the feature is unavailable', async () => {
     apiMocks.get.mockRejectedValue({ response: { status: 404 } })

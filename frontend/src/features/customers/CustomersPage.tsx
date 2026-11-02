@@ -116,7 +116,6 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
   const routeParams = new URLSearchParams(location.search)
   const shopWorkReturn = shopWorkReturnUrl(routeParams)
   const requestedCustomerView = routeParams.get('tab') === 'account' ? 'account' : routeParams.get('tab') === 'history' ? 'history' : 'overview'
-  const shopWorkBack = shopWorkReturn && <ControlButton type="button" className="min-h-11 shrink-0 self-start px-3 text-sm font-semibold underline" onClick={() => navigate(shopWorkReturn)}>Back to Shop Work</ControlButton>
   const changeCustomerView = (view: 'overview' | 'history' | 'account') => {
     const params = new URLSearchParams(location.search)
     params.set('tab', view)
@@ -534,7 +533,7 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
 
   if (isLoading) {
     return (
-      <div className="db-customers-workspace flex flex-col h-full min-h-0">{shopWorkBack}
+      <div className="db-customers-workspace flex flex-col h-full min-h-0">
         <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0${presentationVariant === 'new' ? ' db-operating-page-header' : ''}`}>
           <div>
             <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>
@@ -677,7 +676,7 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
   }
 
   return (
-    <div className={`db-customers-workspace flex flex-col h-full min-h-0${presentationVariant === 'new' && selectedCustomerId ? ' db-customers-workspace--detail-open' : ''}`}>{shopWorkBack}
+    <div className={`db-customers-workspace flex flex-col h-full min-h-0${presentationVariant === 'new' && selectedCustomerId ? ' db-customers-workspace--detail-open' : ''}`}>
       <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0${presentationVariant === 'new' ? ' db-operating-page-header' : ''}`}>
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>
