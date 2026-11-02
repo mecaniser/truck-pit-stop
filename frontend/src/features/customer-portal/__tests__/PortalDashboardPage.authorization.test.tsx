@@ -116,6 +116,22 @@ describe('PortalDashboardPage authorization actions', () => {
     })
   })
 
+  it('keeps historical ETS records out of current debt and payment queues', async () => {
+    renderDashboard([], [], 200, [
+      { id: 'history-1182', invoice_number: 'ETSINV-1182', source: 'easy_truck_shop_import', status: 'sent', total_amount: '314.02' } as Invoice,
+      { id: 'current-1687', invoice_number: 'Invoice 1687', source: 'ets_collection_handoff', status: 'sent', total_amount: '268.44' } as Invoice,
+    ])
+    expect(await screen.findByRole('link', { name: 'Pay invoices — $268.44' })).toHaveAttribute('href', '/portal/invoices/current-1687')
+    expect(screen.queryByText(/314.02|582.46|ETSINV-1182/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Pay oldest first' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('link').some(link => link.getAttribute('href')?.includes('history-1182'))).toBe(false)
+  })
+
+  it('retains an ordinary native unpaid invoice as payable', async () => {
+    renderDashboard([], [], 200, [{ id: 'native-unpaid', source: 'native', status: 'sent', total_amount: '100.00' } as Invoice])
+    expect(await screen.findByRole('link', { name: 'Pay invoices — $100.00' })).toHaveAttribute('href', '/portal/invoices/native-unpaid')
+  })
+
   it('uses recorded cash amount in recently paid and paid YTD', async () => {
     renderDashboard([], [], 200, [{ id: 'cash-invoice', status: 'paid', total_amount: '115.00', paid_at: new Date().toISOString(), cash_receipt: { method: 'cash', amount: '101.00' } } as Invoice])
     await screen.findByText('Recently paid')

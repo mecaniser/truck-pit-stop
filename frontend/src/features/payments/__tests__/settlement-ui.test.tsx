@@ -133,10 +133,10 @@ describe('SettlementSummaryCard', () => {
 })
 
 describe('SettlementPaymentPanel', () => {
-  it('makes partial payment explicit and preserves the exact unpaid remainder without starting payment', async () => {
+  it.each(['customer', 'guest'] as const)('makes partial payment explicit for %s without starting payment', async audience => {
     const user = userEvent.setup()
     const summary = { ...DB048_SETTLEMENT_FIXTURES.unpaid.summary, principal_total: '268.44', outstanding_balance: '268.44', allocatable_balance: '268.44' }
-    renderWithQuery(<SettlementPaymentPanel access={{ kind: 'authenticated', invoiceId: summary.invoice_id }} summary={summary} audience="customer" tone="light" onUpdated={vi.fn()} />)
+    renderWithQuery(<SettlementPaymentPanel access={audience === 'guest' ? { kind: 'guest', token: 'guest-preview-token' } : { kind: 'authenticated', invoiceId: summary.invoice_id }} summary={summary} audience={audience} tone="light" onUpdated={vi.fn()} />)
     expect(screen.getByRole('button', { name: 'Pay in full' })).toHaveAttribute('aria-pressed', 'true')
     await user.click(screen.getByRole('button', { name: 'Pay part' }))
     await user.type(screen.getByLabelText('Amount applied to invoice'), '100.00')

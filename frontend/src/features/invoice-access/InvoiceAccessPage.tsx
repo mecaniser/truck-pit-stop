@@ -650,7 +650,7 @@ export default function InvoiceAccessPage() {
             <p className="text-xs text-gray-500 mt-2">{invoice.source_collection?.is_source_history ? 'Original ETS record' : `Status: ${paymentSummary ? invoicePaymentLabels[paymentSummary.state] : invoice.status.replace('_', ' ')}`}</p>
           </div>
 
-          {!invoice.source_collection?.is_source_history && <InvoicePaymentSummary summary={paymentSummary} />}
+          {!invoice.source_collection?.is_source_history && !splitSettlement && <InvoicePaymentSummary summary={paymentSummary} />}
           {invoice.source_collection?.is_source_history && <SourceCollectionSummary summary={invoice.source_collection} originalInvoiceHref={invoice.source_collection.source_invoice_id ? `/portal/invoices/${invoice.source_collection.source_invoice_id}` : undefined} />}
 
           {(!invoice.source_collection || invoice.source_collection.is_source_history) && <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
