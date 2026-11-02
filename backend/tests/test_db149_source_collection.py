@@ -172,13 +172,12 @@ async def test_collection_provider_gate_and_accounting_exclusions(db_session,mon
     assert await enqueue_conversion_event(db_session,tenant=t,invoice=native,order=original.repair_order,customer=c,event_type='repair_order.paid',idempotency_key='test') is None
     from app.services.invoice_payment_presentation import InvoicePaymentSummary
     body=svc.collection_email_html(native,result,InvoicePaymentSummary(state='unpaid',applied_amount='0.00',balance_due='600.00',basis='settlement'),'https://example.test/invoice',t)
-    assert 'Invoice #' in body and '600.00' in body
+    assert 'Invoice' in body and '600.00' in body
     assert 'Transferred balance' not in body and 'ETS' not in body and 'Collection copy' not in body
     assert 'Qty/Hrs' not in body and '>Labor<' not in body
     history=svc.collection_email_html(original,{**result,'is_source_history':True,'balance_due':'0.00'},InvoicePaymentSummary(state='unpaid',balance_due='600.00'),'https://example.test/history',t)
-    assert 'Historical source invoice' in history
-    assert 'Current linked DBN balance: $0.00' in history
-    assert 'not a separate payment request' in history
+    assert 'This invoice is for your records.' in history
+    assert 'DBN' not in history and 'ETS' not in history
 
 @pytest.mark.asyncio
 async def test_dashboard_revenue_links_payment_invoice_and_tenant(db_session,monkeypatch):
@@ -290,8 +289,9 @@ async def test_reviewed_different_portal_billto_exact_membership_and_history(db_
     from app.api.v1.endpoints.invoice_access import _load_hardened_guest_invoice_context
     t,a,source,original,p,b=await context(db_session,monkeypatch)
     original.source='easy_truck_shop_import';source.ets_external_id='97052'
+    source.company_name='Reviewed Legal Business'
     original.due_date=datetime(2026,10,19,tzinfo=timezone.utc)
-    target=Customer(tenant_id=t.id,first_name='Reviewed',last_name='Portal',company_name='Same legal business',email='target@example.test')
+    target=Customer(tenant_id=t.id,first_name='Reviewed',last_name='Portal',company_name='Reviewed Legal Business (DBN)',email='target@example.test')
     db_session.add(target);await db_session.flush()
     p.update(source_customer=source,customer=target)
     p['latest'].update(source_customer_id='97052',source_customer_uuid=str(uuid4()),source_customer_deleted=False,source_customer_binding_kind='embedded_service_customer')
@@ -315,6 +315,10 @@ async def test_reviewed_different_portal_billto_exact_membership_and_history(db_
     p['summary'].observed_at=datetime.now(timezone.utc)+timedelta(seconds=1)
     row,_=await svc.activate(db_session,row,a,SourceVersionRequest(expected_version=1,expected_source_capture_sha256='a'*64,expected_source_revision='b'*64),'activate')
     native=await db_session.get(Invoice,row.native_invoice_id)
+    display = await svc.source_collection_for_invoice(db_session,native,viewer_customer_id=target.id)
+    assert display['customer_display_company']=='Reviewed Legal Business'
+    assert target.company_name=='Reviewed Legal Business (DBN)'
+
     b_user=NS(role=UserRole.CUSTOMER,customer_id=target.id,tenant_id=t.id)
     a_user=NS(role=UserRole.CUSTOMER,customer_id=source.id,tenant_id=t.id)
     detail=await get_invoice(native.id,db=db_session,current_user=b_user)

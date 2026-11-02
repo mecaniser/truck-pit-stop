@@ -229,10 +229,17 @@ def generate_invoice_pdf(
     zelle_phone: Optional[str] = None,
 ) -> bytes:
     collection_copy = bool(source_collection and not source_collection.get("is_source_history"))
+    if source_collection and source_collection.get("is_source_history"):
+        invoice_number = str(source_collection.get("display_invoice_number") or "")
+        notes = None
+        status = "unknown"
+        payment_summary = {"state": "unknown"}
+
     if collection_copy:
         # Display the customer's established invoice identity; retain lineage in stored records.
-        invoice_number = str(source_collection.get("source_invoice_number") or invoice_number)
+        invoice_number = str(source_collection.get("display_invoice_number") or "")
         notes = None
+        customer_company = source_collection.get("customer_display_company") or customer_company
         if source_collection.get("original_invoice_date"):
             invoice_date = str(source_collection["original_invoice_date"])[:10]
     labor_items = labor_items or []
@@ -278,36 +285,19 @@ def generate_invoice_pdf(
 
     story = []
     if source_collection and source_collection.get("is_source_history"):
-        if source_collection.get("is_source_history"):
-            payment_summary = {"state":"unknown", "note":"Historical source copy. Contact the shop for current billing information; do not pay this copy separately."}
-        label = "Source invoice history" if source_collection.get("is_source_history") else "Collection copy"
-        source_number = escape(str(source_collection.get("source_invoice_number", "")))
-        story.append(_p(f'<b>{label} of ETS invoice {source_number}</b>', S_BOLD))
-        if source_collection.get("original_invoice_date"):
-            story.append(_p("Original invoice date: " + escape(str(source_collection["original_invoice_date"])[:10]), S_SMALL))
-        original = Decimal(source_collection["original_issued_total"])
-        prior = Decimal(source_collection["source_prior_allocated"])
-        opening = Decimal(source_collection.get("opening_principal") or "0")
-        story.append(_p(f'Original issued total: {_fmt(original)}  |  Prior ETS payments / credits: {_fmt(prior)}', S_SMALL))
-        if source_collection.get("restricted_history"):
-            story.append(_p('Preserved source history. Contact the shop for current billing information; this is not a separate payment request.', S_SMALL))
-        else:
-            story.append(_p(f'Balance transferred to DBN: {_fmt(opening)}. Balance includes original charges. This copy is not a new sale or tax invoice.', S_SMALL))
-        if source_collection.get("is_source_history") and not source_collection.get("restricted_history"):
-            current_balance = source_collection.get("balance_due")
-            balance_label = _fmt(Decimal(current_balance)) if current_balance is not None else "Needs shop verification"
-            story.append(_p("Current linked DBN balance: <b>" + balance_label + "</b>. This historical copy is not a separate payment request.", S_SMALL))
+        invoice_access_url = None
+        story.append(_p('For your records. Contact the shop for current payment details.', S_SMALL))
         story.append(Spacer(1, 10))
 
     if payment_summary:
         status = payment_summary.get("state", "unknown")
     # ── Bill To / Invoice Info (2-column) ──────────────────────────────────────
     status_col = _status_color(status)
-    status_lbl = "SOURCE HISTORY" if source_collection and source_collection.get("is_source_history") else _status_label(status)
+    status_lbl = "FOR YOUR RECORDS" if source_collection and source_collection.get("is_source_history") else _status_label(status)
 
     bill_rows = []
     if customer_company:
-        bill_rows.append(_p(customer_company, S_BOLD))
+        bill_rows.append(_p(escape(customer_company), S_BOLD))
     bill_rows.append(_p(customer_name, S_BODY if customer_company else S_BOLD))
     if customer_email:
         bill_rows.append(_p(customer_email, S_SMALL))

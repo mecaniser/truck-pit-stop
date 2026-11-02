@@ -66,7 +66,7 @@ function StripeAttemptForm({
       return
     }
     if (result.paymentIntent?.id) {
-      toast.success('Card accepted. Settlement is being reconciled.')
+      toast.success('Your payment is being confirmed.')
       onProviderSubmitted()
     }
     setBusy(false)
@@ -271,13 +271,15 @@ function InvoicePaymentPanel({
         setAttempt(null)
         toast.success(`${RAIL_META[rail!].label} payment recorded.`)
       } else if (rail === 'zelle') {
-        toast.success('Zelle amount reserved for shop confirmation.')
+        toast.success('Follow the Zelle instructions below.')
       }
     },
     onError: error => {
       if (!mounted.current) return
       const parsed = paymentApiError(error)
-      toast.error(parsed.message)
+      const publicMessage = /source_|handoff_|bill_to_|configuration/.test(parsed.code) || /\b(DBN|ETS|idempotency|mapping|reconciling)\b/i.test(parsed.message)
+        ? 'Please refresh this invoice or contact the shop before paying.' : parsed.message
+      toast.error(audience === 'staff' ? parsed.message : publicMessage)
       if (typeof parsed.current_version === 'number') {
         queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
       }
@@ -362,8 +364,8 @@ function InvoicePaymentPanel({
   if (providerSubmitted) {
     return (
       <div className={`rounded-2xl border p-4 text-sm ${panel}`} role="status">
-        <p className="font-bold">Card submitted to Stripe Connect</p>
-        <p className={`mt-1 ${quiet}`}>We are waiting for signed provider confirmation. Do not submit another payment while this attempt is reconciling.</p>
+        <p className="font-bold">{audience === 'staff' ? 'Card submitted to Stripe Connect' : 'Payment being confirmed'}</p>
+        <p className={`mt-1 ${quiet}`}>{audience === 'staff' ? 'We are waiting for signed provider confirmation. Do not submit another payment while this attempt is reconciling.' : "Your payment is being confirmed. Please don't pay again yet."}</p>
         <ControlButton
           type="button"
           onClick={() => {
@@ -476,7 +478,7 @@ function InvoicePaymentPanel({
         <div className="flex items-start gap-3">
           <Clock3 className="mt-0.5 h-5 w-5 text-amber-500" />
           <div>
-            <h2 id="zelle-reservation-heading" className="font-extrabold">Zelle amount reserved</h2>
+            <h2 id="zelle-reservation-heading" className="font-extrabold">Pay with Zelle</h2>
             <p className={`mt-1 text-sm ${quiet}`}>
               Send the exact amount. The remaining invoice balance stays available for another payment.
             </p>
@@ -497,8 +499,8 @@ function InvoicePaymentPanel({
           ))}
         </div>
         <p className={`mt-3 text-xs ${quiet}`}>
-          {attempt.expires_at ? `Reservation expires ${new Date(attempt.expires_at).toLocaleString()}. ` : ''}
-          The invoice changes only after the shop confirms receipt.
+          {attempt.expires_at ? `Please send by ${new Date(attempt.expires_at).toLocaleString()}. ` : ''}
+          The shop will confirm your payment after receiving it.
         </p>
         {isPositiveMoney(summary.allocatable_balance) && (
           <ControlButton
@@ -519,10 +521,10 @@ function InvoicePaymentPanel({
     const settled = !isPositiveMoney(summary.outstanding_balance)
     const title = resolving ? 'Payment review needed' : pending ? 'Payment awaiting confirmation' : settled ? 'Invoice paid in full' : !cash && summary.allowed_actions?.confirm_cash ? 'Other payment methods are unavailable.' : 'Payment unavailable'
     const explanation = resolving
-      ? 'Review the excess payment shown above before collecting any additional money.'
-      : pending ? `${formatMoney(summary.active_pending_principal)} is awaiting confirmation. It is reserved against this invoice to prevent a duplicate payment.`
+      ? audience === 'staff' ? 'Review the excess payment shown above before collecting any additional money.' : 'Contact the shop for help with this payment.'
+      : pending ? audience === 'staff' ? `${formatMoney(summary.active_pending_principal)} is awaiting confirmation. It is reserved against this invoice to prevent a duplicate payment.` : `${formatMoney(summary.active_pending_principal)} is awaiting confirmation. Please don’t send this amount again.`
       : settled ? 'There is no remaining balance to collect.'
-      : summary.allowed_actions?.payment_unavailable_reason ?? cash?.reason ?? 'Payment collection is unavailable. Review the invoice’s accounting status.'
+      : audience === 'staff' ? summary.allowed_actions?.payment_unavailable_reason ?? cash?.reason ?? 'Payment collection is unavailable. Review the invoice’s accounting status.' : 'Online payment is currently unavailable. Contact the shop for help.'
     return (
       <div className={`rounded-2xl border p-4 text-sm ${panel}`} role="status">
         <p className="font-bold">{title}</p>
@@ -596,7 +598,7 @@ function InvoicePaymentPanel({
         <ControlButton type="button" aria-pressed={editingAmount} onClick={() => { setEditingAmount(true); setAmount('') }} className={`whitespace-nowrap rounded-xl border px-3 text-sm font-bold ${editingAmount ? dark ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-emerald-700 bg-emerald-50' : input}`}>Pay part</ControlButton>
       </div>}
       {!cashSelected && noncashAvailable && (audience !== 'staff' || editingAmount) && <label className="mt-3 block">
-        <span className={`mb-1.5 block text-xs font-bold ${quiet}`}>Amount applied to invoice</span>
+        <span className={`mb-1.5 block text-xs font-bold ${quiet}`}>{audience === 'staff' ? 'Amount applied to invoice' : 'Payment amount'}</span>
         <div className="relative">
           <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-bold ${quiet}`}>$</span>
           <ControlInput
@@ -607,13 +609,13 @@ function InvoicePaymentPanel({
             onChange={event => { setAmount(event.target.value); if (audience !== 'staff') setEditingAmount(true) }}
             onBlur={() => { const normalized = normalizeMoney(currentAmount); if (normalized) setAmount(normalized) }}
             aria-invalid={currentAmount.length > 0 && !amountValid}
-            aria-label="Amount applied to invoice"
+            aria-label={audience === 'staff' ? 'Amount applied to invoice' : 'Payment amount'}
             aria-describedby={`settlement-amount-help-${summary.invoice_id}`}
             className={` w-full rounded-xl border pl-8 pr-3 text-lg font-extrabold tabular-nums outline-none focus:ring-2 focus:ring-[var(--accent-500,#d25d43)] ${input}`}
           />
         </div>
         <span id={`settlement-amount-help-${summary.invoice_id}`} className={`mt-1 block min-h-4 text-xs ${currentAmount.length > 0 && !amountValid ? 'text-red-500' : quiet}`}>
-          {currentAmount.length > 0 && !amountValid ? `Enter at least $0.01 and no more than ${formatMoney(summary.allocatable_balance)}, the amount available to pay.` : 'Card fees are calculated only on the card-funded portion.'}
+          {currentAmount.length > 0 && !amountValid ? `Enter at least $0.01 and no more than ${formatMoney(summary.allocatable_balance)}, the amount available to pay.` : audience === 'staff' ? 'Card fees are calculated only on the card-funded portion.' : 'Card fees apply to card payments.'}
         </span>
       </label>}
       {audience !== 'staff' && amountValid && (moneyToCents(currentAmount) ?? 0n) < (moneyToCents(summary.allocatable_balance) ?? 0n) && <p className={`mt-2 text-sm ${quiet}`} role="status">
@@ -699,9 +701,9 @@ function InvoicePaymentPanel({
 
       {!cashSelected && noncashAvailable && <><ControlButton type="button" onClick={() => createMutation.mutate()} disabled={!canSubmit || createMutation.isPending} className="mt-4 flex  w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent-600,#b9472f)] px-4 text-sm font-extrabold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
         {createMutation.isPending && <Spinner size="sm" />}
-        {createMutation.isPending ? 'Preparing…' : rail === 'card' ? `Continue to ${providerLabel}` : audience === 'staff' ? `Record ${rail ? RAIL_META[rail].label : 'payment'}` : 'Reserve Zelle amount'}
+        {createMutation.isPending ? 'Preparing…' : rail === 'card' ? `Continue to ${providerLabel}` : audience === 'staff' ? `Record ${rail ? RAIL_META[rail].label : 'payment'}` : 'Continue with Zelle'}
       </ControlButton>
-      <p className={`mt-2 text-center text-[11px] ${quiet}`}>Applied after {rail === 'card' ? 'provider' : 'shop'} confirmation.</p>
+      {audience === 'staff' && <p className={`mt-2 text-center text-[11px] ${quiet}`}>Applied after {rail === 'card' ? 'provider' : 'shop'} confirmation.</p>}
       </>}
       </fieldset>
     </section>

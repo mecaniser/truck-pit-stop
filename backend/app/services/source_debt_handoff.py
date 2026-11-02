@@ -306,21 +306,35 @@ async def invoice_handoff(db,invoice,*,require_active=False,check_source=True):
         if known!=current:fail('source_reconciliation_required','Source payments changed. Reconcile before collecting another payment.')
     return row
 
+def reviewed_customer_company(row):
+    validate_bill_to_authorization(row)
+    auth = row.bill_to_authorization
+    if auth.get('mode') != 'owner_same_legal_entity' or auth.get('attested_same_legal_entity') is not True:
+        return None
+    name = auth.get('original_bill_to_name')
+    return name.strip() if isinstance(name, str) and name.strip() else None
+
+async def _customer_display_summary(db, invoice, collection):
+    from app.db.models.tenant import Tenant
+    from app.services.invoice_identity import collection_display_number
+    tenant = await db.scalar(select(Tenant).where(Tenant.id == invoice.tenant_id))
+    return {**collection, 'display_invoice_number': collection_display_number(tenant, collection.get('source_invoice_number'))}
+
 async def source_collection_for_invoice(db,invoice,*,viewer_customer_id=None):
     if not is_collection(invoice):
         if getattr(invoice,'source',None)!=SOURCE:return None
         row=await db.scalar(select(SourceDebtHandoff).where(SourceDebtHandoff.tenant_id==invoice.tenant_id,SourceDebtHandoff.source_dbn_invoice_id==invoice.id,SourceDebtHandoff.native_invoice_id.is_not(None)))
         if row:
             if row.source_customer_id!=row.customer_id and viewer_customer_id==row.source_customer_id:
-                return dict(is_source_history=True,restricted_history=True,source_invoice_id=str(invoice.id),
+                return await _customer_display_summary(db, invoice, dict(is_source_history=True,restricted_history=True,source_invoice_id=str(invoice.id),
                     source_invoice_number=row.source_invoice_number,source_service_number=row.source_service_number,
                     original_invoice_date=invoice.ets_invoiced_at.isoformat() if invoice.ets_invoiced_at else None,
                     original_issued_total=str(money(row.original_issued_total)),source_prior_allocated=str(money(row.source_prior_allocated)),
-                    native_invoice_id=None,target_customer_id=None,balance_due=None,native_confirmed_principal=None,native_pending_principal=None)
-            return {**await summary(db,row),'is_source_history':True}
+                    native_invoice_id=None,target_customer_id=None,balance_due=None,native_confirmed_principal=None,native_pending_principal=None))
+            return await _customer_display_summary(db, invoice, {**await summary(db,row),'is_source_history':True})
         return None
     row=await invoice_handoff(db,invoice,check_source=False)
-    return {**await summary(db,row),'is_source_history':False}
+    return await _customer_display_summary(db, invoice, {**await summary(db,row),'is_source_history':False, 'customer_display_company': reviewed_customer_company(row)})
 
 def task_dto(task):
     return {**{k:str(getattr(task,k)) if getattr(task,k) is not None else None for k in ('id','handoff_id','invoice_id','payment_id','attempt_id')},
@@ -487,31 +501,13 @@ def collection_email_html(invoice,collection,payment_summary,invoice_access_url,
     from html import escape
     from app.services.invoice_payment_presentation import payment_summary_html
     from app.services.invoice_review_service import invoice_review_html
-    if collection.get('restricted_history'):
-        return (f'<h2>Historical source invoice {escape(invoice.invoice_number)}</h2>'
-            f'<p>Original issued total: ${Decimal(collection["original_issued_total"]):,.2f}. Prior source payments / credits: ${Decimal(collection["source_prior_allocated"]):,.2f}.</p>'
-            '<p>This invoice is preserved as source history. Contact the shop for current billing information; this copy is not a separate payment request.</p>'
+    number=escape(str(collection.get('display_invoice_number') or ''))
+    heading='Invoice' + (' '+number if number else '')
+    if collection.get('is_source_history'):
+        return (f'<h2>{heading}</h2><p>This invoice is for your records. Contact the shop for current payment details.</p>'
             +invoice_review_html(tenant,invoice))
-    history=bool(collection.get('is_source_history'))
-    if not history:
-        number=escape(str(collection.get('source_invoice_number') or invoice.invoice_number))
-        return (f'<h2>Invoice #{number}</h2>'
-            +payment_summary_html(payment_summary)
-            +f'<p><a href="{escape(invoice_access_url,quote=True)}">View invoice</a></p>'
-            +invoice_review_html(tenant,invoice))
-    if history:
-        from app.services.invoice_payment_presentation import InvoicePaymentSummary
-        balance=collection.get('balance_due')
-        payment_summary=InvoicePaymentSummary(state='unknown',note='Historical source copy; not a separate payment request. Current linked DBN balance: '+('$'+balance if balance is not None else 'needs shop verification'))
-    title='Historical source invoice' if history else 'Collection copy'
-    number=escape(str(collection.get('source_invoice_number','')))
-    date=escape(str(collection.get('original_invoice_date') or '')[:10])
-    return (f'<h2>{title} — {escape(invoice.invoice_number)}</h2>'
-        f'<p>Original ETS invoice {number} · Original date: {date}</p>'
-        f'<p>Original issued total: ${Decimal(collection["original_issued_total"]):,.2f} · Prior ETS payments / credits: ${Decimal(collection["source_prior_allocated"]):,.2f}</p>'
-        f'<p>Transferred balance: <b>${Decimal(collection["opening_principal"]):,.2f}</b>. Balance includes original charges. This copy is not a new sale or tax invoice.</p>'
-        +payment_summary_html(payment_summary)
-        +f'<p><a href="{escape(invoice_access_url,quote=True)}">View current invoice and receipt</a></p>'
+    return (f'<h2>{heading}</h2>' +payment_summary_html(payment_summary)
+        +f'<p><a href="{escape(invoice_access_url,quote=True)}">View invoice</a></p>'
         +invoice_review_html(tenant,invoice))
 
 def accounting_export_allowed_clause():

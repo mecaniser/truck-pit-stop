@@ -669,6 +669,7 @@ export interface CashReceiptSummary {
 }
 
 export interface Invoice {
+  source_collection?: import('@/features/source-collection/types').SourceCollectionSummary | null
   id: string
   tenant_id: string
   repair_order_id: string

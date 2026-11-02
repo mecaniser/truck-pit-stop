@@ -49,7 +49,7 @@ function show(audience: 'staff' | 'customer' | 'guest' = 'staff') {
   }
   return render(<QueryClientProvider client={client}><Harness /></QueryClientProvider>)
 }
-const amountInput = () => screen.getByRole('textbox', { name: 'Amount applied to invoice' })
+const amountInput = () => screen.getByRole('textbox', { name: /^(Amount applied to invoice|Payment amount)$/ })
 const collect = () => within(screen.getByRole('region', { name: 'Payment breakdown' })).getByText('Amount to collect').nextElementSibling!
 const proceed = () => screen.getByRole('button', { name: 'Continue to QBO Payments' })
 async function enterPartial(value: string) {
