@@ -31,3 +31,42 @@ Startup skill preflight: new worktree lacks approved backend/.env. Default5173 b
 Final local receipt: baseline-aware lint passes21 changed TypeScript files with no new violations. Actual customer portal restore also passes390x844: notice x32/y646/bottom812, viewport844, scrollWidth390. First name restored exactly; desktop first-name and notes restored exactly. A repeat expiry after restoration offers recovery again. Screenshots retained locally in `.playwright-cli/page-2026-11-01T21-22-21-278Z.png` (desktop) and `.playwright-cli/page-2026-11-01T21-23-59-272Z.png` (mobile). No customer writes were issued. Customer fixture had zero browser console errors and two existing router warnings. Final source committed asd9719e43; this note only adds verification evidence.
 
 Independent QA subsequently reviewed actual desktop/mobile customer screenshots and restored-field snapshot: GO for source, automated and synthetic component runtime. PR748 remains draft. Current main d28882de integrated without conflicts; frontend source identity against reviewed dd09bc00 passes. Temporary fixture source/cache and its own5197 server were removed after verification. Existing shared services remain running. Full authenticated backend acceptance and release are still open.
+
+## Conflict integration — 2026-11-02
+
+Release & Reliability resumes conflict resolution only. Original owner task
+**Audit UI state coverage** is not loaded, and its original worktree is clean at
+48d63201. All edits use a separate clone/branch codex/pr748-conflict-integration;
+no other agent worktree, service, database or credential-bearing configuration is
+read or changed for runtime setup.
+
+Current main1c9c5cb9 is integrated at ca573238b305183d13b7638a48ac1352b34bc616.
+Three conflicted files preserve both sides: ReadFailure and Shop Work imports in
+InventoryPage; draft-recovery and Shop Work imports/JSX in RepairOrdersPage; all
+PROJECT_BOARD histories. Current canonical Activity/query/navigation source is
+unchanged from main. Original recovery semantics and existing main caches remain.
+
+Local tests:155 recovery/auth/customer/intake/inventory/navigation tests in14files
+pass;8 API cancellation/refresh tests in2files pass. Production build/control
+guard/TypeScript/Vite pass. Baseline-aware changed-source lint passes21files;
+diff check passes. These are isolated mock/component tests, not authenticated
+backend acceptance.
+
+Fresh independent source/integration GO at exact ca573238:66 focused repository
+tests and13 temporary tests pass (7 duplicates plus6 additional race/cancellation
+probes). Delayed tenant-switch validation, unmount/newer storage, revoked role,
+replaced draft envelope, real slow Axios cancellation and pre-aborted requests
+were checked. Tenant/user/role/customer binding, TTL/schema/current-envelope,
+newer-editor and uncertain-submission checks, explicit logout purge/no recapture,
+canonical session/cache/navigation and no automatic write/replay are preserved.
+Gatekeeper made no source edits or browser/backend/service/production actions.
+
+Release remains BLOCKED: this integration has no approved, aligned isolated
+backend plus genuine test-account session for the required authenticated
+expiry/reauthentication/restore and failed/offline-read journey. Prior denied
+credential-bearing environment contents were not inspected; no unknown/shared
+database or another agent's service was reused. Synthetic tests and green CI do
+not clear this gate. Frontend & UX owns the remaining real desktop/mobile
+acceptance once that runtime is available through supported approvals. PR748
+must remain draft and unmerged; no deployment or production changes authorized
+by this conflict-resolution handoff. Held619/622/623/638 remain untouched.
