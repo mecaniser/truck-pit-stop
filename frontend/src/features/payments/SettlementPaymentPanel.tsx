@@ -66,7 +66,7 @@ function StripeAttemptForm({
       return
     }
     if (result.paymentIntent?.id) {
-      toast.success('Card accepted. Settlement is being reconciled.')
+      toast.success('Your payment is being confirmed.')
       onProviderSubmitted()
     }
     setBusy(false)
@@ -271,7 +271,7 @@ function InvoicePaymentPanel({
         setAttempt(null)
         toast.success(`${RAIL_META[rail!].label} payment recorded.`)
       } else if (rail === 'zelle') {
-        toast.success('Zelle amount reserved for shop confirmation.')
+        toast.success('Follow the Zelle instructions below.')
       }
     },
     onError: error => {
@@ -478,7 +478,7 @@ function InvoicePaymentPanel({
         <div className="flex items-start gap-3">
           <Clock3 className="mt-0.5 h-5 w-5 text-amber-500" />
           <div>
-            <h2 id="zelle-reservation-heading" className="font-extrabold">Zelle amount reserved</h2>
+            <h2 id="zelle-reservation-heading" className="font-extrabold">Pay with Zelle</h2>
             <p className={`mt-1 text-sm ${quiet}`}>
               Send the exact amount. The remaining invoice balance stays available for another payment.
             </p>
@@ -499,8 +499,8 @@ function InvoicePaymentPanel({
           ))}
         </div>
         <p className={`mt-3 text-xs ${quiet}`}>
-          {attempt.expires_at ? `Reservation expires ${new Date(attempt.expires_at).toLocaleString()}. ` : ''}
-          The invoice changes only after the shop confirms receipt.
+          {attempt.expires_at ? `Please send by ${new Date(attempt.expires_at).toLocaleString()}. ` : ''}
+          The shop will confirm your payment after receiving it.
         </p>
         {isPositiveMoney(summary.allocatable_balance) && (
           <ControlButton
@@ -521,8 +521,8 @@ function InvoicePaymentPanel({
     const settled = !isPositiveMoney(summary.outstanding_balance)
     const title = resolving ? 'Payment review needed' : pending ? 'Payment awaiting confirmation' : settled ? 'Invoice paid in full' : !cash && summary.allowed_actions?.confirm_cash ? 'Other payment methods are unavailable.' : 'Payment unavailable'
     const explanation = resolving
-      ? 'Review the excess payment shown above before collecting any additional money.'
-      : pending ? `${formatMoney(summary.active_pending_principal)} is awaiting confirmation. It is reserved against this invoice to prevent a duplicate payment.`
+      ? audience === 'staff' ? 'Review the excess payment shown above before collecting any additional money.' : 'Contact the shop for help with this payment.'
+      : pending ? audience === 'staff' ? `${formatMoney(summary.active_pending_principal)} is awaiting confirmation. It is reserved against this invoice to prevent a duplicate payment.` : `${formatMoney(summary.active_pending_principal)} is awaiting confirmation. Please don’t send this amount again.`
       : settled ? 'There is no remaining balance to collect.'
       : audience === 'staff' ? summary.allowed_actions?.payment_unavailable_reason ?? cash?.reason ?? 'Payment collection is unavailable. Review the invoice’s accounting status.' : 'Online payment is currently unavailable. Contact the shop for help.'
     return (
@@ -701,7 +701,7 @@ function InvoicePaymentPanel({
 
       {!cashSelected && noncashAvailable && <><ControlButton type="button" onClick={() => createMutation.mutate()} disabled={!canSubmit || createMutation.isPending} className="mt-4 flex  w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent-600,#b9472f)] px-4 text-sm font-extrabold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
         {createMutation.isPending && <Spinner size="sm" />}
-        {createMutation.isPending ? 'Preparing…' : rail === 'card' ? `Continue to ${providerLabel}` : audience === 'staff' ? `Record ${rail ? RAIL_META[rail].label : 'payment'}` : 'Reserve Zelle amount'}
+        {createMutation.isPending ? 'Preparing…' : rail === 'card' ? `Continue to ${providerLabel}` : audience === 'staff' ? `Record ${rail ? RAIL_META[rail].label : 'payment'}` : 'Continue with Zelle'}
       </ControlButton>
       {audience === 'staff' && <p className={`mt-2 text-center text-[11px] ${quiet}`}>Applied after {rail === 'card' ? 'provider' : 'shop'} confirmation.</p>}
       </>}
