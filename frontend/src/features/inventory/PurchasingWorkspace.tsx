@@ -150,7 +150,6 @@ function PurchasingWorkspaceContent({ queryScope }: { queryScope: string }) {
   const summary = summaryQuery.data
 
   return <section className="db-purchasing" aria-labelledby="purchasing-title">
-    {returnAction}
     <header className="db-purchasing__header">
       <div>
         <h1 id="purchasing-title">Purchasing</h1>

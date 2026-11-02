@@ -558,9 +558,11 @@ describe('DB-151 customer account route and return', () => {
     renderPage('/dashboard/customers?selected=customer-2&tab=account&shop_work=overview')
     expect(await screen.findByTestId('linked-account')).toHaveTextContent('Account for customer-2')
     expect(apiMocks.get).toHaveBeenCalledWith('/customers/customer-2')
+    const surface = document.querySelector('.db-customers-workspace')!
+    expect(surface.firstElementChild).toContainElement(screen.getByRole('heading', { name: 'Customers', exact: true }))
     await userEvent.click(screen.getByRole('button', { name: 'Overview', exact: true }))
     expect(screen.getByTestId('customers-location')).toHaveTextContent('selected=customer-2&tab=overview&shop_work=overview')
-    await userEvent.click(screen.getAllByRole('button', { name: 'Back to Shop Work' })[0])
+    await userEvent.click(await screen.findByRole('button', { name: 'Back to Shop Work' }))
     expect(screen.getByTestId('customers-location')).toHaveTextContent('?work_view=overview')
   })
   it('retains a safe return when the exact customer is unavailable', async () => {
@@ -570,7 +572,7 @@ describe('DB-151 customer account route and return', () => {
     renderPage('/dashboard/customers?selected=missing-customer&tab=account&shop_work=overview')
     await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/customers/missing-customer'))
     expect(screen.queryByTestId('linked-account')).not.toBeInTheDocument()
-    await userEvent.click(screen.getAllByRole('button', { name: 'Back to Shop Work' })[0])
+    await userEvent.click(await screen.findByRole('button', { name: 'Back to Shop Work' }))
     expect(screen.getByTestId('customers-location')).toHaveTextContent('?work_view=overview')
   })
 })

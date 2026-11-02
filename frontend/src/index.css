@@ -1298,6 +1298,7 @@ html::-webkit-scrollbar-thumb:hover {
 
   .db-presentation-new .db-customers-workspace--detail-open > .db-operating-page-header {
     grid-column: 1 / -1;
+    grid-row: 1;
     margin-bottom: 0;
   }
 

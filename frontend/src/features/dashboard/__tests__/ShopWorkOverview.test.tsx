@@ -27,15 +27,21 @@ describe('Shop Work overview', () => {
  })
  it('does not claim all clear for unavailable or partially verified sources', () => {
   setup(data({ actions: [], actions_total: null, sources: [source({ id: 'receivables', state: 'partial', reason: 'account_review_only', total: null, shown: 0 }), source({ state: 'unavailable', total: null, shown: 0 })] }))
-  fireEvent.click(screen.getByRole('button', { name: '2 areas need review' }))
-  expect(screen.getByText('No confirmed actions in the checked work')).toBeInTheDocument(); expect(screen.getByText(/Collectible balances require verification/)).toBeInTheDocument(); expect(screen.queryByText(/caught up/)).not.toBeInTheDocument(); expect(screen.getByText('0 shown')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Inventory unavailable' }))
+  expect(screen.getByText('No confirmed actions in the checked work')).toBeInTheDocument(); expect(screen.getByText(/Invoice balances are reviewed in each customer/)).toBeInTheDocument(); expect(screen.queryByText(/caught up/)).not.toBeInTheDocument(); expect(screen.getByText('0 shown')).toBeInTheDocument()
  })
  it('does not turn an unknown account source into a claim that more records exist', () => {
   const { props } = setup(data({ actions: [], actions_total: null, has_more_actions: true, sources: [source({ id: 'receivables', state: 'partial', reason: 'classification_unavailable', total: null, shown: 0, has_more: true })] }))
   expect(screen.queryByRole('button', { name: 'Customer accounts', exact: true })).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: 'Accounts unverified' }))
-  expect(screen.getByText('Invoice balances could not be verified. Check customer accounts before following up on payment.')).toBeInTheDocument(); expect(screen.queryByText('More records are available in this workspace.')).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: 'Open Customer accounts' })); expect(props.onWorkspace).toHaveBeenCalledExactlyOnceWith('/dashboard/customers'); expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Billing data incomplete' }))
+  expect(screen.getByText('Invoice balances could not be checked. This board cannot confirm which payments are due.')).toBeInTheDocument(); expect(screen.queryByText('More records are available in this workspace.')).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Open Customer accounts' })).not.toBeInTheDocument(); expect(props.onWorkspace).not.toHaveBeenCalled()
+ })
+ it('keeps routine billing coverage out of attention controls and avoids an all-clear claim', () => {
+  setup(data({ actions: [], sources: [source({ total: 0 }), source({ id: 'receivables', state: 'partial', reason: 'account_review_only', total: null })] }))
+  expect(screen.queryByRole('button', { name: /Accounts|Billing data|Customer accounts/ })).not.toBeInTheDocument()
+  expect(screen.getByText(/Invoice balances are reviewed in each customer/)).toBeInTheDocument()
+  expect(screen.queryByText(/caught up|flagged areas/)).not.toBeInTheDocument()
  })
  it('scopes an empty-state claim to accessible checked workspaces', () => {
   setup(data({ actions: [], actions_total: 0, sources: [source({ total: 0, shown: 0 }), source({ id: 'receivables', state: 'restricted', total: null, shown: 0 })] }))
@@ -53,7 +59,7 @@ describe('Shop Work overview', () => {
  })
  it('routes incomplete upcoming coverage without asserting more dated work exists', () => {
   const { props } = setup(data({ upcoming_total: null, has_more_upcoming: true, sources: [source({ id: 'purchasing', state: 'partial', reason: 'source_limit', total: null, has_more: true })] }))
-  expect(screen.getByText('Upcoming commitments could not be fully checked.')).toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Purchasing unverified' })); expect(screen.queryByText('More dated work is available in its workspace.')).not.toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Open Purchasing', exact: true })); expect(props.onWorkspace).toHaveBeenCalledWith('/dashboard/garage/purchasing?view=orders')
+  expect(screen.getByText('Upcoming commitments could not be fully checked.')).toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Purchasing incomplete' })); expect(screen.queryByText('More dated work is available in its workspace.')).not.toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Open Purchasing', exact: true })); expect(props.onWorkspace).toHaveBeenCalledWith('/dashboard/garage/purchasing?view=orders')
  })
  it('keeps unavailable status visible and supports keyboard dismissal with focus restored', async () => {
   const user = userEvent.setup()

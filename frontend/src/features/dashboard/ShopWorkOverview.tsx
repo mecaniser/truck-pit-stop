@@ -97,8 +97,8 @@ function duePrefix(item: ShopWorkItem): string {
 }
 function sourceIssue(source: OverviewSourceStatus): string {
   if (source.state === 'unavailable') return 'Could not check this area.'
-  if (source.reason === 'account_review_only') return 'Account review candidates only. Collectible balances require verification in Account.'
-  if (source.reason === 'classification_unavailable') return 'Invoice balances could not be verified. Check customer accounts before following up on payment.'
+  if (source.reason === 'account_review_only') return 'Invoice balances are reviewed in each customer’s Account tab.'
+  if (source.reason === 'classification_unavailable') return 'Invoice balances could not be checked. This board cannot confirm which payments are due.'
   if (source.has_more && source.total !== null) return 'More records are available in this workspace.'
   return 'Some records could not be verified. Review this workspace.'
 }
@@ -121,12 +121,13 @@ export default function ShopWorkOverview({ data, loading, failed, refreshing, on
   </section>
 
   const checkedTime = Number.isFinite(Date.parse(data.as_of)) ? new Date(data.as_of).toLocaleString() : 'time unavailable'
-  const issues = data.sources.filter(source => source.state === 'partial' || source.state === 'unavailable')
+  const accountReviewOnly = data.sources.some(source => source.id === 'receivables' && source.state === 'partial' && source.reason === 'account_review_only')
+  const issues = data.sources.filter(source => (source.state === 'partial' || source.state === 'unavailable') && !(source.id === 'receivables' && source.reason === 'account_review_only' && source.state === 'partial'))
   const actionOverflow = data.sources.filter(source => source.has_more && source.state === 'ready')
   const upcomingOverflow = data.sources.filter(source => (source.id === 'schedule' || source.id === 'purchasing') && source.state === 'ready')
   const shown = data.actions.slice(0, visibleCount)
   const [lead, ...remaining] = shown
-  const allChecked = !failed && data.sources.some(source => source.state === 'ready') && issues.length === 0
+  const allChecked = !failed && data.sources.some(source => source.state === 'ready') && issues.length === 0 && !accountReviewOnly
   const clock = Date.parse(data.as_of)
   const itemMeta = (item: ShopWorkItem) => {
     const date = dateLabel(item, data.timezone)
@@ -145,14 +146,14 @@ export default function ShopWorkOverview({ data, loading, failed, refreshing, on
               {({ close }) => <>
                 <PopoverButton data-db-control="action" className="db-overview__status-trigger">
                   <CircleAlert aria-hidden="true" />
-                  {issues.length === 1 ? `${issues[0].id === 'receivables' ? 'Accounts' : SOURCE[issues[0].id].label} ${issues[0].state === 'unavailable' ? 'unavailable' : 'unverified'}` : `${issues.length} areas need review`}
+                  {issues.length === 1 ? `${issues[0].id === 'receivables' ? 'Billing data' : SOURCE[issues[0].id].label} ${issues[0].state === 'unavailable' ? 'unavailable' : 'incomplete'}` : `${issues.length} areas need review`}
                   <ChevronDown aria-hidden="true" />
                 </PopoverButton>
                 <PopoverPanel focus className="db-overview__status-panel" role="dialog" aria-label="Areas needing review">
-                  <div className="db-overview__status-heading"><strong>Needs verification</strong><ControlButton controlKind="icon" type="button" aria-label="Close verification details" onClick={() => close()}><X aria-hidden="true" /></ControlButton></div>
+                  <div className="db-overview__status-heading"><strong>Board coverage</strong><ControlButton controlKind="icon" type="button" aria-label="Close verification details" onClick={() => close()}><X aria-hidden="true" /></ControlButton></div>
                   <ul>{issues.map(source => {
                     const Icon = SOURCE[source.id].icon
-                    return <li key={source.id}><div className="db-overview__status-source"><Icon aria-hidden="true" /><strong>{SOURCE[source.id].label}</strong></div><p>{sourceIssue(source)}</p><ControlButton className="db-overview__link" type="button" onClick={() => { close(); onWorkspace(SOURCE[source.id].path) }}>Open {SOURCE[source.id].label}<ArrowUpRight aria-hidden="true" /></ControlButton></li>
+                    return <li key={source.id}><div className="db-overview__status-source"><Icon aria-hidden="true" /><strong>{SOURCE[source.id].label}</strong></div><p>{sourceIssue(source)}</p>{source.id !== 'receivables' && <ControlButton className="db-overview__link" type="button" onClick={() => { close(); onWorkspace(SOURCE[source.id].path) }}>Open {SOURCE[source.id].label}<ArrowUpRight aria-hidden="true" /></ControlButton>}</li>
                   })}</ul>
                 </PopoverPanel>
               </>}
@@ -172,7 +173,7 @@ export default function ShopWorkOverview({ data, loading, failed, refreshing, on
               <ControlButton type="button" className="db-overview__link" aria-label={`${item.action_label}: ${item.title}`} onClick={() => onOpen(item.destination)}>{item.action_label}<ArrowUpRight aria-hidden="true" /></ControlButton>
             </article>
           })}</div>
-        </> : <div className="db-overview__empty" role="status">{allChecked ? <CheckCircle2 aria-hidden="true" /> : <CircleAlert aria-hidden="true" />}<h3>{allChecked ? 'You’re caught up in your available workspaces' : 'No confirmed actions in the checked work'}</h3><p>{allChecked ? 'No action is due in the areas you can access. Upcoming commitments stay alongside.' : 'Review the flagged areas before treating the shop as clear.'}</p></div>}
+        </> : <div className="db-overview__empty" role="status">{allChecked ? <CheckCircle2 aria-hidden="true" /> : <CircleAlert aria-hidden="true" />}<h3>{allChecked ? 'You’re caught up in your available workspaces' : 'No confirmed actions in the checked work'}</h3><p>{allChecked ? 'No action is due in the areas you can access. Upcoming commitments stay alongside.' : issues.length ? 'Review the flagged areas before treating the shop as clear.' : 'No confirmed action is due in the checked areas. Invoice balances are reviewed separately.'}</p></div>}
         {visibleCount < data.actions.length && <ControlButton type="button" className="db-overview__more" onClick={() => setVisibleCount(count => count + 6)}>Show next {Math.min(6, data.actions.length - visibleCount)} tasks</ControlButton>}
         {data.has_more_actions && actionOverflow.length > 0 && visibleCount >= data.actions.length && <div className="db-overview__overflow"><p>{data.actions_total == null ? 'Some areas need review in their workspace.' : 'More work is available in the owning workspaces.'}</p>{actionOverflow.map(s => <ControlButton type="button" key={s.id} onClick={() => onWorkspace(SOURCE[s.id].path)}>{SOURCE[s.id].label}<ArrowUpRight aria-hidden="true" /></ControlButton>)}</div>}
       </section>
@@ -184,6 +185,7 @@ export default function ShopWorkOverview({ data, loading, failed, refreshing, on
         {data.upcoming.length > upcomingCount && <ControlButton type="button" className="db-overview__more" onClick={() => setUpcomingCount(count => count + 5)}>Show more commitments</ControlButton>}
         {data.has_more_upcoming && upcomingOverflow.length > 0 && upcomingCount >= data.upcoming.length && <div className="db-overview__overflow"><p>{data.upcoming_total == null ? 'Review upcoming commitments in their workspace.' : 'More dated work is available in its workspace.'}</p>{upcomingOverflow.map(s => <ControlButton type="button" key={s.id} onClick={() => onWorkspace(SOURCE[s.id].path)}>{SOURCE[s.id].label}<ArrowUpRight aria-hidden="true" /></ControlButton>)}</div>}
         <p className="db-overview__scope"><ClipboardList aria-hidden="true" />{data.scope === 'assigned' ? 'Your assigned repair work' : 'Your shop · authorized workspaces'}</p>
+        {accountReviewOnly && <p className="db-overview__scope">Invoice balances are reviewed in each customer’s Account tab.</p>}
       </aside>
     </div>
   </div>
