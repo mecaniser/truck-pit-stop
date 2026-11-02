@@ -1,0 +1,22 @@
+import { beforeEach, expect, it, vi } from 'vitest'
+const m = vi.hoisted(() => ({ load: vi.fn(), get: vi.fn() }))
+vi.mock('@stripe/stripe-js/pure', () => ({ loadStripe: m.load }))
+vi.mock('../api', () => ({ default: { get: m.get } }))
+beforeEach(() => { vi.resetModules(); vi.resetAllMocks(); m.get.mockResolvedValue({ data: { publishable_key: 'pk_test_synthetic' } }) })
+it('evicts a rejected Stripe loader so retry can recover', async () => {
+  m.load.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ synthetic: true })
+  const { getStripeForAccount } = await import('../stripe')
+  await expect(getStripeForAccount('acct_one')).rejects.toThrow('offline')
+  await expect(getStripeForAccount('acct_one')).resolves.toEqual({ synthetic: true })
+  expect(m.load).toHaveBeenCalledTimes(2)
+  expect(m.load).toHaveBeenLastCalledWith('pk_test_synthetic', { stripeAccount: 'acct_one' })
+})
+it('evicts null results and keeps successful loads scoped per account', async () => {
+  m.load.mockResolvedValueOnce(null).mockResolvedValue({ synthetic: true })
+  const { getStripeForAccount } = await import('../stripe')
+  expect(await getStripeForAccount('acct_one')).toBeNull()
+  await getStripeForAccount('acct_one')
+  await getStripeForAccount('acct_one')
+  await getStripeForAccount('acct_two')
+  expect(m.load).toHaveBeenCalledTimes(3)
+})
