@@ -493,6 +493,12 @@ def collection_email_html(invoice,collection,payment_summary,invoice_access_url,
             '<p>This invoice is preserved as source history. Contact the shop for current billing information; this copy is not a separate payment request.</p>'
             +invoice_review_html(tenant,invoice))
     history=bool(collection.get('is_source_history'))
+    if not history:
+        number=escape(str(collection.get('source_invoice_number') or invoice.invoice_number))
+        return (f'<h2>Invoice #{number}</h2>'
+            +payment_summary_html(payment_summary)
+            +f'<p><a href="{escape(invoice_access_url,quote=True)}">View invoice</a></p>'
+            +invoice_review_html(tenant,invoice))
     if history:
         from app.services.invoice_payment_presentation import InvoicePaymentSummary
         balance=collection.get('balance_due')

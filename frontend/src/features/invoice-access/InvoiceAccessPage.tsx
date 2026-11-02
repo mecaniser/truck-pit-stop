@@ -592,9 +592,9 @@ export default function InvoiceAccessPage() {
               className="h-12 sm:h-14 w-auto object-contain drop-shadow-[0_1px_2px_rgba(15,23,42,0.35)]"
             />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">Invoice {invoice.invoice_number}</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Invoice {invoice.source_collection && !invoice.source_collection.is_source_history ? invoice.source_collection.source_invoice_number : invoice.invoice_number}</h1>
           <p className="text-gray-600 mt-1">
-            Order {invoice.order_number}
+            {!(invoice.source_collection && !invoice.source_collection.is_source_history) && <>Order {invoice.order_number}</>}
             {invoice.due_date ? ` • Due ${format(new Date(invoice.due_date), 'MMM d, yyyy')}` : ''}
           </p>
           <div className="flex gap-2 mt-3 print:hidden">
@@ -620,7 +620,7 @@ export default function InvoiceAccessPage() {
               onClick={() => {
                 const url = window.location.href
                 if (navigator.share) {
-                  navigator.share({ title: `Invoice ${invoice.invoice_number}`, url }).catch(() => {})
+                  navigator.share({ title: `Invoice ${invoice.source_collection && !invoice.source_collection.is_source_history ? invoice.source_collection.source_invoice_number : invoice.invoice_number}`, url }).catch(() => {})
                 } else {
                   navigator.clipboard.writeText(url).then(() => toast.success('Link copied!'))
                 }
@@ -651,7 +651,7 @@ export default function InvoiceAccessPage() {
           </div>
 
           {!invoice.source_collection?.is_source_history && <InvoicePaymentSummary summary={paymentSummary} />}
-          {invoice.source_collection && <SourceCollectionSummary summary={invoice.source_collection} originalInvoiceHref={invoice.source_collection.source_invoice_id ? `/portal/invoices/${invoice.source_collection.source_invoice_id}` : undefined} />}
+          {invoice.source_collection?.is_source_history && <SourceCollectionSummary summary={invoice.source_collection} originalInvoiceHref={invoice.source_collection.source_invoice_id ? `/portal/invoices/${invoice.source_collection.source_invoice_id}` : undefined} />}
 
           {(!invoice.source_collection || invoice.source_collection.is_source_history) && <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
             <h3 className="text-sm font-semibold text-gray-900 mb-3">{cashReceipt ? 'Cash Receipt Breakdown' : 'Invoice Breakdown'}</h3>
@@ -691,7 +691,7 @@ export default function InvoiceAccessPage() {
             || invoice.source_collection.state !== 'active'
             || ['source_conflict', 'source_unavailable'].includes(invoice.source_collection.source_sync_state)
             || !splitSettlement) ? (
-            <p role="status" className="my-4 text-center text-sm">Contact the shop to confirm payment availability for this collection copy.</p>
+            <p role="status" className="my-4 text-center text-sm">Contact the shop to confirm payment availability.</p>
           ) : paymentSummary && ['cancelled', 'unknown'].includes(paymentSummary.state) ? (
           <p className="my-4 text-center text-sm">{paymentSummary.state === 'cancelled' ? 'This invoice is cancelled.' : 'Contact the shop to confirm your current balance before paying.'}</p>
         ) : isPaid ? (
@@ -718,6 +718,8 @@ export default function InvoiceAccessPage() {
           ) : splitSettlement && settlementAccess ? (
             <div className="space-y-4">
               <SettlementSummaryCard
+                audience="customer"
+                streamlined
                 summary={splitSettlement}
                 allocations={allocationQuery.data?.items ?? []}
                 tone="light"

@@ -28,6 +28,7 @@ export default function SettlementSummaryCard({
   tone = 'dark',
   compact = false,
   streamlined = false,
+  audience = 'staff',
   children,
 }: {
   summary: InvoiceSettlementSummary
@@ -35,6 +36,7 @@ export default function SettlementSummaryCard({
   tone?: 'dark' | 'light'
   compact?: boolean
   streamlined?: boolean
+  audience?: 'staff' | 'customer'
   children?: ReactNode
 }) {
   const dark = tone === 'dark'
@@ -58,9 +60,12 @@ export default function SettlementSummaryCard({
     ['Available to pay', summary.allocatable_balance],
   ]
 
+  const customerCompact = audience === 'customer' && streamlined
+  if (customerCompact && figures.length === 0 && !resolution && allocations.length === 0 && !children) return null
+
   return (
-    <section className={`overflow-hidden rounded-2xl border ${panel}`} aria-labelledby={`settlement-${summary.invoice_id}`}>
-      <div className={`flex flex-wrap items-start justify-between gap-3 ${compact ? 'p-3' : 'p-4'}`}>
+    <section className={`overflow-hidden rounded-2xl border ${panel}`} aria-labelledby={customerCompact ? undefined : `settlement-${summary.invoice_id}`} aria-label={customerCompact ? "Payment details" : undefined}>
+      {!customerCompact && <div className={`flex flex-wrap items-start justify-between gap-3 ${compact ? 'p-3' : 'p-4'}`}>
         <div>
           {!streamlined && <p className={`text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>Invoice settlement</p>}
           <h2 id={`settlement-${summary.invoice_id}`} className="mt-1 flex items-center gap-2 text-sm font-extrabold">
@@ -72,7 +77,7 @@ export default function SettlementSummaryCard({
           <span className={`block text-xs ${quiet}`}>{streamlined ? 'Balance due' : 'Outstanding'}</span>
           <span className="block text-2xl font-extrabold tabular-nums">{formatMoney(summary.outstanding_balance)}</span>
         </p>
-      </div>
+      </div>}
 
       {figures.length > 0 && <dl className={`flex flex-wrap border-t ${divider}`}>
         {figures.map(([label, value]) => (
@@ -96,7 +101,7 @@ export default function SettlementSummaryCard({
         </div>
       )}
 
-      {summary.accounting_sync_status !== 'synced'
+      {audience === 'staff' && summary.accounting_sync_status !== 'synced'
         && summary.accounting_sync_status !== 'not_applicable_local_cash'
         && summary.accounting_sync_status !== 'not_started'
         && summary.accounting_sync_status !== 'not_required' && (
@@ -109,7 +114,7 @@ export default function SettlementSummaryCard({
         </div>
       )}
 
-      {summary.accounting_sync_status === 'not_applicable_local_cash' && (
+      {audience === 'staff' && summary.accounting_sync_status === 'not_applicable_local_cash' && (
         <p className={`border-t px-3 py-2.5 text-xs ${divider} ${quiet}`}>Cash recorded locally. Not synced to QuickBooks.</p>
       )}
 

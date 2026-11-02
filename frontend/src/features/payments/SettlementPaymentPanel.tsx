@@ -546,7 +546,7 @@ function InvoicePaymentPanel({
       <fieldset disabled={createMutation.isPending || cash?.pending} className="m-0 min-w-0 border-0 p-0">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 id={`settlement-payment-${summary.invoice_id}`} className="font-extrabold">{audience === 'staff' ? 'Payment method' : 'Choose an amount and tender'}</h2>
+          <h2 id={`settlement-payment-${summary.invoice_id}`} className="font-extrabold">{audience === 'staff' ? 'Payment method' : 'Payment method'}</h2>
         </div>
         {audience !== 'staff' && <p className={`text-xs ${quiet}`}>Up to {formatMoney(summary.allocatable_balance)}</p>}
       </div>

@@ -1,0 +1,11 @@
+# DB-149 customer invoice clarity — November 2, 2026
+
+Frontend & UX owns this presentation change. Customer payable pages, guest links, PDFs and email render a normal invoice identity without internal transfer or accounting explanations. Staff controls and provenance remain unchanged. No API/schema/auth/financial-state, collector, reconciliation or payment submission change.
+
+Acceptance: concise unpaid view; paid, pending, partial, held and historical non-collectible states remain safe; original issued totals and prior payments are retained accurately in PDF presentation; PDF review invitation remains. Independent QA GO: 47 backend and 46 frontend checks, plus nonzero prior/native payment PDF amount checks. Owner focused frontend51 checks pass; production frontend build passes before final guest header and amount-presentation edits, final TypeScript/build check recorded below. Protected CI remains pending with PR.
+
+Runtime preflight: isolated `/private/tmp/db149-customer-invoice-clarity`, branch `codex/customer-invoice-clarity`, base e8e464d648d882b78ce9527eeaaffcfcb03489d1. Vite PID80056 on5173, process/cwd and rendered edited customer route verified. Existing Docker backend8000 belongs to another checkout and was preserved. New worktree has no approved backend environment; no secrets copied and no database/server/financial mutation. Local API proxy intentionally points to closed loopback port9; preview uses actual CustomerInvoicePage and local synthetic fixtures, with all API writes rejected. This is a browser-verified fixture preview, not an aligned authenticated full-stack runtime or live customer acceptance.
+
+Desktop and390px previews visually verified. Compact screenshot initially captured an intermediate resize frame; fresh settled capture and DOM geometry show347px content within390px viewport, no horizontal overflow. Viewport restored. Private screenshots and rendered one-page preview PDF in output/ remain untracked. PDF fixture omits logo/contact fields and is not a fetched production invoice. Product receipt dates use original snapshot when available; sample fixture retains supplied preview date. Source provenance stays in stored records and staff views.
+
+No merge or deployment for this follow-up. Show the preview to the user first.

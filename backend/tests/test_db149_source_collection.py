@@ -172,7 +172,8 @@ async def test_collection_provider_gate_and_accounting_exclusions(db_session,mon
     assert await enqueue_conversion_event(db_session,tenant=t,invoice=native,order=original.repair_order,customer=c,event_type='repair_order.paid',idempotency_key='test') is None
     from app.services.invoice_payment_presentation import InvoicePaymentSummary
     body=svc.collection_email_html(native,result,InvoicePaymentSummary(state='unpaid',applied_amount='0.00',balance_due='600.00',basis='settlement'),'https://example.test/invoice',t)
-    assert 'Transferred balance' in body and '600.00' in body and 'new sale or tax invoice' in body
+    assert 'Invoice #' in body and '600.00' in body
+    assert 'Transferred balance' not in body and 'ETS' not in body and 'Collection copy' not in body
     assert 'Qty/Hrs' not in body and '>Labor<' not in body
     history=svc.collection_email_html(original,{**result,'is_source_history':True,'balance_due':'0.00'},InvoicePaymentSummary(state='unpaid',balance_due='600.00'),'https://example.test/history',t)
     assert 'Historical source invoice' in history
