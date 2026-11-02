@@ -43,6 +43,8 @@ export default function SettlementSummaryCard({
     : 'border-slate-200 bg-white text-slate-950'
   const quiet = dark ? 'text-[#99a4b7]' : 'text-slate-500'
   const divider = dark ? 'border-[#2a3245]' : 'border-slate-200'
+  const manualExternalAccounting = summary.accounting_sync_status === 'external_reconciliation_pending'
+  const accountingStatusNotice = manualExternalAccounting || summary.accounting_sync_status === 'pending'
   const paid = summary.state === 'paid'
   const pending = isPositiveMoney(summary.active_pending_principal)
   const resolution = isPositiveMoney(summary.unapplied_credit) || isPositiveMoney(summary.refund_pending)
@@ -98,8 +100,10 @@ export default function SettlementSummaryCard({
         && summary.accounting_sync_status !== 'not_applicable_local_cash'
         && summary.accounting_sync_status !== 'not_started'
         && summary.accounting_sync_status !== 'not_required' && (
-        <div className={`border-t px-3 py-2.5 text-xs ${divider} ${summary.accounting_sync_status === 'pending' ? quiet : 'text-red-500'}`} role={summary.accounting_sync_status === 'pending' ? 'status' : 'alert'}>
-          {summary.accounting_sync_status === 'pending'
+        <div className={`border-t px-3 py-2.5 text-xs ${divider} ${accountingStatusNotice ? quiet : 'text-red-500'}`} role={accountingStatusNotice ? 'status' : 'alert'}>
+          {manualExternalAccounting
+            ? 'Original invoice accounting is reconciled manually with ETS.'
+            : summary.accounting_sync_status === 'pending'
             ? 'Payment recorded. QuickBooks accounting sync is pending; no duplicate payment is needed.'
             : 'QuickBooks accounting sync needs staff attention. The payment remains recorded in DieselBridge.'}
         </div>
