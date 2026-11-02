@@ -213,6 +213,8 @@ async def native_settled_amount(db: AsyncSession, *, tenant: Tenant, invoice: In
 
 
 async def enqueue_conversion_event(db: AsyncSession, *, tenant: Optional[Tenant], invoice: Invoice, order: RepairOrder, customer: Optional[Customer], event_type: str, idempotency_key: str, total_amount=None) -> Optional[ProviderOutboxEvent]:
+    if getattr(invoice, "accounting_policy", None) == "source_collection_hold":
+        return None
     if event_type not in CONVERSION_EVENT_TYPES:
         raise ValueError("Unsupported conversion event type")
     if not tenant or not tenant.paid_invoice_webhook_enabled or not tenant.paid_invoice_webhook_url or not tenant.paid_invoice_webhook_secret_encrypted:

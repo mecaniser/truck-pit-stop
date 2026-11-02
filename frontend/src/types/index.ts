@@ -714,6 +714,7 @@ export interface InvoicePaymentSummary {
 }
 
 export interface InvoiceDetail extends Invoice {
+  source_collection?: import('@/features/source-collection/types').SourceCollectionSummary | null
   payment_summary?: InvoicePaymentPresentation | null
   review_url?: string | null
   order_number: string

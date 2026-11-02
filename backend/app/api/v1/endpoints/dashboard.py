@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, cast, Date, or_, case, literal, String
 from pydantic import BaseModel, Field
 from typing import Dict, List, Literal, Optional
+from app.services.source_collection_reporting import confirmed_collection_receipt_clause,receipt_gross_expression
 from datetime import datetime, timedelta, date, timezone
 from decimal import Decimal
 from uuid import UUID
@@ -170,6 +171,7 @@ class MechanicWorkload(BaseModel):
 
 
 class RevenueStats(BaseModel):
+    source_collection_profit_unallocated_receipts: str = "0.00"
     today: str
     this_week: str
     this_month: str
@@ -637,6 +639,7 @@ async def get_dashboard_daily_workset(
             RepairOrder.deleted_at.is_(None),
             Invoice.tenant_id == current_user.tenant_id,
             Invoice.status == InvoiceStatus.PAID,
+            Invoice.accounting_policy != "source_collection_hold",
             Invoice.paid_at.is_not(None),
             Invoice.paid_at >= local_day_start.astimezone(timezone.utc),
             Invoice.paid_at < next_reset_at.astimezone(timezone.utc),
@@ -717,6 +720,7 @@ async def get_dashboard_daily_workset_value_summary(
             Invoice.tenant_id == current_user.tenant_id,
             Invoice.repair_order_id == RepairOrder.id,
             Invoice.status == InvoiceStatus.PAID,
+            Invoice.accounting_policy != "source_collection_hold",
             Invoice.paid_at.is_not(None),
             Invoice.paid_at >= local_day_start.astimezone(timezone.utc),
             Invoice.paid_at < next_reset_at.astimezone(timezone.utc),
@@ -1215,7 +1219,7 @@ async def get_dashboard_stats(
                 func.coalesce(
                     func.sum(
                         case(
-                            (cast(Payment.created_at, Date) == today, Payment.amount),
+                            (cast(Payment.created_at, Date) == today, receipt_gross_expression()),
                             else_=0,
                         )
                     ),
@@ -1224,7 +1228,7 @@ async def get_dashboard_stats(
                 func.coalesce(
                     func.sum(
                         case(
-                            (cast(Payment.created_at, Date) >= week_start, Payment.amount),
+                            (cast(Payment.created_at, Date) >= week_start, receipt_gross_expression()),
                             else_=0,
                         )
                     ),
@@ -1233,7 +1237,7 @@ async def get_dashboard_stats(
                 func.coalesce(
                     func.sum(
                         case(
-                            (cast(Payment.created_at, Date) >= month_start, Payment.amount),
+                            (cast(Payment.created_at, Date) >= month_start, receipt_gross_expression()),
                             else_=0,
                         )
                     ),
@@ -1246,8 +1250,9 @@ async def get_dashboard_stats(
                 )
                 .scalar_subquery()
                 .label("total_paid_orders"),
-            ).where(
+            ).join(Invoice, and_(Invoice.id == Payment.invoice_id, Invoice.tenant_id == Payment.tenant_id)).where(
                 Payment.tenant_id == tenant_id,
+                or_(Invoice.accounting_policy!="source_collection_hold",confirmed_collection_receipt_clause()),
                 Payment.status == PaymentStatus.COMPLETED,
             )
         )
@@ -1265,6 +1270,9 @@ async def get_dashboard_stats(
     result = await db.execute(
         select(
             Payment.created_at,
+            Payment.id.label("payment_id"),
+            receipt_gross_expression().label("amount"),
+            Invoice.accounting_policy,
             Payment.invoice_id,
             RepairOrder.id.label("order_id"),
             RepairOrder.total_parts_cost,
@@ -1277,12 +1285,21 @@ async def get_dashboard_stats(
         .where(
             and_(
                 Payment.tenant_id == tenant_id,
+                or_(Invoice.accounting_policy!="source_collection_hold",confirmed_collection_receipt_clause()),
+                Invoice.tenant_id == tenant_id,
+                RepairOrder.tenant_id == tenant_id,
                 Payment.status == PaymentStatus.COMPLETED,
                 cast(Payment.created_at, Date) >= calc_start,
             )
         )
     )
     paid_rows = result.all()
+    from app.services.source_collection_reporting import collection_economics,collection_receipt_components
+    economics=await collection_economics(db,[row.invoice_id for row in paid_rows if row.accounting_policy=="source_collection_hold"])
+    collection_payment_ids=[row.payment_id for row in paid_rows if row.accounting_policy=="source_collection_hold"]
+    collection_payments=(await db.scalars(select(Payment).where(Payment.tenant_id==tenant_id,Payment.id.in_(collection_payment_ids)))).all() if collection_payment_ids else []
+    components=await collection_receipt_components(db,collection_payments)
+    profit_unallocated=Decimal("0.00")
 
     order_ids = [row.order_id for row in paid_rows]
     parts_cost_by_order: Dict = {}
@@ -1331,12 +1348,23 @@ async def get_dashboard_stats(
             subtotal = Decimal(str(row.subtotal or 0))
             labor_revenue = max(subtotal - parts_revenue, Decimal("0.00"))
 
+        collection=row.accounting_policy=="source_collection_hold"
+        if collection:
+            component=components.get(row.payment_id)
+            archived=economics.get(row.invoice_id) if component else None
+            if archived and archived["parts_cost"] is not None:
+                share=component['principal']/archived['total']
+                parts_margin=(archived['parts']-archived['parts_cost'])*share
+                labor_revenue=archived['labor']*share
+            else:
+                parts_margin=labor_revenue=Decimal("0.00")
+                profit_unallocated+=Decimal(str(row.amount))
         gross_profit = labor_revenue + parts_margin
 
         for bucket in _bucket_for(payment_date):
             profitability[bucket]["parts_margin"] += parts_margin
             profitability[bucket]["gross_profit"] += gross_profit
-            profitability[bucket]["invoices"].add(row.invoice_id)
+            if not collection:profitability[bucket]["invoices"].add(row.invoice_id)
 
     def _ppi_for(bucket: str) -> Decimal:
         invoice_count = len(profitability[bucket]["invoices"])
@@ -1345,6 +1373,7 @@ async def get_dashboard_stats(
         return (profitability[bucket]["gross_profit"] / Decimal(invoice_count)).quantize(Decimal("0.01"))
 
     revenue = RevenueStats(
+        source_collection_profit_unallocated_receipts=str(profit_unallocated),
         today=str(revenue_today),
         this_week=str(revenue_week),
         this_month=str(revenue_month),

@@ -9,6 +9,7 @@ import json
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Literal, Optional
+from app.services.source_debt_handoff import invoice_customer_access_clause
 from uuid import UUID
 
 import stripe
@@ -113,7 +114,7 @@ async def invoice_for_principal(
             Invoice.status != InvoiceStatus.CANCELLED,
             Invoice.voided_at.is_(None),
             RepairOrder.tenant_id == Invoice.tenant_id,
-            RepairOrder.deleted_at.is_(None),
+            or_(RepairOrder.deleted_at.is_(None), Invoice.accounting_policy == "source_collection_hold"),
             RepairOrder.status != RepairOrderStatus.CANCELLED,
         )
     )
@@ -122,7 +123,7 @@ async def invoice_for_principal(
     elif principal.role == UserRole.CUSTOMER:
         query = query.where(
             Invoice.tenant_id == principal.tenant_id,
-            RepairOrder.customer_id == principal.customer_id,
+            invoice_customer_access_clause(principal.customer_id),
         )
     else:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
@@ -130,15 +131,20 @@ async def invoice_for_principal(
     if (
         not invoice
         or not invoice.repair_order
-        or invoice.repair_order.deleted_at is not None
+        or (invoice.repair_order.deleted_at is not None and getattr(invoice,"accounting_policy","standard") != "source_collection_hold")
     ):
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
-    if invoice.source == "easy_truck_shop_import" or invoice.repair_order.source == "easy_truck_shop_import":
+    if getattr(invoice,"accounting_policy","standard") == "source_collection_hold":
+        from app.services.source_debt_handoff import invoice_handoff
+        handoff=await invoice_handoff(db,invoice,check_source=False)
+        if principal.role == UserRole.CUSTOMER and principal.customer_id != handoff.customer_id:
+            raise SettlementDomainError("invoice_not_found","Invoice not found.",status_code=404)
+    elif invoice.source == "easy_truck_shop_import" or invoice.repair_order.source == "easy_truck_shop_import":
         raise SettlementDomainError("source_owned_invoice", "ETS invoices cannot use DieselBridge payment actions.", status_code=409)
     tenant = (await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id, Tenant.is_active.is_(True)))).scalar_one_or_none()
     if not tenant:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
-    return invoice, tenant, invoice.repair_order.customer_id
+    return invoice, tenant, handoff.customer_id if getattr(invoice,"accounting_policy","standard") == "source_collection_hold" else invoice.repair_order.customer_id
 
 
 def _public_provider_status(readiness) -> str:
@@ -209,7 +215,10 @@ async def settlement_summary(
     ).execution_options(populate_existing=True))
     if invoice is None or settlement.tenant_id != tenant.id:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
-    if invoice and invoice.accounting_policy == HISTORICAL_HOLD:
+    if getattr(invoice,"accounting_policy","standard") == "source_collection_hold":
+        actions.apply_customer_credit = actions.resolve_overpayment = actions.retry_accounting = False
+        actions.authorize_early_release = False
+    if invoice and getattr(invoice,"accounting_policy","standard") == HISTORICAL_HOLD:
         actions.apply_customer_credit = False
         actions.retry_accounting = False
         from app.services.new_receipt_accounting import require_clean_historical_balance

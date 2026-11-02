@@ -16,6 +16,8 @@ const accountSchema = z.object({
   customer: z.object({ id: z.string(), name: z.string() }),
   native: z.object({
     collectible: moneySchema,
+    held_collection_balance: moneySchema.optional(),
+    collection_review_count: z.number().int().nonnegative().optional(),
     collectible_complete: z.boolean(),
     unverified_invoice_count: z.number().int().nonnegative(),
     reviewed_attestation_count: z.number().int().nonnegative().optional(),
@@ -215,6 +217,10 @@ export default function CustomerAccount({ customerId }: { customerId: string }) 
       <div className="db-customer-account__collectible"><span>{account.native.collectible_complete ? 'DieselBridge collectible' : 'Verified native subtotal'}</span><strong>{money(account.native.collectible)}</strong><small>{account.native.collectible_complete ? 'Verified native invoice principal' : 'Balance incomplete · do not collect from this subtotal'}</small></div>
       <div><span>Unapplied credit</span><strong>{money(account.native.unapplied_credit)}</strong><small>Not deducted from aging</small></div>
     </div>
+    {Number(account.native.held_collection_balance ?? '0') > 0 && <div role="status" className="db-customer-account__section">
+      <div className="db-customer-account__exceptions"><span>DBN balance awaiting source reconciliation</span><strong>{money(account.native.held_collection_balance!)}</strong></div>
+      <p>Confirmed DBN payments remain recorded. Reconcile the ETS payment history before collecting this balance.</p>
+    </div>}
     <section className="db-customer-account__section" aria-label="Native aging">
       <h4>{account.native.collectible_complete ? 'Overdue aging' : 'Verified overdue aging only'}</h4>
       {!account.native.collectible_complete && <p role="alert">Native balance incomplete: {account.native.unverified_invoice_count} {account.native.unverified_invoice_count === 1 ? 'invoice is' : 'invoices are'} unverified and excluded from this subtotal and aging.</p>}

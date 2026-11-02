@@ -35,6 +35,10 @@ interface DashboardMetric {
 }
 
 interface ReportsDashboardResponse {
+  source_collection_unallocated_receipts?: string
+  source_collection_attribution_note?: string | null
+  source_collection_unapplied_receipts?: string
+  source_collection_parts_profit_attribution_pending?: boolean
   range_start: string
   range_end: string
   revenue_interval?: 'day' | 'week' | 'month'
@@ -110,6 +114,12 @@ interface TaxRow {
 
 interface ReportsTaxResponse {
   rows: TaxRow[]
+  source_collection_tax_reconciliation?: {
+    receipt_count: number
+    required: boolean
+    accounting_owner: 'external_manual'
+    note: string
+  }
 }
 
 interface PartRevenueRow {
@@ -330,19 +340,22 @@ function DashboardTab({ range }: { range: ReportRange }) {
   const interval = data.revenue_interval ?? 'week'
   const intervalAdjective = { day: 'daily', week: 'weekly', month: 'monthly' }[interval]
   const averageRevenue = revenueAverage(trendRows.map((row) => row.revenue))
+  const partialRevenue = Number(data.source_collection_unallocated_receipts ?? '0') > 0
+  const revenueLabel = partialRevenue ? 'Verified net revenue (partial)' : 'Revenue'
+  const averageLabel = `Average ${intervalAdjective} ${partialRevenue ? 'verified net revenue (partial)' : 'revenue'}`
 
   return (
     <div className="space-y-4">
       <Hero
-        label="Total Revenue"
+        label={partialRevenue ? revenueLabel : 'Total Revenue'}
         value={fmtMoney(data.revenue.value)}
         accent={accent}
-        insight={`Revenue recognized each ${interval} across the period, from completed payments.`}
+        insight={partialRevenue ? `Verified net revenue each ${interval}; additional gross source receipts await attribution.` : `Revenue recognized each ${interval} across the period, from completed payments.`}
       >
         {averageRevenue !== null && (
-          <div className="flex items-center justify-end gap-2 text-xs text-amber-300" aria-label={`Average ${intervalAdjective} revenue ${fmtMoney(averageRevenue)}`}>
+          <div className="flex items-center justify-end gap-2 text-xs text-amber-300" aria-label={`${averageLabel} ${fmtMoney(averageRevenue)}`}>
             <span className="w-5 border-t-2 border-dashed border-amber-300" aria-hidden="true" />
-            Average {intervalAdjective} revenue {fmtMoney(averageRevenue)}
+            {averageLabel} {fmtMoney(averageRevenue)}
           </div>
         )}
         <div className="h-56">
@@ -359,15 +372,21 @@ function DashboardTab({ range }: { range: ReportRange }) {
                 allowEscapeViewBox={{ x: true, y: false }}
               />
               {averageRevenue !== null && <ReferenceLine y={averageRevenue} stroke="#fcd34d" strokeWidth={2} strokeDasharray="6 4" ifOverflow="extendDomain" />}
-              <Bar dataKey="revenue" name="Revenue" fill={accent} radius={[4, 4, 0, 0]} maxBarSize={30} isAnimationActive={false} activeBar={{ fill: accent, stroke: '#fff', strokeOpacity: 0.35, strokeWidth: 1 }} />
+              <Bar dataKey="revenue" name={revenueLabel} fill={accent} radius={[4, 4, 0, 0]} maxBarSize={30} isAnimationActive={false} activeBar={{ fill: accent, stroke: '#fff', strokeOpacity: 0.35, strokeWidth: 1 }} />
             </BarChart>
           </ResponsiveContainer>
         </div>
       </Hero>
 
+      {(Number(data.source_collection_unallocated_receipts ?? '0') > 0 || Number(data.source_collection_unapplied_receipts ?? '0') > 0 || data.source_collection_parts_profit_attribution_pending) && <section role="status" aria-label="Source collection reconciliation" className="space-y-2 text-sm text-amber-200">
+        {Number(data.source_collection_unallocated_receipts ?? '0') > 0 && <><p>Additional gross source receipts: <strong>{fmtMoney(data.source_collection_unallocated_receipts!)}</strong>.</p><p>{data.source_collection_attribution_note}</p></>}
+        {Number(data.source_collection_unapplied_receipts ?? '0') > 0 && <p>Unapplied source funds: <strong>{fmtMoney(data.source_collection_unapplied_receipts!)}</strong>. These funds are not included in net sales.</p>}
+        {data.source_collection_parts_profit_attribution_pending && <p>Parts profit excludes source receipts whose original costs are unverified.</p>}
+      </section>}
+
       <StatStrip stats={[
         { label: 'Fees Revenue', value: fmtMoney(data.fees_revenue.value) },
-        { label: 'Parts Profit', value: fmtMoney(data.parts_profit.value) },
+        { label: data.source_collection_parts_profit_attribution_pending ? 'Verified parts profit (partial)' : 'Parts Profit', value: fmtMoney(data.parts_profit.value) },
         { label: 'Invoiced Hours', value: `${fmtNumber(data.invoiced_hours.value)} hrs` },
         { label: 'Inventory Value', value: fmtMoney(data.inventory_value.value) },
         { label: 'Part Sales', value: fmtNumber(data.part_sales_finalized.value) },
@@ -677,19 +696,27 @@ function FeesTab({ range }: { range: ReportRange }) {
 
 // ============ TAB: SALES TAX ============
 
-function TaxTab({ range }: { range: ReportRange }) {
+export function TaxTab({ range }: { range: ReportRange }) {
   const { data, isLoading } = useQuery<ReportsTaxResponse>({
     queryKey: ['reports-tax', range],
     queryFn: async () => (await api.get('/reports/tax', { params: range })).data,
   })
 
   if (isLoading || !data) return <LoadingBlock />
+  const sourceTax = data.source_collection_tax_reconciliation
+  const externalReconciliation = Boolean(sourceTax?.required && sourceTax.receipt_count > 0)
 
   const handleExport = () => {
     exportRowsToCsv(
       'sales-tax-report.csv',
-      ['Rate', 'Percentage', 'Tax Collected'],
-      data.rows.map((r) => [r.rate_label, r.percentage, r.tax_collected])
+      ['Rate', 'Percentage', externalReconciliation ? 'Tax recorded here' : 'Tax Collected'],
+      [
+        ...data.rows.map((r) => [r.rate_label, r.percentage, r.tax_collected]),
+        ...(externalReconciliation && sourceTax ? [
+          ['Report scope', sourceTax.note, ''],
+          ['Linked ETS collection receipts', sourceTax.receipt_count, 'External tax reconciliation required'],
+        ] : []),
+      ]
     )
   }
 
@@ -700,10 +727,10 @@ function TaxTab({ range }: { range: ReportRange }) {
   return (
     <div className="space-y-4">
       <Hero
-        label="Total Tax Collected"
+        label={externalReconciliation ? 'Tax recorded here' : 'Total Tax Collected'}
         value={fmtMoney(total)}
         accent={accent}
-        insight="Tax collected is a pass-through liability — it's owed to the jurisdiction, not shop revenue."
+        insight={externalReconciliation ? sourceTax?.note : "Tax collected is a pass-through liability — it's owed to the jurisdiction, not shop revenue."}
       >
         {ranked.length > 0 && (
           <div>
@@ -716,6 +743,7 @@ function TaxTab({ range }: { range: ReportRange }) {
           </div>
         )}
       </Hero>
+      {externalReconciliation && sourceTax && <p role="status" className="text-sm text-amber-200">{sourceTax.receipt_count} linked ETS collection {sourceTax.receipt_count === 1 ? 'receipt requires' : 'receipts require'} external tax reconciliation.</p>}
 
       <DetailTable title="Rate components" count={data.rows.length} onExport={handleExport}>
         <table className="w-full text-sm">
@@ -723,7 +751,7 @@ function TaxTab({ range }: { range: ReportRange }) {
             <tr>
               <th className="px-4 py-2.5 text-left font-medium">Rate</th>
               <th className="px-4 py-2.5 text-right font-medium">Percentage</th>
-              <th className="px-4 py-2.5 text-right font-medium">Tax Collected</th>
+              <th className="px-4 py-2.5 text-right font-medium">{externalReconciliation ? 'Tax recorded here' : 'Tax Collected'}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/[0.06]">
@@ -735,7 +763,7 @@ function TaxTab({ range }: { range: ReportRange }) {
               </tr>
             ))}
             {data.rows.length === 0 && (
-              <tr><td colSpan={3} className="px-4 py-8 text-center text-white/40">No tax collected in this range</td></tr>
+              <tr><td colSpan={3} className="px-4 py-8 text-center text-white/40">{externalReconciliation ? 'No tax recorded in this report. Tax for linked ETS collection receipts requires external reconciliation.' : 'No tax collected in this range'}</td></tr>
             )}
           </tbody>
         </table>

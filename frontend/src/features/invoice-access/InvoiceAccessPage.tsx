@@ -4,6 +4,8 @@ import InvoicePaymentSummary from '@/components/InvoicePaymentSummary'
 import { invoicePaymentLabels } from '@/lib/invoicePaymentLabels'
 import type { InvoicePaymentPresentation } from '@/types'
 import InvoiceReviewLink from '@/components/InvoiceReviewLink'
+import SourceCollectionSummary from '@/features/source-collection/SourceCollectionSummary'
+import type { SourceCollectionSummary as CollectionSummary } from '@/features/source-collection/types'
 import { useState } from 'react'
 import type { CashReceiptSummary } from '../../types'
 import { Spinner } from '@/components/ui'
@@ -32,6 +34,7 @@ import {
 } from '@/features/payments'
 
 interface InvoiceAccessResolve {
+  source_collection?: CollectionSummary | null
   payment_summary?: InvoicePaymentPresentation | null
   cash_receipt?: CashReceiptSummary | null
   invoice_id: string
@@ -641,15 +644,16 @@ export default function InvoiceAccessPage() {
 
           <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 mb-6">
             <div className="flex items-center justify-between">
-              <span className="text-gray-700 font-medium">{paymentSummary?.state === 'cancelled' ? 'Invoice status' : 'Balance due'}</span>
-              <span className="text-3xl font-bold text-gray-900">{paymentSummary?.state === 'cancelled' ? 'Cancelled' : paymentSummary?.balance_due === null ? 'Unavailable' : formatMoney(isPaid ? '0' : splitSettlement?.outstanding_balance ?? paymentSummary?.balance_due ?? invoice.amount_due)}</span>
+              <span className="text-gray-700 font-medium">{invoice.source_collection?.is_source_history ? 'Original invoice total' : paymentSummary?.state === 'cancelled' ? 'Invoice status' : 'Balance due'}</span>
+              <span className="text-3xl font-bold text-gray-900">{invoice.source_collection?.is_source_history ? formatMoney(invoice.source_collection.original_issued_total) : paymentSummary?.state === 'cancelled' ? 'Cancelled' : paymentSummary?.balance_due === null ? 'Unavailable' : formatMoney(isPaid ? '0' : splitSettlement?.outstanding_balance ?? paymentSummary?.balance_due ?? invoice.amount_due)}</span>
             </div>
-            <p className="text-xs text-gray-500 mt-2">Status: {paymentSummary ? invoicePaymentLabels[paymentSummary.state] : invoice.status.replace('_', ' ')}</p>
+            <p className="text-xs text-gray-500 mt-2">{invoice.source_collection?.is_source_history ? 'Original ETS record' : `Status: ${paymentSummary ? invoicePaymentLabels[paymentSummary.state] : invoice.status.replace('_', ' ')}`}</p>
           </div>
 
-          <InvoicePaymentSummary summary={paymentSummary} />
+          {!invoice.source_collection?.is_source_history && <InvoicePaymentSummary summary={paymentSummary} />}
+          {invoice.source_collection && <SourceCollectionSummary summary={invoice.source_collection} originalInvoiceHref={invoice.source_collection.source_invoice_id ? `/portal/invoices/${invoice.source_collection.source_invoice_id}` : undefined} />}
 
-          <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
+          {(!invoice.source_collection || invoice.source_collection.is_source_history) && <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
             <h3 className="text-sm font-semibold text-gray-900 mb-3">{cashReceipt ? 'Cash Receipt Breakdown' : 'Invoice Breakdown'}</h3>
             <div className="space-y-2 text-sm">
               <div className="flex items-center justify-between text-gray-700">
@@ -679,9 +683,16 @@ export default function InvoiceAccessPage() {
                 <span>{formatMoney(cashReceipt?.amount ?? invoice.total_amount)}</span>
               </div>
             </div>
-          </div>
+          </div>}
 
-          {paymentSummary && ['cancelled', 'unknown'].includes(paymentSummary.state) ? (
+          {invoice.source_collection?.is_source_history ? <div className="my-4 text-center text-sm"><p>This is the original ETS record. Collection is tracked on the linked DBN invoice.</p>
+            {invoice.source_collection.native_invoice_id && <a className="mt-2 inline-flex min-h-11 items-center font-semibold text-orange-700" href={`/portal/invoices/${invoice.source_collection.native_invoice_id}`}>Open collection invoice in portal</a>}</div>
+          : !isPaid && invoice.source_collection && (invoice.source_collection.collection_enabled === false
+            || invoice.source_collection.state !== 'active'
+            || ['source_conflict', 'source_unavailable'].includes(invoice.source_collection.source_sync_state)
+            || !splitSettlement) ? (
+            <p role="status" className="my-4 text-center text-sm">Contact the shop to confirm payment availability for this collection copy.</p>
+          ) : paymentSummary && ['cancelled', 'unknown'].includes(paymentSummary.state) ? (
           <p className="my-4 text-center text-sm">{paymentSummary.state === 'cancelled' ? 'This invoice is cancelled.' : 'Contact the shop to confirm your current balance before paying.'}</p>
         ) : isPaid ? (
             <section className="space-y-6">

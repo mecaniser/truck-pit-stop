@@ -81,3 +81,6 @@ api_router.include_router(vehicle_issues.router, prefix="/vehicles", tags=["truc
 
 from app.api.v1.endpoints import platform_sms_onboarding
 api_router.include_router(platform_sms_onboarding.router, prefix="/admin/tenants/{tenant_id}/sms", tags=["platform-sms-registration"])
+
+from app.api.v1.endpoints import source_debt_handoffs
+api_router.include_router(source_debt_handoffs.router, prefix="/source-debt-handoffs", tags=["source-debt-handoffs"])

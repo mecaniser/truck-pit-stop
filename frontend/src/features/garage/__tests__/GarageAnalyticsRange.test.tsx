@@ -13,7 +13,7 @@ vi.mock('../../analytics/ChartKit', () => ({ ChartCard: () => null, Profitabilit
 vi.mock('recharts', () => ({
   BarChart: ({ children }: { children: ReactNode }) => <>{children}</>,
   ResponsiveContainer: ({ children }: { children: ReactNode }) => <>{children}</>,
-  Bar: () => null, XAxis: () => null, YAxis: () => null, Tooltip: () => null,
+  Bar: ({ name }: { name: string }) => <div data-testid="revenue-series" data-name={name} />, XAxis: () => null, YAxis: () => null, Tooltip: () => null,
   ReferenceLine: ({ y }: { y: number }) => <div data-testid="average-line" data-y={y} />,
 }))
 const metric = { value: '0', trend: [] }
@@ -32,6 +32,25 @@ function show(tab: string) {
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter initialEntries={[`/?tab=${tab}&range=custom&from_date=2024-02-29&to_date=2024-03-10`]}><GarageAnalyticsPage /></MemoryRouter></QueryClientProvider>)
 }
 describe('Analytics report date contract', () => {
+  it('keeps unverified gross source money separate from the verified net revenue subtotal', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: {
+      ...report, revenue: { value: '100.00', trend: [{ label: 'W1', value: '100.00' }] },
+      source_collection_unallocated_receipts: '300.00',
+      source_collection_attribution_note: 'Additional gross source receipts await net sales, tax and cost attribution and are not included in the verified net total.',
+      source_collection_parts_profit_attribution_pending: true,
+    } })
+    show('dashboard')
+    expect(await screen.findByText('$100.00')).toBeVisible()
+    expect(screen.getByText('Verified net revenue (partial)')).toBeVisible()
+    expect(screen.getByRole('status')).toHaveTextContent('Additional gross source receipts: $300.00')
+    expect(screen.getByRole('status')).toHaveTextContent('not included in the verified net total')
+    expect(screen.getByText('Verified parts profit (partial)')).toBeVisible()
+    expect(screen.queryByText('$400.00')).not.toBeInTheDocument()
+    expect(screen.getByText('Average weekly verified net revenue (partial) $100.00')).toBeVisible()
+    expect(screen.getByTestId('revenue-series')).toHaveAttribute('data-name', 'Verified net revenue (partial)')
+    expect(screen.getByText('Verified net revenue each week; additional gross source receipts await attribution.')).toBeVisible()
+  })
+
   it.each([
     ['day', 'daily'], ['week', 'weekly'], ['month', 'monthly'],
   ] as const)('labels the %s bucket average from displayed revenue, including zero periods', async (interval, adjective) => {

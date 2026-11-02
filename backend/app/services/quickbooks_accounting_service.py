@@ -552,6 +552,8 @@ async def sync_payment(
     invoice: Invoice,
     customer: Customer,
 ) -> str:
+    if getattr(invoice, "accounting_policy", None) == "source_collection_hold":
+        raise QuickBooksAccountingError("Source collection receipts require external accounting reconciliation")
     if payment.invoice_payment_attempt_id is not None:
         raise QuickBooksAccountingError(
             "Canonical invoice payments must use their settlement accounting writer"

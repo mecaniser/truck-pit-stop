@@ -3,6 +3,7 @@ import { currentInvoicePaymentSummary } from '@/lib/invoicePaymentPresentation'
 import InvoicePaymentSummary from '@/components/InvoicePaymentSummary'
 import { invoicePaymentLabels } from '@/lib/invoicePaymentLabels'
 import InvoiceReviewLink from '@/components/InvoiceReviewLink'
+import SourceCollectionSummary from '@/features/source-collection/SourceCollectionSummary'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import type { Stripe } from '@stripe/stripe-js'
@@ -169,6 +170,8 @@ export default function CustomerInvoicePage() {
   })
 
   const isHistoricalInvoice = invoice?.source === 'easy_truck_shop_import'
+  const isCollectionInvoice = invoice?.source === 'ets_collection_handoff'
+  const isLinkedSourceHistory = Boolean(invoice?.source_collection?.is_source_history)
   const settlementAccess = invoice?.id && !isHistoricalInvoice
     ? { kind: 'authenticated' as const, invoiceId: invoice.id }
     : null
@@ -180,7 +183,7 @@ export default function CustomerInvoicePage() {
   const { data: repairOrder } = useQuery<RepairOrderDetail>({
     queryKey: ['repair-order-payment-detail', invoice?.repair_order_id],
     queryFn: async () => (await api.get(`/repair-orders/${invoice!.repair_order_id}/detail`)).data,
-    enabled: Boolean(invoice?.repair_order_id && !isHistoricalInvoice),
+    enabled: Boolean(invoice?.repair_order_id && !isHistoricalInvoice && !invoice.source_collection),
   })
 
   const { data: zelleInfo, isLoading: isZelleLoading } = useQuery<ZelleInfoResponse>({
@@ -194,7 +197,7 @@ export default function CustomerInvoicePage() {
   const { data: quickBooksPayment, isLoading: isQuickBooksLoading } = useQuery<QuickBooksPaymentAvailability>({
     queryKey: ['quickbooks-payment-availability', invoice?.id],
     queryFn: async () => (await api.get(`/quickbooks/payments/availability/${invoice!.id}`)).data,
-    enabled: Boolean(invoice && !isHistoricalInvoice && invoice.status !== 'paid' && legacySettlementMode),
+    enabled: Boolean(invoice && !isHistoricalInvoice && !invoice.source_collection && invoice.status !== 'paid' && legacySettlementMode),
   })
 
   const createIntentMutation = useMutation({
@@ -374,14 +377,14 @@ export default function CustomerInvoicePage() {
             <span aria-hidden="true">·</span>
             <span className="text-[#d9a521]">{invoice.vehicle_info}</span>
             <span className="rounded-full border border-violet-400/35 bg-violet-400/10 px-2.5 py-0.5 text-[11px] font-bold text-[#a78bfa]">
-              {paymentSummary ? invoicePaymentLabels[paymentSummary.state] : isPaid ? 'paid' : 'invoiced'}
+              {isLinkedSourceHistory ? 'Original ETS record' : paymentSummary ? invoicePaymentLabels[paymentSummary.state] : isPaid ? 'paid' : 'invoiced'}
             </span>
           </p>
           {(isHistoricalInvoice || splitSettlement || cashReceipt || paymentSummary) && (
-            <p className="mt-2.5 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#8b92a5]">{isHistoricalInvoice && !paymentSummary ? 'Invoice total (recorded)' : paymentSummary?.state === 'cancelled' ? 'Invoice status' : cashReceipt ? 'Total paid in cash' : 'Balance due'}</p>
+            <p className="mt-2.5 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#8b92a5]">{isLinkedSourceHistory ? 'Original invoice total' : isHistoricalInvoice && !paymentSummary ? 'Invoice total (recorded)' : paymentSummary?.state === 'cancelled' ? 'Invoice status' : cashReceipt ? 'Total paid in cash' : 'Balance due'}</p>
           )}
           <h1 id="payment-total" className={`${splitSettlement ? 'mt-1' : 'mt-2.5'} whitespace-nowrap text-[38px] font-extrabold leading-none tracking-[-0.02em] tabular-nums sm:text-[46px]`}>
-            {isHistoricalInvoice && !paymentSummary ? money(invoice.total_amount) : paymentSummary?.state === 'cancelled' ? 'Cancelled' : paymentSummary?.balance_due === null ? 'Unavailable' : money(cashReceipt?.amount ?? splitSettlement?.outstanding_balance ?? paymentSummary?.balance_due ?? (isPaid ? '0' : pricing.selectedTotal))}
+            {isLinkedSourceHistory ? money(invoice.source_collection!.original_issued_total) : isHistoricalInvoice && !paymentSummary ? money(invoice.total_amount) : paymentSummary?.state === 'cancelled' ? 'Cancelled' : paymentSummary?.balance_due === null ? 'Unavailable' : money(cashReceipt?.amount ?? splitSettlement?.outstanding_balance ?? paymentSummary?.balance_due ?? (isPaid ? '0' : pricing.selectedTotal))}
           </h1>
           {!isHistoricalInvoice && !cashReceipt && !isPaid && <p className={`mt-1 min-h-5 text-[13px] font-bold ${selectedMethod === 'zelle' ? 'text-[#2dd4bf]' : 'text-[#8b92a5]'}`}>
             {splitSettlement
@@ -394,14 +397,25 @@ export default function CustomerInvoicePage() {
           </p>}
         </section>
 
-        <InvoicePaymentSummary summary={paymentSummary} dark />
+        {!isLinkedSourceHistory && <InvoicePaymentSummary summary={paymentSummary} dark />}
+        {invoice.source_collection && <SourceCollectionSummary summary={invoice.source_collection} dark originalInvoiceHref={invoice.source_collection.source_invoice_id ? `/portal/invoices/${invoice.source_collection.source_invoice_id}` : undefined} />}
 
         {isHistoricalInvoice ? (
           <section className="mt-4 rounded-[14px] border border-[#232939] bg-[#161a26] p-5" aria-labelledby="historical-invoice-title">
             <h2 id="historical-invoice-title" className="font-bold text-[#eceef4]">Historical invoice</h2>
-            <p className="mt-2 text-sm text-[#c9cdd8]">This imported invoice is read-only. Online payments are unavailable for this record.</p>
-            <p className="mt-2 text-sm text-[#9aa1b3]">You can review the available invoice details and download the PDF below. Contact the shop with any questions.</p>
+            {invoice.source_collection?.is_source_history && invoice.source_collection.native_invoice_id ? <>
+              <p className="mt-2 text-sm text-[#c9cdd8]">This is the original ETS record. Collection is tracked on the linked DBN invoice.</p>
+              <a className="mt-3 inline-flex min-h-11 items-center font-semibold text-[#c4b1ff]" href={`/portal/invoices/${invoice.source_collection.native_invoice_id}`}>Open collection invoice</a>
+            </> : <>
+              <p className="mt-2 text-sm text-[#c9cdd8]">This imported invoice is read-only. Online payments are unavailable for this record.</p>
+              <p className="mt-2 text-sm text-[#9aa1b3]">You can review the available invoice details and download the PDF below. Contact the shop with any questions.</p>
+            </>}
           </section>
+        ) : !isPaid && invoice.source_collection && (invoice.source_collection.collection_enabled === false
+          || invoice.source_collection.state !== 'active'
+          || ['source_conflict', 'source_unavailable'].includes(invoice.source_collection.source_sync_state)
+          || legacySettlementMode) ? (
+          <p role="status" className="my-4 text-center text-sm">Contact the shop to confirm payment availability for this collection copy.</p>
         ) : paymentSummary && ['cancelled', 'unknown'].includes(paymentSummary.state) ? (
           <p className="my-4 text-center text-sm">{paymentSummary.state === 'cancelled' ? 'This invoice is cancelled.' : 'Contact the shop to confirm your current balance before paying.'}</p>
         ) : isPaid ? (
@@ -439,7 +453,7 @@ export default function CustomerInvoicePage() {
                 queryClient.invalidateQueries({ queryKey: ['invoice-detail', invoiceId] })
               }}
             />
-            <SettlementCreditPanel
+            {!invoice.source_collection && <SettlementCreditPanel
               access={settlementAccess}
               summary={splitSettlement}
               tone="dark"
@@ -447,7 +461,7 @@ export default function CustomerInvoicePage() {
                 queryClient.setQueryData(['invoice-settlement', 'authenticated', invoice.id], next)
                 queryClient.invalidateQueries({ queryKey: ['invoice-detail', invoiceId] })
               }}
-            />
+            />}
             <SettlementPaymentPanel
               access={settlementAccess}
               summary={splitSettlement}
@@ -617,7 +631,7 @@ export default function CustomerInvoicePage() {
         <section className="mt-4 rounded-[14px] border border-[#232939] bg-[#161a26] px-5 py-4" aria-labelledby="charge-breakdown">
           <div className="flex items-center justify-between gap-4 pb-2">
             <h2 id="charge-breakdown" className="min-w-0 truncate text-[11px] font-extrabold uppercase tracking-[0.1em] text-[#8b92a5]">
-              {concern} · Charges
+              {isCollectionInvoice ? 'Collection balance' : `${concern} · Charges`}
             </h2>
             <a
               href={`/api/v1/invoices/${invoice.id}/pdf`}
@@ -628,8 +642,8 @@ export default function CustomerInvoicePage() {
               Invoice PDF
             </a>
           </div>
-          {cashReceipt ? <CashReceiptBreakdown receipt={cashReceipt} /> : <div>
-            {[
+          {cashReceipt && !isCollectionInvoice ? <CashReceiptBreakdown receipt={cashReceipt} /> : <div>
+            {(isCollectionInvoice ? [['Balance transferred', Number(invoice.subtotal)]] : [
               ...(isHistoricalInvoice ? [['Subtotal', Number(invoice.subtotal)] as [string, number]] : [['Labor / Services', labor], ['Parts', parts]]),
               ['Shop Supplies', Number(invoice.shop_supplies_amount || 0)],
               ['Tax', Number(invoice.tax_amount || 0)],
@@ -639,7 +653,7 @@ export default function CustomerInvoicePage() {
               ...((isHistoricalInvoice || selectedMethod === 'card') && pricing.cardFee > 0
                 ? [['Card Processing Fee', pricing.cardFee] as [string, number]]
                 : []),
-            ].map(([label, amount], index, rows) => (
+            ]).map(([label, amount], index, rows) => (
               <div key={label} className={`flex items-center justify-between py-[9px] text-[13px] ${index < rows.length - 1 ? 'border-b border-[#1e2432]' : ''}`}>
                 <span className="text-[#9aa1b3]">{label}</span>
                 <span className="whitespace-nowrap font-semibold text-[#eceef4] tabular-nums">{money(amount)}</span>

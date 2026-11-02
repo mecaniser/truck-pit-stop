@@ -342,6 +342,12 @@ async def provider_readiness(
         if node is None or node.deleted_at is not None:
             ancestry_reasons.append("invoice_settlement_ancestry_requires_review")
             break
+        if current_id == invoice_id and node.accounting_policy == "source_collection_hold":
+            from app.services.source_debt_handoff import invoice_handoff
+            try:
+                await invoice_handoff(db, node, require_active=True)
+            except SettlementDomainError as exc:
+                ancestry_reasons.append(exc.code)
         if lock_ancestry:
             from app.services.invoice_accounting_policy import locked_policy
             await locked_policy(db, node)
@@ -477,9 +483,9 @@ async def provider_readiness(
                 ~select(InvoiceSettlement.id).where(
                     InvoiceSettlement.tenant_id == tenant.id,
                     InvoiceSettlement.invoice_id == Invoice.id,
-                    InvoiceSettlement.customer_id == RepairOrder.customer_id,
+                    InvoiceSettlement.customer_id == case((Invoice.accounting_policy == "source_collection_hold", Invoice.billed_customer_id), else_=RepairOrder.customer_id),
                     InvoiceSettlement.deleted_at.is_(None),
-                ).correlate(Invoice).exists(),
+                ).correlate(Invoice,RepairOrder).exists(),
             )
             .limit(1)
         )
@@ -515,10 +521,11 @@ async def provider_readiness(
                     and_(
                         RepairOrder.id == Invoice.repair_order_id,
                         RepairOrder.tenant_id == InvoicePaymentAttempt.tenant_id,
-                        RepairOrder.customer_id == InvoicePaymentAttempt.customer_id,
+                        case((Invoice.accounting_policy == "source_collection_hold", Invoice.billed_customer_id), else_=RepairOrder.customer_id) == InvoicePaymentAttempt.customer_id,
                         or_(
                             RepairOrder.deleted_at.is_(None),
                             InvoicePaymentAttempt.source == "backfill",
+                            Invoice.accounting_policy == "source_collection_hold",
                         ),
                     ),
                 )
@@ -658,6 +665,7 @@ async def provider_readiness(
         and mappings_ready
         and writer_ready
         and backfill_ready
+        and not ancestry_reasons
     )
     status = "ready" if ready else (
         "unavailable_external_approval" if provider == "quickbooks_payments" and not provider_gate else "not_ready"
@@ -1023,7 +1031,18 @@ async def create_attempt(
         or invoice.voided_at is not None
     ):
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
-    active_order_id = await db.scalar(select(RepairOrder.id).where(
+    from app.services.source_debt_handoff import is_collection, invoice_handoff
+    collection = is_collection(invoice)
+    collection_admission = None
+    if collection:
+        bound = await invoice_handoff(db, invoice, require_active=True)
+        from app.services.source_debt_handoff import source_proof
+        source_admission=await source_proof(db,tenant.id,bound.source_dbn_invoice_id,bound.customer_id)
+        collection_admission=dict(handoff_id=str(bound.id),handoff_version=bound.version,
+            source_capture_sha256=source_admission['digest'],source_revision=source_admission['revision'],
+            source_observed_at=source_admission['summary'].observed_at.isoformat(),bill_to_authorization_sha256=bound.bill_to_authorization_sha256)
+        if bound.customer_id != customer_id:raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    active_order_id = invoice.repair_order_id if collection else await db.scalar(select(RepairOrder.id).where(
         RepairOrder.id == invoice.repair_order_id,
         RepairOrder.tenant_id == tenant.id,
         RepairOrder.customer_id == customer_id,
@@ -1183,7 +1202,7 @@ async def create_attempt(
         prior_state=prior_state,
         new_state=settlement.state,
         pending_delta=amount,
-        evidence={"source": source, "rail": rail, "provider": provider},
+        evidence={"source": source, "rail": rail, "provider": provider, **({"source_collection_admission":collection_admission} if collection_admission else {})},
     )
     if rail != "card" and sender_evidence:
         await append_ledger_event(
@@ -1225,6 +1244,7 @@ async def locked_accessible_invoice_for_attempt(
     """
     from app.services.financial_transaction_lock import lock_tenant_financials
     await lock_tenant_financials(db, attempt.tenant_id)
+    from app.services.source_debt_handoff import invoice_customer_access_clause
     invoice = (
         await db.execute(
             select(Invoice)
@@ -1234,7 +1254,7 @@ async def locked_accessible_invoice_for_attempt(
                 and_(
                     Customer.id == attempt.customer_id,
                     Customer.tenant_id == attempt.tenant_id,
-                    Customer.id == RepairOrder.customer_id,
+                    invoice_customer_access_clause(attempt.customer_id),
                     Customer.deleted_at.is_(None),
                 ),
             )
@@ -1258,8 +1278,8 @@ async def locked_accessible_invoice_for_attempt(
                 Invoice.voided_at.is_(None),
                 Invoice.status != InvoiceStatus.CANCELLED,
                 RepairOrder.tenant_id == attempt.tenant_id,
-                RepairOrder.customer_id == attempt.customer_id,
-                RepairOrder.deleted_at.is_(None),
+                invoice_customer_access_clause(attempt.customer_id),
+                or_(RepairOrder.deleted_at.is_(None), Invoice.accounting_policy == "source_collection_hold"),
                 RepairOrder.status != RepairOrderStatus.CANCELLED,
             )
             .with_for_update()
@@ -1269,6 +1289,10 @@ async def locked_accessible_invoice_for_attempt(
         raise SettlementDomainError(
             "invoice_not_found", "Invoice not found.", status_code=404
         )
+    if invoice.accounting_policy == "source_collection_hold":
+        from app.services.source_debt_handoff import invoice_handoff
+        handoff=await invoice_handoff(db,invoice,check_source=False)
+        if handoff.customer_id != attempt.customer_id:raise SettlementDomainError("invoice_not_found","Invoice not found.",status_code=404)
     return invoice
 
 
@@ -1278,7 +1302,12 @@ async def _enqueue_accounting(
     settlement: InvoiceSettlement,
     attempt: InvoicePaymentAttempt,
     config: TenantPaymentProviderConfiguration,
+    invoice: Optional[Invoice] = None,
 ) -> PaymentAccountingLink:
+    if invoice is not None and invoice.accounting_policy == "source_collection_hold":
+        settlement.accounting_sync_status = "external_reconciliation_pending"
+        invoice.quickbooks_sync_status = "external_reconciliation_pending"
+        return None
     await bind_settlement_accounting_realm(
         db,
         settlement=settlement,
@@ -1604,14 +1633,15 @@ async def confirm_attempt(
     ).scalar_one_or_none()
     if config is None:
         raise SettlementDomainError("provider_configuration_missing", "The snapshotted provider configuration is unavailable.")
-    await _enqueue_accounting(db, settlement=settlement, attempt=attempt, config=config)
+    await _enqueue_accounting(db, settlement=settlement, attempt=attempt, config=config, invoice=invoice)
 
     paid_transition = money(settlement.confirmed_principal) >= money(settlement.principal_total) and invoice.status != InvoiceStatus.PAID
     if paid_transition:
         invoice.status = InvoiceStatus.PAID
         if invoice.paid_at is None:
             invoice.paid_at = datetime.now(timezone.utc)
-        invoice.repair_order.status = RepairOrderStatus.PAID
+        if invoice.accounting_policy != "source_collection_hold":
+            invoice.repair_order.status = RepairOrderStatus.PAID
     settlement.state = settlement_state(settlement)
     await append_ledger_event(
         db,
@@ -1641,14 +1671,23 @@ async def confirm_attempt(
         db,
         settlement=settlement,
         attempt=attempt,
-        event_type="accounting_queued",
+        event_type="external_accounting_pending" if invoice.accounting_policy == "source_collection_hold" else "accounting_queued",
         idempotency_key=f"attempt:{attempt.id}:accounting-queued:v1",
         actor=actor,
         evidence={"writer": config.writer_strategy},
     )
 
     overpayment = refund = None
-    if unapplied_gross > ZERO:
+    if invoice.accounting_policy == "source_collection_hold":
+        from app.services.source_debt_handoff import record_native_receipt, get_handoff, event
+        await record_native_receipt(db, invoice, payment, attempt, actor)
+        if unapplied_gross > ZERO:
+            overpayment = PaymentOverpayment(tenant_id=tenant.id,invoice_id=invoice.id,settlement_id=settlement.id,source_attempt_id=attempt.id,customer_id=settlement.customer_id,amount=unapplied_gross,state="manual_review_required")
+            db.add(overpayment)
+            handoff=await get_handoff(db,tenant.id,invoice.source_debt_handoff_id,True)
+            handoff.state="source_conflict";handoff.version+=1
+            await event(db,handoff,actor,"overpayment_review_required","overpayment:"+str(attempt.id),{"amount":str(unapplied_gross),"automatic_refund":False})
+    elif unapplied_gross > ZERO:
         overpayment = PaymentOverpayment(
             tenant_id=tenant.id,
             invoice_id=invoice.id,
@@ -1731,7 +1770,7 @@ async def confirm_attempt(
         )
         db.add(outbox)
 
-    if paid_transition:
+    if paid_transition and invoice.accounting_policy != "source_collection_hold":
         await enqueue_paid_invoice_webhook(
             db, tenant=tenant, invoice=invoice,
             order=invoice.repair_order, customer=invoice.repair_order.customer,
@@ -1806,6 +1845,9 @@ async def create_refund(
     await lock_tenant_financials(db, tenant_id)
     if attempt.tenant_id != tenant_id:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    collection_invoice = await db.scalar(select(Invoice).where(Invoice.id == attempt.invoice_id, Invoice.tenant_id == tenant_id))
+    if collection_invoice and collection_invoice.accounting_policy == "source_collection_hold":
+        raise SettlementDomainError("collection_refund_requires_review", "Source collection refunds require an explicit cross-system reconciliation workflow.")
     if attempt.rail == "cash":
         raise SettlementDomainError("cash_refund_unavailable", "Local cash refunds require a separate supported reversal workflow.")
     amount = money(amount)
@@ -2074,6 +2116,9 @@ async def record_credit_consent(
     ).scalar_one_or_none()
     if not overpayment:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    source_invoice = await db.scalar(select(Invoice).where(Invoice.id == overpayment.invoice_id, Invoice.tenant_id == tenant_id))
+    if source_invoice and source_invoice.accounting_policy == "source_collection_hold":
+        raise SettlementDomainError("collection_credit_requires_review", "Source collection overpayments require cross-system review.")
     existing = (
         await db.execute(select(CustomerCreditEntry).where(CustomerCreditEntry.tenant_id == tenant_id, CustomerCreditEntry.idempotency_key == idempotency_key))
     ).scalar_one_or_none()
@@ -2245,6 +2290,8 @@ async def apply_customer_credit(
     actor: Optional[CurrentUser],
     idempotency_key: str,
 ) -> tuple[CustomerCreditEntry, InvoiceSettlement]:
+    from app.services.source_debt_handoff import is_collection
+    if is_collection(invoice):raise SettlementDomainError("collection_credit_review_required", "Source collection credits require explicit external reconciliation.")
     from app.services.financial_transaction_lock import lock_tenant_financials
     await lock_tenant_financials(db, tenant.id)
     amount = money(amount)
@@ -2493,6 +2540,8 @@ async def authorize_early_release(
 ) -> InvoiceSettlement:
     from app.services.financial_transaction_lock import lock_tenant_financials
     await lock_tenant_financials(db, tenant.id)
+    if invoice.accounting_policy == "source_collection_hold":
+        raise SettlementDomainError("collection_release_unavailable", "Source collection does not change the historical repair order.")
     if actor.role not in {UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN} or not user_has_permission(actor, "payments"):
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
     settlement = await get_or_create_settlement(

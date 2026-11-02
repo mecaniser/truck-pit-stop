@@ -273,3 +273,5 @@ from app.db.models.twilio_reply_route import TwilioReplyRoute
 from app.db.models.conversation_contact import ConversationContactLink, ContactRepairLink, ConversationContextMutation
 
 from app.db.models.vehicle_issue import VehicleIssue, VehicleIssueLink, VehicleIssueRequest, VehicleIssueEvent
+
+from app.db.models.source_debt_handoff import SourceDebtHandoff, EtsReceiptUpdateTask, SourceReceiptLink, SourceDebtEvent

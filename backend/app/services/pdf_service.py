@@ -216,6 +216,7 @@ def generate_invoice_pdf(
     service_fee_amount: Decimal = Decimal("0"),
     cash_receipt: bool = False,
     payment_summary: Optional[dict] = None,
+    source_collection: Optional[dict] = None,
     subtotal: Decimal = Decimal("0"),
     tax_amount: Decimal = Decimal("0"),
     tax_rate: Optional[float] = None,
@@ -269,12 +270,33 @@ def generate_invoice_pdf(
     doc.addPageTemplates([PageTemplate(id="main", frames=[frame], onPage=page_handler)])
 
     story = []
+    if source_collection:
+        if source_collection.get("is_source_history"):
+            payment_summary = {"state":"unknown", "note":"Historical source copy. Contact the shop for current billing information; do not pay this copy separately."}
+        label = "Source invoice history" if source_collection.get("is_source_history") else "Collection copy"
+        source_number = escape(str(source_collection.get("source_invoice_number", "")))
+        story.append(_p(f'<b>{label} of ETS invoice {source_number}</b>', S_BOLD))
+        if source_collection.get("original_invoice_date"):
+            story.append(_p("Original invoice date: " + escape(str(source_collection["original_invoice_date"])[:10]), S_SMALL))
+        original = Decimal(source_collection["original_issued_total"])
+        prior = Decimal(source_collection["source_prior_allocated"])
+        opening = Decimal(source_collection.get("opening_principal") or "0")
+        story.append(_p(f'Original issued total: {_fmt(original)}  |  Prior ETS payments / credits: {_fmt(prior)}', S_SMALL))
+        if source_collection.get("restricted_history"):
+            story.append(_p('Preserved source history. Contact the shop for current billing information; this is not a separate payment request.', S_SMALL))
+        else:
+            story.append(_p(f'Balance transferred to DBN: {_fmt(opening)}. Balance includes original charges. This copy is not a new sale or tax invoice.', S_SMALL))
+        if source_collection.get("is_source_history") and not source_collection.get("restricted_history"):
+            current_balance = source_collection.get("balance_due")
+            balance_label = _fmt(Decimal(current_balance)) if current_balance is not None else "Needs shop verification"
+            story.append(_p("Current linked DBN balance: <b>" + balance_label + "</b>. This historical copy is not a separate payment request.", S_SMALL))
+        story.append(Spacer(1, 10))
 
     if payment_summary:
         status = payment_summary.get("state", "unknown")
     # ── Bill To / Invoice Info (2-column) ──────────────────────────────────────
     status_col = _status_color(status)
-    status_lbl = _status_label(status)
+    status_lbl = "SOURCE HISTORY" if source_collection and source_collection.get("is_source_history") else _status_label(status)
 
     bill_rows = []
     if customer_company:
@@ -471,6 +493,16 @@ def generate_invoice_pdf(
         ("RIGHTPADDING", (0, 0), (-1, -1), 6),
     ]
 
+    collection_copy = bool(source_collection and not source_collection.get("is_source_history"))
+    if collection_copy:
+        COL_W = [CONTENT_W * .72, CONTENT_W * .28]
+        rows = [[_p("Description", _style("collection-th", fontName="Helvetica-Bold", fontSize=8, textColor=white)),
+                 _p("Transferred balance", _style("collection-th-amount", fontName="Helvetica-Bold", fontSize=8, textColor=white, alignment=TA_RIGHT))],
+                [_p("Balance transferred from ETS invoice " + escape(str(source_collection.get("source_invoice_number", ""))), S_BODY),
+                 _p(_fmt(Decimal(source_collection["opening_principal"])), S_RIGHT_BOLD)]]
+        row_styles = [("BACKGROUND", (0,0), (-1,0), C_DARK), ("VALIGN", (0,0), (-1,-1), "TOP"),
+                      ("TOPPADDING", (0,0), (-1,-1), 7), ("BOTTOMPADDING", (0,0), (-1,-1), 7),
+                      ("LINEBELOW", (0,1), (-1,1), .25, C_BORDER)]
     items_tbl = Table(rows, colWidths=COL_W, repeatRows=1)
     items_tbl.setStyle(TableStyle(row_styles))
     story.append(items_tbl)
@@ -504,7 +536,9 @@ def generate_invoice_pdf(
         total_rows.append(total_row(f"Discount", -discount_amount, color=C_GREEN))
     tax_label = "Sales tax (not charged)" if cash_receipt and tax_amount == 0 else "Tax (exempt)" if tax_exempt else (f"Tax ({tax_rate:.2f}%)" if tax_rate else "Tax")
     total_rows.append(total_row(tax_label, tax_amount))
-    total_rows.append(total_row("TOTAL PAID — CASH" if cash_receipt else "INVOICE TOTAL", total_amount, bold=True, color=white))
+    if collection_copy:
+        total_rows = []
+    total_rows.append(total_row("TOTAL PAID — CASH" if cash_receipt else "TRANSFERRED BALANCE" if source_collection and not source_collection.get("is_source_history") else "INVOICE TOTAL", total_amount, bold=True, color=white))
 
     sum_tbl = Table(
         total_rows,

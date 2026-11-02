@@ -447,3 +447,17 @@ async def test_owner_review_rejects_unrelated_ancestor_ledger(db_session, monkey
     await db_session.flush()
     reason, _ = await cash.cash_eligibility(db_session, ctx[3], ctx[4])
     assert "outside the owner's reviewed cash attestation" in reason
+
+
+def test_nullable_collection_lineage_legacy_digest_never_omits_nonnull_lineage():
+    invoice=Invoice()
+    legacy=cash.event_history_digest(invoice,_omit_null_invoice_fields={'source_debt_handoff_id'})
+    assert legacy in cash.compatible_invoice_history_digests(invoice)
+    canonical=cash.event_history_digest(invoice)
+    assert canonical in cash.compatible_invoice_history_digests(invoice)
+    invoice.source_debt_handoff_id=uuid4()
+    assert legacy not in cash.compatible_invoice_history_digests(invoice)
+    assert canonical not in cash.compatible_invoice_history_digests(invoice)
+    bound=cash.event_history_digest(invoice)
+    invoice.source_debt_handoff_id=uuid4()
+    assert bound not in cash.compatible_invoice_history_digests(invoice)

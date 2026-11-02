@@ -33,6 +33,7 @@ DB target comes from $DATABASE_URL (async URL is normalized to psycopg2), or
 falls back to the local dev DSN. Tenant via --tenant-id (required for import).
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -492,6 +493,42 @@ def _ro_money_split(inv_data, fallback_total):
     return (Decimal("0.00"), fallback_total)
 
 
+def _first_value(row):
+    return next(iter(row.values())) if isinstance(row, dict) else row[0]
+
+
+def _lock_source_money(cursor, tenant_id):
+    # Same aggregate key as app.services.financial_transaction_lock. Never wait
+    # with source rows locked, and never retry an uncertain write automatically.
+    key = int.from_bytes(hashlib.sha256(
+        f"dieselbridge:financial:v1:{uuid.UUID(str(tenant_id))}".encode()
+    ).digest()[:8], "big", signed=True)
+    cursor.execute("SELECT pg_try_advisory_xact_lock(%s)", (key,))
+    if not _first_value(cursor.fetchone()):
+        raise RuntimeError("Tenant financial processing is busy; importer held")
+
+
+def _source_debt_owned(cursor, tenant_id, service_no, data, invoice_id=None):
+    cursor.execute("SELECT to_regclass('source_debt_handoffs')")
+    if _first_value(cursor.fetchone()) is None:
+        return False  # Before the additive migration no handoff can exist.
+    evidence = normalize_source_evidence((data or {}).get("sourceEvidence")) or {}
+    invoice_no = str((data or {}).get("invoiceNumber") or "")
+    cursor.execute("""SELECT EXISTS (SELECT 1 FROM source_debt_handoffs
+        WHERE tenant_id=%s AND (
+            source_dbn_invoice_id=%s
+            OR (ets_shop_id=%s AND ets_invoice_internal_id=%s)
+            OR (source_service_number=%s AND (%s='' OR source_invoice_number=%s))))""",
+        (tenant_id, invoice_id, evidence.get("ets_shop_id"), evidence.get("invoice_id"),
+         str(service_no), invoice_no, invoice_no))
+    # All states (including closed/deleted) preserve permanent source identity.
+    return bool(_first_value(cursor.fetchone()))
+
+
+def _handoff_skip(stats):
+    stats["source_debt_handoff_skipped"] = stats.get("source_debt_handoff_skipped", 0) + 1
+
+
 def _create_invoice_and_payments(w, tenant_id, ro_id, order_number, service_no,
                                   invoices_by_service_no, existing_invoice_numbers, stats, now):
     """Analytics/reports (see backend/app/api/v1/endpoints/reports.py) key off
@@ -506,6 +543,10 @@ def _create_invoice_and_payments(w, tenant_id, ro_id, order_number, service_no,
     here is informational only (same convention that older import used) —
     total = subtotal + tax, not subtotal + tax + shop_supplies."""
     inv_data = invoices_by_service_no.get(service_no)
+    _lock_source_money(w, tenant_id)
+    if _source_debt_owned(w, tenant_id, service_no, inv_data):
+        _handoff_skip(stats)
+        return
     if not inv_data or inv_data.get("total") is None:
         stats["inv_no_data"] += 1
         return
@@ -658,11 +699,12 @@ def _sync_payments_for_existing_invoices(conn, w, cur, tenant_id, invoices_by_se
     its payment list. Re-derives the invoice's paid status afterwards, so an
     invoice that has since been settled starts counting as revenue.
     """
+    _lock_source_money(w, tenant_id)
     by_invoice_no = {}
     for svc, d in invoices_by_service_no.items():
         num = d.get("invoiceNumber")
         if num:
-            by_invoice_no[str(num)] = d
+            by_invoice_no[str(num)] = (str(svc), d)
 
     cur.execute(
         """SELECT id, invoice_number, total_amount, status, paid_at
@@ -672,8 +714,12 @@ def _sync_payments_for_existing_invoices(conn, w, cur, tenant_id, invoices_by_se
         (tenant_id, IMPORT_SOURCE))
     for inv in cur.fetchall():
         ets_no = (inv["invoice_number"] or "").replace("ETSINV-", "").split("-")[0]
-        d = by_invoice_no.get(ets_no)
-        if not d:
+        found = by_invoice_no.get(ets_no)
+        if not found:
+            continue
+        svc, d = found
+        if _source_debt_owned(w, tenant_id, svc, d, inv["id"]):
+            _handoff_skip(stats)
             continue
         scraped = [(Decimal(str(p["amount"])), _parse_ets_date(p.get("date")))
                    for p in (d.get("payments") or [])]
@@ -730,6 +776,7 @@ def resync(conn, tenant_id, commit):
     recs = build_records(customers, tenant_id)
     invoices_by_service_no = _load_invoices()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    _lock_source_money(cur, tenant_id)
     now = datetime.utcnow()
 
     # --- load existing import rows keyed by external id ---
@@ -844,6 +891,9 @@ def resync(conn, tenant_id, commit):
     # Repair orders: order_number is deterministic, so existing ones are simply
     # left as-is (historical work orders don't change). Only insert new ones.
     for r in recs["repair_orders"]:
+        if _source_debt_owned(w, tenant_id, r["service_no"], invoices_by_service_no.get(r["service_no"])):
+            _handoff_skip(stats)
+            continue
         if r["order_number"] in existing_ro:
             stats["ro_exists"] += 1
             continue
