@@ -13,7 +13,7 @@ Customer copy omits source-transfer/platform implementation explanations. Shop l
 ## Verification
 
 - Backend focused identity, source-collection and PDF/review tests: 62 passed. Includes another tenant prefix, leading zero, invalid source/header content, ordinary compatibility, exact linked history, unlinked imports, foreign tenant and tampered authorization.
-- Frontend focused identity/branding/dashboard/history/payment tests: 63 passed.
+- Frontend focused identity/branding/dashboard/history/payment tests: 63 passed;24 additional partial-payment draft regressions passed with the public Payment amount label.
 - Production frontend build passed. Changed-source lint passed across14 files.
 - Browser fixture at http://127.0.0.1:5173/invoice-preview.html serves this worktree's actual components with synthetic data and API origin loopback port9; writes rejected. Guest title/header TPS-1687, full268.44 and partial100.00 showing remaining168.44; dashboard one268.44 invoice/TPS-1687 and no internal identifier or duplicated subtitle.390px layout no horizontal overflow. Inspected local screenshots in output/.
 - Runtime receipt 2026-11-02: branch codex/tenant-invoice-identity base7a76258d, dirty owned changes; frontend5173 PID20178 cwd/private/tmp/db149-tenant-invoice-identity/frontend. Unrelated Docker8000 preserved. Backend configuration absent; no local full-stack claim. Aligned and browser-verified frontend fixture only.
