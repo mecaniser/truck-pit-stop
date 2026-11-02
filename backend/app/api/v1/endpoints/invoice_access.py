@@ -1,3 +1,4 @@
+from app.services.invoice_identity import load_invoice_display_number, pdf_filename_for_number
 from app.services.source_debt_handoff import source_collection_for_invoice, is_collection, invoice_handoff
 from app.services.invoice_payment_presentation import InvoicePaymentSummary, load_payment_summary
 from app.services.invoice_review_service import invoice_review_url
@@ -1237,7 +1238,7 @@ async def download_invoice_pdf_by_token(
         invoice_access_url=None, cash_receipt=cash_receipt,
     )
 
-    filename = f"Invoice-{invoice.invoice_number}.pdf"
+    filename = pdf_filename_for_number(await load_invoice_display_number(db, invoice, tenant))
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

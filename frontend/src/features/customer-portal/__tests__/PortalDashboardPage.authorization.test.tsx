@@ -132,6 +132,13 @@ describe('PortalDashboardPage authorization actions', () => {
     expect(await screen.findByRole('link', { name: 'Pay invoices — $100.00' })).toHaveAttribute('href', '/portal/invoices/native-unpaid')
   })
 
+  it('shows only the tenant reference for the collection invoice', async () => {
+    renderDashboard([], [], 200, [{ id: 'current', invoice_number: 'DBN-COL-INTERNAL-ID', source: 'ets_collection_handoff', status: 'sent', total_amount: '268.44', source_collection: { display_invoice_number: 'TPS-1687' } } as Invoice])
+    await screen.findByRole('link', { name: 'Pay invoices — $268.44' })
+    expect(screen.getAllByText('Invoice TPS-1687').length).toBeGreaterThan(0)
+    expect(screen.queryByText(/DBN-COL|INTERNAL-ID/)).not.toBeInTheDocument()
+  })
+
   it('uses recorded cash amount in recently paid and paid YTD', async () => {
     renderDashboard([], [], 200, [{ id: 'cash-invoice', status: 'paid', total_amount: '115.00', paid_at: new Date().toISOString(), cash_receipt: { method: 'cash', amount: '101.00' } } as Invoice])
     await screen.findByText('Recently paid')

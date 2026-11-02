@@ -1,3 +1,4 @@
+from app.services.invoice_identity import load_invoice_display_number, pdf_filename_for_number
 from app.services.source_debt_handoff import source_collection_for_invoice, source_history_alias_clause, effective_billing_customer, invoice_customer_access_clause, can_view_source_history
 from app.services.invoice_payment_presentation import InvoicePaymentSummary, load_payment_summary, payment_summary_html
 from app.services.invoice_review_service import invoice_review_url, invoice_review_html
@@ -577,7 +578,7 @@ async def enqueue_invoice_created_email(
         aggregate_id=invoice.id,
         idempotency_key=f"invoice-email:{invoice.id}:created",
         recipient=recipient.email,
-        subject=f"Invoice {invoice.invoice_number} – {vehicle_info}",
+        subject=f"Invoice {await load_invoice_display_number(db, invoice, tenant)} – {vehicle_info}",
         body=email_html,
         template_name="invoice_created",
         sender_name=tenant.name,
@@ -665,14 +666,14 @@ async def notify_invoice_created(
             parts_items=parts_items,
             invoice_access_url=invoice_access_url,
         )
-        attachments = [{"filename": f"Invoice-{invoice.invoice_number}.pdf", "content": pdf_bytes}]
+        attachments = [{"filename": pdf_filename_for_number(await load_invoice_display_number(db, invoice, tenant)), "content": pdf_bytes}]
     except Exception:
         attachments = None
     await send_email(
         db=db,
         tenant_id=str(order.tenant_id),
         to=recipient.email,
-        subject=f"Invoice {invoice.invoice_number} – {vehicle_info}",
+        subject=f"Invoice {await load_invoice_display_number(db, invoice, tenant)} – {vehicle_info}",
         body=email_html,
         template_name="invoice_created",
         attachments=attachments,
@@ -1475,7 +1476,7 @@ async def resend_invoice(
             labor_items=labor_items, parts_items=parts_items,
             invoice_access_url=invoice_access_url, cash_receipt=cash_receipt,
         )
-        attachments = [{"filename": f"Invoice-{invoice.invoice_number}.pdf", "content": pdf_bytes}]
+        attachments = [{"filename": pdf_filename_for_number(await load_invoice_display_number(db, invoice, tenant)), "content": pdf_bytes}]
     except Exception:
         attachments = None
 
@@ -1483,7 +1484,7 @@ async def resend_invoice(
         db=db,
         tenant_id=str(invoice.tenant_id),
         to=to_email,
-        subject=f"Invoice {invoice.invoice_number} – {vehicle_info}",
+        subject=f"Invoice {await load_invoice_display_number(db, invoice, tenant)} – {vehicle_info}",
         body=email_html,
         template_name="invoice_resend",
         attachments=attachments,
@@ -1534,7 +1535,7 @@ async def download_invoice_pdf(
         invoice_access_url=None, cash_receipt=cash_receipt,
     )
 
-    filename = f"Invoice-{inv.invoice_number}.pdf"
+    filename = pdf_filename_for_number(await load_invoice_display_number(db, inv, tenant))
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

@@ -1,3 +1,4 @@
+import { customerInvoiceLabel } from '@/lib/invoiceIdentity'
 import { ControlButton } from '@/components/ui/Controls'
 import { useMemo, useState } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
@@ -313,7 +314,7 @@ export default function PortalDashboardPage() {
               >
                 <div className="min-w-0">
                   <p className="truncate text-[13px] font-extrabold">{overdueDays > 0 ? 'Past-due invoice' : 'Invoice ready to pay'}</p>
-                  <p className="mt-0.5 truncate text-[11px] text-[#8b92a5]">{order?.order_number || invoice.invoice_number} · {order ? orderVehicleLabel(order) : 'Repair service'}</p>
+                  <p className="mt-0.5 truncate text-[11px] text-[#8b92a5]">{invoice.source_collection ? customerInvoiceLabel(invoice) : order?.order_number || customerInvoiceLabel(invoice)} · {order ? orderVehicleLabel(order) : 'Repair service'}</p>
                 </div>
                 <span className="hidden truncate text-xs text-[#9aa1b3] sm:block">
                   {overdueDays > 0 ? `${overdueDays} day${overdueDays === 1 ? '' : 's'} past due` : 'Payment due'}
@@ -413,7 +414,7 @@ export default function PortalDashboardPage() {
                     {selecting && (
                       <ControlButton controlKind="action"
                         type="button"
-                        aria-label={`${isSelected ? 'Deselect' : 'Select'} invoice ${invoice.invoice_number}`}
+                        aria-label={`${isSelected ? 'Deselect' : 'Select'} ${customerInvoiceLabel(invoice)}`}
                         onClick={() => toggleInvoice(invoice.id)}
                         className={`flex  w-5 items-center justify-center rounded border ${isSelected ? 'border-[#8b7cf7] bg-[#8b7cf7] text-[#0e1118]' : 'border-[#343b52]'}`}
                       >
@@ -421,8 +422,8 @@ export default function PortalDashboardPage() {
                       </ControlButton>
                     )}
                     <div className="min-w-0">
-                      <p className="truncate text-[13px] font-bold">{order?.order_number || invoice.invoice_number}</p>
-                      <p className="mt-0.5 truncate text-[11px] text-[#8b92a5]">{order?.description || `Invoice ${invoice.invoice_number}`}</p>
+                      <p className="truncate text-[13px] font-bold">{invoice.source_collection ? customerInvoiceLabel(invoice) : order?.order_number || customerInvoiceLabel(invoice)}</p>
+                      {(!invoice.source_collection || order?.description) && <p className="mt-0.5 truncate text-[11px] text-[#8b92a5]">{order?.description || customerInvoiceLabel(invoice)}</p>}
                     </div>
                     <div className="col-span-2 flex items-center justify-between gap-2 sm:col-span-1 sm:block">
                       <span className={`rounded-md px-2 py-1 text-[11px] font-extrabold ${
@@ -466,7 +467,7 @@ export default function PortalDashboardPage() {
               const order = orderById.get(invoice.repair_order_id)
               return (
                 <div key={invoice.id} className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-[11px] border border-[#1e2432] bg-[#12161f] px-3.5 py-2.5 sm:grid-cols-[210px_1fr_auto_84px]">
-                  <span className="truncate text-[13px] font-bold">{order?.order_number || invoice.invoice_number}</span>
+                  <span className="truncate text-[13px] font-bold">{invoice.source_collection ? customerInvoiceLabel(invoice) : order?.order_number || customerInvoiceLabel(invoice)}</span>
                   <span className="hidden truncate text-xs text-[#8b92a5] sm:block">{order?.description || 'Repair service'}</span>
                   <PaidBadge />
                   <Money className="text-right text-sm font-extrabold">{formatMoney(invoice.cash_receipt?.amount ?? invoice.total_amount)}</Money>

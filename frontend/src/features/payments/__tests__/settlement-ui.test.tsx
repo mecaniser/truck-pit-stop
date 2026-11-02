@@ -139,12 +139,12 @@ describe('SettlementPaymentPanel', () => {
     renderWithQuery(<SettlementPaymentPanel access={audience === 'guest' ? { kind: 'guest', token: 'guest-preview-token' } : { kind: 'authenticated', invoiceId: summary.invoice_id }} summary={summary} audience={audience} tone="light" onUpdated={vi.fn()} />)
     expect(screen.getByRole('button', { name: 'Pay in full' })).toHaveAttribute('aria-pressed', 'true')
     await user.click(screen.getByRole('button', { name: 'Pay part' }))
-    await user.type(screen.getByLabelText('Amount applied to invoice'), '100.00')
+    await user.type(screen.getByLabelText(/^(Amount applied to invoice|Payment amount)$/), '100.00')
     expect(screen.getByRole('status')).toHaveTextContent('Remaining after confirmation: $168.44')
     expect(screen.getByRole('button', { name: 'Pay part' })).toHaveAttribute('aria-pressed', 'true')
     expect(paymentApi.createPaymentAttempt).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Pay in full' }))
-    expect(screen.getByLabelText('Amount applied to invoice')).toHaveValue('268.44')
+    expect(screen.getByLabelText(/^(Amount applied to invoice|Payment amount)$/)).toHaveValue('268.44')
     expect(screen.queryByText(/Remaining after confirmation/)).not.toBeInTheDocument()
   })
 
@@ -177,7 +177,7 @@ describe('SettlementPaymentPanel', () => {
         summary={fixture.summary}
         audience="customer"
         tone="light"
-        zelleRecipient={{ display: 'pay@example.com', memo: 'INV-48' }}
+        zelleRecipient={{ display: 'pay@example.com', memo: 'TPS-1687' }}
         onUpdated={vi.fn()}
       />,
     )
@@ -188,6 +188,7 @@ describe('SettlementPaymentPanel', () => {
     await user.type(screen.getByLabelText('Zelle transaction reference (optional)'), 'ZELLE-PORTAL-334')
     await user.type(screen.getByLabelText('Note to shop (optional)'), 'Sent by dispatch')
     await user.click(screen.getByRole('button', { name: /reserve zelle amount/i }))
+    expect(JSON.stringify(paymentApi.createPaymentAttempt.mock.calls[0]?.[1])).not.toContain('TPS-1687')
     expect(paymentApi.createPaymentAttempt).toHaveBeenCalledWith(
       { kind: 'authenticated', invoiceId: fixture.summary.invoice_id },
       expect.objectContaining({ amount: '334.00', rail: 'zelle', expected_settlement_version: 2, sender_evidence: expect.objectContaining({reference:'ZELLE-PORTAL-334',note:'Sent by dispatch'}) }),
@@ -195,7 +196,7 @@ describe('SettlementPaymentPanel', () => {
     )
     expect(await screen.findByText('Zelle amount reserved')).toBeInTheDocument()
     expect(screen.getByText('pay@example.com')).toBeInTheDocument()
-    expect(screen.getByText('INV-48')).toBeInTheDocument()
+    expect(screen.getByText('TPS-1687')).toBeInTheDocument()
   })
 
   it('keeps the remaining balance payable after a partial Zelle reservation', async () => {
@@ -231,7 +232,7 @@ describe('SettlementPaymentPanel', () => {
           summary={current}
           audience="customer"
           tone="light"
-          zelleRecipient={{ display: 'pay@example.com', memo: 'INV-48' }}
+          zelleRecipient={{ display: 'pay@example.com', memo: 'TPS-1687' }}
           onUpdated={setCurrent}
         />
       )
@@ -239,7 +240,7 @@ describe('SettlementPaymentPanel', () => {
 
     renderWithQuery(<PartialZelleHarness />)
     await user.click(screen.getByRole('radio', { name: /zelle/i }))
-    const amount = screen.getByLabelText(/amount applied/i)
+    const amount = screen.getByLabelText(/^(amount applied to invoice|payment amount)$/i)
     await user.clear(amount)
     await user.type(amount, '500')
     await user.click(screen.getByRole('button', { name: /reserve zelle amount/i }))
@@ -247,7 +248,7 @@ describe('SettlementPaymentPanel', () => {
     const continueButton = await screen.findByRole('button', { name: /make another payment.*\$334\.00 available/i })
     await user.click(continueButton)
     expect(screen.getByRole('heading', { name: /payment method/i })).toBeInTheDocument()
-    expect(screen.getByLabelText(/amount applied/i)).toHaveValue('334.00')
+    expect(screen.getByLabelText(/^(amount applied to invoice|payment amount)$/i)).toHaveValue('334.00')
   })
 
   it('requires staff evidence and never offers cash or fleet payment', async () => {
@@ -270,7 +271,7 @@ describe('SettlementPaymentPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Pay partial amount' }))
     const submit = screen.getByRole('button', { name: /record check/i })
     expect(submit).toBeDisabled()
-    const amount = screen.getByLabelText(/amount applied/i)
+    const amount = screen.getByLabelText(/^(amount applied to invoice|payment amount)$/i)
     await user.clear(amount)
     await user.type(amount, '200')
     await user.type(screen.getByLabelText(/check number/i), 'CHK-884')
