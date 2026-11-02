@@ -101,6 +101,47 @@ async def load_payment_summary(db, invoice, cash_receipt=None):
     return project_payment_summary(invoice, settlement, payments, cash_receipt)
 
 
+async def load_payment_summaries(db, invoices, *, tenant_id, cash_receipts=None):
+    """Project an authorized invoice page with at most two evidence reads.
+
+    Callers pass current ORM invoices already selected by customer/tenant access
+    rules, never persisted list payloads. No projection is initialized or saved.
+    """
+    if not invoices:
+        return {}
+    if tenant_id is None or any(invoice.tenant_id != tenant_id for invoice in invoices):
+        raise ValueError("Invoice summary page must belong to the selected tenant")
+    cash_receipts = cash_receipts or {}
+    evidence_ids = [invoice.id for invoice in invoices if not cash_receipts.get(invoice.id)]
+    settlements = {}
+    payments = {}
+    if evidence_ids:
+        rows = (await db.execute(select(InvoiceSettlement).where(
+            InvoiceSettlement.tenant_id == tenant_id,
+            InvoiceSettlement.invoice_id.in_(evidence_ids),
+            InvoiceSettlement.deleted_at.is_(None),
+        ))).scalars().all()
+        settlements = {row.invoice_id: row for row in rows}
+        legacy_ids = [invoice_id for invoice_id in evidence_ids if invoice_id not in settlements]
+        if legacy_ids:
+            rows = (await db.execute(select(Payment).where(
+                Payment.tenant_id == tenant_id,
+                Payment.invoice_id.in_(legacy_ids),
+                Payment.deleted_at.is_(None),
+            ))).scalars().all()
+            for payment in rows:
+                payments.setdefault(payment.invoice_id, []).append(payment)
+    return {
+        invoice.id: project_payment_summary(
+            invoice,
+            settlements.get(invoice.id),
+            payments.get(invoice.id, ()),
+            cash_receipts.get(invoice.id),
+        )
+        for invoice in invoices
+    }
+
+
 def payment_summary_html(summary):
     from html import escape
     labels = {'paid':'PAID','unpaid':'UNPAID','partially_paid':'PARTIALLY PAID','payment_pending':'PAYMENT PENDING','partially_paid_pending':'PARTIALLY PAID · PAYMENT PENDING','overdue':'OVERDUE','cancelled':'CANCELLED','unknown':'BALANCE NEEDS VERIFICATION'}

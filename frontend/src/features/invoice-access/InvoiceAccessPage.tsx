@@ -1,3 +1,4 @@
+import { collectionAppliedPrincipal } from '@/features/source-collection/collectionAppliedPrincipal'
 import { customerInvoiceLabel, customerInvoiceMemo } from '@/lib/invoiceIdentity'
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { currentInvoicePaymentSummary } from '@/lib/invoicePaymentPresentation'
@@ -27,6 +28,7 @@ import {
   SettlementPaymentPanel,
   SettlementResolutionPanel,
   SettlementSummaryCard,
+  isPositiveMoney,
   isSettlementUnavailable,
   paymentApiError,
   useInvoiceAllocations,
@@ -303,6 +305,7 @@ export default function InvoiceAccessPage() {
   const isPaid = !!invoice && (paymentSummary ? paymentSummary.state === 'paid' : splitSettlement?.state === 'paid' || invoice.is_paid || paidInThisSession)
   const cashReceipt = isPaid ? invoice?.cash_receipt : null
   const paidAt = cashReceipt?.paid_at ?? paymentResult?.paidAt ?? invoice?.paid_at ?? null
+  const collectionApplied = invoice?.source_collection ? collectionAppliedPrincipal(invoice.source_collection, splitSettlement ? (paymentSummary?.applied_amount === null ? null : splitSettlement.confirmed_principal) : (paymentSummary ? paymentSummary.applied_amount : invoice.source_collection.native_confirmed_principal)) : null
   const portalTokenForCreate = paidInThisSession
     ? paymentResult?.portalEnrollmentToken ?? null
     : token
@@ -658,6 +661,11 @@ export default function InvoiceAccessPage() {
           </div>
 
           {!invoice.source_collection?.is_source_history && !splitSettlement && <InvoicePaymentSummary summary={paymentSummary} />}
+          {!invoice.source_collection?.is_source_history && isPaid && splitSettlement && (isPositiveMoney(splitSettlement.refund_pending) || isPositiveMoney(splitSettlement.unapplied_credit)) && <SettlementSummaryCard audience="customer" streamlined resolutionOnly summary={splitSettlement} tone="light" />}
+          {invoice.source_collection && !invoice.source_collection.is_source_history && <div className="mb-6 rounded-xl border border-gray-200 p-4 text-sm" aria-label="Invoice amounts">
+            <div className="flex justify-between gap-4"><span>Invoice total</span><span>{formatMoney(invoice.source_collection.original_issued_total)}</span></div>
+            {isPositiveMoney(collectionApplied) && <div className="mt-2 flex justify-between gap-4"><span>Payments / credits applied</span><span>{formatMoney(`-${collectionApplied}`)}</span></div>}
+          </div>}
 
           {(!invoice.source_collection || invoice.source_collection.is_source_history) && <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
             <h3 className="text-sm font-semibold text-gray-900 mb-3">{cashReceipt ? 'Cash Receipt Breakdown' : 'Invoice Breakdown'}</h3>
@@ -721,12 +729,13 @@ export default function InvoiceAccessPage() {
                 showTokenWarning={paidInThisSession && !portalTokenForCreate}
               />
             </section>
-          ) : splitSettlement && settlementAccess ? (
+          ) : splitSettlement && settlementAccess && !settlementFailure ? (
             <div className="space-y-4">
               <SettlementSummaryCard
                 audience="customer"
                 streamlined
                 summary={splitSettlement}
+                hideConfirmed={Boolean(invoice.source_collection)}
                 allocations={allocationQuery.data?.items ?? []}
                 tone="light"
               />

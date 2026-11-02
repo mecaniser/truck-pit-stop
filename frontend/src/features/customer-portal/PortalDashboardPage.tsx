@@ -1,3 +1,4 @@
+import { centsToMoney, moneyToCents } from '@/features/payments/money'
 import { customerInvoiceLabel } from '@/lib/invoiceIdentity'
 import { ControlButton } from '@/components/ui/Controls'
 import { useMemo, useState } from 'react'
@@ -86,7 +87,7 @@ export default function PortalDashboardPage() {
     queryKey: ['repair-orders'],
     queryFn: () => getAll<RepairOrder>('/repair-orders'),
   })
-  const { data: invoices = [], isLoading: invoicesLoading } = useQuery<Invoice[]>({
+  const { data: invoices = [], isLoading: invoicesLoading, isError: invoicesFailed, refetch: reloadInvoices } = useQuery<Invoice[]>({
     queryKey: ['customer-dashboard-invoices'],
     queryFn: async () => (await api.get('/invoices')).data,
   })
@@ -95,20 +96,25 @@ export default function PortalDashboardPage() {
     () => new Map(orders.map(order => [order.id, order])),
     [orders],
   )
+  const currentBalances = useMemo(() => invoices
+    .filter(invoice => invoice.source !== 'easy_truck_shop_import' && invoice.status !== 'cancelled' && invoice.payment_summary?.state !== 'cancelled')
+    .map(invoice => ({ invoice, cents: invoice.payment_summary && invoice.payment_summary.state !== 'unknown' ? moneyToCents(invoice.payment_summary.balance_due) : null })), [invoices])
+  const unresolvedInvoices = currentBalances.filter(item => item.cents === null)
   const unpaid = useMemo(
-    () => invoices
-      .filter(invoice => invoice.source !== 'easy_truck_shop_import' && !['paid', 'cancelled'].includes(invoice.status))
-      .map(invoice => ({
+    () => currentBalances
+      .filter(item => item.cents !== null && item.cents > 0n)
+      .map(({ invoice, cents }) => ({
         invoice,
+        balanceDue: centsToMoney(cents!),
         order: orderById.get(invoice.repair_order_id),
         overdueDays: daysOverdue(invoice.due_date),
       }))
       .sort((a, b) => b.overdueDays - a.overdueDays),
-    [invoices, orderById],
+    [currentBalances, orderById],
   )
   const paidThisYear = useMemo(
     () => invoices.filter(invoice =>
-      invoice.status === 'paid'
+      (invoice.payment_summary ? invoice.payment_summary.state === 'paid' : invoice.status === 'paid')
       && invoice.paid_at
       && new Date(invoice.paid_at).getFullYear() === new Date().getFullYear(),
     ),
@@ -116,7 +122,7 @@ export default function PortalDashboardPage() {
   )
   const recentlyPaid = useMemo(
     () => invoices
-      .filter(invoice => invoice.status === 'paid')
+      .filter(invoice => (invoice.payment_summary ? invoice.payment_summary.state === 'paid' : invoice.status === 'paid'))
       .sort((a, b) => new Date(b.paid_at || b.updated_at).getTime() - new Date(a.paid_at || a.updated_at).getTime())
       .slice(0, 3),
     [invoices],
@@ -145,10 +151,10 @@ export default function PortalDashboardPage() {
     )
   ))
   const actionCount = quoteActions.length
-  const balance = unpaid.reduce((sum, item) => sum + Number(item.invoice.total_amount || 0), 0)
+  const balance = centsToMoney(unpaid.reduce((sum, item) => sum + moneyToCents(item.balanceDue)!, 0n))
   const paidYtd = paidThisYear.reduce((sum, invoice) => sum + Number(invoice.cash_receipt?.amount ?? invoice.total_amount ?? 0), 0)
   const selected = unpaid.filter(item => selectedIds.includes(item.invoice.id))
-  const selectedTotal = selected.reduce((sum, item) => sum + Number(item.invoice.total_amount || 0), 0)
+  const selectedTotal = centsToMoney(selected.reduce((sum, item) => sum + moneyToCents(item.balanceDue)!, 0n))
   const oldest = unpaid[0]
   const hasOverdue = unpaid.some(item => item.overdueDays > 0)
   const canSelect = unpaid.length > 1
@@ -158,6 +164,8 @@ export default function PortalDashboardPage() {
     return <div className="flex min-h-[420px] items-center justify-center"><Spinner size="xl" /></div>
   }
 
+  if (invoicesFailed) return <Card className="p-5"><p role="alert">Unable to load current invoice balances. Refresh before paying.</p><ControlButton className="mt-3" onClick={() => { void reloadInvoices() }}>Retry invoice balances</ControlButton></Card>
+
   const toggleInvoice = (id: string) => {
     setSelectedIds(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id])
   }
@@ -166,12 +174,16 @@ export default function PortalDashboardPage() {
     <div className="space-y-4">
       <div className="grid gap-3 xl:grid-cols-[1.4fr_1fr] xl:gap-3.5">
         <Card className={unpaid.some(item => item.overdueDays > 0) ? 'flex flex-col justify-center border-[#ff6b6e]/30 p-5 sm:p-[22px]' : 'flex flex-col justify-center p-5 sm:p-[22px]'}>
-          {balance > 0 ? (
+          {unresolvedInvoices.length > 0 && <div role="status" className="mb-4 text-sm text-[#f0b959]">
+            <p>Some invoice balances need shop verification. Contact the shop before paying those invoices.</p>
+            {unresolvedInvoices.map(({ invoice }) => <Link className="mt-2 block underline" key={invoice.id} to={`/portal/invoices/${invoice.id}`}>View {customerInvoiceLabel(invoice)}</Link>)}
+          </div>}
+          {unpaid.length > 0 ? (
             <>
               <div className="flex items-center gap-2">
                 <span className={`h-[7px] w-[7px] rounded-full ${hasOverdue ? 'bg-[#ff6b6e]' : 'bg-[#8b92a5]'}`} />
                 <SectionLabel className={hasOverdue ? 'text-[#ff8b8d]' : 'text-[#9aa1b3]'}>
-                  Balance due{unpaid.every(item => item.overdueDays > 0) ? ' · all past due' : ''}
+                  {unresolvedInvoices.length > 0 ? 'Known balance due' : 'Balance due'}{unpaid.every(item => item.overdueDays > 0) ? ' · all past due' : ''}
                 </SectionLabel>
               </div>
               <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-1">
@@ -187,6 +199,8 @@ export default function PortalDashboardPage() {
               </p>
 
             </>
+          ) : unresolvedInvoices.length > 0 ? (
+            <SectionLabel>Balance unavailable</SectionLabel>
           ) : (
             <>
               <div className="flex items-center gap-2 text-[#3ecf6f]">
@@ -369,7 +383,7 @@ export default function PortalDashboardPage() {
             </div>
           </div>
           <div className="space-y-1.5 p-2.5">
-            {unpaid.map(({ invoice, order, overdueDays }) => {
+            {unpaid.map(({ invoice, order, overdueDays, balanceDue }) => {
               const level = overdueLevel(overdueDays)
               const isSelected = selectedIds.includes(invoice.id)
               return (
@@ -401,7 +415,7 @@ export default function PortalDashboardPage() {
                         {overdueDays ? `${overdueDays} day${overdueDays === 1 ? '' : 's'} past due` : 'Due soon'}
                       </span>
                     </div>
-                    <Money className="text-sm font-extrabold sm:text-right">{formatMoney(invoice.total_amount)}</Money>
+                    <Money className="text-sm font-extrabold sm:text-right">{formatMoney(balanceDue)}</Money>
                     {!selectionActive && (
                       <Link data-db-control="action"
                         to={`/portal/invoices/${invoice.id}`}

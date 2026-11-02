@@ -1,6 +1,6 @@
 from app.services.invoice_identity import load_invoice_display_number, pdf_filename_for_number
 from app.services.source_debt_handoff import source_collection_for_invoice, source_history_alias_clause, effective_billing_customer, invoice_customer_access_clause, can_view_source_history
-from app.services.invoice_payment_presentation import InvoicePaymentSummary, load_payment_summary, payment_summary_html
+from app.services.invoice_payment_presentation import InvoicePaymentSummary, load_payment_summary, load_payment_summaries, payment_summary_html
 from app.services.invoice_review_service import invoice_review_url, invoice_review_html
 from datetime import datetime, date, timezone
 from types import SimpleNamespace
@@ -447,6 +447,7 @@ class PaymentSummary(BaseModel):
 
 
 class InvoiceResponse(BaseModel):
+    payment_summary: Optional[InvoicePaymentSummary] = None
     source_collection: Optional[dict] = None
     id: UUID
     tenant_id: UUID
@@ -486,7 +487,6 @@ class InvoiceResponse(BaseModel):
 
 
 class InvoiceDetailResponse(InvoiceResponse):
-    payment_summary: Optional[InvoicePaymentSummary] = None
     review_url: Optional[str] = None
     order_number: str
     customer_name: str
@@ -1073,7 +1073,7 @@ async def list_invoices(
         )
 
     rows = await db.execute(
-        select(InvoiceReadModel.payload, Invoice.source)
+        select(InvoiceReadModel.payload, Invoice)
         .join(Invoice, and_(Invoice.id == InvoiceReadModel.invoice_id, Invoice.tenant_id == InvoiceReadModel.tenant_id))
         .join(RepairOrder, and_(RepairOrder.id == Invoice.repair_order_id, RepairOrder.tenant_id == Invoice.tenant_id))
         .where(*projection_filters)
@@ -1082,15 +1082,21 @@ async def list_invoices(
         .limit(limit)
     )
     items = []
-    for payload, source in rows.all():
-        item = InvoiceResponse.model_validate(payload)
-        item.source = source
-        if source in ("ets_collection_handoff", "easy_truck_shop_import"):
-            actual=await db.get(Invoice,item.id)
+    current_invoices = []
+    for payload, actual in rows.all():
+        item = InvoiceResponse.model_validate({**payload, "payment_summary": None})
+        item.source = actual.source
+        if actual.source in ("ets_collection_handoff", "easy_truck_shop_import"):
             item.source_collection=await source_collection_for_invoice(db,actual,viewer_customer_id=current_user.customer_id if current_user.role==UserRole.CUSTOMER else None)
+        item.cash_receipt = await load_cash_receipt(db, actual)
         items.append(item)
+        current_invoices.append(actual)
+    summaries = await load_payment_summaries(
+        db, current_invoices, tenant_id=current_user.tenant_id,
+        cash_receipts={item.id: item.cash_receipt for item in items},
+    )
     for item in items:
-        item.cash_receipt = await load_cash_receipt(db, item)
+        item.payment_summary = summaries[item.id]
     return paginated_or_list(
         items,
         total,
@@ -1183,6 +1189,12 @@ async def _list_invoices_legacy(
         resp.cash_receipt = await load_cash_receipt(db, inv)
         if inv.source in ("ets_collection_handoff","easy_truck_shop_import"):resp.source_collection=await source_collection_for_invoice(db,inv,viewer_customer_id=current_user.customer_id if current_user.role==UserRole.CUSTOMER else None)
         items.append(resp)
+    summaries = await load_payment_summaries(
+        db, invoices, tenant_id=current_user.tenant_id,
+        cash_receipts={item.id: item.cash_receipt for item in items},
+    )
+    for item in items:
+        item.payment_summary = summaries[item.id]
     return paginated_or_list(items, total, skip, limit, paginated)
 
 
@@ -1227,7 +1239,7 @@ async def get_invoice(
         payment_summary=await load_payment_summary(db, inv, response.cash_receipt),
         source_collection=await source_collection_for_invoice(db, inv, viewer_customer_id=current_user.customer_id if current_user.role == UserRole.CUSTOMER else None),
         review_url=invoice_review_url(tenant, inv),
-        **response.model_dump(exclude={"source_collection"}),
+        **response.model_dump(exclude={"source_collection", "payment_summary"}),
         order_number=order.order_number,
         customer_name=customer_name,
         vehicle_info=vehicle_info,
