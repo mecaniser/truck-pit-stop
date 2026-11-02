@@ -582,20 +582,20 @@ html::-webkit-scrollbar-thumb:hover {
   color: #fff !important;
 }
 
-/* Price Builder deliberately remains a light working sheet so detailed parts,
-   labor, and pricing values are scanned on one consistent surface. Do not let
-   a dark shell turn its normal form controls into navy islands. */
-.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-price-builder {
-  color-scheme: light;
+/* Repair work uses the active workspace palette, including its form controls. */
+.db-presentation-new .db-price-builder {
+  color-scheme: inherit;
+  background: var(--surface-overlay);
+  color: var(--workspace-text);
 }
-.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-price-builder :is(input, textarea, select) {
-  border-color: #cbd5e1 !important;
-  background: #fff !important;
-  color: #17283f !important;
-  caret-color: #17283f;
+.db-presentation-new .db-price-builder :is(input, textarea, select) {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-overlay) !important;
+  color: var(--workspace-text) !important;
+  caret-color: var(--workspace-text);
 }
-.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-price-builder :is(input[type='text'], input[type='search'], textarea)::placeholder {
-  color: #526176;
+.db-presentation-new .db-price-builder :is(input[type='text'], input[type='search'], textarea)::placeholder {
+  color: var(--workspace-muted);
   opacity: 1;
 }
 
@@ -7059,8 +7059,7 @@ html.customer-portal-active {
    the light appearance and illegible in the dark one — white fields with white
    text, pale pills, washed stat cards. Remap them onto workspace tokens for the
    dark and high-contrast appearances only; the light appearance keeps the
-   legacy look until the surface is rebuilt. Scoped to the customer panel so the
-   deliberately white repair-order detail panel is untouched. */
+   legacy look until the surface is rebuilt. Scoped to customer surfaces; repair-order styling is defined separately. */
 .db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-modal) {
   /* The scope element carries bg-white itself; the descendant rules below only
      reach its children, which left a white sheet holding dark fields. */
@@ -7283,9 +7282,9 @@ html.customer-portal-active {
   .db-stage-action, .db-job-vehicle, .db-price-builder .db-job-stages .db-pipeline-step { min-height: 44px; }
 }
 
-/* Keep the white job sheet legible inside a dark staff shell. */
-.db-presentation-new .db-price-builder :is(.db-workspace-body, .db-workspace-footer) :is(.text-gray-400, .text-gray-500, .text-gray-600, .text-gray-700) { color: #4b5563 !important; }
-.db-presentation-new .db-price-builder :is(.db-workspace-body, .db-workspace-footer) :is(.text-gray-800, .text-gray-900) { color: #111827 !important; }
+/* Keep neutral job-sheet text paired with the active workspace surface. */
+.db-presentation-new .db-price-builder :is(.db-workspace-body, .db-workspace-footer) :is(.text-gray-400, .text-gray-500, .text-gray-600, .text-gray-700, .text-slate-400, .text-slate-500, .text-slate-600, .text-slate-700, .\!text-gray-600) { color: var(--workspace-muted) !important; }
+.db-presentation-new .db-price-builder :is(.db-workspace-body, .db-workspace-footer) :is(.text-gray-800, .text-gray-900, .text-gray-950, .text-slate-800, .text-slate-900, .\!text-gray-900) { color: var(--workspace-text) !important; }
 .db-presentation-new .db-price-builder [data-authorization-quote-action] { color: #92400e !important; border-color: #d1d5db; }
 .db-presentation-new .db-price-builder [data-authorization-quote-action].bg-emerald-600 { color: #fff !important; }
 @media (max-width: 639px) {
@@ -7805,3 +7804,24 @@ html.customer-portal-active {
  .db-parts-workbench__body { grid-template-columns:minmax(0,3fr) minmax(28rem,2fr); column-gap:12px; }
  .db-parts-workbench__ledger-workspace,.db-parts-workbench__ledger { border-inline-end:0; }
 }
+
+/* DB-151: the selected repair record stays in the same Day/Night workspace.
+   Header and semantic status colors retain their own contrast pairs. */
+.db-presentation-new .db-price-builder :is(.db-job-workflow, .db-workspace-body, .db-workspace-footer, .db-workspace-pricing > div) {
+  background: var(--surface-overlay);
+  color: var(--workspace-text);
+  border-color: var(--workspace-border);
+}
+.db-presentation-new .db-price-builder :is(.db-workspace-body, .db-workspace-footer) :is(.bg-white, .bg-gray-50, .bg-gray-100) {
+  background: var(--surface-raised) !important;
+}
+.db-presentation-new .db-price-builder :is(.db-workspace-body, .db-workspace-footer) :is(.border-gray-100, .border-gray-200, .db-intake, .db-prior-recommendations, .db-workspace-secondary > button) {
+  border-color: var(--workspace-border);
+}
+.db-presentation-new .db-price-builder .db-workspace-body th,
+.db-presentation-new .db-price-builder .db-workspace-body .db-prior-source {
+  color: var(--workspace-muted) !important;
+}
+
+.db-presentation-new .db-price-builder .db-job-customer-mobile { border-color: var(--workspace-border); }
+.db-presentation-new .db-price-builder .db-job-customer-mobile :is(.db-order-customer-pill, span) { color: var(--workspace-text); }

@@ -45,3 +45,50 @@ Synthetic local QA records only:
 ## Release status
 
 In Review; [draft PR751](https://github.com/mecaniser/truck-pit-stop/pull/751) published, protected CI pending. Prior PR736 is merged; that does not release this regression fix. No merge, deployment or production acceptance for this change. Not Done.
+
+
+## Repair Orders omission returned by the user, 2026-11-01
+
+The earlier destination acceptance missed the Repair Orders root return button. The user's screenshot is a valid gate failure: the extra button became the first grid cell, moving the ledger right and the detail panel to the next row. Prior completion language was too broad.
+
+Removed that duplicate root control. The existing detail Close and shell breadcrumb retain the fixed Overview return. Updated the repair regression to assert the ledger is the first workspace child, the inline detail remains present, no duplicate return button exists, and an untrusted return parameter cannot redirect Close.
+
+The visual check also found neutral repair text inheriting Night colors on an intentionally white sheet, plus fixed dark foregrounds. The modern Price Builder now pairs neutral body, footer, form, heading, metadata and mobile-customer colors with the existing workspace tokens. Semantic header/status colors and financial behavior remain unchanged.
+
+### Fresh browser acceptance
+
+Performed through the signed-in isolated local QA clone, using real existing fixture records and UI navigation. A separate QA tab avoided interference with the user's tab.
+
+| Journey | Observed result |
+| --- | --- |
+| Overview closeout action | Opens `DB151-quiet-1049`, exact selected ID `4c84304d-5f47-4367-9410-7e01a7d9027c` and Ready to Close queue. |
+| Desktop, 1280px | Ledger x236/w300 and detail x548/w720, both y56/h664; no horizontal document overflow or extra root return control. Initial wider user viewport also had both panes at y56. |
+| Phone, 390x844 | Selected detail x0/y0/w390/h844; document width390; Close target44x44 at x338/y4. |
+| Reload | Same exact selected repair and queue restored. |
+| Next/previous record | Moves between completed1049 and invoiced1048; selected record and working layout update together. |
+| Close, desktop/phone | Returns to `/dashboard?work_view=overview`. |
+| Zero active jobs | Active work shows its empty state; Overview still exposes closeout, purchase draft, core, supplier return, stock and upcoming delivery. |
+| Purchase draft | Actual Overview action opens PO209 (`9b2ad293-6363-4318-8d1f-abcb2b8faf6c`). Header, tabs and content remain contiguous. |
+| Core | Actual action selects core `aad78fdc-813e-42fe-821f-6132308b8229`, Brake chamberT30, on hand. |
+| Supplier return | Actual action selects R18 (`6ef8bb1c-2db7-41dd-9428-1f07954c005b`), shipped. |
+| Receiving | Actual upcoming-delivery action selects PO208 (`0310ea7c-2fd0-4ea8-bf5d-91dc485f25b1`), submitted,6 units awaiting receipt. |
+| Inventory | Actual action selects part `021d51e8-2c54-4d7a-aede-a864f46165eb`, Brake chamberT30. |
+| Destination breadcrumbs | Purchasing, core, supplier return, receiving and inventory return to Overview. |
+| Customer Account | Direct canonical deep link selects Test Freight's Account tab; Customers heading remains above list/detail. Existing detail Back returns to Overview. No account action is fabricated in the local Overview: billing classification is unavailable in this fixture. |
+| Day/Night | Empty and populated repair inspected in both; Night body and order total use matching workspace surface/text. Day pricing disclosure inspected. Original Night preference restored. |
+| Unaffected route | Settings/Profile visually inspected; no displaced content. |
+
+No payment, receipt, credit, inventory, invoice or repair-state actions were submitted. Test data has fixture limitations (the invoiced order's saved invoice and current order total differ); this change does not reconcile financial fixtures.
+
+### Automated acceptance
+
+Fresh run:72 passing tests across RepairOrdersPage.schedule(6), DashboardLayout(17), shopWorkNavigation(8), PurchasingWorkspace(10), CustomersPage.workstation(31). This is a different72-test set from the prior receipt; it explicitly includes Repair Orders. Existing tests cover unavailable/denied records, tenant identity changes, and safe destination URLs. Changed-source lint passes across9 files. Final build includes TypeScript and shared-control guard.
+
+Runtime alignment: Vite PID27010 on5215 serves this worktree's frontend; backend `dieselbridge_api_db151` on8041 bind-mounts this worktree's backend, isolated `postgres/truckpitstop_db151`, migration197. Proxied readiness passes database/Redis. Startup badge is base `e28b92b5`; changed-source rendering and measured geometry corroborate HMR rather than treating that badge as current HEAD. No production deployment.
+
+Screenshots:
+
+- [Repair, Night](assets/db151-destinations/repair-order-night-fixed.png)
+- [Repair, Day](assets/db151-destinations/repair-order-day-fixed.png)
+- [Repair, phone](assets/db151-destinations/repair-order-mobile-fixed.png)
+- [Populated repair, Night](assets/db151-destinations/repair-order-populated-night-fixed.png)

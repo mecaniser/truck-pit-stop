@@ -82,11 +82,15 @@ it('returns an Overview-origin exact repair order to Overview on close', async (
   expect(screen.getByTestId('location')).toHaveTextContent('/dashboard?work_view=overview')
 })
 
-it('offers a fixed Overview return while preserving the requested repair ID', async () => {
+it('preserves the workspace structure and safe Overview close for an exact repair ID', async () => {
   mount('/dashboard/repair-orders?selected=order-1&shop_work=overview&return=https://evil.test')
   await screen.findByRole('button', { name: 'Close repair order' })
   expect(screen.getByTestId('location')).toHaveTextContent('selected=order-1')
-  fireEvent.click(screen.getByRole('button', { name: 'Back to Shop Work' }))
+  expect(screen.queryByRole('button', { name: 'Back to Shop Work' })).not.toBeInTheDocument()
+  const workspace = document.querySelector('.db-repair-orders-workspace')!
+  expect(workspace.firstElementChild).toHaveClass('db-repair-orders-new')
+  expect(workspace.querySelector(':scope > .db-slide-panel-workspace')).not.toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Close repair order' }))
   expect(screen.getByTestId('location')).toHaveTextContent('/dashboard?work_view=overview')
 })
 
