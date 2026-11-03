@@ -7,7 +7,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { useAuthStore } from '../../stores/authStore'
+import { isCurrentAuthEpoch, useAuthStore } from '../../stores/authStore'
 import api from '../../lib/api'
 import { Customer } from '../../types'
 import PaymentMethodsCard from './PaymentMethodsCard'
@@ -94,6 +94,7 @@ function ProfileSection() {
       return response.data
     },
     onSuccess: (data) => {
+      if (!isCurrentAuthEpoch(authSessionEpoch)) return
       const responseUser = data.user || data
       const isVerificationPending = data.email_verification_pending || false
       setUser(responseUser, authSessionEpoch)
@@ -109,6 +110,7 @@ function ProfileSection() {
       setValue('password', '')
     },
     onError: (error: any) => {
+      if (!isCurrentAuthEpoch(authSessionEpoch)) return
       toast.error(error.response?.data?.detail || 'Failed to update profile')
     }
   })
@@ -265,7 +267,7 @@ function ProfileSection() {
 void ProfileSection
 
 function SecuritySection() {
-  const { logout } = useAuthStore()
+  const { logout, authSessionEpoch } = useAuthStore()
   const navigate = useNavigate()
   const [showForm, setShowForm] = useState(false)
 
@@ -281,14 +283,17 @@ function SecuritySection() {
       })
     },
     onSuccess: () => {
+      if (!isCurrentAuthEpoch(authSessionEpoch)) return
       reset()
       toast.success('Password changed! Redirecting to login...')
       setTimeout(() => {
+        if (!isCurrentAuthEpoch(authSessionEpoch)) return
         logout()
         navigate('/login')
       }, 2000)
     },
     onError: (err: any) => {
+      if (!isCurrentAuthEpoch(authSessionEpoch)) return
       toast.error(err.response?.data?.detail || 'Failed to change password')
     },
   })
@@ -704,12 +709,14 @@ function ContactDetailsSection() {
   const updateMutation = useMutation({
     mutationFn: async (data: ProfileFormData) => (await api.put('/auth/me', data)).data,
     onSuccess: data => {
+      if (!isCurrentAuthEpoch(authSessionEpoch)) return
       setUser(data.user || data, authSessionEpoch)
       queryClient.invalidateQueries({ queryKey: ['customer'] })
       toast.success(data.email_verification_pending ? 'Check your new email to verify the change.' : 'Contact details saved')
       setValue('password', '')
     },
     onError: (error: { response?: { data?: { detail?: string } } }) => {
+      if (!isCurrentAuthEpoch(authSessionEpoch)) return
       toast.error(error.response?.data?.detail || 'Unable to save contact details')
     },
   })

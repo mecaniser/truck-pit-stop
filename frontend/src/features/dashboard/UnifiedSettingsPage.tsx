@@ -8,7 +8,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useAuthStore } from '../../stores/authStore'
+import { isCurrentAuthEpoch, useAuthStore } from '../../stores/authStore'
 import type { User as UserType } from '../../types'
 import api from '../../lib/api'
 import {
@@ -524,6 +524,7 @@ function ProfileSection() {
       return response.data
     },
     onSuccess: (data) => {
+      if (!isCurrentAuthEpoch(authSessionEpoch)) return
       const responseUser = data.user || data
       const isVerificationPending = data.email_verification_pending || false
       setUser(responseUser, authSessionEpoch)
@@ -538,6 +539,7 @@ function ProfileSection() {
       setValue('password', '')
     },
     onError: (error: any) => {
+      if (!isCurrentAuthEpoch(authSessionEpoch)) return
       toast.error(error.response?.data?.detail || 'Failed to update profile')
     }
   })
@@ -766,11 +768,13 @@ function GarageProfileSection() {
       return response.data as GarageProfile
     },
     onSuccess: (updated) => {
+      if (!isCurrentAuthEpoch(authSessionEpoch)) return
       syncTenantBranding(updated)
       setIsEditing(false)
       toast.success('Shop profile updated')
     },
     onError: (error: any) => {
+      if (!isCurrentAuthEpoch(authSessionEpoch)) return
       toast.error(error.response?.data?.detail || 'Failed to update garage profile')
     },
   })
@@ -783,12 +787,14 @@ function GarageProfileSection() {
       return response.data as GarageProfile
     },
     onSuccess: (updated) => {
+      if (!isCurrentAuthEpoch(authSessionEpoch)) return
       syncTenantBranding(updated)
       setValue('website', updated.website || '', { shouldDirty: false, shouldValidate: true })
       setValue('logo_url', updated.logo_url || '', { shouldDirty: false, shouldValidate: true })
       toast.success('Logo imported from website')
     },
     onError: (error: any) => {
+      if (!isCurrentAuthEpoch(authSessionEpoch)) return
       toast.error(error.response?.data?.detail || 'Failed to import logo')
     },
   })
@@ -1161,7 +1167,7 @@ function GarageProfileSection() {
 }
 
 function SecuritySection() {
-  const { logout } = useAuthStore()
+  const { logout, authSessionEpoch } = useAuthStore()
   const navigate = useNavigate()
   const [showForm, setShowForm] = useState(false)
 
@@ -1177,14 +1183,17 @@ function SecuritySection() {
       })
     },
     onSuccess: () => {
+      if (!isCurrentAuthEpoch(authSessionEpoch)) return
       reset()
       toast.success('Password changed! Redirecting to login...')
       setTimeout(() => {
+        if (!isCurrentAuthEpoch(authSessionEpoch)) return
         logout()
         navigate('/login')
       }, 2000)
     },
     onError: (err: any) => {
+      if (!isCurrentAuthEpoch(authSessionEpoch)) return
       toast.error(err.response?.data?.detail || 'Failed to change password')
     },
   })
@@ -2362,12 +2371,14 @@ function NotificationsSection() {
     mutationFn: async (next: boolean) =>
       (await api.put('/admin/tenant-settings', { messaging_enabled: next })).data,
     onSuccess: (data: { messaging_enabled: boolean }) => {
+      if (!isCurrentAuthEpoch(authSessionEpoch)) return
       toast.success(data.messaging_enabled ? 'Messaging enabled' : 'Messaging disabled')
       queryClient.invalidateQueries({ queryKey: ['tenant-settings'] })
       // Reflect immediately so the Messages nav link + route hide/show without a reload.
       if (user) setUser({ ...user, messaging_enabled: data.messaging_enabled }, authSessionEpoch)
     },
     onError: (error: any) => {
+      if (!isCurrentAuthEpoch(authSessionEpoch)) return
       toast.error(error.response?.data?.detail || 'Failed to update messaging')
     },
   })

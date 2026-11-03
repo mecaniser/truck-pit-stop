@@ -301,6 +301,13 @@ export function syncStoredSession() {
   return true
 }
 
+/** Recheck before continuing an asynchronous action under browser credentials. */
+export function isCurrentAuthEpoch(epoch: number) {
+  if (syncStoredSession()) return false
+  const session = useAuthStore.getState()
+  return session.authSessionEpoch === epoch && getAuthenticatedSessionIdentity(session) !== null
+}
+
 export function watchSessionBoundary() {
   window.addEventListener('storage', event => {
     if (event.storageArea === localStorage && (event.key === storageKey || event.key === null)) syncStoredSession()
