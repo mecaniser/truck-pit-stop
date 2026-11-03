@@ -28,6 +28,9 @@ export default function SettlementSummaryCard({
   tone = 'dark',
   compact = false,
   streamlined = false,
+  resolutionOnly = false,
+  hideConfirmed = false,
+  audience = 'staff',
   children,
 }: {
   summary: InvoiceSettlementSummary
@@ -35,6 +38,9 @@ export default function SettlementSummaryCard({
   tone?: 'dark' | 'light'
   compact?: boolean
   streamlined?: boolean
+  resolutionOnly?: boolean
+  hideConfirmed?: boolean
+  audience?: 'staff' | 'customer'
   children?: ReactNode
 }) {
   const dark = tone === 'dark'
@@ -48,8 +54,8 @@ export default function SettlementSummaryCard({
   const paid = summary.state === 'paid'
   const pending = isPositiveMoney(summary.active_pending_principal)
   const resolution = isPositiveMoney(summary.unapplied_credit) || isPositiveMoney(summary.refund_pending)
-  const figures = streamlined ? [
-    ...(isPositiveMoney(summary.confirmed_principal) ? [['Paid toward invoice', summary.confirmed_principal]] : []),
+  const figures = resolutionOnly ? [] : streamlined ? [
+    ...(!hideConfirmed && isPositiveMoney(summary.confirmed_principal) ? [['Paid toward invoice', summary.confirmed_principal]] : []),
     ...(pending ? [['Pending confirmation', summary.active_pending_principal], ['Available to pay', summary.allocatable_balance]] : []),
   ] : [
     ['Invoice total', summary.principal_total],
@@ -58,9 +64,12 @@ export default function SettlementSummaryCard({
     ['Available to pay', summary.allocatable_balance],
   ]
 
+  const customerCompact = audience === 'customer' && streamlined
+  if (customerCompact && figures.length === 0 && !resolution && allocations.length === 0 && !children) return null
+
   return (
-    <section className={`overflow-hidden rounded-2xl border ${panel}`} aria-labelledby={`settlement-${summary.invoice_id}`}>
-      <div className={`flex flex-wrap items-start justify-between gap-3 ${compact ? 'p-3' : 'p-4'}`}>
+    <section className={`overflow-hidden rounded-2xl border ${panel}`} aria-labelledby={customerCompact ? undefined : `settlement-${summary.invoice_id}`} aria-label={customerCompact ? "Payment details" : undefined}>
+      {!customerCompact && <div className={`flex flex-wrap items-start justify-between gap-3 ${compact ? 'p-3' : 'p-4'}`}>
         <div>
           {!streamlined && <p className={`text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>Invoice settlement</p>}
           <h2 id={`settlement-${summary.invoice_id}`} className="mt-1 flex items-center gap-2 text-sm font-extrabold">
@@ -72,7 +81,7 @@ export default function SettlementSummaryCard({
           <span className={`block text-xs ${quiet}`}>{streamlined ? 'Balance due' : 'Outstanding'}</span>
           <span className="block text-2xl font-extrabold tabular-nums">{formatMoney(summary.outstanding_balance)}</span>
         </p>
-      </div>
+      </div>}
 
       {figures.length > 0 && <dl className={`flex flex-wrap border-t ${divider}`}>
         {figures.map(([label, value]) => (
@@ -89,14 +98,13 @@ export default function SettlementSummaryCard({
         <div className={`flex gap-2 border-t px-3 py-3 text-sm ${divider} ${dark ? 'bg-amber-400/10 text-amber-200' : 'bg-amber-50 text-amber-900'}`}>
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
-            {isPositiveMoney(summary.refund_pending)
-              ? `${formatMoney(summary.refund_pending)} refund pending.`
-              : `${formatMoney(summary.unapplied_credit)} exceeds the invoice balance. Review this amount before deciding whether to refund it or retain it as customer credit with the customer’s consent.`}
+            {isPositiveMoney(summary.refund_pending) && <span className="block">{formatMoney(summary.refund_pending)} refund pending.</span>}
+            {isPositiveMoney(summary.unapplied_credit) && <span className="block">{formatMoney(summary.unapplied_credit)} exceeds the invoice balance. Review this amount before deciding whether to refund it or retain it as customer credit with the customer’s consent.</span>}
           </p>
         </div>
       )}
 
-      {summary.accounting_sync_status !== 'synced'
+      {audience === 'staff' && summary.accounting_sync_status !== 'synced'
         && summary.accounting_sync_status !== 'not_applicable_local_cash'
         && summary.accounting_sync_status !== 'not_started'
         && summary.accounting_sync_status !== 'not_required' && (
@@ -109,11 +117,11 @@ export default function SettlementSummaryCard({
         </div>
       )}
 
-      {summary.accounting_sync_status === 'not_applicable_local_cash' && (
+      {audience === 'staff' && summary.accounting_sync_status === 'not_applicable_local_cash' && (
         <p className={`border-t px-3 py-2.5 text-xs ${divider} ${quiet}`}>Cash recorded locally. Not synced to QuickBooks.</p>
       )}
 
-      {allocations.length > 0 && (
+      {!resolutionOnly && allocations.length > 0 && (
         <div className={`border-t ${divider}`}>
           <p className={`px-3 pt-3 text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>Payment history</p>
           <ol className={`divide-y ${dark ? 'divide-[#2a3245]' : 'divide-slate-200'}`}>

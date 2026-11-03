@@ -36,6 +36,14 @@ run timed canaries, repeated health loops, worker scans, or unrelated suites for
 Fast UI change. The protected branch checks remain the repository integration
 gate and must not be duplicated manually without a concrete failure signal.
 
+## Staff navigation conventions
+
+Owners, admins and technicians bring familiar browser habits to the shop. When changing a staff journey, name the owning workspace in the terms staff see there. Use a link for a record destination and a button for an operation. Open the identified record directly. Keep navigation labels in stable positions as selection changes.
+
+For a board-to-record journey, verify that Back returns to the originating task, including its keyboard focus. If the task has left the queue, focus the current queue heading. For a section destination, verify that reloading its URL restores the same authorized section. Test the journey at desk and phone widths.
+
+When reviewing choices on a staff screen, group them by the decision the person is making. Show each choice once. Hide filters that cannot affect the current view. For example, Inventory’s Needs reorder view already determines which parts qualify, so the stock filter belongs in All parts. Check the result with a real task. A link count alone does not measure decision time. [Hick’s choice reaction experiments](https://doi.org/10.1080/17470215208416600).
+
 ## App task map
 
 These pinned DieselBridge tasks are the stable role inboxes:

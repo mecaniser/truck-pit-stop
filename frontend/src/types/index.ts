@@ -669,6 +669,7 @@ export interface CashReceiptSummary {
 }
 
 export interface Invoice {
+  source_collection?: import('@/features/source-collection/types').SourceCollectionSummary | null
   id: string
   tenant_id: string
   repair_order_id: string
@@ -694,6 +695,7 @@ export interface Invoice {
   zelle_pending_sender_phone?: string | null
   zelle_pending_last_reminder_at?: string | null
   zelle_pending_reminder_count?: number
+  payment_summary?: InvoicePaymentPresentation | null
   cash_receipt?: CashReceiptSummary | null
   payment?: InvoicePaymentSummary | null
   created_at: string

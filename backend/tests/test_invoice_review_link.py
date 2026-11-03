@@ -132,3 +132,35 @@ def test_pdf_payment_copy_and_review_qr(monkeypatch, status):
     qr_values.clear()
     _build_invoice_pdf_bytes(invoice, order, customer, None, tenant, [], [], None)
     assert qr_values == []
+
+
+@pytest.mark.parametrize("prior", ["0.00", "40.00"])
+def test_payable_collection_pdf_uses_customer_invoice_language(monkeypatch, prior):
+    from app.services import pdf_service as svc
+    from app.services.invoice_payment_presentation import InvoicePaymentSummary
+    tenant, invoice, order, customer = entities()
+    invoice.status = 'sent'
+    invoice.notes = 'Collection copy of ETS invoice 1687; no new sale or tax.'
+    paragraphs = []
+    original_p = svc._p
+    def paragraph(text, *args, **kwargs):
+        paragraphs.append(text)
+        return original_p(text, *args, **kwargs)
+    monkeypatch.setattr(svc, '_p', paragraph)
+    collection = dict(customer_display_company='Legal & DBN <Business>', display_invoice_number='TPS-1687', source_invoice_number='1687', original_issued_total='100.00', source_prior_allocated=prior, opening_principal=str(Decimal('100') - Decimal(prior)))
+    headers = []
+    original_header = svc._make_page_handler
+    def capture_header(**kwargs):
+        headers.append(kwargs['invoice_number'])
+        return original_header(**kwargs)
+    monkeypatch.setattr(svc, '_make_page_handler', capture_header)
+    pdf = _build_invoice_pdf_bytes(invoice, order, customer, None, tenant, [], [], None, source_collection=collection, payment_summary=InvoicePaymentSummary(state="unpaid", applied_amount="0.00", balance_due=str(Decimal("100")-Decimal(prior)), basis="settlement"))
+    text = ' '.join(paragraphs)
+    assert pdf.startswith(b'%PDF')
+    assert headers == ['TPS-1687']
+    assert 'INVOICE TOTAL' in text and 'Repair services' in text and '$100.00' in text
+    assert not any(word in text for word in ['ETS', 'TRANSFERRED', 'Collection copy', 'Prior ETS', 'Order #'])
+    assert 'Legal &amp; DBN &lt;Business&gt;' in text
+    assert URL.replace("&", "&amp;") in text
+    assert f"${Decimal(prior):,.2f}" in text
+    assert f"${Decimal(100)-Decimal(prior):,.2f}" in text

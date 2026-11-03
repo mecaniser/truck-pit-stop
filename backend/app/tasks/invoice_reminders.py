@@ -1,3 +1,4 @@
+from app.services.invoice_identity import load_invoice_display_number
 """
 Invoice reminder task - sends reminders for overdue unpaid invoices.
 
@@ -135,6 +136,7 @@ async def _process_invoice_reminders(tenant_id: str = None):
             days_overdue = (today - invoice.due_date.date()).days if invoice.due_date else 0
             garage_name = tenant.name if tenant else "DieselBridge Network"
             
+            display_number = await load_invoice_display_number(db, invoice, tenant)
             reminder_num = invoice.reminder_count + 1
             
             # The rollout flag retains legacy notification sessions under the lock.
@@ -142,9 +144,9 @@ async def _process_invoice_reminders(tenant_id: str = None):
             # Send SMS if customer has phone
             if customer.phone:
                 if reminder_num == 1:
-                    sms_body = f"Reminder: Invoice #{invoice.invoice_number} for ${invoice.total_amount:,.2f} ({vehicle_info}) is due today. Please pay at your earliest convenience. - {garage_name}"
+                    sms_body = f"Reminder: Invoice #{display_number} for ${invoice.total_amount:,.2f} ({vehicle_info}) is due today. Please pay at your earliest convenience. - {garage_name}"
                 else:
-                    sms_body = f"Reminder #{reminder_num}: Invoice #{invoice.invoice_number} for ${invoice.total_amount:,.2f} is {days_overdue} days overdue. Please pay ASAP to avoid service holds. - {garage_name}"
+                    sms_body = f"Reminder #{reminder_num}: Invoice #{display_number} for ${invoice.total_amount:,.2f} is {days_overdue} days overdue. Please pay ASAP to avoid service holds. - {garage_name}"
                 
                 if settings.SMS_AUTOMATION_OUTBOX_ENABLED:
                     await enqueue_automated_sms(
@@ -180,10 +182,10 @@ async def _process_invoice_reminders(tenant_id: str = None):
                 )
                 
                 if reminder_num == 1:
-                    subject = f"Payment Reminder: Invoice #{invoice.invoice_number} Due Today"
+                    subject = f"Payment Reminder: Invoice #{display_number} Due Today"
                     urgency_text = "is due today"
                 else:
-                    subject = f"OVERDUE: Invoice #{invoice.invoice_number} - {days_overdue} Days Past Due"
+                    subject = f"OVERDUE: Invoice #{display_number} - {days_overdue} Days Past Due"
                     urgency_text = f"is <strong>{days_overdue} days overdue</strong>"
                 
                 html_body = f"""
@@ -196,7 +198,7 @@ async def _process_invoice_reminders(tenant_id: str = None):
                     <p>This is a friendly reminder that your invoice {urgency_text}.</p>
                     
                     <div style="background: #fef3c7; border-radius: 8px; padding: 20px; margin: 20px 0; border: 1px solid #fcd34d;">
-                        <p style="margin: 0 0 10px 0;"><strong>Invoice #:</strong> {invoice.invoice_number}</p>
+                        <p style="margin: 0 0 10px 0;"><strong>Invoice #:</strong> {display_number}</p>
                         <p style="margin: 0 0 10px 0;"><strong>Vehicle:</strong> {vehicle_info}</p>
                         <p style="margin: 0 0 10px 0;"><strong>Amount Due:</strong> <span style="font-size: 18px; color: #dc2626;">${invoice.total_amount:,.2f}</span></p>
                         <p style="margin: 0;"><strong>Due Date:</strong> {invoice.due_date.strftime('%B %d, %Y') if invoice.due_date else 'N/A'}</p>

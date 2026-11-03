@@ -1,3 +1,5 @@
+import { centsToMoney, moneyToCents } from '@/features/payments/money'
+import { customerInvoiceLabel } from '@/lib/invoiceIdentity'
 import { ControlButton } from '@/components/ui/Controls'
 import { useMemo, useState } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
@@ -85,7 +87,7 @@ export default function PortalDashboardPage() {
     queryKey: ['repair-orders'],
     queryFn: () => getAll<RepairOrder>('/repair-orders'),
   })
-  const { data: invoices = [], isLoading: invoicesLoading } = useQuery<Invoice[]>({
+  const { data: invoices = [], isLoading: invoicesLoading, isError: invoicesFailed, refetch: reloadInvoices } = useQuery<Invoice[]>({
     queryKey: ['customer-dashboard-invoices'],
     queryFn: async () => (await api.get('/invoices')).data,
   })
@@ -94,20 +96,25 @@ export default function PortalDashboardPage() {
     () => new Map(orders.map(order => [order.id, order])),
     [orders],
   )
+  const currentBalances = useMemo(() => invoices
+    .filter(invoice => invoice.source !== 'easy_truck_shop_import' && invoice.status !== 'cancelled' && invoice.payment_summary?.state !== 'cancelled')
+    .map(invoice => ({ invoice, cents: invoice.payment_summary && invoice.payment_summary.state !== 'unknown' ? moneyToCents(invoice.payment_summary.balance_due) : null })), [invoices])
+  const unresolvedInvoices = currentBalances.filter(item => item.cents === null)
   const unpaid = useMemo(
-    () => invoices
-      .filter(invoice => !['paid', 'cancelled'].includes(invoice.status))
-      .map(invoice => ({
+    () => currentBalances
+      .filter(item => item.cents !== null && item.cents > 0n)
+      .map(({ invoice, cents }) => ({
         invoice,
+        balanceDue: centsToMoney(cents!),
         order: orderById.get(invoice.repair_order_id),
         overdueDays: daysOverdue(invoice.due_date),
       }))
       .sort((a, b) => b.overdueDays - a.overdueDays),
-    [invoices, orderById],
+    [currentBalances, orderById],
   )
   const paidThisYear = useMemo(
     () => invoices.filter(invoice =>
-      invoice.status === 'paid'
+      (invoice.payment_summary ? invoice.payment_summary.state === 'paid' : invoice.status === 'paid')
       && invoice.paid_at
       && new Date(invoice.paid_at).getFullYear() === new Date().getFullYear(),
     ),
@@ -115,7 +122,7 @@ export default function PortalDashboardPage() {
   )
   const recentlyPaid = useMemo(
     () => invoices
-      .filter(invoice => invoice.status === 'paid')
+      .filter(invoice => (invoice.payment_summary ? invoice.payment_summary.state === 'paid' : invoice.status === 'paid'))
       .sort((a, b) => new Date(b.paid_at || b.updated_at).getTime() - new Date(a.paid_at || a.updated_at).getTime())
       .slice(0, 3),
     [invoices],
@@ -143,16 +150,21 @@ export default function PortalDashboardPage() {
       latestCustomerVisibleAuthorization(authorizationHistoryQueries[index]?.data?.revisions),
     )
   ))
-  const actionCount = quoteActions.length + unpaid.length
-  const balance = unpaid.reduce((sum, item) => sum + Number(item.invoice.total_amount || 0), 0)
+  const actionCount = quoteActions.length
+  const balance = centsToMoney(unpaid.reduce((sum, item) => sum + moneyToCents(item.balanceDue)!, 0n))
   const paidYtd = paidThisYear.reduce((sum, invoice) => sum + Number(invoice.cash_receipt?.amount ?? invoice.total_amount ?? 0), 0)
   const selected = unpaid.filter(item => selectedIds.includes(item.invoice.id))
-  const selectedTotal = selected.reduce((sum, item) => sum + Number(item.invoice.total_amount || 0), 0)
+  const selectedTotal = centsToMoney(selected.reduce((sum, item) => sum + moneyToCents(item.balanceDue)!, 0n))
   const oldest = unpaid[0]
+  const hasOverdue = unpaid.some(item => item.overdueDays > 0)
+  const canSelect = unpaid.length > 1
+  const selectionActive = canSelect && selecting
 
   if (vehiclesLoading || ordersLoading || invoicesLoading) {
     return <div className="flex min-h-[420px] items-center justify-center"><Spinner size="xl" /></div>
   }
+
+  if (invoicesFailed) return <Card className="p-5"><p role="alert">Unable to load current invoice balances. Refresh before paying.</p><ControlButton className="mt-3" onClick={() => { void reloadInvoices() }}>Retry invoice balances</ControlButton></Card>
 
   const toggleInvoice = (id: string) => {
     setSelectedIds(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id])
@@ -161,13 +173,17 @@ export default function PortalDashboardPage() {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 xl:grid-cols-[1.4fr_1fr] xl:gap-3.5">
-        <Card className={unpaid.some(item => item.overdueDays > 0) ? 'border-[#ff6b6e]/30 p-5 sm:p-[22px]' : 'p-5 sm:p-[22px]'}>
-          {balance > 0 ? (
+        <Card className={unpaid.some(item => item.overdueDays > 0) ? 'flex flex-col justify-center border-[#ff6b6e]/30 p-5 sm:p-[22px]' : 'flex flex-col justify-center p-5 sm:p-[22px]'}>
+          {unresolvedInvoices.length > 0 && <div role="status" className="mb-4 text-sm text-[#f0b959]">
+            <p>Some invoice balances need shop verification. Contact the shop before paying those invoices.</p>
+            {unresolvedInvoices.map(({ invoice }) => <Link className="mt-2 block underline" key={invoice.id} to={`/portal/invoices/${invoice.id}`}>View {customerInvoiceLabel(invoice)}</Link>)}
+          </div>}
+          {unpaid.length > 0 ? (
             <>
               <div className="flex items-center gap-2">
-                <span className="h-[7px] w-[7px] rounded-full bg-[#ff6b6e]" />
-                <SectionLabel className="text-[#ff8b8d]">
-                  Balance due{unpaid.every(item => item.overdueDays > 0) ? ' · all past due' : ''}
+                <span className={`h-[7px] w-[7px] rounded-full ${hasOverdue ? 'bg-[#ff6b6e]' : 'bg-[#8b92a5]'}`} />
+                <SectionLabel className={hasOverdue ? 'text-[#ff8b8d]' : 'text-[#9aa1b3]'}>
+                  {unresolvedInvoices.length > 0 ? 'Known balance due' : 'Balance due'}{unpaid.every(item => item.overdueDays > 0) ? ' · all past due' : ''}
                 </SectionLabel>
               </div>
               <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-1">
@@ -181,27 +197,10 @@ export default function PortalDashboardPage() {
                   ? `Oldest unpaid: ${oldest.overdueDays} day${oldest.overdueDays === 1 ? '' : 's'} past due${oldest.invoice.due_date ? ` · ${format(new Date(oldest.invoice.due_date), 'MMM d')}` : ''}`
                   : 'Your balance is current.'}
               </p>
-              <div className="mt-5 grid gap-2 sm:flex">
-                {oldest && (
-                  <Link data-db-control="action"
-                    to={`/portal/invoices/${oldest.invoice.id}`}
-                    state={{ paymentOrigin: 'Dashboard', invoiceQueue: unpaid.map(item => item.invoice.id) }}
-                    className="flex h-[46px] items-center justify-center rounded-xl bg-[#8b7cf7] px-5 text-sm font-extrabold text-[#0e1118] hover:brightness-110"
-                  >
-                    Pay invoices — {formatMoney(balance)}
-                  </Link>
-                )}
-                {oldest && unpaid.length > 1 && (
-                  <Link data-db-control="action"
-                    to={`/portal/invoices/${oldest.invoice.id}`}
-                    state={{ paymentOrigin: 'Dashboard' }}
-                    className="flex h-[46px] items-center justify-center rounded-xl border border-[#272d3d] bg-[#191d2a] px-5 text-sm font-bold text-[#c9cdd8] hover:border-[#343b52]"
-                  >
-                    Pay oldest first
-                  </Link>
-                )}
-              </div>
+
             </>
+          ) : unresolvedInvoices.length > 0 ? (
+            <SectionLabel>Balance unavailable</SectionLabel>
           ) : (
             <>
               <div className="flex items-center gap-2 text-[#3ecf6f]">
@@ -304,26 +303,7 @@ export default function PortalDashboardPage() {
                 </span>
               </Link>
             ))}
-            {unpaid.map(({ invoice, order, overdueDays }) => (
-              <Link
-                key={`payment-${invoice.id}`}
-                to={`/portal/invoices/${invoice.id}`}
-                state={{ paymentOrigin: 'Dashboard' }}
-                className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-xl border border-[#ff6b6e]/20 bg-[#ff6b6e]/5 px-3.5 py-3 hover:border-[#ff6b6e]/40 sm:grid-cols-[210px_1fr_auto_auto]"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-[13px] font-extrabold">{overdueDays > 0 ? 'Past-due invoice' : 'Invoice ready to pay'}</p>
-                  <p className="mt-0.5 truncate text-[11px] text-[#8b92a5]">{order?.order_number || invoice.invoice_number} · {order ? orderVehicleLabel(order) : 'Repair service'}</p>
-                </div>
-                <span className="hidden truncate text-xs text-[#9aa1b3] sm:block">
-                  {overdueDays > 0 ? `${overdueDays} day${overdueDays === 1 ? '' : 's'} past due` : 'Payment due'}
-                </span>
-                <Money className="hidden text-sm font-extrabold sm:block">{formatMoney(invoice.total_amount)}</Money>
-                <span className="inline-flex h-[34px] items-center justify-center rounded-lg bg-[#8b7cf7] px-4 text-xs font-extrabold text-[#0e1118]">
-                  Pay
-                </span>
-              </Link>
-            ))}
+
           </div>
         </Card>
       )}
@@ -377,11 +357,11 @@ export default function PortalDashboardPage() {
           <div className="flex flex-col gap-3 border-b border-[#1e2432] p-4 sm:flex-row sm:items-center sm:justify-between sm:px-[18px] sm:py-[15px]">
             <div className="flex items-baseline gap-2.5">
               <SectionLabel className="text-[#eceef4]">Unpaid invoices</SectionLabel>
-              <span className="text-xs font-extrabold text-[#ff8b8d]">{unpaid.filter(item => item.overdueDays > 0).length} past due</span>
+              {hasOverdue && <span className="text-xs font-extrabold text-[#ff8b8d]">{unpaid.filter(item => item.overdueDays > 0).length} past due</span>}
             </div>
             <div className="flex items-center justify-between gap-2">
-              <span className="hidden text-xs text-[#8b92a5] sm:inline">Sorted by days overdue</span>
-              {selecting && selected.length > 0 && (
+              {canSelect && <span className="hidden text-xs text-[#8b92a5] sm:inline">Sorted by days overdue</span>}
+              {selectionActive && selected.length > 0 && (
                 <Link data-db-control="action"
                   to={`/portal/invoices/${selected[0].invoice.id}`}
                   state={{ paymentOrigin: 'Dashboard', invoiceQueue: selected.map(item => item.invoice.id) }}
@@ -390,7 +370,7 @@ export default function PortalDashboardPage() {
                   Pay {selected.length} · {formatMoney(selectedTotal)}
                 </Link>
               )}
-              <ControlButton
+              {canSelect && <ControlButton
                 type="button"
                 onClick={() => {
                   setSelecting(current => !current)
@@ -398,22 +378,22 @@ export default function PortalDashboardPage() {
                 }}
                 className=" rounded-lg border border-[#8b7cf7] bg-[#8b7cf7]/10 px-3.5 text-xs font-extrabold text-[#c9bfff] "
               >
-                {selecting ? 'Done' : 'Select & pay'}
-              </ControlButton>
+                {selectionActive ? 'Done' : 'Select & pay'}
+              </ControlButton>}
             </div>
           </div>
           <div className="space-y-1.5 p-2.5">
-            {unpaid.map(({ invoice, order, overdueDays }) => {
+            {unpaid.map(({ invoice, order, overdueDays, balanceDue }) => {
               const level = overdueLevel(overdueDays)
               const isSelected = selectedIds.includes(invoice.id)
               return (
                 <div key={invoice.id} className="relative overflow-hidden rounded-[11px] border border-[#1e2432] bg-[#12161f] hover:border-[#343b52] hover:bg-[#161b26]">
                   {level !== 'none' && <span className={`absolute inset-y-0 left-0 w-1 ${level === 'critical' ? 'bg-[#ff6b6e]' : 'bg-[#f0b959]'}`} />}
-                  <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-3 py-3 pl-4 sm:grid-cols-[auto_210px_1fr_84px_auto] sm:px-3.5 sm:py-2.5 sm:pl-[18px]">
-                    {selecting && (
+                  <div className={`grid items-center gap-3 px-3 py-3 pl-4 sm:px-3.5 sm:py-2.5 sm:pl-[18px] ${selectionActive ? 'grid-cols-[44px_1fr_auto] sm:grid-cols-[44px_1fr_auto_84px]' : 'grid-cols-[1fr_auto] sm:grid-cols-[1fr_auto_84px_auto]'}`}>
+                    {selectionActive && (
                       <ControlButton controlKind="action"
                         type="button"
-                        aria-label={`${isSelected ? 'Deselect' : 'Select'} invoice ${invoice.invoice_number}`}
+                        aria-label={`${isSelected ? 'Deselect' : 'Select'} ${customerInvoiceLabel(invoice)}`}
                         onClick={() => toggleInvoice(invoice.id)}
                         className={`flex  w-5 items-center justify-center rounded border ${isSelected ? 'border-[#8b7cf7] bg-[#8b7cf7] text-[#0e1118]' : 'border-[#343b52]'}`}
                       >
@@ -421,10 +401,10 @@ export default function PortalDashboardPage() {
                       </ControlButton>
                     )}
                     <div className="min-w-0">
-                      <p className="truncate text-[13px] font-bold">{order?.order_number || invoice.invoice_number}</p>
-                      <p className="mt-0.5 truncate text-[11px] text-[#8b92a5]">{order?.description || `Invoice ${invoice.invoice_number}`}</p>
+                      <p className="truncate text-[13px] font-bold">{invoice.source_collection ? customerInvoiceLabel(invoice) : order?.order_number || customerInvoiceLabel(invoice)}</p>
+                      {(!invoice.source_collection || order?.description) && <p className="mt-0.5 truncate text-[11px] text-[#8b92a5]">{order?.description || customerInvoiceLabel(invoice)}</p>}
                     </div>
-                    <div className="col-span-2 flex items-center justify-between gap-2 sm:col-span-1 sm:block">
+                    <div className="flex items-center justify-end gap-2 sm:block">
                       <span className={`rounded-md px-2 py-1 text-[11px] font-extrabold ${
                         level === 'critical'
                           ? 'border border-[#ff6b6e]/30 bg-[#ff6b6e]/10 text-[#ff8b8d]'
@@ -435,12 +415,12 @@ export default function PortalDashboardPage() {
                         {overdueDays ? `${overdueDays} day${overdueDays === 1 ? '' : 's'} past due` : 'Due soon'}
                       </span>
                     </div>
-                    <Money className="text-right text-sm font-extrabold">{formatMoney(invoice.total_amount)}</Money>
-                    {!selecting && (
+                    <Money className="text-sm font-extrabold sm:text-right">{formatMoney(balanceDue)}</Money>
+                    {!selectionActive && (
                       <Link data-db-control="action"
                         to={`/portal/invoices/${invoice.id}`}
                         state={{ paymentOrigin: 'Dashboard' }}
-                        className="flex h-[44px] items-center justify-center rounded-lg bg-[#8b7cf7] px-4 text-xs font-extrabold text-[#0e1118] sm:h-[34px]"
+                        className="flex h-[44px] min-w-[84px] items-center justify-center justify-self-end whitespace-nowrap rounded-lg bg-[#8b7cf7] px-4 text-xs font-extrabold text-[#0e1118] sm:h-[34px]"
                       >
                         Pay
                       </Link>
@@ -466,10 +446,10 @@ export default function PortalDashboardPage() {
               const order = orderById.get(invoice.repair_order_id)
               return (
                 <div key={invoice.id} className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-[11px] border border-[#1e2432] bg-[#12161f] px-3.5 py-2.5 sm:grid-cols-[210px_1fr_auto_84px]">
-                  <span className="truncate text-[13px] font-bold">{order?.order_number || invoice.invoice_number}</span>
+                  <span className="truncate text-[13px] font-bold">{invoice.source_collection ? customerInvoiceLabel(invoice) : order?.order_number || customerInvoiceLabel(invoice)}</span>
                   <span className="hidden truncate text-xs text-[#8b92a5] sm:block">{order?.description || 'Repair service'}</span>
                   <PaidBadge />
-                  <Money className="text-right text-sm font-extrabold">{formatMoney(invoice.cash_receipt?.amount ?? invoice.total_amount)}</Money>
+                  <Money className="text-sm font-extrabold sm:text-right">{formatMoney(invoice.cash_receipt?.amount ?? invoice.total_amount)}</Money>
                 </div>
               )
             })}

@@ -25,7 +25,13 @@ export async function getStripeForAccount(stripeAccountId?: string | null): Prom
   }
 
   const options = stripeAccountId ? { stripeAccount: stripeAccountId } : undefined
-  const stripePromise = loadStripe(publishableKey, options)
+  const stripePromise = loadStripe(publishableKey, options).then((stripe) => {
+    if (!stripe) stripePromiseCache.delete(cacheKey)
+    return stripe
+  }).catch((error: unknown) => {
+    stripePromiseCache.delete(cacheKey)
+    throw error
+  })
   stripePromiseCache.set(cacheKey, stripePromise)
   return stripePromise
 }

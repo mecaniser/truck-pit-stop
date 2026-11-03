@@ -9,7 +9,7 @@ import { createPortal } from 'react-dom'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { LoadingLine } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import api from '../../lib/api'
 import { InventoryItem, Supplier, UnitType } from '../../types'
 import { ArrowRight, Camera, Check, ChevronDown, Download, ImageOff, MapPin, PackageCheck, Pencil, Plus, Settings, Sparkles, Trash2, X } from 'lucide-react'
@@ -2171,7 +2171,5 @@ function LegacyInventoryPage() {
 
 export default function InventoryPage() {
   const queryScope = useAuthStore(state => shopWorkQueryScope(state.user, state.authSessionEpoch))
-  const [params] = useSearchParams()
-  const returnUrl = shopWorkReturnUrl(params)
-  return <>{returnUrl && <Link className="inline-flex min-h-11 items-center px-3 text-sm font-semibold underline" to={returnUrl}>Back to Shop Work</Link>}<PartsInventoryGate key={queryScope} legacy={<LegacyInventoryPage />} /></>
+  return <PartsInventoryGate key={queryScope} legacy={<LegacyInventoryPage />} />
 }

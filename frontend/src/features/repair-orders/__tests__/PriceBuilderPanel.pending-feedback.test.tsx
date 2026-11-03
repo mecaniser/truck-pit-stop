@@ -27,7 +27,11 @@ vi.mock('@/lib/api', () => ({
   },
 }))
 
-vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ appearance: { mode: 'dark' }, accentColors: { 500: '#d86a15' } }) }))
+vi.mock('@/contexts/ThemeContext', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/contexts/ThemeContext')>()
+  const { DEFAULT_APPEARANCE } = await import('@/types/presentation')
+  return { ...original, useTheme: () => ({ appearance: { ...DEFAULT_APPEARANCE, mode: 'dark' }, accentColors: { 500: '#d86a15' } }) }
+})
 
 vi.mock('react-hot-toast', () => ({
   default: {
@@ -84,6 +88,19 @@ async function waitForInventorySearch(queryClient: QueryClient, term: string) {
 }
 
 describe('PriceBuilderPanel pending feedback', () => {
+  it('carries the selected appearance into the portaled pipeline details and restores focus on Escape', async () => {
+    const user = userEvent.setup()
+    renderPanel({ orderStatus: 'completed' })
+    const trigger = screen.getByRole('button', { name: 'Quality review' })
+    await user.click(trigger)
+    const panel = screen.getByLabelText('Quality-review details')
+    expect(panel).toHaveAttribute('data-appearance-mode', 'dark')
+    expect(screen.getByText('Work finalized')).toBeVisible()
+    await user.keyboard('{Escape}')
+    expect(panel).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+  })
+
   it.each([['garage_owner', 'shop'], ['fleet_manager', 'fleet']] as const)('matches maintenance read and removal presentation for %s', async (role, channel) => {
     useAuthStore.setState({ user: { id: 'user-1', tenant_id: 'tenant-1', role } as User, authSessionEpoch: 1, logoutInProgress: false })
     apiMocks.get.mockImplementation(async (url: string, config?: { params?: { channel?: string } }) => {

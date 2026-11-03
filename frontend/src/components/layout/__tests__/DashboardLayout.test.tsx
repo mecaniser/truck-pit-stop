@@ -289,6 +289,20 @@ describe('DB-035 authenticated staff shell', () => {
     expect(mobile.querySelector('button[aria-controls="mobile-secondary-navigation"]')).toHaveAttribute('aria-expanded', 'true')
   })
 
+  it.each([
+    '/dashboard/customers?selected=customer-2&tab=account&shop_work=overview',
+    '/dashboard/garage/purchasing?view=returns&core=core-2&shop_work=overview',
+    '/dashboard/garage/inventory?selected=part-2&shop_work=overview',
+    '/dashboard/repair-orders?selected=repair-2&queue=ready_to_close&shop_work=overview',
+  ])('uses the existing breadcrumb for the Overview return from %s', async (path) => {
+    renderShell(path)
+    const back = screen.getByText('Shop Work', { selector: '.db-breadcrumb a' })
+    expect(back).toHaveAttribute('href', '/dashboard?work_view=overview')
+    fireEvent.click(back)
+    expect(await screen.findByRole('heading', { name: 'Dashboard surface' })).toBeInTheDocument()
+    expect(screen.getByTestId('dashboard-location-state')).toHaveTextContent('work_view=overview')
+  })
+
   it('returns a Repair Orders queue launch to Shop Work with the canonical lane context', async () => {
     renderShell('/dashboard/repair-orders?selected=real-order-id&queue=needs_action')
     await screen.findByText('Repair Orders surface')

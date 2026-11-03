@@ -54,7 +54,7 @@
   line-height: 1.5;
 }
 
-.db-purchasing__header > button {
+.db-purchasing__header > a {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -68,7 +68,7 @@
   font-weight: 750;
 }
 
-.db-purchasing__header > button svg { inline-size: 1rem; }
+.db-purchasing__header > a svg { inline-size: 1rem; }
 
 .db-purchasing__tabs {
   display: flex;
@@ -310,7 +310,7 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .db-purchasing__header > button:hover,
+  .db-purchasing__header > a:hover,
   .db-purchasing__line > button:hover { color: var(--text-primary); }
   .db-purchasing__quantity-stepper button:hover:not(:disabled) { background:var(--surface-overlay); }
   .db-purchasing__tabs button:hover { background: var(--surface-hover, var(--surface-overlay)); color: var(--text-primary); }
@@ -325,7 +325,7 @@
 
 @media (max-width: 760px) {
   .db-purchasing__header { display: grid; }
-  .db-purchasing__header > button { justify-self: start; }
+  .db-purchasing__header > a { justify-self: start; }
   .db-purchasing__preparation-head { display: grid; }
   .db-purchasing__line,
   .db-purchasing__line.is-blocked { grid-template-columns: minmax(0, 1fr); }
@@ -367,3 +367,5 @@
     overflow: visible;
   }
 }
+
+.db-parts-workbench__purchasing-link { display: inline-flex; align-items: center; gap: .35rem; min-height: 44px; color: var(--text-primary); text-decoration: underline; text-underline-offset: 3px; font-weight: 700; }

@@ -5,7 +5,7 @@ import PlatformSelect from '@/components/PlatformSelect'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, ArrowRight, ChevronDown, Download, ExternalLink, Search, SlidersHorizontal } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import api from '@/lib/api'
 import type { ActivityCategory, ActivityEvent, CursorPage, LifecycleSummary } from './inventoryLifecycleTypes'
@@ -219,9 +219,21 @@ export function PartLifecycleSummary({ inventoryId }: { inventoryId: string }) {
 
 export default function ActivityWorkspace({ inventoryId, compact = false }: { inventoryId?: string; compact?: boolean }) {
   const queryScope = useAuthStore(state => shopWorkQueryScope(state.user, state.authSessionEpoch))
-  const [draft, setDraft] = useState<ActivityFilters>(EMPTY_FILTERS)
-  const [filters, setFilters] = useState<ActivityFilters>(EMPTY_FILTERS)
-  const [cursors, setCursors] = useState<Array<string | null>>([null])
+  const location = useLocation()
+  const navigate = useNavigate()
+  const saved = location.state?.inventoryActivity
+  const sameList = saved?.scope === queryScope && saved.inventoryId === (inventoryId ?? null)
+  const filters: ActivityFilters = sameList && saved.filters && Object.keys(EMPTY_FILTERS).every(key =>
+    typeof saved.filters[key] === 'string') && ['from', 'to'].every(key => !saved.filters[key] || Number.isFinite(Date.parse(saved.filters[key])))
+    ? saved.filters : EMPTY_FILTERS
+  const cursors: Array<string | null> = sameList && Array.isArray(saved.cursors) && saved.cursors[0] === null
+    && saved.cursors.slice(1).every((cursor: unknown) => typeof cursor === 'string') ? saved.cursors : [null]
+  const [draft, setDraft] = useState<ActivityFilters>(filters)
+  useEffect(() => setDraft(filters), [filters])
+  const saveList = (nextFilters: ActivityFilters, nextCursors: Array<string | null>) => {
+    const inventoryActivity = { scope: queryScope, inventoryId: inventoryId ?? null, filters: nextFilters, cursors: nextCursors }
+    navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: { ...location.state, inventoryActivity } })
+  }
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const cursor = cursors[cursors.length - 1] || null
@@ -271,8 +283,8 @@ export default function ActivityWorkspace({ inventoryId, compact = false }: { in
   const advancedFilterCount = [draft.eventType, draft.actorId, draft.sourceType, draft.sourceId, draft.from, draft.to].filter((value) => value.trim()).length
   const appliedFilterCount = Object.values(filters).filter((value) => value.trim()).length
   const eventTypeHelpId = `activity-event-type-help-${inventoryId || 'global'}`
-  const apply = () => { setFilters(draft); setCursors([null]) }
-  const clear = () => { setDraft(EMPTY_FILTERS); setFilters(EMPTY_FILTERS); setCursors([null]) }
+  const apply = () => saveList(draft, [null])
+  const clear = () => { setDraft(EMPTY_FILTERS); saveList(EMPTY_FILTERS, [null]) }
   const exportCsv = async () => {
     setExporting(true); setExportError(null)
     try {
@@ -328,7 +340,7 @@ export default function ActivityWorkspace({ inventoryId, compact = false }: { in
         </div>
         <div className="db-activity__event-source">{sourceLink(event.source)}<time dateTime={event.occurred_at}>{new Date(event.occurred_at).toLocaleString()}</time></div>
       </article> })}
-      <div className="db-activity__pager"><span aria-live="polite">Showing {query.data.items.length} activity records</span><div><ControlButton type="button" disabled={cursors.length === 1 || query.isFetching} onClick={() => setCursors((current) => current.slice(0, -1))}><ArrowLeft aria-hidden="true" />Previous</ControlButton><ControlButton type="button" disabled={!query.data.next_cursor || query.isFetching} onClick={() => query.data.next_cursor && setCursors((current) => [...current, query.data.next_cursor])}>Next<ArrowRight aria-hidden="true" /></ControlButton></div></div>
+      <div className="db-activity__pager"><span aria-live="polite">Showing {query.data.items.length} activity records</span><div><ControlButton type="button" disabled={cursors.length === 1 || query.isFetching} onClick={() => saveList(filters, cursors.slice(0, -1))}><ArrowLeft aria-hidden="true" />Previous</ControlButton><ControlButton type="button" disabled={!query.data.next_cursor || query.isFetching} onClick={() => query.data.next_cursor && saveList(filters, [...cursors, query.data.next_cursor])}>Next<ArrowRight aria-hidden="true" /></ControlButton></div></div>
     </div>}
   </section>
 }

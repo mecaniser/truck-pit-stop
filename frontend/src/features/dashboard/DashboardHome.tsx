@@ -41,7 +41,7 @@ import { useActivityFeed, activityCountLabel } from './activityFeedQuery'
 import ShopCockpitActionLedger, { type ActionQueueLane } from './ShopCockpitActionLedger'
 import WipAgingPanel from './WipAgingPanel'
 import ShopWorkOverview, { type ShopWorkOverviewData } from './ShopWorkOverview'
-import { shopWorkDestinationUrl } from './shopWorkNavigation'
+import { shopWorkBoardUrl } from './shopWorkNavigation'
 import { DEFAULT_WIP_FILTERS, type WipFilters } from './wipAging'
 import RepairOrdersPage from '../repair-orders/RepairOrdersPage'
 import { elapsedSince, shortDuration } from '@/lib/elapsed'
@@ -959,6 +959,7 @@ export default function DashboardHome() {
           setWorkView(view)
           const params = new URLSearchParams(location.search)
           params.set('work_view', view)
+          params.delete('task')
           if (view !== 'closeout') params.delete('queue')
           navigate(`/dashboard?${params.toString()}`, { replace: true })
         }}
@@ -970,7 +971,12 @@ export default function DashboardHome() {
           failed={!!overviewQuery.error}
           refreshing={overviewQuery.isFetching}
           onRetry={() => { void overviewQuery.refetch() }}
-          onOpen={destination => navigate(shopWorkDestinationUrl(destination))}
+          resumeTask={new URLSearchParams(location.search).get('task')}
+          onOpen={(href, task) => {
+            // Replace the current history entry so browser Back and the workspace breadcrumb agree.
+            navigate(shopWorkBoardUrl(task), { replace: true })
+            navigate(href)
+          }}
           onWorkspace={path => {
             const [pathname, search = ''] = path.split('?')
             const params = new URLSearchParams(search)
