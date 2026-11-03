@@ -66,7 +66,7 @@ from uuid import UUID
 import json
 import secrets
 import re
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote_plus, urlencode, urlsplit, urlunsplit
 from app.services import workos_provider, workos_session
 from app.services.identity_lifecycle import IdentityReviewRequired, resolve_authenticated_identity
 from app.services.presentation_service import (
@@ -105,16 +105,37 @@ def _workos_enabled() -> None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="WorkOS authentication is not configured")
 
 
+_WORKOS_COMPLETION_PARAM = "db_login_completed"
+
+
 def _safe_return_path(value: Optional[str]) -> str:
-    return value if value and value.startswith("/") and not value.startswith("//") else "/"
+    if (
+        not isinstance(value, str)
+        or not value.startswith("/")
+        or value.startswith("//")
+        or "\\" in value
+        or any(ord(char) < 32 or ord(char) == 127 for char in value)
+    ):
+        return "/"
+    # Do not let an input return path masquerade as a completed login, even on
+    # callbacks recovered from an existing session or legacy fallback cookie.
+    parts = urlsplit(value)
+    query = "&".join(
+        field for field in parts.query.split("&")
+        if unquote_plus(field.partition("=")[0]) != _WORKOS_COMPLETION_PARAM
+    )
+    return urlunsplit(("", "", parts.path, query, parts.fragment))
 
 
-def _workos_state_context(return_to: Optional[str], tenant_id: Optional[UUID]) -> str:
+def _workos_state_context(
+    return_to: Optional[str], tenant_id: Optional[UUID], browser_attempt: Optional[UUID] = None,
+) -> str:
     """Serialize only server-validated OAuth continuation data."""
     return json.dumps(
         {
             "return_to": _safe_return_path(return_to),
             "tenant_id": str(tenant_id) if tenant_id else None,
+            **({"browser_attempt": str(browser_attempt)} if browser_attempt else {}),
         },
         separators=(",", ":"),
     )
@@ -125,7 +146,7 @@ def _read_workos_state_context(
     *,
     fallback_return_to: Optional[str] = None,
     fallback_tenant_id: Optional[str] = None,
-) -> tuple[str, Optional[str]]:
+) -> tuple[str, Optional[str], Optional[UUID]]:
     """Read trusted state context, with safe fallback for rolling deploys."""
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8", errors="replace")
@@ -134,9 +155,15 @@ def _read_workos_state_context(
     except (TypeError, ValueError):
         parsed = None
 
+    browser_attempt = None
     if isinstance(parsed, dict):
         return_to = _safe_return_path(parsed.get("return_to"))
         raw_tenant_id = parsed.get("tenant_id")
+        if isinstance(parsed.get("browser_attempt"), str):
+            try:
+                browser_attempt = UUID(parsed["browser_attempt"])
+            except ValueError:
+                pass
     else:
         # Older deployments stored the literal "1". Browser cookies remain a
         # safe compatibility fallback until those ten-minute states expire.
@@ -147,7 +174,7 @@ def _read_workos_state_context(
         tenant_id = str(UUID(raw_tenant_id)) if raw_tenant_id else None
     except (TypeError, ValueError):
         tenant_id = None
-    return return_to, tenant_id
+    return return_to, tenant_id, browser_attempt
 
 
 async def _consume_workos_state(state: str) -> Optional[Union[str, bytes]]:
@@ -232,7 +259,7 @@ async def _workos_state_failure_response(
     and permissions. Without a session, restart AuthKit once with a new state;
     a second failure stops at the login surface instead of looping.
     """
-    return_to, tenant_id = _read_workos_state_context(
+    return_to, tenant_id, browser_attempt = _read_workos_state_context(
         state_context,
         fallback_return_to=request.cookies.get("workos_return_to"),
         fallback_tenant_id=request.cookies.get("workos_tenant_id"),
@@ -247,7 +274,9 @@ async def _workos_state_failure_response(
         return response
 
     login_path = "/driver/login" if return_to.startswith("/driver") else "/login"
-    if request.cookies.get("workos_recovery_attempted") != "1":
+    # A browser-bound attempt that lost its state must restart from the
+    # login page, so a fresh attempt can be established in the correct tab.
+    if not browser_attempt and request.cookies.get("workos_recovery_attempted") != "1":
         retry_params = {"return_to": return_to, "recovery": "1"}
         if tenant_id:
             retry_params["tenant_id"] = tenant_id
@@ -271,6 +300,7 @@ async def workos_login(
     return_to: Optional[str] = None,
     tenant_id: Optional[UUID] = None,
     recovery: bool = False,
+    browser_attempt: Optional[UUID] = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Start AuthKit without changing any legacy login behavior."""
@@ -307,7 +337,7 @@ async def workos_login(
     await (await get_redis()).setex(
         f"workos:oauth-state:{state}",
         600,
-        _workos_state_context(return_to, tenant.id if tenant else None),
+        _workos_state_context(return_to, tenant.id if tenant else None, browser_attempt),
     )
     return response
 
@@ -326,7 +356,7 @@ async def workos_callback(request: Request, code: str, state: Optional[str] = No
     state_context = await _consume_workos_state(state)
     if state_context is None:
         return await _workos_state_failure_response(request)
-    return_to, _ = _read_workos_state_context(
+    return_to, _, browser_attempt = _read_workos_state_context(
         state_context,
         fallback_return_to=request.cookies.get("workos_return_to"),
         fallback_tenant_id=request.cookies.get("workos_tenant_id"),
@@ -371,6 +401,11 @@ async def workos_callback(request: Request, code: str, state: Optional[str] = No
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="WorkOS session credential is unavailable")
     await db.commit()
+    if browser_attempt is not None:
+        parts = urlsplit(return_to)
+        marker = urlencode({_WORKOS_COMPLETION_PARAM: str(browser_attempt)})
+        query = f"{parts.query}&{marker}" if parts.query else marker
+        return_to = urlunsplit(("", "", parts.path, query, parts.fragment))
     response = RedirectResponse(settings.WORKOS_POST_LOGIN_URL.rstrip("/") + return_to)
     token_version = await get_token_version(str(user.id))
     access_token = create_access_token(data={"sub": str(user.id), "auth_provider": "workos", "workos_user_id": claims["sub"], "workos_org_id": claims["org_id"], "permissions": claims["permissions"]}, expires_delta=timedelta(minutes=settings.WORKOS_ACCESS_TOKEN_MINUTES), tenant_id=str(tenant.id), token_version=token_version)
@@ -975,8 +1010,12 @@ async def logout(
 async def workos_logout(request: Request, response: Response):
     """End only the short-lived repair-shop WorkOS session.
 
-    This intentionally does not clear the legacy refresh cookie or any future
-    platform-admin session; callers must present a WorkOS-marked access token.
+    Revoke the presented credentials without changing shared browser cookies.
+    A delayed logout response can arrive after another tab has signed in; cookie
+    deletion headers would then erase that replacement session. The retained
+    cookie copies carry no authority after token blacklisting/session deletion
+    and keep their original expiry until a subsequent login overwrites them.
+    Legacy refresh and platform-admin sessions remain untouched.
     """
     token = request.cookies.get("access_token")
     payload = decode_token(token) if token else None
@@ -989,8 +1028,6 @@ async def workos_logout(request: Request, response: Response):
             await blacklist_token(payload["jti"], expiry)
     if session_id:
         await workos_session.delete_session(session_id)
-    response.delete_cookie("access_token", path="/", domain=_cookie_domain())
-    response.delete_cookie("workos_session", path="/api/v1/auth/workos", domain=_cookie_domain())
     return LogoutResponse(message="Successfully logged out of repair-shop session")
 
 

@@ -7,7 +7,7 @@ import DatePicker from '@/components/DatePicker'
 import { Spinner } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
-import { useAuthStore } from '../../stores/authStore'
+import { isCurrentAuthEpoch, useAuthStore } from '../../stores/authStore'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useNotificationManager } from '../../hooks/useNotificationManager'
@@ -295,7 +295,7 @@ const Container = ({ children, className = '' }: { children: React.ReactNode; cl
 )
 
 export default function MechanicPortalPage() {
-  const { user, logout, setUser } = useAuthStore()
+  const { user, logout, setUser, authSessionEpoch } = useAuthStore()
   const { accent, setAccent, fontSize, setFontSize, resetToDefaults } = useTheme()
   const queryClient = useQueryClient()
   
@@ -730,12 +730,13 @@ export default function MechanicPortalPage() {
       return response.data
     },
     onSuccess: (data) => {
+      if (!isCurrentAuthEpoch(authSessionEpoch)) return
       // Handle new response format with user object wrapped
       const responseUser = data.user || data
       const isVerificationPending = data.email_verification_pending || false
       
       // Always update auth store - other fields may have been updated
-      setUser(responseUser)
+      setUser(responseUser, authSessionEpoch)
       setFirstName(responseUser.first_name)
       setLastName(responseUser.last_name)
       setEmail(responseUser.email)
@@ -750,7 +751,9 @@ export default function MechanicPortalPage() {
         setIsEditingProfile(false)
       }
     },
-    onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to update profile'),
+    onError: (error: unknown) => {
+      if (isCurrentAuthEpoch(authSessionEpoch)) toast.error(checklistErrorDetail(error, 'Failed to update profile'))
+    },
   })
 
   const changePasswordMutation = useMutation({
@@ -759,16 +762,20 @@ export default function MechanicPortalPage() {
       return response.data
     },
     onSuccess: () => {
+      if (!isCurrentAuthEpoch(authSessionEpoch)) return
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
       setIsChangingPassword(false)
       toast.success('Password changed! Please log in again.')
       setTimeout(() => {
+        if (!isCurrentAuthEpoch(authSessionEpoch)) return
         logout()
       }, 2000)
     },
-    onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to change password'),
+    onError: (error: unknown) => {
+      if (isCurrentAuthEpoch(authSessionEpoch)) toast.error(checklistErrorDetail(error, 'Failed to change password'))
+    },
   })
 
   const handleLogout = async () => {

@@ -28,7 +28,7 @@ import { isAxiosError } from 'axios'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { formatUSPhone } from '@/utils/phone'
-import { getAuthenticatedSessionIdentity, useAuthStore } from '../../stores/authStore'
+import { getAuthenticatedSessionIdentity, syncStoredSession, useAuthStore } from '../../stores/authStore'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useNotificationManager } from '../../hooks/useNotificationManager'
@@ -785,6 +785,8 @@ function AuthenticatedDashboardHome() {
     if (!validateQuickForm()) {
       return
     }
+    const stillCurrent = () => !syncStoredSession() && getAuthenticatedSessionIdentity(useAuthStore.getState()) === identity
+    if (!stillCurrent()) return
     setQuickSubmitting(true)
     try {
       const response = await api.post('/repair-orders/quick', {
@@ -792,6 +794,7 @@ function AuthenticatedDashboardHome() {
         vehicle_description: quickTruck.trim() || null,
         complaint: quickComplaint.trim() || null,
       })
+      if (!stillCurrent()) return
       const order = response.data
       toast.success(
         <span>
@@ -806,10 +809,11 @@ function AuthenticatedDashboardHome() {
       setShowQuickForm(false)
       handleManualRefresh()
     } catch (err: unknown) {
+      if (!stillCurrent()) return
       const detail = isAxiosError<{ detail?: string }>(err) ? err.response?.data?.detail : undefined
       toast.error(detail || 'Failed to create order')
     } finally {
-      setQuickSubmitting(false)
+      if (stillCurrent()) setQuickSubmitting(false)
     }
   }
 

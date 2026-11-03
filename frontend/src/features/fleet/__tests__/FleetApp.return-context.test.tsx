@@ -1,12 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import type { ReactNode } from 'react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '../../../stores/authStore'
 
-const apiMocks = vi.hoisted(() => ({ get: vi.fn() }))
+const apiMocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), post: vi.fn() }))
 
 vi.mock('@/lib/api', () => ({ default: apiMocks }))
 vi.mock('react-hot-toast', () => ({ default: { success: vi.fn(), error: vi.fn() } }))
@@ -17,7 +18,7 @@ vi.mock('../TruckDetail', () => ({ default: ({ truckId, onViewTrips }: { truckId
 vi.mock('../FleetModals', () => ({
   AddTruckModal: () => null,
   SchedulePMModal: () => null,
-  SidekickPanel: () => null,
+  SidekickPanel: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   invalidateFleetAndCockpit: vi.fn(),
 }))
 vi.mock('../FleetPriceBuilderPanel', () => ({ default: () => null }))
@@ -75,6 +76,29 @@ describe('Fleet board return context', () => {
 
   afterEach(() => {
     window.localStorage.removeItem('tps-fleet-state')
+  })
+
+  it('does not continue an earlier profile save into a password change for the next account', async () => {
+    let finish!: () => void
+    const owner = useAuthStore.getState().user!
+    apiMocks.put.mockImplementationOnce(() => new Promise(resolve => { finish = () => resolve({ data: { user: owner } }) }))
+    const view = renderFleet(['/fleet'])
+    fireEvent.click(screen.getByRole('button', { name: 'Open profile menu' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit account' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Change password' }))
+    const fields = document.querySelectorAll('input[type=password]')
+    fireEvent.change(fields[0], { target: { value: 'Synthetic-current-1!' } })
+    fireEvent.change(fields[1], { target: { value: 'Synthetic-next-2!' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(apiMocks.put).toHaveBeenCalled())
+    view.unmount()
+    await act(async () => {
+      useAuthStore.getState().login('test-access', 'test-refresh', { ...owner, id: 'b', tenant_id: 'shop-b' })
+      finish()
+    })
+    expect(apiMocks.post).not.toHaveBeenCalled()
+    expect(useAuthStore.getState().user?.id).toBe('b')
   })
 
   it('opens Fleet map without implying live telemetry or changing the route', async () => {

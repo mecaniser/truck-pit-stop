@@ -5,10 +5,10 @@ import { Navigate, useSearchParams } from 'react-router-dom'
 import BrandLogo from '../../components/brand/BrandLogo'
 import { applySeo } from '../../lib/seo'
 import { useAuthStore } from '../../stores/authStore'
-import { buildWorkOSLoginUrl } from '../../lib/workosAuth'
+import { buildWorkOSLoginUrl, startWorkOSLogin } from '../../lib/workosAuth'
 
 export default function DriverLoginPage() {
-  const { isAuthenticated, user } = useAuthStore()
+  const { isAuthenticated, user, explicitlySignedOut } = useAuthStore()
   const [searchParams] = useSearchParams()
   const endedMessage = sessionEndMessage(searchParams.get('reason'))
   const accessNeedsReview = searchParams.get('reason') === 'identity_review_required'
@@ -105,6 +105,12 @@ export default function DriverLoginPage() {
             <>
               <a data-db-control="action"
                 href={workOSLoginUrl}
+                onClick={event => {
+                  if (explicitlySignedOut) {
+                    event.preventDefault()
+                    startWorkOSLogin('/driver', null, tenantId)
+                  }
+                }}
                 className="mt-8 flex min-h-14 w-full items-center justify-center rounded-xl bg-amber-400 px-5 text-base font-bold text-[#081018] shadow-[0_12px_32px_rgba(251,191,36,0.16)] transition-[background-color,transform,box-shadow] duration-150 hover:bg-amber-300 hover:shadow-[0_16px_38px_rgba(251,191,36,0.22)] active:translate-y-px focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-4 focus-visible:ring-offset-[#081018]"
               >
                 Continue to Driver Portal

@@ -1,7 +1,8 @@
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { QueryClient, QueryClientProvider, keepPreviousData } from '@tanstack/react-query'
+import toast from 'react-hot-toast'
 import DashboardHome from '../DashboardHome'
 import { garageOwnerSession } from '../../../test-fixtures/db035/staffSession'
 
@@ -235,6 +236,25 @@ describe('dashboard authenticated lifecycle with real authStore', () => {
     expect(apiMock.get.mock.calls.length).toBe(before)
     expect(signals.every(signal => signal.aborted)).toBe(true)
     await act(async () => { finishLogout(); await logout })
+  })
+
+  it('does not announce a previously submitted repair when its response arrives in the next shop', async () => {
+    const notice = vi.spyOn(toast, 'success')
+    let complete!: () => void
+    apiMock.post.mockImplementationOnce(() => new Promise(resolve => {
+      complete = () => resolve({ data: { order_number: 'A-PRIVATE' } })
+    }))
+    render(view())
+    await screen.findByText('Private tenant stock')
+    fireEvent.click(screen.getByRole('button', { name: 'Lightning Order' }))
+    fireEvent.change(screen.getByPlaceholderText('(555) 123-4567'), { target: { value: '5551112222' } })
+    fireEvent.change(screen.getByPlaceholderText('Engine overheating'), { target: { value: 'Repair in A' } })
+    fireEvent.click(screen.getByRole('button', { name: /create order/i }))
+    await waitFor(() => expect(apiMock.post).toHaveBeenCalledTimes(1))
+    act(() => useAuthStore.getState().establishCookieSession({ ...garageOwnerSession, id: 'b', tenant_id: 'b' }))
+    await act(async () => complete())
+    expect(notice).not.toHaveBeenCalled()
+    notice.mockRestore()
   })
 
   it('never revives old rows after a different tenant authenticates while old reads finish', async () => {

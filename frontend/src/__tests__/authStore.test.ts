@@ -59,13 +59,13 @@ describe('authStore', () => {
     expect(state.isAuthenticated).toBe(false)
     expect(state.user).toBeNull()
     expect(state.token).toBeNull()
-    expect(api.post).toHaveBeenCalledWith('/auth/logout')
+    expect(api.post).toHaveBeenCalledWith('/auth/logout', undefined, { authSessionEpoch: state.authSessionEpoch })
   })
 
   it('uses tenant-only WorkOS logout for cookie sessions', async () => {
     useAuthStore.getState().establishCookieSession(fakeUser)
     await useAuthStore.getState().logout()
-    expect(api.post).toHaveBeenCalledWith('/auth/workos/logout')
+    expect(api.post).toHaveBeenCalledWith('/auth/workos/logout', undefined, { authSessionEpoch: useAuthStore.getState().authSessionEpoch })
     expect(useAuthStore.getState().authProvider).toBeNull()
   })
 
@@ -98,6 +98,27 @@ describe('authStore', () => {
     useAuthStore.getState().login('new-access', 'new-refresh', fakeUser)
     expect(useAuthStore.getState().authSessionEpoch).toBe(firstEpoch + 1)
     expect(useAuthStore.getState().claimWebSocketAuthRecovery()).toBe(true)
+  })
+
+  it('ignores passive token and profile writes after a peer signs out, even before its storage event', () => {
+    const session = useAuthStore.getState()
+    session.login('token', 'refresh', fakeUser)
+    const ended = JSON.stringify({ version: 0, state: { explicitlySignedOut: true, isAuthenticated: false, user: null } })
+    localStorage.setItem('auth-storage', ended)
+    session.setTokens('late-token', 'late-refresh')
+    session.setUser(fakeUser)
+    expect(useAuthStore.getState()).toMatchObject({ user: null, token: null, explicitlySignedOut: true })
+    expect(localStorage.getItem('auth-storage')).toBe(ended)
+  })
+
+  it('drops a delayed profile save after another account takes over', () => {
+    const store = useAuthStore.getState()
+    store.login('a', 'ra', fakeUser)
+    const epochA = useAuthStore.getState().authSessionEpoch
+    const other = { ...fakeUser, id: 'u-2', tenant_id: 'second-shop' }
+    store.login('b', 'rb', other)
+    store.setUser({ ...fakeUser, first_name: 'Previous shop' }, epochA)
+    expect(useAuthStore.getState().user).toEqual(other)
   })
 
   it('publishes logout start and does not let a slow logout clear a newer session', async () => {

@@ -37,3 +37,5 @@ Final read-only database fingerprint comparison after browser QA: all nine prote
 Preview approval is required before merge/deployment. Protected exact-head CI and production acceptance remain separate release gates. This item is not Done or deployed.
 
 Lint scope: changed-line baseline gate passes. Explicit whole-file ESLint across all edited/new TypeScript files additionally reports three unchanged pre-existing violations: ProfileSettingsPage catch-any lines111/291 and types/index.ts empty interface455. No new violations were introduced; those unrelated lines were preserved.
+
+Integration: main advanced to `8e1c264e` (PR764). Merged into this branch preserving both board histories and the upstream logout/session changes. Only the delivery board conflicted; ProfileSettingsPage automatically retained both its scope-preserving navigation and upstream logout handling. Recheck integrated runtime, focused suites, build and exact-head CI before release.
