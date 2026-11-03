@@ -2,6 +2,8 @@
 
 2026-11-03. Accountable owner: Frontend & UX. High-risk privacy lane. Branch: `codex/privacy-safety`. Base: `24790dd3` (origin/main at intake). Status: [PR761](https://github.com/mecaniser/truck-pit-stop/pull/761) merged as `82ec76fb` after all seven exact-head checks; API/web, main worker and ETS deployments and live public acceptance verified. [Final release evidence](DB154_PRIVACY_RELEASE.md). This is engineering evidence, not legal advice or a compliance certification.
 
+The later [PR763 presentation correction](DB154_PRIVACY_RELEASE.md#cookie-control-placement-correction--pr763) removes the automatic/global floating cookie UI. Privacy controls now open only from Security settings or public footers; analytics stays disabled. Earlier banner evidence below describes the initial release.
+
 ## Verified operator decisions
 
 The operator supplied: Elis Tech LLC, doing business as Diesel Bridge Network; 1002 Yearden Ln, Monroe, NC 28110, United States; privacy/contact email support@dieselbridge.com (confirmed replacement on 2026-11-03). Subscriptions are month-to-month, non-refundable except where applicable law requires a refund; cancellation stops future monthly renewals. The operator also confirmed ownership or permission for current site logos/images. No independent chain-of-title search or legal review was performed. A North Carolina mailing address does not establish the entity's formation jurisdiction or select governing law.
