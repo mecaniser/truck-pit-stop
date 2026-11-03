@@ -592,3 +592,56 @@ async def test_workos_logout_can_end_server_session_after_access_expiry(client, 
     response = await client.post("/api/v1/auth/workos/logout")
     assert response.status_code == 200
     assert await fake_redis.get("workos:session:opaque") is None
+
+@pytest.mark.asyncio
+async def test_pr764_replacement_cookie_survives_prior_logout_response(client, db_session, fake_redis, monkeypatch):
+    """Real routes+cookie jar, controlled provider; model delayed A response headers."""
+    import asyncio
+    import httpx
+    from pathlib import Path
+    from app.main import app
+    for label in ('A', 'B'):
+        db_session.add(Tenant(name=f'Synthetic {label}', slug=f'overlap-{label.lower()}', workos_organization_id=f'org_{label}'))
+        db_session.add(User(email=f'{label.lower()}@overlap.test', hashed_password='synthetic', first_name=label, last_name='QA', role=UserRole.GARAGE_ADMIN, workos_user_id=f'wu_{label}'))
+    await db_session.commit()
+    async def provider_auth(payload):
+        label=payload['code']
+        return {'user':{'id':f'wu_{label}','email':f'{label.lower()}@overlap.test'},'access_token':f'provider-{label}','refresh_token':f'synthetic-refresh-{label}'}
+    async def provider_verify(token):
+        label=token.rsplit('-',1)[-1]
+        return {'sub':f'wu_{label}','org_id':f'org_{label}','role':'garage_admin','permissions':['fleet:view']}
+    monkeypatch.setattr(workos_provider,'authenticate',provider_auth)
+    monkeypatch.setattr(workos_provider,'verify_access_token',provider_verify)
+    entered=asyncio.Event();release=asyncio.Event()
+    async def held_app(scope,receive,send):
+        async def held_send(message):
+            if scope.get('path')=='/api/v1/auth/workos/logout' and message['type']=='http.response.start':
+                entered.set();await release.wait()
+            await send(message)
+        await app(scope,receive,held_send)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=held_app),base_url='http://test') as browser:
+        async def login(label):
+            started=await browser.get('/api/v1/auth/workos/login',params={'return_to':'/dashboard','browser_attempt':str(uuid4())},follow_redirects=False)
+            assert started.status_code==307
+            state=started.cookies['workos_oauth_state']
+            callback=await browser.get('/api/v1/auth/workos/callback',params={'code':label,'state':state},follow_redirects=False)
+            assert callback.status_code==307
+            return callback
+        await login('A')
+        assert (await browser.get('/api/v1/auth/workos/me')).status_code==200
+        pending=asyncio.create_task(browser.post('/api/v1/auth/workos/logout'))
+        try:
+            await asyncio.wait_for(entered.wait(),5)
+            replacement=await login('B')
+            session_b=replacement.cookies['workos_session']
+            before=await browser.get('/api/v1/auth/workos/me')
+            assert before.status_code==200 and before.json()['email']=='b@overlap.test'
+            cookies_before=sorted(cookie.name for cookie in browser.cookies.jar)
+        finally:
+            release.set()
+        ended=await pending
+        after=await browser.get('/api/v1/auth/workos/me')
+        refresh=await browser.post('/api/v1/auth/workos/session/refresh')
+        report={'provider_exchange':'simulated','routes':'actual ASGI application','logout_status':ended.status_code,'replacement_me_before_prior_response':before.status_code,'replacement_me_after_prior_response':after.status_code,'refresh_after_prior_response':refresh.status_code,'replacement_server_session_still_exists':bool(await fake_redis.get(f'workos:session:{session_b}')),'cookie_names_before':cookies_before,'cookie_names_after':sorted(cookie.name for cookie in browser.cookies.jar)}
+        Path('/evidence/workos-overlap-real-asgi.json').write_text(json.dumps(report,indent=2))
+        assert after.status_code==200, report
