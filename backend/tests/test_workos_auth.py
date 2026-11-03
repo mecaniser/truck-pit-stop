@@ -199,6 +199,20 @@ async def test_callback_redirects_stale_driver_state_to_tenant_bound_recovery(cl
 
 
 @pytest.mark.asyncio
+async def test_stale_browser_bound_attempt_returns_to_login_without_a_completion(client, fake_redis):
+    nonce = str(uuid4())
+    await fake_redis.setex(
+        "workos:oauth-state:wrong-tab", 600,
+        json.dumps({"browser_attempt": nonce, "return_to": f"/driver?db_login_completed={nonce}"}),
+    )
+    response = await client.get(
+        "/api/v1/auth/workos/callback?code=unused&state=wrong-tab", follow_redirects=False,
+    )
+    assert response.headers["location"].endswith("/driver/login?reason=workos_state_expired")
+    assert await fake_redis.get("workos:oauth-state:wrong-tab") is None
+
+
+@pytest.mark.asyncio
 async def test_callback_replay_resumes_existing_opaque_workos_session(client, fake_redis):
     session_id = await workos_session.create_session(
         refresh_token="provider-refresh",
@@ -207,7 +221,9 @@ async def test_callback_replay_resumes_existing_opaque_workos_session(client, fa
         workos_org_id="org",
     )
     client.cookies.set("workos_session", session_id, path="/api/v1/auth/workos")
-    client.cookies.set("workos_return_to", "/dashboard", path="/api/v1/auth/workos")
+    client.cookies.set(
+        "workos_return_to", f"/dashboard?db_login_completed={uuid4()}", path="/api/v1/auth/workos",
+    )
 
     response = await client.get(
         "/api/v1/auth/workos/callback?code=already-used&state=already-used",
@@ -316,6 +332,47 @@ async def test_successful_callback_uses_server_bound_return_path_when_cookie_is_
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("bind_attempt", [False, True])
+async def test_only_fresh_bound_login_emits_completion(client, db_session, fake_redis, monkeypatch, bind_attempt):
+    nonce = str(uuid4())
+    forged = str(uuid4())
+    return_to = f"/dashboard?work_view=closeout&db_login_completed={forged}&%64b_login_completed={forged}#queue"
+    params = {"return_to": return_to}
+    if bind_attempt:
+        params["browser_attempt"] = nonce
+    started = await client.get("/api/v1/auth/workos/login", params=params, follow_redirects=False)
+    assert nonce not in started.headers["location"]
+    state = started.cookies["workos_oauth_state"]
+    context = json.loads(await fake_redis.get(f"workos:oauth-state:{state}"))
+    assert context.get("browser_attempt") == (nonce if bind_attempt else None)
+    assert context["return_to"] == "/dashboard?work_view=closeout#queue"
+
+    tenant = Tenant(name="Fresh", slug="fresh-bound", workos_organization_id="org_1")
+    user = User(email="u@example.test", hashed_password="x", first_name="U", last_name="T",
+                role=UserRole.GARAGE_ADMIN, workos_user_id="wu_1")
+    db_session.add_all([tenant, user])
+    await db_session.commit()
+    monkeypatch.setattr(workos_provider, "authenticate", _authenticate)
+    monkeypatch.setattr(workos_provider, "verify_access_token", _verify)
+    callback_url = f"/api/v1/auth/workos/callback?code=fresh&state={state}"
+    callback = await client.get(callback_url, follow_redirects=False)
+    marker = f"&db_login_completed={nonce}" if bind_attempt else ""
+    assert callback.status_code == 307
+    assert callback.headers["location"].endswith(f"/dashboard?work_view=closeout{marker}#queue")
+    assert callback.cookies.get("workos_session")
+    replay = await client.get(callback_url, follow_redirects=False)
+    assert replay.status_code == 307
+    assert "db_login_completed" not in replay.headers["location"]
+
+
+@pytest.mark.asyncio
+async def test_malformed_browser_attempt_rejected_at_login(client):
+    response = await client.get("/api/v1/auth/workos/login?browser_attempt=invalid", follow_redirects=False)
+    assert response.status_code == 422
+    assert "location" not in response.headers
+
+
+@pytest.mark.asyncio
 async def test_callback_accepts_new_shared_state_beside_stale_host_cookie(
     db_session, fake_redis, monkeypatch
 ):
@@ -364,7 +421,11 @@ async def test_callback_redirects_identity_review_to_validated_frontend_path(db_
     assert auth._return_path_with_reason(
         "//evil.example/steal", "identity_review_required"
     ) == "/?reason=identity_review_required"
-    await fake_redis.setex("workos:oauth-state:review", 600, "1")
+    await fake_redis.setex(
+        "workos:oauth-state:review", 600,
+        json.dumps({"return_to": "/driver/login?next=%2Fdriver&reason=stale&db_login_completed=forged",
+                    "browser_attempt": str(uuid4())}),
+    )
     monkeypatch.setattr(auth, "get_redis", lambda: _resolved(fake_redis))
     monkeypatch.setattr(workos_provider, "authenticate", _authenticate)
     monkeypatch.setattr(workos_provider, "verify_access_token", _verify)

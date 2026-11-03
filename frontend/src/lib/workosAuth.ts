@@ -1,5 +1,6 @@
+import { beginSignedOutLogin } from './workosLoginReturn'
 import api from './api'
-import { useAuthStore } from '../stores/authStore'
+import { syncStoredSession, useAuthStore } from '../stores/authStore'
 
 export type DriverInvitationCapabilityReason =
   | 'available'
@@ -43,10 +44,15 @@ export async function getWorkOSCapabilities(returnTo: string): Promise<WorkOSCap
 }
 
 export function startWorkOSLogin(returnTo: string, reauthPath?: string | null, tenantId?: string | null): void {
-  // A legacy Authorization header takes precedence over the new HttpOnly
-  // WorkOS cookie. Clear the browser projection before leaving for AuthKit.
-  useAuthStore.getState().clearSession()
-  delete api.defaults.headers.common.Authorization
+  syncStoredSession()
+  const session = useAuthStore.getState()
   const target = reauthPath ? `${apiBaseUrl()}${reauthPath}` : buildWorkOSLoginUrl(returnTo, tenantId)
+  if (session.explicitlySignedOut) {
+    window.location.assign(beginSignedOutLogin(target, session.browserSessionId))
+    return
+  }
+  // Do not send legacy Authorization credentials after AuthKit returns.
+  session.clearSession()
+  delete api.defaults.headers.common.Authorization
   window.location.assign(target)
 }

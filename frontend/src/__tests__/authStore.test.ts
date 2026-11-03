@@ -100,6 +100,17 @@ describe('authStore', () => {
     expect(useAuthStore.getState().claimWebSocketAuthRecovery()).toBe(true)
   })
 
+  it('ignores passive token and profile writes after a peer signs out, even before its storage event', () => {
+    const session = useAuthStore.getState()
+    session.login('token', 'refresh', fakeUser)
+    const ended = JSON.stringify({ version: 0, state: { explicitlySignedOut: true, isAuthenticated: false, user: null } })
+    localStorage.setItem('auth-storage', ended)
+    session.setTokens('late-token', 'late-refresh')
+    session.setUser(fakeUser)
+    expect(useAuthStore.getState()).toMatchObject({ user: null, token: null, explicitlySignedOut: true })
+    expect(localStorage.getItem('auth-storage')).toBe(ended)
+  })
+
   it('publishes logout start and does not let a slow logout clear a newer session', async () => {
     let resolveLogout: (() => void) | undefined
     vi.mocked(api.post).mockImplementationOnce(() => new Promise((resolve) => {
