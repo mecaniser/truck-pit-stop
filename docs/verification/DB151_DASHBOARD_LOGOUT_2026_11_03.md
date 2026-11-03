@@ -25,3 +25,11 @@ First real normal sign-out under12s tab-scoped latency correctly hid Dashboard r
 Expanded client boundary: while logoutInProgress is true, actual App unmounts the provider/router/view tree and displays generic Signing out feedback. The actual authStore logout continues and new-session epoch protection remains unchanged. The Dashboard guard remains defense in depth for inactive/unauthenticated state and component cancellation. Staff unread summary was also found keyed globally; its read and inbox writer now share an authenticated-session key, reject stale writer callbacks and cancel the list request on scope changes. Query prefixes/invalidation and server API contracts remain intact; no backend/store policy change.
 
 Failing-first actual-App/shell tests10fail/1pass and inbox-writer tests2fail. Fresh full regression, new independent review and genuine backend repeat required before release. Initial automated GO is historical until that repeat.
+
+## Regression reconciliation
+
+Canonical ConnectedInbox integration fixture previously replaced the entire authStore and lacked the newly used real session helper. Updated to partial import plus explicit authenticated demo identity only for the dashboard integration block; cache assertion now requires the full scoped key.25/25 integration cases pass; fresh independent expanded gate114/114 across10files with no skips. Application source unchanged after252fbf.
+
+Final full frontend run exposed one pre-existing asynchronous inventory URL-cleanup assertion: it waited for filter=stock, already present in the initial URL, then checked selected was gone before the queued navigation committed. Both assertions now share waitFor, retaining exact filter and selected absence plus no-write checks. Inventory application source is unchanged. Focused2/2 pass; repeat full frontend required.
+
+Main advanced only in release documentation to2f401615; merged preserving both board histories with no product/dependency/test changes. Full backend rerun in corrected, network-isolated Python3.11/Node22 image:5337passed/468skipped/0failures; skips remain explicit dedicated PostgreSQL/Redis and disabled-test exclusions, as previously inventoried.

@@ -33,8 +33,10 @@ describe('legacy inventory search deep links', () => {
     renderPage()
     expect(await screen.findByRole('dialog', { name: 'Air filter' })).toBeInTheDocument()
     expect(apiMocks.get).toHaveBeenCalledWith('/inventory/part-44', expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    await waitFor(() => expect(screen.getByTestId('inventory-location')).toHaveTextContent('?filter=stock'))
-    expect(screen.getByTestId('inventory-location')).not.toHaveTextContent('selected=')
+    await waitFor(() => {
+      expect(screen.getByTestId('inventory-location')).toHaveTextContent('?filter=stock')
+      expect(screen.getByTestId('inventory-location')).not.toHaveTextContent('selected=')
+    })
     expect(apiMocks.post).not.toHaveBeenCalled()
     expect(apiMocks.put).not.toHaveBeenCalled()
   })
