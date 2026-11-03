@@ -923,6 +923,29 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(within(ordering).getByRole('link', { name: 'View purchase list' })).toBeInTheDocument()
   })
 
+  it.each([
+    ['active', '&shop_work=active'],
+    ['overview&task=attention:inventory:part-active', '&shop_work=overview&task=attention%3Ainventory%3Apart-active'],
+    ['activity&actor_id=owner&event_type=stock.adjusted&date_from=2026-10-01&date_to=2026-11-01', '&shop_work=activity&actor_id=owner&event_type=stock.adjusted&date_from=2026-10-01&date_to=2026-11-01'],
+    ['unknown&return_url=https://example.com', ''],
+  ])('preserves only supported Shop Work origin %s through nested purchasing links', async (origin, context) => {
+    installApi({ ...detail(activePart), incoming_sources: [{ purchase_order_id: 'po-1', po_number: 'PO-1042', packages: 8, expected_at: null }] })
+    const user = userEvent.setup()
+    renderWorkspace(undefined, `/dashboard/garage/inventory?selected=${activePart.id}&shop_work=${origin}&unrelated=discard`)
+    await screen.findByRole('heading', { name: activePart.name })
+    await user.click(screen.getByRole('tab', { name: 'Ordering' }))
+    const ordering = screen.getByRole('tabpanel', { name: 'Ordering' })
+    const purchasing = new URL(within(ordering).getByRole('link', { name: 'Open Purchasing' }).getAttribute('href')!, 'http://localhost')
+    expect(purchasing.pathname).toBe('/dashboard/garage/purchasing')
+    expect(Object.fromEntries(purchasing.searchParams)).toEqual(Object.fromEntries(new URLSearchParams(`view=orders${context}`)))
+    const order = within(ordering).getByRole('link', { name: /PO-1042/ })
+    const params = new URL(order.getAttribute('href')!, 'http://localhost').searchParams
+    expect(params.get('purchase_order')).toBe('po-1')
+    expect(params.get('shop_work')).toBe(new URLSearchParams(context).get('shop_work'))
+    expect(params.has('unrelated')).toBe(false)
+    expect(params.has('return_url')).toBe(false)
+  })
+
   it('preserves populated purchase orders and receipts inside the compact activity group', async () => {
     installApi({
       ...detail(activePart),
