@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -81,6 +81,9 @@ describe('RepairOrdersPage request cancellation', () => {
     useAuthStore.setState({ user: garageOwnerSession, isAuthenticated: true, logoutInProgress: false })
   })
   afterEach(() => {
+    // Unmount before resetting API promises: creation may still be navigating
+    // to its selected workspace when this test has asserted the POST payload.
+    cleanup()
     apiMocks.get.mockReset()
     apiMocks.post.mockReset()
     themeState.presentationVariant = 'legacy'
