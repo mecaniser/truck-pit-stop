@@ -751,7 +751,9 @@ export default function MechanicPortalPage() {
         setIsEditingProfile(false)
       }
     },
-    onError: (error: any) => { if (isCurrentAuthEpoch(authSessionEpoch)) toast.error(error.response?.data?.detail || 'Failed to update profile') },
+    onError: (error: unknown) => {
+      if (isCurrentAuthEpoch(authSessionEpoch)) toast.error(checklistErrorDetail(error, 'Failed to update profile'))
+    },
   })
 
   const changePasswordMutation = useMutation({
@@ -771,7 +773,9 @@ export default function MechanicPortalPage() {
         logout()
       }, 2000)
     },
-    onError: (error: any) => { if (isCurrentAuthEpoch(authSessionEpoch)) toast.error(error.response?.data?.detail || 'Failed to change password') },
+    onError: (error: unknown) => {
+      if (isCurrentAuthEpoch(authSessionEpoch)) toast.error(checklistErrorDetail(error, 'Failed to change password'))
+    },
   })
 
   const handleLogout = async () => {
