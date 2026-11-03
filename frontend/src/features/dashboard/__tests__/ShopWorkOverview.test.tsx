@@ -58,6 +58,14 @@ describe('Shop Work overview', () => {
   const actions = Array.from({ length: 8 }, (_, i) => item({ id: `inventory:${i}`, title: `Part ${i}` })); const { props } = setup(data({ actions, actions_total: null, has_more_actions: true, sources: [source({ has_more: true, state: 'ready', total: 10, shown: 8 })] }))
   expect(document.querySelectorAll('[data-work-id]')).toHaveLength(6); fireEvent.click(screen.getByRole('button', { name: 'Show next 2 tasks' })); expect(document.querySelectorAll('[data-work-id]')).toHaveLength(8); fireEvent.click(screen.getByRole('button', { name: 'Inventory', exact: true })); expect(props.onWorkspace).toHaveBeenCalledWith('/dashboard/garage/inventory')
  })
+ it('opens the Cores list directly and omits a schedule shortcut when only purchasing overflowed', () => {
+  const { props } = setup(data({ has_more_actions: true, has_more_upcoming: true, sources: [
+    source({ id: 'cores', has_more: true }), source({ id: 'schedule' }), source({ id: 'purchasing', has_more: true }),
+  ] }))
+  fireEvent.click(screen.getByRole('button', { name: 'Cores' }))
+  expect(props.onWorkspace).toHaveBeenCalledWith('/dashboard/garage/purchasing?view=returns&custody=cores')
+  expect(within(screen.getByRole('complementary')).queryByRole('button', { name: 'Repair commitments' })).not.toBeInTheDocument()
+ })
  it('routes incomplete upcoming coverage without asserting more dated work exists', () => {
   const { props } = setup(data({ upcoming_total: null, has_more_upcoming: true, sources: [source({ id: 'purchasing', state: 'partial', reason: 'source_limit', total: null, has_more: true })] }))
   expect(screen.getByText('Upcoming commitments could not be fully checked.')).toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Purchasing incomplete' })); expect(screen.queryByText('More dated work is available in its workspace.')).not.toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Open Purchasing', exact: true })); expect(props.onWorkspace).toHaveBeenCalledWith('/dashboard/garage/purchasing?view=orders')
