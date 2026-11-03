@@ -1,13 +1,18 @@
+import { PolicyLinks } from './PublicPolicyPage'
+import './PublicPolicyPage.css'
+import BusinessContact from './BusinessContact'
+import { BUSINESS } from './business'
 import { Link } from 'react-router-dom'
 import BrandLogo from '../../components/brand/BrandLogo'
 
 const BRAND_NAME = 'Diesel Bridge Network'
-const CONTACT_EMAIL = 'support@dieselbridge.com'
-const EFFECTIVE_DATE = 'March 19, 2026'
+const EFFECTIVE_DATE = 'November 3, 2026'
 
 export default function PrivacyPolicyPage() {
+  const CONTACT_EMAIL = BUSINESS.email
   return (
-    <div className="min-h-screen" style={{ background: 'linear-gradient(to top left, #162338 0%, #0f172a 50%, #111827 100%)' }}>
+    <div className="public-policy min-h-screen" style={{ background: 'linear-gradient(to top left, #162338 0%, #0f172a 50%, #111827 100%)' }}>
+      <a className="policy-skip" href="#policy-content">Skip to policy</a>
       <header className="sticky top-0 z-50 border-b border-gray-800 bg-gray-900/95 backdrop-blur-sm">
         <nav className="mx-auto flex h-16 max-w-4xl items-center justify-between px-4 sm:px-6">
           <Link to="/" className="flex items-center">
@@ -22,16 +27,16 @@ export default function PrivacyPolicyPage() {
         </nav>
       </header>
 
-      <main className="mx-auto max-w-4xl px-4 py-14 sm:px-6">
+      <main id="policy-content" tabIndex={-1} className="mx-auto max-w-4xl px-4 py-14 sm:px-6">
         <h1 className="mb-2 text-3xl font-bold text-white sm:text-4xl">Privacy Policy</h1>
-        <p className="mb-10 text-sm text-gray-400">Effective date: {EFFECTIVE_DATE}</p>
+        <p className="mb-10 text-sm text-gray-400">Last updated: {EFFECTIVE_DATE}</p>
 
         <div className="space-y-10 text-gray-300 leading-7">
 
           <section>
             <h2 className="mb-3 text-xl font-semibold text-white">1. Overview</h2>
             <p>
-              {BRAND_NAME} ("DieselBridge", "we", "us", or "our") operates a shop management platform that enables
+              Elis Tech LLC, doing business as {BRAND_NAME} ("DieselBridge", "we", "us", or "our"), operates a shop management platform that enables
               auto and truck repair shops to manage repair orders, communicate with customers, process payments, and
               coordinate service operations. This Privacy Policy explains how we collect, use, and protect information
               when you use our platform, whether as a shop operator, staff member, or end customer.
@@ -122,6 +127,13 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
+            <h2 className="mb-3 text-xl font-semibold text-white">Cookies and other service providers</h2>
+            <p>Google Analytics and advertising trackers are disabled. Cookie settings explains necessary storage and lets you keep optional cookies off. Earlier analytics cookies accessible to this site are removed. See our <Link to="/cookies">Cookie Policy</Link>.</p>
+            <p>Depending on the features a shop enables, providers also include Resend (email delivery), WorkOS (identity), Mapbox (maps and address search), CallRail (calls and messaging), Google Business Profile (connected reviews), Motive (connected fleet data), and Anthropic (AI-assisted review drafts). Connected features may share relevant contact, message, location, vehicle, or review data with their provider. Avoid including sensitive personal information in free-text fields or review drafts. These are distinct from optional website analytics.</p>
+            <p>For shop-managed customer and fleet records, the shop or fleet operator controls the purpose of processing. Contact that business about its records; DieselBridge support can help route requests. Contact DieselBridge directly about platform accounts and website privacy.</p>
+          </section>
+
+          <section>
             <h2 className="mb-3 text-xl font-semibold text-white">6. Data Sharing</h2>
             <p>
               We do not sell your personal information. We share data only as necessary to operate the platform
@@ -135,7 +147,8 @@ export default function PrivacyPolicyPage() {
             <p>
               We retain account and service data for as long as your account is active or as needed to provide
               services. Customer records and repair history are retained per the shop operator's account lifecycle.
-              You may request deletion of your data by contacting us at{' '}
+              Records may need to be retained for legal, tax, security, accounting, or dispute purposes.
+              Use our <Link to="/data-deletion">data deletion request option</Link>, or contact us at{' '}
               <a href={`mailto:${CONTACT_EMAIL}`} className="text-amber-400 hover:text-amber-300 underline">{CONTACT_EMAIL}</a>.
             </p>
           </section>
@@ -143,8 +156,8 @@ export default function PrivacyPolicyPage() {
           <section>
             <h2 className="mb-3 text-xl font-semibold text-white">8. Security</h2>
             <p>
-              We implement industry-standard security measures including encrypted connections (HTTPS), hashed
-              passwords, token-based authentication, and rate limiting. No system is completely secure; we encourage
+              The platform uses access controls, authentication, and rate limiting. Protecting data also depends on
+              deployment configuration, connected providers, and how authorized users handle records. No system is completely secure; we encourage
               users to use strong passwords and report any suspected security issues promptly.
             </p>
           </section>
@@ -168,8 +181,7 @@ export default function PrivacyPolicyPage() {
             <h2 className="mb-3 text-xl font-semibold text-white">10. Changes to This Policy</h2>
             <p>
               We may update this Privacy Policy from time to time. Changes will be posted on this page with an
-              updated effective date. Continued use of the platform after changes constitutes acceptance of the
-              revised policy.
+              updated effective date. Where a change requires consent, we will ask for that consent separately.
             </p>
           </section>
 
@@ -179,6 +191,7 @@ export default function PrivacyPolicyPage() {
               If you have questions about this Privacy Policy, please contact us at{' '}
               <a href={`mailto:${CONTACT_EMAIL}`} className="text-amber-400 hover:text-amber-300 underline">{CONTACT_EMAIL}</a>.
             </p>
+            <BusinessContact />
           </section>
 
         </div>
@@ -188,8 +201,7 @@ export default function PrivacyPolicyPage() {
         <div className="mx-auto flex max-w-4xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-gray-400">&copy; {new Date().getFullYear()} {BRAND_NAME}. All rights reserved.</p>
           <div className="flex items-center gap-4 text-sm text-gray-400">
-            <Link to="/privacy" className="hover:text-white">Privacy Policy</Link>
-            <Link to="/terms" className="hover:text-white">Terms of Service</Link>
+            <PolicyLinks />
           </div>
         </div>
       </footer>

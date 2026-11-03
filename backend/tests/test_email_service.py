@@ -94,3 +94,19 @@ async def test_send_email_change_notification_masks_email(monkeypatch):
     # New email should be partially masked
     assert "newlong@example.com" not in sent["html"]
     assert "***" in sent["html"]
+
+
+def test_privacy_footer_is_inside_document_and_honest_about_manual_requests():
+    result = email_svc._with_privacy_footer('<html><BODY><p>Notice</p></BODY></html>')
+    assert result.index('<footer') < result.index('</BODY>')
+    assert 'Elis Tech LLC' in result
+    assert '1002 Yearden Ln' in result
+    assert 'mailto:elis@elisprotech.com?subject=Unsubscribe' in result
+    assert 'does not automatically unsubscribe' in result
+    assert 'Essential account, security and transaction notices' in result
+
+
+def test_privacy_footer_supports_html_fragments():
+    result = email_svc._with_privacy_footer('<p>Your invoice</p>')
+    assert result.startswith('<p>Your invoice</p>')
+    assert result.count('<footer') == 1

@@ -193,8 +193,6 @@ export default function GarageEnrollmentPage() {
         phone: finalData.phone,
         email: finalData.email,
         website: finalData.website,
-        business_license: finalData.business_license,
-        ein: finalData.ein,
         owner_first_name: finalData.owner_first_name,
         owner_last_name: finalData.owner_last_name,
         owner_email: finalData.owner_email,
@@ -244,7 +242,7 @@ export default function GarageEnrollmentPage() {
   }
 
   const getInputClasses = (hasError: boolean, readOnly = false) => {
-    const baseClasses = 'block w-full rounded-xl border bg-zinc-950/70 px-4 py-3 text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 transition-colors sm:text-sm'
+    const baseClasses = 'block w-full rounded-xl border bg-zinc-950/70 px-4 py-3 text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 transition-colors sm:text-sm'
     const readOnlyClasses = readOnly ? 'cursor-not-allowed bg-zinc-900/60 text-zinc-400' : ''
     if (hasError) {
       return `${baseClasses} ${readOnlyClasses} border-red-500 focus:ring-red-500 focus:border-red-500`
@@ -389,7 +387,7 @@ export default function GarageEnrollmentPage() {
                 <Link
                   to="/login"
                   className={`${primaryButtonClasses} w-full`}
-                  style={{ background: 'linear-gradient(135deg, var(--accent-500) 0%, var(--accent-600) 100%)' }}
+                  style={{ background: 'linear-gradient(135deg, #a83c00 0%, #873000 100%)' }}
                 >
                   Back to Login
                 </Link>
@@ -467,7 +465,7 @@ export default function GarageEnrollmentPage() {
                 Shop Enrollment
               </p>
               <h1 className="text-3xl font-black tracking-tight text-zinc-100">Apply for Founding Shop Access</h1>
-              <p className="mt-2 text-sm text-zinc-400">Register your shop in four guided steps.</p>
+              <p className="mt-2 text-sm text-zinc-300">Register your shop in four guided steps. We use your business contact details to review your application and create your account. Read our <Link to="/privacy" className="underline text-amber-300">Privacy Policy</Link> before entering personal information. Phone details do not opt you into SMS or marketing.</p>
             </div>
 
             <div className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-900/55 p-4">
@@ -483,12 +481,12 @@ export default function GarageEnrollmentPage() {
                             ? 'border-[var(--accent-500)] bg-[var(--accent-500)] text-white'
                             : isCurrent
                             ? 'border-[var(--accent-500)] text-[var(--accent-400)]'
-                            : 'border-zinc-700 text-zinc-500'
+                            : 'border-zinc-700 text-zinc-400'
                         }`}
                       >
                         {isComplete ? <CheckCircle className="h-4 w-4" /> : <step.icon className="h-4 w-4" />}
                       </div>
-                      <span className={`text-[11px] sm:text-xs ${isCurrent ? 'text-zinc-200' : 'text-zinc-500'}`}>
+                      <span className={`text-[11px] sm:text-xs ${isCurrent ? 'text-zinc-200' : 'text-zinc-400'}`}>
                         {step.name}
                       </span>
                     </div>
@@ -500,7 +498,7 @@ export default function GarageEnrollmentPage() {
                   className="h-full rounded-full transition-all duration-300"
                   style={{
                     width: `${progressPercent}%`,
-                    background: 'linear-gradient(135deg, var(--accent-500) 0%, var(--accent-600) 100%)',
+                    background: 'linear-gradient(135deg, #a83c00 0%, #873000 100%)',
                   }}
                 />
               </div>
@@ -544,7 +542,7 @@ export default function GarageEnrollmentPage() {
                     URL Slug <span className="text-red-400">*</span>
                   </label>
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-zinc-500">dieselbridge.com/</span>
+                    <span className="text-sm text-zinc-400">dieselbridge.com/</span>
                     <ControlInput
                       {...step1Form.register('slug')}
                       type="text"
@@ -613,7 +611,7 @@ export default function GarageEnrollmentPage() {
 
                 <div>
                   <label htmlFor="website" className="mb-1 block text-sm font-medium text-zinc-300">
-                    Website <span className="text-zinc-500">(optional)</span>
+                    Website <span className="text-zinc-400">(optional)</span>
                   </label>
                   <ControlInput
                     {...step1Form.register('website')}
@@ -635,7 +633,7 @@ export default function GarageEnrollmentPage() {
                   <ControlButton
                     type="submit"
                     className={primaryButtonClasses}
-                    style={{ background: 'linear-gradient(135deg, var(--accent-500) 0%, var(--accent-600) 100%)' }}
+                    style={{ background: 'linear-gradient(135deg, #a83c00 0%, #873000 100%)' }}
                   >
                     {resumeStepAfterGarageEdit === 4 ? 'Return to Review' : 'Next'}
                     <ArrowRight className="h-4 w-4" />
@@ -647,42 +645,7 @@ export default function GarageEnrollmentPage() {
             {/* Step 2: Business Details */}
             {currentStep === 2 && (
               <form onSubmit={step2Form.handleSubmit(handleStep2Submit)} className="space-y-4">
-                <div className="rounded-xl border border-cyan-800/50 bg-cyan-900/15 p-4 text-sm text-cyan-200">
-                  These fields are optional, but they can speed up business verification.
-                </div>
-
-                <div>
-                  <label htmlFor="business_license" className="mb-1 block text-sm font-medium text-zinc-300">
-                    Business License Number <span className="text-zinc-500">(optional)</span>
-                  </label>
-                  <ControlInput
-                    {...step2Form.register('business_license')}
-                    type="text"
-                    id="business_license"
-                    className={getInputClasses(!!step2Form.formState.errors.business_license)}
-                    placeholder="BL-123456"
-                  />
-                  {step2Form.formState.errors.business_license && (
-                    <p className="mt-1.5 text-sm text-red-400">{step2Form.formState.errors.business_license.message}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label htmlFor="ein" className="mb-1 block text-sm font-medium text-zinc-300">
-                    EIN (Employer Identification Number) <span className="text-zinc-500">(optional)</span>
-                  </label>
-                  <ControlInput
-                    {...step2Form.register('ein')}
-                    type="text"
-                    id="ein"
-                    className={getInputClasses(!!step2Form.formState.errors.ein)}
-                    placeholder="XX-XXXXXXX"
-                  />
-                  <p className="mt-1 text-xs text-zinc-500">Format: XX-XXXXXXX (example: 12-3456789)</p>
-                  {step2Form.formState.errors.ein && (
-                    <p className="mt-1.5 text-sm text-red-400">{step2Form.formState.errors.ein.message}</p>
-                  )}
-                </div>
+                <p className="text-sm text-zinc-200">No tax ID or business license number is needed for this application. If verification is needed later, support will explain why and how to provide it securely.</p>
 
                 <div className="flex items-center justify-between pt-4">
                   <ControlButton type="button" onClick={goBack} className={backButtonClasses}>
@@ -692,7 +655,7 @@ export default function GarageEnrollmentPage() {
                   <ControlButton
                     type="submit"
                     className={primaryButtonClasses}
-                    style={{ background: 'linear-gradient(135deg, var(--accent-500) 0%, var(--accent-600) 100%)' }}
+                    style={{ background: 'linear-gradient(135deg, #a83c00 0%, #873000 100%)' }}
                   >
                     Next
                     <ArrowRight className="h-4 w-4" />
@@ -741,7 +704,7 @@ export default function GarageEnrollmentPage() {
                   <label htmlFor="owner_email" className="mb-1 block text-sm font-medium text-zinc-300">
                     Owner Login Email <span className="text-red-400">*</span>
                   </label>
-                  <p className="mb-1 text-xs text-zinc-500">Uses the same email as Business Contact Email.</p>
+                  <p className="mb-1 text-xs text-zinc-400">Uses the same email as Business Contact Email.</p>
                   <ControlInput
                     {...step3Form.register('owner_email')}
                     type="email"
@@ -759,7 +722,7 @@ export default function GarageEnrollmentPage() {
                   <label htmlFor="owner_phone" className="mb-1 block text-sm font-medium text-zinc-300">
                     Phone <span className="text-red-400">*</span>
                   </label>
-                  <p className="mb-1 text-xs text-zinc-500">Prefilled from Shop Info. Change only if needed.</p>
+                  <p className="mb-1 text-xs text-zinc-400">Prefilled from Shop Info. Change only if needed.</p>
                   <ControlInput
                     {...step3Form.register('owner_phone', {
                       onChange: (e) => step3Form.setValue('owner_phone', formatUSPhone(e.target.value)),
@@ -871,7 +834,7 @@ export default function GarageEnrollmentPage() {
                   <ControlButton
                     type="submit"
                     className={primaryButtonClasses}
-                    style={{ background: 'linear-gradient(135deg, var(--accent-500) 0%, var(--accent-600) 100%)' }}
+                    style={{ background: 'linear-gradient(135deg, #a83c00 0%, #873000 100%)' }}
                   >
                     Review
                     <ArrowRight className="h-4 w-4" />
@@ -902,28 +865,28 @@ export default function GarageEnrollmentPage() {
                   </div>
                   <div className="grid grid-cols-1 gap-3 text-sm text-zinc-300 sm:grid-cols-2">
                     <div>
-                      <span className="text-zinc-500">Name</span>
+                      <span className="text-zinc-400">Name</span>
                       <p className="font-medium text-zinc-100">{formData.garage_name}</p>
                     </div>
                     <div>
-                      <span className="text-zinc-500">URL</span>
+                      <span className="text-zinc-400">URL</span>
                       <p className="font-medium text-zinc-100">dieselbridge.com/{formData.slug}</p>
                     </div>
                     <div className="sm:col-span-2">
-                      <span className="text-zinc-500">Address</span>
+                      <span className="text-zinc-400">Address</span>
                       <p className="font-medium text-zinc-100">{formData.address}</p>
                     </div>
                     <div className="sm:col-span-2">
-                      <span className="text-zinc-500">Phone</span>
+                      <span className="text-zinc-400">Phone</span>
                       <p className="font-medium text-zinc-100">{formData.phone}</p>
                       <div className="mt-2">
-                        <span className="text-zinc-500">Business Email</span>
+                        <span className="text-zinc-400">Business Email</span>
                         <p className="break-all font-medium text-zinc-100">{formData.email}</p>
                       </div>
                     </div>
                     {formData.website && (
                       <div className="sm:col-span-2">
-                        <span className="text-zinc-500">Website</span>
+                        <span className="text-zinc-400">Website</span>
                         <p className="font-medium text-zinc-100">{formData.website}</p>
                       </div>
                     )}
@@ -948,13 +911,13 @@ export default function GarageEnrollmentPage() {
                     <div className="grid grid-cols-1 gap-3 text-sm text-zinc-300 sm:grid-cols-2">
                       {formData.business_license && (
                         <div>
-                          <span className="text-zinc-500">License</span>
+                          <span className="text-zinc-400">License</span>
                           <p className="font-medium text-zinc-100">{formData.business_license}</p>
                         </div>
                       )}
                       {formData.ein && (
                         <div>
-                          <span className="text-zinc-500">EIN</span>
+                          <span className="text-zinc-400">EIN</span>
                           <p className="font-medium text-zinc-100">{formData.ein}</p>
                         </div>
                       )}
@@ -978,24 +941,24 @@ export default function GarageEnrollmentPage() {
                   </div>
                   <div className="grid grid-cols-1 gap-3 text-sm text-zinc-300 sm:grid-cols-2">
                     <div className="sm:col-span-2">
-                      <span className="text-zinc-500">Name</span>
+                      <span className="text-zinc-400">Name</span>
                       <p className="font-medium text-zinc-100">
                         {formData.owner_first_name} {formData.owner_last_name}
                       </p>
                       <div className="mt-2">
-                        <span className="text-zinc-500">Owner Login Email</span>
+                        <span className="text-zinc-400">Owner Login Email</span>
                         <p className="break-all font-medium text-zinc-100">{formData.owner_email}</p>
                       </div>
                     </div>
                     <div>
-                      <span className="text-zinc-500">Phone</span>
+                      <span className="text-zinc-400">Phone</span>
                       <p className="font-medium text-zinc-100">{formData.owner_phone}</p>
                     </div>
                   </div>
                 </div>
 
                 <div className="rounded-xl border border-zinc-800/70 bg-zinc-900/55 px-3 py-2 text-xs text-zinc-400">
-                  Review details carefully before submitting. DieselBridge staff will never ask for your password.
+                  Review details carefully before submitting. By submitting, you agree to the <Link to="/terms" className="underline text-amber-300">Terms of Service</Link>. Read the <Link to="/privacy" className="underline text-amber-300">Privacy Policy</Link> for how we handle application data. Providing your phone number does not subscribe you to marketing or grant SMS consent. DieselBridge staff will never ask you to share your password.
                 </div>
 
                 <div className="flex items-center justify-between pt-2">
@@ -1007,7 +970,7 @@ export default function GarageEnrollmentPage() {
                     onClick={handleFinalSubmit}
                     disabled={isLoading}
                     className={primaryButtonClasses}
-                    style={{ background: 'linear-gradient(135deg, var(--accent-500) 0%, var(--accent-600) 100%)' }}
+                    style={{ background: 'linear-gradient(135deg, #a83c00 0%, #873000 100%)' }}
                   >
                     {isLoading ? (
                       <>

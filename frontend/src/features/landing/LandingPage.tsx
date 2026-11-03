@@ -1,3 +1,5 @@
+import BusinessContact from './BusinessContact'
+import { PolicyLinks } from './PublicPolicyPage'
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
@@ -96,7 +98,7 @@ export default function LandingPage() {
 
       <header className="landing-header">
         <nav className="landing-nav" aria-label="Primary navigation">
-          <a className="landing-brand-link" href="#main-content"><DieselBridgeWordmark animated /></a>
+          <a className="landing-brand-link" href="#main-content" aria-label="DieselBridge: skip to main content"><DieselBridgeWordmark animated /></a>
           <div className="landing-nav-links">
             <a href="#product-preview">Product tour</a>
             <a href="#approved-shops">Approved shops</a>
@@ -118,6 +120,7 @@ export default function LandingPage() {
               <ArrowRight aria-hidden="true" />
             </Link>
           </div>
+          <p className="landing-demo-disclosure">Interactive demonstration with fictional shop, customer, and financial data.</p>
           <ProductWorkspace />
         </section>
 
@@ -190,10 +193,9 @@ export default function LandingPage() {
 
       <footer className="landing-footer">
         <DieselBridgeWordmark />
-        <p>© {new Date().getFullYear()} {BRAND.platformName}</p>
+        <div><p>© {new Date().getFullYear()} {BRAND.platformName}</p><BusinessContact /></div>
         <div>
-          <Link to="/privacy">Privacy</Link>
-          <Link to="/terms">Terms</Link>
+          <PolicyLinks />
           <a href={mailtoHref || 'mailto:support@dieselbridge.network'}>Contact</a>
         </div>
       </footer>

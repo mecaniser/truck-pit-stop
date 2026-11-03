@@ -30,6 +30,7 @@ export default function DieselBridgeWordmark({
   return (
     <span
       className={`db-wordmark${animated ? ' db-wordmark--animated' : ''}${showBridge ? '' : ' db-wordmark--type-only'}${className ? ` ${className}` : ''}`}
+      role="img"
       aria-label="Diesel Bridge Network"
     >
       {showBridge && (
