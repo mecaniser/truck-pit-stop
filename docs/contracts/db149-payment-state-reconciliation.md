@@ -45,3 +45,7 @@ Required owner and fresh independent evidence:
 - A newly isolated real PostgreSQL/Redis backend with synthetic normal authenticated customer/guest journeys, desktop and390px, reload and failed-read recovery. No live payments or operational financial writes. Snapshot full financial rows before/after reads and UI changes; synthetic seed creation is distinct from payment operations. Preserve evidence and clean only owned disposable services.
 
 Return to Architecture for changed financial derivation, persisted columns/migrations, access scopes, provider execution, identity alias/legal-name policy, unbounded added reads or inability to keep unknown balances conservative. Otherwise proceed locally without another product-owner permission request. Publishing/merge/deploy remain explicitly unauthorized in this task.
+
+## Draft publication scope update — 2026-11-03
+
+The later explicit instruction authorizes publishing the independently reviewed payment-only draft PR. Original local-only contract language records the earlier stage; merge, deployment and GitHub PR approval remain outside this step. Enrollment remediation and unrelated test-infrastructure changes remain excluded. Current verification is recorded in `../verification/DB149_PAYMENT_STATE_DRAFT_PR.md`.
