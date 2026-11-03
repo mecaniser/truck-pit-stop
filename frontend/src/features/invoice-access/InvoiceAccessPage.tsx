@@ -299,7 +299,7 @@ export default function InvoiceAccessPage() {
   const allocationQuery = useInvoiceAllocations(settlementAccess, Boolean(settlementQuery.data))
   const splitSettlement = settlementQuery.data?.feature_enabled === false ? null : settlementQuery.data
   const paymentSummary = currentInvoicePaymentSummary(invoice?.payment_summary, splitSettlement)
-  const settlementFailure = settlementQuery.error && !isSettlementUnavailable(settlementQuery.error)
+  const settlementFailure = Boolean(settlementQuery.error && (splitSettlement || !isSettlementUnavailable(settlementQuery.error)))
 
   const paidInThisSession = paymentResult !== null
   const isPaid = !!invoice && (paymentSummary ? paymentSummary.state === 'paid' : splitSettlement?.state === 'paid' || invoice.is_paid || paidInThisSession)

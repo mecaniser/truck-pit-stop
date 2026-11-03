@@ -179,7 +179,7 @@ export default function CustomerInvoicePage() {
   const settlementQuery = useInvoiceSettlement(settlementAccess)
   const allocationQuery = useInvoiceAllocations(settlementAccess, Boolean(settlementQuery.data))
   const legacySettlementMode = settlementQuery.data?.feature_enabled === false
-    || Boolean(settlementQuery.error && isSettlementUnavailable(settlementQuery.error))
+    || Boolean(!settlementQuery.data && settlementQuery.error && isSettlementUnavailable(settlementQuery.error))
 
   const { data: repairOrder } = useQuery<RepairOrderDetail>({
     queryKey: ['repair-order-payment-detail', invoice?.repair_order_id],
@@ -319,7 +319,7 @@ export default function CustomerInvoicePage() {
   const backDestination = paymentState?.paymentOrigin || 'History'
   const splitSettlement = isHistoricalInvoice || settlementQuery.data?.feature_enabled === false ? null : settlementQuery.data
   const paymentSummary = currentInvoicePaymentSummary(invoice.payment_summary, splitSettlement)
-  const settlementFailure = settlementQuery.error && !isSettlementUnavailable(settlementQuery.error)
+  const settlementFailure = Boolean(settlementQuery.error && (splitSettlement || !isSettlementUnavailable(settlementQuery.error)))
   const isPaid = paymentSummary ? paymentSummary.state === 'paid' : splitSettlement?.state === 'paid' || invoice.status === 'paid'
   const cashReceipt = isPaid ? invoice.cash_receipt : null
   const collectionApplied = invoice.source_collection ? collectionAppliedPrincipal(invoice.source_collection, splitSettlement ? (paymentSummary?.applied_amount === null ? null : splitSettlement.confirmed_principal) : (paymentSummary ? paymentSummary.applied_amount : invoice.source_collection.native_confirmed_principal)) : null

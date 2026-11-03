@@ -1,3 +1,4 @@
+import { AxiosError, AxiosHeaders } from 'axios'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -11,12 +12,13 @@ vi.mock('@/features/payments', async () => ({ ...await vi.importActual('@/featur
 }))
 import InvoiceAccessPage from '../InvoiceAccessPage'
 import CustomerInvoicePage from '@/features/customer-portal/CustomerInvoicePage'
-function show(audience: 'guest' | 'portal', overrides: Partial<InvoiceSettlementSummary>, prior?: string) {
+function show(audience: 'guest' | 'portal', overrides: Partial<InvoiceSettlementSummary>, prior?: string, initialUnavailable?: unknown) {
   const summary = { invoice_id: 'matrix-invoice', currency: 'USD', principal_total: '100.00', confirmed_principal: '0.00',
     active_pending_principal: '0.00', outstanding_balance: '100.00', allocatable_balance: '100.00', unapplied_credit: '0.00',
     refund_pending: '0.00', state: 'unpaid', version: 1, card_provider: null, card_provider_status: 'not_configured',
     accounting_sync_status: 'not_started', feature_enabled: true, allowed_actions: { create_attempt: false, rails: [] }, ...overrides } as InvoiceSettlementSummary
-  mocks.settlement = summary
+  mocks.settlement = initialUnavailable ? null : summary
+  if (initialUnavailable !== undefined) mocks.settlementError = initialUnavailable
   const invoice = { invoice_id: 'matrix-invoice', id: 'matrix-invoice', repair_order_id: 'order-matrix', invoice_number: prior === undefined ? 'MATRIX' : 'DBN-COL-INTERNAL',
     order_number: 'RO-MATRIX', customer_name: 'Synthetic customer', vehicle_info: 'Synthetic truck', source: prior === undefined ? 'native' : 'ets_collection_handoff',
     status: summary.state === 'paid' ? 'paid' : 'sent', is_paid: summary.state === 'paid', subtotal: '100.00', total_amount: '100.00',
@@ -32,10 +34,13 @@ function show(audience: 'guest' | 'portal', overrides: Partial<InvoiceSettlement
     if (url.includes('allocations')) return { data: { items: [] } }
     return { data: {} }
   })
-  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}>
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  const tree = () => <QueryClientProvider client={client}>
     <MemoryRouter initialEntries={[audience === 'guest' ? '/invoice/matrix-token' : '/portal/invoices/matrix-invoice']}><Routes>
       <Route path="/invoice/:token" element={<InvoiceAccessPage />} /><Route path="/portal/invoices/:invoiceId" element={<CustomerInvoicePage />} />
-    </Routes></MemoryRouter></QueryClientProvider>)
+    </Routes></MemoryRouter></QueryClientProvider>
+  const view = render(tree())
+  return { ...view, rerenderCurrent: () => view.rerender(tree()) }
 }
 beforeEach(() => { mocks.get.mockReset(); mocks.post.mockReset(); mocks.settlement = null; mocks.settlementError = null; mocks.savedApplied = undefined })
 describe.each(['guest', 'portal'] as const)('%s actual invoice state presentation', audience => {
@@ -133,5 +138,39 @@ describe.each(['guest', 'portal'] as const)('%s adverse-state regressions', audi
     show(audience,enabled)
     expect(await screen.findByRole('button',{name:'Pay part'})).toBeEnabled()
     expect(mocks.post.mock.calls.every(([url])=>url==='/invoice-access/resolve')).toBe(true)
+  })
+})
+
+
+function unavailableResponse(code: string) {
+  const missing = code === 'route_missing'
+  return new AxiosError('Synthetic unavailable response', 'ERR_BAD_REQUEST', undefined, undefined, {
+    status: missing ? 404 : 409, statusText: missing ? 'Not Found' : 'Conflict', headers: {}, config: { headers: new AxiosHeaders() },
+    data: missing ? { detail: 'Not Found' } : { error: { code, message: 'Split payments unavailable' } },
+  })
+}
+const unavailableCodes = ['feature_disabled', 'invoice_split_payments_disabled', 'split_payments_disabled', 'route_missing']
+describe.each(['guest', 'portal'] as const)('%s unavailable settlement transitions', audience => {
+  it.each(unavailableCodes)('blocks cached controls after %s and recovers on a successful read', async code => {
+    const view = show(audience, { state: 'partially_paid', confirmed_principal: '40.00', outstanding_balance: '60.00', allocatable_balance: '60.00', allowed_actions: { create_attempt: true, rails: ['zelle'] } })
+    expect(await screen.findByRole('button', { name: 'Pay part' })).toBeEnabled()
+    mocks.settlementError = unavailableResponse(code)
+    view.rerenderCurrent()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Payment details could not be loaded')
+    expect(screen.queryByRole('button', { name: 'Pay part' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Pay in full' })).not.toBeInTheDocument()
+    if (audience === 'portal') expect(mocks.get.mock.calls.some(([url]) => url.includes('quickbooks/payments/availability'))).toBe(false)
+    mocks.settlementError = null
+    view.rerenderCurrent()
+    expect(await screen.findByRole('button', { name: 'Pay part' })).toBeEnabled()
+    expect(mocks.post.mock.calls.every(([url]) => url === '/invoice-access/resolve')).toBe(true)
+  })
+  it.each(unavailableCodes)('preserves first-read legacy fallback for %s without cached split data', async code => {
+    show(audience, { feature_enabled: false }, undefined, unavailableResponse(code))
+    await screen.findByText('Synthetic truck')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Pay part' })).not.toBeInTheDocument()
+    if (audience === 'guest') expect(await screen.findByRole('button', { name: 'Open My Portal' })).toBeEnabled()
+    expect(mocks.post.mock.calls.every(([url]) => url === '/invoice-access/resolve')).toBe(true)
   })
 })
