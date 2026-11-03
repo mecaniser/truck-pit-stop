@@ -3,12 +3,14 @@
   "build": {
     "builder": "DOCKERFILE",
     "dockerfilePath": "backend/Dockerfile.ets-sync",
+      "backend/requirements.lock",
     "watchPatterns": [
       "backend/scripts/easytruck_sync/**",
       "backend/scripts/fix_legacy_invoice_numbers.py",
       "backend/scripts/backfill_invoice_ets_date.py",
       "backend/scripts/backfill_ro_labor_hours.py",
       "backend/Dockerfile.ets-sync",
+      "backend/requirements.lock",
       "railway.ets-sync.json"
     ]
   },
