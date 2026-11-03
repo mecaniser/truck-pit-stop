@@ -5,6 +5,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { Spinner } from '@/components/ui'
 import {
   AlertTriangle,
+  ArrowRight,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -40,8 +41,9 @@ import RecentActivityFeed from './RecentActivityFeed'
 import { useActivityFeed, activityCountLabel } from './activityFeedQuery'
 import ShopCockpitActionLedger, { type ActionQueueLane } from './ShopCockpitActionLedger'
 import WipAgingPanel from './WipAgingPanel'
+import WorkspaceRecordLink from '@/components/WorkspaceRecordLink'
 import ShopWorkOverview, { type ShopWorkOverviewData } from './ShopWorkOverview'
-import { shopWorkBoardUrl } from './shopWorkNavigation'
+import { shopWorkBoardUrl, shopWorkDestinationUrl } from './shopWorkNavigation'
 import { DEFAULT_WIP_FILTERS, type WipFilters } from './wipAging'
 import RepairOrdersPage from '../repair-orders/RepairOrdersPage'
 import { elapsedSince, shortDuration } from '@/lib/elapsed'
@@ -887,16 +889,7 @@ export default function DashboardHome() {
     : null
   const activeLastUpdated = activeUpdatedAt ? new Date(activeUpdatedAt) : null
 
-  if (activeLoading && !(presentationVariant === 'new' && workView === 'overview')) {
-    if (presentationVariant === 'new') {
-      return (
-        <section className="db-shop-work-new db-shop-work-new--state" aria-busy="true" aria-label="Loading Shop Work">
-          <Spinner size="xl" />
-          <strong>Loading Shop Work</strong>
-          <span>Retrieving the three canonical queues.</span>
-        </section>
-      )
-    }
+  if (presentationVariant !== 'new' && activeLoading) {
     return (
       <div className="flex items-center justify-center py-20">
         <Spinner size="xl" />
@@ -904,20 +897,7 @@ export default function DashboardHome() {
     )
   }
 
-  if (activeError && !(presentationVariant === 'new' && workView === 'overview')) {
-    if (presentationVariant === 'new') {
-      return (
-        <section className="db-shop-work-new db-shop-work-new--state" role="alert">
-          <AlertTriangle aria-hidden="true" />
-          <strong>{activeError}</strong>
-          <span>The current queue could not be retrieved. Existing repair orders remain in Repair Orders.</span>
-          <ControlButton type="button" onClick={handleManualRefresh} disabled={activeRefreshing}>
-            <RefreshCw aria-hidden="true" className={activeRefreshing ? 'animate-spin' : ''} />
-            {activeRefreshing ? 'Retrying…' : 'Try again'}
-          </ControlButton>
-        </section>
-      )
-    }
+  if (presentationVariant !== 'new' && activeError) {
     return (
       <div className="text-center py-12">
         <p className="text-red-400">{activeError}</p>
@@ -946,6 +926,11 @@ export default function DashboardHome() {
       orders_closed_today: dailyWorkbench?.closed_today.items ?? [],
       orders_closed_today_has_more: dailyWorkbench?.closed_today.has_more ?? false,
     }
+    const nextTask = !overviewQuery.isError && overviewQuery.data?.actions[0]
+    const nextHref = nextTask ? shopWorkDestinationUrl(nextTask.destination, undefined, 'active') : '/dashboard?work_view=overview'
+    const quietNext = <WorkspaceRecordLink className="db-work-control db-work-next" href={nextHref} onOpen={() => navigate(nextHref)}>
+      {nextTask ? `${nextTask.action_label}: ${nextTask.title}` : 'View shop overview'} <ArrowRight aria-hidden="true" />
+    </WorkspaceRecordLink>
     const openRecord = (id: string, lane: ActionQueueLane) => {
       navigate(`/dashboard?selected=${encodeURIComponent(id)}&queue=${lane}&work_view=${workView}`)
     }
@@ -964,6 +949,8 @@ export default function DashboardHome() {
           navigate(`/dashboard?${params.toString()}`, { replace: true })
         }}
         activeCount={overviewQuery.data?.active_jobs ?? null}
+        closeoutState={activeError ? <div className="db-work-state" role="alert"><AlertTriangle aria-hidden="true" /><div><strong>Closeout could not be loaded</strong><ControlButton className="db-work-control" onClick={handleManualRefresh} disabled={activeRefreshing}>Try again</ControlButton></div></div>
+          : activeLoading ? <div className="db-work-state" role="status"><Spinner size="sm" />Loading closeout…</div> : null}
         closeoutUnavailable={!!dailyWorkbenchError || isDailyWorkbenchLoading}
         overview={<ShopWorkOverview
           data={overviewQuery.data}
@@ -984,7 +971,7 @@ export default function DashboardHome() {
             navigate(`${pathname}?${params}`)
           }}
         />}
-        activeWork={<WipAgingPanel filters={wipFilters} onFiltersChange={setWipFilters} onOpenRecord={openRecord} />}
+        activeWork={<WipAgingPanel quietNext={quietNext} filters={wipFilters} onFiltersChange={setWipFilters} onOpenRecord={openRecord} />}
         isManager={isManager}
         canViewActivity={canViewActivity}
         queueView={queueView}

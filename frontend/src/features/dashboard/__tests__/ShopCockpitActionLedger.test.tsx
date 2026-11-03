@@ -111,8 +111,17 @@ describe('DB-035 Stage 3 Action Ledger', () => {
 
   it('does not apply nonpayment overflow to the payment-review subset', () => {
     renderLedger({ activeWork: <div>Active panel</div>, workView: 'closeout', projection: { ...projection, orders_needing_action_has_more: true } })
-    expect(screen.getByRole('tab', { name: 'Payment review 0' })).toBeInTheDocument()
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+    expect(screen.getByText('Ready to Close · 1')).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: 'Payment review 0+' })).not.toBeInTheDocument()
+  })
+
+  it('opens pending payment review immediately when no repairs are ready to close', () => {
+    const payment = order('payment', 'RO-PAY', 'invoiced', 'Shop', 'Truck', { pending_zelle_confirmation: true })
+    renderLedger({ activeWork: <div />, workView: 'closeout', projection: { ...projection, orders_ready_to_close: [], orders_needing_action: [payment] } })
+    expect(screen.getByRole('button', { name: 'Open RO-PAY in Repair Orders' })).toBeVisible()
+    expect(screen.getByText('Payment review · 1')).toBeVisible()
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
   })
 
   it.each(['completed', 'invoiced'])('labels imported %s history without a native billing instruction', (status) => {
@@ -120,8 +129,8 @@ describe('DB-035 Stage 3 Action Ledger', () => {
       order('ets-history', 'ETS-EXAMPLE', status, 'Synthetic carrier', 'Synthetic truck', { source: 'easy_truck_shop_import', pending_zelle_confirmation: true }),
     ] } })
     expect(screen.getByText('ETS history')).toBeInTheDocument()
-    expect(screen.queryByText('Invoice Customer')).not.toBeInTheDocument()
-    expect(screen.queryByText('Payment Due')).not.toBeInTheDocument()
+    expect(screen.queryByText('Review for invoicing')).not.toBeInTheDocument()
+    expect(screen.queryByText('Review invoice')).not.toBeInTheDocument()
     expect(screen.queryByText('Zelle Review')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Open ETS-EXAMPLE in Repair Orders' })).toBeInTheDocument()
   })
@@ -243,7 +252,7 @@ describe('DB-035 Stage 3 Action Ledger', () => {
     expect(within(row).getByText('Ready to Close')).toBeInTheDocument()
     await user.click(screen.getByRole('tab', { name: 'Ready to Close 1' }))
     expect(within(row).queryByText('Ready to Close')).not.toBeInTheDocument()
-    expect(within(row).getByText('Payment Due')).toBeInTheDocument()
+    expect(within(row).getByText('Review invoice')).toBeInTheDocument()
   })
   it('distinguishes calculating, unavailable, and genuine zero work values', () => {
     const { rerender, props } = renderLedger({ valueSummaryLoading: true })

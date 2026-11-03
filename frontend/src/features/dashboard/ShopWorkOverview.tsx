@@ -1,6 +1,6 @@
 import WorkspaceRecordLink from '@/components/WorkspaceRecordLink'
 import { ControlButton } from '@/components/ui/Controls'
-import { useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
 import { ArrowRight, ArrowUpRight, CalendarClock, CheckCircle2, ChevronDown, CircleAlert, ClipboardList, CloudOff, Package, Receipt, RotateCcw, Truck, Wrench, X } from 'lucide-react'
 import { shopWorkDestinationUrl, type ShopWorkDestination } from './shopWorkNavigation'
@@ -51,7 +51,7 @@ const SOURCE = {
   inventory: { label: 'Inventory', icon: Package, path: '/dashboard/garage/inventory' },
   purchasing: { label: 'Purchasing', icon: Truck, path: '/dashboard/garage/purchasing?view=orders' },
   returns: { label: 'Returns', icon: RotateCcw, path: '/dashboard/garage/purchasing?view=returns' },
-  cores: { label: 'Cores', icon: RotateCcw, path: '/dashboard/garage/purchasing?view=returns' },
+  cores: { label: 'Cores', icon: RotateCcw, path: '/dashboard/garage/purchasing?view=returns&custody=cores' },
   receivables: { label: 'Customer accounts', icon: Receipt, path: '/dashboard/customers' },
 } as const
 const REASONS: Record<string, string> = {
@@ -114,17 +114,17 @@ const destinationArea: Record<ShopWorkDestination['kind'], string> = {
 
 type OpenRecord = (href: string, task: string) => void
 
-function RecordLink({ item, section = 'attention', primary = false, onOpen }: {
+function RecordLink({ item, section = 'attention', children, onOpen }: {
   item: ShopWorkItem
   section?: 'attention' | 'upcoming'
-  primary?: boolean
+  children?: ReactNode
   onOpen: OpenRecord
 }) {
   const task = `${section}:${item.id}`
   const href = shopWorkDestinationUrl(item.destination, task)
-  return <WorkspaceRecordLink id={task} href={href} className={primary ? 'db-overview__primary' : 'db-overview__link'}
+  return <WorkspaceRecordLink id={task} href={href} className={children ? 'db-overview__task' : 'db-overview__link'}
     aria-label={`${item.action_label}: ${item.title}`} onOpen={() => onOpen(href, task)}>
-    {item.action_label}<ArrowRight aria-hidden="true" />
+    {children ?? item.action_label}<ArrowRight aria-hidden="true" />
   </WorkspaceRecordLink>
 }
 
@@ -165,8 +165,8 @@ export default function ShopWorkOverview({ data, loading, failed, refreshing, on
   const checkedTime = Number.isFinite(Date.parse(data.as_of)) ? new Date(data.as_of).toLocaleString() : 'time unavailable'
   const accountReviewOnly = data.sources.some(source => source.id === 'receivables' && source.state === 'partial' && source.reason === 'account_review_only')
   const issues = data.sources.filter(source => (source.state === 'partial' || source.state === 'unavailable') && !(source.id === 'receivables' && source.reason === 'account_review_only' && source.state === 'partial'))
-  const actionOverflow = data.sources.filter(source => source.has_more && source.state === 'ready')
-  const upcomingOverflow = data.sources.filter(source => (source.id === 'schedule' || source.id === 'purchasing') && source.state === 'ready')
+  const actionOverflow = data.sources.filter(source => source.id !== 'schedule' && source.has_more && source.state === 'ready')
+  const upcomingOverflow = data.sources.filter(source => (source.id === 'schedule' || source.id === 'purchasing') && source.has_more && source.state === 'ready')
   const shown = data.actions.slice(0, visibleCount)
   const [lead, ...remaining] = shown
   const allChecked = !failed && data.sources.some(source => source.state === 'ready') && issues.length === 0 && !accountReviewOnly
@@ -204,15 +204,15 @@ export default function ShopWorkOverview({ data, loading, failed, refreshing, on
         </header>
         {lead ? <>
           <article className="db-overview__lead" data-work-id={lead.id}>
-            <div className="db-overview__lead-meta"><span>{(() => { const Icon = SOURCE[lead.source].icon; return <Icon aria-hidden="true" /> })()}{destinationArea[lead.destination.kind]}</span>{overdue(lead) && <strong className="db-overview__overdue">Past promise</strong>}</div>
-            <h3>{lead.title}</h3><p>{itemMeta(lead)}</p>
-            <RecordLink item={lead} primary onOpen={onOpen} />
+            <RecordLink item={lead} onOpen={onOpen}>
+              <div><div className="db-overview__lead-meta"><span>{destinationArea[lead.destination.kind]}</span>{overdue(lead) && <strong className="db-overview__overdue">Past promise</strong>}</div>
+              <h3>{lead.action_label}</h3><strong>{lead.title}</strong><p>{itemMeta(lead)}</p></div>
+            </RecordLink>
           </article>
           <div className="db-overview__rows">{remaining.map(item => {
             const Icon = SOURCE[item.source].icon
             return <article className="db-overview__row" key={item.id} data-work-id={item.id}>
-              <Icon className="db-overview__domain-icon" aria-hidden="true" /><div><h3>{item.title}</h3><p>{destinationArea[item.destination.kind]} · {itemMeta(item)}</p>{overdue(item) && <span className="db-overview__overdue">Past promise</span>}</div>
-              <RecordLink item={item} onOpen={onOpen} />
+              <RecordLink item={item} onOpen={onOpen}><Icon className="db-overview__domain-icon" aria-hidden="true" /><div><h3>{item.action_label} <span>· <span>{item.title}</span></span></h3><p>{destinationArea[item.destination.kind]} · {itemMeta(item)}</p>{overdue(item) && <span className="db-overview__overdue">Past promise</span>}</div></RecordLink>
             </article>
           })}</div>
         </> : <div className="db-overview__empty" role="status">{allChecked ? <CheckCircle2 aria-hidden="true" /> : <CircleAlert aria-hidden="true" />}<h3>{allChecked ? 'You’re caught up in your available workspaces' : 'No confirmed actions in the checked work'}</h3><p>{allChecked ? 'No action is due in the areas you can access. Upcoming commitments stay alongside.' : issues.length ? 'Review the flagged areas before treating the shop as clear.' : 'No confirmed action is due in the checked areas. Invoice balances are reviewed separately.'}</p></div>}

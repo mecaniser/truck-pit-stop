@@ -100,12 +100,12 @@ describe('A2 Shop Work aging', () => {
     await user.click(screen.getByRole('searchbox', { name: 'Search active work' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
-  it('offers mobile category selection and an actionable search-wide Unknown count', async () => {
+  it('offers mobile category selection and a search-wide Unknown count', async () => {
     render(<Harness />)
     await userEvent.click(screen.getByLabelText('Active work category'))
     await userEvent.click(screen.getByRole('option', { name: 'Parts · 49' }))
-    fireEvent.click(screen.getByRole('button', { name: '1 unknown across all active jobs; filter unknown wait timing' }))
-    expect(testState.options.queryKey[3]).toMatchObject({ category: 'parts', timing: 'unknown', offset: 0 })
+    expect(screen.getByText('Unknown wait: 1')).toBeVisible()
+    expect(testState.options.queryKey[3]).toMatchObject({ category: 'parts', offset: 0 })
   })
   it('keeps a nested menu inside Filters open on selection and restores keyboard focus', async () => {
     const user = userEvent.setup()
@@ -161,7 +161,8 @@ describe('A2 Shop Work aging', () => {
     testState.data = { ...fixture, summary: { ...fixture.summary, total_jobs: 0 }, filtered_total: 0, items: [], has_more: false }
     render(<Harness />)
     expect(screen.getByText('No active jobs in this view')).toBeInTheDocument()
-    expect(screen.getByText('Overview shows other shop tasks. Completed work and payment follow-up stay in Closeout.')).toBeInTheDocument()
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Filters' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Next active jobs' })).not.toBeInTheDocument()
   })
   it('removes inert controls from a truly empty queue but preserves unknown-filter recovery', () => {
@@ -170,8 +171,8 @@ describe('A2 Shop Work aging', () => {
     expect(screen.queryByRole('button', { name: 'All active 0' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /filter unknown wait timing/ })).not.toBeInTheDocument()
     unmount()
-    render(<Harness initial={{ ...DEFAULT_WIP_FILTERS, timing: 'unknown', search: 'missing', offset: 50 }} />)
-    expect(screen.getByRole('button', { name: /filter unknown wait timing/ })).toHaveAttribute('aria-pressed', 'true')
+    render(<Harness initial={{ ...DEFAULT_WIP_FILTERS, timing: 'unknown', search: 'missing', offset: 0 }} />)
+    expect(screen.getByText('Unknown wait: 0')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Clear search and filters' }))
     expect(testState.options.queryKey[3]).toMatchObject(DEFAULT_WIP_FILTERS)
   })

@@ -18,12 +18,27 @@ export function shopWorkBoardUrl(task: string | null): string {
   return `${SHOP_WORK_RETURN_URL}&task=${encodeURIComponent(task)}`
 }
 
+export function activityBoardParams(params: URLSearchParams): URLSearchParams {
+  const result = new URLSearchParams()
+  for (const key of ['actor_id', 'event_type', 'date_from', 'date_to']) {
+    const value = params.get(key)
+    if (value) result.set(key, value)
+  }
+  return result
+}
+
 export function shopWorkReturnUrl(params: URLSearchParams): string | null {
+  if (params.get('shop_work') === 'activity') {
+    const board = activityBoardParams(params)
+    board.set('work_view', 'activity')
+    return `/dashboard?${board}`
+  }
+  if (params.get('shop_work') === 'active') return '/dashboard?work_view=active'
   return params.get('shop_work') === 'overview' ? shopWorkBoardUrl(params.get('task')) : null
 }
 
-export function shopWorkDestinationUrl(destination: ShopWorkDestination, task?: string): string {
-  const params = new URLSearchParams({ shop_work: 'overview' })
+export function shopWorkDestinationUrl(destination: ShopWorkDestination, task?: string, origin: 'overview' | 'active' = 'overview'): string {
+  const params = new URLSearchParams({ shop_work: origin })
   if (task) params.set('task', task)
   let path: string
   switch (destination.kind) {
