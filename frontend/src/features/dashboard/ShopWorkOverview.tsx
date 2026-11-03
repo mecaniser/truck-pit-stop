@@ -1,3 +1,4 @@
+import WorkspaceRecordLink from '@/components/WorkspaceRecordLink'
 import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useRef, useState } from 'react'
 import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
@@ -121,14 +122,10 @@ function RecordLink({ item, section = 'attention', primary = false, onOpen }: {
 }) {
   const task = `${section}:${item.id}`
   const href = shopWorkDestinationUrl(item.destination, task)
-  return <a id={task} href={href} className={primary ? 'db-overview__primary' : 'db-overview__link'}
-    aria-label={`${item.action_label}: ${item.title}`} onClick={event => {
-      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-      event.preventDefault()
-      onOpen(href, task)
-    }}>
+  return <WorkspaceRecordLink id={task} href={href} className={primary ? 'db-overview__primary' : 'db-overview__link'}
+    aria-label={`${item.action_label}: ${item.title}`} onOpen={() => onOpen(href, task)}>
     {item.action_label}<ArrowRight aria-hidden="true" />
-  </a>
+  </WorkspaceRecordLink>
 }
 
 export default function ShopWorkOverview({ data, loading, failed, refreshing, onRetry, onOpen, onWorkspace, resumeTask }: {

@@ -255,7 +255,7 @@ describe('RepairOrdersPage request cancellation', () => {
     )
     expect(screen.getByRole('button', { name: 'Filter repair orders: Needs Action' })).toBeInTheDocument()
     expect(screen.queryByText('2 total')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Show details for RO-QUEUE-2' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show preview for RO-QUEUE-2' }))
     expect(screen.getByTestId('repair-orders-location')).toHaveTextContent('?selected=queue-order&queue=needs_action')
     expect(apiMocks.get).not.toHaveBeenCalledWith('/repair-orders/sibling-order/workspace')
     fireEvent.click(screen.getByRole('button', { name: 'Open repair order RO-QUEUE-2' }))

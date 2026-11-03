@@ -118,3 +118,21 @@ Before the change, the DB151 Quiet QA stock task already opened the exact invent
 Signed-in local check, 1440px and 390px, with Active work at zero. Purchasing selected the on-hand core for DB151-quiet-1048, even though Inventory lists the same brake chamber title as a separate stock task. A modified click opened the inventory record in another browser tab. No records were changed. Local runtime matches this checkout, Vite PID7423 on port5215, local API8041, postgres/truckpitstop_db151 migration197, database and Redis ready. 51 focused tests passed.
 
 [Return to the core task](assets/db151-destinations/ux-board-return.png) · [Selected core in Purchasing](assets/db151-destinations/ux-core-workspace.png)
+
+## Shop workspace round trips, November 2–3, 2026
+
+| Journey | Before | Signed-in acceptance |
+|---|---|---|
+| Repair Orders | A fresh queue selection replaced its list history entry. Browser Back could jump to the preceding Customers page. | Preview stays in the list. Opening a repair then using Back or Close restores the queue and focuses the row. |
+| Customer or vehicle history | Opening the canonical repair discarded the originating customer context. A fresh customer load could reset History to Overview. | Close and browser Back reopen the same expanded order or truck history link. The directory retains its search. Copying/opening the repair link in another tab also works. |
+| Inventory to Purchasing | All parts and the reorder workspace each exposed a “Needs reorder” control. Returning from Purchasing could reset the part and inspector tab. | A single reorder view, applicable stock filters, and an exact part and panel in the URL. The oil filter’s incoming PO opens PO-208. Both the breadcrumb-independent Back to part link and browser Back return to the oil filter’s Ordering tab with the PO link focused. |
+| Purchasing | Selecting a record replaced the previous entry. Receiving could suggest retrying a draft that it could never receive. | Back restores the selected draft or core. Eligible submitted PO-208 remains selected in Receiving. A directly linked draft explains its status and opens the exact PO in Purchase orders. |
+| Secondary lists | Supplier search and applied Inventory Activity filters reset when the workspace remounted. | The supplier search survives reload. Applied activity filters survive reload and returning through browser history. No-match supplier results no longer suggest an empty supplier directory. |
+
+Six Playwright cases against the DB151 Quiet QA shop. The four main tests cover garage owner and restricted garage admin sessions at 1440px and 390px. Two secondary tests cover vehicle repair history, supplier search, Inventory Activity, and returns/core navigation. The admin’s account tab stayed unavailable through direct navigation. 244 focused frontend tests passed. Frontend build and control checks passed. Tests navigated records without submitting repairs, receipts, credits, payments or stock changes. A temporary local QA admin used for the pass was disabled afterward.
+
+To repeat with the populated local QA shop, supply DB151_QA_URL (loopback only), DB151_OWNER_EMAIL, DB151_OWNER_PASSWORD, DB151_ADMIN_EMAIL and DB151_ADMIN_PASSWORD. From e2e, run Playwright with playwright.db151-local.config.ts. The two runs for each identity are spaced to respect the development API rate limit.
+
+Local runtime verified November 3: Vite PID7423 serves the shop-work-overview frontend on 5215. Its API proxy reaches container dieselbridge_api_db151 on 8041, mounted from the same checkout. Database postgres/truckpitstop_db151 is at migration 197, DB/Redis ready. Screenshots use synthetic shop records.
+
+[Customer History after returning](assets/db151-workspace/customer-history.png) · [Ordering after returning from PO-208](assets/db151-workspace/inventory-ordering.png)

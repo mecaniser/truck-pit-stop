@@ -1,3 +1,4 @@
+import { readWorkspaceVisit } from '../dashboard/workspaceVisit'
 import { shopWorkReturnUrl, shopWorkQueryScope } from '@/features/dashboard/shopWorkNavigation'
 import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
@@ -422,6 +423,16 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
   const [selectedServiceOptions, setSelectedServiceOptions] = useState<ServiceTypeaheadItem[]>([])
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null)
+  const ledgerOrigin = useRef<string | null>(null)
+  const selectedParam = searchParams.get('selected')
+  useEffect(() => {
+    if (selectedParam || isDetailOpen || !ledgerOrigin.current) return
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(`repair-open-${ledgerOrigin.current}`)?.focus()
+      ledgerOrigin.current = null
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [isDetailOpen, selectedParam])
   const [workspaceFocusRequest, setWorkspaceFocusRequest] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const submittingOrder = useRef(false)
@@ -759,7 +770,7 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
     next.set('selected', orderId)
     next.set('queue', workQueueLane)
     for (const key of ['customer', 'customer_vehicle', 'operation', 'recommendation']) next.delete(key)
-    setSearchParams(next, { replace: true })
+    setSearchParams(next, { replace: Boolean(selectedParam) })
   }
 
   const clearDetailState = () => {
@@ -873,7 +884,18 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
     vehicleRelationshipFilter: customerViewVehicleFilter,
   })
 
+  const recordVisit = readWorkspaceVisit(location.state, queryScope)
+  const returnLabel = recordVisit?.record === selectedParam && recordVisit
+    ? recordVisit.pathname === '/dashboard/customers' ? 'Back to customer record' : 'Back to inventory part'
+    : undefined
   const closeDetail = () => {
+    const origin = recordVisit
+    const selected = searchParams.get('selected')
+    if (origin && origin.record === selected) {
+      clearDetailState()
+      navigate({ pathname: origin.pathname, search: origin.search }, { replace: true, state: location.state })
+      return
+    }
     const shopWorkReturn = shopWorkReturnUrl(searchParams)
     if (shopWorkReturn) {
       clearDetailState()
@@ -893,6 +915,8 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
     const next = new URLSearchParams(searchParams)
     for (const key of ['selected', 'customer', 'customer_vehicle', 'operation', 'recommendation']) next.delete(key)
     setSearchParams(next, { replace: true })
+    ledgerOrigin.current ??= selected
+
   }
 
   const changeLedgerView = (view: OrderListView) => {
@@ -3345,6 +3369,7 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
             else setSearchParams(next)
           }}
           onOpenOrder={(id, options) => {
+            ledgerOrigin.current = id
             if (isQueueWorkset) {
               openWorkQueueOrder(id, options)
               return
@@ -5071,6 +5096,7 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
                       if (!selectedOrder.is_internal) void refetchAuthorizationHistory()
                     }}
                     onClose={closeDetail}
+                    returnLabel={returnLabel}
                     onPrev={showNavigation || hasPrev ? goToPrevOrder : undefined}
                     onNext={showNavigation || hasNext ? goToNextOrder : undefined}
                     prevDisabled={!hasPrev}

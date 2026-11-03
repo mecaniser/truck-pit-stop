@@ -51,7 +51,7 @@ import {
   Trash2,
   Truck,
   Wrench,
-  X, StickyNote, Pencil, Star } from 'lucide-react'
+  ArrowLeft, X, StickyNote, Pencil, Star } from 'lucide-react'
 
 import api from '@/lib/api'
 import { ConversionLink, type ConversionContext } from './RecommendationConversionAction'
@@ -254,6 +254,7 @@ type Props = {
   historyLoading?: boolean
   historyError?: boolean
   onHistoryRetry?: () => void
+  returnLabel?: string
   onClose?: () => void
   onPrev?: () => void
   onNext?: () => void
@@ -892,6 +893,7 @@ export default function PriceBuilderPanel({
   historyError = false,
   onHistoryRetry,
   onClose,
+  returnLabel,
   onPrev,
   onNext,
   prevDisabled,
@@ -2685,9 +2687,10 @@ export default function PriceBuilderPanel({
                 type="button"
                 onClick={onClose}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/14 text-white ring-1 ring-white/20 hover:bg-white/20"
-                aria-label="Close repair order"
+                aria-label={returnLabel || "Close repair order"}
+                title={returnLabel || "Close repair order"}
               >
-                <X className="h-5 w-5" />
+                {returnLabel ? <ArrowLeft className="h-5 w-5" /> : <X className="h-5 w-5" />}
               </ControlButton>
             )}
           </div>

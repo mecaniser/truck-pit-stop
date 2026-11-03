@@ -1,3 +1,4 @@
+import { readWorkspaceVisit, type WorkspaceVisit } from '../dashboard/workspaceVisit'
 import { shopWorkReturnUrl, shopWorkQueryScope } from '@/features/dashboard/shopWorkNavigation'
 import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import { canStartCustomerOrder, readCustomerDirectoryContext, repairOrderEntrySearch, type RepairOrderReturn } from '../repair-orders/repairOrderEntry'
@@ -122,31 +123,33 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
     navigate({ pathname: location.pathname, search: `?${params}` })
   }
   // Route-local context survives the order detour without becoming a global preference.
-  const returnedOrigin = location.state?.restoreOrderOrigin as RepairOrderReturn | undefined
+  const visit = readWorkspaceVisit(location.state, queryScope)
+  const returnedOrigin = (!location.state?.workspaceVisit || visit) ? location.state?.restoreOrderOrigin as RepairOrderReturn | undefined : undefined
   const directory = returnedOrigin?.customerId === new URLSearchParams(location.search).get('selected')
     ? readCustomerDirectoryContext(returnedOrigin?.directory) : null
-  const [searchQuery, setSearchQuery] = useState(directory?.searchQuery ?? '')
+  const searchQuery = routeParams.get('search') ?? directory?.searchQuery ?? ''
   const debouncedSearch = useDebouncedValue(searchQuery.trim(), 300)
   const PAGE_SIZE = 25
-  const [page, setPage] = useState(directory?.page ?? 0)
+  const rawPage = Number(routeParams.get('page') ?? directory?.page ?? 0)
+  const page = Number.isSafeInteger(rawPage) && Number.isSafeInteger(rawPage * PAGE_SIZE) && rawPage >= 0 ? rawPage : 0
   type CustomerSortField = 'name' | 'balance' | 'vehicle_count'
-  const [sortField, setSortField] = useState<CustomerSortField>(directory?.sortField ?? 'name')
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(directory?.sortDirection ?? 'asc')
-  const toggleSort = (field: CustomerSortField) => {
-    setPage(0)
-    if (sortField === field) {
-      setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'))
-    } else {
-      setSortField(field)
-      setSortDirection('asc')
+  const sortParam = routeParams.get('sort') ?? directory?.sortField
+  const sortField: CustomerSortField = sortParam === 'vehicle_count' || sortParam === 'balance' ? sortParam : 'name'
+  const sortDirection = (routeParams.get('direction') ?? directory?.sortDirection) === 'desc' ? 'desc' : 'asc'
+  const updateDirectory = (changes: Record<string, string>) => {
+    const params = new URLSearchParams(location.search)
+    const values = { search: searchQuery, page: String(page), sort: sortField, direction: sortDirection, ...changes }
+    const defaults: Record<string, string> = { search: '', page: '0', sort: 'name', direction: 'asc' }
+    for (const [key, value] of Object.entries(values)) {
+      if (value === defaults[key] && !directory) params.delete(key)
+      else params.set(key, value)
     }
+    navigate({ pathname: location.pathname, search: params.toString() }, { replace: true, state: location.state })
   }
-  // Any new search term returns to the first page of results.
-  const previousSearch = useRef(debouncedSearch)
-  useEffect(() => {
-    if (previousSearch.current !== debouncedSearch) setPage(0)
-    previousSearch.current = debouncedSearch
-  }, [debouncedSearch])
+  const setSearchQuery = (value: string) => updateDirectory({ search: value, page: '0' })
+  const toggleSort = (field: CustomerSortField) => updateDirectory({
+    sort: field, direction: field === sortField && sortDirection === 'asc' ? 'desc' : 'asc', page: '0',
+  })
   const [viewMode, setViewMode] = useViewPreference('customers')
   const [isMobile, setIsMobile] = useState(false)
   
@@ -163,7 +166,13 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
   const [manualSelectedVehicle, setSelectedVehicleInPanel] = useState<Vehicle | null>(null)
   const [detailTab, setDetailTab] = useState<'overview' | 'history'>('overview')
   useEffect(() => setDetailTab(requestedCustomerView === 'history' ? 'history' : 'overview'), [requestedCustomerView])
-  const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null)
+  const expandedHistoryId = routeParams.get('historyOrder')
+  const setExpandedHistoryId = (id: string | null) => {
+    const params = new URLSearchParams(location.search)
+    if (id) params.set('historyOrder', id)
+    else params.delete('historyOrder')
+    navigate({ pathname: location.pathname, search: params.toString() }, { replace: true })
+  }
   const [workspaceFocusRequest, setWorkspaceFocusRequest] = useState(0)
   const [inspectedCustomerId, setInspectedCustomerId] = useState<string | null>(null)
   const customerRowRefs = useRef(new Map<string, HTMLElement>())
@@ -207,6 +216,19 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
       directory: { searchQuery, page: searchQuery.trim() === debouncedSearch ? page : 0, sortField, sortDirection },
     }
     navigate(`/dashboard/repair-orders${repairOrderEntrySearch(customer.id, vehicle?.id)}`, { state: { repairOrderReturn: origin } })
+  }
+
+  const openCustomerRepair = (id: string) => {
+    if (!selectedCustomer) return
+    const params = new URLSearchParams(location.search)
+    params.set('selected', selectedCustomer.id)
+    const search = `?${params}`
+    const workspaceVisit: WorkspaceVisit = { scope: queryScope, pathname: '/dashboard/customers', search, record: id }
+    const origin: RepairOrderReturn = { pathname: '/dashboard/customers', search, customerId: selectedCustomer.id,
+      vehicleId: selectedVehicleInPanel?.id, directory: { searchQuery, page, sortField, sortDirection } }
+    const state = { workspaceVisit, restoreOrderOrigin: origin, restoreOrderFocus: false }
+    navigate({ pathname: workspaceVisit.pathname, search }, { replace: true, state })
+    navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}`, { state })
   }
 
   const activeViewMode = isMobile ? 'list' : viewMode
@@ -278,7 +300,6 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
     setIsDetailOpen(true)
     if (workspaceCustomerId.current !== selectedCustomerId) {
       workspaceCustomerId.current = selectedCustomerId
-      setDetailTab('overview')
       setSelectedVehicleInPanel(null)
     }
   }, [customerOnCurrentPage, presentationVariant, selectedCustomerId, selectedCustomerRecord])
@@ -348,15 +369,15 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
   const restoredOrderFocus = useRef<string | null>(null)
   const createOrderButtonRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
-    const origin = location.state?.restoreOrderOrigin as RepairOrderReturn | undefined
+    const origin = returnedOrigin
     if (!origin || restoredVehicleForLocation.current === location.key || !customerVehicles || selectedCustomer?.id !== origin.customerId) return
     restoredVehicleForLocation.current = location.key
     setSelectedVehicleInPanel(customerVehicles.find(vehicle => vehicle.id === origin.vehicleId) ?? null)
-  }, [location.key, location.state, customerVehicles, selectedCustomer?.id])
+  }, [returnedOrigin, location.key, location.state, customerVehicles, selectedCustomer?.id])
 
 
   useEffect(() => {
-    const origin = location.state?.restoreOrderOrigin as RepairOrderReturn | undefined
+    const origin = returnedOrigin
     // Filter edits preserve return context, but must not replay its one-time focus move.
     if (!origin || location.state?.restoreOrderFocus === false || restoredOrderFocus.current === location.key || selectedCustomer?.id !== origin.customerId
       || (selectedVehicleInPanel?.id ?? undefined) !== origin.vehicleId) return
@@ -365,7 +386,7 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
       restoredOrderFocus.current = location.key
     })
     return () => cancelAnimationFrame(frame)
-  }, [location.key, location.state, selectedCustomer?.id, selectedVehicleInPanel?.id])
+  }, [returnedOrigin, location.key, location.state, selectedCustomer?.id, selectedVehicleInPanel?.id])
 
   const { data: customerContacts, isLoading: isLoadingContacts, isError: contactsError, isFetching: isFetchingContacts, refetch: refetchContacts } = useQuery<Contact[]>({
     queryKey: ['customerContacts', selectedCustomer?.id, queryScope],
@@ -408,6 +429,8 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
   const updateSelectedCustomerQuery = (customerId: string | null) => {
     const params = new URLSearchParams(location.search)
     params.delete('vehicle')
+    params.delete('historyOrder')
+    params.delete('tab')
     if (customerId) params.set('selected', customerId)
     else params.delete('selected')
     const search = params.toString()
@@ -447,7 +470,6 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
     setSelectedCustomer(null)
     setSelectedVehicleInPanel(null)
     setDetailTab('overview')
-    setExpandedHistoryId(null)
     setVehicleRelationshipSearch('')
     setVehicleRelationshipFilter('all')
     if (presentationVariant === 'new' || selectedCustomerId) {
@@ -801,7 +823,7 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
                         aria-controls={`customer-inspection-${customer.id}`}
                         className="db-customer-details-control"
                       >
-                        Details
+                        Preview
                         <ChevronDown aria-hidden="true" />
                       </ControlButton>
                     </div>
@@ -1023,7 +1045,7 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
                       }}
                       className="w-full text-center font-medium text-amber-700"
                     >
-                      View Details
+                      Open customer
                     </ControlButton>
                   </div>
                 </div>
@@ -1053,14 +1075,14 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
             {totalCustomers > PAGE_SIZE && (
               <div className="flex items-center gap-2">
                 <ControlButton
-                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  onClick={() => updateDirectory({ page: String(Math.max(0, page - 1)) })}
                   disabled={page === 0 || isPlaceholderData}
                   className="px-3  rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   Previous
                 </ControlButton>
                 <ControlButton
-                  onClick={() => setPage((p) => (customerPage?.has_more ? p + 1 : p))}
+                  onClick={() => updateDirectory({ page: String(customerPage?.has_more ? page + 1 : page) })}
                   disabled={!customerPage?.has_more || isPlaceholderData}
                   className="px-3  rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
@@ -1164,7 +1186,7 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
         {!selectedCustomer ? null : selectedVehicleInPanel ? (
           <CustomerVehicleDetail createOrderButtonRef={createOrderButtonRef} customer={selectedCustomer} vehicle={selectedVehicleInPanel}
             onCreateOrder={canStartCustomerOrder(currentUser?.role) ? () => startCustomerOrder(selectedCustomer, selectedVehicleInPanel) : undefined}
-            onOpenOrder={order => navigate(`/dashboard/repair-orders?selected=${order.id}`)} />
+            restoreOrderFocus={visit?.record} onOpenOrder={order => openCustomerRepair(order.id)} />
               ) : (
                 <CustomerDetailPanel
                   createOrderButtonRef={createOrderButtonRef}
@@ -1177,7 +1199,7 @@ function CustomersWorkspace({ queryScope }: { queryScope: string }) {
                   expandedHistoryId={expandedHistoryId}
                   setExpandedHistoryId={setExpandedHistoryId}
                   HistoryRoDetail={CustomerHistoryOrderDetail}
-                  onOpenHistoryOrder={orderId => navigate(`/dashboard/repair-orders?selected=${orderId}`)}
+                  restoreOrderFocus={visit?.record} onOpenHistoryOrder={openCustomerRepair}
                   customerVehicles={customerVehicles}
                   customerContacts={customerContacts}
                   customerHistory={customerHistory}

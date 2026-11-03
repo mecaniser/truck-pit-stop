@@ -1,8 +1,9 @@
+import { readWorkspaceVisit } from '../dashboard/workspaceVisit'
 import { ControlButton } from '@/components/ui/Controls'
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, ClipboardCheck, PackageCheck, RotateCcw, Store, Truck } from 'lucide-react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
 import api from '@/lib/api'
 import { shopWorkReturnUrl, shopWorkQueryScope } from '@/features/dashboard/shopWorkNavigation'
@@ -105,7 +106,17 @@ function PurchasingWorkspaceContent({ queryScope }: { queryScope: string }) {
   const linkedCoreId = searchParams.get('core')
   const returnUrl = shopWorkReturnUrl(searchParams)
   const returnAction = returnUrl && <ControlButton type="button" className="min-h-11 px-3 text-sm font-semibold underline" onClick={() => navigate(returnUrl)}>Back to Shop Work</ControlButton>
-  const inventoryUrl = `/dashboard/garage/inventory${returnUrl ? '?shop_work=overview' : ''}`
+  const location = useLocation()
+  const queryClient = useQueryClient()
+  const visit = readWorkspaceVisit(location.state, queryScope)
+  const partVisit = visit?.pathname === '/dashboard/garage/inventory' ? visit : null
+  const inventoryParams = new URLSearchParams()
+  if (returnUrl) {
+    inventoryParams.set('shop_work', 'overview')
+    if (searchParams.has('task')) inventoryParams.set('task', searchParams.get('task')!)
+  }
+  const inventoryUrl = partVisit ? `${partVisit.pathname}${partVisit.search}` : `/dashboard/garage/inventory${returnUrl ? `?${inventoryParams}` : ''}`
+  const openInventory = () => navigate(inventoryUrl, { state: partVisit ? location.state : null })
   const summaryQuery = useQuery<Summary>({
     queryKey: ['parts-operations', 'summary', queryScope],
     placeholderData: undefined,
@@ -132,20 +143,25 @@ function PurchasingWorkspaceContent({ queryScope }: { queryScope: string }) {
 
   const selectView = (next: PurchasingView) => {
     const params = new URLSearchParams(searchParams)
+    if (next === view) return
     params.set('view', next)
-    setSearchParams(params)
+    // A draft selected in Orders may not be eligible for Receiving.
+    const order = queryClient.getQueryData<{ status: string }>(['parts-operations', 'purchase-order', linkedPurchaseOrderId, queryScope])
+    if (next === 'receiving' && order && !['submitted', 'partially_received'].includes(order.status)) params.delete('purchase_order')
+    setSearchParams(params, { state: { ...location.state, focusPurchasingRow: undefined } })
   }
   const selectRecord = (kind: 'purchase_order' | 'return' | 'core', id: string) => {
     const params = new URLSearchParams(searchParams)
+    if (params.get(kind) === id) return
     params.set(kind, id)
     if (kind !== 'purchase_order') params.set('custody', kind === 'core' ? 'cores' : 'returns')
-    setSearchParams(params, { replace: true })
+    setSearchParams(params, { state: { ...location.state, focusPurchasingRow: id } })
   }
   const custodyView = searchParams.get('custody') === 'cores' ? 'cores' : searchParams.get('custody') === 'returns' ? 'returns' : linkedCoreId && !linkedReturnId ? 'cores' : 'returns'
   const selectCustodyView = (next: 'returns' | 'cores') => {
     const params = new URLSearchParams(searchParams)
     params.set('custody', next)
-    setSearchParams(params)
+    setSearchParams(params, { state: { ...location.state, focusPurchasingRow: undefined } })
   }
   const summary = summaryQuery.data
 
@@ -155,9 +171,9 @@ function PurchasingWorkspaceContent({ queryScope }: { queryScope: string }) {
         <h1 id="purchasing-title">Purchasing</h1>
         <p>Prepare supplier orders, receive deliveries, and close the loop on returns and cores.</p>
       </div>
-      <ControlButton type="button" onClick={() => navigate(inventoryUrl)}>
-        <ArrowLeft aria-hidden="true" />Parts & inventory
-      </ControlButton>
+      {partVisit && <Link to={inventoryUrl} state={location.state}>
+        <ArrowLeft aria-hidden="true" />Back to part
+      </Link>}
     </header>
 
     <nav className="db-purchasing__tabs" aria-label="Purchasing areas">
@@ -175,7 +191,7 @@ function PurchasingWorkspaceContent({ queryScope }: { queryScope: string }) {
 
     <div className="db-purchasing__content db-operating-surface__scroller">
       {view === 'orders' && <>
-        <PurchasePreparationTray onCreated={() => selectView('orders')} onOpenParts={() => navigate(inventoryUrl)} />
+        <PurchasePreparationTray onCreated={() => selectView('orders')} onOpenParts={openInventory} />
         <PartsOperationsWorkspace key={`purchasing-orders-${linkedPurchaseOrderId || 'default'}`} summary={summary} initialTab="purchase-orders" initialPurchaseOrderId={linkedPurchaseOrderId} onRecordSelect={selectRecord} visibleTabs={['purchase-orders']} embedded />
       </>}
 

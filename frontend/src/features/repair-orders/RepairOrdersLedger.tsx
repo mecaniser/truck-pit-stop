@@ -288,7 +288,7 @@ export default function RepairOrdersLedger({
                       type="button"
                       className="db-repair-orders-ledger__record"
                       data-has-deadline={!!row.deadline || undefined}
-                      aria-label={`Open repair order ${row.orderNumber}`}
+                      id={`repair-open-${row.id}`} aria-label={`Open repair order ${row.orderNumber}`}
                       aria-current={isOpenInWorkspace ? 'true' : undefined}
                       onKeyDown={(event) => {
                         if (event.key !== 'Enter' && event.key !== ' ') return
@@ -328,13 +328,13 @@ export default function RepairOrdersLedger({
                       className="db-repair-orders-ledger__details-toggle"
                       aria-expanded={isBriefOpen}
                       aria-controls={briefId}
-                      aria-label={`${isBriefOpen ? 'Hide' : 'Show'} details for ${row.orderNumber}`}
+                      aria-label={`${isBriefOpen ? 'Hide' : 'Show'} preview for ${row.orderNumber}`}
                       onClick={(event) => {
                         event.stopPropagation()
                         setExpandedBriefId((current) => current === row.id ? null : row.id)
                       }}
                     >
-                      <span aria-hidden="true">Details</span>
+                      <span aria-hidden="true">Preview</span>
                       <ChevronDown aria-hidden="true" />
                     </ControlButton>}
                   </div>

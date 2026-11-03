@@ -127,7 +127,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
       source_invoice_url:'https://easytruck.shop/shop1/services/7001/invoice',
     } }] })
     expect(screen.queryByRole('region', { name: 'Why billing needs attention' })).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Show details for RO-1017' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Show preview for RO-1017' }))
     const reasons = screen.getByRole('region', { name: 'Why billing needs attention' })
     expect(reasons).toHaveTextContent('Related operations have different customer or vehicle identities. Shared billing needs review.')
     expect(reasons).toHaveTextContent('ETS source amounts differ from the imported financial records.')
@@ -282,7 +282,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     await user.click(screen.getByRole('button', { name: 'Filter repair orders: On the Floor' }))
     await user.click(screen.getByRole('menuitem', { name: 'In Progress' }))
     expect(props.onStatusChange).toHaveBeenLastCalledWith('in_progress')
-    await user.click(screen.getByRole('button', { name: 'Show details for RO-1017' }))
+    await user.click(screen.getByRole('button', { name: 'Show preview for RO-1017' }))
     expect(props.onOpenOrder).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Open repair order RO-1017 from details' }))
     expect(props.onOpenOrder).toHaveBeenCalledWith('ro-real-17')
@@ -364,7 +364,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
   it('keeps Details in the navigator and opens the workspace only from the record or explicit secondary action', async () => {
     const user = userEvent.setup()
     const { props } = renderLedger()
-    const details = screen.getByRole('button', { name: 'Show details for RO-1017' })
+    const details = screen.getByRole('button', { name: 'Show preview for RO-1017' })
 
     await user.click(details)
     expect(props.onOpenOrder).not.toHaveBeenCalled()
@@ -382,10 +382,10 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     const user = userEvent.setup()
     renderLedger()
 
-    await user.click(screen.getByRole('button', { name: 'Show details for RO-1017' }))
+    await user.click(screen.getByRole('button', { name: 'Show preview for RO-1017' }))
     expect(screen.getByRole('region', { name: 'Order brief for RO-1017' })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Hide details for RO-1017' }))
+    await user.click(screen.getByRole('button', { name: 'Hide preview for RO-1017' }))
     // It stays mounted to play the exit, but stops being announced while it does.
     const closing = document.querySelector('.db-repair-orders-ledger__brief-reveal')
     expect(closing).toHaveAttribute('data-closing')
@@ -401,7 +401,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
   it('keeps the disclosure plane inert and protects Details from canonical row activation', async () => {
     const user = userEvent.setup()
     const { props } = renderLedger()
-    const details = screen.getByRole('button', { name: 'Show details for RO-1017' })
+    const details = screen.getByRole('button', { name: 'Show preview for RO-1017' })
 
     await user.click(details)
     const brief = screen.getByRole('region', { name: 'Order brief for RO-1017' })
@@ -429,7 +429,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     const user = userEvent.setup()
     renderLedger()
     const ledger = screen.getByRole('region', { name: 'Repair order ledger' })
-    const details = screen.getByRole('button', { name: 'Show details for RO-1017' })
+    const details = screen.getByRole('button', { name: 'Show preview for RO-1017' })
 
     await user.click(details)
     expect(ledger).toHaveAttribute('data-pointer-interaction', 'true')
@@ -497,7 +497,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     }
     const { props } = renderLedger({ rows: [...rows, secondRow], totalOrders: 2, selectedId: 'ro-real-17' })
 
-    await user.click(screen.getByRole('button', { name: 'Show details for RO-1018' }))
+    await user.click(screen.getByRole('button', { name: 'Show preview for RO-1018' }))
     const brief = screen.getByRole('region', { name: 'Order brief for RO-1018' })
     // The brief carries only what the row cannot: the full request and the
     // operational facts. Customer and vehicle title the row, so repeating them
@@ -521,7 +521,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     // The selected row offers no brief of its own: the workspace beside the list
     // is already that order's detail, so a second copy on the row repeated the
     // customer, truck and work request rather than adding anything.
-    expect(screen.queryByRole('button', { name: 'Show details for RO-1017' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Show preview for RO-1017' })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Order brief for RO-1017' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Open repair order RO-1017 from details' })).not.toBeInTheDocument()
     // Inspecting another row still works and still leaves the selection alone.
@@ -543,7 +543,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     }
     renderLedger({ rows: [noVehicleRow] })
 
-    await user.click(screen.getByRole('button', { name: 'Show details for RO-1019' }))
+    await user.click(screen.getByRole('button', { name: 'Show preview for RO-1019' }))
     const brief = screen.getByRole('region', { name: 'Order brief for RO-1019' })
     expect(within(brief).queryByRole('region', { name: 'Vehicle' })).not.toBeInTheDocument()
   })
@@ -566,7 +566,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     // and it reads on the row rather than in a Vehicle block inside the brief.
     const row = screen.getByRole('article', { name: 'Repair order RO-1020' })
     expect(row).toHaveTextContent('2020 Volvo VNL 760')
-    await user.click(screen.getByRole('button', { name: 'Show details for RO-1020' }))
+    await user.click(screen.getByRole('button', { name: 'Show preview for RO-1020' }))
     expect(screen.queryByRole('region', { name: 'Vehicle' })).not.toBeInTheDocument()
     expect(screen.getAllByText('2020 Volvo VNL 760')).toHaveLength(1)
   })

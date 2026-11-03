@@ -442,7 +442,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(screen.getByRole('tabpanel', { name: 'Overview' })).toHaveTextContent('At a glance')
     expect(screen.queryByRole('button', { name: 'Add to purchase list' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Adjust on-hand quantity' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Open Purchasing/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Open Purchasing/ })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('tab', { name: 'Stock' }))
     const stock = screen.getByRole('tabpanel', { name: 'Stock' })
@@ -454,7 +454,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     const ordering = screen.getByRole('tabpanel', { name: 'Ordering' })
     expect(within(ordering).getByText('Replenishment recommended')).toBeInTheDocument()
     expect(within(ordering).getByRole('button', { name: 'Add to purchase list' })).toHaveClass('db-parts-workbench__action-primary')
-    expect(within(ordering).getAllByRole('button', { name: /Open Purchasing/ })).toHaveLength(1)
+    expect(within(ordering).getAllByRole('link', { name: /Open Purchasing/ })).toHaveLength(1)
     expect(within(ordering).getByRole('heading', { name: 'Purchase activity' })).toBeInTheDocument()
     expect(within(ordering).getByRole('heading', { name: 'Open purchase orders' }).parentElement).toHaveTextContent('None')
     expect(within(ordering).getByRole('heading', { name: 'Recent receipts' }).parentElement).toHaveTextContent('None')
@@ -920,7 +920,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(within(ordering).getByText('Prepared for purchasing')).toBeInTheDocument()
     expect(within(ordering).getByText('This part is staged for review in Purchasing.')).toBeInTheDocument()
     expect(within(ordering).queryByRole('button', { name: 'Add to purchase list' })).not.toBeInTheDocument()
-    expect(within(ordering).getByRole('button', { name: 'View purchase list' })).toBeInTheDocument()
+    expect(within(ordering).getByRole('link', { name: 'View purchase list' })).toBeInTheDocument()
   })
 
   it('preserves populated purchase orders and receipts inside the compact activity group', async () => {
@@ -938,8 +938,8 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(within(ordering).getByRole('heading', { name: 'Purchase activity' })).toBeInTheDocument()
     const openOrders = within(ordering).getByRole('heading', { name: 'Open purchase orders' }).closest('section')!
     const recentReceipts = within(ordering).getByRole('heading', { name: 'Recent receipts' }).closest('section')!
-    expect(within(openOrders).getByRole('button', { name: /PO-1042/ })).toHaveTextContent('8 units incoming')
-    expect(within(recentReceipts).getByRole('button', { name: /RCV-2042/ })).toHaveTextContent('4 at $12.25')
+    expect(within(openOrders).getByRole('link', { name: /PO-1042/ })).toHaveTextContent('8 units incoming')
+    expect(within(recentReceipts).getByRole('link', { name: /RCV-2042/ })).toHaveTextContent('4 at $12.25')
     expect(within(ordering).queryByText('None')).not.toBeInTheDocument()
   })
 
