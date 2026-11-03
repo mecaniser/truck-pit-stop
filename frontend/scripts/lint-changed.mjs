@@ -47,7 +47,7 @@ function sourceAtRevision(revision, file) {
 function lintSource(source, filename) {
   const result = spawnSync(
     eslintBinary,
-    ['eslint', '--stdin', '--stdin-filename', filename, '--format', 'json'],
+    ['--config', resolve(repoRoot, 'frontend/eslint.config.js'), '--stdin', '--stdin-filename', filename, '--format', 'json'],
     { cwd: repoRoot, input: source, encoding: 'utf8' },
   )
   if (result.error) throw result.error

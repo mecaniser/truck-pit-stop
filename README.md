@@ -62,7 +62,7 @@ truck-pit-stop/
 ### Prerequisites
 
 - Python 3.11+
-- Node.js 18+
+- Node.js 22.14+ (or supported Node.js 24+)
 - Docker and Docker Compose (for local PostgreSQL/Redis)
 - Or use Railway's managed services
 
@@ -87,7 +87,7 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 python --version   # expect Python 3.11.x
 
 # Install dependencies
-pip install -r requirements.txt
+pip install -r requirements.lock
 
 # .env file is already configured for Docker setup
 # Run migrations
@@ -219,7 +219,7 @@ COOKIE_DOMAIN=
 VITE_API_URL=http://localhost:8000/api/v1
 VITE_SITE_URL=http://localhost:5173
 VITE_STRIPE_PUBLISHABLE_KEY=pk_...
-VITE_GA_MEASUREMENT_ID=G-...
+# Optional analytics is disabled; legacy VITE_GA_MEASUREMENT_ID is ignored.
 ```
 
 ### Production example (dieselbridge.com)

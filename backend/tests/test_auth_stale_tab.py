@@ -23,7 +23,7 @@ async def test_stale_tab_recovers_after_rotation_grace(client, monkeypatch):
 @pytest.mark.asyncio
 async def test_stale_tab_recovers_through_simulated_full_day(client, monkeypatch):
     from app.core import security
-    from jose import jwt
+    import jwt
 
     start = datetime.now(timezone.utc)
     class Clock(datetime):
@@ -38,7 +38,7 @@ async def test_stale_tab_recovers_through_simulated_full_day(client, monkeypatch
             return cls.now(timezone.utc).replace(tzinfo=None)
 
     monkeypatch.setattr(security, "datetime", Clock)
-    monkeypatch.setattr(jwt, "datetime", Clock)
+    monkeypatch.setattr(jwt.api_jwt, "datetime", Clock)
     monkeypatch.setattr(settings, "REFRESH_TOKEN_ROTATION_GRACE_SECONDS", 0)
     registered = await client.post(REGISTER_URL, json=VALID_USER)
     stale = registered.json()["refresh_token"]
@@ -94,7 +94,7 @@ async def test_cookie_only_and_body_only_clients_remain_supported(client):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("reason", ["expired", "access-token", "inactive", "version-invalidated"])
 async def test_selected_cookie_still_requires_current_authority(client, db_session, reason):
-    from jose import jwt
+    import jwt
     from sqlalchemy import select
     from app.core import redis
     from app.db.models.user import User

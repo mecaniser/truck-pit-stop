@@ -96,7 +96,7 @@ describe('LandingPage shop workflow', () => {
   it('presents the shop-first workflow and concise approved-shop proof', async () => {
     renderPage()
 
-    const headerBrand = screen.getByRole('link', { name: 'Diesel Bridge Network' })
+    const headerBrand = screen.getByRole('link', { name: 'DieselBridge: skip to main content' })
     expect(headerBrand.querySelector('.db-wordmark--animated')).toBeInTheDocument()
     expect(headerBrand.querySelector('.db-wordmark__name')).toBeInTheDocument()
     expect(headerBrand.querySelector('.db-wordmark__letters')).toHaveTextContent('DieselBridge')
@@ -115,7 +115,7 @@ describe('LandingPage shop workflow', () => {
     const primaryCtas = screen.getAllByRole('link', { name: /bring dieselbridge to my shop/i })
     expect(primaryCtas.length).toBe(2)
     expect(primaryCtas.every((link) => link.getAttribute('href') === '/enroll')).toBe(true)
-    expect(screen.queryByText(/illustrative|fictional/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/demonstration with fictional/i)).toBeVisible()
     expect(screen.queryByText('One repair order. Five connected outcomes.')).not.toBeInTheDocument()
     expect(screen.getAllByText('RO-2025-0417').length).toBeGreaterThan(0)
     expect(screen.getAllByText('NorthStar Logistics').length).toBeGreaterThan(0)

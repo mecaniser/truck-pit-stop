@@ -6,10 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "npm run lint:controls && tsc && vite build",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "lint": "eslint src --report-unused-disable-directives --max-warnings 0",
     "lint:changed": "node scripts/lint-changed.mjs",
     "preview": "vite preview",
-    "start": "serve -s dist -l ${PORT:-3000}",
+    "start": "sirv dist --single --host 0.0.0.0 --port ${PORT:-3000}",
     "test": "vitest",
     "test:critical": "node scripts/run-critical-tests.mjs",
     "test:coverage": "vitest run --coverage",
@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@headlessui/react": "^2.2.9",
-    "@hookform/resolvers": "^3.3.2",
+    "@hookform/resolvers": "^7.0.1",
     "@mapbox/search-js-react": "^1.5.1",
     "@stripe/react-stripe-js": "^2.4.0",
     "@stripe/stripe-js": "^2.2.0",
@@ -25,19 +25,17 @@
     "axios": "^1.6.2",
     "clsx": "^2.0.0",
     "date-fns": "^2.30.0",
-    "jspdf": "^2.5.1",
     "lucide-react": "^0.562.0",
     "mapbox-gl": "3.18.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.48.2",
     "react-hot-toast": "^2.6.0",
-    "react-pdf": "^7.5.1",
-    "react-router-dom": "^6.20.0",
+    "react-router-dom": "^7.18.5",
     "recharts": "^3.9.2",
-    "serve": "^14.2.1",
+    "sirv-cli": "^3.0.1",
     "tailwind-merge": "^2.1.0",
-    "zod": "^3.22.4",
+    "zod": "^4.6.7",
     "zustand": "^4.4.7"
   },
   "devDependencies": {
@@ -46,20 +44,28 @@
     "@testing-library/user-event": "^14.6.1",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
-    "@typescript-eslint/eslint-plugin": "^6.13.1",
-    "@typescript-eslint/parser": "^6.13.1",
-    "@vitejs/plugin-react": "^4.2.1",
-    "@vitest/coverage-v8": "^3.2.4",
+    "@typescript-eslint/eslint-plugin": "^8.72.1",
+    "@typescript-eslint/parser": "^8.72.1",
+    "@vitejs/plugin-react": "^6.2.1",
+    "@vitest/coverage-v8": "^5.1.0",
     "autoprefixer": "^10.4.16",
-    "eslint": "^8.54.0",
-    "eslint-plugin-react-hooks": "^4.6.0",
-    "eslint-plugin-react-refresh": "^0.4.4",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.7",
     "jsdom": "^26.1.0",
     "msw": "^2.12.10",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.3.6",
     "typescript": "^5.2.2",
-    "vite": "^5.0.5",
-    "vitest": "^3.2.4"
+    "vite": "^8.3.5",
+    "vitest": "^5.1.0",
+    "@eslint/js": "^10.0.1",
+    "globals": "^17.0.0"
+  },
+  "engines": {
+    "node": ">=22.14.0 <23 || >=24.0.0"
+  },
+  "overrides": {
+    "minimatch": "^11.0.4"
   }
 }

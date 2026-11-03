@@ -1,13 +1,18 @@
+import { PolicyLinks } from './PublicPolicyPage'
+import './PublicPolicyPage.css'
+import BusinessContact from './BusinessContact'
+import { BUSINESS } from './business'
 import { Link } from 'react-router-dom'
 import BrandLogo from '../../components/brand/BrandLogo'
 
 const BRAND_NAME = 'Diesel Bridge Network'
-const CONTACT_EMAIL = 'support@dieselbridge.com'
-const EFFECTIVE_DATE = 'March 19, 2026'
+const EFFECTIVE_DATE = 'November 3, 2026'
 
 export default function TermsOfServicePage() {
+  const CONTACT_EMAIL = BUSINESS.email
   return (
-    <div className="min-h-screen" style={{ background: 'linear-gradient(to top left, #162338 0%, #0f172a 50%, #111827 100%)' }}>
+    <div className="public-policy min-h-screen" style={{ background: 'linear-gradient(to top left, #162338 0%, #0f172a 50%, #111827 100%)' }}>
+      <a className="policy-skip" href="#policy-content">Skip to policy</a>
       <header className="sticky top-0 z-50 border-b border-gray-800 bg-gray-900/95 backdrop-blur-sm">
         <nav className="mx-auto flex h-16 max-w-4xl items-center justify-between px-4 sm:px-6">
           <Link to="/" className="flex items-center">
@@ -22,16 +27,16 @@ export default function TermsOfServicePage() {
         </nav>
       </header>
 
-      <main className="mx-auto max-w-4xl px-4 py-14 sm:px-6">
+      <main id="policy-content" tabIndex={-1} className="mx-auto max-w-4xl px-4 py-14 sm:px-6">
         <h1 className="mb-2 text-3xl font-bold text-white sm:text-4xl">Terms of Service</h1>
-        <p className="mb-10 text-sm text-gray-400">Effective date: {EFFECTIVE_DATE}</p>
+        <p className="mb-10 text-sm text-gray-400">Last updated: {EFFECTIVE_DATE}</p>
 
         <div className="space-y-10 text-gray-300 leading-7">
 
           <section>
             <h2 className="mb-3 text-xl font-semibold text-white">1. Acceptance of Terms</h2>
             <p>
-              By accessing or using the {BRAND_NAME} platform ("DieselBridge", "the Service"), you agree to be
+              Elis Tech LLC operates the {BRAND_NAME} platform. By accessing or using the platform ("DieselBridge", "the Service"), you agree to be
               bound by these Terms of Service. If you do not agree, do not use the Service. These terms apply to
               all users including shop operators, staff members, and end customers.
             </p>
@@ -63,9 +68,9 @@ export default function TermsOfServicePage() {
           <section>
             <h2 className="mb-3 text-xl font-semibold text-white">4. SMS Communications</h2>
             <p className="mb-3">
-              By providing a phone number through the platform — whether as a shop operator or as an end customer
-              of a repair shop — you consent to receive SMS messages related to your service, including appointment
-              reminders, repair status updates, invoice notifications, and payment links.
+              Providing a phone number or accepting these Terms does not by itself give consent to SMS or marketing.
+              Shop operators must obtain and record any consent required for messages they send. Consent to
+              marketing must be separate, optional, and not a condition of purchasing repairs or using the Service.
             </p>
             <ul className="list-disc pl-6 space-y-2">
               <li>
@@ -91,6 +96,8 @@ export default function TermsOfServicePage() {
               Stripe's Terms of Service. DieselBridge does not store full payment card details on its servers.
             </p>
             <p>
+              Review our <Link to="/refunds">Refund &amp; Cancellation Policy</Link> before purchasing.
+              Prices, taxes, recurring billing conditions, and applicable fees must be disclosed before authorization.
               Shop operators are responsible for ensuring accurate pricing, tax information, and customer billing
               within their account. DieselBridge is not liable for billing disputes between shops and their customers.
             </p>
@@ -114,8 +121,8 @@ export default function TermsOfServicePage() {
             <p>
               Your use of the Service is also governed by our{' '}
               <Link to="/privacy" className="text-amber-400 hover:text-amber-300 underline">Privacy Policy</Link>,
-              which is incorporated into these Terms by reference. By using the Service, you consent to the
-              collection and use of information as described therein.
+              which explains how personal information is handled. Optional analytics and marketing require
+              separate choices; accepting these Terms is not consent to those activities.
             </p>
           </section>
 
@@ -180,6 +187,7 @@ export default function TermsOfServicePage() {
               For questions about these Terms, contact us at{' '}
               <a href={`mailto:${CONTACT_EMAIL}`} className="text-amber-400 hover:text-amber-300 underline">{CONTACT_EMAIL}</a>.
             </p>
+            <BusinessContact />
           </section>
 
         </div>
@@ -189,8 +197,7 @@ export default function TermsOfServicePage() {
         <div className="mx-auto flex max-w-4xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-gray-400">&copy; {new Date().getFullYear()} {BRAND_NAME}. All rights reserved.</p>
           <div className="flex items-center gap-4 text-sm text-gray-400">
-            <Link to="/privacy" className="hover:text-white">Privacy Policy</Link>
-            <Link to="/terms" className="hover:text-white">Terms of Service</Link>
+            <PolicyLinks />
           </div>
         </div>
       </footer>

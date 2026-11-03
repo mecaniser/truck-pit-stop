@@ -1,0 +1,86 @@
+[
+  {
+    "family": "Inter",
+    "package": "@fontsource-variable/inter",
+    "version": "5.3.0",
+    "license": "OFL-1.1",
+    "source": {
+      "type": "git",
+      "url": "git+https://github.com/fontsource/font-files.git",
+      "directory": "fonts/variable/inter"
+    },
+    "files": [
+      {
+        "file": "inter-latin-wght-normal.woff2",
+        "sha256": "3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62"
+      },
+      {
+        "file": "inter-latin-wght-italic.woff2",
+        "sha256": "7291b5970da2237441273c03b424a504b70b18f09791473fab99687dcc314720"
+      }
+    ]
+  },
+  {
+    "family": "DM Sans",
+    "package": "@fontsource-variable/dm-sans",
+    "version": "5.3.0",
+    "license": "OFL-1.1",
+    "source": {
+      "type": "git",
+      "url": "git+https://github.com/fontsource/font-files.git",
+      "directory": "fonts/variable/dm-sans"
+    },
+    "files": [
+      {
+        "file": "dm-sans-latin-wght-normal.woff2",
+        "sha256": "9fea608a947e67020c33cad9a6fe3d60c54119dfb8cff87768a8117a15ed7543"
+      },
+      {
+        "file": "dm-sans-latin-wght-italic.woff2",
+        "sha256": "f1a235db5bcb8730707844188d35201ecdf63e56c5dcce97bab24a9c7066091d"
+      }
+    ]
+  },
+  {
+    "family": "Plus Jakarta Sans",
+    "package": "@fontsource-variable/plus-jakarta-sans",
+    "version": "5.3.0",
+    "license": "OFL-1.1",
+    "source": {
+      "type": "git",
+      "url": "git+https://github.com/fontsource/font-files.git",
+      "directory": "fonts/variable/plus-jakarta-sans"
+    },
+    "files": [
+      {
+        "file": "plus-jakarta-sans-latin-wght-normal.woff2",
+        "sha256": "153fc85b70298beeb1d61a5f723331649e7f23bb77302a66e61cb3e2fbdb5e79"
+      },
+      {
+        "file": "plus-jakarta-sans-latin-wght-italic.woff2",
+        "sha256": "bb113d8f5be89636a9a31ffa0966762126546b98be171d6fa81115abb2cd5352"
+      }
+    ]
+  },
+  {
+    "family": "Geist",
+    "package": "@fontsource-variable/geist",
+    "version": "5.3.0",
+    "license": "OFL-1.1",
+    "source": {
+      "type": "git",
+      "url": "git+https://github.com/fontsource/font-files.git",
+      "directory": "fonts/variable/geist"
+    },
+    "files": [
+      {
+        "file": "geist-latin-wght-normal.woff2",
+        "sha256": "19f9c92546aa300c312235e3125af1b81394d8db9a4bc4a425cd5b641d2d54e1"
+      },
+      {
+        "file": "geist-latin-wght-italic.woff2",
+        "sha256": "9b10496762af92659f3b05d2b084b0c8f962c3ecdf637aa764e3b7fd17f5acaf"
+      }
+    ]
+  }
+]

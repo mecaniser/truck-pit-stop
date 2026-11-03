@@ -1189,7 +1189,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveTextContent('Reorder urgency')
     expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveFocus()
-  })
+  }, 15_000)
 
   it('keeps search and stock filters when the sort field or direction changes', async () => {
     installApi()

@@ -98,7 +98,7 @@ function AddVehicleForm({ onClose }: { onClose: () => void }) {
   const { user } = useAuthStore()
   const queryClient = useQueryClient()
   
-  const { register, handleSubmit, formState: { errors }, setValue } = useForm<AddVehicleData>({
+  const { register, handleSubmit, formState: { errors }, setValue } = useForm<z.input<typeof addVehicleSchema>, unknown, AddVehicleData>({
     resolver: zodResolver(addVehicleSchema),
   })
   const [isDecodingVin, setIsDecodingVin] = useState(false)

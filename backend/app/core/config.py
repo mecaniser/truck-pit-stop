@@ -1,3 +1,4 @@
+from pydantic import EmailStr
 from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
 from typing import List
@@ -233,7 +234,8 @@ class Settings(BaseSettings):
 
     # Resend
     RESEND_API_KEY: str = ""
-    RESEND_FROM_EMAIL: str = "noreply@dieselbridge.network"
+    RESEND_FROM_EMAIL: str = "noreply@dieselbridge.com"
+    PUBLIC_SUPPORT_EMAIL: EmailStr = "support@dieselbridge.com"
 
     # Provider outbox. Keep delivery disabled until a dedicated Celery worker
     # is deployed; enabled routes otherwise preserve their current synchronous

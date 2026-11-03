@@ -1,0 +1,13 @@
+.public-policy { min-height: 100vh; background: #0f172a; color: #e2e8f0; font: 16px/1.75 ui-sans-serif, system-ui, sans-serif; padding-bottom: 80px; }
+.public-policy header, .public-policy footer, .public-policy main { width: min(100% - 40px, 880px); margin-inline: auto; }
+.public-policy header { display: flex; justify-content: space-between; gap: 20px; padding-block: 24px; }
+.public-policy main { padding-block: 24px; }
+.public-policy h1 { color: #f8fafc; font-size: clamp(28px, 5vw, 40px); font-weight: 700; line-height: 1.25; }
+.public-policy h2 { color: #f8fafc; font-size: 22px; font-weight: 600; margin-top: 30px; }
+.public-policy p { margin-block: 14px; }
+.public-policy a { color: #fcd34d; text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
+.public-policy :is(a, button):focus-visible { outline: 3px solid #fbbf24; outline-offset: 4px; }
+.policy-links { display: flex; flex-wrap: wrap; gap: 12px 24px; padding-block: 20px; }
+.policy-action { display: inline-block; padding: 12px; border: 1px solid #94a3b8; border-radius: 8px; }
+.policy-skip { position: absolute; top: -100px; left: 20px; z-index: 100; background: #0f172a; padding: 10px; }
+.policy-skip:focus { top: 10px; }

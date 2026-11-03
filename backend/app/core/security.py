@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 import uuid
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError as JWTError
 import bcrypt
 from app.core.config import settings
 

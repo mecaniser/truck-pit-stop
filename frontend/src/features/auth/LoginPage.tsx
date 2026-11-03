@@ -114,7 +114,7 @@ export default function LoginPage() {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<LoginFormData>({
+  } = useForm<z.input<typeof loginSchema>, unknown, LoginFormData>({
     resolver: zodResolver(loginSchema),
     mode: 'onBlur',
     defaultValues: {

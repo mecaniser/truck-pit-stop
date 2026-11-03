@@ -1159,43 +1159,12 @@ class LandingPartnerResponse(BaseModel):
 
 
 @router.get("/platform-contact", response_model=PlatformContactResponse)
-async def get_platform_contact(
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Public platform support contact details for customer-facing pages.
-    Source of truth is the most recently updated active super admin profile.
-    """
-    active_super_admin_result = await db.execute(
-        select(User)
-        .where(
-            User.role == UserRole.SUPER_ADMIN,
-            User.is_active == True,
-        )
-        .order_by(User.updated_at.desc(), User.created_at.desc())
-    )
-    support_user = active_super_admin_result.scalars().first()
-
-    if not support_user:
-        fallback_super_admin_result = await db.execute(
-            select(User)
-            .where(User.role == UserRole.SUPER_ADMIN)
-            .order_by(User.updated_at.desc(), User.created_at.desc())
-        )
-        support_user = fallback_super_admin_result.scalars().first()
-
-    if not support_user:
-        return PlatformContactResponse(
-            support_name="Diesel Bridge Support",
-            support_email=None,
-            support_phone=None,
-        )
-
-    support_name = f"{support_user.first_name} {support_user.last_name}".strip() or "Diesel Bridge Support"
+async def get_platform_contact():
+    """Explicit public business contact; never derive public PII from admin accounts."""
     return PlatformContactResponse(
-        support_name=support_name,
-        support_email=support_user.email,
-        support_phone=support_user.phone,
+        support_name="Diesel Bridge Support",
+        support_email=settings.PUBLIC_SUPPORT_EMAIL,
+        support_phone=None,
     )
 
 
@@ -1767,6 +1736,13 @@ async def enroll_garage(
     Public endpoint for garage owners to apply for platform enrollment.
     Creates a tenant and owner user with pending status.
     """
+    # Older clients may still include the optional keys. Never store their values.
+    if enrollment_data.ein or enrollment_data.business_license:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tax IDs and business license numbers are not collected during enrollment. Remove those fields and try again.",
+        )
+
     if enrollment_data.email.strip().lower() != enrollment_data.owner_email.strip().lower():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1775,15 +1751,6 @@ async def enroll_garage(
 
     # Validate password complexity
     validate_password(enrollment_data.owner_password)
-    
-    # Validate EIN format if provided (XX-XXXXXXX)
-    if enrollment_data.ein:
-        ein_pattern = r'^\d{2}-\d{7}$'
-        if not re.match(ein_pattern, enrollment_data.ein):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="EIN must be in format XX-XXXXXXX (e.g., 12-3456789)",
-            )
     
     # Check if slug is already taken
     result = await db.execute(select(Tenant).where(Tenant.slug == enrollment_data.slug))
@@ -1811,8 +1778,6 @@ async def enroll_garage(
         phone=enrollment_data.phone,
         email=enrollment_data.email,
         website=enrollment_data.website,
-        business_license=enrollment_data.business_license,
-        ein=enrollment_data.ein,
         is_active=False,  # Not active until approved
         enrollment_status="pending",
         applied_at=datetime.now(timezone.utc),

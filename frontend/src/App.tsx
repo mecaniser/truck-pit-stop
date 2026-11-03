@@ -1,3 +1,4 @@
+import PrivacyControls from './components/PrivacyControls'
 import { ControlButton } from '@/components/ui/Controls'
 import { useCookieSessionBootstrap } from './lib/useCookieSessionBootstrap'
 import SessionRecoveryNotice from './components/SessionRecoveryNotice'
@@ -13,6 +14,7 @@ import { AppearanceNavigationGuardProvider } from './features/dashboard/Appearan
 
 const LandingPage = lazy(lazyRouteLoader(() => import('./features/landing/LandingPage')))
 const PrivacyPolicyPage = lazy(lazyRouteLoader(() => import('./features/landing/PrivacyPolicyPage')))
+const PublicPolicyPage = lazy(lazyRouteLoader(() => import('./features/landing/PublicPolicyPage')))
 const TermsOfServicePage = lazy(lazyRouteLoader(() => import('./features/landing/TermsOfServicePage')))
 const LoginPage = lazy(lazyRouteLoader(() => import('./features/auth/LoginPage')))
 const DriverLoginPage = lazy(lazyRouteLoader(() => import('./features/auth/DriverLoginPage')))
@@ -61,80 +63,9 @@ const ADMIN_FAVICON_PATHS = [
   /^\/verify-email$/,
 ]
 
-const PUBLIC_ANALYTICS_PATHS = new Set([
-  '/',
-  '/enroll',
-  '/enroll/success',
-  '/privacy',
-  '/terms',
-  '/login',
-  '/forgot-password',
-  '/reset-password',
-  '/verify-email',
-  '/driver/login',
-])
-
-function isTokenAccessRoute(pathname: string): boolean {
-  return /^\/(quote|invoice)\/[^/]+$/.test(pathname)
-}
-
-function isProductAnalyticsRoute(pathname: string, role?: string): boolean {
-  if (pathname === '/fleet/motive/callback') return false
-  if (PUBLIC_ANALYTICS_PATHS.has(pathname) || isTokenAccessRoute(pathname)) return true
-  if (role === 'super_admin') return false
-
-  // Protected product surfaces are tracked only after the authenticated user's
-  // role is known. This keeps platform-super-admin navigation out of GA.
-  return Boolean(role) && /^(\/dashboard|\/portal|\/mechanic|\/fleet|\/driver)(\/|$)/.test(pathname)
-}
-
-function analyticsPagePath(pathname: string, search: string): string {
-  if (isTokenAccessRoute(pathname)) return pathname.startsWith('/quote/') ? '/quote/:token' : '/invoice/:token'
-
-  // Usage analytics needs page families, not tenant/customer record identifiers.
-  const redactedPath = pathname
-    .replace(/\/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, '/:id')
-    .replace(/\/\d+(?=\/|$)/g, '/:id')
-
-  return `${redactedPath}${search}`
-}
-
-function loadGoogleAnalytics(measurementId: string) {
-  if (document.getElementById('google-analytics-tag')) return
-
-  const tag = document.createElement('script')
-  tag.id = 'google-analytics-tag'
-  tag.async = true
-  tag.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}`
-  document.head.appendChild(tag)
-
-  window.dataLayer = window.dataLayer || []
-  window.gtag = window.gtag || function gtag(...args: unknown[]) { window.dataLayer?.push(args) }
-  window.gtag('js', new Date())
-  window.gtag('config', measurementId, { send_page_view: false })
-}
-
-function ProductAnalyticsTracker() {
-  const location = useLocation()
-  const { user } = useAuthStore()
-
-  useEffect(() => {
-    const measurementId = import.meta.env.VITE_GA_MEASUREMENT_ID?.trim()
-    const isProductionSite = ['dieselbridge.com', 'www.dieselbridge.com'].includes(window.location.hostname)
-    const pagePath = analyticsPagePath(location.pathname, location.search)
-
-    if (!measurementId || !isProductionSite || !isProductAnalyticsRoute(location.pathname, user?.role)) return
-
-    loadGoogleAnalytics(measurementId)
-    window.gtag?.('event', 'page_view', {
-      page_title: document.title,
-      page_location: `${window.location.origin}${pagePath}`,
-      page_path: pagePath,
-    })
-  }, [location.pathname, location.search, user?.role])
-
-  return null
-}
+// Optional analytics is intentionally absent. Do not load tracking SDKs on this
+// origin: automatic history listeners can observe private/token routes before
+// a React navigation effect can disable collection.
 
 function resolveFavicon(pathname: string): FaviconAssetSet {
   if (pathname === '/') return HOME_FAVICON
@@ -383,7 +314,7 @@ function App() {
     <ThemeProvider>
     <BrowserRouter>
       <AppearanceNavigationGuardProvider>
-      <ProductAnalyticsTracker />
+      <PrivacyControls />
       <RouteFaviconManager />
       <ToastLimiter />
       <AppToaster />
@@ -451,6 +382,9 @@ function App() {
         />
         
         <Route path="/" element={<LandingPage />} />
+        <Route path="/cookies" element={<PublicPolicyPage kind="cookies" />} />
+        <Route path="/refunds" element={<PublicPolicyPage kind="refunds" />} />
+        <Route path="/data-deletion" element={<PublicPolicyPage kind="deletion" />} />
         <Route path="/privacy" element={<PrivacyPolicyPage />} />
         <Route path="/terms" element={<TermsOfServicePage />} />
       </Routes>

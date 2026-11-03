@@ -111,8 +111,7 @@
   padding: 0.9rem 1.25rem;
   border: 1px solid rgba(255, 218, 190, 0.78);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent 42%),
-    linear-gradient(135deg, #f06a1f, #bd3e04);
+    linear-gradient(135deg, #a83c00, #873000);
   box-shadow:
     0 1px 0 rgba(255, 246, 236, 0.72) inset,
     0 -1px 0 rgba(101, 28, 0, 0.38) inset,
@@ -133,8 +132,7 @@
 .landing-nav-cta:hover { background: var(--landing-orange-hover); box-shadow: 0 16px 34px rgba(153, 52, 0, 0.38); }
 .landing-primary-cta:hover {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.26), transparent 42%),
-    linear-gradient(135deg, #ff7b31, #c84506);
+    linear-gradient(135deg, #b34200, #913300);
   box-shadow:
     0 1px 0 rgba(255, 246, 236, 0.8) inset,
     0 -1px 0 rgba(101, 28, 0, 0.38) inset,
@@ -283,3 +281,9 @@
   .landing-shell { forced-color-adjust: auto; }
   .landing-nav { border: 1px solid CanvasText; }
 }
+
+.landing-demo-disclosure { text-align: center; color: var(--landing-muted); font-size: 14px; margin: 20px auto; max-width: 70ch; }
+.landing-footer .policy-links { padding: 0; }
+
+.landing-footer .business-contact { color: var(--landing-muted); font-size: 13px; }
+.landing-footer .business-contact a { text-decoration: underline; }

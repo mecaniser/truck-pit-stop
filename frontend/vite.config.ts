@@ -34,7 +34,7 @@ export default defineConfig(({ command, mode }) => {
   plugins: [react(), buildStampPlugin({ sha: process.env.RAILWAY_GIT_COMMIT_SHA ?? runtimeSha })],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(import.meta.dirname, './src'),
     },
   },
   server: {

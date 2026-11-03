@@ -9,6 +9,7 @@
       "backend/scripts/backfill_invoice_ets_date.py",
       "backend/scripts/backfill_ro_labor_hours.py",
       "backend/Dockerfile.ets-sync",
+      "backend/requirements.lock",
       "railway.ets-sync.json"
     ]
   },

@@ -1,6 +1,7 @@
 """Real process outcomes and privacy, without browser/provider/database access."""
 import json
 import os
+from pathlib import Path
 import signal
 import subprocess
 import sys
@@ -64,7 +65,7 @@ def main():
  read_process([sys.executable,'-c',"import os,time,pathlib;pathlib.Path("+repr(sys.argv[1])+").write_text(str(os.getpid()));time.sleep(30)"],timeout=60,observer=observer)
 entry(main,observer=observer)
 """
-    process = subprocess.Popen([sys.executable, '-c', program, str(pidfile)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    process = subprocess.Popen([sys.executable, '-c', program, str(pidfile)], cwd=Path(__file__).resolve().parents[1], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     import time
     try:
         deadline = time.monotonic()+5

@@ -205,7 +205,6 @@ describe("connected inbox sending", () => {
     const draft = screen.getByRole("textbox", { name: "Message draft" });
     expect(inboxApi.read).toHaveBeenCalled();
     fireEvent.change(draft, { target: { value: "x".repeat(141) } });
-    vi.useFakeTimers();
     vi.mocked(inboxApi.list).mockResolvedValue([updated]);
     vi.mocked(inboxApi.detail).mockResolvedValue(updated);
     await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
@@ -235,7 +234,6 @@ describe("connected inbox sending", () => {
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Send SMS" })); });
     expect(screen.getAllByRole("alert").length).toBeGreaterThan(0);
     const original = JSON.parse(localStorage.getItem(storeKey)!);
-    vi.useFakeTimers();
     vi.mocked(inboxApi.list).mockResolvedValue([updated]);
     vi.mocked(inboxApi.detail).mockResolvedValue(updated);
     await act(async () => { await vi.advanceTimersByTimeAsync(2500); });

@@ -15,6 +15,7 @@ import httpx
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.services.email_service import _with_privacy_footer
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models.notification import Notification, NotificationStatus, NotificationType
@@ -218,7 +219,7 @@ async def _deliver_email(delivery: EmailDelivery) -> Optional[str]:
                     "from": _format_sender(delivery.sender_name),
                     "to": delivery.recipient,
                     "subject": delivery.subject,
-                    "html": delivery.body,
+                    "html": _with_privacy_footer(delivery.body),
                 },
             )
         if response.status_code >= 400:

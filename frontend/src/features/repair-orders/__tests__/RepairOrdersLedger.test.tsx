@@ -621,7 +621,7 @@ describe('bounded visible-page loading', () => {
   afterEach(() => vi.unstubAllGlobals())
   function observePages() {
     const observers: { emit: (visible: boolean) => void; disconnect: ReturnType<typeof vi.fn>; options?: IntersectionObserverInit }[] = []
-    vi.stubGlobal('IntersectionObserver', vi.fn((callback: IntersectionObserverCallback, options?: IntersectionObserverInit) => {
+    vi.stubGlobal('IntersectionObserver', vi.fn(function (callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
       const observer = { observe: vi.fn(), disconnect: vi.fn() }
       observers.push({ ...observer, options, emit: (visible) => callback([{ isIntersecting: visible } as IntersectionObserverEntry], observer as unknown as IntersectionObserver) })
       return observer

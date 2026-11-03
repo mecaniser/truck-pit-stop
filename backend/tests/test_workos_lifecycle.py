@@ -11,8 +11,8 @@ from starlette.requests import Request
 from sqlalchemy import select
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
-from jose import jwt
-from jose.utils import base64url_encode
+import jwt
+from jwt.utils import base64url_encode
 
 from app.core.config import settings
 from app.core.security import get_password_hash

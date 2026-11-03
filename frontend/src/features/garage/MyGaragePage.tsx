@@ -35,7 +35,7 @@ function GarageLinks({ sections }: { sections: GarageSection[] }) {
   return sections.map(section => (
     <NavLink
       key={section.to}
-      to={section.to}
+      to={`/dashboard/garage/${section.to}`}
       aria-label={section.label}
       data-shop-section={section.to}
       onClick={event => {
@@ -145,7 +145,7 @@ export default function MyGaragePage() {
             scroller, so this frame clips rather than offering a second one. */}
         <div className={`db-my-shop-content db-operating-surface__frame min-w-0 scrollbar-dark${isServicesRoute ? ' db-my-shop-content--services' : ''}`}>
           <Routes>
-            <Route index element={<Navigate to="inventory" replace />} />
+            <Route index element={<Navigate to="/dashboard/garage/inventory" replace />} />
             <Route path="services" element={<ServicesManagementPage />} />
             <Route path="labor-book-time" element={<LaborBookTimePage />} />
             <Route path="inventory" element={<InventoryPage />} />

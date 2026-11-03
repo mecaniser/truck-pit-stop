@@ -160,6 +160,9 @@ async def test_outbox_uses_resend_idempotency_key(monkeypatch):
     assert response_id == "resend-message-456"
     assert sent["headers"]["Idempotency-Key"] == "quote-email-idempotency-key"
     assert sent["headers"]["User-Agent"] == "truck-pit-stop-provider-outbox/1.0"
+    assert sent["json"]["html"].startswith("<p>Ready</p>")
+    assert "Request unsubscribe from optional emails" in sent["json"]["html"]
+    assert "does not automatically unsubscribe" in sent["json"]["html"]
 
 
 def test_celery_outbox_task_reuses_its_worker_event_loop(monkeypatch):

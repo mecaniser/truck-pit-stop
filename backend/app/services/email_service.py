@@ -4,8 +4,28 @@ from app.db.models.notification import Notification, NotificationType, Notificat
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 import resend
+import re
 
 resend.api_key = settings.RESEND_API_KEY
+
+
+def _with_privacy_footer(body: str) -> str:
+    """A mailto opt-out request, not an automatic suppression receipt.
+
+    Support must process requests before any further optional marketing send.
+    Essential account, invoice and security notices remain distinct.
+    """
+    footer = f"""<footer style="margin-top:24px;padding:16px;border-top:1px solid #94a3b8;color:#334155;background:#ffffff;font:13px/1.6 Arial,sans-serif">
+    <p>Platform operator: Elis Tech LLC, doing business as Diesel Bridge Network<br>
+    1002 Yearden Ln, Monroe, NC 28110, United States</p>
+    <p><a style="color:#1e40af" href="mailto:{settings.PUBLIC_SUPPORT_EMAIL}?subject=Unsubscribe%20from%20optional%20emails">Request unsubscribe from optional emails</a><br>
+    This opens an email request for support to process. It does not automatically unsubscribe you.
+    Essential account, security and transaction notices may still be sent.</p>
+    <p><a style="color:#1e40af" href="mailto:{settings.PUBLIC_SUPPORT_EMAIL}?subject=Personal%20data%20deletion%20request">Request personal data deletion</a></p>
+    </footer>"""
+    if re.search(r'</body\s*>', body, flags=re.IGNORECASE):
+        return re.sub(r'</body\s*>', lambda match: footer + match.group(0), body, count=1, flags=re.IGNORECASE)
+    return body + footer
 
 
 def _format_sender(sender_name: Optional[str] = None) -> str:
@@ -49,7 +69,7 @@ async def send_email(
             "from": _format_sender(sender_name),
             "to": to,
             "subject": subject,
-            "html": body,
+            "html": _with_privacy_footer(body),
         }
         if attachments:
             params["attachments"] = [
@@ -105,7 +125,7 @@ async def send_password_reset_email(to: str, reset_token: str, shop_name: Option
             "from": settings.RESEND_FROM_EMAIL,
             "to": to,
             "subject": f"Reset Your Password – {brand}",
-            "html": html_body,
+            "html": _with_privacy_footer(html_body),
         }
         resend.Emails.send(params)
     except Exception as e:
@@ -160,7 +180,7 @@ async def send_email_verification(to: str, verification_token: str, shop_name: O
             "from": settings.RESEND_FROM_EMAIL,
             "to": to,
             "subject": f"Verify Your Email Address – {brand}",
-            "html": html_body,
+            "html": _with_privacy_footer(html_body),
         }
         resend.Emails.send(params)
     except Exception as e:
@@ -231,7 +251,7 @@ async def send_email_change_notification(old_email: str, new_email: str, user_na
             "from": settings.RESEND_FROM_EMAIL,
             "to": old_email,
             "subject": f"Email Change Request – {brand}",
-            "html": html_body,
+            "html": _with_privacy_footer(html_body),
         }
         resend.Emails.send(params)
     except Exception as e:
@@ -276,7 +296,7 @@ async def send_enrollment_received_email(to: str, garage_name: str, owner_name: 
             "from": settings.RESEND_FROM_EMAIL,
             "to": to,
             "subject": f"Application Received - {garage_name} | DieselBridge Network",
-            "html": html_body,
+            "html": _with_privacy_footer(html_body),
         }
         resend.Emails.send(params)
     except Exception as e:
@@ -329,7 +349,7 @@ async def send_enrollment_approved_email(to: str, garage_name: str, owner_name: 
             "from": settings.RESEND_FROM_EMAIL,
             "to": to,
             "subject": f"Welcome to DieselBridge Network - {garage_name} Approved!",
-            "html": html_body,
+            "html": _with_privacy_footer(html_body),
         }
         resend.Emails.send(params)
     except Exception as e:
@@ -372,7 +392,7 @@ async def send_enrollment_rejected_email(to: str, garage_name: str, owner_name: 
             "from": settings.RESEND_FROM_EMAIL,
             "to": to,
             "subject": f"Application Status Update - {garage_name} | DieselBridge Network",
-            "html": html_body,
+            "html": _with_privacy_footer(html_body),
         }
         resend.Emails.send(params)
     except Exception as e:
@@ -426,7 +446,7 @@ async def send_new_enrollment_notification(admin_emails: list, garage_name: str,
                 "from": settings.RESEND_FROM_EMAIL,
                 "to": email,
                 "subject": f"New Shop Enrollment: {garage_name}",
-                "html": html_body,
+                "html": _with_privacy_footer(html_body),
             }
             resend.Emails.send(params)
         except Exception as e:
