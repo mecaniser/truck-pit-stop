@@ -1010,8 +1010,12 @@ async def logout(
 async def workos_logout(request: Request, response: Response):
     """End only the short-lived repair-shop WorkOS session.
 
-    This intentionally does not clear the legacy refresh cookie or any future
-    platform-admin session; callers must present a WorkOS-marked access token.
+    Revoke the presented credentials without changing shared browser cookies.
+    A delayed logout response can arrive after another tab has signed in; cookie
+    deletion headers would then erase that replacement session. The retained
+    cookie copies carry no authority after token blacklisting/session deletion
+    and keep their original expiry until a subsequent login overwrites them.
+    Legacy refresh and platform-admin sessions remain untouched.
     """
     token = request.cookies.get("access_token")
     payload = decode_token(token) if token else None
@@ -1024,8 +1028,6 @@ async def workos_logout(request: Request, response: Response):
             await blacklist_token(payload["jti"], expiry)
     if session_id:
         await workos_session.delete_session(session_id)
-    response.delete_cookie("access_token", path="/", domain=_cookie_domain())
-    response.delete_cookie("workos_session", path="/api/v1/auth/workos", domain=_cookie_domain())
     return LogoutResponse(message="Successfully logged out of repair-shop session")
 
 

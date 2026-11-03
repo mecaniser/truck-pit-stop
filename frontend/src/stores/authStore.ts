@@ -192,10 +192,10 @@ export const useAuthStore = create<AuthState>()(
         stopSessionKeepAlive()
         set({ authSessionEpoch: logoutEpoch, browserSessionId: crypto.randomUUID(), logoutInProgress: true, explicitlySignedOut: true })
 
-        // Call backend to blacklist token and clear cookies
+        // Revoke the originating session; a replacement epoch cancels queued dispatch.
         try {
           if (endpoint) {
-            await api.post(endpoint)
+            await api.post(endpoint, undefined, { authSessionEpoch: logoutEpoch })
           }
         } catch {
           // Ignore errors - we're logging out anyway

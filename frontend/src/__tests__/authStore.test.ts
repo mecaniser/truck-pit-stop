@@ -59,13 +59,13 @@ describe('authStore', () => {
     expect(state.isAuthenticated).toBe(false)
     expect(state.user).toBeNull()
     expect(state.token).toBeNull()
-    expect(api.post).toHaveBeenCalledWith('/auth/logout')
+    expect(api.post).toHaveBeenCalledWith('/auth/logout', undefined, { authSessionEpoch: state.authSessionEpoch })
   })
 
   it('uses tenant-only WorkOS logout for cookie sessions', async () => {
     useAuthStore.getState().establishCookieSession(fakeUser)
     await useAuthStore.getState().logout()
-    expect(api.post).toHaveBeenCalledWith('/auth/workos/logout')
+    expect(api.post).toHaveBeenCalledWith('/auth/workos/logout', undefined, { authSessionEpoch: useAuthStore.getState().authSessionEpoch })
     expect(useAuthStore.getState().authProvider).toBeNull()
   })
 

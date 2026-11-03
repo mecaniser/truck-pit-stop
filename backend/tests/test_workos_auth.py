@@ -574,15 +574,18 @@ async def test_workos_state_replay_and_refresh_are_rejected(client, db_session, 
 
 
 @pytest.mark.asyncio
-async def test_workos_logout_clears_only_access_cookie(client):
+async def test_workos_logout_revokes_access_without_mutating_shared_cookies(client, fake_redis, monkeypatch):
+    from app.core import redis as redis_module
+    monkeypatch.setattr(redis_module, "get_redis", lambda: _resolved(fake_redis))
     token = _workos_token(uuid4())
     client.cookies.set("access_token", token)
     client.cookies.set("refresh_token", "legacy-refresh", path="/api/v1/auth")
     response = await client.post("/api/v1/auth/workos/logout")
     assert response.status_code == 200
-    cookies = response.headers.get_list("set-cookie")
-    assert any("access_token=\"\"" in cookie or "access_token=" in cookie for cookie in cookies)
-    assert not any("refresh_token=" in cookie for cookie in cookies)
+    assert response.headers.get_list("set-cookie") == []
+    assert await fake_redis.get(f"token_blacklist:{decode_token(token)['jti']}")
+    assert client.cookies.get("access_token") == token
+    assert client.cookies.get("refresh_token") == "legacy-refresh"
 
 
 @pytest.mark.asyncio
@@ -594,24 +597,33 @@ async def test_workos_logout_can_end_server_session_after_access_expiry(client, 
     assert await fake_redis.get("workos:session:opaque") is None
 
 @pytest.mark.asyncio
-async def test_pr764_replacement_cookie_survives_prior_logout_response(client, db_session, fake_redis, monkeypatch):
+@pytest.mark.parametrize("replacement_label", ["A", "B"])
+async def test_pr764_replacement_cookie_survives_prior_logout_response(client, db_session, fake_redis, monkeypatch, tmp_path, replacement_label):
     """Real routes+cookie jar, controlled provider; model delayed A response headers."""
     import asyncio
     import httpx
-    from pathlib import Path
     from app.main import app
+    from app.core import redis as redis_module
+    # Keep the real blacklist writer and the authority reader on one fixture.
+    monkeypatch.setattr(redis_module, 'get_redis', lambda: _resolved(fake_redis))
     for label in ('A', 'B'):
         db_session.add(Tenant(name=f'Synthetic {label}', slug=f'overlap-{label.lower()}', workos_organization_id=f'org_{label}'))
         db_session.add(User(email=f'{label.lower()}@overlap.test', hashed_password='synthetic', first_name=label, last_name='QA', role=UserRole.GARAGE_ADMIN, workos_user_id=f'wu_{label}'))
     await db_session.commit()
     async def provider_auth(payload):
-        label=payload['code']
+        label=payload.get('code') or payload['refresh_token'].rsplit('-', 1)[-1]
         return {'user':{'id':f'wu_{label}','email':f'{label.lower()}@overlap.test'},'access_token':f'provider-{label}','refresh_token':f'synthetic-refresh-{label}'}
     async def provider_verify(token):
         label=token.rsplit('-',1)[-1]
         return {'sub':f'wu_{label}','org_id':f'org_{label}','role':'garage_admin','permissions':['fleet:view']}
+    async def provider_membership(*, user_id, organization_id):
+        label=user_id.rsplit('_', 1)[-1]
+        assert organization_id==f'org_{label}'
+        return {'id':f'membership-{label}', 'user_id':user_id, 'organization_id':organization_id,
+                'status':'active', 'role':{'slug':'garage_admin'}}
     monkeypatch.setattr(workos_provider,'authenticate',provider_auth)
     monkeypatch.setattr(workos_provider,'verify_access_token',provider_verify)
+    monkeypatch.setattr(workos_provider,'find_organization_membership',provider_membership)
     entered=asyncio.Event();release=asyncio.Event()
     async def held_app(scope,receive,send):
         async def held_send(message):
@@ -628,14 +640,15 @@ async def test_pr764_replacement_cookie_survives_prior_logout_response(client, d
             assert callback.status_code==307
             return callback
         await login('A')
+        original_cookies=[(c.name, c.value, c.domain, c.path) for c in browser.cookies.jar]
         assert (await browser.get('/api/v1/auth/workos/me')).status_code==200
         pending=asyncio.create_task(browser.post('/api/v1/auth/workos/logout'))
         try:
             await asyncio.wait_for(entered.wait(),5)
-            replacement=await login('B')
+            replacement=await login(replacement_label)
             session_b=replacement.cookies['workos_session']
             before=await browser.get('/api/v1/auth/workos/me')
-            assert before.status_code==200 and before.json()['email']=='b@overlap.test'
+            assert before.status_code==200 and before.json()['email']==f'{replacement_label.lower()}@overlap.test'
             cookies_before=sorted(cookie.name for cookie in browser.cookies.jar)
         finally:
             release.set()
@@ -643,5 +656,23 @@ async def test_pr764_replacement_cookie_survives_prior_logout_response(client, d
         after=await browser.get('/api/v1/auth/workos/me')
         refresh=await browser.post('/api/v1/auth/workos/session/refresh')
         report={'provider_exchange':'simulated','routes':'actual ASGI application','logout_status':ended.status_code,'replacement_me_before_prior_response':before.status_code,'replacement_me_after_prior_response':after.status_code,'refresh_after_prior_response':refresh.status_code,'replacement_server_session_still_exists':bool(await fake_redis.get(f'workos:session:{session_b}')),'cookie_names_before':cookies_before,'cookie_names_after':sorted(cookie.name for cookie in browser.cookies.jar)}
-        Path('/evidence/workos-overlap-real-asgi.json').write_text(json.dumps(report,indent=2))
+        report['replacement_label'] = replacement_label
+        report['logout_cookie_headers'] = ended.headers.get_list('set-cookie')
+        # A revoked cookie copy cannot bootstrap authority, even without any
+        # frontend/localStorage guard. It also cannot recreate its server session.
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as old_browser:
+            for name, value, domain, path in original_cookies:
+                old_browser.cookies.set(name, value, domain=domain, path=path)
+            report['revoked_workos_me'] = (await old_browser.get('/api/v1/auth/workos/me')).status_code
+            report['revoked_auth_me'] = (await old_browser.get('/api/v1/auth/me')).status_code
+            report['revoked_refresh'] = (await old_browser.post('/api/v1/auth/workos/session/refresh')).status_code
+        (tmp_path / 'workos-overlap-report.json').write_text(json.dumps(report, indent=2))
         assert after.status_code==200, report
+        assert after.json()['email']==f'{replacement_label.lower()}@overlap.test'
+        assert refresh.status_code==200, report
+        assert ended.headers.get_list('set-cookie')==[]
+        assert report['revoked_workos_me']==401, report
+        assert report['revoked_auth_me']==401, report
+        assert report['revoked_refresh']==401, report
+        again=await browser.get('/api/v1/auth/workos/me')
+        assert again.status_code==200 and again.json()['email']==f'{replacement_label.lower()}@overlap.test'
