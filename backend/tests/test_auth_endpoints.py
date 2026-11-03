@@ -236,12 +236,12 @@ async def test_platform_contact_defaults_without_super_admin(client):
     assert r.status_code == 200
     body = r.json()
     assert body["support_name"] == "Diesel Bridge Support"
-    assert body["support_email"] is None
+    assert body["support_email"] == "support@dieselbridge.com"
     assert body["support_phone"] is None
 
 
 @pytest.mark.asyncio
-async def test_platform_contact_returns_latest_active_super_admin(client, db_session):
+async def test_platform_contact_does_not_expose_super_admin_profile(client, db_session):
     older = User(
         email="older-admin@example.com",
         hashed_password="x",
@@ -273,6 +273,6 @@ async def test_platform_contact_returns_latest_active_super_admin(client, db_ses
     r = await client.get(PLATFORM_CONTACT_URL)
     assert r.status_code == 200
     body = r.json()
-    assert body["support_name"] == "Latest Admin"
-    assert body["support_email"] == "latest-admin@example.com"
-    assert body["support_phone"] == "(555) 999-0000"
+    assert body["support_name"] == "Diesel Bridge Support"
+    assert body["support_email"] == "support@dieselbridge.com"
+    assert body["support_phone"] is None

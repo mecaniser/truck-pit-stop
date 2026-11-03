@@ -1,5 +1,6 @@
 """Recovery rollout, overlap, failure visibility and execution bounds."""
 import asyncio
+from pathlib import Path
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -131,7 +132,7 @@ entry = celery_app.conf.beat_schedule.get('process-sms-recovery')
 print(json.dumps(None if entry is None else {'task':entry['task'], 'seconds':entry['schedule'].total_seconds(), 'expires':entry['options']['expires']}))
 """
     env = {**os.environ, 'SMS_RECOVERY_ENABLED': str(enabled).lower()}
-    result = subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, check=True)
+    result = subprocess.run([sys.executable, '-c', code], cwd=Path(__file__).resolve().parents[1], env=env, capture_output=True, text=True, check=True)
     assert json.loads(result.stdout.strip().splitlines()[-1]) == ({'task':'process_sms_recovery', 'seconds':60, 'expires':60} if enabled else None)
 
 

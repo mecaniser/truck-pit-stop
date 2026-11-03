@@ -16,26 +16,45 @@ from app.api.v1.endpoints.repair_orders import repair_order_status_counts
 from app.db.models.user import UserRole
 
 
-def _repair_order_paths() -> list[str]:
-    return [
-        route.path
-        for route in app.routes
-        if getattr(route, "path", "").startswith("/api/v1/repair-orders")
-    ]
-
-
 def test_status_counts_route_is_registered():
-    assert any(path.endswith("/repair-orders/status-counts") for path in _repair_order_paths())
+    paths = app.openapi()["paths"]
+    assert "get" in paths["/api/v1/repair-orders/status-counts"]
+    assert any("/repair-orders/{" in path for path in paths), "expected id-parameterised routes to exist"
 
 
-def test_status_counts_is_declared_before_any_order_id_route():
-    paths = _repair_order_paths()
-    literal = next(i for i, p in enumerate(paths) if p.endswith("/repair-orders/status-counts"))
-    parameterised = [i for i, p in enumerate(paths) if "/repair-orders/{" in p]
-    assert parameterised, "expected id-parameterised repair-order routes to exist"
-    assert literal < min(parameterised), (
-        "status-counts must be declared before the {order_id} routes or it will be shadowed"
-    )
+@pytest.mark.asyncio
+async def test_status_counts_dispatches_before_any_order_id_route():
+    """A literal request must reach counts, not UUID validation on an ID route."""
+    import httpx
+    from app.core.dependencies import get_current_active_user
+    from app.db.session import get_db
+
+    class Result:
+        def one(self):
+            return (5, 5)
+
+        def all(self):
+            return [("invoiced", 3), ("paid", 2)]
+
+    class DB:
+        async def execute(self, _statement):
+            return Result()
+
+    async def database():
+        yield DB()
+
+    current_user = SimpleNamespace(role=UserRole.GARAGE_OWNER, tenant_id=uuid4())
+    previous = app.dependency_overrides.copy()
+    app.dependency_overrides[get_db] = database
+    app.dependency_overrides[get_current_active_user] = lambda: current_user
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.get("/api/v1/repair-orders/status-counts")
+        assert response.status_code == 200
+        assert response.json() == {"invoiced": 3, "paid": 2, "all": 5}
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous)
 
 
 @pytest.mark.asyncio

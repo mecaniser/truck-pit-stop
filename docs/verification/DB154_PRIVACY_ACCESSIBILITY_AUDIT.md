@@ -4,7 +4,7 @@
 
 ## Verified operator decisions
 
-The operator supplied: Elis Tech LLC, doing business as Diesel Bridge Network; 1002 Yearden Ln, Monroe, NC 28110, United States; privacy/contact email elis@elisprotech.com. Subscriptions are month-to-month, non-refundable except where applicable law requires a refund; cancellation stops future monthly renewals. The operator also confirmed ownership or permission for current site logos/images. No independent chain-of-title search or legal review was performed. A North Carolina mailing address does not establish the entity's formation jurisdiction or select governing law.
+The operator supplied: Elis Tech LLC, doing business as Diesel Bridge Network; 1002 Yearden Ln, Monroe, NC 28110, United States; privacy/contact email support@dieselbridge.com (confirmed replacement on 2026-11-03). Subscriptions are month-to-month, non-refundable except where applicable law requires a refund; cancellation stops future monthly renewals. The operator also confirmed ownership or permission for current site logos/images. No independent chain-of-title search or legal review was performed. A North Carolina mailing address does not establish the entity's formation jurisdiction or select governing law.
 
 ## Implementation and audit coverage
 
@@ -14,7 +14,7 @@ The operator supplied: Elis Tech LLC, doing business as Diesel Bridge Network; 1
 | Terms | Existing terms corrected: providing a phone number and accepting terms do not grant SMS/marketing consent. Optional marketing must be separate and not a purchasing condition. Added refund/fee references. |
 | Refund policy | `/refunds` states approved monthly/non-refundable rule with statutory exception and email cancellation route. Repair-shop purchases remain the supplying shop's responsibility. Policy does not itself automate billing cancellation. |
 | Cookie policy/banner | `/cookies` plus global nonmodal, keyboard-accessible necessary-only notice and persistent settings action. No fabricated Accept-all choice for nonexistent optional collection. Preference lasts up to 180 days; blocked/malformed/old acceptance storage does not enable tracking. Callback UI remains absent. |
-| Data minimization | Removed EIN/business-license inputs and omitted their values from enrollment payloads. Existing historical records were not deleted. Legacy API still accepts those optional fields for older clients; this is not a system-wide field/retention reduction. |
+| Data minimization | Removed EIN/business-license inputs and omitted their values from enrollment payloads. Existing historical records were not deleted. Legacy API rejects nonempty EIN/license fields with safe400 before tenant/user/provider writes; empty/null legacy fields remain compatible. This is not a system-wide retention reduction. |
 | Form consent | Privacy disclosure appears before personal-data entry and terms link at review. Explicitly explains that phone details do not grant SMS or marketing consent. Existing SMS systems have opt-out enforcement; full affirmative opt-in provenance/enforcement is not certified by this work. No new messaging enabled. |
 | SDK audit | GA loader removed, including automatic history listener exposure; no page/title/query/token/account tracking remains in app source. Existing Stripe pure lazy loader retained. Feature-triggered Mapbox, Stripe and server providers inventoried below. Third-party font requests replaced with local licensed files. |
 | Dark patterns | No optional tracker acceptance pressure, no prechecked marketing box, no false automatic deletion/unsubscribe receipt, and fictional demo data labeled. No exhaustive audit of every authenticated workflow. |
@@ -41,11 +41,11 @@ The operator supplied: Elis Tech LLC, doing business as Diesel Bridge Network; 1
 | Cloudinary | Media hosting integration. Uploaded/remote media permissions and retention require business controls. |
 | Google Business Profile / Motive / Anthropic | Connected review/fleet data and AI review drafting; provider scopes, operator authorization, retention and data handling require their own controls. No integration triggered or data resynchronized. |
 
-### Dependency audit — unresolved findings
+### Dependency remediation — DB-155
 
-`npm audit --omit=dev --json` against the existing lockfile reports **22 package entries: 2 critical, 16 high, 4 moderate**. These are registry dependency findings, not proof of reachable exploitation. Not changed by this PR.
+The earlier 22 production npm findings were remediated in this authorized release. Unused jspdf/react-pdf and their vulnerable graphs were removed; serving moved from serve to sirv-cli. Router7, Zod4, Vite8, Vitest5 and ESLint10 compatibility is covered by build, full suites and actual authenticated navigation. Node22 is selected in Docker/CI. Registry URLs/integrity remain in the lockfile.
 
-Direct packages flagged: axios (high), jspdf (critical), react-pdf (high), react-router-dom (high), serve (high), zod (high). Transitive critical entry includes tar under the react-pdf dependency graph. Registry proposes major upgrades for jspdf (4.2.1), react-pdf (11.0.0) and zod (4.6.7); compatible updates exist for other entries. Remediation is tracked as DB-155 and needs a separate focused change covering generated PDFs, PDF previews, schema validation, HTTP behavior, routing and production serving. Do not infer security clearance from this PR's tests. Raw local audit: `/tmp/db154-dependency-audit.json` (not committed).
+All frontend dependencies including development tools: **0 known vulnerabilities**. E2E, Motive importer and ETS importer npm lockfiles independently audit **0**. Python resolved to **89 exact locked packages**, with **0 pip-audit findings**; main/development and all six integration worker builders install that lock. PyJWT replaces python-jose while preserving explicit algorithm/authority validation. These are registry advisory results at verification time, not proof that no vulnerability exists.
 
 ## Verification
 
@@ -58,19 +58,25 @@ Direct packages flagged: axios (high), jspdf (critical), react-pdf (high), react
 - Independent Security initially NO-GO: failed-withdrawal storage case, automatic analytics history leakage, outbox footer bypass. All corrected and independently source-approved GO. Independent QA GO for the bounded public UI; implementing agent did not approve its own gates.
 - Independent QA did not certify real billing, actual delivered email, provider configuration, legal sufficiency or the complete authenticated app.
 
+## Final remediation verification — 2026-11-03
+
+- Full frontend: **225 files / 2477 tests passing**. Full backend: **5337 passing / 468 skipped**, no failures. Skips are recorded, not claimed as exercised.
+- Production build and shared-control check pass. Final changed-source lint and exact-head CI remain release gates.
+- Full-stack smoke: **5/5 passing**. Actual sandbox browser verifies all five policy contacts, authenticated login, canonical Inventory navigation, Services active state, and no external resource origins in those journeys.
+- FastAPI route tests use public OpenAPI/real ASGI dispatch; Pillow13 tests cover valid multi-frame/orientation handling plus deliberately corrupt MPF metadata. Vitest constructor/timer compatibility fixtures corrected without removing assertions.
+- Independent final source Security **GO**: lock adoption, explicit JWT algorithms, enrollment pre-write rejection, public contact minimization, response identity guard, Docker context exclusions. Independent final QA pending at this checkpoint.
+
 ## Local runtime receipt
 
-Local startup skill read and preflight attempted at intake and repeated on the new local day. Isolated worktree initially lacked approved `backend/.env`; no secrets copied, defaults invented, migrations applied or shared services replaced. Later controller dry run rejects the dirty checkout. Existing other stacks preserved.
+The initially missing local configuration was resolved with an isolated credential-free sandbox based on the existing approved CI/sandbox launch pattern. Project `db761-sandbox` uses disposable database `db761_disposable`, Redis, ENVIRONMENT=test, empty messaging/payment/provider keys and disabled WorkOS. Migrations apply only to this disposable database; other stacks and populated volumes remain untouched.
 
-Vite frontend served `http://127.0.0.1:5173`, PID 21988 during evidence collection, cwd `/Users/sergio_m1_promax/.codex/worktrees/privacy-safety/truck-pit-stop/frontend`; source branch `codex/privacy-safety`, base HEAD `24790dd3e605e960bfaf00e6e2c88c5166ec8a32`. Exact served changed source and rendered features checked. API/proxy target `127.0.0.1:8000` unavailable; public browser tests intercepted API with fictional partner/contact and unauthorized-auth fixtures. **Frontend source/browser verified; full stack blocked/unverified.** No database identity or payment readiness inferred. Receipt expires with source/process/config/date changes.
+Frontend `http://127.0.0.1:5173` serves this privacy-safety checkout; backend `http://127.0.0.1:8000` uses the same checkout mounted read-only with the new locked image. API readiness and frontend proxy report database/Redis ready. Actual rendered policy contacts and authenticated My Shop navigation corroborate source alignment. **Aligned and browser-verified**, distinct from production release. No real emails, payments, customer-data deletion or financial mutations were performed.
 
-## Release and operational gates
+## Release and operational obligations
 
-1. Keep as draft until legal review confirms applicable jurisdictions, statutory privacy rights, processor/retention inventory, SMS consent and monthly cancellation/refund wording. Engineering cannot guarantee freedom from lawsuits.
-2. The operator must monitor `elis@elisprotech.com`, verify data-rights requests with minimal information, route shop-controlled records, record retention exceptions and process deletion requests. Do not claim a deletion occurred merely because a mailto opened.
-3. Record and honor optional-email opt-outs. No optional marketing campaign should launch until suppression is enforceable and tested. The footer is a manual request channel, not automatic suppression. Mandatory security/transaction notices are separate.
-4. Address dependency findings in focused follow-up work; do not label them resolved.
-5. Backend-aligned runtime acceptance, protected PR checks, explicit release authorization, merge/deploy and production verification remain outstanding. Do not mark DB-154 Done or treat this audit as a production release.
+The operator explicitly authorizes PR761 merge/deploy after passing technical gates. PR remains unmerged at this checkpoint; exact pushed-source CI, production source/readiness and changed-route acceptance must be recorded before Done. Rollback: revert the merge through a reviewed PR if auth, enrollment, routing, email provider errors or health regress; retain sender configuration consistent with verified domain. No database migration is introduced by this release.
+
+The operator must monitor **support@dieselbridge.com**, verify requests with minimal information, route shop-controlled records, honor retention exceptions and process deletion/cancellation/optional-email opt-outs. The mailto links do not automatically execute these operations. No marketing launch is authorized by this release; enforceable suppression and affirmative consent remain required for future marketing. Applicable jurisdictions, legal sufficiency, processor contracts and full retention/consent inventories remain business/legal obligations. Engineering does not certify freedom from lawsuits.
 
 ## Primary guidance consulted
 

@@ -185,7 +185,7 @@ export default function GarageEnrollmentPage() {
     setError(null)
 
     try {
-      const finalData = formData as EnrollmentData & { confirm_password: string }
+      const finalData = enrollmentSchema.parse(formData)
       const submitData: EnrollmentData = {
         garage_name: finalData.garage_name,
         slug: finalData.slug,

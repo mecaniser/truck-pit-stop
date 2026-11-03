@@ -23,7 +23,7 @@ describe('public policies and operator identity', () => {
   })
   it('prepares a deletion email without claiming it was submitted or requesting sensitive IDs', () => {
     mount(<PublicPolicyPage kind="deletion" />)
-    expect(screen.getByRole('link', {name:'Email a data deletion request'})).toHaveAttribute('href',expect.stringContaining('mailto:elis@elisprotech.com?subject='))
+    expect(screen.getByRole('link', {name:'Email a data deletion request'})).toHaveAttribute('href',expect.stringContaining('mailto:support@dieselbridge.com?subject='))
     expect(screen.getByText(/does not submit a request until you send it/)).toBeVisible()
     expect(screen.getByText(/Do not include passwords/)).toBeVisible()
   })

@@ -213,9 +213,12 @@ async def test_http_status_and_mounted_contract(db_session):
     response = Response(status_code=201)
     second = await routes.create_external_service(a.vehicle.id, body, response, db_session, a.owner)
     assert response.status_code == 200 and second.replayed
+    from fastapi import FastAPI
     from app.api.v1.router import api_router
-    paths = {(route.path, method) for route in api_router.routes for method in getattr(route, "methods", [])}
-    base = "/vehicles/{vehicle_id}/external-services"
+    mounted = FastAPI()
+    mounted.include_router(api_router, prefix="/api/v1")
+    paths = {(path, method.upper()) for path, operations in mounted.openapi()["paths"].items() for method in operations}
+    base = "/api/v1/vehicles/{vehicle_id}/external-services"
     assert {(base, "GET"), (base, "POST"), (base + "/{record_id}", "PUT"), (base + "/{record_id}/void", "POST"), (base + "/{record_id}/restore", "POST"), (base + "/{record_id}/history", "GET")} <= paths
 
 

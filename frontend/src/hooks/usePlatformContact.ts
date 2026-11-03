@@ -10,7 +10,7 @@ interface PlatformContactResponse {
 }
 
 const FALLBACK_SUPPORT_NAME = 'Diesel Bridge Support'
-const FALLBACK_SUPPORT_EMAIL = 'support@dieselbridge.network'
+const FALLBACK_SUPPORT_EMAIL = 'support@dieselbridge.com'
 
 const buildTelHref = (phone: string | null): string | null => {
   if (!phone) return null

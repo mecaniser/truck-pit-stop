@@ -910,6 +910,9 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
     api.get(`/repair-orders/${selectedId}/workspace`, { signal: controller.signal })
       .then((response) => {
         if (cancelled) return
+        if (!response.data || response.data.id !== selectedId || typeof response.data.status !== 'string') {
+          throw new Error('Repair order workspace response is unavailable')
+        }
         queryClient.setQueryData(['repair-order-workspace', selectedId, queryScope], response.data)
         applyDetailState(response.data as RepairOrder)
       })

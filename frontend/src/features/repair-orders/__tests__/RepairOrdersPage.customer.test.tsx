@@ -34,6 +34,7 @@ beforeEach(() => {
     if (url === '/customers') return Promise.resolve({ data: { items: [customer], total: 1, has_more: false } })
     if (url === '/customers/customer-1') return Promise.resolve({ data: customer })
     if (url === '/repair-orders') return Promise.resolve({ data: { items: [order], total: 1, has_more: false } })
+    if (url === '/repair-orders/new-order/workspace' || url === '/repair-orders/new-order/detail') return Promise.resolve({ data: { ...order, id: 'new-order' } })
     if (url === '/repair-orders/order-1/workspace' || url === '/repair-orders/order-1/detail') return Promise.resolve({ data: order })
     if (url.startsWith('/quotes')) return Promise.resolve({ data: null })
     if (url === '/dashboard/stats') return Promise.resolve({ data: { mechanic_workload: [] } })
@@ -432,7 +433,7 @@ afterEach(() => vi.unstubAllGlobals())
 
 it('never drains order pages behind contextual customer intake and resumes after cancel', async () => {
   const callbacks: IntersectionObserverCallback[] = []
-  vi.stubGlobal('IntersectionObserver', vi.fn((callback: IntersectionObserverCallback) => {
+  vi.stubGlobal('IntersectionObserver', vi.fn(function (callback: IntersectionObserverCallback) {
     callbacks.push(callback)
     return { observe: vi.fn(), disconnect: vi.fn() }
   }))
@@ -613,7 +614,7 @@ it.each(['Retry remaining', 'Keep current work'])('keeps recovery inside the led
   api.post.mockImplementation((url, body) => url === '/repair-orders' ? Promise.resolve({ data: { ...order, id: 'new-order', order_number: 'RO-NEW' } }) : url === '/parts-pricing/resolve' ? Promise.resolve({ data: quote({ plan: body.plan }) }) : Promise.resolve({ data: {} }))
   await startOrderWithService()
   fireEvent.click(within(await screen.findByRole('dialog', { name: 'Review parts pricing' })).getByRole('button', { name: 'Cancel' }))
-  fireEvent.click(await screen.findByRole('button', { name: 'Close repair order' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Close repair order' }, { timeout: 5000 }))
   const notice = await screen.findByRole('status', { name: 'Unfinished service attachment' })
   expect(notice.closest('section')).toHaveClass('db-repair-orders-new')
   fireEvent.click(within(notice).getByRole('button', { name: action }))

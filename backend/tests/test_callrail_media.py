@@ -703,12 +703,13 @@ def mpo_pixels(*, pictures=2, size=(80,48), orientation=6):
     return output.getvalue()
 
 
+@pytest.mark.parametrize('pictures',[2,3])
 @pytest.mark.parametrize('orientation',[6,8])
-def test_genuine_mpo_only_primary_pixels_orientation_and_no_metadata(monkeypatch,orientation):
+def test_genuine_mpo_only_primary_pixels_orientation_and_no_metadata(monkeypatch,orientation,pictures):
     from PIL import ImageOps,MpoImagePlugin
-    raw=mpo_pixels(pictures=2,orientation=orientation)
+    raw=mpo_pixels(pictures=pictures,orientation=orientation)
     with Image.open(io.BytesIO(raw)) as source:
-        assert source.format=='MPO' and source.n_frames==2
+        assert source.format=='MPO' and source.n_frames==pictures
         primary=ImageOps.exif_transpose(source).convert('RGB')
         source.seek(1)
         source.load()
@@ -769,26 +770,15 @@ async def test_signed_object_mpo_primary_preview_preserves_privacy(receipt,monke
     assert len(requests)==3 and all(client.is_closed for client in clients)
 
 
-def test_installed_three_picture_writer_malformed_mpf_is_rejected():
-    # Pillow 10.1 reserves an 82-byte MPF block sized for two pictures; a third
-    # append overwrites primary JPEG data. Do not downgrade that broken container.
-    raw=mpo_pixels(pictures=3)
-    import warnings
-    from PIL import UnidentifiedImageError
-    # The broken writer output has two independently reproduced parser outcomes:
-    # it may be unidentifiable, or downgrade to JPEG with a malformed-MPO warning.
-    # Neither outcome may become a successful application attachment.
-    with warnings.catch_warnings(record=True) as seen:
-        warnings.simplefilter('always')
-        try:
-            with Image.open(io.BytesIO(raw)) as source:
-                assert source.format=='JPEG'
-        except UnidentifiedImageError:
-            pass
-        else:
-            assert any('Image appears to be a malformed MPO file' in str(item.message) for item in seen)
-    with pytest.raises(HTTPException) as error:media.decode_raster(raw,'image/jpeg')
-    assert error.value.status_code==422
+def test_corrupted_three_picture_mpf_is_rejected_instead_of_downgrading():
+    # Generate a valid container, then corrupt the MPF TIFF byte-order marker.
+    # This remains malformed regardless of fixes to Pillow's MPO writer.
+    raw=bytearray(mpo_pixels(pictures=3))
+    tiff=raw.index(b'MPF\0')+4
+    assert raw[tiff:tiff+2] in (b'II', b'MM')
+    raw[tiff:tiff+2]=b'ZZ'
+    with pytest.raises(HTTPException) as error:media.decode_raster(bytes(raw),'image/jpeg')
+    assert error.value.status_code==422 and error.value.headers==media.HEADERS
 
 
 @pytest.fixture(autouse=True)

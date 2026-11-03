@@ -15,13 +15,13 @@ def _with_privacy_footer(body: str) -> str:
     Support must process requests before any further optional marketing send.
     Essential account, invoice and security notices remain distinct.
     """
-    footer = """<footer style="margin-top:24px;padding:16px;border-top:1px solid #94a3b8;color:#334155;background:#ffffff;font:13px/1.6 Arial,sans-serif">
+    footer = f"""<footer style="margin-top:24px;padding:16px;border-top:1px solid #94a3b8;color:#334155;background:#ffffff;font:13px/1.6 Arial,sans-serif">
     <p>Platform operator: Elis Tech LLC, doing business as Diesel Bridge Network<br>
     1002 Yearden Ln, Monroe, NC 28110, United States</p>
-    <p><a style="color:#1e40af" href="mailto:elis@elisprotech.com?subject=Unsubscribe%20from%20optional%20emails">Request unsubscribe from optional emails</a><br>
+    <p><a style="color:#1e40af" href="mailto:{settings.PUBLIC_SUPPORT_EMAIL}?subject=Unsubscribe%20from%20optional%20emails">Request unsubscribe from optional emails</a><br>
     This opens an email request for support to process. It does not automatically unsubscribe you.
     Essential account, security and transaction notices may still be sent.</p>
-    <p><a style="color:#1e40af" href="mailto:elis@elisprotech.com?subject=Personal%20data%20deletion%20request">Request personal data deletion</a></p>
+    <p><a style="color:#1e40af" href="mailto:{settings.PUBLIC_SUPPORT_EMAIL}?subject=Personal%20data%20deletion%20request">Request personal data deletion</a></p>
     </footer>"""
     if re.search(r'</body\s*>', body, flags=re.IGNORECASE):
         return re.sub(r'</body\s*>', lambda match: footer + match.group(0), body, count=1, flags=re.IGNORECASE)

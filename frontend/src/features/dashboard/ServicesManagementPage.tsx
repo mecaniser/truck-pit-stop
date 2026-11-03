@@ -208,7 +208,7 @@ function ServicesManagementWorkspace() {
     getValues,
     trigger,
     formState: { errors },
-  } = useForm<ServiceFormData>({
+  } = useForm<z.input<typeof serviceSchema>, unknown, ServiceFormData>({
     resolver: zodResolver(serviceSchema),
     defaultValues: {
       duration_minutes: 60,
@@ -323,7 +323,9 @@ function ServicesManagementWorkspace() {
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
       autoSaveTimer.current = setTimeout(async () => {
         if (!(await trigger())) return // don't persist invalid state (e.g. empty name)
-        autoSave.mutate({ id: editingService.id, data: getValues() })
+        const parsed = serviceSchema.safeParse(getValues())
+        if (!parsed.success) return
+        autoSave.mutate({ id: editingService.id, data: parsed.data })
       }, 700)
     })
     return () => {

@@ -97,8 +97,6 @@ async def test_enroll_garage_imports_logo_when_website_present(client, db_sessio
             "phone": "5551234567",
             "email": "owner@garage.example.com",
             "website": "https://garage.example.com",
-            "business_license": "LIC-123",
-            "ein": "12-3456789",
             "owner_email": "owner@garage.example.com",
             "owner_first_name": "Garage",
             "owner_last_name": "Owner",
@@ -130,8 +128,6 @@ async def test_enroll_garage_still_succeeds_when_logo_import_fails(client, db_se
             "phone": "5551234568",
             "email": "fallback@garage.example.com",
             "website": "https://garage.example.com",
-            "business_license": "LIC-456",
-            "ein": "98-7654321",
             "owner_email": "fallback@garage.example.com",
             "owner_first_name": "Fallback",
             "owner_last_name": "Owner",
@@ -217,3 +213,26 @@ async def test_garage_profile_update_persists_landing_partner_fields(client, db_
     tenant = result.scalar_one()
     assert tenant.partner_summary == "24/7 mobile truck repair across the Carolinas."
     assert tenant.partner_services == "Roadside repair, diagnostics, fleet PM"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('field', ['ein', 'business_license'])
+async def test_enrollment_rejects_unnecessary_identifiers_before_writes(client, db_session, monkeypatch, field):
+    async def unexpected_provider(*args, **kwargs):
+        pytest.fail('Enrollment must not contact providers when rejecting unnecessary identifiers')
+
+    monkeypatch.setattr(auth_endpoints, 'import_logo_from_website', unexpected_provider)
+    payload = {
+        'garage_name': 'Minimal Enrollment', 'slug': 'minimal-enrollment',
+        'address': '123 Example Street', 'phone': '2025550123',
+        'email': 'minimal@example.com', 'owner_email': 'minimal@example.com',
+        'owner_first_name': 'Example', 'owner_last_name': 'Owner',
+        'owner_phone': '2025550123', 'owner_password': 'ExampleOnly42!NotAnAccount',
+        field: 'not-to-store',
+    }
+    response = await client.post(ENROLL_URL, json=payload)
+    assert response.status_code == 400
+    assert 'not collected' in response.json()['detail']
+    assert 'not-to-store' not in response.text
+    assert (await db_session.execute(select(Tenant).where(Tenant.slug == payload['slug']))).scalar_one_or_none() is None
+    assert (await db_session.execute(select(User).where(User.email == payload['owner_email']))).scalar_one_or_none() is None

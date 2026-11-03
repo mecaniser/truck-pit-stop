@@ -196,7 +196,7 @@ export default function LandingPage() {
         <div><p>© {new Date().getFullYear()} {BRAND.platformName}</p><BusinessContact /></div>
         <div>
           <PolicyLinks />
-          <a href={mailtoHref || 'mailto:support@dieselbridge.network'}>Contact</a>
+          <a href={mailtoHref || 'mailto:support@dieselbridge.com'}>Contact</a>
         </div>
       </footer>
     </div>

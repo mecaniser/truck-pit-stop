@@ -7,8 +7,8 @@ FROM python:3.11-slim-bookworm
 WORKDIR /app
 COPY --from=browser /usr/local/bin/node /usr/local/bin/node
 COPY --from=browser /browser/node_modules /app/scripts/motive_sync/node_modules
-COPY backend/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+COPY backend/requirements.txt backend/requirements.lock ./
+RUN pip install --no-cache-dir -r requirements.lock
 RUN node /app/scripts/motive_sync/node_modules/playwright/cli.js install --with-deps chromium
 COPY backend/ ./
 ENV MOTIVE_SYNC_COMMIT=false

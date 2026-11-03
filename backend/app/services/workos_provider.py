@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import httpx
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError as JWTError
 
 from app.core.config import settings
 
@@ -79,7 +80,7 @@ async def verify_access_token(access_token: str) -> Dict[str, Any]:
     try:
         claims = jwt.decode(
             access_token,
-            key,
+            jwt.PyJWK.from_dict(key, algorithm="RS256").key,
             algorithms=["RS256"],
             options={"verify_aud": False},
         )
