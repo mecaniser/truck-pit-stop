@@ -17,3 +17,11 @@ Use the existing getAuthenticatedSessionIdentity contract: pending logout, inact
 Existing lifecycle suite on current main:9 failed/1 passed; failures include extra reads and private surfaces during invalid session states, while tenant-change isolation already passes. Apply only the existing69ac5cdb dashboard correction and its10 real-store lifecycle tests. Initial correction10/10 passed on current locked dependencies (Node22/Vitest5). Pending feedback assertions retain explicit private-content and selected-workspace absence checks. Full regression, independent review and runtime evidence pending.
 
 Rollback: revert this frontend correction and redeploy; no data/schema rollback. Stop release for any stale private display/read, cross-scope revival, active-user regression, failed required CI or material independent finding.
+
+## Genuine-backend gate returned: staff shell reads
+
+First real normal sign-out under12s tab-scoped latency correctly hid Dashboard rows and started no Dashboard GETs, but the retained session caused login navigation to remount the staff shell and ThemeProvider. Request observation recorded appearance and conversation reads during pending logout. This returned the initial scoped GO to implementation.
+
+Expanded client boundary: while logoutInProgress is true, actual App unmounts the provider/router/view tree and displays generic Signing out feedback. The actual authStore logout continues and new-session epoch protection remains unchanged. The Dashboard guard remains defense in depth for inactive/unauthenticated state and component cancellation. Staff unread summary was also found keyed globally; its read and inbox writer now share an authenticated-session key, reject stale writer callbacks and cancel the list request on scope changes. Query prefixes/invalidation and server API contracts remain intact; no backend/store policy change.
+
+Failing-first actual-App/shell tests10fail/1pass and inbox-writer tests2fail. Fresh full regression, new independent review and genuine backend repeat required before release. Initial automated GO is historical until that repeat.
