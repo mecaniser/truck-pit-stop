@@ -1,169 +1,58 @@
-import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Search, Wrench } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
-
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Search, Wrench, ClipboardCheck, Truck, AlertCircle, ChevronRight, Clock3 } from 'lucide-react'
+import { ControlButton, ControlInput } from '@/components/ui/Controls'
+import PortalVehicleScope from '@/features/customer-portal/PortalVehicleScope'
 import { Spinner } from '@/components/ui'
-import api from '@/lib/api'
+import { useAuthStore } from '@/stores/authStore'
 import type { Service, ServiceCategory, Vehicle } from '@/types'
-import { formatMoney, Pill, vehicleName } from '@/features/customer-portal/portal-ui'
+import { formatMoney } from '@/features/customer-portal/portal-ui'
+import { getPortalItems, resolveVehicleScope, scopedPortalPath, vehicleIdentity } from '@/features/customer-portal/portal-context'
 
-const categoryColors = ['#8b7cf7', '#ff6b6e', '#3ecf6f', '#f0b959', '#2dd4bf']
-
-function shortCategoryName(value: string) {
-  const normalized = value.trim().toLowerCase()
-  if (normalized === 'all pm services') return 'PM Services'
-  if (normalized === 'other services') return 'Other services'
-  return value
-}
+const needs = [
+  { name: 'Maintenance', detail: 'Oil changes and scheduled service', pattern: /maintenance|\bpm\b|oil|lube|lubrication|filter/i, icon: Wrench },
+  { name: 'Inspection', detail: 'Annual and safety inspections', pattern: /inspect|\bdot\b|safety/i, icon: ClipboardCheck },
+  { name: 'Brakes & tires', detail: 'Braking or tire concerns', pattern: /brake|braking|tire|tyre|wheel/i, icon: Truck },
+  { name: 'Something wrong', detail: 'Warning light, noise, leak, or not sure', pattern: /diagnos|troubleshoot|warning|noise|leak|repair/i, icon: AlertCircle },
+]
 
 export default function ServicesPage() {
   const navigate = useNavigate()
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  const [params, setParams] = useSearchParams()
+  const requestedVehicle = params.get('vehicle_id')
+  const user = useAuthStore(state => state.user)
+  const tenant = user?.tenant_id
+  const customer = user?.customer_id
+  const [category, setCategory] = useState('Common needs')
   const [search, setSearch] = useState('')
-
-  const { data: categories = [] } = useQuery<ServiceCategory[]>({
-    queryKey: ['service-categories'],
-    queryFn: async () => (await api.get('/services/categories')).data,
+  const categoriesQuery = useQuery({ queryKey: ['service-categories', tenant, customer], queryFn: ({ signal }) => getPortalItems<ServiceCategory>('/services/categories', {}, signal) })
+  const servicesQuery = useQuery({ queryKey: ['services', 'portal-all', tenant, customer], queryFn: ({ signal }) => getPortalItems<Service>('/services', {}, signal) })
+  const vehiclesQuery = useQuery({ queryKey: ['vehicles', tenant, customer], queryFn: ({ signal }) => getPortalItems<Vehicle>('/vehicles', {}, signal) })
+  const services = useMemo(() => (servicesQuery.data || []).filter(service => service.is_active), [servicesQuery.data])
+  const vehicles = vehiclesQuery.data || []
+  const scope = resolveVehicleScope(vehicles, requestedVehicle)
+  const categories = categoriesQuery.data || []
+  const matchingNeeds = needs.map(need => ({ ...need, services: services.filter(service => need.pattern.test(`${service.name} ${service.description || ''} ${categories.find(item => item.id === service.category_id)?.name || ''}`)) }))
+  const visible = services.filter(service => {
+    if (search.trim()) return `${service.name} ${service.description || ''}`.toLowerCase().includes(search.trim().toLowerCase())
+    const need = matchingNeeds.find(item => item.name === category)
+    return need ? need.services.some(item => item.id === service.id) : category === 'All services' || service.category_id === category
   })
-  const { data: services = [], isLoading } = useQuery<Service[]>({
-    queryKey: ['services', 'portal-all'],
-    queryFn: async () => (await api.get('/services')).data,
-  })
-  const { data: vehicles = [] } = useQuery<Vehicle[]>({
-    queryKey: ['vehicles'],
-    queryFn: async () => {
-      const response = await api.get('/vehicles', { params: { paginated: true, skip: 0, limit: 100 } })
-      return Array.isArray(response.data) ? response.data : response.data.items
-    },
-  })
-
-  const categoryMap = useMemo(
-    () => new Map(categories.map((category, index) => [category.id, { ...category, color: categoryColors[index % categoryColors.length] }])),
-    [categories],
-  )
-
-  const visibleServices = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    return services.filter(service => {
-      if (selectedCategory && service.category_id !== selectedCategory) return false
-      if (!query) return true
-      return `${service.name} ${service.description || ''}`.toLowerCase().includes(query)
-    })
-  }, [search, selectedCategory, services])
-
-  const groups = useMemo(() => {
-    const grouped = new Map<string, Service[]>()
-    visibleServices.forEach(service => {
-      const key = service.category_id || 'other'
-      grouped.set(key, [...(grouped.get(key) || []), service])
-    })
-    return [...grouped.entries()]
-      .map(([categoryId, items], index) => {
-        const category = categoryMap.get(categoryId)
-        const sorted = [...items].sort((a, b) => Number(a.computed_total_price) - Number(b.computed_total_price))
-        const prices = sorted.map(item => Number(item.computed_total_price || 0))
-        return {
-          id: categoryId,
-          name: shortCategoryName(category?.name || 'Other services'),
-          color: category?.color || categoryColors[index % categoryColors.length],
-          items: sorted,
-          min: Math.min(...prices),
-          max: Math.max(...prices),
-        }
-      })
-      .sort((a, b) => a.name.localeCompare(b.name))
-  }, [categoryMap, visibleServices])
-
-  if (isLoading) return <div className="flex min-h-[420px] items-center justify-center"><Spinner size="xl" /></div>
-
-  const vehicle = vehicles[0]
-
-  return (
-    <div className="space-y-4">
-      <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-2xl font-extrabold tracking-[-0.01em]">Book a service</h1>
-          <p className="mt-1 max-w-3xl text-[13px] leading-5 text-[#8b92a5]">
-            {vehicles.length === 1 ? (
-              <>All services are performed on <span className="font-semibold text-[#d9a521]">{vehicleName(vehicle)}{vehicle?.unit_number ? ` · Unit #${vehicle.unit_number}` : ''}</span> — no need to pick a vehicle.</>
-            ) : vehicles.length > 1 ? (
-              'Choose the vehicle during scheduling.'
-            ) : (
-              'Choose a service now; you can add a vehicle during scheduling.'
-            )}
-          </p>
-        </div>
-        <label className="relative block w-full lg:w-[250px]">
-          <span className="sr-only">Search services</span>
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5c6375]" />
-          <ControlInput
-            value={search}
-            onChange={event => setSearch(event.target.value)}
-            placeholder={`Search ${services.length} services…`}
-            className=" w-full rounded-[10px] border border-[#272d3d] bg-[#161a26] pl-10 pr-3 text-base text-[#eceef4] outline-none placeholder:text-[#5c6375] focus:border-[#8b7cf7] focus:ring-2 focus:ring-[#8b7cf7]/35  lg:text-[13px]"
-          />
-        </label>
-      </header>
-
-      <div className="-mx-4 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
-        <div className="flex min-w-max gap-2">
-          <Pill active={selectedCategory === null} onClick={() => setSelectedCategory(null)}>All {services.length}</Pill>
-          {categories.map(category => {
-            const count = services.filter(service => service.category_id === category.id).length
-            if (!count) return null
-            return (
-              <Pill key={category.id} active={selectedCategory === category.id} onClick={() => setSelectedCategory(category.id)}>
-                {shortCategoryName(category.name)} {count}
-              </Pill>
-            )
-          })}
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        {groups.map(group => (
-          <section key={group.id}>
-            <div className="mb-2 flex items-center gap-2.5">
-              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: group.color }} />
-              <h2 className="text-[11px] font-extrabold uppercase tracking-[0.1em]">{group.name}</h2>
-              <span className="text-[11px] text-[#5c6375]">
-                {formatMoney(group.min)}{group.max !== group.min ? ` – ${formatMoney(group.max)}` : ''}
-              </span>
-            </div>
-            <div className="grid gap-2 lg:grid-cols-2">
-              {group.items.map(service => (
-                <article key={service.id} className="flex items-center gap-3 rounded-xl border border-[#232939] bg-[#161a26] p-3 hover:border-[#343b52] sm:gap-3.5 sm:px-3.5">
-                  <div className="min-w-0 flex-1">
-                    <h3 className="truncate text-[13px] font-bold">{service.name}</h3>
-                    <p className="mt-1 truncate text-[11px] text-[#8b92a5]">{service.description || 'Professional heavy-duty service'}</p>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <p className="text-sm font-extrabold tabular-nums">{formatMoney(service.computed_total_price)}</p>
-                    <p className="mt-0.5 text-[11px] text-[#5c6375]">{service.duration_minutes} min</p>
-                  </div>
-                  <ControlButton
-                    type="button"
-                    onClick={() => navigate(`/portal/book/${service.id}`)}
-                    className=" shrink-0 rounded-lg border border-[#8b7cf7] bg-[#8b7cf7]/10 px-3.5 text-xs font-extrabold text-[#c9bfff] hover:bg-[#8b7cf7]/15 "
-                  >
-                    Book
-                  </ControlButton>
-                </article>
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
-
-      {groups.length === 0 && (
-        <div className="rounded-2xl border border-[#232939] bg-[#161a26] py-12 text-center">
-          <Wrench className="mx-auto h-9 w-9 text-[#5c6375]" />
-          <h2 className="mt-3 font-extrabold">No services found</h2>
-          <p className="mt-1 text-sm text-[#8b92a5]">Try a different search or category.</p>
-        </div>
-      )}
-    </div>
-  )
+  const readError = servicesQuery.isError || categoriesQuery.isError || vehiclesQuery.isError
+  if (servicesQuery.isLoading || categoriesQuery.isLoading || vehiclesQuery.isLoading) return <div className="cp-root"><Spinner size="xl" /></div>
+  if (readError) return <div className="cp-root" role="alert"><h1>Services unavailable</h1><p>We couldn’t load the service catalog and your vehicles.</p><ControlButton className="cp-secondary" onClick={() => { void servicesQuery.refetch(); void categoriesQuery.refetch(); void vehiclesQuery.refetch() }}>Try again</ControlButton></div>
+  return <div className="cp-root">
+    <div className="cp-title"><div><h1>Book a service</h1><p>What does your truck need?</p></div></div>
+    <div className="cp-book-context"><div><strong>Vehicle</strong><PortalVehicleScope vehicles={vehicles} requested={requestedVehicle} onChange={id => setParams(id ? { vehicle_id: id } : {})} />{scope.vehicle && <p>{vehicleIdentity(scope.vehicle)}</p>}{scope.invalid && <p role="alert">This vehicle is unavailable. Choose one of your vehicles to continue.</p>}{scope.ambiguous && <p role="alert">Vehicle details need review. Contact the shop before booking.</p>}{!scope.vehicle && !scope.invalid && !scope.ambiguous && <p>{vehicles.length ? 'Choose your vehicle during scheduling.' : 'No vehicles registered. Services without a vehicle are still available.'}</p>}</div></div>
+    <label className="cp-search"><Search size={20} /><ControlInput aria-label="Search services or describe a concern" placeholder="Search services or describe a concern" value={search} onChange={event => setSearch(event.target.value)} /></label>
+    <div className="cp-category-nav" aria-label="Service categories">{['Common needs', 'All services'].map(name => <ControlButton key={name} aria-pressed={category === name} className={category === name ? 'cp-active' : ''} onClick={() => setCategory(name)}>{name}</ControlButton>)}</div>
+    {category === 'Common needs' && !search.trim() ? <div className="cp-needs">{matchingNeeds.map(need => <ControlButton controlKind="content" key={need.name} disabled={!need.services.length} onClick={() => setCategory(need.name)}><span className="cp-need-icon"><need.icon /></span><span><strong>{need.name}</strong><span>{need.services.length ? need.detail : 'No matching services available'}</span></span><ChevronRight size={20} /></ControlButton>)}</div> : <>
+      <div className="cp-list-heading"><h2>{search.trim() ? `Results for “${search}”` : matchingNeeds.some(need => need.name === category) || category === 'All services' ? category : categories.find(item => item.id === category)?.name}</h2>{category !== 'All services' && <ControlButton className="cp-text" onClick={() => setCategory('Common needs')}>All common needs</ControlButton>}</div>
+      {category === 'All services' && !search.trim() && <div className="cp-category-nav">{categories.filter(item => services.some(service => service.category_id === item.id)).map(item => <ControlButton key={item.id} className="cp-text" onClick={() => setCategory(item.id)}>{item.name}</ControlButton>)}</div>}
+      <div className="cp-service-list">{visible.map(service => <article key={service.id}><div><h3>{service.name}</h3>{service.description && <p>{service.description}</p>}<p>{formatMoney(service.computed_total_price)}</p></div><span className="cp-duration"><Clock3 size={15} />{service.duration_minutes} min</span><ControlButton className="cp-secondary" disabled={scope.invalid || (service.requires_vehicle && scope.ambiguous)} onClick={() => navigate(scopedPortalPath(`/portal/book/${service.id}`, scope.vehicleId))}>Choose<ChevronRight size={15} /></ControlButton></article>)}</div>
+      {!visible.length && <div className="cp-panel cp-empty"><Search /><h2>No matching services</h2><p>Try another search or browse all services.</p><ControlButton className="cp-secondary" onClick={() => { setSearch(''); setCategory('All services') }}>All services</ControlButton></div>}
+    </>}
+    {!services.length && <div className="cp-panel cp-empty"><h2>No services available</h2><p>Contact the shop for help scheduling a visit.</p></div>}
+  </div>
 }

@@ -641,6 +641,8 @@ export interface Appointment {
 export interface TimeSlot {
   time: string
   available: boolean
+  starts_at: string
+  timezone: string
 }
 
 export interface Supplier {

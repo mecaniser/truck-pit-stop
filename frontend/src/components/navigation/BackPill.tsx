@@ -3,13 +3,13 @@ import { ChevronLeft } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 type BackPillProps = {
-  destination: 'History' | 'Dashboard'
+  destination: 'History' | 'Dashboard' | 'Today' | 'Invoices'
   fallbackTo?: string
 }
 
 export default function BackPill({
   destination,
-  fallbackTo = destination === 'History' ? '/portal/repairs' : '/portal',
+  fallbackTo = destination === 'History' ? '/portal/repairs' : destination === 'Invoices' ? '/portal/invoices' : '/portal',
 }: BackPillProps) {
   const navigate = useNavigate()
 

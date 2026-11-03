@@ -1,5 +1,5 @@
 const portalRouteLabel = (pathname: string, search: string): string => {
-  if (pathname === '/portal') return 'Dashboard'
+  if (pathname === '/portal') return 'Today'
   if (pathname === '/portal/services') return 'Services'
   if (pathname.startsWith('/portal/book/')) return 'Book Service'
   if (pathname === '/portal/appointments') return 'Appointments'
@@ -9,6 +9,7 @@ const portalRouteLabel = (pathname: string, search: string): string => {
       ? 'Active Repairs'
       : 'Repair History'
   }
+  if (pathname === '/portal/invoices') return 'Invoices'
   if (pathname.startsWith('/portal/invoices/')) return 'Invoice'
   if (pathname === '/portal/integrations') return 'Integrations'
   if (pathname === '/portal/settings') return 'Account'

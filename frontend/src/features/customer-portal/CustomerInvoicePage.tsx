@@ -34,6 +34,7 @@ import {
   useInvoiceSettlement,
 } from '@/features/payments'
 
+import { scopedPortalPath } from './portal-context'
 import CashReceiptBreakdown from './CashReceiptBreakdown'
 import QuickBooksPaymentPanel from './QuickBooksPaymentPanel'
 import { getPortalPreferences } from './portal-preferences'
@@ -253,7 +254,7 @@ export default function CustomerInvoicePage() {
   }
 
   const paymentState = location.state as {
-    paymentOrigin?: 'History' | 'Dashboard'
+    paymentOrigin?: 'History' | 'Dashboard' | 'Today' | 'Invoices'
     invoiceQueue?: string[]
   } | null
   const invoiceQueue = paymentState?.invoiceQueue?.filter(Boolean) || []
@@ -365,7 +366,7 @@ export default function CustomerInvoicePage() {
     <div className="min-h-full bg-[#10131c] px-4 pb-8 text-[#eceef4] sm:px-6">
       <div className="mx-auto w-full max-w-[640px] pb-6 pt-4">
         <div className="mb-2">
-          <BackPill destination={backDestination} />
+          <BackPill destination={backDestination} fallbackTo={scopedPortalPath(backDestination === 'History' ? '/portal/repairs' : backDestination === 'Invoices' ? '/portal/invoices' : '/portal', new URLSearchParams(location.search).get('vehicle_id'))} />
         </div>
 
         <section className="py-2 text-center" aria-labelledby="payment-total">

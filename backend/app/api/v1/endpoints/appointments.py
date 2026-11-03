@@ -1,6 +1,7 @@
 from typing import List, Optional
 from uuid import UUID
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import secrets
 import string
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -65,6 +66,8 @@ class PaymentIntentResponse(BaseModel):
 class TimeSlot(BaseModel):
     time: str
     available: bool
+    starts_at: datetime
+    timezone: str
 
 
 def generate_confirmation_number() -> str:
@@ -446,48 +449,66 @@ async def get_available_slots(
 ):
     """Get available time slots for a service on a given date"""
     
-    result = await db.execute(select(Service).where(Service.id == service_id))
+    result = await db.execute(select(Service).where(
+        Service.id == service_id,
+        Service.tenant_id == current_user.tenant_id,
+        Service.is_active.is_(True),
+        Service.deleted_at.is_(None),
+    ))
     service = result.scalar_one_or_none()
     
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
     
-    # Get existing appointments for this day
-    start_of_day = datetime.combine(date_str, datetime.min.time())
-    end_of_day = datetime.combine(date_str, datetime.max.time())
+    result = await db.execute(select(Tenant.timezone).where(Tenant.id == service.tenant_id))
+    timezone_name = result.scalar_one_or_none()
+    try:
+        shop_zone = ZoneInfo(timezone_name)
+    except (ZoneInfoNotFoundError, TypeError, ValueError):
+        raise HTTPException(status_code=409, detail="Shop timezone is unavailable")
+    start_of_day = datetime.combine(date_str, datetime.min.time(), tzinfo=shop_zone).astimezone(timezone.utc)
+    end_of_day = datetime.combine(date_str + timedelta(days=1), datetime.min.time(), tzinfo=shop_zone).astimezone(timezone.utc)
     
     result = await db.execute(
         select(Appointment).where(
             and_(
                 Appointment.tenant_id == service.tenant_id,
-                Appointment.scheduled_at >= start_of_day,
-                Appointment.scheduled_at <= end_of_day,
+                # Include earlier appointments that may extend into this shop day.
+                Appointment.scheduled_at < end_of_day,
                 Appointment.status.in_([AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS]),
             )
         )
     )
-    existing = result.scalars().all()
+    existing = []
+    for appointment in result.scalars().all():
+        # Naive legacy/test values follow the database UTC convention.
+        starts_at = appointment.scheduled_at.replace(tzinfo=appointment.scheduled_at.tzinfo or timezone.utc).astimezone(timezone.utc)
+        ends_at = starts_at + timedelta(minutes=appointment.duration_minutes)
+        if ends_at > start_of_day:
+            existing.append((starts_at, ends_at))
     
     # Generate time slots (8am - 5pm, every 30 min)
     slots = []
-    current_time = datetime.combine(date_str, datetime.strptime("08:00", "%H:%M").time())
-    end_time = datetime.combine(date_str, datetime.strptime("17:00", "%H:%M").time())
+    current_time = datetime.combine(date_str, datetime.strptime("08:00", "%H:%M").time(), tzinfo=shop_zone)
+    end_time = datetime.combine(date_str, datetime.strptime("17:00", "%H:%M").time(), tzinfo=shop_zone)
     
     while current_time < end_time:
         # Check if slot conflicts with existing appointments
-        slot_end = current_time + timedelta(minutes=service.duration_minutes)
+        slot_start = current_time.astimezone(timezone.utc)
+        slot_end = slot_start + timedelta(minutes=service.duration_minutes)
         available = True
         
-        for apt in existing:
-            apt_end = apt.scheduled_at + timedelta(minutes=apt.duration_minutes)
-            # Check for overlap
-            if not (slot_end <= apt.scheduled_at or current_time >= apt_end):
+        for apt_start, apt_end in existing:
+            # Adjacent appointments do not overlap.
+            if not (slot_end <= apt_start or slot_start >= apt_end):
                 available = False
                 break
         
         slots.append(TimeSlot(
             time=current_time.strftime("%H:%M"),
             available=available,
+            starts_at=slot_start,
+            timezone=timezone_name,
         ))
         
         current_time += timedelta(minutes=30)
