@@ -1,3 +1,4 @@
+import { CookieSettingsButton } from '../../components/PrivacyControls'
 import { Link } from 'react-router-dom'
 import BusinessContact from './BusinessContact'
 import { BUSINESS } from './business'
@@ -10,7 +11,7 @@ export function PolicyLinks() {
   return <nav className="policy-links" aria-label="Policies">
     <Link to="/privacy">Privacy Policy</Link><Link to="/terms">Terms of Service</Link>
     <Link to="/refunds">Refund Policy</Link><Link to="/cookies">Cookie Policy</Link>
-    <Link to="/data-deletion">Data deletion request</Link>
+    <Link to="/data-deletion">Data deletion request</Link><CookieSettingsButton />
   </nav>
 }
 
@@ -26,7 +27,7 @@ export default function PublicPolicyPage({ kind }: { kind: PolicyKind }) {
         <p>DieselBridge uses cookies and similar browser storage for the purposes described below.</p>
         <h2>Necessary storage</h2><p>Sign-in cookies protect your session. Local storage remembers appearance settings and your cookie choice. These support the service you request and are separate from optional analytics. Removing sign-in cookies may sign you out.</p>
         <h2>Optional analytics</h2><p>Google Analytics and advertising trackers are disabled. Earlier versions of the site may have set identifiers such as <code>_ga</code> and <code>_ga_*</code>, which we remove when you visit. Our necessary-only cookie preference lasts up to 180 days. Your browser may delete storage sooner. We do not send analytics page views, query strings, account records, or token access links to Google Analytics.</p>
-        <h2>Change your choice</h2><p>Use Cookie settings at the bottom of any page to review necessary storage and keep optional cookies off. Optional analytics stays disabled regardless of browser signals or previously stored consent. We remove analytics cookies accessible to this site; this does not erase information already held by Google. If optional tracking is added in future, it will require a separate opt-in choice before it loads.</p>
+        <h2>Change your choice</h2><p>Use Cookie settings in the public footer or in your account’s Security settings to review necessary storage and keep optional cookies off. Optional analytics stays disabled regardless of browser signals or previously stored consent. We remove analytics cookies accessible to this site; this does not erase information already held by Google. If optional tracking is added in future, it will require a separate opt-in choice before it loads.</p>
         <h2>Feature providers</h2><p>Payment flows use Stripe for payment processing and fraud prevention. Map features contact Mapbox when used. Those providers may use storage or receive device and network information to deliver their features. Rejecting optional analytics does not disable a payment or map feature you request. See our <Link to="/privacy">Privacy Policy</Link>.</p>
       </>}
       {kind === 'refunds' && <>
@@ -40,7 +41,7 @@ export default function PublicPolicyPage({ kind }: { kind: PolicyKind }) {
         <h2>Send a request</h2><p><a className="policy-action" href={deletionHref}>Email a data deletion request</a></p><p>If an email app does not open, email <a href={`mailto:${supportEmail}`}>{supportEmail}</a> with the subject “Personal data deletion request”. This link prepares an email; it does not submit a request until you send it.</p>
         <p>Provide only the email address associated with your account and, if relevant, the shop name. Do not include passwords, bank or card details, government ID numbers, or copies of identity documents. We may need to verify your identity before releasing or deleting data.</p>
         <h2>What happens next</h2><p>Support will review your request and explain its outcome, any additional verification, and any records that must be retained for legal, security, tax, dispute, or accounting purposes. Deletion is not automatic. If a repair shop controls the records, contact that shop; support can help route the request.</p>
-        <p>Withdrawing cookie consent and deleting an account are separate actions. Use Cookie settings to stop optional analytics immediately.</p>
+        <p>Withdrawing cookie consent and deleting an account are separate actions. Optional analytics remains disabled. Cookie settings is available in the public footer and account Security settings.</p>
       </>}
       <section><h2>Business contact</h2><BusinessContact /></section>
     </main>

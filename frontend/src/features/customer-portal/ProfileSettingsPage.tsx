@@ -1,3 +1,4 @@
+import { CookiePrivacySettings } from '@/components/PrivacyControls'
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useState, useEffect } from 'react'
 import { Spinner } from '@/components/ui'
@@ -949,7 +950,7 @@ export default function ProfileSettingsPage() {
         <ContactDetailsSection />
       ) : (
         <div className="min-h-[420px] rounded-2xl border border-[#232939] bg-[#161a26] p-4 sm:p-6">
-          {activeSection === 'security' && <SecuritySection />}
+          {activeSection === 'security' && <><SecuritySection /><CookiePrivacySettings /></>}
           {activeSection === 'appearance' && <AppearanceSection />}
           {activeSection === 'payments' && <PaymentsSection />}
           {activeSection === 'vehicles' && <VehiclesSection />}
