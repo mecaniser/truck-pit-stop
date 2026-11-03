@@ -1,6 +1,6 @@
 # DB-154 — Privacy, public policies and accessibility
 
-2026-11-03. Accountable owner: Frontend & UX. High-risk privacy lane. Branch: `codex/privacy-safety`. Base: `24790dd3` (origin/main at intake). Status: implementation reviewed; draft PR/release gates pending. This is engineering evidence, not legal advice or a compliance certification.
+2026-11-03. Accountable owner: Frontend & UX. High-risk privacy lane. Branch: `codex/privacy-safety`. Base: `24790dd3` (origin/main at intake). Status: implementation reviewed; [draft PR761](https://github.com/mecaniser/truck-pit-stop/pull/761) open at implementation commit `0f3ea542`; unmerged/undeployed, protected CI/release gates pending. This is engineering evidence, not legal advice or a compliance certification.
 
 ## Verified operator decisions
 
@@ -45,7 +45,7 @@ The operator supplied: Elis Tech LLC, doing business as Diesel Bridge Network; 1
 
 `npm audit --omit=dev --json` against the existing lockfile reports **22 package entries: 2 critical, 16 high, 4 moderate**. These are registry dependency findings, not proof of reachable exploitation. Not changed by this PR.
 
-Direct packages flagged: axios (high), jspdf (critical), react-pdf (high), react-router-dom (high), serve (high), zod (high). Transitive critical entry includes tar under the react-pdf dependency graph. Registry proposes major upgrades for jspdf (4.2.1), react-pdf (11.0.0) and zod (4.6.7); compatible updates exist for other entries. Remediation needs a separate focused change covering generated PDFs, PDF previews, schema validation, HTTP behavior, routing and production serving. Do not infer security clearance from this PR's tests. Raw local audit: `/tmp/db154-dependency-audit.json` (not committed).
+Direct packages flagged: axios (high), jspdf (critical), react-pdf (high), react-router-dom (high), serve (high), zod (high). Transitive critical entry includes tar under the react-pdf dependency graph. Registry proposes major upgrades for jspdf (4.2.1), react-pdf (11.0.0) and zod (4.6.7); compatible updates exist for other entries. Remediation is tracked as DB-155 and needs a separate focused change covering generated PDFs, PDF previews, schema validation, HTTP behavior, routing and production serving. Do not infer security clearance from this PR's tests. Raw local audit: `/tmp/db154-dependency-audit.json` (not committed).
 
 ## Verification
 
