@@ -1,6 +1,6 @@
 # DB-154 — Privacy, public policies and accessibility
 
-2026-11-03. Accountable owner: Frontend & UX. High-risk privacy lane. Branch: `codex/privacy-safety`. Base: `24790dd3` (origin/main at intake). Status: implementation reviewed; [draft PR761](https://github.com/mecaniser/truck-pit-stop/pull/761) open at implementation commit `0f3ea542`; unmerged/undeployed, protected CI/release gates pending. This is engineering evidence, not legal advice or a compliance certification.
+2026-11-03. Accountable owner: Frontend & UX. High-risk privacy lane. Branch: `codex/privacy-safety`. Base: `24790dd3` (origin/main at intake). Status: [PR761](https://github.com/mecaniser/truck-pit-stop/pull/761) merged as `82ec76fb` after all seven exact-head checks; API/web, main worker and ETS deployments and live public acceptance verified. [Final release evidence](DB154_PRIVACY_RELEASE.md). This is engineering evidence, not legal advice or a compliance certification.
 
 ## Verified operator decisions
 
@@ -60,8 +60,8 @@ All frontend dependencies including development tools: **0 known vulnerabilities
 
 ## Final remediation verification — 2026-11-03
 
-- Full frontend: **225 files / 2477 tests passing**. Full backend: **5337 passing / 468 skipped**, no failures. Skips are recorded, not claimed as exercised.
-- Production build and shared-control check pass. Final changed-source lint passes across26 changed files; exact-head CI remains the release gate.
+- Pre-integration frontend: **225 files /2477 tests passing**; final integrated frontend: **226 files /2495 tests passing**. Full backend: **5337 passing / 468 skipped**, no failures. Skips are recorded, not claimed as exercised.
+- Production build and shared-control check pass. Final changed-source lint passes across 26 changed files; all seven final exact-head CI jobs passed.
 - Full-stack smoke: **5/5 passing**. Actual sandbox browser verifies all five policy contacts, authenticated login, canonical Inventory navigation, Services active state, and no external resource origins in those journeys.
 - FastAPI route tests use public OpenAPI/real ASGI dispatch; Pillow13 tests cover valid multi-frame/orientation handling plus deliberately corrupt MPF metadata. Vitest constructor/timer compatibility fixtures corrected without removing assertions.
 - Independent final source Security **GO**: lock adoption, explicit JWT algorithms, enrollment pre-write rejection, public contact minimization, response identity guard, Docker context exclusions. Independent final QA **GO** on integration candidate a768a0c4: full frontend **226 files / 2495 tests**, actual policies/authenticated navigation and build/lint evidence.
@@ -74,7 +74,7 @@ Frontend `http://127.0.0.1:5173` serves this privacy-safety checkout; backend `h
 
 ## Release and operational obligations
 
-The operator explicitly authorizes PR761 merge/deploy after passing technical gates. Resend confirms dieselbridge.com sending verified with all required DNS records verified. Existing incoming PrivateEmail MX/SPF preserved. API/worker sender and public support configuration prepared with skipdeploys for noreply@dieselbridge.com and support@dieselbridge.com. No real email sent. PR remains unmerged at this checkpoint; exact pushed-source CI, production source/readiness and changed-route acceptance must be recorded before Done. Rollback: revert the merge through a reviewed PR if auth, enrollment, routing, email provider errors or health regress; retain sender configuration consistent with verified domain. No database migration is introduced by this release.
+The operator explicitly authorizes PR761 merge/deploy after passing technical gates. Resend confirms dieselbridge.com sending verified with all required DNS records verified. Existing incoming PrivateEmail MX/SPF preserved. API/worker sender and public support configuration confirmed inside deployed API and worker: noreply@dieselbridge.com and support@dieselbridge.com. No real email sent. PR761 is merged as `82ec76fb`; final exact-source CI, production source/readiness and changed-route acceptance are recorded in the release receipt. Rollback: revert the merge through a reviewed PR if auth, enrollment, routing, email provider errors or health regress; retain sender configuration consistent with verified domain. No database migration is introduced by this release.
 
 The operator must monitor **support@dieselbridge.com**, verify requests with minimal information, route shop-controlled records, honor retention exceptions and process deletion/cancellation/optional-email opt-outs. The mailto links do not automatically execute these operations. No marketing launch is authorized by this release; enforceable suppression and affirmative consent remain required for future marketing. Applicable jurisdictions, legal sufficiency, processor contracts and full retention/consent inventories remain business/legal obligations. Engineering does not certify freedom from lawsuits.
 
