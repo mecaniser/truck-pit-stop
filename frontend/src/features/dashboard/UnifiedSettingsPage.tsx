@@ -493,7 +493,7 @@ function PaymentSourceDisconnectDialog({
 // ============ SECTION COMPONENTS ============
 
 function ProfileSection() {
-  const { user, setUser } = useAuthStore()
+  const { user, setUser, authSessionEpoch } = useAuthStore()
   const queryClient = useQueryClient()
   const [isEditing, setIsEditing] = useState(false)
   const [originalEmail, setOriginalEmail] = useState(user?.email || '')
@@ -526,7 +526,7 @@ function ProfileSection() {
     onSuccess: (data) => {
       const responseUser = data.user || data
       const isVerificationPending = data.email_verification_pending || false
-      setUser(responseUser)
+      setUser(responseUser, authSessionEpoch)
       queryClient.invalidateQueries({ queryKey: ['user'] })
       
       if (isVerificationPending) {
@@ -695,7 +695,7 @@ function ProfileSection() {
 }
 
 function GarageProfileSection() {
-  const { user, setUser } = useAuthStore()
+  const { user, setUser, authSessionEpoch } = useAuthStore()
   const queryClient = useQueryClient()
   const [isEditing, setIsEditing] = useState(false)
   const tenantBrandingKey = tenantBrandingQueryKey(user?.tenant_id)
@@ -744,7 +744,7 @@ function GarageProfileSection() {
         tenant_name: updated.name,
         tenant_slug: updated.slug,
         tenant_logo_url: updated.logo_url,
-      })
+      }, authSessionEpoch)
     }
   }
 
@@ -2346,7 +2346,7 @@ function ZelleSection({
 
 function NotificationsSection() {
   const queryClient = useQueryClient()
-  const { user, setUser } = useAuthStore()
+  const { user, setUser, authSessionEpoch } = useAuthStore()
   const [remindersEnabled, setRemindersEnabled] = useState(true)
   const [reminderFrequency, setReminderFrequency] = useState(3)
   const [maxReminders, setMaxReminders] = useState(3)
@@ -2365,7 +2365,7 @@ function NotificationsSection() {
       toast.success(data.messaging_enabled ? 'Messaging enabled' : 'Messaging disabled')
       queryClient.invalidateQueries({ queryKey: ['tenant-settings'] })
       // Reflect immediately so the Messages nav link + route hide/show without a reload.
-      if (user) setUser({ ...user, messaging_enabled: data.messaging_enabled })
+      if (user) setUser({ ...user, messaging_enabled: data.messaging_enabled }, authSessionEpoch)
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.detail || 'Failed to update messaging')

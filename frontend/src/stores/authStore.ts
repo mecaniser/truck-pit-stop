@@ -41,7 +41,7 @@ interface AuthState {
   establishCookieSession: (user: User) => void
   logout: () => Promise<void>
   clearSession: () => void
-  setUser: (user: User) => void
+  setUser: (user: User, expectedEpoch?: number) => void
   setTokens: (token: string, refreshToken: string) => void
   claimWebSocketAuthRecovery: () => boolean
 }
@@ -218,13 +218,16 @@ export const useAuthStore = create<AuthState>()(
           webSocketRecoverySessionKey: null,
         }))
       },
-      setUser: (user) => {
+      setUser: (user, expectedEpoch) => {
         if (syncStoredSession()) return
         const current = get()
-        // Profile responses update an existing user; they cannot log a user in.
-        if (!current.isAuthenticated || current.logoutInProgress || user.id !== current.user?.id ||
-            user.tenant_id !== current.user.tenant_id) return
-        const changed = current.user.role !== user.role || current.user.customer_id !== user.customer_id ||
+        if (!current.isAuthenticated || current.logoutInProgress || !current.user) return
+        // Async profile saves belong to their original session. Explicit identity
+        // transitions still replace the principal and reopen the socket.
+        if (expectedEpoch !== undefined && (expectedEpoch !== current.authSessionEpoch ||
+            current.user.id !== user.id || current.user.tenant_id !== user.tenant_id)) return
+        const changed = current.user.id !== user.id || current.user.tenant_id !== user.tenant_id ||
+          current.user.role !== user.role || current.user.customer_id !== user.customer_id ||
           current.user.is_active !== user.is_active
         set({
           user,

@@ -53,7 +53,7 @@ type SettingsSection = 'profile' | 'security' | 'appearance' | 'payments' | 'veh
 // ============ SECTION COMPONENTS ============
 
 function ProfileSection() {
-  const { user, setUser } = useAuthStore()
+  const { user, setUser, authSessionEpoch } = useAuthStore()
   const queryClient = useQueryClient()
   const [isEditing, setIsEditing] = useState(false)
   const [originalEmail, setOriginalEmail] = useState('')
@@ -96,7 +96,7 @@ function ProfileSection() {
     onSuccess: (data) => {
       const responseUser = data.user || data
       const isVerificationPending = data.email_verification_pending || false
-      setUser(responseUser)
+      setUser(responseUser, authSessionEpoch)
       queryClient.invalidateQueries({ queryKey: ['customer'] })
       queryClient.invalidateQueries({ queryKey: ['user'] })
       
@@ -671,7 +671,7 @@ function PreferenceToggle({
 }
 
 function ContactDetailsSection() {
-  const { user, setUser } = useAuthStore()
+  const { user, setUser, authSessionEpoch } = useAuthStore()
   const queryClient = useQueryClient()
   const [preferences, setPreferences] = useState<CustomerPortalPreferences>(() => getPortalPreferences(user?.customer_id))
 
@@ -704,7 +704,7 @@ function ContactDetailsSection() {
   const updateMutation = useMutation({
     mutationFn: async (data: ProfileFormData) => (await api.put('/auth/me', data)).data,
     onSuccess: data => {
-      setUser(data.user || data)
+      setUser(data.user || data, authSessionEpoch)
       queryClient.invalidateQueries({ queryKey: ['customer'] })
       toast.success(data.email_verification_pending ? 'Check your new email to verify the change.' : 'Contact details saved')
       setValue('password', '')

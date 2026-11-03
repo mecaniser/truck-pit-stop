@@ -823,7 +823,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function FleetSettingsModal({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate()
-  const { user, setUser, logout } = useAuthStore()
+  const { user, setUser, authSessionEpoch, logout } = useAuthStore()
 
   const [profile, setProfile] = useState({
     first_name: user?.first_name || '',
@@ -883,7 +883,7 @@ function FleetSettingsModal({ onClose }: { onClose: () => void }) {
       }
       if (emailChanged) payload.password = pwd.current_password
       const res = await api.put('/auth/me', payload)
-      if (res.data?.user) setUser(res.data.user)
+      if (res.data?.user) setUser(res.data.user, authSessionEpoch)
 
       if (wantsPasswordChange) {
         // Changing the password invalidates all sessions — force a fresh login.

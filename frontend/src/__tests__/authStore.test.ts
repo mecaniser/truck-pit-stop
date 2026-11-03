@@ -111,6 +111,16 @@ describe('authStore', () => {
     expect(localStorage.getItem('auth-storage')).toBe(ended)
   })
 
+  it('drops a delayed profile save after another account takes over', () => {
+    const store = useAuthStore.getState()
+    store.login('a', 'ra', fakeUser)
+    const epochA = useAuthStore.getState().authSessionEpoch
+    const other = { ...fakeUser, id: 'u-2', tenant_id: 'second-shop' }
+    store.login('b', 'rb', other)
+    store.setUser({ ...fakeUser, first_name: 'Previous shop' }, epochA)
+    expect(useAuthStore.getState().user).toEqual(other)
+  })
+
   it('publishes logout start and does not let a slow logout clear a newer session', async () => {
     let resolveLogout: (() => void) | undefined
     vi.mocked(api.post).mockImplementationOnce(() => new Promise((resolve) => {

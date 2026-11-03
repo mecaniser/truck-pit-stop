@@ -62,7 +62,7 @@ it('does not display a previous tenant unread count while the new tenant loads',
  let finish!: (rows:{unreadCount:number}[])=>void
  inboxMock.list.mockResolvedValueOnce([{unreadCount:7}]).mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve}))
  render(view());await screen.findByRole('link',{name:'Open Messages, 7 unread'})
- act(()=>useAuthStore.getState().establishCookieSession({...garageOwnerSession,id:'owner-b',tenant_id:'tenant-b'}))
+ act(()=>useAuthStore.getState().setUser({...garageOwnerSession,id:'owner-b',tenant_id:'tenant-b'}))
  expect(screen.queryByRole('link',{name:'Open Messages, 7 unread'})).not.toBeInTheDocument()
  await waitFor(()=>expect(inboxMock.list).toHaveBeenCalledTimes(2))
  await act(async()=>{finish([{unreadCount:1}])})
@@ -77,7 +77,7 @@ it('cancels an old unread read and ignores its late result after tenant change',
  inboxMock.list.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve})).mockResolvedValueOnce([{unreadCount:1}])
  render(view());await waitFor(()=>expect(inboxMock.list).toHaveBeenCalledTimes(1))
  const signal=inboxMock.list.mock.calls[0][1] as AbortSignal
- act(()=>useAuthStore.getState().establishCookieSession({...garageOwnerSession,id:'owner-b',tenant_id:'tenant-b'}))
+ act(()=>useAuthStore.getState().setUser({...garageOwnerSession,id:'owner-b',tenant_id:'tenant-b'}))
  expect(signal?.aborted).toBe(true)
  expect(await screen.findByRole('link',{name:'Open Messages, 1 unread'})).toBeInTheDocument()
  await act(async()=>{finish([{unreadCount:7}])})

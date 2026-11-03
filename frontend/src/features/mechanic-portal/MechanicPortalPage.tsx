@@ -295,7 +295,7 @@ const Container = ({ children, className = '' }: { children: React.ReactNode; cl
 )
 
 export default function MechanicPortalPage() {
-  const { user, logout, setUser } = useAuthStore()
+  const { user, logout, setUser, authSessionEpoch } = useAuthStore()
   const { accent, setAccent, fontSize, setFontSize, resetToDefaults } = useTheme()
   const queryClient = useQueryClient()
   
@@ -735,7 +735,7 @@ export default function MechanicPortalPage() {
       const isVerificationPending = data.email_verification_pending || false
       
       // Always update auth store - other fields may have been updated
-      setUser(responseUser)
+      setUser(responseUser, authSessionEpoch)
       setFirstName(responseUser.first_name)
       setLastName(responseUser.last_name)
       setEmail(responseUser.email)
