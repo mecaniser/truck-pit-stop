@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import { useAuthStore } from '../stores/authStore'
@@ -80,7 +80,12 @@ const quickBooksConnection = {
   last_webhook_error: null,
 }
 
-function renderPage(initialEntry = '/dashboard/settings') {
+function HistoryProbe() {
+  const navigate = useNavigate()
+  return <><output data-testid="settings-url">{useLocation().search}</output><button onClick={() => navigate(-1)}>Browser Back</button></>
+}
+
+function renderPage(initialEntry = '/dashboard/settings', withHistory = false) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -92,6 +97,7 @@ function renderPage(initialEntry = '/dashboard/settings') {
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]}>
         <UnifiedSettingsPage />
+        {withHistory && <HistoryProbe />}
       </MemoryRouter>
     </QueryClientProvider>
   )
@@ -130,6 +136,18 @@ describe('UnifiedSettingsPage garage logo import', () => {
       refreshToken: 'refresh',
       isAuthenticated: true,
     })
+  })
+
+  it('keeps the selected section on a fresh visit and restores it with browser Back', async () => {
+    const user = userEvent.setup()
+    renderPage('/dashboard/settings?section=security', true)
+    const sidebar = within(document.querySelector<HTMLElement>('.db-settings-sidebar')!)
+    const security = sidebar.getByRole('button', { name: 'Security' })
+    expect(security).toHaveAttribute('data-active', 'true')
+    await user.click(sidebar.getByRole('button', { name: 'Shop Profile' }))
+    expect(screen.getByTestId('settings-url')).toHaveTextContent('section=garageProfile')
+    await user.click(screen.getByRole('button', { name: 'Browser Back' }))
+    expect(security).toHaveAttribute('data-active', 'true')
   })
 
   it('saves and clears the customer invoice review URL', async () => {
@@ -444,6 +462,13 @@ describe('UnifiedSettingsPage payment disclosures', () => {
     }
     expect(apiMocks.put).not.toHaveBeenCalled()
     expect(apiMocks.post).not.toHaveBeenCalled()
+  })
+
+  it('resolves a restricted section URL to Profile without reading protected settings', async () => {
+    useAuthStore.setState({ user: { ...useAuthStore.getState().user!, role: 'garage_admin', permissions: {} } })
+    renderPage('/dashboard/settings?section=payments')
+    expect(await screen.findByRole('button', { name: 'Edit Profile' })).toBeVisible()
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/stripe/connect/status')
   })
 
   it('does not mount payment controls through an OAuth return without permission', async () => {
