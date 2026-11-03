@@ -147,6 +147,8 @@ jobs:
   frontend-dependencies:
     name: Prepare frontend dependencies
     needs: migration-graph
+    outputs:
+      node_version: ${{ steps.frontend-node.outputs.version }}
     # PRs use standard hosted capacity; local slots serve scheduled/manual
     # regression only. VM isolation remains the local security boundary.
     runs-on: ${{ fromJSON(needs.migration-graph.outputs.frontend_required != 'false' && github.event_name != 'pull_request' && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-24.04"]') }}
@@ -162,6 +164,10 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - name: Record installed frontend Node version
+        id: frontend-node
+        if: needs.migration-graph.outputs.frontend_required != 'false'
+        run: node -e "require('node:fs').appendFileSync(process.env.GITHUB_OUTPUT, 'version=' + process.versions.node + '\n')"
       - name: Install dependencies
         if: needs.migration-graph.outputs.frontend_required != 'false'
         working-directory: frontend
@@ -205,7 +211,7 @@ jobs:
       - uses: actions/setup-node@v4
         if: needs.migration-graph.outputs.frontend_required != 'false'
         with:
-          node-version: '22'
+          node-version: ${{ needs.frontend-dependencies.outputs.node_version }}
       - uses: actions/download-artifact@v4
         if: needs.migration-graph.outputs.frontend_required != 'false'
         with:
@@ -255,7 +261,7 @@ jobs:
       - uses: actions/setup-node@v4
         if: needs.migration-graph.outputs.frontend_required != 'false'
         with:
-          node-version: '22'
+          node-version: ${{ needs.frontend-dependencies.outputs.node_version }}
       - uses: actions/download-artifact@v4
         if: needs.migration-graph.outputs.frontend_required != 'false'
         with:
@@ -272,7 +278,7 @@ jobs:
 
   playwright-smoke:
     name: Playwright smoke
-    needs: [migration-graph, frontend-checks, backend-tests]
+    needs: [migration-graph, frontend-dependencies, frontend-checks, backend-tests]
     # PRs use standard hosted capacity; local slots serve scheduled/manual
     # regression only. VM isolation remains the local security boundary.
     runs-on: ${{ fromJSON(needs.migration-graph.outputs.smoke_required != 'false' && github.event_name != 'pull_request' && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-24.04"]') }}
@@ -323,7 +329,7 @@ jobs:
       - uses: actions/setup-node@v4
         if: needs.migration-graph.outputs.smoke_required != 'false'
         with:
-          node-version: '22'
+          node-version: ${{ needs.frontend-dependencies.outputs.node_version }}
           cache: npm
           cache-dependency-path: e2e/package-lock.json
       - name: Install backend dependencies
