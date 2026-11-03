@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, ForeignKey, Text, Enum as SQLEnum, DateTime, Numeric
+from sqlalchemy import Column, String, Integer, ForeignKey, Text, Enum as SQLEnum, DateTime, Numeric, UniqueConstraint, ForeignKeyConstraint, CheckConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 import enum
@@ -17,6 +17,26 @@ class AppointmentStatus(str, enum.Enum):
 class Appointment(BaseModel):
     """Customer appointment for a service"""
     __tablename__ = "appointments"
+    __table_args__ = (
+        UniqueConstraint('tenant_id', 'id', name='uq_booking_appointment_tenant_id'),
+        CheckConstraint("booking_payment_version IS NULL OR (booking_payment_version=1 AND booking_kind='reserve' AND booking_payment_state IS NOT NULL AND booking_payment_state IN ('unpaid_hold','payment_processing','paid','expired_unpaid','payment_received_review','refund_pending','refunded') AND booking_version IS NOT NULL AND booking_version>=1 AND hold_expires_at IS NOT NULL AND price_snapshot_sha256 IS NOT NULL AND length(price_snapshot_sha256)=64 AND booking_idempotency_key IS NOT NULL AND booking_request_sha256 IS NOT NULL AND booking_currency='usd' AND price>=0.50 AND booking_provider_configuration_version IS NOT NULL AND booking_provider_environment IS NOT NULL AND booking_provider_environment IN ('sandbox','production'))",name="ck_verified_booking_snapshot"),
+        UniqueConstraint('tenant_id', 'booking_idempotency_key', name='uq_booking_reservation_request'),
+        ForeignKeyConstraint(['tenant_id','booking_provider_configuration_version'], ['tenant_payment_provider_configurations.tenant_id','tenant_payment_provider_configurations.version'], name='fk_booking_reservation_configuration'),
+        ForeignKeyConstraint(['tenant_id','confirmed_receipt_id'], ['booking_receipts.tenant_id','booking_receipts.id'], use_alter=True, name='fk_booking_confirmed_receipt'),
+    )
+    booking_kind = Column(String(16), nullable=True)
+    booking_payment_version = Column(Integer, nullable=True)
+    booking_payment_state = Column(String(32), nullable=True)
+    booking_version = Column(Integer, nullable=True)
+    hold_expires_at = Column(DateTime(timezone=True), nullable=True)
+    price_snapshot_sha256 = Column(String(64), nullable=True)
+    booking_idempotency_key = Column(String(200), nullable=True)
+    booking_request_sha256 = Column(String(64), nullable=True)
+    confirmed_receipt_id = Column(UUID(as_uuid=True), nullable=True)
+    booking_currency = Column(String(3), nullable=True)
+    booking_provider_configuration_version = Column(Integer, nullable=True)
+    booking_provider_environment = Column(String(24), nullable=True)
+
     
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     tenant = relationship("Tenant", backref="appointments")

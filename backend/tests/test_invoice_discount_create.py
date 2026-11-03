@@ -22,6 +22,9 @@ def completed_order_guard(monkeypatch):
     # These query-count fakes own invoice discount math. The real-DB operation
     # suite covers the manual invoice route rejecting incomplete work.
     monkeypatch.setattr("app.services.service_checklist.guard_completion", AsyncMock())
+    # Pricing uses a query-limited fake; actual booking admission is tested
+    # against the database in test_booking_invoice_guard.py.
+    monkeypatch.setattr("app.services.booking_invoice_guard.require_booking_prepayment_resolved", AsyncMock())
 
 
 class _ScalarResult:

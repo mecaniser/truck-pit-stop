@@ -1668,9 +1668,10 @@ export default function CustomerPortalPage() {
   const isInvoicePage = location.pathname.startsWith('/portal/invoices/')
 
   return (
-    <div data-db-touch-controls className="fixed inset-0 grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-[#0d1018] font-['Helvetica_Neue',Helvetica,Arial,sans-serif] text-[#eceef4]">
+    <div data-customer-portal data-db-touch-controls className="fixed inset-0 grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-[#0d1018] font-['Helvetica_Neue',Helvetica,Arial,sans-serif] text-[#eceef4]">
       <PortalDocumentTitle portalBrandName={portalBrandName} />
       <nav
+        aria-label="Customer portal navigation"
         className="relative z-50 min-w-0 shrink-0 border-b border-[#1e2432] bg-[#0a0d14]"
         style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
@@ -1695,6 +1696,7 @@ export default function CustomerPortalPage() {
               {navLinks.map(link => (
                 <Link data-db-control="action"
                   key={link.to}
+                  aria-current={isActive(link.to, link.exact) ? 'page' : undefined}
                   to={scopedPortalPath(link.to,requestedVehicle)}
                   className={`flex h-[34px] items-center rounded-lg px-3 text-[13px] font-bold ${
                     isActive(link.to, link.exact)

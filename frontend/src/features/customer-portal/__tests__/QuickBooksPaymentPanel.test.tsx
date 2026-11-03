@@ -1,11 +1,13 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import toast from 'react-hot-toast'
 
 import QuickBooksPaymentPanel from '../QuickBooksPaymentPanel'
 
 vi.mock('react-hot-toast', () => ({ default: { success: vi.fn(), error: vi.fn() } }))
 
 describe('QuickBooksPaymentPanel theme', () => {
+  beforeEach(() => vi.clearAllMocks())
   it('uses light invoice fields when rendered inside the guest invoice', () => {
     render(
       <QuickBooksPaymentPanel
@@ -113,6 +115,22 @@ describe('QuickBooksPaymentPanel theme', () => {
         address: { country: 'US', postalCode: '53703-1234' },
       },
     })
+    fetchSpy.mockRestore()
+  })
+
+  it.each([false, true])('lets a booking own its verified result without changing default invoice feedback (owns result=%s)', async ownsResult => {
+    const onSuccess = vi.fn()
+    const onToken = vi.fn().mockResolvedValue(undefined)
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => ({ value: 'opaque-token' }) } as Response)
+    render(<QuickBooksPaymentPanel tokenUrl="https://sandbox.api.intuit.com/quickbooks/v4/payments/tokens" onToken={onToken} onSuccess={onSuccess} onTokenHandlesResult={ownsResult} />)
+    for (const [label, value] of [['Name on card', 'Sample Customer'], ['Card number', '4242424242424242'], ['Expiry', '122030'], ['Security code', '123'], ['Billing ZIP code', '53703']]) {
+      fireEvent.change(screen.getByLabelText(label), { target: { value } })
+    }
+    fireEvent.click(screen.getByRole('button', { name: /submit secure payment/i }))
+    await waitFor(() => expect(onToken).toHaveBeenCalledWith('opaque-token'))
+    await waitFor(() => expect(screen.getByRole('button', { name: /submit secure payment/i })).toBeEnabled())
+    expect(toast.success).toHaveBeenCalledTimes(ownsResult ? 0 : 1)
+    expect(onSuccess).toHaveBeenCalledTimes(ownsResult ? 0 : 1)
     fetchSpy.mockRestore()
   })
 })

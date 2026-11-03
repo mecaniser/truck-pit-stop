@@ -16,7 +16,11 @@
     "src/hooks/__tests__/useWebSocket.test.tsx",
     "src/features/repair-orders/__tests__/RepairOrdersPage.abort.test.tsx",
     "src/features/repair-orders/__tests__/PriceBuilderPanel.pending-feedback.test.tsx",
-    "src/lib/__tests__/apiCancellation.test.ts"
+    "src/lib/__tests__/apiCancellation.test.ts",
+    "src/features/booking/__tests__/PortalBookingFlow.test.tsx",
+    "src/features/booking/__tests__/BookingCheckout.test.tsx",
+    "src/features/appointments/__tests__/PortalVisits.test.tsx",
+    "src/features/customer-portal/__tests__/QuickBooksPaymentPanel.test.tsx"
   ],
   "backend": [
     "tests/test_schema_preflight.py",
@@ -36,6 +40,11 @@
     "tests/test_ro_pricing_discounts.py",
     "tests/test_discount_cost_floor.py",
     "tests/test_workspace_typeaheads.py",
-    "tests/test_request_performance.py"
+    "tests/test_request_performance.py",
+    "tests/test_appointment_payment_unavailable.py",
+    "tests/test_booking_payment_provider.py",
+    "tests/test_verified_booking_flow.py",
+    "tests/test_booking_invoice_guard.py",
+    "tests/test_booking_worker_runtime.py"
   ]
 }

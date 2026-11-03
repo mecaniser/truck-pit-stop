@@ -2311,7 +2311,7 @@ async def apply_customer_credit(
     ).scalar_one_or_none()
     settlement = await get_or_create_settlement(db, invoice=invoice, customer_id=customer_id, tenant=tenant, lock=True)
     from app.services.invoice_accounting_policy import require_standard_payment
-    await require_standard_payment(db, invoice)
+    await require_standard_payment(db, invoice, new_entry=existing is None)
     if existing:
         if existing.request_hash != request_hash:
             raise SettlementDomainError(

@@ -706,6 +706,8 @@ async def auto_create_invoice_for_order(
     latest_invoice = latest_result.scalar_one_or_none()
     if latest_invoice and latest_invoice.status != InvoiceStatus.CANCELLED:
         return None
+    from app.services.booking_invoice_guard import require_booking_prepayment_resolved
+    await require_booking_prepayment_resolved(db, order.tenant_id, order.id)
     from app.services.service_checklist import guard_completion
     await guard_completion(db, order)
     supersedes_invoice_id = latest_invoice.id if latest_invoice else None
@@ -865,6 +867,8 @@ async def create_invoice(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="An invoice already exists for this repair order",
         )
+    from app.services.booking_invoice_guard import require_booking_prepayment_resolved
+    await require_booking_prepayment_resolved(db, order.tenant_id, order.id)
     from app.services.service_checklist import guard_completion
     await guard_completion(db, order)
     supersedes_invoice_id = latest_invoice.id if latest_invoice else None

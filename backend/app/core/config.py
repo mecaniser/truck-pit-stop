@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     # Select the new accounting composition only for pristine new settlements.
     # Existing financial records keep their immutable legacy composition.
     DB048_GROSS_QBO_ACCOUNTING_ENABLED: bool = False
+    BOOKING_PAYMENTS_ENABLED: bool = False
+    BOOKING_PAYMENTS_APPROVED_TENANT_IDS: str = ""
     STRIPE_CONNECT_INVOICE_PAYMENTS_APPROVED: bool = False
     QUICKBOOKS_PAYMENTS_INVOICE_PAYMENTS_APPROVED: bool = False
     # Comma-separated tenant UUIDs allowed to initiate QBP charges. Empty is

@@ -18,6 +18,7 @@ from slowapi.errors import RateLimitExceeded
 from app.api.v1.endpoints import invoice_access, payments
 from app.core.dependencies import get_current_active_user, get_db
 from app.core.rate_limit import limiter
+from app.db.models.appointment import Appointment
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.invoice_settlement import InvoiceSettlement
@@ -57,6 +58,20 @@ class _FakePaymentsSession:
             assert self.invoice.tenant_id in statement.compile().params.values()
             return _ScalarResult(self.tenant)
         raise AssertionError(f"Unexpected query entity: {entity}")
+
+    async def scalars(self, statement):
+        entity = statement.column_descriptions[0].get("entity")
+        self.queried_entities.append(entity)
+        assert entity is Appointment, f"Unexpected scalar-list query entity: {entity}"
+        assert statement.column_descriptions[0].get("name") == "id"
+        assert {self.invoice.tenant_id, self.invoice.repair_order_id}.issubset(
+            set(statement.compile().params.values()))
+        # These legacy-invoice fixtures have no linked booking prepayment.
+        # Keep the production admission guard and its tenant/order lookup active.
+        class EmptyBookings:
+            def all(self):
+                return []
+        return EmptyBookings()
 
     async def scalar(self, statement):
         entity = statement.column_descriptions[0].get("entity")

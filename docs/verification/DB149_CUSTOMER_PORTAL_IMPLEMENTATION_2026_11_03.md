@@ -39,3 +39,64 @@ Preview approval is required before merge/deployment. Protected exact-head CI an
 Lint scope: changed-line baseline gate passes. Explicit whole-file ESLint across all edited/new TypeScript files additionally reports three unchanged pre-existing violations: ProfileSettingsPage catch-any lines111/291 and types/index.ts empty interface455. No new violations were introduced; those unrelated lines were preserved.
 
 Integration: main advanced to `8e1c264e` (PR764). Merged into this branch preserving both board histories and the upstream logout/session changes. Only the delivery board conflicted; ProfileSettingsPage automatically retained both its scope-preserving navigation and upstream logout handling. Recheck integrated runtime, focused suites, build and exact-head CI before release.
+
+
+## Superseding booking/payment handoff — November 3, 2026
+
+The initial read-only UI acceptance above is historical. Deeper checkout review found a pre-existing simulated-payment handler. Its earlier GO was revoked and PR767 returned to draft. No simulation was submitted during review. The following implementation supersedes preservation of that unsafe contract.
+
+### Acceptance fixed before implementation
+
+- One choice after service selection: **Reserve a time** or **Request a visit**, retained on Back. A single known truck is not an extra decision; fleet scope stays explicit and authorized.
+- Requests have an optional preferred date and no payment or reserved start time. They appear separately as awaiting shop confirmation.
+- Reservations hold a server-priced available start time for15 minutes. Only verified full payment and a fresh authorized confirmed/paid/receipt snapshot permit “Time reserved.”
+- Unknown payment outcomes prevent another charge. Refresh resumes the same reservation. Expiry releases only proven-unpaid capacity; late or uncertain money never silently reclaims a released slot.
+- Exact tenant/customer/configuration/account/environment/amount/currency binding; inactive catalog entries cannot hide an existing receipt. Existing invoice settlement callbacks remain functional.
+- Prepayments remain booking liabilities, separate from invoice sales. A linked repair order cannot issue or collect another full invoice while unapplied funds or unknown money remain. Credit-application and refund writers are outside this change; staff API exposes unapplied money for review.
+- No real payments, real booking submissions, production financial edits, production configuration changes, merge or deployment during preview work.
+
+### Current source and safety evidence
+
+Architecture: [frozen contract](../contracts/portal-verified-booking-prepayment-v1.md). Additive migration198; no backfill. Booking payment capability defaults off, requires explicit tenant admission and eligible selected tenant payment configuration. QuickBooks Payments and Stripe Connect use bound provider evidence. No global Stripe fallback or unconditional confirmation endpoint remains.
+
+Independent reviewer source QA/Security GO:117 backend focused tests,6 actual disposable PostgreSQL migration/race cases,55 frontend. Owner backend suite112 plus one additional actual PostgreSQL cancellation race pass. Provider adapter23 cases and invoice guard/cash/credit/pricing82 combined pass. Counts overlap and must not be summed.
+
+Full frontend240 files/2613 tests pass with two workers. Focused booking/visits/QBO/login73 pass. Production build, TypeScript, controls and changed-line lint pass. Whole-file ESLint has three unchanged main-baseline violations in ProfileSettingsPage and shared types; no new violation. New booking safety suites promoted into the protected critical test manifest.
+
+Database constraints enforce tenant-composite relationships, frozen snapshots/attempts/receipts/events and v1 paid-confirmation evidence. Application assertions additionally bind cross-row customer, amount, currency and exact configuration/environment. The latter are not claimed as a complete database cross-row constraint system.
+
+### Current actual application acceptance
+
+Aligned implementation frontend: `http://127.0.0.1:5173`, PID56652, `/private/tmp/portal-task-first-implementation/frontend`, proxy8015. API8015 uses read-only current backend source bind, test database `portal_booking_qa`, final migration198, isolated Docker network with outbound provider access unavailable. Original8014 database/schema197 and unrelated8000 remain preserved. Private runtime receipt: `/tmp/portal-booking-qa-runtime/final-launch-receipt.json`.
+
+Normal customer login and actual API/browser journeys checked at1440×1000 desktop and390×1100 mobile: single-truck Today, fleet Today and selector, scoped search and service choice; one-time booking choice; request optional-date/details/review/send/visits; reservation slot/details/review/hold creation/card form; keyboard Next/Back focus; refresh recovers the same hold; a different customer sees Reservation unavailable. Mobile choice and checkout have no horizontal overflow; checkout actions measure44px. Final desktop recovered checkout is capped at640px rather than stretching card fields across the full page. Removed duplicate vehicle identity in service discovery.
+
+Only fictional request/hold records were created in the explicitly disposable `portal_booking_qa` database. No card data was entered or tokenized, and no Pay button was submitted. Payment success/unknown/refund races were tested with mocked providers and disposable test schemas, not live provider certification.
+
+Current captures in the existing local `portal-implementation` artifact directory:
+- `two-path-choice-desktop.png`, `two-path-choice-mobile.png`
+- `visit-request-review-desktop.png`, `visit-request-review-mobile.png`
+- `reservation-review-desktop.png`, `reservation-review-mobile.png`
+- `reservation-checkout-desktop.png`, `reservation-checkout-mobile.png`
+- `final-single-home-desktop.png`, `final-fleet-home-desktop.png`, `final-fleet-home-mobile.png`
+
+### Impeccable and Emil review
+
+The original bounded Impeccable baseline was16/20; it is not a comprehensive payment-safety score. P0 simulated payment path replaced and independently re-reviewed. P2 keyboard focus corrected and actual Enter/Back transitions land on the next heading. P3 prototype CSS debt removed:16 unused class families and superseded mobile declarations; raw stylesheet reduced from21,177 bytes to roughly17KB. Existing tenant palette preserved; measured reviewed color pairs exceed AA normal-text contrast, without claiming formal accessibility certification.
+
+| Before | After | Why |
+|---|---|---|
+| Booking choice repeated or unclear payment authority | One post-service choice; verified reservation and unpaid request | Familiar scheduling pattern with one meaningful decision |
+| Keyboard step transition loses focus | Focus moves to the new heading on deliberate progression | Preserve position without stealing focus on refetch |
+| Recovered card form spans the desktop |640px centered checkout; mobile full available width | Readable field lengths and a stable action area |
+| Prototype selectors, touch-hover and duplicate vehicle text | Removed unused CSS, pointer-gated hover, one vehicle label | Reduce visual and maintenance noise |
+
+No decorative entrance or repeated-action motion added. Press feedback is immediate; reduced-motion preference remains respected. This remains a preview and source-review result, not a merge/deployment or live payment-readiness claim.
+
+
+Final runtime expiry acceptance: one additional near-expiry synthetic hold was created through the real reservation service with a test-process clock. The real expiry service persisted `expired_unpaid`, wrote its expiry event, and released the exact09:00 slot. Actual desktop/mobile screens show Checkout expired with no card form or Pay action; expired amounts are labeled Reservation total. Original browser-created hold remained byte-for-byte unchanged. QA final counts:2 appointments,1 visit request,3 booking events;0 payment attempts/receipts/invoices/settlements/payments/ledger/accounting/outbox. Provider create/retrieve counters0/0. Original8014 nine protected projected-column hashes match the pre-QA baseline. Private receipts: `expiry-final-receipt.json` and `final-browser-counts-receipt.json` under the QA runtime directory. Additional captures: `reservation-expired-desktop.png`, `reservation-expired-mobile.png`.
+
+Independent final consolidated Impeccable/Emil delta review retained GO with no P1: desktop/mobile choice and checkout captures,640px checkout cap, vehicle duplicate removal and critical-manifest promotion. Review is source/isolated-runtime bounded; no live provider certification or release assertion.
+
+
+Production activation limit: this repository currently has no appointment-to-repair-order linking writer and no booking-receipt application writer. The exact-linked-RO guard is independently tested, but it does not infer relationships for separately created repair orders. Therefore this preview is not evidence of a complete prepaid-booking-to-final-invoice accounting workflow. Production booking payment gates must remain off until explicit liability ownership and the reviewed link/application workflow are ready. No production flag was enabled. This is an activation blocker, not a hidden completed follow-up.

@@ -13,6 +13,7 @@ import { Spinner } from '@/components/ui'
 import api from '@/lib/api'
 import type { Appointment, Vehicle } from '@/types'
 import { DateBlock, formatMoney, Pill } from '@/features/customer-portal/portal-ui'
+import type { VisitRequestResult } from '@/features/booking/booking-contract'
 
 const statusStyles: Record<string, string> = {
   pending: 'border-[#8b7cf7]/35 bg-[#8b7cf7]/10 text-[#c9bfff]',
@@ -36,8 +37,10 @@ export default function AppointmentsPage() {
     queryFn: ({ signal }) => getPortalItems<Appointment>('/appointments', {}, signal),
   })
   const vehiclesQuery = useQuery({queryKey:['vehicles',user?.tenant_id,user?.customer_id],queryFn: ({ signal }) => getPortalItems<Vehicle>('/vehicles', {}, signal)})
+  const requestsQuery = useQuery({ queryKey: ['visit-requests', user?.tenant_id, user?.customer_id], queryFn: ({ signal }) => getPortalItems<VisitRequestResult>('/visit-requests', {}, signal) })
   const vehicles=vehiclesQuery.data || []
   const scope=resolveVehicleScope(vehicles,requestedVehicle)
+  const requests = requestsQuery.isError ? [] : (requestsQuery.data || []).filter(request => request.status !== 'withdrawn' && (!scope.vehicleId || !request.vehicle_id || request.vehicle_id === scope.vehicleId))
 
   const cancelMutation = useMutation({
     mutationFn: async (appointmentId: string) => api.post(`/appointments/${appointmentId}/cancel`),
@@ -66,7 +69,7 @@ export default function AppointmentsPage() {
         <div>
           <h1 className="text-2xl font-extrabold tracking-[-0.01em]">Appointments</h1>
           <p className="mt-1 text-[13px] text-[#8b92a5]">
-            {scope.vehicle ? `Visits for ${vehicleIdentity(scope.vehicle)} and your account` : 'Your scheduled service visits'}
+            {scope.vehicle ? `Visits for ${vehicleIdentity(scope.vehicle)} and your account` : 'Your reservations and visit requests'}
           </p>
         </div>
         <div className="flex gap-2 overflow-x-auto">
@@ -77,6 +80,11 @@ export default function AppointmentsPage() {
           ))}
         </div>
       </header>
+
+      <section aria-label="Visit requests" className="space-y-3">
+        <h2 className="text-base font-bold">Awaiting shop confirmation</h2>
+        {requestsQuery.isLoading ? <p role="status">Loading visit requests…</p> : requestsQuery.isError ? <div role="alert"><p>Visit requests couldn’t load.</p><ControlButton className="cp-secondary" onClick={() => { void requestsQuery.refetch() }}>Try requests again</ControlButton></div> : requests.length ? requests.map(request => <article key={request.id} className="cp-panel p-4 space-y-2"><h3 className="font-bold">{request.service_name || 'Service visit request'}</h3><p className="text-sm text-[#a2a9bb]">{vehicles.some(vehicle => vehicle.id === request.vehicle_id) ? vehicleIdentity(vehicles.find(vehicle => vehicle.id === request.vehicle_id)!) : 'Vehicle not specified'}</p><p className="text-sm">The shop will confirm availability. No start time is reserved.</p>{request.preferred_date && <p className="text-sm">Preferred date: <time dateTime={request.preferred_date}>{format(new Date(`${request.preferred_date}T12:00:00`), 'MMM d, yyyy')}</time></p>}<p className="text-xs">Request {request.request_reference}</p></article>) : <p className="text-sm text-[#a2a9bb]">No visit requests awaiting confirmation.</p>}
+      </section>
 
       {filtered.length === 0 ? (
         <section className="rounded-2xl border border-[#232939] bg-[#161a26] px-5 py-9 text-center sm:px-6">
@@ -91,8 +99,12 @@ export default function AppointmentsPage() {
       ) : (
         <div className="space-y-2">
           {filtered.map(appointment => {
+            const paymentState = appointment.booking_payment_state
+            const verifiedBooking = Boolean(paymentState)
+            const paymentLabels: Record<string, string> = { unpaid_hold: 'Payment needed · time not confirmed', expired_unpaid: 'Checkout expired', payment_processing: 'Payment verification pending', payment_received_review: 'Payment received · shop review needed', refund_pending: 'Refund review pending', refunded: 'Refund recorded', paid: appointment.status === 'confirmed' && appointment.receipt ? 'Confirmed · payment verified' : 'Payment received · confirmation unavailable' }
             const canCancel = ['pending', 'confirmed'].includes(appointment.status)
               && new Date(appointment.scheduled_at) >= new Date()
+              && !verifiedBooking
             return (
               <article key={appointment.id} className="flex items-center gap-3 rounded-xl border border-[#232939] bg-[#161a26] p-3 hover:border-[#343b52] sm:gap-4 sm:px-4">
                 <DateBlock value={appointment.scheduled_at} />
@@ -101,14 +113,15 @@ export default function AppointmentsPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="truncate text-[13px] font-bold sm:text-sm">{appointment.service_name}</h2>
                     <span className={`rounded-md border px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.05em] ${statusStyles[appointment.status] || statusStyles.pending}`}>
-                      {appointment.status.replace('_', ' ')}
+                      {paymentState ? paymentLabels[paymentState] || 'Reservation needs review' : appointment.status.replace('_', ' ')}
                     </span>
                   </div>
                   <p className="mt-1 text-xs text-[#8b92a5]">{format(new Date(appointment.scheduled_at), 'h:mm a')} · {appointment.duration_minutes} min</p>
-                  <p className="mt-0.5 truncate text-[11px] text-[#5c6375]">Confirmation {appointment.confirmation_number}</p>
+                  <p className="mt-0.5 truncate text-[11px] text-[#a2a9bb]">{verifiedBooking ? 'Booking reference' : 'Confirmation'} {appointment.confirmation_number}</p>
                 </div>
                 <div className="shrink-0 text-right">
                   <p className="text-sm font-extrabold tabular-nums">{formatMoney(appointment.price)}</p>
+                  {verifiedBooking && <Link className="cp-text" to={scopedPortalPath(`/portal/book/${encodeURIComponent(appointment.service_id)}?reservation_id=${encodeURIComponent(appointment.id)}`, appointment.vehicle_id)}>Check reservation</Link>}
                   {canCancel && (
                     <ControlButton
                       type="button"

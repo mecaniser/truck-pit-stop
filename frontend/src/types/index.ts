@@ -636,6 +636,14 @@ export interface Appointment {
   customer_notes: string | null
   paid_at: string | null
   created_at: string
+  booking_kind?: 'reserve'
+  booking_payment_version?: number | null
+  booking_payment_state?: string | null
+  hold_expires_at?: string | null
+  version?: number
+  price_snapshot_sha256?: string
+  currency?: string
+  receipt?: { id?: string; amount?: string; refunded_amount?: string; currency?: string } | null
 }
 
 export interface TimeSlot {

@@ -112,6 +112,9 @@ async def require_exportable_invoice(invoice):
 async def require_standard_payment(db, invoice, *, verified_provider_fact=False, new_entry=False, attempt=None):
     from app.services.invoice_settlement_service import SettlementDomainError
     policy = await locked_policy(db, invoice)
+    if new_entry and not verified_provider_fact:
+        from app.services.booking_invoice_guard import require_booking_prepayment_resolved
+        await require_booking_prepayment_resolved(db, invoice.tenant_id, invoice.repair_order_id)
     if policy == "source_collection_hold":
         from app.services.source_debt_handoff import invoice_handoff
         await invoice_handoff(db, invoice, require_active=not verified_provider_fact, check_source=not verified_provider_fact)
