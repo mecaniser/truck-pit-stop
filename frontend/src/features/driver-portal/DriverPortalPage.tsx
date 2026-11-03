@@ -54,7 +54,7 @@ function equipmentTitle(item: Equipment) {
 
 function DriverHome() {
   const navigate = useNavigate()
-  const clearSession = useAuthStore((state) => state.clearSession)
+  const logout = useAuthStore((state) => state.logout)
   const [profile, setProfile] = useState<DriverProfile | null>(null)
   const [equipment, setEquipment] = useState<Equipment[]>([])
   const [inspections, setInspections] = useState<Inspection[]>([])
@@ -202,8 +202,9 @@ function DriverHome() {
           <h1>{profile ? `${profile.first_name} ${profile.last_name}` : 'My equipment'}</h1>
           <p>Confirm custody, complete your pre-trip inspection, and report conditions as they happen.</p>
         </div>
-        <ControlButton controlKind="icon" type="button" className="driver-icon-button" onClick={async () => {
-          try { await api.post('/auth/workos/logout') } finally { clearSession(); window.location.assign('/driver/login') }
+        <ControlButton controlKind="icon" type="button" className="driver-icon-button" onClick={() => {
+          void logout()
+          navigate('/driver/login', { replace: true })
         }} aria-label="Sign out"><LogOut /></ControlButton>
       </header>
 

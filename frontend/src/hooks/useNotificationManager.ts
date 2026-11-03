@@ -8,7 +8,7 @@
  */
 import { useCallback, useRef, useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import { useAuthStore } from '../stores/authStore'
+import { getAuthenticatedSessionIdentity, useAuthStore } from '../stores/authStore'
 
 // Event types that can trigger notifications
 export type NotificationEventType =
@@ -113,6 +113,7 @@ export function useNotificationManager(
   const { showToasts = true, toastDelay = 800, dedupeWindow = 2000 } = options
   
   const { user } = useAuthStore()
+  const session = useAuthStore(getAuthenticatedSessionIdentity)
   const isMechanic = user?.role === 'mechanic'
   
   // Queue state
@@ -134,7 +135,7 @@ export function useNotificationManager(
   
   // Process the notification queue
   const processQueue = useCallback(() => {
-    if (isProcessing.current || queue.current.length === 0) return
+    if (!session || session !== getAuthenticatedSessionIdentity(useAuthStore.getState()) || isProcessing.current || queue.current.length === 0) return
     
     isProcessing.current = true
     const notification = queue.current.shift()!
@@ -156,7 +157,7 @@ export function useNotificationManager(
       isProcessing.current = false
       processQueue()
     }, toastDelay)
-  }, [showToasts, toastDelay])
+  }, [session, showToasts, toastDelay])
   
   // Add notification to queue with deduplication
   const addToQueue = useCallback((notification: QueuedNotification) => {
@@ -200,6 +201,7 @@ export function useNotificationManager(
   
   // Main notify function
   const notify = useCallback((event: NotificationEvent) => {
+    if (!session || session !== getAuthenticatedSessionIdentity(useAuthStore.getState())) return
     // Filter out events mechanics shouldn't see
     if (isMechanic) {
       if (MECHANIC_EXCLUDED_EVENTS.includes(event.type)) {
@@ -299,7 +301,7 @@ export function useNotificationManager(
         break
       }
     }
-  }, [isMechanic, addToQueue, addBanner])
+  }, [session, isMechanic, addToQueue, addBanner])
   
   return {
     notify,

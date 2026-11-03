@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { useAuthStore } from '../stores/authStore'
+import { syncStoredSession, useAuthStore } from '../stores/authStore'
 import { requestTokenRefresh, requestWorkOSSessionRefresh } from './authRefresh'
 import { endRejectedSession, isSessionRejection, setSessionRecovering } from './sessionRecovery'
 
@@ -7,6 +7,8 @@ declare module 'axios' {
   interface AxiosRequestConfig {
     /** One-use OAuth callbacks must never be replayed by session renewal. */
     skipAuthRefresh?: boolean
+    /** Captured request intent; reject dispatch under a replacement session. */
+    authSessionEpoch?: number
   }
 }
 
@@ -19,11 +21,15 @@ const api = axios.create({
   timeout: 30000, // 30 second timeout
 })
 
-// Request interceptor to add auth token (fallback for non-cookie scenarios)
+// Bind queued requests to their session before adding fallback auth credentials.
 api.interceptors.request.use(
   (config) => {
+    syncStoredSession()
     const state = useAuthStore.getState()
-    ;(config as typeof config & { authSessionEpoch?: number }).authSessionEpoch = state.authSessionEpoch
+    if (config.authSessionEpoch !== undefined && config.authSessionEpoch !== state.authSessionEpoch) {
+      throw new axios.CanceledError('Session changed before request dispatch')
+    }
+    config.authSessionEpoch = state.authSessionEpoch
     const token = state.token
     const hasAuthHeader = Boolean(config.headers?.Authorization || config.headers?.authorization)
     // Only add Authorization header if we have a token and cookies might not be set yet

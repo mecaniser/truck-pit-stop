@@ -33,13 +33,15 @@ interface AuthState {
   isAuthenticated: boolean
   authProvider: 'legacy' | 'workos' | null
   authSessionEpoch: number
+  browserSessionId: string | null
+  explicitlySignedOut: boolean
   logoutInProgress: boolean
   webSocketRecoverySessionKey: string | null
   login: (token: string, refreshToken: string, user: User) => void
   establishCookieSession: (user: User) => void
   logout: () => Promise<void>
   clearSession: () => void
-  setUser: (user: User) => void
+  setUser: (user: User, expectedEpoch?: number) => void
   setTokens: (token: string, refreshToken: string) => void
   claimWebSocketAuthRecovery: () => boolean
 }
@@ -66,13 +68,31 @@ export function getAuthenticatedSessionIdentity(
   ])
 }
 
+const signedOutSession = { user: null, token: null, refreshToken: null, authProvider: null, isAuthenticated: false }
+const storageKey = 'auth-storage'
+
+// Store only a comparison key in memory. Credentials can rotate without changing
+// the session. Older persisted sessions have no browserSessionId, so also compare
+// the principal and access fields.
+function boundaryKey(state?: Partial<AuthState>) {
+  return JSON.stringify([state?.browserSessionId, state?.explicitlySignedOut === true, state?.isAuthenticated,
+    state?.authProvider, state?.user?.id, state?.user?.tenant_id, state?.user?.role, state?.user?.customer_id,
+    state?.user?.is_active, state?.user?.permissions?.payments])
+}
+let observedBoundary = boundaryKey()
+
 function sanitizePersistedAuthState(state: Partial<AuthState>): Partial<AuthState> {
   const sanitized = {
     ...state,
+    explicitlySignedOut: state.explicitlySignedOut === true,
+    browserSessionId: state.browserSessionId ?? null,
     // These fields coordinate live resources and must never resume from disk.
     authSessionEpoch: 0,
     logoutInProgress: false,
     webSocketRecoverySessionKey: null,
+  }
+  if (state.logoutInProgress || state.explicitlySignedOut) {
+    return { ...sanitized, ...signedOutSession, explicitlySignedOut: true }
   }
   if (sanitized.authProvider === 'workos') {
     // The HttpOnly WorkOS session is revalidated by /auth/me on page load.
@@ -115,6 +135,8 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       authProvider: null,
       authSessionEpoch: 0,
+      browserSessionId: null,
+      explicitlySignedOut: false,
       logoutInProgress: false,
       webSocketRecoverySessionKey: null,
       login: (token, refreshToken, user) => {
@@ -124,7 +146,9 @@ export const useAuthStore = create<AuthState>()(
           refreshToken,
           user,
           isAuthenticated: true,
+          explicitlySignedOut: false,
           authProvider: 'legacy',
+          browserSessionId: crypto.randomUUID(),
           authSessionEpoch: state.authSessionEpoch + 1,
           logoutInProgress: false,
           webSocketRecoverySessionKey: null,
@@ -140,7 +164,12 @@ export const useAuthStore = create<AuthState>()(
           token: null,
           refreshToken: null,
           isAuthenticated: true,
+          explicitlySignedOut: false,
           authProvider: 'workos',
+          // Cookie bootstrap also runs on reload. Keep the same browser session
+          // unless this establishes a different actor or follows explicit logout.
+          browserSessionId: !state.explicitlySignedOut && (!state.user || state.user.id === user.id && state.user.tenant_id === user.tenant_id)
+            ? state.browserSessionId ?? crypto.randomUUID() : crypto.randomUUID(),
           authSessionEpoch: state.authSessionEpoch + 1,
           logoutInProgress: false,
           webSocketRecoverySessionKey: null,
@@ -148,6 +177,7 @@ export const useAuthStore = create<AuthState>()(
         startSessionKeepAlive()
       },
       logout: async () => {
+        if (syncStoredSession()) return
         const session = get()
         if (session.logoutInProgress) return
 
@@ -160,63 +190,56 @@ export const useAuthStore = create<AuthState>()(
         // cannot remain attached to the session during a slow provider logout.
         setSessionRecovering(false)
         stopSessionKeepAlive()
-        set({ authSessionEpoch: logoutEpoch, logoutInProgress: true })
+        set({ authSessionEpoch: logoutEpoch, browserSessionId: crypto.randomUUID(), logoutInProgress: true, explicitlySignedOut: true })
 
-        // Call backend to blacklist token and clear cookies
+        // Revoke the originating session; a replacement epoch cancels queued dispatch.
         try {
           if (endpoint) {
-            await api.post(endpoint)
+            await api.post(endpoint, undefined, { authSessionEpoch: logoutEpoch })
           }
         } catch {
           // Ignore errors - we're logging out anyway
         }
 
-        set((current) => {
-          // A new session may have started while the logout request was slow.
-          if (current.authSessionEpoch !== logoutEpoch || !current.logoutInProgress) return {}
-          return {
-            user: null,
-            token: null,
-            refreshToken: null,
-            isAuthenticated: false,
-            authProvider: null,
-            logoutInProgress: false,
-            webSocketRecoverySessionKey: null,
-          }
-        })
+        // An intervening login, including one in another tab, owns the new session.
+        syncStoredSession()
+        if (get().authSessionEpoch !== logoutEpoch || !get().logoutInProgress) return
+        set({ ...signedOutSession, logoutInProgress: false, webSocketRecoverySessionKey: null })
       },
       clearSession: () => {
+        if (syncStoredSession()) return
         setSessionRecovering(false)
         stopSessionKeepAlive()
         set((state) => ({
-          user: null,
-          token: null,
-          refreshToken: null,
-          isAuthenticated: false,
-          authProvider: null,
+          ...signedOutSession,
+          browserSessionId: crypto.randomUUID(),
           authSessionEpoch: state.authSessionEpoch + 1,
           logoutInProgress: false,
           webSocketRecoverySessionKey: null,
         }))
       },
-      setUser: (user) => set((state) => {
-        const identityChanged = state.user?.id !== user.id
-          || state.user?.tenant_id !== user.tenant_id
-          || state.user?.role !== user.role
-          || state.user?.customer_id !== user.customer_id
-          || state.user?.is_active !== user.is_active
-        return {
+      setUser: (user, expectedEpoch) => {
+        if (syncStoredSession()) return
+        const current = get()
+        if (!current.isAuthenticated || current.logoutInProgress || !current.user) return
+        // Async profile saves belong to their original session. Explicit identity
+        // transitions still replace the principal and reopen the socket.
+        if (expectedEpoch !== undefined && (expectedEpoch !== current.authSessionEpoch ||
+            current.user.id !== user.id || current.user.tenant_id !== user.tenant_id)) return
+        const changed = current.user.id !== user.id || current.user.tenant_id !== user.tenant_id ||
+          current.user.role !== user.role || current.user.customer_id !== user.customer_id ||
+          current.user.is_active !== user.is_active
+        set({
           user,
-          authSessionEpoch: identityChanged
-            ? state.authSessionEpoch + 1
-            : state.authSessionEpoch,
-          webSocketRecoverySessionKey: identityChanged
-            ? null
-            : state.webSocketRecoverySessionKey,
-        }
-      }),
-      setTokens: (token, refreshToken) => set({ token, refreshToken }),
+          authSessionEpoch: current.authSessionEpoch + (changed ? 1 : 0),
+          webSocketRecoverySessionKey: changed ? null : current.webSocketRecoverySessionKey,
+        })
+      },
+      setTokens: (token, refreshToken) => {
+        if (!syncStoredSession() && getAuthenticatedSessionIdentity(get())) set({ token, refreshToken })
+      },
       claimWebSocketAuthRecovery: () => {
+        if (syncStoredSession()) return false
         let claimed = false
         set((state) => {
           const sessionKey = getAuthenticatedSessionIdentity(state)
@@ -231,13 +254,23 @@ export const useAuthStore = create<AuthState>()(
       },
     }),
     {
-      name: 'auth-storage',
+      name: storageKey,
+      // The initiating tab keeps its credential only in memory to revoke it.
+      // Peers and reloads see a signed-out projection before the HTTP response.
+      partialize: state => {
+        const projection = state.logoutInProgress ? { ...state, ...signedOutSession, logoutInProgress: false } : state
+        observedBoundary = boundaryKey(projection)
+        return projection
+      },
       storage: createJSONStorage(() => localStorage),
       merge: (persistedState, currentState) => {
-        const sanitized = sanitizePersistedAuthState((persistedState as Partial<AuthState>) ?? {})
+        const saved = persistedState as Partial<AuthState> | undefined
+        observedBoundary = boundaryKey(saved)
+        const sanitized = sanitizePersistedAuthState(saved ?? { ...signedOutSession, explicitlySignedOut: false, browserSessionId: null })
         return {
           ...currentState,
           ...sanitized,
+          authSessionEpoch: currentState.authSessionEpoch + 1,
         }
       },
       onRehydrateStorage: () => (state) => {
@@ -252,3 +285,32 @@ export const useAuthStore = create<AuthState>()(
     }
   )
 )
+
+/** React only to session boundaries. Ordinary token rotations and writes by the
+ * same user must not reset the workspace. Read current storage so queued events
+ * cannot restore an older identity or overwrite a subsequent login. */
+export function syncStoredSession() {
+  let saved: Partial<AuthState> | undefined
+  try {
+    saved = JSON.parse(localStorage.getItem(storageKey) ?? 'null')?.state
+  } catch { return false }
+  if (boundaryKey(saved) === observedBoundary) return false
+  stopSessionKeepAlive()
+  setSessionRecovering(false)
+  void useAuthStore.persist.rehydrate()
+  return true
+}
+
+/** Recheck before continuing an asynchronous action under browser credentials. */
+export function isCurrentAuthEpoch(epoch: number) {
+  if (syncStoredSession()) return false
+  const session = useAuthStore.getState()
+  return session.authSessionEpoch === epoch && getAuthenticatedSessionIdentity(session) !== null
+}
+
+export function watchSessionBoundary() {
+  window.addEventListener('storage', event => {
+    if (event.storageArea === localStorage && (event.key === storageKey || event.key === null)) syncStoredSession()
+  })
+  window.addEventListener('pageshow', syncStoredSession)
+}
