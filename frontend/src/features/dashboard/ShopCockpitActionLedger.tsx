@@ -67,8 +67,8 @@ const statusLabel = (order: ActionQueueOrder) => {
   if (order.pending_zelle_confirmation) return 'Zelle Review'
   if (order.status === 'pending_review') return 'Needs Review'
   if (order.status === 'in_progress' && order.hold_reason) return 'On Hold'
-  if (order.status === 'completed') return 'Invoice Customer'
-  if (order.status === 'invoiced') return 'Payment Due'
+  if (order.status === 'completed') return 'Review for invoicing'
+  if (order.status === 'invoiced') return 'Review invoice'
   if (order.status === 'paid') return 'Paid'
   if (order.status === 'acknowledged') return "Ack'd"
   return order.status.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
@@ -115,6 +115,7 @@ export default function ShopCockpitActionLedger({
   overview,
   activeCount,
   closeoutUnavailable = false,
+  closeoutState,
   onWorkViewChange,
 }: {
   projection: ActionQueueProjection
@@ -141,6 +142,7 @@ export default function ShopCockpitActionLedger({
   activeWork?: ReactNode
   overview?: ReactNode
   activeCount?: number | null
+  closeoutState?: ReactNode
   closeoutUnavailable?: boolean
   workView?: 'overview' | 'active' | 'closeout'
   onWorkViewChange?: (view: 'overview' | 'active' | 'closeout') => void
@@ -194,20 +196,17 @@ export default function ShopCockpitActionLedger({
     () => lanes.flatMap((lane) => lane.orders.map((order) => ({ order, lane: lane.key }))),
     [lanes],
   )
-  const [laneFilter, setLaneFilter] = useState<ActionQueueFilter>(activeWork && !['needs_action', 'ready_to_close', 'closed_today'].includes(initialLaneFilter) ? 'ready_to_close' : initialLaneFilter)
+  const [requestedLane, setLaneFilter] = useState<ActionQueueFilter>(initialLaneFilter)
   const [searchQuery, setSearchQuery] = useState('')
-
+  useEffect(() => { setLaneFilter(initialLaneFilter) }, [initialLaneFilter])
+  // Without an explicit choice, open the first populated queue (outstanding before history).
+  const laneFilter = hasActiveWork && !lanes.some(lane => lane.key === requestedLane)
+    ? lanes.find(lane => lane.orders.length || lane.hasMore)?.key ?? 'ready_to_close'
+    : requestedLane
+  const visibleLanes = lanes.filter(lane => !hasActiveWork || lane.orders.length || lane.hasMore || lane.key === requestedLane)
   useEffect(() => {
     onValueScopeChange?.({ lane: laneFilter, search: searchQuery.trim() })
   }, [laneFilter, onValueScopeChange, searchQuery])
-
-  // A return from Repair Orders carries only a transient navigation state. The
-  // cockpit instance stays mounted under the authenticated shell, so sync that
-  // state whenever the user returns instead of treating it as construction-time
-  // default data.
-  useEffect(() => {
-    setLaneFilter(hasActiveWork && !['needs_action', 'ready_to_close', 'closed_today'].includes(initialLaneFilter) ? 'ready_to_close' : initialLaneFilter)
-  }, [initialLaneFilter, hasActiveWork])
   const normalizedSearch = searchQuery.trim().toLocaleLowerCase()
   const visibleRows = allRows.filter(({ order, lane }) => {
     if (laneFilter !== 'all' && lane !== laneFilter) return false
@@ -290,15 +289,15 @@ export default function ShopCockpitActionLedger({
                 >
                   <History aria-hidden="true" />
                   Activity
-                  {activityCount != null && <span title="Recent activity; + means more events are available">{activityCount}</span>}
+                  {!hasActiveWork && activityCount != null && <span title="Recent activity; + means more events are available">{activityCount}</span>}
                 </ControlButton>
               )}
             </div>
             {!activeWork && <h2>{queueView === 'activity' ? 'Activity' : 'Action Ledger'}</h2>}
           </div>
           <div className="db-action-ledger__caption-summary" aria-live="polite">
-            {queueView === 'queue' && !showingActive && !showingOverview && (!activeWork || laneFilter !== 'needs_action') && <span className="db-action-ledger__caption-value">
-              <span>{activeWork ? 'Closeout work value' : searchQuery.trim() ? 'Matching work value' : 'Work value'}</span>
+            {queueView === 'queue' && !showingActive && !showingOverview && !closeoutState && (!activeWork || laneFilter !== 'needs_action') && <span className="db-action-ledger__caption-value">
+              <span>{activeWork ? laneFilter === 'closed_today' ? 'Closed work value' : 'Closeout work value' : searchQuery.trim() ? 'Matching work value' : 'Work value'}</span>
               <strong>
                 {valueSummaryLoading
                   ? 'Calculating…'
@@ -313,9 +312,9 @@ export default function ShopCockpitActionLedger({
 
         {/* Queue-only controls: the chips and search filter the queue, so
             they leave with it. */}
-        {queueView === 'queue' && !showingActive && !showingOverview && (
+        {queueView === 'queue' && !showingActive && !showingOverview && !closeoutState && (
           <div className="db-shop-work-new__toolbar">
-            <div className="db-shop-work-new__lane-tabs" role="tablist" aria-label="Work queues">
+            {hasActiveWork && visibleLanes.length < 2 ? <span className="db-closeout-label">{visibleLanes[0]?.label ?? 'Closeout'}{visibleLanes.length === 1 && ` · ${visibleLanes[0].orders.length}${visibleLanes[0].hasMore ? '+' : ''}`}</span> : <div className="db-shop-work-new__lane-tabs" role="tablist" aria-label="Work queues">
             {!activeWork && <ControlButton controlKind="content"
               type="button"
               role="tab"
@@ -324,7 +323,7 @@ export default function ShopCockpitActionLedger({
             >
               All work <span>{totalCount}</span>
             </ControlButton>}
-            {lanes.map((lane) => (
+            {visibleLanes.map((lane) => (
               <ControlButton controlKind="content"
                 type="button"
                 role="tab"
@@ -336,8 +335,8 @@ export default function ShopCockpitActionLedger({
                 {lane.label} <span>{lane.orders.length}{activeWork && lane.key === 'needs_action' && lane.orders.length >= 50 ? ' shown' : lane.hasMore ? '+' : ''}</span>
               </ControlButton>
             ))}
-          </div>
-          <label className="db-shop-work-new__search">
+          </div>}
+          {(!hasActiveWork || totalCount > 0 || searchQuery) && <label className="db-shop-work-new__search">
             <span className="sr-only">Search work queue</span>
             <Search aria-hidden="true" />
             <ControlInput
@@ -346,14 +345,14 @@ export default function ShopCockpitActionLedger({
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder="Order, customer, truck, or technician"
             />
-            </label>
+            </label>}
           </div>
         )}
 
 
       {queueView === 'activity' ? (
         <div className="db-shop-work-new__activity db-operating-surface__scroller">{activityFeed}</div>
-      ) : showingOverview ? overview : showingActive ? activeWork : (
+      ) : showingOverview ? overview : showingActive ? activeWork : closeoutState || (
         <>
           {/* The scroller wraps the card so the scrollbar sits outside the
               border; the caption above stays pinned. */}
@@ -362,7 +361,8 @@ export default function ShopCockpitActionLedger({
             <div className="db-action-ledger__rows">
               {visibleRows.length === 0 ? (
                 <div className="db-action-ledger__empty" role="status">
-                  <strong>{activeWork ? 'No closeout matches this view' : totalCount === 0 ? 'No work is waiting' : 'No work matches this view'}</strong>
+                  <strong>{activeWork ? normalizedSearch ? 'No orders match this search' : 'No closeout work in this queue' : totalCount === 0 ? 'No work is waiting' : 'No work matches this view'}</strong>
+                  {normalizedSearch && <ControlButton type="button" className="db-work-control" onClick={() => setSearchQuery('')}>Clear search</ControlButton>}
                   <span>{totalCount === 0 ? 'Completed work and payment follow-up will appear here.' : 'Choose another queue or clear the search.'}</span>
                 </div>
               ) : visibleRows.map(({ order, lane }) => {

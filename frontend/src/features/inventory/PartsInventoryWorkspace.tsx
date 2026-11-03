@@ -1,4 +1,6 @@
-import { shopWorkReturnUrl, shopWorkDestinationUrl, shopWorkQueryScope } from '@/features/dashboard/shopWorkNavigation'
+import WorkspaceRecordLink from '@/components/WorkspaceRecordLink'
+import { readWorkspaceVisit, type WorkspaceVisit } from '../dashboard/workspaceVisit'
+import { shopWorkReturnUrl, shopWorkQueryScope } from '@/features/dashboard/shopWorkNavigation'
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { pricingError, pricingMoney } from '@/features/parts-pricing/contract'
@@ -26,7 +28,6 @@ type WorkspaceView = 'parts' | 'reorder' | 'activity'
 type CatalogView = 'active' | 'archived'
 type PartSort = 'catalog' | 'name' | 'available' | 'location' | 'cost' | 'value' | 'reorder'
 type SortDirection = 'asc' | 'desc'
-type StockFilter = 'all' | 'below_min' | 'out_of_stock'
 type LedgerDensity = 'comfortable' | 'compact'
 type InspectorView = 'overview' | 'stock' | 'ordering' | 'activity'
 
@@ -477,50 +478,72 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   const role = useAuthStore((state) => state.user?.role)
   const manage = canManage(role)
   const navigate = useNavigate()
-  const { key: locationKey } = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const linkedPartId = searchParams.get('selected')
-  const shopWorkOrigin = Boolean(shopWorkReturnUrl(searchParams))
-  const purchasingUrl = `/dashboard/garage/purchasing?view=orders${shopWorkOrigin ? '&shop_work=overview' : ''}`
+  // Derive context from the bounded board-return contract, never a supplied URL.
+  const boardReturnUrl = shopWorkReturnUrl(searchParams)
+  const boardContext = new URLSearchParams(boardReturnUrl?.split('?')[1])
+  const boardOrigin = boardContext.get('work_view')
+  boardContext.delete('work_view')
+  if (boardOrigin) boardContext.set('shop_work', boardOrigin)
+  const purchasingParams = new URLSearchParams({ view: 'orders' })
+  boardContext.forEach((value, key) => purchasingParams.set(key, value))
+  const purchasingUrl = `/dashboard/garage/purchasing?${purchasingParams}`
   const queryClient = useQueryClient()
   const { data: branding } = useTenantBranding()
-  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>('parts')
-  const [catalogView, setCatalogView] = useState<CatalogView>('active')
-  const [sort, setSort] = useState<PartSort>('catalog')
-  const [direction, setDirection] = useState<SortDirection>('asc')
-  const [stockFilter, setStockFilter] = useState<StockFilter>('all')
+  const viewParam = searchParams.get('list')
+  const workspaceView: WorkspaceView = viewParam === 'activity' || viewParam === 'reorder' ? viewParam : 'parts'
+  const catalogView: CatalogView = workspaceView === 'parts' && searchParams.get('catalog') === 'archived' ? 'archived' : 'active'
+  const sortParam = searchParams.get('sort')
+  const sort: PartSort = ['name', 'available', 'location', 'cost', 'value', 'reorder'].includes(sortParam ?? '') ? sortParam as PartSort : 'catalog'
+  const direction: SortDirection = searchParams.get('direction') === 'desc' ? 'desc' : 'asc'
+  const stockFilter = workspaceView === 'parts' && searchParams.get('stock') === 'out_of_stock' ? 'out_of_stock' : 'all'
   const [density, setDensity] = useState<LedgerDensity>('comfortable')
-  const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const search = searchParams.get('search') ?? ''
+  const updateList = (changes: Record<string, string | null>, replace = true) => {
+    const next = new URLSearchParams(searchParams)
+    for (const [key, value] of Object.entries(changes)) {
+      if (value) next.set(key, value)
+      else next.delete(key)
+    }
+    setSearchParams(next, { replace })
+  }
+  const [debouncedSearch, setDebouncedSearch] = useState(search.trim())
   const [partsSequence, setPartsSequence] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(linkedPartId)
   const [checkedParts, setCheckedParts] = useState<Map<string, PartRecord>>(() => new Map())
   const [preparedPartIds, setPreparedPartIds] = useState<Set<string>>(() => new Set(readPurchasePreparation().map((line) => line.inventoryId)))
   const [allPartsCount, setAllPartsCount] = useState<number | null>(null)
   const [addPartOpen, setAddPartOpen] = useState(false)
-  const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
+  const mobileDetailOpen = !!linkedPartId
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const selectionMembership = useRef('')
   const reorderPreselection = useRef<{ context: string; pages: Set<string> }>({ context: '', pages: new Set() })
 
   useEffect(() => {
-    if (!linkedPartId) return
-    setSelectedId(linkedPartId)
-    setWorkspaceView('parts')
-    setMobileDetailOpen(true)
-  }, [linkedPartId, locationKey])
+    if (linkedPartId) setSelectedId(linkedPartId)
+  }, [linkedPartId])
 
   const selectPart = (id: string) => {
+    if (linkedPartId !== id) updateList({ selected: id, panel: null }, false)
     setSelectedId(id)
-    setMobileDetailOpen(true)
-    if (linkedPartId) {
-      const params = new URLSearchParams(searchParams)
-      params.set('selected', id)
-      setSearchParams(params, { replace: true })
-    }
   }
 
+  const openFromPart = (url: string, record: string) => {
+    if (!selectedId) { navigate(url); return }
+    const params = new URLSearchParams(searchParams)
+    params.set('selected', selectedId)
+    const visit: WorkspaceVisit = { pathname: '/dashboard/garage/inventory', scope: queryScope, search: `?${params}`, record, triggerId: document.activeElement?.id }
+    const state = { workspaceVisit: visit }
+    navigate({ pathname: visit.pathname, search: visit.search }, { replace: true, state })
+    navigate(url, { state })
+  }
+  const linkedRecordUrl = (kind: 'repair_order' | 'purchase_order', id: string) => {
+    const url = kind === 'repair_order' ? `/dashboard/repair-orders?selected=${encodeURIComponent(id)}`
+      : `/dashboard/garage/purchasing?view=orders&purchase_order=${encodeURIComponent(id)}`
+    return boardContext.size ? `${url}&${boardContext}` : url
+  }
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const nextSearch = search.trim()
@@ -535,7 +558,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
 
   const partParams = useMemo(() => ({
     view: catalogView,
-    ...(workspaceView === 'reorder' || stockFilter === 'below_min' ? { attention: 'needs_reorder' } : {}),
+    ...(workspaceView === 'reorder' ? { attention: 'needs_reorder' } : {}),
     ...(workspaceView !== 'reorder' && stockFilter === 'out_of_stock' ? { attention: 'out_of_stock' } : {}),
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
     sort,
@@ -611,8 +634,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
 
   const chooseSort = (nextSort: PartSort, nextDirection: SortDirection) => {
     if (nextSort !== sort || nextDirection !== direction) {
-      setSort(nextSort)
-      setDirection(nextDirection)
+      updateList({ sort: nextSort, direction: nextDirection })
       setPartsSequence((current) => current + 1)
     }
   }
@@ -627,15 +649,11 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   }
 
   const selectView = (view: WorkspaceView) => {
-    setWorkspaceView(view)
+    if (view === workspaceView) return
+    updateList({ list: view === 'parts' ? null : view, selected: null, panel: null, stock: null, catalog: null }, false)
     setPartsSequence((current) => current + 1)
-    setMobileDetailOpen(false)
     setCheckedParts(new Map())
     reorderPreselection.current = { context: '', pages: new Set() }
-    if (view === 'reorder') {
-      setCatalogView('active')
-      setStockFilter('all')
-    }
   }
 
   const toggleChecked = (part: PartRecord, checked: boolean) => {
@@ -644,6 +662,17 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
       if (checked && isManuallySelectable(part)) next.set(part.id, part)
       else next.delete(part.id)
       return next
+    })
+  }
+
+  const backToParts = () => {
+    updateList({ selected: null, panel: null })
+    if (!parts.some(part => part.id === selectedId)) setSelectedId(parts[0]?.id ?? null)
+    requestAnimationFrame(() => {
+      const row = document.getElementById(`inventory-row-${selectedId}`)
+      const searchField = document.getElementById('inventory-part-search')
+      const target = row ?? searchField
+      target?.focus()
     })
   }
 
@@ -864,13 +893,14 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
         Customers, Repair Orders, and Shop Work surfaces. */}
     {workspaceView !== 'activity' &&
     <div className="db-parts-workbench__toolbar">
-      <label data-db-control-shell="field" className="db-parts-workbench__search"><Search aria-hidden="true" /><span className="sr-only">Search parts</span><ControlInput type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search part, SKU, supplier, source number, or bin" /></label>
-      <div className="db-parts-workbench__filters" role="group" aria-label="Stock filter">
-        <ControlButton controlKind="action" type="button" aria-pressed={stockFilter === 'all'} onClick={() => { setStockFilter('all'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }}>All</ControlButton>
-        <ControlButton controlKind="action" type="button" aria-pressed={stockFilter === 'below_min'} onClick={() => { setStockFilter('below_min'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }}>Needs reorder</ControlButton>
-        <ControlButton controlKind="action" type="button" aria-pressed={stockFilter === 'out_of_stock'} onClick={() => { setStockFilter('out_of_stock'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }}>Out of stock</ControlButton>
-      </div>
-      <ControlButton className="db-parts-workbench__archive-link" type="button" onClick={() => { setCatalogView(catalogView === 'active' ? 'archived' : 'active'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }} disabled={workspaceView === 'reorder'}><Archive aria-hidden="true" />{catalogView === 'active' ? 'Archived parts' : 'Back to active parts'}</ControlButton>
+      <label data-db-control-shell="field" className="db-parts-workbench__search"><Search aria-hidden="true" /><span className="sr-only">Search parts</span><ControlInput id="inventory-part-search" type="search" value={search} onChange={(event) => updateList({ search: event.target.value, selected: null, panel: null })} placeholder="Search part, SKU, supplier, source number, or bin" /></label>
+      {workspaceView === 'parts' && <>
+        <div className="db-parts-workbench__filters" role="group" aria-label="Stock filter">
+          <ControlButton type="button" aria-pressed={stockFilter === 'all'} onClick={() => { updateList({ stock: null, selected: null, panel: null }); setCheckedParts(new Map()) }}>All</ControlButton>
+          <ControlButton type="button" aria-pressed={stockFilter === 'out_of_stock'} onClick={() => { updateList({ stock: 'out_of_stock', selected: null, panel: null }); setCheckedParts(new Map()) }}>Out of stock</ControlButton>
+        </div>
+        <ControlButton className="db-parts-workbench__archive-link" type="button" onClick={() => { updateList({ catalog: catalogView === 'active' ? 'archived' : null, selected: null, panel: null }); setCheckedParts(new Map()) }}><Archive aria-hidden="true" />{catalogView === 'active' ? 'Archived parts' : 'Back to active parts'}</ControlButton>
+      </>}
       <div className="db-parts-workbench__density" role="group" aria-label="Ledger density">
         <ControlButton controlKind="action" type="button" aria-pressed={density === 'comfortable'} onClick={() => chooseDensity('comfortable')}>Comfortable</ControlButton>
         <ControlButton controlKind="action" type="button" aria-pressed={density === 'compact'} onClick={() => chooseDensity('compact')}>Compact</ControlButton>
@@ -900,7 +930,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
           </div>}
           <PartLedger page={partsPage} loading={partsQuery.isLoading} loadingMore={partsQuery.isFetchingNextPage} failed={partsQuery.isError && !partsQuery.data} manage={manage} salesEnabled={counterSalesEnabled} selectedId={selectedId} checkedIds={new Set(checkedParts.keys())} density={density} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onCheck={toggleChecked} onSelect={selectPart} onSell={(id) => navigate(`/dashboard/garage/inventory/sales?new=1&part=${encodeURIComponent(id)}`)} onRetry={() => void partsQuery.refetch()} onLoadMore={() => void partsQuery.fetchNextPage()} />
         </div>
-        <PartInspector part={detailQuery.data} loading={detailQuery.isLoading} failed={detailQuery.isError} manage={manage} prepared={Boolean(detailQuery.data && preparedPartIds.has(detailQuery.data.id))} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onBack={() => setMobileDetailOpen(false)} onRetry={() => void detailQuery.refetch()} onAdjust={updatePart} onReceive={receiveStock} onUpdateIdentity={updatePartIdentity} onUploadPhoto={uploadPartPhoto} onRemovePhoto={removePartPhoto} onPrepare={addToPreparation} onPurchasing={() => navigate(purchasingUrl)} onOpenPurchaseOrder={(id) => navigate(shopWorkOrigin ? shopWorkDestinationUrl({ kind: 'purchase_order', id, view: 'orders' }) : `/dashboard/garage/purchasing?view=orders&purchase_order=${encodeURIComponent(id)}`)} onOpenRepair={(id) => navigate(shopWorkOrigin ? shopWorkDestinationUrl({ kind: 'repair_order', id, view: null }) : `/dashboard/repair-orders?selected=${encodeURIComponent(id)}`)} />
+        <PartInspector part={detailQuery.data} loading={detailQuery.isLoading} failed={detailQuery.isError} manage={manage} prepared={Boolean(detailQuery.data && preparedPartIds.has(detailQuery.data.id))} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onBack={backToParts} onRetry={() => void detailQuery.refetch()} onAdjust={updatePart} onReceive={receiveStock} onUpdateIdentity={updatePartIdentity} onUploadPhoto={uploadPartPhoto} onRemovePhoto={removePartPhoto} onPrepare={addToPreparation} purchasingUrl={purchasingUrl} linkedRecordUrl={linkedRecordUrl} onOpenRecord={openFromPart} />
       </div>}
     {addPartOpen && <AddPartDrawer isOpen onClose={() => setAddPartOpen(false)} onCreated={async (partName) => {
       await Promise.all([
@@ -948,7 +978,7 @@ function PartLedger({ page, loading, loadingMore, failed, manage, salesEnabled, 
         }}>
           {manage && <span role="cell" className="db-parts-workbench__check" onClick={(event) => event.stopPropagation()}>{eligible && <label><input type="checkbox" aria-label={`Select ${part.name} for purchase preparation`} checked={checkedIds.has(part.id)} onClick={(event) => event.stopPropagation()} onChange={(event) => onCheck(part, event.target.checked)} /></label>}</span>}
           <span role="cell" className="db-parts-workbench__part-cell">
-            <ControlButton controlKind="content" type="button" className="db-parts-workbench__row-select" aria-current={selected ? 'true' : undefined} aria-controls="selected-part-inspector" onClick={() => onSelect(part.id)}>
+            <ControlButton controlKind="content" type="button" id={`inventory-row-${part.id}`} className="db-parts-workbench__row-select" aria-current={selected ? 'true' : undefined} aria-controls="selected-part-inspector" onClick={() => onSelect(part.id)}>
               <span className="db-parts-workbench__identity"><span className="db-parts-workbench__photo-spacer" aria-hidden="true" /><span><strong>{part.name}</strong><small>{part.sku}</small></span></span>
               <ChevronRight className="db-parts-workbench__row-cue" aria-hidden="true" />
             </ControlButton>
@@ -1115,8 +1145,10 @@ function AddPartDrawer({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
   </SlidePanelForm>
 }
 
-function PartInspector({ part, loading, failed, manage, prepared, logoUrl, companyName, onBack, onRetry, onAdjust, onReceive, onUpdateIdentity, onUploadPhoto, onRemovePhoto, onPrepare, onPurchasing, onOpenPurchaseOrder, onOpenRepair }: { part?: PartDetail; loading: boolean; failed: boolean; manage: boolean; prepared: boolean; logoUrl: string | null; companyName: string | null; onBack: () => void; onRetry: () => void; onAdjust: (part: PartDetail, patch: Record<string, unknown>) => Promise<void>; onReceive: (part: PartDetail, quantity: number) => Promise<void>; onUpdateIdentity: (part: PartDetail, patch: Record<string, unknown>) => Promise<void>; onUploadPhoto: (part: PartDetail, file: File) => Promise<void>; onRemovePhoto: (part: PartDetail) => Promise<void>; onPrepare: (part: PartDetail) => void; onPurchasing: () => void; onOpenPurchaseOrder: (id: string) => void; onOpenRepair: (id: string) => void }) {
-  const [inspectorView, setInspectorView] = useState<InspectorView>('overview')
+function PartInspector({ part, loading, failed, manage, prepared, logoUrl, companyName, onBack, onRetry, onAdjust, onReceive, onUpdateIdentity, onUploadPhoto, onRemovePhoto, onPrepare, purchasingUrl, linkedRecordUrl, onOpenRecord }: { part?: PartDetail; loading: boolean; failed: boolean; manage: boolean; prepared: boolean; logoUrl: string | null; companyName: string | null; onBack: () => void; onRetry: () => void; onAdjust: (part: PartDetail, patch: Record<string, unknown>) => Promise<void>; onReceive: (part: PartDetail, quantity: number) => Promise<void>; onUpdateIdentity: (part: PartDetail, patch: Record<string, unknown>) => Promise<void>; onUploadPhoto: (part: PartDetail, file: File) => Promise<void>; onRemovePhoto: (part: PartDetail) => Promise<void>; onPrepare: (part: PartDetail) => void; purchasingUrl: string; linkedRecordUrl: (kind: "repair_order" | "purchase_order", id: string) => string; onOpenRecord: (url: string, record: string) => void }) {
+  const [panelParams, setPanelParams] = useSearchParams()
+  const panel = panelParams.get('panel')
+  const inspectorView: InspectorView = panel === 'ordering' || panel === 'activity' || panel === 'stock' ? panel : 'overview'
   const [edit, setEdit] = useState<'available' | 'reorder' | null>(null)
   const [value, setValue] = useState('')
   const [reason, setReason] = useState('')
@@ -1149,6 +1181,17 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
   const identityTrigger = useRef<HTMLButtonElement>(null)
   const photoInput = useRef<HTMLInputElement>(null)
   const queryScope = useAuthStore(state => shopWorkQueryScope(state.user, state.authSessionEpoch))
+  const location = useLocation()
+  const restoredAt = useRef<string | null>(null)
+  useEffect(() => {
+    const visit = readWorkspaceVisit(location.state, queryScope)
+    if (!part || visit?.pathname !== '/dashboard/garage/inventory' || restoredAt.current === location.key) return
+    if (new URLSearchParams(visit.search).get('selected') !== part.id) return
+    const inspector = document.getElementById('selected-part-inspector')
+    const trigger = visit.triggerId && document.getElementById(visit.triggerId)
+    const target = trigger && inspector?.contains(trigger) ? trigger : inspector?.querySelector<HTMLElement>('[aria-selected="true"][role="tab"]')
+    if (target) { target.focus(); restoredAt.current = location.key }
+  }, [location, part, queryScope])
   const identityQuery = useQuery<InventoryEditorRecord>({
     queryKey: ['inventory', 'detail', part?.id, queryScope],
     placeholderData: undefined,
@@ -1170,7 +1213,6 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     setIdentitySaving(false)
     setPhotoAction(null)
     setConfirmPhotoRemove(false)
-    setInspectorView('overview')
     setEdit(null)
     setEditFocusMode('pointer')
     setLocalError(null)
@@ -1212,7 +1254,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     const frame = window.requestAnimationFrame(() => target.current?.focus())
     return () => window.cancelAnimationFrame(frame)
   }, [edit])
-  const open = (next: 'available' | 'reorder', origin: 'available-shortcut' | 'reorder', event: ReactMouseEvent<HTMLButtonElement>) => { if (!part) return; editOrigin.current = origin; setEditFocusMode(event.detail === 0 ? 'keyboard' : 'pointer'); setInspectorView('stock'); setValue(String(next === 'available' ? part.available_packages : part.reorder_level)); setReason(''); setLocalError(null); setEdit(next) }
+  const open = (next: 'available' | 'reorder', origin: 'available-shortcut' | 'reorder', event: ReactMouseEvent<HTMLButtonElement>) => { if (!part) return; editOrigin.current = origin; setEditFocusMode(event.detail === 0 ? 'keyboard' : 'pointer'); selectInspectorView('stock'); setValue(String(next === 'available' ? part.available_packages : part.reorder_level)); setReason(''); setLocalError(null); setEdit(next) }
   const close = () => { restore.current = editOrigin.current; editOrigin.current = null; setEdit(null); setLocalError(null) }
   const openIdentity = () => {
     if (identitySaving || photoSaving) return
@@ -1329,7 +1371,11 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     finally { if (identitySession.current === session) setPhotoAction(null) }
   }
   const selectInspectorView = (next: InspectorView, focus = false) => {
-    setInspectorView(next)
+    if (!part) return
+    const params = new URLSearchParams(panelParams)
+    params.set('selected', part.id)
+    params.set('panel', next)
+    setPanelParams(params, { replace: true })
     setEdit(null)
     setLocalError(null)
     if (focus) window.requestAnimationFrame(() => inspectorTabs.current[INSPECTOR_VIEWS.findIndex((view) => view.id === next)]?.focus())
@@ -1356,7 +1402,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     } catch { /* Parent keeps the exact server recovery message. */ } finally { setSaving(false) }
   }
   if (loading) return <aside className="db-parts-workbench__inspector" role="status">Loading part details…</aside>
-  if (failed) return <aside className="db-parts-workbench__inspector" role="alert">Part details could not be loaded.<ControlButton type="button" onClick={onRetry}>Retry</ControlButton></aside>
+  if (failed) return <aside className="db-parts-workbench__inspector" role="alert">Part details could not be loaded.<ControlButton type="button" onClick={onBack}>Back to parts</ControlButton><ControlButton type="button" onClick={onRetry}>Retry</ControlButton></aside>
   if (!part) return <aside className="db-parts-workbench__inspector"><p>Select a part to see stock, supplier, repair, and purchase history.</p></aside>
   const stockState = part.is_archived ? 'Archived' : part.available_packages < part.needed_for_open_repairs ? 'Short for open repairs' : part.available_packages <= part.reorder_level ? 'Needs reorder' : 'In stock'
   const stockStateClass = part.is_archived ? 'is-archived' : part.available_packages < part.needed_for_open_repairs ? 'is-danger' : part.available_packages <= part.reorder_level ? 'is-warning' : ''
@@ -1575,7 +1621,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
             </dl>
           </div> : <div className="db-parts-workbench__supplier-unlinked"><i aria-hidden="true" /><span><strong>No supplier linked</strong><small>Add this part to the purchase list to keep it visible as blocked, or use Ordering to link a source.</small></span></div>}
         </section>
-        <section className="db-parts-workbench__section"><h3>Why this part is needed</h3>{part.repair_sources.length ? part.repair_sources.slice(0, 3).map((source) => <ControlButton className="db-parts-workbench__linked-row" type="button" key={source.repair_order_id} onClick={() => onOpenRepair(source.repair_order_id)}><span><strong>{source.order_number}</strong><small>{source.unit_number ? `Unit ${source.unit_number} · ` : ''}{source.vehicle_display || 'Vehicle not set'}</small></span><strong>{source.packages} units needed</strong><ArrowRight aria-hidden="true" /></ControlButton>) : <p className="db-parts-workbench__muted">No open repair is waiting on this part.</p>}</section>
+        <section className="db-parts-workbench__section"><h3>Why this part is needed</h3>{part.repair_sources.length ? part.repair_sources.slice(0, 3).map((source) => <WorkspaceRecordLink href={linkedRecordUrl('repair_order', source.repair_order_id)} className="db-parts-workbench__linked-row" id={`part-repair-${source.repair_order_id}`} key={source.repair_order_id} onOpen={() => onOpenRecord(linkedRecordUrl('repair_order', source.repair_order_id), source.repair_order_id)}><span><strong>{source.order_number}</strong><small>{source.unit_number ? `Unit ${source.unit_number} · ` : ''}{source.vehicle_display || 'Vehicle not set'}</small></span><strong>{source.packages} units needed</strong><ArrowRight aria-hidden="true" /></WorkspaceRecordLink>) : <p className="db-parts-workbench__muted">No open repair is waiting on this part.</p>}</section>
         <section className="db-parts-workbench__section"><h3>Recent movement</h3>{part.recent_movements.length ? part.recent_movements.slice(0, 3).map((movement) => <div className="db-parts-workbench__movement-row" key={movement.id}><span><strong>{movementLabel(movement.movement_type)}</strong><small>{new Date(movement.occurred_at).toLocaleString()}</small></span><strong>{movement.quantity_delta > 0 ? '+' : ''}{movement.quantity_delta} · {movement.balance_after} available</strong></div>) : <p className="db-parts-workbench__muted">No inventory changes have been recorded for this part.</p>}</section>
       </>}
       {inspectorView === 'stock' && <section className="db-parts-workbench__section">
@@ -1604,7 +1650,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
       </form>}
       </section>}
       {inspectorView === 'ordering' && <section className="db-parts-workbench__section">
-        <div className="db-parts-workbench__section-head"><h3>Ordering</h3><ControlButton type="button" onClick={onPurchasing}>{prepared ? 'View purchase list' : 'Open Purchasing'}<ArrowRight aria-hidden="true" /></ControlButton></div>
+        <div className="db-parts-workbench__section-head"><h3>Ordering</h3><WorkspaceRecordLink className="db-parts-workbench__purchasing-link" id="part-open-purchasing" href={purchasingUrl} onOpen={() => onOpenRecord(purchasingUrl, 'purchasing')}>{prepared ? 'View purchase list' : 'Open Purchasing'}<ArrowRight aria-hidden="true" /></WorkspaceRecordLink></div>
         <dl className="db-parts-workbench__facts"><div><dt>Recommended order</dt><dd>{part.recommended_order_packages}</dd></div><div><dt>Average unit cost</dt><dd>${part.average_unit_cost}</dd></div></dl>
         {manage && isManuallySelectable(part) && <div className={`db-parts-workbench__ordering-action${purchaseActionable ? ' is-actionable' : ''}${prepared ? ' is-prepared' : ''}`}>
           <span><strong>{prepared ? 'Prepared for purchasing' : purchaseActionable ? 'Replenishment recommended' : 'Stock is covered'}</strong><small>{prepared ? 'This part is staged for review in Purchasing.' : purchaseActionable ? `${part.recommended_order_packages} ${part.unit_type || 'units'} recommended. Add it to stage the quantity for review in Purchasing.` : 'No replenishment is recommended. Add it only to stage a manual review in Purchasing.'}</small></span>
@@ -1616,11 +1662,11 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
           <div className="db-parts-workbench__purchase-activity-list">
             <section aria-labelledby={`open-purchase-orders-${part.id}`}>
               <div className="db-parts-workbench__purchase-activity-title"><h5 id={`open-purchase-orders-${part.id}`}>Open purchase orders</h5>{!part.incoming_sources.length && <strong>None</strong>}</div>
-              {part.incoming_sources.map((source) => <ControlButton className="db-parts-workbench__linked-row" type="button" key={source.purchase_order_id} onClick={() => onOpenPurchaseOrder(source.purchase_order_id)}><span><strong>{source.po_number}</strong><small>{source.expected_at ? `Expected ${formatDate(source.expected_at)}` : 'Delivery date not set'}</small></span><strong>{source.packages} units incoming</strong><ArrowRight aria-hidden="true" /></ControlButton>)}
+              {part.incoming_sources.map((source) => <WorkspaceRecordLink href={linkedRecordUrl('purchase_order', source.purchase_order_id)} className="db-parts-workbench__linked-row" id={`part-po-${source.purchase_order_id}`} key={source.purchase_order_id} onOpen={() => onOpenRecord(linkedRecordUrl('purchase_order', source.purchase_order_id), source.purchase_order_id)}><span><strong>{source.po_number}</strong><small>{source.expected_at ? `Expected ${formatDate(source.expected_at)}` : 'Delivery date not set'}</small></span><strong>{source.packages} units incoming</strong><ArrowRight aria-hidden="true" /></WorkspaceRecordLink>)}
             </section>
             <section aria-labelledby={`recent-receipts-${part.id}`}>
               <div className="db-parts-workbench__purchase-activity-title"><h5 id={`recent-receipts-${part.id}`}>Recent receipts</h5>{!part.recent_receipts.length && <strong>None</strong>}</div>
-              {part.recent_receipts.map((receipt) => <ControlButton className="db-parts-workbench__linked-row" type="button" key={receipt.receipt_id} onClick={() => onOpenPurchaseOrder(receipt.purchase_order_id)}><span><strong>{receipt.receipt_number}</strong><small>{receipt.po_number} · Received {formatDate(receipt.received_at)}</small></span><strong>{receipt.quantity} at ${receipt.unit_cost}</strong><ArrowRight aria-hidden="true" /></ControlButton>)}
+              {part.recent_receipts.map((receipt) => <WorkspaceRecordLink href={linkedRecordUrl('purchase_order', receipt.purchase_order_id)} className="db-parts-workbench__linked-row" id={`part-receipt-${receipt.receipt_id}`} key={receipt.receipt_id} aria-label={`Open purchase order ${receipt.po_number} for receipt ${receipt.receipt_number}`} onOpen={() => onOpenRecord(linkedRecordUrl('purchase_order', receipt.purchase_order_id), receipt.purchase_order_id)}><span><strong>{receipt.receipt_number}</strong><small>{receipt.po_number} · Open purchase order · Received {formatDate(receipt.received_at)}</small></span><strong>{receipt.quantity} at ${receipt.unit_cost}</strong><ArrowRight aria-hidden="true" /></WorkspaceRecordLink>)}
             </section>
           </div>
         </div>

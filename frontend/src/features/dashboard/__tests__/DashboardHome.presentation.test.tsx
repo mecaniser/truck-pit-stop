@@ -183,14 +183,14 @@ describe('DashboardHome DB-035 presentation boundary', () => {
     testState.locationSearch = '?work_view=activity'
     render(<DashboardHome />)
     expect(screen.getByText('Activity surface')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Activity 9+', exact: true }))
+    fireEvent.click(screen.getByRole('button', { name: 'Activity', exact: true }))
     expect(testState.navigate).toHaveBeenCalledWith('/dashboard?work_view=activity', { replace: true })
     expect(screen.queryByText('Closeout work value')).not.toBeInTheDocument()
   })
 
-  it('shows capped Activity count before opening the feed and refreshes it with Shop Work', () => {
+  it('keeps history separate from pending-work counts and refreshes it with Shop Work', () => {
     render(<DashboardHome />)
-    expect(screen.getByRole('button', { name: 'Activity 9+', exact: true })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Activity', exact: true })).toBeInTheDocument()
     expect(screen.queryByText('Activity surface')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Refresh Shop Work/ }))
     expect(testState.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['activity-feed'] })
@@ -270,7 +270,7 @@ describe('DashboardHome DB-035 presentation boundary', () => {
     expect(screen.getByRole('button', { name: 'Overview' })).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(screen.getByRole('button', { name: /^Active work/ }))
     expect(screen.getByRole('button', { name: /^Active work/ })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.queryByText('Payment Due')).not.toBeInTheDocument()
+    expect(screen.queryByText('Review invoice')).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Shop Cockpit' })).not.toBeInTheDocument()
 
     expect(screen.queryByText('Selected repair record · read only')).not.toBeInTheDocument()
@@ -284,24 +284,24 @@ describe('DashboardHome DB-035 presentation boundary', () => {
   it('keeps unpaid closeout separate and preserves existing payment status', () => {
     render(<DashboardHome />)
     fireEvent.click(screen.getByRole('button', { name: /^Closeout \d/ }))
-    expect(screen.getByText('Payment Due')).toBeInTheDocument()
+    expect(screen.getByText('Review invoice')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Open RO-1009 in Repair Orders' })).toBeInTheDocument()
     expect(screen.queryByText('Work in progress')).not.toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: /On the Floor/ })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /^Active work/ }))
     expect(screen.getByText('Work in progress')).toBeInTheDocument()
-    expect(screen.queryByText('Payment Due')).not.toBeInTheDocument()
+    expect(screen.queryByText('Review invoice')).not.toBeInTheDocument()
   })
 
   it('restores external Closeout navigation without losing the active-work filter', () => {
     const { rerender } = render(<DashboardHome />)
     fireEvent.click(screen.getByRole('button', { name: /^Active work/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Parts 0' }))
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search active work' }), { target: { value: 'RO-1022' } })
     testState.locationState = { shopWorkQueue: 'ready_to_close' }
     rerender(<DashboardHome />)
     expect(screen.getByRole('button', { name: /^Closeout \d/ })).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(screen.getByRole('button', { name: /^Active work/ }))
-    expect(screen.getByRole('button', { name: 'Parts 0' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('searchbox', { name: 'Search active work' })).toHaveValue('RO-1022')
   })
 
   it('restores Payment review after opening and closing its existing workspace', () => {
@@ -326,8 +326,8 @@ describe('DashboardHome DB-035 presentation boundary', () => {
     testState.query.data = { ...dashboardFixture, orders_ready_to_close: [order({ status, source: 'easy_truck_shop_import', pending_zelle_confirmation: true })] }
     render(<DashboardHome />)
     expect(screen.getByText('ETS history')).toBeInTheDocument()
-    expect(screen.queryByText('Invoice Customer')).not.toBeInTheDocument()
-    expect(screen.queryByText('Payment Due')).not.toBeInTheDocument()
+    expect(screen.queryByText('Review for invoicing')).not.toBeInTheDocument()
+    expect(screen.queryByText('Review invoice')).not.toBeInTheDocument()
     expect(screen.queryByText('Customer marked payment sent. Confirm receipt before closing.')).not.toBeInTheDocument()
   })
 
@@ -356,11 +356,13 @@ describe('DashboardHome DB-035 presentation boundary', () => {
     testState.locationSearch = '?work_view=active'
     testState.query = { ...testState.query, data: undefined, isLoading: true }
     const { rerender } = render(<DashboardHome />)
-    expect(screen.getByLabelText('Loading Shop Work')).toBeInTheDocument()
+    expect(screen.getByRole('searchbox', { name: 'Search active work' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^Closeout/ }))
+    expect(screen.getByText('Loading closeout…')).toBeVisible()
 
     testState.query = { ...testState.query, isLoading: false, error: new Error('offline') }
     rerender(<DashboardHome />)
-    expect(screen.getByRole('alert')).toHaveTextContent('Failed to load work queue')
+    expect(screen.getByRole('alert')).toHaveTextContent('Closeout could not be loaded')
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
     expect(testState.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboard-action-queue'] })
     expect(testState.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboard-daily-workset'] })

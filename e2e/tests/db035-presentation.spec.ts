@@ -154,7 +154,7 @@ async function installSession(page: Page, variant: 'legacy' | 'new') {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [], total: 0, has_more: false }) })
       return
     }
-    if (url.pathname.endsWith('/messages/threads')) {
+    if (url.pathname.endsWith('/messages/threads') || url.pathname.endsWith('/communications/conversations')) {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [], next_cursor: null, has_more: false }) })
       return
     }
@@ -238,6 +238,26 @@ async function openAppearance(page: Page, variant: 'legacy' | 'new') {
     await page.getByRole('button', { name: /Appearance|Theme/ }).click()
   }
 }
+
+test('settings sidebar icons and labels keep their columns when selection changes', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await installSession(page, 'new')
+  await page.goto('/dashboard/settings')
+  const sidebar = page.locator('.db-settings-sidebar')
+  const rows = sidebar.getByRole('button')
+  for (const section of ['Profile', 'Security', 'Shop Profile']) {
+    await sidebar.getByRole('button', { name: section, exact: true }).press('Enter')
+    await expect(sidebar.getByRole('button', { name: section, exact: true })).toHaveAttribute('data-active', 'true')
+    const positions = await rows.evaluateAll(buttons => buttons.map(button => ({
+      icon: button.querySelector('svg')!.getBoundingClientRect().left,
+      label: button.querySelector('span')!.getBoundingClientRect().left,
+    })))
+    for (const { icon, label } of positions) {
+      expect(icon).toBeCloseTo(positions[0].icon, 0)
+      expect(label).toBeCloseTo(positions[0].label, 0)
+    }
+  }
+})
 
 test('new staff presentation preserves product/shop hierarchy and responsive appearance controls', async ({ page }) => {
   await openAppearance(page, 'new')

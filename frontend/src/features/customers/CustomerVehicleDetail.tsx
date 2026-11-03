@@ -1,3 +1,4 @@
+import WorkspaceRecordLink from '@/components/WorkspaceRecordLink'
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { useEffect, useRef, useState, type Ref } from 'react'
@@ -16,11 +17,11 @@ import VehicleIssuesPanel from '@/features/vehicle-issues/VehicleIssuesPanel'
 import RecommendedWorkPanel from '@/features/repair-orders/RecommendedWorkPanel'
 import { isPricingScopeCurrent, usePricingScope } from '@/features/parts-pricing/usePricingScope'
 
-type Props = { customer: Customer; vehicle: Vehicle; onOpenOrder: (order: RepairOrder) => void; onCreateOrder?: () => void; createOrderButtonRef?: Ref<HTMLButtonElement> }
+type Props = { restoreOrderFocus?: string; customer: Customer; vehicle: Vehicle; onOpenOrder: (order: RepairOrder) => void; onCreateOrder?: () => void; createOrderButtonRef?: Ref<HTMLButtonElement> }
 const historyStatuses = ['draft', 'quoted', 'approved', 'declined', 'assigned', 'acknowledged', 'in_progress', 'pending_review', 'completed', 'invoiced', 'paid', 'cancelled'] as const
 const statusLabel = (value: string) => value.replace(/_/g, ' ').replace(/^./, character => character.toUpperCase())
 type HistoryPage = { items: RepairOrder[]; total: number; has_more: boolean }
-function VehicleRecord({ customer, vehicle, onOpenOrder, onCreateOrder, createOrderButtonRef }: Props) {
+function VehicleRecord({ customer, vehicle, onOpenOrder, restoreOrderFocus, onCreateOrder, createOrderButtonRef }: Props) {
   const authScope = usePricingScope()
   const maintenanceNavigation = useRef(new AbortController()); const [maintenanceOpenError, setMaintenanceOpenError] = useState(false)
   useEffect(() => { const controller = new AbortController(); maintenanceNavigation.current = controller; setMaintenanceOpenError(false); return () => controller.abort() }, [authScope, vehicle.id])
@@ -108,10 +109,10 @@ function VehicleRecord({ customer, vehicle, onOpenOrder, onCreateOrder, createOr
       </div>
       {searchPending || history.isLoading ? <p role="status">Loading repair history…</p> : history.isError || !history.data ? <div role="alert">Could not load repair history. <ControlButton type="button" onClick={() => void history.refetch()}>Retry repair history</ControlButton></div> : <>
         {history.data.items.length === 0 ? <p role="status">{page > 0 ? <>This history page is no longer available. <ControlButton type="button" onClick={() => updateFilters({ page: 0 })}>First history page</ControlButton></> : filtered ? 'No repair orders match these filters for this truck.' : 'No repair orders for this vehicle yet.'}</p> : <ul className="db-customer-vehicle-history">{history.data.items.map(order => <li key={order.id}>
-          <ControlButton type="button" aria-label={`Open repair order ${order.order_number}`} onClick={() => onOpenOrder(order)}>
+          <WorkspaceRecordLink href={`/dashboard/repair-orders?selected=${encodeURIComponent(order.id)}`} restoreFocus={order.id === restoreOrderFocus} aria-label={`Open repair order ${order.order_number}`} onOpen={() => onOpenOrder(order)}>
             <span><strong>{order.order_number}</strong><span className="db-customer-vehicle-history__description">{order.description || 'No description'}</span><small>{new Date(order.created_at).toLocaleDateString()} · {order.status.replace(/_/g, ' ')}{order.assigned_mechanic_id && mechanicName(order.assigned_mechanic_id) && ` · ${mechanicName(order.assigned_mechanic_id)}`}</small></span>
             <span>${Number(order.total_cost).toFixed(2)}</span><ChevronRight aria-hidden="true" />
-          </ControlButton>
+          </WorkspaceRecordLink>
         </li>)}</ul>}
         {(page > 0 || history.data.has_more) && <nav aria-label="Vehicle history pages" className="db-customer-vehicle-history__pages">
           <ControlButton type="button" disabled={page === 0 || history.isFetching} aria-label="Previous history page" onClick={() => updateFilters({ page: page - 1 })}>Previous</ControlButton>

@@ -1,3 +1,4 @@
+import WorkspaceRecordLink from '@/components/WorkspaceRecordLink'
 import { ControlButton } from '@/components/ui/Controls'
 import { useQuery } from '@tanstack/react-query'
 import api from '@/lib/api'
@@ -14,8 +15,8 @@ interface HistoryOrderDetail {
   parts: { id: string; name: string | null; sku: string | null; quantity: number; unit_price: string; total_price: string }[]
 }
 const money = (value: string | null) => value !== null && Number.isFinite(Number(value)) ? `$${Number(value).toFixed(2)}` : '—'
-export default function CustomerHistoryOrderDetail({ customerId, orderId, onOpenOrder }: {
-  customerId: string; orderId: string; onOpenOrder?: (orderId: string) => void
+export default function CustomerHistoryOrderDetail({ customerId, orderId, onOpenOrder, restoreFocus }: {
+  restoreFocus?: boolean; customerId: string; orderId: string; onOpenOrder?: (orderId: string) => void
 }) {
   const query = useQuery({
     queryKey: ['customerHistoryDetail', customerId, orderId],
@@ -45,6 +46,6 @@ export default function CustomerHistoryOrderDetail({ customerId, orderId, onOpen
     {data.parts.length ? <ul>{data.parts.map(part => <li key={part.id}><span>{part.name || 'Part'}{part.sku && ` · ${part.sku}`}</span><span>{part.quantity} × {money(part.unit_price)} = {money(part.total_price)}</span></li>)}</ul> : <p>No parts used</p>}
     {data.customer_notes && <p className="whitespace-pre-wrap">Customer: {data.customer_notes}</p>}
     {internalNotes && <p className="whitespace-pre-wrap">Internal: {internalNotes}</p>}
-    {onOpenOrder && <ControlButton type="button" className="db-customer-history-detail__open" aria-label={`Open repair order ${data.order_number}`} onClick={() => onOpenOrder(orderId)}>Open repair order</ControlButton>}
+    {onOpenOrder && <WorkspaceRecordLink href={`/dashboard/repair-orders?selected=${encodeURIComponent(orderId)}`} restoreFocus={restoreFocus} className="db-customer-history-detail__open" aria-label={`Open repair order ${data.order_number}`} onOpen={() => onOpenOrder(orderId)}>Open repair order</WorkspaceRecordLink>}
   </section>
 }

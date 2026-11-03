@@ -89,7 +89,8 @@ describe('deleted repair-order workspace', () => {
       if (snapshot !== undefined) expect(snapshot).toMatchObject({ id: order.id, deleted_at: deletedOrder.deleted_at })
     }
     api.get.mockClear()
-    await user.click(screen.getByRole('button', { name: 'Deleted', exact: true }))
+    await user.click(screen.getByRole('button', { name: /^Filter repair orders:/ }))
+    await user.click(screen.getByRole('menuitem', { name: 'Deleted', exact: true }))
     await user.click(await screen.findByRole('button', { name: 'Open repair order QA116', exact: true }))
     expect(await screen.findByRole('button', { name: 'Restore order', exact: true })).toBeEnabled()
     expect(api.get.mock.calls.filter(([url]) => activeOnly(url))).toEqual([])

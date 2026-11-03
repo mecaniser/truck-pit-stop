@@ -6,14 +6,14 @@ const info: WorkflowInfo = { created_at: '2026-09-12T09:00:00Z', work_started_at
 describe('Workflow informational steps', () => {
   it('puts the blocking reason before timing details in a held job', async () => {
     const user = userEvent.setup()
-    render(<WorkflowInfoStep stage="bay" label="On hold" className="" status="in_progress" info={{ ...info, work_completed_at: null, hold_reason: 'waiting_for_customer_approval' }} />)
+    render(<WorkflowInfoStep stage="bay" label="On hold" status="in_progress" info={{ ...info, work_completed_at: null, hold_reason: 'waiting_for_customer_approval' }} />)
     await user.click(screen.getByRole('button', { name: 'On hold' }))
     const reason = screen.getByText('Waiting for customer approval')
     expect(reason.compareDocumentPosition(screen.getByText('Job started')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
   it('separates elapsed job duration from tracked labor and provides no mutation', async () => {
     const user = userEvent.setup()
-    render(<WorkflowInfoStep stage="bay" label="In the bay" className="" status="pending_review" info={info} operationCount={3} />)
+    render(<WorkflowInfoStep stage="bay" label="In the bay" status="pending_review" info={info} operationCount={3} />)
     await user.click(screen.getByRole('button', { name: 'In the bay' }))
     expect(screen.getByText('3h 30m')).toBeVisible()
     expect(screen.getByText('1h 15m')).toBeVisible()
@@ -25,14 +25,14 @@ describe('Workflow informational steps', () => {
   })
   it('does not turn missing or reversed timestamps into durations', async () => {
     const user = userEvent.setup()
-    render(<WorkflowInfoStep stage="bay" label="In the bay" className="" status="pending_review" info={{ ...info, work_started_at: '2026-09-13T10:00:00Z', actual_tracked_minutes: null }} />)
+    render(<WorkflowInfoStep stage="bay" label="In the bay" status="pending_review" info={{ ...info, work_started_at: '2026-09-13T10:00:00Z', actual_tracked_minutes: null }} />)
     await user.click(screen.getByRole('button', { name: 'In the bay' }))
     expect(screen.getAllByText('Not available').length).toBeGreaterThan(0)
     expect(screen.getByText('Not recorded')).toBeVisible()
   })
   it('separates saved reviews from unsaved drafts and unrelated internal notes', async () => {
     const user = userEvent.setup()
-    render(<WorkflowInfoStep stage="review" label="Quality review" className="" status="pending_review" reviewDraft="Check coolant again" info={{ ...info, internal_notes: JSON.stringify({ raw_notes: 'not a review', reviews: [{ type: 'manager_review', notes: 'Road test passed', reviewed_by: 'Sam', reviewed_at: '2026-09-12T14:00:00Z' }] }) }} />)
+    render(<WorkflowInfoStep stage="review" label="Quality review" status="pending_review" reviewDraft="Check coolant again" info={{ ...info, internal_notes: JSON.stringify({ raw_notes: 'not a review', reviews: [{ type: 'manager_review', notes: 'Road test passed', reviewed_by: 'Sam', reviewed_at: '2026-09-12T14:00:00Z' }] }) }} />)
     await user.click(screen.getByRole('button', { name: 'Quality review' }))
     expect(screen.getByText('Road test passed')).toBeVisible()
     expect(screen.getByText('Unsaved review notes')).toBeVisible()
@@ -40,7 +40,7 @@ describe('Workflow informational steps', () => {
   })
   it('updates shop-managed information when a technician is assigned without claiming a new start', async () => {
     const user = userEvent.setup()
-    const props = { stage: 'technician' as const, label: 'Shop-managed', className: '', status: 'in_progress', info }
+    const props = { stage: 'technician' as const, label: 'Shop-managed', status: 'in_progress', info }
     const view = render(<WorkflowInfoStep {...props} />)
     await user.click(screen.getByRole('button', { name: 'Technician status' }))
     expect(screen.getByText('No technician assigned')).toBeVisible()
@@ -58,7 +58,7 @@ describe('Workflow informational steps', () => {
   })
   it('uses a filling circle to signal an open pipeline popover instead of a dropdown caret', async () => {
     const user = userEvent.setup()
-    const { container } = render(<WorkflowInfoStep stage="technician" label="Shop-managed" className="" status="in_progress" info={info} />)
+    const { container } = render(<WorkflowInfoStep stage="technician" label="Shop-managed" status="in_progress" info={info} />)
     const indicator = screen.getByTestId('workflow-popover-indicator')
     expect(indicator).toHaveAttribute('data-open', 'false')
     expect(container.querySelector('[data-lucide="chevron-down"]')).not.toBeInTheDocument()
@@ -69,7 +69,7 @@ describe('Workflow informational steps', () => {
   })
   it('handles malformed legacy notes without inventing reviews', async () => {
     const user = userEvent.setup()
-    render(<WorkflowInfoStep stage="review" label="Quality review" className="" status="draft" info={{ ...info, internal_notes: 'legacy plain text' }} />)
+    render(<WorkflowInfoStep stage="review" label="Quality review" status="draft" info={{ ...info, internal_notes: 'legacy plain text' }} />)
     await user.click(screen.getByRole('button', { name: 'Quality review' }))
     expect(screen.getByText('No saved quality-review notes.')).toBeVisible()
     expect(screen.getByText('Work has not reached quality review')).toBeVisible()

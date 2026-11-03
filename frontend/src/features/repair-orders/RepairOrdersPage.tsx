@@ -1,3 +1,4 @@
+import { readWorkspaceVisit } from '../dashboard/workspaceVisit'
 import { shopWorkReturnUrl, shopWorkQueryScope } from '@/features/dashboard/shopWorkNavigation'
 import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
@@ -6,6 +7,7 @@ import { useMaintenanceFinalization } from '@/features/maintenance/useMaintenanc
 import { useMaintenanceRemoval } from '@/features/maintenance/useMaintenanceRemoval'
 import { MaintenanceCancelled } from '@/features/maintenance/api'
 import { PricingCancelled, pricingError } from '@/features/parts-pricing/contract'
+import type { OrderListView } from './RepairOrderListFilter'
 import { formatScheduleDate, overdueSearchParams, scheduleDeadline, scheduleRefreshInterval } from './repairOrderSchedule'
 import { openChecklistOnCompletionError } from '@/features/service-checklists/queries'
 import RepairOrderEntryGate from './RepairOrderEntryGate'
@@ -386,7 +388,9 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
     retry: false,
   })
   const statusCounts = statusCountsQuery.data
-  const queueParam = overdue ? null : searchParams.get('queue')
+  // The queue projection has no customer/vehicle IDs. Keep scoped archive links on the filtered endpoint.
+  const scopedArchive = workbenchScope === 'all' && Boolean(customerFilter || vehicleFilter)
+  const queueParam = overdue || scopedArchive ? null : searchParams.get('queue')
   const workQueueLane: WorkQueueLane | null = queueParam && queueParam in DAILY_WORKBENCH_FIELD
     ? queueParam as WorkQueueLane
     : null
@@ -419,6 +423,16 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
   const [selectedServiceOptions, setSelectedServiceOptions] = useState<ServiceTypeaheadItem[]>([])
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null)
+  const ledgerOrigin = useRef<string | null>(null)
+  const selectedParam = searchParams.get('selected')
+  useEffect(() => {
+    if (selectedParam || isDetailOpen || !ledgerOrigin.current) return
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(`repair-open-${ledgerOrigin.current}`)?.focus()
+      ledgerOrigin.current = null
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [isDetailOpen, selectedParam])
   const [workspaceFocusRequest, setWorkspaceFocusRequest] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const submittingOrder = useRef(false)
@@ -575,7 +589,20 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
     if (workQueueLane === 'closed_today') return []
     return workQueueStats?.[WORK_QUEUE_FIELD[workQueueLane]] ?? []
   })()
-  const workQueueOrderIds = workQueueOrders.map((order) => order.id)
+  const visibleQueueOrders = workQueueOrders
+    .filter((order) => {
+      const needle = searchQuery.trim().toLowerCase()
+      const matchesSearch = !needle || [
+        order.order_number,
+        order.description,
+        order.customer_name,
+        order.vehicle_info,
+        order.mechanic_name,
+      ].some((value) => value?.toLowerCase().includes(needle))
+      const matchesStatus = statusFilter === 'all' || order.status === statusFilter
+      return matchesSearch && matchesStatus
+    })
+  const workQueueOrderIds = visibleQueueOrders.map((order) => order.id)
   // Server-side pagination: one page at a time, with search + status pushed to
   // the API instead of loading every order and filtering in the browser.
   const fetchOrderPage = async (p: number, signal?: AbortSignal) => {
@@ -743,7 +770,7 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
     next.set('selected', orderId)
     next.set('queue', workQueueLane)
     for (const key of ['customer', 'customer_vehicle', 'operation', 'recommendation']) next.delete(key)
-    setSearchParams(next, { replace: true })
+    setSearchParams(next, { replace: Boolean(selectedParam) })
   }
 
   const clearDetailState = () => {
@@ -857,7 +884,18 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
     vehicleRelationshipFilter: customerViewVehicleFilter,
   })
 
+  const recordVisit = readWorkspaceVisit(location.state, queryScope)
+  const returnLabel = recordVisit?.record === selectedParam && recordVisit
+    ? recordVisit.pathname === '/dashboard/customers' ? 'Back to customer record' : 'Back to inventory part'
+    : undefined
   const closeDetail = () => {
+    const origin = recordVisit
+    const selected = searchParams.get('selected')
+    if (origin && origin.record === selected) {
+      clearDetailState()
+      navigate({ pathname: origin.pathname, search: origin.search }, { replace: true, state: location.state })
+      return
+    }
     const shopWorkReturn = shopWorkReturnUrl(searchParams)
     if (shopWorkReturn) {
       clearDetailState()
@@ -877,12 +915,17 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
     const next = new URLSearchParams(searchParams)
     for (const key of ['selected', 'customer', 'customer_vehicle', 'operation', 'recommendation']) next.delete(key)
     setSearchParams(next, { replace: true })
+    ledgerOrigin.current ??= selected
+
   }
 
-  const showAllOrders = () => {
+  const changeLedgerView = (view: OrderListView) => {
     const next = new URLSearchParams(searchParams)
     next.delete('queue')
-    setSearchParams(next, { replace: true })
+    next.delete('overdue')
+    if (view === 'overdue') next.set('overdue', 'true')
+    else if (view !== 'all') next.set('queue', view)
+    setSearchParams(next)
   }
 
   // The ?selected= URL param is the source of truth for the detail panel: it
@@ -2494,7 +2537,7 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
     ? workQueueOrderIds.indexOf(selectedOrder.id)
     : -1
   const isWorkQueueNavigation = workQueueNavIndex >= 0
-  const navigationOrders = filteredOrders ?? []
+  const navigationOrders = workQueueLane ? [] : filteredOrders ?? []
   const currentNavIndex = selectedOrder
     ? navigationOrders.findIndex(o => o.id === selectedOrder.id)
     : -1
@@ -3235,19 +3278,7 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
   // the global repair-order ledger. Reuse only its compact projection fields;
   // selecting a row still opens the canonical Repair Orders workspace and its
   // existing detail/mutation ownership.
-  const workQueueRows: RepairOrdersLedgerRow[] = workQueueOrders
-    .filter((order) => {
-      const needle = searchQuery.trim().toLowerCase()
-      const matchesSearch = !needle || [
-        order.order_number,
-        order.description,
-        order.customer_name,
-        order.vehicle_info,
-        order.mechanic_name,
-      ].some((value) => value?.toLowerCase().includes(needle))
-      const matchesStatus = statusFilter === 'all' || order.status === statusFilter
-      return matchesSearch && matchesStatus
-    })
+  const workQueueRows: RepairOrdersLedgerRow[] = visibleQueueOrders
     .map((order) => {
       const statusTone: RepairOrdersLedgerRow['statusTone'] = order.status === 'paid'
         ? 'success'
@@ -3283,7 +3314,7 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
 
   const isQueueWorkset = Boolean(workQueueLane)
   const displayedLedgerRows = isQueueWorkset ? workQueueRows : newPresentationRows
-  const displayedLedgerTotal = isQueueWorkset ? workQueueOrders.length : totalOrders
+  const displayedLedgerTotal = isQueueWorkset ? workQueueRows.length : totalOrders
   const ledgerStatusOptions = workbenchScope === 'daily'
     ? [{ value: 'all', label: 'All work' }]
     : statusOptions
@@ -3297,7 +3328,6 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
   const pricingNotice = <>{servicePricing.dialog}{legacyPartPricing.dialog}{serviceRecoveryNotice}</>
   return (
     <div className={`db-repair-orders-workspace flex flex-col h-full ${presentationVariant === 'new' ? 'db-repair-orders-workspace--new' : ''} ${presentationVariant === 'new' && isDetailOpen && selectedOrder ? 'db-repair-orders-workspace--detail-open' : ''}`}>
-      {shopWorkReturnUrl(searchParams) && <ControlButton type="button" className="min-h-11 shrink-0 self-start px-3 text-sm font-semibold underline" onClick={() => navigate(shopWorkReturnUrl(searchParams)!)}>Back to Shop Work</ControlButton>}
       {maintenanceFinalization.dialog}
       {maintenanceRemoval.dialog}
 
@@ -3319,6 +3349,10 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
           statusFilter={statusFilter}
           statusOptions={ledgerStatusOptions}
           selectedId={selectedOrder?.id ?? searchParams.get('selected')}
+          allowQueueViews={!scopedArchive}
+          partialQueue={Boolean(workQueueLane && (workbenchScope === 'daily'
+            ? dailyWorkbench?.[DAILY_WORKBENCH_FIELD[workQueueLane]].has_more
+            : workQueueLane !== 'closed_today' && workQueueStats?.[`${WORK_QUEUE_FIELD[workQueueLane]}_has_more`]))}
           queueOrigin={workbenchScope === 'daily' ? null : workQueueLane}
           isFetching={isQueueWorkset ? isDailyWorkbenchFetching || isFetching : isFetching}
           errorMessage={(isQueueWorkset ? workQueueErrorForScope : orderPageError) ? 'Check the connection and try again.' : null}
@@ -3338,6 +3372,7 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
             else setSearchParams(next)
           }}
           onOpenOrder={(id, options) => {
+            ledgerOrigin.current = id
             if (isQueueWorkset) {
               openWorkQueueOrder(id, options)
               return
@@ -3346,7 +3381,7 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
             if (order) openDetail(order, options)
           }}
           onCreateOrder={openModal}
-          onShowAllOrders={showAllOrders}
+          onViewChange={changeLedgerView}
           onLoadMore={() => void fetchNextPage()}
           pageTitle={ledgerTitle}
           pageDescription={ledgerDescription}
@@ -3354,7 +3389,7 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
             ? `${REPAIR_ORDERS_QUEUE_LABEL[workQueueLane]} · today`
             : 'Order ledger'}
           compact={workbenchScope === 'daily'}
-          hideValueSummary={!isQueueWorkset && (repairOrderValueQuery.data?.has_imported_orders !== false || (filteredOrders ?? []).some(order => order.source === 'easy_truck_shop_import'))}
+          hideValueSummary={isQueueWorkset ? statusFilter !== 'all' : (repairOrderValueQuery.data?.has_imported_orders !== false || (filteredOrders ?? []).some(order => order.source === 'easy_truck_shop_import'))}
           valueSummary={activeValueQuery.data}
           valueSummaryLoading={activeValueQuery.isLoading || searchQuery.trim() !== debouncedSearch}
           valueSummaryError={Boolean(activeValueQuery.error)}
@@ -5064,6 +5099,7 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
                       if (!selectedOrder.is_internal) void refetchAuthorizationHistory()
                     }}
                     onClose={closeDetail}
+                    returnLabel={returnLabel}
                     onPrev={showNavigation || hasPrev ? goToPrevOrder : undefined}
                     onNext={showNavigation || hasNext ? goToNextOrder : undefined}
                     prevDisabled={!hasPrev}

@@ -442,7 +442,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(screen.getByRole('tabpanel', { name: 'Overview' })).toHaveTextContent('At a glance')
     expect(screen.queryByRole('button', { name: 'Add to purchase list' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Adjust on-hand quantity' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Open Purchasing/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Open Purchasing/ })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('tab', { name: 'Stock' }))
     const stock = screen.getByRole('tabpanel', { name: 'Stock' })
@@ -454,7 +454,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     const ordering = screen.getByRole('tabpanel', { name: 'Ordering' })
     expect(within(ordering).getByText('Replenishment recommended')).toBeInTheDocument()
     expect(within(ordering).getByRole('button', { name: 'Add to purchase list' })).toHaveClass('db-parts-workbench__action-primary')
-    expect(within(ordering).getAllByRole('button', { name: /Open Purchasing/ })).toHaveLength(1)
+    expect(within(ordering).getAllByRole('link', { name: /Open Purchasing/ })).toHaveLength(1)
     expect(within(ordering).getByRole('heading', { name: 'Purchase activity' })).toBeInTheDocument()
     expect(within(ordering).getByRole('heading', { name: 'Open purchase orders' }).parentElement).toHaveTextContent('None')
     expect(within(ordering).getByRole('heading', { name: 'Recent receipts' }).parentElement).toHaveTextContent('None')
@@ -920,7 +920,30 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(within(ordering).getByText('Prepared for purchasing')).toBeInTheDocument()
     expect(within(ordering).getByText('This part is staged for review in Purchasing.')).toBeInTheDocument()
     expect(within(ordering).queryByRole('button', { name: 'Add to purchase list' })).not.toBeInTheDocument()
-    expect(within(ordering).getByRole('button', { name: 'View purchase list' })).toBeInTheDocument()
+    expect(within(ordering).getByRole('link', { name: 'View purchase list' })).toBeInTheDocument()
+  })
+
+  it.each([
+    ['active', '&shop_work=active'],
+    ['overview&task=attention:inventory:part-active', '&shop_work=overview&task=attention%3Ainventory%3Apart-active'],
+    ['activity&actor_id=owner&event_type=stock.adjusted&date_from=2026-10-01&date_to=2026-11-01', '&shop_work=activity&actor_id=owner&event_type=stock.adjusted&date_from=2026-10-01&date_to=2026-11-01'],
+    ['unknown&return_url=https://example.com', ''],
+  ])('preserves only supported Shop Work origin %s through nested purchasing links', async (origin, context) => {
+    installApi({ ...detail(activePart), incoming_sources: [{ purchase_order_id: 'po-1', po_number: 'PO-1042', packages: 8, expected_at: null }] })
+    const user = userEvent.setup()
+    renderWorkspace(undefined, `/dashboard/garage/inventory?selected=${activePart.id}&shop_work=${origin}&unrelated=discard`)
+    await screen.findByRole('heading', { name: activePart.name })
+    await user.click(screen.getByRole('tab', { name: 'Ordering' }))
+    const ordering = screen.getByRole('tabpanel', { name: 'Ordering' })
+    const purchasing = new URL(within(ordering).getByRole('link', { name: 'Open Purchasing' }).getAttribute('href')!, 'http://localhost')
+    expect(purchasing.pathname).toBe('/dashboard/garage/purchasing')
+    expect(Object.fromEntries(purchasing.searchParams)).toEqual(Object.fromEntries(new URLSearchParams(`view=orders${context}`)))
+    const order = within(ordering).getByRole('link', { name: /PO-1042/ })
+    const params = new URL(order.getAttribute('href')!, 'http://localhost').searchParams
+    expect(params.get('purchase_order')).toBe('po-1')
+    expect(params.get('shop_work')).toBe(new URLSearchParams(context).get('shop_work'))
+    expect(params.has('unrelated')).toBe(false)
+    expect(params.has('return_url')).toBe(false)
   })
 
   it('preserves populated purchase orders and receipts inside the compact activity group', async () => {
@@ -938,8 +961,8 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(within(ordering).getByRole('heading', { name: 'Purchase activity' })).toBeInTheDocument()
     const openOrders = within(ordering).getByRole('heading', { name: 'Open purchase orders' }).closest('section')!
     const recentReceipts = within(ordering).getByRole('heading', { name: 'Recent receipts' }).closest('section')!
-    expect(within(openOrders).getByRole('button', { name: /PO-1042/ })).toHaveTextContent('8 units incoming')
-    expect(within(recentReceipts).getByRole('button', { name: /RCV-2042/ })).toHaveTextContent('4 at $12.25')
+    expect(within(openOrders).getByRole('link', { name: /PO-1042/ })).toHaveTextContent('8 units incoming')
+    expect(within(recentReceipts).getByRole('link', { name: /RCV-2042/ })).toHaveTextContent('4 at $12.25')
     expect(within(ordering).queryByText('None')).not.toBeInTheDocument()
   })
 
