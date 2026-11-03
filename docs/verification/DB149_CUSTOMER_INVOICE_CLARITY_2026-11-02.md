@@ -1,0 +1,15 @@
+# DB-149 customer invoice clarity — November 2, 2026
+
+Frontend & UX owns this presentation change. Customer payable pages, guest links, PDFs and email render a normal invoice identity without internal transfer or accounting explanations. Staff controls and provenance remain unchanged. No API/schema/auth/financial-state, collector, reconciliation or payment submission change.
+
+Acceptance: concise unpaid view; paid, pending, partial, held and historical non-collectible states remain safe; original issued totals and prior payments are retained accurately in PDF presentation; PDF review invitation remains. Independent QA GO: 47 backend and 46 frontend checks, plus nonzero prior/native payment PDF amount checks. Owner focused frontend51 checks pass; final production frontend build, TypeScript and changed-source lint pass. Draft PR754 is the review handoff; protected CI/merge/deployment remain pending.
+
+Runtime preflight: isolated `/private/tmp/db149-customer-invoice-clarity`, branch `codex/customer-invoice-clarity`, base e8e464d648d882b78ce9527eeaaffcfcb03489d1. Vite PID80056 on5173, process/cwd and rendered edited customer route verified. Existing Docker backend8000 belongs to another checkout and was preserved. New worktree has no approved backend environment; no secrets copied and no database/server/financial mutation. Local API proxy intentionally points to closed loopback port9; preview uses actual CustomerInvoicePage and local synthetic fixtures, with all API writes rejected. This is a browser-verified fixture preview, not an aligned authenticated full-stack runtime or live customer acceptance.
+
+Desktop and390px previews visually verified. Compact screenshot initially captured an intermediate resize frame; fresh settled capture and DOM geometry show347px content within390px viewport, no horizontal overflow. Viewport restored. Private screenshots and rendered one-page preview PDF in output/ remain untracked. PDF fixture omits logo/contact fields and is not a fetched production invoice. Product receipt dates use original snapshot when available; sample fixture retains supplied preview date. Source provenance stays in stored records and staff views.
+
+No merge or deployment for this follow-up. Show the preview to the user first.
+
+## Explicit partial-payment follow-up
+
+Customer amount input was editable but insufficiently discoverable. Added Pay in full / Pay part controls, keeping the existing amount validation, provider requests and staff controls. A valid partial amount shows the exact remaining principal after confirmation using integer cents; it does not count as payment. Test37/37 settlement UI checks PASS, including selecting100.00 of268.44, showing168.44 remaining, resetting full268.44, and zero created attempts. Actual component fixture interaction verified without submitting payment. Refreshed runtime source: isolated Vite5173 from this worktree, base f5ff81bb138728f907503dfd16437d21d34c2e3a, proxy remains disabled loopback9, backend8000 preserved. Desktop/compact screenshot artifacts stay private. Not deployed.

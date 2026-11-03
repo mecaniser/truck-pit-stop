@@ -19,7 +19,7 @@ export type CardProviderStatus =
   | 'unavailable_external_approval'
   | 'feature_disabled'
 
-export type AccountingSyncStatus = 'not_started' | 'not_required' | 'not_applicable_local_cash' | 'pending' | 'synced' | 'failed' | 'dead_letter'
+export type AccountingSyncStatus = 'not_started' | 'not_required' | 'not_applicable_local_cash' | 'external_reconciliation_pending' | 'pending' | 'synced' | 'failed' | 'dead_letter'
 export type PaymentAttemptState = 'pending' | 'confirmed' | 'failed' | 'expired' | 'refunded' | 'reversed'
 
 export interface SettlementAllowedActions {

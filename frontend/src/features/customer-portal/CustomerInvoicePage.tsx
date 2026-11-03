@@ -1,9 +1,10 @@
+import { collectionAppliedPrincipal } from '@/features/source-collection/collectionAppliedPrincipal'
+import { customerInvoiceLabel, customerInvoiceMemo } from '@/lib/invoiceIdentity'
 import { ControlButton } from '@/components/ui/Controls'
 import { currentInvoicePaymentSummary } from '@/lib/invoicePaymentPresentation'
 import InvoicePaymentSummary from '@/components/InvoicePaymentSummary'
 import { invoicePaymentLabels } from '@/lib/invoicePaymentLabels'
 import InvoiceReviewLink from '@/components/InvoiceReviewLink'
-import SourceCollectionSummary from '@/features/source-collection/SourceCollectionSummary'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import type { Stripe } from '@stripe/stripe-js'
@@ -178,7 +179,7 @@ export default function CustomerInvoicePage() {
   const settlementQuery = useInvoiceSettlement(settlementAccess)
   const allocationQuery = useInvoiceAllocations(settlementAccess, Boolean(settlementQuery.data))
   const legacySettlementMode = settlementQuery.data?.feature_enabled === false
-    || Boolean(settlementQuery.error && isSettlementUnavailable(settlementQuery.error))
+    || Boolean(!settlementQuery.data && settlementQuery.error && isSettlementUnavailable(settlementQuery.error))
 
   const { data: repairOrder } = useQuery<RepairOrderDetail>({
     queryKey: ['repair-order-payment-detail', invoice?.repair_order_id],
@@ -233,7 +234,7 @@ export default function CustomerInvoicePage() {
         invoice_id: invoice.id,
         sender_email: user?.email || null,
         sender_phone: user?.phone ? formatUSPhone(user.phone) : null,
-        notes: `Invoice #${invoice.invoice_number}`,
+        notes: customerInvoiceMemo(invoice, `Invoice #${invoice.invoice_number}`),
       })
     },
     onSuccess: () => {
@@ -318,9 +319,10 @@ export default function CustomerInvoicePage() {
   const backDestination = paymentState?.paymentOrigin || 'History'
   const splitSettlement = isHistoricalInvoice || settlementQuery.data?.feature_enabled === false ? null : settlementQuery.data
   const paymentSummary = currentInvoicePaymentSummary(invoice.payment_summary, splitSettlement)
-  const settlementFailure = settlementQuery.error && !isSettlementUnavailable(settlementQuery.error)
+  const settlementFailure = Boolean(settlementQuery.error && (splitSettlement || !isSettlementUnavailable(settlementQuery.error)))
   const isPaid = paymentSummary ? paymentSummary.state === 'paid' : splitSettlement?.state === 'paid' || invoice.status === 'paid'
   const cashReceipt = isPaid ? invoice.cash_receipt : null
+  const collectionApplied = invoice.source_collection ? collectionAppliedPrincipal(invoice.source_collection, splitSettlement ? (paymentSummary?.applied_amount === null ? null : splitSettlement.confirmed_principal) : (paymentSummary ? paymentSummary.applied_amount : invoice.source_collection.native_confirmed_principal)) : null
   const isPending = splitSettlement
     ? isPositiveMoney(splitSettlement.active_pending_principal)
     : Boolean(invoice.pending_zelle_confirmation)
@@ -373,41 +375,41 @@ export default function CustomerInvoicePage() {
             </p>
           )}
           <p className="flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 text-[13px] text-[#8b92a5]">
-            <span>{invoice.order_number}</span>
+            <span>{isCollectionInvoice || invoice.source_collection ? customerInvoiceLabel(invoice) : invoice.order_number}</span>
             <span aria-hidden="true">·</span>
             <span className="text-[#d9a521]">{invoice.vehicle_info}</span>
             <span className="rounded-full border border-violet-400/35 bg-violet-400/10 px-2.5 py-0.5 text-[11px] font-bold text-[#a78bfa]">
-              {isLinkedSourceHistory ? 'Original ETS record' : paymentSummary ? invoicePaymentLabels[paymentSummary.state] : isPaid ? 'paid' : 'invoiced'}
+              {isLinkedSourceHistory ? 'Historical record' : paymentSummary ? invoicePaymentLabels[paymentSummary.state] : isPaid ? 'paid' : 'invoiced'}
             </span>
           </p>
           {(isHistoricalInvoice || splitSettlement || cashReceipt || paymentSummary) && (
             <p className="mt-2.5 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#8b92a5]">{isLinkedSourceHistory ? 'Original invoice total' : isHistoricalInvoice && !paymentSummary ? 'Invoice total (recorded)' : paymentSummary?.state === 'cancelled' ? 'Invoice status' : cashReceipt ? 'Total paid in cash' : 'Balance due'}</p>
           )}
           <h1 id="payment-total" className={`${splitSettlement ? 'mt-1' : 'mt-2.5'} whitespace-nowrap text-[38px] font-extrabold leading-none tracking-[-0.02em] tabular-nums sm:text-[46px]`}>
-            {isLinkedSourceHistory ? money(invoice.source_collection!.original_issued_total) : isHistoricalInvoice && !paymentSummary ? money(invoice.total_amount) : paymentSummary?.state === 'cancelled' ? 'Cancelled' : paymentSummary?.balance_due === null ? 'Unavailable' : money(cashReceipt?.amount ?? splitSettlement?.outstanding_balance ?? paymentSummary?.balance_due ?? (isPaid ? '0' : pricing.selectedTotal))}
+            {isLinkedSourceHistory ? money((invoice.source_collection?.original_issued_total ?? invoice.total_amount)) : isHistoricalInvoice && !paymentSummary ? money(invoice.total_amount) : paymentSummary?.state === 'cancelled' ? 'Cancelled' : paymentSummary?.balance_due === null ? 'Unavailable' : money(cashReceipt?.amount ?? splitSettlement?.outstanding_balance ?? paymentSummary?.balance_due ?? (isPaid ? '0' : pricing.selectedTotal))}
           </h1>
           {!isHistoricalInvoice && !cashReceipt && !isPaid && <p className={`mt-1 min-h-5 text-[13px] font-bold ${selectedMethod === 'zelle' ? 'text-[#2dd4bf]' : 'text-[#8b92a5]'}`}>
             {splitSettlement
               ? selectedMethod === 'zelle'
                 ? 'No card fee with Zelle'
-                : 'Card fee is calculated only on the card-funded amount'
+                : 'Card fees apply to card payments.'
               : selectedMethod === 'zelle'
               ? pricing.cardFee > 0 && `No card fee with Zelle — you save ${money(pricing.cardFee)}`
               : `Includes ${money(pricing.cardFee)} card processing fee`}
           </p>}
         </section>
 
-        {!isLinkedSourceHistory && <InvoicePaymentSummary summary={paymentSummary} dark />}
-        {invoice.source_collection && <SourceCollectionSummary summary={invoice.source_collection} dark originalInvoiceHref={invoice.source_collection.source_invoice_id ? `/portal/invoices/${invoice.source_collection.source_invoice_id}` : undefined} />}
+        {!isLinkedSourceHistory && !splitSettlement && <InvoicePaymentSummary summary={paymentSummary} dark />}
+        {!isLinkedSourceHistory && isPaid && splitSettlement && (isPositiveMoney(splitSettlement.refund_pending) || isPositiveMoney(splitSettlement.unapplied_credit)) && <SettlementSummaryCard audience="customer" streamlined resolutionOnly summary={splitSettlement} tone="dark" />}
 
         {isHistoricalInvoice ? (
           <section className="mt-4 rounded-[14px] border border-[#232939] bg-[#161a26] p-5" aria-labelledby="historical-invoice-title">
             <h2 id="historical-invoice-title" className="font-bold text-[#eceef4]">Historical invoice</h2>
             {invoice.source_collection?.is_source_history && invoice.source_collection.native_invoice_id ? <>
-              <p className="mt-2 text-sm text-[#c9cdd8]">This is the original ETS record. Collection is tracked on the linked DBN invoice.</p>
-              <a className="mt-3 inline-flex min-h-11 items-center font-semibold text-[#c4b1ff]" href={`/portal/invoices/${invoice.source_collection.native_invoice_id}`}>Open collection invoice</a>
+              <p className="mt-2 text-sm text-[#c9cdd8]">This invoice is for your records.</p>
+              <a className="mt-3 inline-flex min-h-11 items-center font-semibold text-[#c4b1ff]" href={`/portal/invoices/${invoice.source_collection.native_invoice_id}`}>View current invoice</a>
             </> : <>
-              <p className="mt-2 text-sm text-[#c9cdd8]">This imported invoice is read-only. Online payments are unavailable for this record.</p>
+              <p className="mt-2 text-sm text-[#c9cdd8]">This invoice is for your records. Online payment is unavailable for this document.</p>
               <p className="mt-2 text-sm text-[#9aa1b3]">You can review the available invoice details and download the PDF below. Contact the shop with any questions.</p>
             </>}
           </section>
@@ -415,7 +417,7 @@ export default function CustomerInvoicePage() {
           || invoice.source_collection.state !== 'active'
           || ['source_conflict', 'source_unavailable'].includes(invoice.source_collection.source_sync_state)
           || legacySettlementMode) ? (
-          <p role="status" className="my-4 text-center text-sm">Contact the shop to confirm payment availability for this collection copy.</p>
+          <p role="status" className="my-4 text-center text-sm">Contact the shop to confirm payment availability.</p>
         ) : paymentSummary && ['cancelled', 'unknown'].includes(paymentSummary.state) ? (
           <p className="my-4 text-center text-sm">{paymentSummary.state === 'cancelled' ? 'This invoice is cancelled.' : 'Contact the shop to confirm your current balance before paying.'}</p>
         ) : isPaid ? (
@@ -435,12 +437,15 @@ export default function CustomerInvoicePage() {
               Receipt
             </a>
           </section>
-        ) : splitSettlement && settlementAccess ? (
+        ) : splitSettlement && settlementAccess && !settlementFailure ? (
           <div className="mt-4 space-y-4">
             <SettlementSummaryCard
               summary={splitSettlement}
+                hideConfirmed={Boolean(invoice.source_collection)}
               allocations={allocationQuery.data?.items ?? []}
               tone="dark"
+              audience="customer"
+              streamlined
             />
             <SettlementResolutionPanel
               access={settlementAccess}
@@ -471,7 +476,7 @@ export default function CustomerInvoicePage() {
                 email: user?.email || null,
                 phone: user?.phone || null,
               }}
-              zelleRecipient={recipient ? { display: recipient, memo: invoice.order_number } : null}
+              zelleRecipient={recipient ? { display: recipient, memo: customerInvoiceMemo(invoice, invoice.order_number) } : null}
               onUpdated={next => {
                 queryClient.setQueryData(['invoice-settlement', 'authenticated', invoice.id], next)
                 queryClient.invalidateQueries({ queryKey: ['invoice-detail', invoiceId] })
@@ -631,7 +636,7 @@ export default function CustomerInvoicePage() {
         <section className="mt-4 rounded-[14px] border border-[#232939] bg-[#161a26] px-5 py-4" aria-labelledby="charge-breakdown">
           <div className="flex items-center justify-between gap-4 pb-2">
             <h2 id="charge-breakdown" className="min-w-0 truncate text-[11px] font-extrabold uppercase tracking-[0.1em] text-[#8b92a5]">
-              {isCollectionInvoice ? 'Collection balance' : `${concern} · Charges`}
+              {isCollectionInvoice ? 'Invoice' : `${concern} · Charges`}
             </h2>
             <a
               href={`/api/v1/invoices/${invoice.id}/pdf`}
@@ -643,7 +648,7 @@ export default function CustomerInvoicePage() {
             </a>
           </div>
           {cashReceipt && !isCollectionInvoice ? <CashReceiptBreakdown receipt={cashReceipt} /> : <div>
-            {(isCollectionInvoice ? [['Balance transferred', Number(invoice.subtotal)]] : [
+            {(isCollectionInvoice ? [['Invoice total', Number((invoice.source_collection?.original_issued_total ?? invoice.total_amount))], ...(isPositiveMoney(collectionApplied) ? [['Payments / credits applied', -Number(collectionApplied)]] : [])] : [
               ...(isHistoricalInvoice ? [['Subtotal', Number(invoice.subtotal)] as [string, number]] : [['Labor / Services', labor], ['Parts', parts]]),
               ['Shop Supplies', Number(invoice.shop_supplies_amount || 0)],
               ['Tax', Number(invoice.tax_amount || 0)],

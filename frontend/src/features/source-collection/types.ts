@@ -1,4 +1,6 @@
 export interface SourceCollectionSummary {
+  display_invoice_number?: string | null
+  customer_display_company?: string | null
   is_source_history?: boolean
   restricted_history?: boolean
   source_invoice_id?: string

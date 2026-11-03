@@ -1,3 +1,4 @@
+import { customerInvoiceMemo, customerInvoiceLabel } from '@/lib/invoiceIdentity'
 import { ControlButton } from '@/components/ui/Controls'
 import CashReceiptBreakdown from './CashReceiptBreakdown'
 import { useState, useEffect, useRef, type MouseEvent as ReactMouseEvent, type TouchEvent } from 'react'
@@ -800,7 +801,7 @@ function CustomerRepairs() {
   const zelleAmount = invoice
     ? (parseFloat(invoice.total_amount) - parseFloat(invoice.service_fee_amount || '0')).toFixed(2)
     : '0.00'
-  const zelleMemo = invoice ? `Invoice #${invoice.invoice_number}` : ''
+  const zelleMemo = invoice ? customerInvoiceMemo(invoice, `Invoice #${invoice.invoice_number}`) : ''
 
   useEffect(() => {
     if (!user) return
@@ -828,7 +829,7 @@ function CustomerRepairs() {
       const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
       const link = document.createElement('a')
       link.href = url
-      link.setAttribute('download', `Invoice-${invoice.invoice_number}.pdf`)
+      link.setAttribute('download', `${customerInvoiceLabel(invoice).replace(/ /g, '-')}.pdf`)
       document.body.appendChild(link)
       link.click()
       link.remove()
@@ -1174,7 +1175,7 @@ function CustomerRepairs() {
             <div className="flex items-center gap-3 mb-4">
               <FileText className="w-6 h-6 text-purple-400" />
               <div className="flex-1">
-                <h3 className="font-semibold text-white">Invoice {invoice.invoice_number}</h3>
+                <h3 className="font-semibold text-white">{customerInvoiceLabel(invoice)}</h3>
                 {getVehicleLabel(selectedOrder) && (
                   <p className="text-amber-300 text-xs font-medium">{getVehicleLabel(selectedOrder)}</p>
                 )}
@@ -1618,7 +1619,7 @@ export default function CustomerPortalPage() {
     (part): part is string => Boolean(part?.trim()),
   )
   const profileDisplayName = profileNameParts.join(' ').trim() || user?.email || 'Account'
-  const portalBrandName = tenantBranding?.name || user?.tenant_name || 'Diesel Bridge Network'
+  const portalBrandName = tenantBranding?.name || user?.tenant_name || 'Your shop'
   const profileMonogram = (
     profileNameParts.map((part) => part.charAt(0)).join('') ||
     user?.email?.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2) ||
@@ -1719,6 +1720,7 @@ export default function CustomerPortalPage() {
               aria-label={`${portalBrandName} customer portal`}
             >
               <TenantBrandLogo
+            tenantOnly
                 tenantLogoUrl={tenantBranding?.logo_url}
                 tenantName={portalBrandName}
                 fallbackVariant="admin"

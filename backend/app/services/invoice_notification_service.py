@@ -1,3 +1,4 @@
+from app.services.invoice_identity import load_invoice_display_number, pdf_filename_for_number
 from app.services.source_debt_handoff import source_collection_for_invoice
 from app.services.invoice_payment_presentation import load_payment_summary, payment_summary_html
 from app.services.invoice_review_service import invoice_review_url, invoice_review_html
@@ -293,7 +294,7 @@ async def send_invoice_payment_confirmation_email(
             zelle_email=tenant.zelle_email if tenant else None,
             zelle_phone=tenant.zelle_phone if tenant else None,
         )
-        attachments = [{"filename": f"Invoice-{invoice.invoice_number}-PAID.pdf", "content": pdf_bytes}]
+        attachments = [{"filename": pdf_filename_for_number(await load_invoice_display_number(db, invoice, tenant), paid=True), "content": pdf_bytes}]
     except Exception:
         pass
 
@@ -301,7 +302,7 @@ async def send_invoice_payment_confirmation_email(
         db=db,
         tenant_id=str(invoice.tenant_id),
         to=customer.email,
-        subject=f"Payment Received – {invoice.invoice_number} ({shop_name})",
+        subject=f"Payment Received – {await load_invoice_display_number(db, invoice, tenant)} ({shop_name})",
         body=html_body,
         template_name="invoice_paid_confirmation",
         attachments=attachments,

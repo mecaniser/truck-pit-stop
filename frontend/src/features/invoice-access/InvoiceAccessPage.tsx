@@ -1,12 +1,13 @@
+import { collectionAppliedPrincipal } from '@/features/source-collection/collectionAppliedPrincipal'
+import { customerInvoiceLabel, customerInvoiceMemo } from '@/lib/invoiceIdentity'
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { currentInvoicePaymentSummary } from '@/lib/invoicePaymentPresentation'
 import InvoicePaymentSummary from '@/components/InvoicePaymentSummary'
 import { invoicePaymentLabels } from '@/lib/invoicePaymentLabels'
 import type { InvoicePaymentPresentation } from '@/types'
 import InvoiceReviewLink from '@/components/InvoiceReviewLink'
-import SourceCollectionSummary from '@/features/source-collection/SourceCollectionSummary'
 import type { SourceCollectionSummary as CollectionSummary } from '@/features/source-collection/types'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { CashReceiptSummary } from '../../types'
 import { Spinner } from '@/components/ui'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
@@ -27,6 +28,7 @@ import {
   SettlementPaymentPanel,
   SettlementResolutionPanel,
   SettlementSummaryCard,
+  isPositiveMoney,
   isSettlementUnavailable,
   paymentApiError,
   useInvoiceAllocations,
@@ -297,12 +299,13 @@ export default function InvoiceAccessPage() {
   const allocationQuery = useInvoiceAllocations(settlementAccess, Boolean(settlementQuery.data))
   const splitSettlement = settlementQuery.data?.feature_enabled === false ? null : settlementQuery.data
   const paymentSummary = currentInvoicePaymentSummary(invoice?.payment_summary, splitSettlement)
-  const settlementFailure = settlementQuery.error && !isSettlementUnavailable(settlementQuery.error)
+  const settlementFailure = Boolean(settlementQuery.error && (splitSettlement || !isSettlementUnavailable(settlementQuery.error)))
 
   const paidInThisSession = paymentResult !== null
   const isPaid = !!invoice && (paymentSummary ? paymentSummary.state === 'paid' : splitSettlement?.state === 'paid' || invoice.is_paid || paidInThisSession)
   const cashReceipt = isPaid ? invoice?.cash_receipt : null
   const paidAt = cashReceipt?.paid_at ?? paymentResult?.paidAt ?? invoice?.paid_at ?? null
+  const collectionApplied = invoice?.source_collection ? collectionAppliedPrincipal(invoice.source_collection, splitSettlement ? (paymentSummary?.applied_amount === null ? null : splitSettlement.confirmed_principal) : (paymentSummary ? paymentSummary.applied_amount : invoice.source_collection.native_confirmed_principal)) : null
   const portalTokenForCreate = paidInThisSession
     ? paymentResult?.portalEnrollmentToken ?? null
     : token
@@ -321,8 +324,13 @@ export default function InvoiceAccessPage() {
     const telHref = shopPhone && normalizedPhone ? `tel:${normalizedPhone}` : null
     return { shopName, shopEmail, shopPhone, shopLogoUrl, telHref }
   })()
-  const pageBrandName = invoice?.shop_name || shopContact.shopName || 'Diesel Bridge Network'
+  const pageBrandName = invoice?.shop_name || shopContact.shopName || 'Your shop'
   const pageBrandLogoUrl = invoice?.shop_logo_url || shopContact.shopLogoUrl || null
+  useEffect(() => {
+    const previousTitle = document.title
+    document.title = `${invoice ? customerInvoiceLabel(invoice) : 'Invoice'} | ${pageBrandName}`
+    return () => { document.title = previousTitle }
+  }, [invoice, pageBrandName])
 
   const createIntentMutation = useMutation({
     mutationFn: async (tokenValue: string) => {
@@ -444,6 +452,7 @@ export default function InvoiceAccessPage() {
               tenantLogoUrl={pageBrandLogoUrl}
               tenantName={pageBrandName}
               fallbackVariant="admin"
+              tenantOnly
               className="h-12 w-auto object-contain drop-shadow-[0_1px_2px_rgba(15,23,42,0.35)]"
             />
           </div>
@@ -530,11 +539,11 @@ export default function InvoiceAccessPage() {
         <div className="flex items-center gap-2 px-3 py-2.5">
           <div className="flex-1">
             <p className="text-xs text-blue-600 font-medium mb-0.5">Memo</p>
-            <p className="text-sm text-gray-800 font-medium">#{invoice.invoice_number}</p>
+            <p className="text-sm text-gray-800 font-medium">{customerInvoiceMemo(invoice, `#${invoice.invoice_number}`)}</p>
           </div>
           <ControlButton
             type="button"
-            onClick={() => copyToClipboard(`#${invoice.invoice_number}`, 'memo')}
+            onClick={() => copyToClipboard(customerInvoiceMemo(invoice, `#${invoice.invoice_number}`), 'memo')}
             className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
           >
             {copiedKey === 'memo' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
@@ -589,12 +598,13 @@ export default function InvoiceAccessPage() {
               tenantLogoUrl={pageBrandLogoUrl}
               tenantName={pageBrandName}
               fallbackVariant="admin"
+              tenantOnly
               className="h-12 sm:h-14 w-auto object-contain drop-shadow-[0_1px_2px_rgba(15,23,42,0.35)]"
             />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">Invoice {invoice.invoice_number}</h1>
+          <h1 className="text-3xl font-bold text-gray-900">{customerInvoiceLabel(invoice)}</h1>
           <p className="text-gray-600 mt-1">
-            Order {invoice.order_number}
+            {!(invoice.source_collection && !invoice.source_collection.is_source_history) && <>Order {invoice.order_number}</>}
             {invoice.due_date ? ` • Due ${format(new Date(invoice.due_date), 'MMM d, yyyy')}` : ''}
           </p>
           <div className="flex gap-2 mt-3 print:hidden">
@@ -620,7 +630,7 @@ export default function InvoiceAccessPage() {
               onClick={() => {
                 const url = window.location.href
                 if (navigator.share) {
-                  navigator.share({ title: `Invoice ${invoice.invoice_number}`, url }).catch(() => {})
+                  navigator.share({ title: customerInvoiceLabel(invoice), url }).catch(() => {})
                 } else {
                   navigator.clipboard.writeText(url).then(() => toast.success('Link copied!'))
                 }
@@ -647,11 +657,15 @@ export default function InvoiceAccessPage() {
               <span className="text-gray-700 font-medium">{invoice.source_collection?.is_source_history ? 'Original invoice total' : paymentSummary?.state === 'cancelled' ? 'Invoice status' : 'Balance due'}</span>
               <span className="text-3xl font-bold text-gray-900">{invoice.source_collection?.is_source_history ? formatMoney(invoice.source_collection.original_issued_total) : paymentSummary?.state === 'cancelled' ? 'Cancelled' : paymentSummary?.balance_due === null ? 'Unavailable' : formatMoney(isPaid ? '0' : splitSettlement?.outstanding_balance ?? paymentSummary?.balance_due ?? invoice.amount_due)}</span>
             </div>
-            <p className="text-xs text-gray-500 mt-2">{invoice.source_collection?.is_source_history ? 'Original ETS record' : `Status: ${paymentSummary ? invoicePaymentLabels[paymentSummary.state] : invoice.status.replace('_', ' ')}`}</p>
+            <p className="text-xs text-gray-500 mt-2">{invoice.source_collection?.is_source_history ? 'Historical record' : `Status: ${paymentSummary ? invoicePaymentLabels[paymentSummary.state] : invoice.status.replace('_', ' ')}`}</p>
           </div>
 
-          {!invoice.source_collection?.is_source_history && <InvoicePaymentSummary summary={paymentSummary} />}
-          {invoice.source_collection && <SourceCollectionSummary summary={invoice.source_collection} originalInvoiceHref={invoice.source_collection.source_invoice_id ? `/portal/invoices/${invoice.source_collection.source_invoice_id}` : undefined} />}
+          {!invoice.source_collection?.is_source_history && !splitSettlement && <InvoicePaymentSummary summary={paymentSummary} />}
+          {!invoice.source_collection?.is_source_history && isPaid && splitSettlement && (isPositiveMoney(splitSettlement.refund_pending) || isPositiveMoney(splitSettlement.unapplied_credit)) && <SettlementSummaryCard audience="customer" streamlined resolutionOnly summary={splitSettlement} tone="light" />}
+          {invoice.source_collection && !invoice.source_collection.is_source_history && <div className="mb-6 rounded-xl border border-gray-200 p-4 text-sm" aria-label="Invoice amounts">
+            <div className="flex justify-between gap-4"><span>Invoice total</span><span>{formatMoney(invoice.source_collection.original_issued_total)}</span></div>
+            {isPositiveMoney(collectionApplied) && <div className="mt-2 flex justify-between gap-4"><span>Payments / credits applied</span><span>{formatMoney(`-${collectionApplied}`)}</span></div>}
+          </div>}
 
           {(!invoice.source_collection || invoice.source_collection.is_source_history) && <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
             <h3 className="text-sm font-semibold text-gray-900 mb-3">{cashReceipt ? 'Cash Receipt Breakdown' : 'Invoice Breakdown'}</h3>
@@ -685,13 +699,13 @@ export default function InvoiceAccessPage() {
             </div>
           </div>}
 
-          {invoice.source_collection?.is_source_history ? <div className="my-4 text-center text-sm"><p>This is the original ETS record. Collection is tracked on the linked DBN invoice.</p>
-            {invoice.source_collection.native_invoice_id && <a className="mt-2 inline-flex min-h-11 items-center font-semibold text-orange-700" href={`/portal/invoices/${invoice.source_collection.native_invoice_id}`}>Open collection invoice in portal</a>}</div>
+          {invoice.source_collection?.is_source_history ? <div className="my-4 text-center text-sm"><p>This invoice is for your records.</p>
+            {invoice.source_collection.native_invoice_id && <a className="mt-2 inline-flex min-h-11 items-center font-semibold text-orange-700" href={`/portal/invoices/${invoice.source_collection.native_invoice_id}`}>View current invoice in portal</a>}</div>
           : !isPaid && invoice.source_collection && (invoice.source_collection.collection_enabled === false
             || invoice.source_collection.state !== 'active'
             || ['source_conflict', 'source_unavailable'].includes(invoice.source_collection.source_sync_state)
             || !splitSettlement) ? (
-            <p role="status" className="my-4 text-center text-sm">Contact the shop to confirm payment availability for this collection copy.</p>
+            <p role="status" className="my-4 text-center text-sm">Contact the shop to confirm payment availability.</p>
           ) : paymentSummary && ['cancelled', 'unknown'].includes(paymentSummary.state) ? (
           <p className="my-4 text-center text-sm">{paymentSummary.state === 'cancelled' ? 'This invoice is cancelled.' : 'Contact the shop to confirm your current balance before paying.'}</p>
         ) : isPaid ? (
@@ -715,10 +729,13 @@ export default function InvoiceAccessPage() {
                 showTokenWarning={paidInThisSession && !portalTokenForCreate}
               />
             </section>
-          ) : splitSettlement && settlementAccess ? (
+          ) : splitSettlement && settlementAccess && !settlementFailure ? (
             <div className="space-y-4">
               <SettlementSummaryCard
+                audience="customer"
+                streamlined
                 summary={splitSettlement}
+                hideConfirmed={Boolean(invoice.source_collection)}
                 allocations={allocationQuery.data?.items ?? []}
                 tone="light"
               />
@@ -739,7 +756,7 @@ export default function InvoiceAccessPage() {
                 audience="guest"
                 tone="light"
                 zelleRecipient={(invoice.zelle_phone || invoice.zelle_email)
-                  ? { display: invoice.zelle_phone || invoice.zelle_email!, memo: `#${invoice.invoice_number}` }
+                  ? { display: invoice.zelle_phone || invoice.zelle_email!, memo: customerInvoiceMemo(invoice, `#${invoice.invoice_number}`) }
                   : null}
                 onUpdated={next => {
                   queryClient.setQueryData(['invoice-settlement', 'guest', token], next)
@@ -900,12 +917,7 @@ export default function InvoiceAccessPage() {
               )}
             </p>
           ) : null}
-          <p className="text-xs text-gray-400 mt-4">
-            Powered by{' '}
-            <a href="/" className="hover:text-gray-500 transition-colors">
-              DieselBridge Network
-            </a>
-          </p>
+
         </div>
       </div>
     </div>
