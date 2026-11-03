@@ -1,7 +1,7 @@
 # DB-149 customer portal implementation review — 2026-11-03
 
 Owner: Frontend & UX. Branch: `codex/portal-task-first-implementation`, based on `8582077ba3069e1e1ddbf1dd2d934d7ff80ca58a`.
-Status: implementation and local acceptance review; [draft PR767](https://github.com/mecaniser/truck-pit-stop/pull/767), source commit `461cee28`. No merge/deploy authorization for this change.
+Status: implementation and local acceptance review; [PR767](https://github.com/mecaniser/truck-pit-stop/pull/767), source commit `461cee28`. No merge/deploy authorization for this change.
 
 ## Acceptance and contract
 
