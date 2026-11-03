@@ -6,7 +6,7 @@ import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
 import { lazyRouteLoader } from '@/lib/staleDeploy'
 import { useQuery } from '@tanstack/react-query'
 import { lazy, Suspense, type MouseEvent as ReactMouseEvent, type TouchEvent, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useAuthStore } from '../../stores/authStore'
+import { getAuthenticatedSessionIdentity, useAuthStore } from '../../stores/authStore'
 import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown, MessageSquare, CreditCard, MoreHorizontal, ChevronLeft, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { useTheme } from '../../contexts/ThemeContext'
 import { inboxApi } from '@/features/communications/api'
@@ -53,6 +53,7 @@ function getStaffRailCanExpand() {
 export default function DashboardLayout() {
   useWorkspaceViewport()
   const { user } = useAuthStore()
+  const identity = useAuthStore(getAuthenticatedSessionIdentity)
   const location = useLocation()
   const [mobileNavPage, setMobileNavPage] = useState<'primary' | 'secondary'>('primary')
   const [staffRailExpanded, setStaffRailExpanded] = useState(getInitialStaffRailExpanded)
@@ -75,12 +76,13 @@ export default function DashboardLayout() {
   const messagesNavLink = { to: '/dashboard/messages', label: 'Messages', mobileLabel: 'Messages', exact: false, icon: MessageSquare }
   const shouldFetchMessagesUnread = Boolean(user && user.role !== 'super_admin' && canAccessMessaging)
   const { data: unreadSummary } = useQuery({
-    queryKey: ['messages-unread-summary'],
-    queryFn: async () => {
-      const rows = await inboxApi.list()
+    queryKey: ['messages-unread-summary', identity],
+    placeholderData: undefined,
+    queryFn: async ({ signal }) => {
+      const rows = await inboxApi.list(undefined, signal)
       return { unread_count_staff: rows.reduce((count, row) => count + row.unreadCount, 0) }
     },
-    enabled: shouldFetchMessagesUnread,
+    enabled: Boolean(identity) && shouldFetchMessagesUnread,
     staleTime: 0,
     refetchInterval: 45000,
     refetchIntervalInBackground: true,

@@ -310,6 +310,10 @@ function RouteLoading() {
 }
 
 function App() {
+  const logoutInProgress = useAuthStore(state => state.logoutInProgress)
+  // Close the entire private provider tree before the asynchronous logout finishes.
+  // Otherwise login redirects can remount shell reads with the retained actor.
+  if (logoutInProgress) return <div role="status" aria-live="polite" className="min-h-screen grid place-items-center bg-slate-950 text-white">Signing out…</div>
   return (
     <ThemeProvider>
     <BrowserRouter>

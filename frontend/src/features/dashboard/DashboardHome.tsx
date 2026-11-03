@@ -28,7 +28,7 @@ import { isAxiosError } from 'axios'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { formatUSPhone } from '@/utils/phone'
-import { useAuthStore } from '../../stores/authStore'
+import { getAuthenticatedSessionIdentity, useAuthStore } from '../../stores/authStore'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useNotificationManager } from '../../hooks/useNotificationManager'
@@ -405,10 +405,23 @@ function OrderCard({
 }
 
 export default function DashboardHome() {
-  const { user, authSessionEpoch } = useAuthStore()
+  const identity = useAuthStore(getAuthenticatedSessionIdentity)
+  const user = useAuthStore(state => state.user)
+  // Unmount private surfaces immediately on logout intent or deactivation. Query
+  // enablement alone would leave warm data and manual refetch controls mounted.
+  const logoutInProgress = useAuthStore(state => state.logoutInProgress)
+  if (!identity || !user?.tenant_id) {
+    return logoutInProgress ? <div role="status" aria-live="polite" className="p-6 text-sm text-gray-500">Signing out…</div> : null
+  }
+  return <AuthenticatedDashboardHome key={`${identity}:${user.permissions?.payments === true}`} />
+}
+
+function AuthenticatedDashboardHome() {
+  const { user } = useAuthStore()
+  const identity = useAuthStore(getAuthenticatedSessionIdentity)
   // Queue rows and value summaries must never outlive their authorization scope.
-  const dashboardIdentity = [user?.tenant_id, user?.id, user?.role, user?.permissions?.payments === true, authSessionEpoch] as const
-  const hasDashboardActor = Boolean(user?.tenant_id && user?.id)
+  const dashboardIdentity = [identity, user?.permissions?.payments === true] as const
+  const hasDashboardActor = Boolean(identity && user?.tenant_id && user?.id)
   const { accentColors, fontSize, presentationVariant } = useTheme()
   const navigate = useNavigate()
   const location = useLocation()
@@ -503,8 +516,8 @@ export default function DashboardHome() {
   const { data: stats, isLoading: loading, error: queryError, isFetching: isRefreshing, dataUpdatedAt } = useQuery<DashboardStats>({
     queryKey: ['dashboard-action-queue', ...dashboardIdentity],
     placeholderData: undefined,
-    queryFn: async () => {
-      const response = await api.get('/dashboard/action-queue')
+    queryFn: async ({ signal }) => {
+      const response = await api.get('/dashboard/action-queue', { signal })
       return response.data
     },
     enabled: hasDashboardActor && presentationVariant !== 'new',
@@ -531,7 +544,7 @@ export default function DashboardHome() {
   } = useQuery<DailyWorkbench>({
     queryKey: ['dashboard-daily-workset', ...dashboardIdentity],
     placeholderData: undefined,
-    queryFn: async () => (await api.get('/dashboard/daily-workset')).data,
+    queryFn: async ({ signal }) => (await api.get('/dashboard/daily-workset', { signal })).data,
     enabled: hasDashboardActor && presentationVariant === 'new' && !selectedShopWorkRecord,
     refetchInterval: query => scheduleRefreshInterval(query.state.data ? [query.state.data.needs_attention, query.state.data.on_floor, query.state.data.ready_to_close, query.state.data.closed_today].flatMap(queue => queue.items) : []),
     refetchIntervalInBackground: false,
@@ -543,7 +556,7 @@ export default function DashboardHome() {
   const overviewQuery = useQuery<ShopWorkOverviewData>({
     queryKey: ['shop-work-overview', ...dashboardIdentity],
     placeholderData: undefined,
-    queryFn: async () => (await api.get('/dashboard/shop-work-overview')).data,
+    queryFn: async ({ signal }) => (await api.get('/dashboard/shop-work-overview', { signal })).data,
     enabled: hasDashboardActor && presentationVariant === 'new' && !selectedShopWorkRecord,
     staleTime: 0,
     refetchInterval: 60_000,
@@ -555,7 +568,8 @@ export default function DashboardHome() {
   const shopValueSummaryQuery = useQuery<OrderValueSummary>({
     queryKey: ['dashboard-daily-workset', 'value-summary', ...dashboardIdentity, shopValueScope.lane, debouncedShopValueSearch],
     placeholderData: undefined,
-    queryFn: async () => (await api.get('/dashboard/daily-workset/value-summary', {
+    queryFn: async ({ signal }) => (await api.get('/dashboard/daily-workset/value-summary', {
+      signal,
       params: {
         lane: shopValueScope.lane,
         ...(debouncedShopValueSearch ? { search: debouncedShopValueSearch } : {}),

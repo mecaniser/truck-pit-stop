@@ -169,7 +169,7 @@ export const inboxApi = {
       })
     ).data;
   },
-  list: async (search?: string) => {
+  list: async (search?: string, signal?: AbortSignal) => {
     const rows: Conversation[] = [];
     let cursor: string | null = null;
     do {
@@ -183,6 +183,7 @@ export const inboxApi = {
         };
       } = await api.get("/communications/conversations", {
         params: { limit: 100, search, ...(cursor ? { cursor } : {}) },
+        ...(signal ? { signal } : {}),
       });
       rows.push(...data.items.map(mapConversation));
       cursor = data.has_more ? data.next_cursor : null;
