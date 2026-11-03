@@ -695,6 +695,7 @@ export interface Invoice {
   zelle_pending_sender_phone?: string | null
   zelle_pending_last_reminder_at?: string | null
   zelle_pending_reminder_count?: number
+  payment_summary?: InvoicePaymentPresentation | null
   cash_receipt?: CashReceiptSummary | null
   payment?: InvoicePaymentSummary | null
   created_at: string

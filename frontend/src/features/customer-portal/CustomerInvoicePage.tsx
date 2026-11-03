@@ -1,3 +1,4 @@
+import { collectionAppliedPrincipal } from '@/features/source-collection/collectionAppliedPrincipal'
 import { customerInvoiceLabel, customerInvoiceMemo } from '@/lib/invoiceIdentity'
 import { ControlButton } from '@/components/ui/Controls'
 import { currentInvoicePaymentSummary } from '@/lib/invoicePaymentPresentation'
@@ -178,7 +179,7 @@ export default function CustomerInvoicePage() {
   const settlementQuery = useInvoiceSettlement(settlementAccess)
   const allocationQuery = useInvoiceAllocations(settlementAccess, Boolean(settlementQuery.data))
   const legacySettlementMode = settlementQuery.data?.feature_enabled === false
-    || Boolean(settlementQuery.error && isSettlementUnavailable(settlementQuery.error))
+    || Boolean(!settlementQuery.data && settlementQuery.error && isSettlementUnavailable(settlementQuery.error))
 
   const { data: repairOrder } = useQuery<RepairOrderDetail>({
     queryKey: ['repair-order-payment-detail', invoice?.repair_order_id],
@@ -318,9 +319,10 @@ export default function CustomerInvoicePage() {
   const backDestination = paymentState?.paymentOrigin || 'History'
   const splitSettlement = isHistoricalInvoice || settlementQuery.data?.feature_enabled === false ? null : settlementQuery.data
   const paymentSummary = currentInvoicePaymentSummary(invoice.payment_summary, splitSettlement)
-  const settlementFailure = settlementQuery.error && !isSettlementUnavailable(settlementQuery.error)
+  const settlementFailure = Boolean(settlementQuery.error && (splitSettlement || !isSettlementUnavailable(settlementQuery.error)))
   const isPaid = paymentSummary ? paymentSummary.state === 'paid' : splitSettlement?.state === 'paid' || invoice.status === 'paid'
   const cashReceipt = isPaid ? invoice.cash_receipt : null
+  const collectionApplied = invoice.source_collection ? collectionAppliedPrincipal(invoice.source_collection, splitSettlement ? (paymentSummary?.applied_amount === null ? null : splitSettlement.confirmed_principal) : (paymentSummary ? paymentSummary.applied_amount : invoice.source_collection.native_confirmed_principal)) : null
   const isPending = splitSettlement
     ? isPositiveMoney(splitSettlement.active_pending_principal)
     : Boolean(invoice.pending_zelle_confirmation)
@@ -398,6 +400,7 @@ export default function CustomerInvoicePage() {
         </section>
 
         {!isLinkedSourceHistory && !splitSettlement && <InvoicePaymentSummary summary={paymentSummary} dark />}
+        {!isLinkedSourceHistory && isPaid && splitSettlement && (isPositiveMoney(splitSettlement.refund_pending) || isPositiveMoney(splitSettlement.unapplied_credit)) && <SettlementSummaryCard audience="customer" streamlined resolutionOnly summary={splitSettlement} tone="dark" />}
 
         {isHistoricalInvoice ? (
           <section className="mt-4 rounded-[14px] border border-[#232939] bg-[#161a26] p-5" aria-labelledby="historical-invoice-title">
@@ -434,10 +437,11 @@ export default function CustomerInvoicePage() {
               Receipt
             </a>
           </section>
-        ) : splitSettlement && settlementAccess ? (
+        ) : splitSettlement && settlementAccess && !settlementFailure ? (
           <div className="mt-4 space-y-4">
             <SettlementSummaryCard
               summary={splitSettlement}
+                hideConfirmed={Boolean(invoice.source_collection)}
               allocations={allocationQuery.data?.items ?? []}
               tone="dark"
               audience="customer"
@@ -644,7 +648,7 @@ export default function CustomerInvoicePage() {
             </a>
           </div>
           {cashReceipt && !isCollectionInvoice ? <CashReceiptBreakdown receipt={cashReceipt} /> : <div>
-            {(isCollectionInvoice ? [['Invoice total', Number((invoice.source_collection?.original_issued_total ?? invoice.total_amount))], ...(Number((invoice.source_collection?.source_prior_allocated ?? 0)) > 0 ? [['Payments / credits applied', -(Number((invoice.source_collection?.source_prior_allocated ?? 0)) + Number(splitSettlement?.confirmed_principal ?? paymentSummary?.applied_amount ?? 0))]] : [])] : [
+            {(isCollectionInvoice ? [['Invoice total', Number((invoice.source_collection?.original_issued_total ?? invoice.total_amount))], ...(isPositiveMoney(collectionApplied) ? [['Payments / credits applied', -Number(collectionApplied)]] : [])] : [
               ...(isHistoricalInvoice ? [['Subtotal', Number(invoice.subtotal)] as [string, number]] : [['Labor / Services', labor], ['Parts', parts]]),
               ['Shop Supplies', Number(invoice.shop_supplies_amount || 0)],
               ['Tax', Number(invoice.tax_amount || 0)],

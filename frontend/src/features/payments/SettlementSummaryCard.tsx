@@ -28,6 +28,8 @@ export default function SettlementSummaryCard({
   tone = 'dark',
   compact = false,
   streamlined = false,
+  resolutionOnly = false,
+  hideConfirmed = false,
   audience = 'staff',
   children,
 }: {
@@ -36,6 +38,8 @@ export default function SettlementSummaryCard({
   tone?: 'dark' | 'light'
   compact?: boolean
   streamlined?: boolean
+  resolutionOnly?: boolean
+  hideConfirmed?: boolean
   audience?: 'staff' | 'customer'
   children?: ReactNode
 }) {
@@ -50,8 +54,8 @@ export default function SettlementSummaryCard({
   const paid = summary.state === 'paid'
   const pending = isPositiveMoney(summary.active_pending_principal)
   const resolution = isPositiveMoney(summary.unapplied_credit) || isPositiveMoney(summary.refund_pending)
-  const figures = streamlined ? [
-    ...(isPositiveMoney(summary.confirmed_principal) ? [['Paid toward invoice', summary.confirmed_principal]] : []),
+  const figures = resolutionOnly ? [] : streamlined ? [
+    ...(!hideConfirmed && isPositiveMoney(summary.confirmed_principal) ? [['Paid toward invoice', summary.confirmed_principal]] : []),
     ...(pending ? [['Pending confirmation', summary.active_pending_principal], ['Available to pay', summary.allocatable_balance]] : []),
   ] : [
     ['Invoice total', summary.principal_total],
@@ -94,9 +98,8 @@ export default function SettlementSummaryCard({
         <div className={`flex gap-2 border-t px-3 py-3 text-sm ${divider} ${dark ? 'bg-amber-400/10 text-amber-200' : 'bg-amber-50 text-amber-900'}`}>
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
-            {isPositiveMoney(summary.refund_pending)
-              ? `${formatMoney(summary.refund_pending)} refund pending.`
-              : `${formatMoney(summary.unapplied_credit)} exceeds the invoice balance. Review this amount before deciding whether to refund it or retain it as customer credit with the customer’s consent.`}
+            {isPositiveMoney(summary.refund_pending) && <span className="block">{formatMoney(summary.refund_pending)} refund pending.</span>}
+            {isPositiveMoney(summary.unapplied_credit) && <span className="block">{formatMoney(summary.unapplied_credit)} exceeds the invoice balance. Review this amount before deciding whether to refund it or retain it as customer credit with the customer’s consent.</span>}
           </p>
         </div>
       )}
@@ -118,7 +121,7 @@ export default function SettlementSummaryCard({
         <p className={`border-t px-3 py-2.5 text-xs ${divider} ${quiet}`}>Cash recorded locally. Not synced to QuickBooks.</p>
       )}
 
-      {allocations.length > 0 && (
+      {!resolutionOnly && allocations.length > 0 && (
         <div className={`border-t ${divider}`}>
           <p className={`px-3 pt-3 text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>Payment history</p>
           <ol className={`divide-y ${dark ? 'divide-[#2a3245]' : 'divide-slate-200'}`}>
