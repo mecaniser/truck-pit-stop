@@ -12,12 +12,14 @@ import ConnectedInbox from "./ConnectedInbox";
 import DashboardInboxPage from "./DashboardInboxPage";
 import { inboxApi } from "./api";
 import { draftKey } from "./model";
-import { useAuthStore } from "../../stores/authStore";
+import { getAuthenticatedSessionIdentity, useAuthStore } from "../../stores/authStore";
 import { createDemoConversations, DEMO_TENANT, DEMO_USER } from "./fixtures";
 vi.mock("../../lib/api", () => ({ default: { get: vi.fn(), post: vi.fn() } }));
-vi.mock("../../stores/authStore", () => {
-  const state = { authSessionEpoch: 0, user: null as { role: string } | null };
+vi.mock("../../stores/authStore", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../stores/authStore")>();
+  const state = { authSessionEpoch: 0, isAuthenticated: false, logoutInProgress: false, authProvider: "legacy", user: null as { role: string } | null };
   return {
+    ...actual,
     useAuthStore: Object.assign(
       (select: (s: typeof state) => unknown) => select(state),
       { getState: () => state },
@@ -53,6 +55,7 @@ const storeKey = `inbox-send:${DEMO_TENANT}:${DEMO_USER}`;
 beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
+  Object.assign(useAuthStore.getState(), { isAuthenticated: false, logoutInProgress: false });
   (
     useAuthStore.getState() as unknown as { user: { role: string } | null }
   ).user = null;
@@ -424,6 +427,14 @@ describe("SMS setup entry", () => {
 });
 
 describe("dashboard inbox integration", () => {
+  beforeEach(() => {
+    Object.assign(useAuthStore.getState(), {
+      isAuthenticated: true,
+      logoutInProgress: false,
+      authProvider: "legacy",
+      user: { id: DEMO_USER, tenant_id: DEMO_TENANT, role: "garage_owner", is_active: true },
+    });
+  });
   it("separates real history by the same New York calendar days as message times", async () => {
     const history = {
       ...row,
@@ -490,7 +501,7 @@ describe("dashboard inbox integration", () => {
     expect(inboxApi.send).not.toHaveBeenCalled();
     await waitFor(() =>
       expect(unreadCache.setQueryData).toHaveBeenLastCalledWith(
-        ["messages-unread-summary"],
+        ["messages-unread-summary", getAuthenticatedSessionIdentity(useAuthStore.getState())],
         { unread_count_staff: 0 },
       ),
     );
