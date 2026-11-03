@@ -1,7 +1,7 @@
 # DB-149 customer portal implementation review — 2026-11-03
 
 Owner: Frontend & UX. Branch: `codex/portal-task-first-implementation`, based on `8582077ba3069e1e1ddbf1dd2d934d7ff80ca58a`.
-Status: implementation and local acceptance review; no merge/deploy authorization for this change.
+Status: implementation and local acceptance review; [draft PR767](https://github.com/mecaniser/truck-pit-stop/pull/767), source commit `461cee28`. No merge/deploy authorization for this change.
 
 ## Acceptance and contract
 
@@ -35,3 +35,5 @@ Final read-only database fingerprint comparison after browser QA: all nine prote
 ## Release boundary
 
 Preview approval is required before merge/deployment. Protected exact-head CI and production acceptance remain separate release gates. This item is not Done or deployed.
+
+Lint scope: changed-line baseline gate passes. Explicit whole-file ESLint across all edited/new TypeScript files additionally reports three unchanged pre-existing violations: ProfileSettingsPage catch-any lines111/291 and types/index.ts empty interface455. No new violations were introduced; those unrelated lines were preserved.
