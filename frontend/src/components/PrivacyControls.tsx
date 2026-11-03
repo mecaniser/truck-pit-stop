@@ -37,7 +37,7 @@ export default function PrivacyControls() {
     window.addEventListener(OPEN_SETTINGS, open)
     return () => window.removeEventListener(OPEN_SETTINGS, open)
   }, [])
-  useEffect(() => { setExpanded(false) }, [location.pathname])
+  useEffect(() => { setExpanded(false) }, [location.key])
   useEffect(() => { if (expanded) heading.current?.focus() }, [expanded])
   const close = () => {
     setExpanded(false)

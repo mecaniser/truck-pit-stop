@@ -17,6 +17,7 @@ const mount = (entry: 'footer' | 'settings' | null = 'footer', path = '/') => re
   {entry === 'footer' && <PolicyLinks />}
   {entry === 'settings' && <CookiePrivacySettings />}
   <Link to="/dashboard/garage/inventory">Go to Inventory</Link>
+  <Link to="/?view=another">Change view</Link>
 </MemoryRouter>)
 const open = () => fireEvent.click(screen.getByRole('button', { name: 'Cookie settings' }))
 
@@ -86,9 +87,9 @@ describe('necessary-only privacy choices', () => {
     act(() => { localStorage.removeItem(PRIVACY_KEY); window.dispatchEvent(new StorageEvent('storage', { key: PRIVACY_KEY })) })
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
-  it('closes when navigating away from the requesting page', () => {
+  it.each(['Go to Inventory', 'Change view'])('closes on route or query navigation: %s', name => {
     mount(); open()
-    fireEvent.click(screen.getByRole('link', { name: 'Go to Inventory' }))
+    fireEvent.click(screen.getByRole('link', { name }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
   it('keeps the OAuth callback free of privacy UI', () => {
