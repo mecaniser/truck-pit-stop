@@ -110,3 +110,11 @@ One selector now owns the list view and optional order status. A work queue is a
 Signed in to the local DB151 Quiet QA shop at the reported URL: Ready to Close contained completed 1049 and invoiced 1048. Selecting Completed showed 1049 alone with “1 order”; the unfiltered lane value disappeared. Overdue + Completed returned zero. Switching to All repair orders retained Completed and 1049; browser Back restored Overdue with the same selected ID. On a 390px phone the open menu occupied x23–378 with no horizontal overflow; choosing Invoiced showed 1048 only and tapping it opened that exact order. Escape returned focus to the selector. Restored the original desktop route; no order changes.
 
 75 tests passed across ledger, route/schedule, request cancellation, and deleted-order flows. [Desktop menu](assets/db151-destinations/ledger-filter-night.png) · [Phone menu](assets/db151-destinations/ledger-filter-phone.png)
+
+## Familiar navigation on the zero-active-work board, 2026-11-02
+
+Before the change, the DB151 Quiet QA stock task already opened the exact inventory part. Its breadcrumb returned to Overview with focus on the document body. After the change both browser Back from Inventory and the Purchasing breadcrumb restore the originating link. Close from repair 1049 does the same. The board expands to reveal a returning task outside the first group and falls back to its heading if the task has disappeared.
+
+Signed-in local check, 1440px and 390px, with Active work at zero. Purchasing selected the on-hand core for DB151-quiet-1048, even though Inventory lists the same brake chamber title as a separate stock task. A modified click opened the inventory record in another browser tab. No records were changed. Local runtime matches this checkout, Vite PID7423 on port5215, local API8041, postgres/truckpitstop_db151 migration197, database and Redis ready. 51 focused tests passed.
+
+[Return to the core task](assets/db151-destinations/ux-board-return.png) · [Selected core in Purchasing](assets/db151-destinations/ux-core-workspace.png)

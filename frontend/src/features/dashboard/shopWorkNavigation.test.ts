@@ -18,6 +18,12 @@ describe('Shop Work destination contract', () => {
     expect(shopWorkReturnUrl(url.searchParams)).toBe(SHOP_WORK_RETURN_URL)
   })
 
+  it('keeps a valid return task internal and rejects URL-shaped or malformed markers', () => {
+    const link = shopWorkDestinationUrl({ kind: 'core', id: 'c1', view: null }, 'attention:core:c1')
+    expect(shopWorkReturnUrl(new URL(link, 'https://shop.test').searchParams)).toBe('/dashboard?work_view=overview&task=attention%3Acore%3Ac1')
+    expect(shopWorkReturnUrl(new URLSearchParams({ shop_work: 'overview', task: '//other.example' }))).toBe(SHOP_WORK_RETURN_URL)
+  })
+
   it('accepts only the fixed origin marker and validates queue lanes', () => {
     expect(shopWorkReturnUrl(new URLSearchParams('shop_work=https://evil.test'))).toBeNull()
     expect(shopWorkReturnUrl(new URLSearchParams('return=https://evil.test'))).toBeNull()
