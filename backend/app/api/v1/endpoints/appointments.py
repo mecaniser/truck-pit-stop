@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Literal
 from uuid import UUID
 from datetime import datetime, date, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -7,7 +7,7 @@ import string
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func, or_
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr, StrictBool, Field
 from decimal import Decimal
 
 from app.core.dependencies import get_db, get_current_active_user
@@ -22,7 +22,11 @@ from app.db.models.appointment import Appointment, AppointmentStatus
 from sqlalchemy.orm import selectinload
 from app.services import booking_payments as booking
 
+from app.api.v1.endpoints.visit_requests import staff_router as visit_request_staff_router
+from app.services import booking_fulfillment as fulfillment
+
 router = APIRouter()
+router.include_router(visit_request_staff_router,prefix="/visit-requests",tags=["visit requests"])
 
 
 # Schemas
@@ -401,3 +405,67 @@ async def get_available_slots(
         current_time += timedelta(minutes=30)
     
     return slots
+
+
+class BookingRepairOrderLinkBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    repair_order_id:UUID
+    expected_booking_version:StrictInt=Field(ge=1)
+    reason:StrictStr=Field(min_length=3,max_length=4000)
+    expected_vehicle_id:UUID|None=None
+
+@router.post('/{appointment_id}/repair-order-link')
+async def link_booking_repair_order(appointment_id:UUID,body:BookingRepairOrderLinkBody,db:AsyncSession=Depends(get_db),current_user:User=Depends(get_current_active_user),idempotency_key:str|None=Header(None,alias='Idempotency-Key')):
+    return await fulfillment.link_appointment(db,current_user,appointment_id,body,idempotency_key)
+
+
+class BookingInvoiceOptions(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    due_date:date|None=None
+    discount_amount:Decimal=Field(default=Decimal('0.00'),ge=0,decimal_places=2)
+
+class BookingReceiptApplyBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    repair_order_id:UUID
+    receipt_id:UUID
+    expected_booking_version:StrictInt=Field(ge=1)
+    expected_receipt_version:StrictInt=Field(ge=1)
+    amount_minor:StrictInt=Field(gt=0)
+    expected_invoice_economics_sha256:StrictStr=Field(pattern=r'^[a-f0-9]{64}$')
+    invoice_options:BookingInvoiceOptions=Field(default_factory=BookingInvoiceOptions)
+    accounting_mode:Literal['external_manual']
+
+@router.post('/{appointment_id}/issue-invoice-with-prepayment')
+async def issue_invoice_with_booking_prepayment(appointment_id:UUID,body:BookingReceiptApplyBody,db:AsyncSession=Depends(get_db),current_user:User=Depends(get_current_active_user),idempotency_key:str|None=Header(None,alias='Idempotency-Key')):
+    from app.services.booking_receipt_application import issue_and_apply
+    return await issue_and_apply(db,current_user,appointment_id,body,idempotency_key)
+
+class BookingAccountingAckBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    expected_version:StrictInt=Field(ge=1)
+    evidence_reference:StrictStr=Field(min_length=3,max_length=1000)
+    external_company_reference:StrictStr=Field(min_length=1,max_length=255)
+    review_note:StrictStr=Field(min_length=3,max_length=4000)
+    receipt_liability_recorded:StrictBool
+    application_to_ar_recorded:StrictBool
+
+@router.post('/{appointment_id}/accounting-reviews/{task_id}/acknowledge')
+async def acknowledge_booking_accounting(appointment_id:UUID,task_id:UUID,body:BookingAccountingAckBody,db:AsyncSession=Depends(get_db),current_user:User=Depends(get_current_active_user),idempotency_key:str|None=Header(None,alias='Idempotency-Key')):
+    from app.services.booking_application_accounting import acknowledge_manual_accounting
+    from app.services.booking_receipt_application import prepayment_view
+    task=await acknowledge_manual_accounting(db,tenant_id=current_user.tenant_id,appointment_id=appointment_id,task_id=task_id,actor=current_user,idempotency_key=booking.key(idempotency_key),**body.model_dump())
+    await db.commit()
+    apt=await booking.admitted_appointment(db,current_user,appointment_id)
+    return await prepayment_view(db,apt)
+
+
+class BookingRefundVerificationBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    refund_id:StrictStr=Field(min_length=1,max_length=255)
+    expected_receipt_version:StrictInt=Field(ge=1)
+    expected_booking_version:StrictInt=Field(ge=1)
+
+@router.post('/{appointment_id}/refund-verifications')
+async def verify_existing_booking_refund(appointment_id:UUID,body:BookingRefundVerificationBody,db:AsyncSession=Depends(get_db),current_user:User=Depends(get_current_active_user),idempotency_key:str|None=Header(None,alias='Idempotency-Key')):
+    from app.services.booking_refund_verification import verify_existing_refund
+    return await verify_existing_refund(db,current_user,appointment_id,body,idempotency_key)

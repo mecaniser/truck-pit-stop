@@ -20,7 +20,12 @@
     "src/features/booking/__tests__/PortalBookingFlow.test.tsx",
     "src/features/booking/__tests__/BookingCheckout.test.tsx",
     "src/features/appointments/__tests__/PortalVisits.test.tsx",
-    "src/features/customer-portal/__tests__/QuickBooksPaymentPanel.test.tsx"
+    "src/features/customer-portal/__tests__/QuickBooksPaymentPanel.test.tsx",
+    "src/features/appointments/__tests__/CustomerVisitRequestCard.test.tsx",
+    "src/features/appointments/__tests__/VisitRequestsPage.test.tsx",
+    "src/features/appointments/__tests__/StaffReservationsPage.test.tsx",
+    "src/features/payments/__tests__/prepayment-verification.test.tsx",
+    "src/components/__tests__/InvoicePaymentSummary.test.tsx"
   ],
   "backend": [
     "tests/test_schema_preflight.py",
@@ -42,9 +47,7 @@
     "tests/test_workspace_typeaheads.py",
     "tests/test_request_performance.py",
     "tests/test_appointment_payment_unavailable.py",
-    "tests/test_booking_payment_provider.py",
     "tests/test_verified_booking_flow.py",
-    "tests/test_booking_invoice_guard.py",
-    "tests/test_booking_worker_runtime.py"
+    "tests/test_booking_*.py"
   ]
 }

@@ -199,6 +199,10 @@ async def test_missing_reserve_kind_is_not_legacy_creation_bypass(db_session,set
 async def test_signed_webhook_recovers_timed_out_create_only_through_exact_server_retrieval(db_session,setup_booking,monkeypatch):
     from dataclasses import replace
     chosen=replace(setup_booking[5],provider='stripe_connect',account_id='acct_fixture')
+    config=await db_session.scalar(select(TenantPaymentProviderConfiguration));config.is_active=False;config.deactivated_at=booking.now()
+    chosen=replace(chosen,configuration_version=2)
+    db_session.add(TenantPaymentProviderConfiguration(tenant_id=chosen.tenant_id,version=2,selected_provider=chosen.provider,readiness_state='ready',is_active=True,actor_user_id=setup_booking[3].id,actor_name_snapshot='Synthetic',provider_account_snapshot=chosen.account_id,qbo_realm_snapshot='realm-fixture',writer_strategy='dieselbridge',idempotency_key=str(uuid4()),request_hash='b'*64))
+    await db_session.commit()
     monkeypatch.setattr(booking.provider,'booking_provider_capability',AsyncMock(return_value=BookingProviderCapability(True,chosen)))
     apt=await hold(db_session,setup_booking)
     monkeypatch.setattr(booking.provider,'create_booking_payment',AsyncMock(side_effect=BookingProviderError('Unknown',outcome_unknown=True)))
@@ -220,6 +224,10 @@ async def test_signed_webhook_recovers_timed_out_create_only_through_exact_serve
 async def test_signed_refund_replays_preserve_gross_and_never_restore_full_payment(db_session,setup_booking,monkeypatch):
     from dataclasses import replace
     chosen=replace(setup_booking[5],provider='stripe_connect',account_id='acct_refund_fixture')
+    config=await db_session.scalar(select(TenantPaymentProviderConfiguration));config.is_active=False;config.deactivated_at=booking.now()
+    chosen=replace(chosen,configuration_version=2)
+    db_session.add(TenantPaymentProviderConfiguration(tenant_id=chosen.tenant_id,version=2,selected_provider=chosen.provider,readiness_state='ready',is_active=True,actor_user_id=setup_booking[3].id,actor_name_snapshot='Synthetic',provider_account_snapshot=chosen.account_id,qbo_realm_snapshot='realm-fixture',writer_strategy='dieselbridge',idempotency_key=str(uuid4()),request_hash='b'*64))
+    await db_session.commit()
     monkeypatch.setattr(booking.provider,'booking_provider_capability',AsyncMock(return_value=BookingProviderCapability(True,chosen)))
     apt=await hold(db_session,setup_booking)
     async def create(db,binding,**kwargs):
@@ -229,7 +237,7 @@ async def test_signed_refund_replays_preserve_gross_and_never_restore_full_payme
     event={'id':'evt_partial','type':'charge.refunded','account':chosen.account_id,'livemode':False,'data':{'object':{'id':'pi_refund_fixture','payment_intent':'pi_refund_fixture','amount':12000,'amount_refunded':5000,'currency':'usd'}}}
     await booking.dispatch_connect_event(db_session,event)
     receipt=await db_session.scalar(select(BookingReceipt));assert receipt.amount_received_minor==12000 and receipt.refunded_amount_minor==5000
-    assert apt.booking_payment_state=='refund_pending' and apt.status==AppointmentStatus.PENDING
+    assert apt.booking_payment_state=='refund_pending' and apt.status==AppointmentStatus.CONFIRMED
     await booking.dispatch_connect_event(db_session,event)
     event={**event,'id':'evt_old_partial','data':{'object':{**event['data']['object'],'amount_refunded':3000}}}
     await booking.dispatch_connect_event(db_session,event)

@@ -88,14 +88,14 @@ async def _load_line_items(db: AsyncSession, repair_order_id, invoice: Optional[
     if snapshot:
         return list(snapshot.get("labor", [])), list(snapshot.get("parts", []))
     labor_result = await db.execute(
-        select(Labor).where(Labor.repair_order_id == repair_order_id)
+        select(Labor).where(Labor.repair_order_id == repair_order_id, Labor.deleted_at.is_(None)).order_by(Labor.id)
     )
     labor_rows = labor_result.scalars().all()
 
     parts_result = await db.execute(
         select(PartsUsage)
         .options(selectinload(PartsUsage.inventory_item))
-        .where(PartsUsage.repair_order_id == repair_order_id)
+        .where(PartsUsage.repair_order_id == repair_order_id, PartsUsage.deleted_at.is_(None)).order_by(PartsUsage.id)
     )
     parts_rows = parts_result.scalars().all()
 
@@ -529,6 +529,17 @@ async def generate_invoice_number(db: AsyncSession, tenant_id: UUID) -> str:
     )
 
 
+async def _load_invoice_publication_relationships(db, order):
+    # Lifecycle/financial authority refreshes may expire relationships after
+    # intake eager-loading. Never allow async publication to lazy-load them.
+    from sqlalchemy import inspect
+    state = inspect(order, raiseerr=False)
+    if state is not None and state.persistent:
+        missing = [name for name in ('customer', 'vehicle') if name in state.unloaded]
+        if missing:
+            await db.refresh(order, attribute_names=missing)
+
+
 async def enqueue_invoice_created_email(
     db: AsyncSession,
     *,
@@ -537,6 +548,7 @@ async def enqueue_invoice_created_email(
     tenant: Tenant,
 ) -> bool:
     """Persist a retryable invoice email in the caller's transaction."""
+    await _load_invoice_publication_relationships(db, order)
     customer = await effective_billing_customer(db, invoice, order, order.customer)
     vehicle = order.vehicle
     recipient = _invoice_recipient(invoice, customer, vehicle)
@@ -623,6 +635,7 @@ async def notify_invoice_created(
     except Exception:
         logger.exception("invoice repair-order websocket failed for invoice %s", invoice.id)
 
+    await _load_invoice_publication_relationships(db, order)
     customer = await effective_billing_customer(db, invoice, order, order.customer)
     vehicle = order.vehicle
     recipient = _invoice_recipient(invoice, customer, vehicle)
@@ -688,6 +701,8 @@ async def auto_create_invoice_for_order(
     *,
     commit: bool = True,
     notify: bool = True,
+    _booking_application=None,
+    _invoice_options=None,
 ) -> Optional[Invoice]:
     """Auto-create an invoice when a repair order is approved as completed.
 
@@ -723,17 +738,18 @@ async def auto_create_invoice_for_order(
     if order.is_internal:
         recipient_name, recipient_email, recipient_phone = _fleet_invoice_contact(vehicle)
     from app.services.customer_tax_exemption import issuance_default, stamp_invoice
-    tax_default = await issuance_default(db, order, tenant)
-    taxable_checkout = get_order_checkout_breakdown(order, tenant)
-    checkout = get_order_checkout_breakdown(order, tenant, tax_exempt=bool(tax_default))
+    from app.services.native_invoice_economics import native_invoice_economics
+    economics = await native_invoice_economics(db, order, tenant, discount_amount=(_invoice_options or {}).get("discount_amount", Decimal("0.00")), lock=True, require_itemized=_booking_application is not None)
+    tax_default = economics.tax_default
+    taxable_checkout = economics.taxable_checkout
+    checkout = economics.checkout
     subtotal = checkout["repair_total"]
     shop_supplies_amount = checkout["shop_supplies_amount"]
     service_fee_amount = checkout["service_fee_amount"]
     tax_amount = checkout["tax_amount"]
-    total_amount = checkout["estimated_card_total"]
+    total_amount = economics.total_amount
 
-    labor_items, parts_items = await _load_line_items(db, order.id)
-    line_items_snapshot = _line_items_snapshot(labor_items, parts_items)
+    line_items_snapshot = economics.line_items_snapshot
 
     from app.core.unique_id import create_with_retry
 
@@ -752,9 +768,9 @@ async def auto_create_invoice_for_order(
             shop_supplies_amount=shop_supplies_amount,
             service_fee_amount=service_fee_amount,
             tax_amount=tax_amount,
-            discount_amount=Decimal("0.00"),
+            discount_amount=economics.discount_amount,
             total_amount=total_amount,
-            due_date=date.today(),
+            due_date=(_invoice_options or {}).get("due_date") or date.today(),
             paid_at=None,
             notes=None,
             created_by_user_id=created_by_user_id,
@@ -780,11 +796,15 @@ async def auto_create_invoice_for_order(
     )
     await db.refresh(invoice)
     await db.refresh(order)
-    _add_native_invoice_settlement(
+    settlement = _add_native_invoice_settlement(
         db,
         invoice=invoice,
         customer_id=order.customer_id,
     )
+    if _booking_application is not None:
+        # Private transaction participant: funds/tasks precede every outbox.
+        await db.flush()
+        await _booking_application(invoice, settlement, economics)
     await enqueue_quickbooks_invoice_sync(db, invoice=invoice)
     from app.services.fleet_financial_wakeup import enqueue_financial_wakeup
     await enqueue_financial_wakeup(db, invoice=invoice, order=order, kind="invoice_finalized")
@@ -1342,6 +1362,9 @@ async def void_invoice(
     if invoice.source == "easy_truck_shop_import" or invoice.repair_order.source == "easy_truck_shop_import":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Imported ETS invoices are read-only")
     
+    from app.db.models.booking_application import BookingReceiptApplication
+    if await db.scalar(select(BookingReceiptApplication.id).where(BookingReceiptApplication.tenant_id==invoice.tenant_id,BookingReceiptApplication.invoice_id==invoice.id).limit(1)):
+        raise HTTPException(409,{'code':'booking_application_void_review_required','message':'This invoice has applied prepayment. Review a compensating adjustment before voiding.'})
     if invoice.status == InvoiceStatus.PAID:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Paid invoices require a refund or credit note")
     if invoice.status == InvoiceStatus.CANCELLED:

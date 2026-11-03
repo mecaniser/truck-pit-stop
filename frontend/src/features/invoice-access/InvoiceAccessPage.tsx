@@ -1,7 +1,7 @@
 import { collectionAppliedPrincipal } from '@/features/source-collection/collectionAppliedPrincipal'
 import { customerInvoiceLabel, customerInvoiceMemo } from '@/lib/invoiceIdentity'
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
-import { currentInvoicePaymentSummary } from '@/lib/invoicePaymentPresentation'
+import { currentInvoicePaymentSummary, invoiceAppliedPaymentLabel } from '@/lib/invoicePaymentPresentation'
 import InvoicePaymentSummary from '@/components/InvoicePaymentSummary'
 import { invoicePaymentLabels } from '@/lib/invoicePaymentLabels'
 import type { InvoicePaymentPresentation } from '@/types'
@@ -696,6 +696,10 @@ export default function InvoiceAccessPage() {
                 <span>{cashReceipt ? 'Total paid in cash' : 'Invoice total'}</span>
                 <span>{formatMoney(cashReceipt?.amount ?? invoice.total_amount)}</span>
               </div>
+              {splitSettlement && !cashReceipt && paymentSummary?.applied_amount != null && isPositiveMoney(paymentSummary.prepayment_applied_amount) && <div className="flex items-center justify-between text-gray-700">
+                <span>{invoiceAppliedPaymentLabel(paymentSummary)}</span>
+                <span>{formatMoney(`-${paymentSummary.applied_amount}`)}</span>
+              </div>}
             </div>
           </div>}
 

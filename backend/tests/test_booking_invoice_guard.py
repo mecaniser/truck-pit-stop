@@ -36,7 +36,7 @@ async def reservation_snapshot(db, tenant):
         booking_provider_configuration_version=config.version,booking_provider_environment='sandbox')
 
 
-async def seed(db,state=None,refund=None):
+async def seed(db,state=None,refund=None,charge_binding="valid"):
     t=Tenant(name='Guard',slug=str(uuid4()))
     c=Customer(tenant=t,first_name='Guard',last_name='Customer',email='guard@example.com')
     v=Vehicle(tenant=t,customer=c,make='Demo',model='Truck',vin=uuid4().hex[:17])
@@ -48,16 +48,19 @@ async def seed(db,state=None,refund=None):
         confirmation_number=uuid4().hex[:20],booking_payment_version=1,booking_payment_state='expired_unpaid',**(await reservation_snapshot(db,t)))
     db.add(apt);await db.flush()
     if state:
+        charge_id="charge-"+uuid4().hex
         a=BookingPaymentAttempt(tenant_id=t.id,appointment_id=apt.id,customer_id=c.id,
             amount_minor=10000,currency='usd',provider='quickbooks_payments',provider_account_id='realm',
             configuration_version=1,environment='sandbox',source_metadata_sha256='a'*64,
             provider_intent_id=str(uuid4()),provider_request_id=str(uuid4()),state=state,
+            provider_charge_id=None if charge_binding=="missing_attempt" else "" if charge_binding=="empty_attempt" else charge_id,
             idempotency_key=str(uuid4()),request_sha256='b'*64,
             verified_at=datetime.now(timezone.utc) if state=='succeeded' else None)
         db.add(a);await db.flush()
         if refund is not None:
             db.add(BookingReceipt(tenant_id=t.id,appointment_id=apt.id,attempt_id=a.id,
                 provider=a.provider,provider_account_id=a.provider_account_id,provider_intent_id=a.provider_intent_id,
+                charge_id=None if charge_binding=="missing_receipt" else "" if charge_binding=="empty_receipt" else "other-charge" if charge_binding=="mismatch" else charge_id,
                 amount_received_minor=10000,currency='usd',received_at=datetime.now(timezone.utc),
                 refunded_amount_minor=refund,verification_basis='server_retrieval',proof_sha256='c'*64))
     await db.commit();return t,ro

@@ -15,6 +15,10 @@ async def require_booking_prepayment_resolved(db, tenant_id, repair_order_id):
     if repair_order_id is None:
         return
     await lock_tenant_financials(db, tenant_id)
+    # Only the in-process atomic writer can install this exact transaction scope.
+    scope = getattr(db,'info',{}).get('_booking_invoice_application_scope')
+    if scope is not None and scope.matches(db, tenant_id, repair_order_id):
+        return
     # Include deleted/cancelled appointments and ledger rows: deleting a record
     # or releasing capacity does not dispose of captured money.
     appointments = (await db.scalars(select(Appointment.id).join(
@@ -25,6 +29,11 @@ async def require_booking_prepayment_resolved(db, tenant_id, repair_order_id):
             RepairOrder.id == repair_order_id))).all()
     if not appointments:
         return
+    from app.services.booking_refund_verification import unresolved_refund_verification
+    for appointment_id in appointments:
+        if await unresolved_refund_verification(db,tenant_id,appointment_id):
+            from app.services.invoice_settlement_service import SettlementDomainError
+            raise SettlementDomainError('booking_refund_verification_pending','Existing booking refund verification must be resolved before another collection.')
     attempts = (await db.scalars(select(BookingPaymentAttempt).where(
         BookingPaymentAttempt.tenant_id == tenant_id,
         BookingPaymentAttempt.appointment_id.in_(appointments)))).all()
@@ -45,7 +54,21 @@ async def require_booking_prepayment_resolved(db, tenant_id, repair_order_id):
                  and receipt.proof_sha256 and receipt.verification_basis
                  and attempt.state == 'succeeded' and attempt.verified_at is not None
                  and 0 <= receipt.refunded_amount_minor <= receipt.amount_received_minor)
-        if not valid or receipt.amount_received_minor > receipt.refunded_amount_minor:
+        applied=0
+        if valid:
+            from app.db.models.booking_application import BookingReceiptApplication
+            from app.db.models.invoice import Invoice
+            from app.db.models.invoice_settlement import InvoiceSettlement
+            from app.services.booking_application_proof import booking_invoice_application_proof
+            applications=(await db.scalars(select(BookingReceiptApplication).where(BookingReceiptApplication.tenant_id==tenant_id,BookingReceiptApplication.receipt_id==receipt.id))).all()
+            for application in applications:
+                invoice=await db.get(Invoice,application.invoice_id)
+                settlement=await db.get(InvoiceSettlement,application.settlement_id)
+                proof,review=await booking_invoice_application_proof(db,invoice,settlement)
+                if review or proof is None:
+                    valid=False;break
+                applied+=application.amount_minor
+        if not valid or receipt.amount_received_minor != receipt.refunded_amount_minor+applied:
             blocked = True
         else:
             resolved.add(receipt.attempt_id)

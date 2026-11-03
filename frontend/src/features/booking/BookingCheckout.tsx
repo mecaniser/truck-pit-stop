@@ -9,8 +9,14 @@ import { formatMoney } from '@/features/customer-portal/portal-ui'
 import { moneyToCents } from '@/features/payments/money'
 import { getStripeForAccount } from '@/lib/stripe'
 import api from '@/lib/api'
+import type { Vehicle } from '@/types'
+import { vehicleIdentity } from '@/features/customer-portal/portal-context'
 import type { BookingCapability, BookingPaymentResult, BookingReservation } from './booking-contract'
 
+function savedVisitTime(scheduledAt: string, timezone?: string): string {
+  if (!timezone) return 'Unavailable'
+  try { return new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short', timeZone: timezone }).format(new Date(scheduledAt)) } catch { return 'Unavailable' }
+}
 function approvedTokenUrl(value?: string | null): boolean {
   if (!value) return false
   try {
@@ -40,7 +46,7 @@ function StripeBookingForm({ verify, pause }: { verify: () => Promise<void>; pau
   }}><PaymentElement />{error && <p role="alert">{error}</p>}<ControlButton className="cp-primary" type="submit" disabled={!stripe || !elements || busy}>{busy ? 'Verifying payment…' : 'Pay and reserve'}</ControlButton></form>
 }
 
-export default function BookingCheckout({ appointment, capability, onDone, tenantId }: { appointment: BookingReservation; capability?: BookingCapability; onDone: () => void; tenantId?: string | null }) {
+export default function BookingCheckout({ appointment, capability, onDone, tenantId, vehicle }: { appointment: BookingReservation; capability?: BookingCapability; onDone: () => void; tenantId?: string | null; vehicle?: Vehicle | null }) {
   const heading = useRef<HTMLHeadingElement>(null)
   const attemptKey = useRef(crypto.randomUUID())
   const submissionStarted = useRef(false)
@@ -105,12 +111,13 @@ export default function BookingCheckout({ appointment, capability, onDone, tenan
     finally { setBusy(false) }
   }
   const remainingSeconds = Math.max(0, Math.ceil((Date.parse(current.hold_expires_at) - now) / 1000))
-  if (confirmed) return <div className="space-y-4" role="status"><h2 ref={heading} tabIndex={-1}>Time reserved</h2><p>Your payment was verified and your appointment is confirmed.</p><p>Booking reference: <strong>{current.confirmation_number}</strong></p><ControlButton className="cp-primary" onClick={onDone}>View visits</ControlButton></div>
+  const visitSummary = <section aria-label="Your visit" className="space-y-2"><h3>Your visit</h3><dl>{[['Service', current.service_name || 'Unavailable'], ['Vehicle', current.vehicle_id ? vehicle?.id === current.vehicle_id ? vehicleIdentity(vehicle) : 'Unavailable' : 'Vehicle not specified'], ['Scheduled time', savedVisitTime(current.scheduled_at, capability?.shop_timezone)]].map(([label, value]) => <div className="cp-review-line" key={label}><dt>{label}</dt><dd><strong>{value}</strong></dd></div>)}</dl></section>
+  if (confirmed) return <div className="space-y-4" role="status"><h2 ref={heading} tabIndex={-1}>Time reserved</h2><p>Your payment was verified and your appointment is confirmed.</p>{visitSummary}<p>Booking reference: <strong>{current.confirmation_number}</strong></p><ControlButton className="cp-primary" onClick={onDone}>View visits</ControlButton></div>
   if (closed) return <div className="space-y-4" role="status"><h2 ref={heading} tabIndex={-1}>{paymentState === 'refunded' ? 'Refund recorded' : paymentState === 'refund_pending' ? 'Refund review pending' : 'Reservation cancelled'}</h2><p>This reservation is not confirmed. {current.receipt ? 'A payment receipt is on record.' : 'No verified payment receipt is available.'}</p>{current.receipt?.amount && <div className="cp-review-line"><span>Recorded payment</span><strong>{formatMoney(current.receipt.amount)}</strong></div>}{current.receipt?.refunded_amount && <div className="cp-review-line"><span>Recorded refund</span><strong>{formatMoney(current.receipt.refunded_amount)}</strong></div>}{paymentState !== 'refunded' && current.receipt && <p>Cancellation does not confirm a refund. Contact the shop about this payment.</p>}<ControlButton className="cp-secondary" onClick={onDone}>View visits</ControlButton></div>
   if (review) return <div className="space-y-4" role="status"><h2 ref={heading} tabIndex={-1}>Payment received; shop review needed</h2><p>Your payment was received, but this start time is not confirmed. Contact the shop before making another payment or reservation.</p><ControlButton className="cp-secondary" onClick={onDone}>View visits</ControlButton></div>
   return <div className="space-y-4"><h2 ref={heading} tabIndex={-1}>Payment</h2><div className="cp-review-line"><span>{status.isError ? 'Reservation status' : pending || expired || holdElapsed ? 'Reservation total' : 'Amount due'}</span><strong>{status.isError ? 'Unavailable' : validSnapshot ? formatMoney(current.price) : 'Amount unavailable'}</strong></div>
     {!validSnapshot && <p role="alert">Reservation details couldn’t be verified. Contact the shop before paying.</p>}
-    {expired ? <div role="status"><h3>Checkout expired</h3><p>This unpaid reservation expired. Choose another available time before starting a new checkout.</p></div> : holdElapsed && !pending ? <div role="status"><h3>Checkout time elapsed</h3><p>Check this reservation’s status before choosing another time. Do not submit another payment.</p></div> : !pending && !terminalFailure && <p>Time held for <strong className="tabular-nums">{Math.floor(remainingSeconds / 60)}:{String(remainingSeconds % 60).padStart(2, '0')}</strong>. Your appointment is confirmed after full payment is verified.</p>}
+    {expired ? <div role="status"><h3>Checkout expired</h3>{visitSummary}<p>This unpaid reservation expired. Choose another available time before starting a new checkout.</p></div> : holdElapsed && !pending ? <div role="status"><h3>Checkout time elapsed</h3><p>Check this reservation’s status before choosing another time. Do not submit another payment.</p></div> : !pending && !terminalFailure && <p>Time held for <strong className="tabular-nums">{Math.floor(remainingSeconds / 60)}:{String(remainingSeconds % 60).padStart(2, '0')}</strong>. Your appointment is confirmed after full payment is verified.</p>}
     {pending && <div role="status"><h3>Payment verification pending</h3><p>Your start time is not confirmed yet. Do not submit another payment while the outcome is being checked.</p></div>}
     {terminalFailure && !pending && <div role="status"><h3>Payment was not confirmed</h3><p>{canRetryCard ? 'This payment failed. You can try another card while this time is held.' : 'Contact the shop or check the reservation status before starting another checkout.'}</p>{canRetryCard && <ControlButton className="cp-secondary" onClick={() => {
       if (!canRetryCard) return

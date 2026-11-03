@@ -2,10 +2,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { useAuthStore } from '@/stores/authStore'
 import AppointmentsPage from '../AppointmentsPage'
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
 vi.mock('@/lib/api', () => ({ default: { get: mocks.get, post: mocks.post } }))
-vi.mock('@/stores/authStore', () => ({ useAuthStore: (select: (state: unknown) => unknown) => select({ user: { tenant_id: 'tenant-a', customer_id: 'customer-a' } }) }))
 const base = { customer_id: 'customer-a', vehicle_id: 'truck-a', service_id: 'oil', service_name: 'Oil service', scheduled_at: '2099-11-04T14:00:00Z', duration_minutes: 60, status: 'pending', price: '123.45', confirmation_number: 'REFERENCE', created_at: '2026-11-03T12:00:00Z' }
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -13,11 +13,12 @@ function mount() {
   return client
 }
 beforeEach(() => {
+  useAuthStore.setState({ isAuthenticated: true, logoutInProgress: false, authProvider: 'legacy', authSessionEpoch: 1, user: { id: 'customer-user', tenant_id: 'tenant-a', customer_id: 'customer-a', first_name: 'Alex', last_name: 'Driver', email: 'alex@example.test', role: 'customer', is_active: true } })
   mocks.get.mockReset(); mocks.post.mockReset()
   mocks.get.mockImplementation(async (url: string) => {
     if (url === '/vehicles') return { data: [{ id: 'truck-a', unit_number: '12', make: 'Volvo' }] }
     if (url === '/appointments') return { data: [] }
-    if (url === '/visit-requests') return { data: [] }
+    if (url === '/appointments/visit-requests') return { data: [] }
     throw new Error('Unexpected read')
   })
 })
@@ -25,7 +26,7 @@ describe('portal reservations and unpaid requests', () => {
   it('loads every scoped request page and presents no invented price, exact time or payment action', async () => {
     const original = mocks.get.getMockImplementation()!
     mocks.get.mockImplementation(async (url: string, config: { params?: { skip?: number }; signal?: AbortSignal }) => {
-      if (url !== '/visit-requests') return original(url, config)
+      if (url !== '/appointments/visit-requests') return original(url, config)
       return { data: { items: [{ id: config.params?.skip ? 'request-b' : 'request-a', booking_kind: 'request', request_reference: config.params?.skip ? 'VR-B' : 'VR-A', service_name: 'Inspection request', vehicle_id: 'truck-a', status: 'requested', preferred_date: config.params?.skip ? null : '2099-11-04' }], skip: config.params?.skip || 0, limit: 100, has_more: !config.params?.skip } }
     })
     mount()
@@ -36,7 +37,7 @@ describe('portal reservations and unpaid requests', () => {
     expect(within(section).getAllByText('Unit #12 · Volvo')).toHaveLength(2)
     expect(within(section).queryByText(/\$|09:00|confirmed|paid/i)).not.toBeInTheDocument()
     expect(within(section).queryByRole('button', { name: /pay|confirm/i })).not.toBeInTheDocument()
-    const reads = mocks.get.mock.calls.filter(([url]) => url === '/visit-requests')
+    const reads = mocks.get.mock.calls.filter(([url]) => url === '/appointments/visit-requests')
     expect(reads).toHaveLength(2)
     expect(reads[0][1].signal).toBeInstanceOf(AbortSignal)
     expect(reads[1][1].signal).toBe(reads[0][1].signal)
@@ -73,7 +74,7 @@ describe('portal reservations and unpaid requests', () => {
     let failed = false
     const original = mocks.get.getMockImplementation()!
     mocks.get.mockImplementation(async (url: string) => {
-      if (url !== '/visit-requests') return original(url)
+      if (url !== '/appointments/visit-requests') return original(url)
       if (failed) throw new Error('Unavailable')
       return { data: [{ id: 'request-a', request_reference: 'VR-A', status: 'requested', service_name: 'Requested inspection' }] }
     })

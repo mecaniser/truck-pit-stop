@@ -4,6 +4,8 @@ from sqlalchemy import select, func, and_, cast, Date, or_, case, literal, Strin
 from pydantic import BaseModel, Field
 from typing import Dict, List, Literal, Optional
 from app.services.source_collection_reporting import confirmed_collection_receipt_clause,receipt_gross_expression
+from app.services.booking_financial_reporting import BookingPrepaymentsReport, booking_prepayments_for_period
+from app.core.date_ranges import resolve_date_range
 from datetime import datetime, timedelta, date, timezone
 from decimal import Decimal
 from uuid import UUID
@@ -195,6 +197,7 @@ class InternalCostStats(BaseModel):
 
 
 class DashboardStats(BaseModel):
+    booking_prepayments: Optional[BookingPrepaymentsReport] = None
     total_customers: int
     total_vehicles: int
     total_repair_orders: int
@@ -1479,7 +1482,12 @@ async def get_dashboard_stats(
 
     await _mask_dashboard_schedules(db, current_user, [*recent_orders, *orders_needing_action,
         *orders_on_floor, *orders_ready_to_close])
+    booking_prepayments=None
+    if current_user.role in (UserRole.GARAGE_OWNER,UserRole.GARAGE_ADMIN):
+        booking_month=resolve_date_range('this_month',schedule_zone)
+        booking_prepayments=await booking_prepayments_for_period(db,tenant_id,booking_month.utc_start,booking_month.utc_end)
     return DashboardStats(
+        booking_prepayments=booking_prepayments,
         total_customers=total_customers,
         total_vehicles=total_vehicles,
         total_repair_orders=total_repair_orders,

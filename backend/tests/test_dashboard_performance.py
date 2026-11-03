@@ -175,7 +175,9 @@ async def test_dashboard_stats_stays_within_query_budget(db_session):
 
     assert response.total_customers == 0
     assert response.total_repair_orders == 0
-    assert query_count == 12
+    # Two fixed aggregate reads disclose booking receipt liabilities and
+    # applications separately; neither query scales with returned row count.
+    assert query_count == 14
 
 
 @pytest.mark.asyncio

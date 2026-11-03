@@ -134,7 +134,16 @@ async def reserve(db,actor,body,request_key):
 async def receipt_summary(db,apt):
     receipt=await db.scalar(select(BookingReceipt).where(BookingReceipt.tenant_id==apt.tenant_id,BookingReceipt.appointment_id==apt.id))
     if not receipt:return None
-    return {'id':str(receipt.id),'gross_amount':str(Decimal(receipt.amount_received_minor)/100),'net_amount':str(Decimal(receipt.amount_received_minor-receipt.refunded_amount_minor)/100),'unapplied_amount':str(Decimal(receipt.amount_received_minor-receipt.refunded_amount_minor)/100),'outstanding_amount':str(Decimal(receipt.amount_received_minor-receipt.refunded_amount_minor)/100),'reservation_balance':str(max(Decimal('0'),Decimal(apt.price)-Decimal(receipt.amount_received_minor-receipt.refunded_amount_minor)/100)),'amount':str(Decimal(receipt.amount_received_minor)/100),'currency':receipt.currency,'received_at':receipt.received_at,'refunded_amount':str(Decimal(receipt.refunded_amount_minor)/100),'verification_basis':receipt.verification_basis}
+    from app.services.booking_application_accounting import receipt_balances
+    from app.services.invoice_settlement_service import SettlementDomainError
+    try:
+        balances=await receipt_balances(db,apt.tenant_id,receipt.id)
+        unapplied=str(Decimal(balances['unapplied_minor'])/100)
+        applied=str(Decimal(balances['applied_minor'])/100)
+        review=False
+    except SettlementDomainError:
+        unapplied=None;applied=None;review=True
+    return {'applied_amount':applied,'payment_verification_required':review,'id':str(receipt.id),'gross_amount':str(Decimal(receipt.amount_received_minor)/100),'net_amount':str(Decimal(receipt.amount_received_minor-receipt.refunded_amount_minor)/100),'unapplied_amount':unapplied,'outstanding_amount':unapplied,'reservation_balance':str(max(Decimal('0'),Decimal(apt.price)-Decimal(receipt.amount_received_minor-receipt.refunded_amount_minor)/100)),'amount':str(Decimal(receipt.amount_received_minor)/100),'currency':receipt.currency,'received_at':receipt.received_at,'refunded_amount':str(Decimal(receipt.refunded_amount_minor)/100),'verification_basis':receipt.verification_basis}
 
 async def snapshot(db,apt,service_name=None,*,actor=None):
     state=apt.booking_payment_state
@@ -146,9 +155,12 @@ async def snapshot(db,apt,service_name=None,*,actor=None):
         elif state=='unpaid_hold' and apt.hold_expires_at and utc(apt.hold_expires_at)<=now():state='expired_unpaid'
     if service_name is None:service_name=await db.scalar(select(Service.name).where(Service.id==apt.service_id,Service.tenant_id==apt.tenant_id))
     receipt=await receipt_summary(db,apt)
+    from app.services.booking_refund_verification import unresolved_refund_verification
+    if await unresolved_refund_verification(db,apt.tenant_id,apt.id):state='refund_pending'
     internal={}
     if actor is not None and actor.role in STAFF:
-        internal={'repair_order_id':str(apt.repair_order_id) if apt.repair_order_id else None,'application_review_required':bool((receipt and Decimal(receipt['net_amount'])>0) or state=='payment_processing'),'accounting_classification':'booking_prepayment_liability' if receipt else None}
+        from app.services.booking_receipt_application import prepayment_view
+        internal={'prepayment':await prepayment_view(db,apt),'repair_order_id':str(apt.repair_order_id) if apt.repair_order_id else None,'application_review_required':bool((receipt and (receipt['payment_verification_required'] or (receipt['unapplied_amount'] is not None and Decimal(receipt['unapplied_amount'])>0))) or state=='payment_processing'),'accounting_classification':'booking_prepayment_liability' if receipt else None}
     return {**internal,'id':str(apt.id),'confirmation_number':apt.confirmation_number,'customer_id':str(apt.customer_id),'vehicle_id':str(apt.vehicle_id) if apt.vehicle_id else None,'service_id':str(apt.service_id),'service_name':service_name or 'Service','scheduled_at':apt.scheduled_at,'duration_minutes':apt.duration_minutes,'status':apt.status.value,'price':str(apt.price),'customer_notes':apt.customer_notes,'paid_at':apt.paid_at,'created_at':apt.created_at,'booking_kind':apt.booking_kind,'booking_payment_version':apt.booking_payment_version,'booking_payment_state':state,'hold_expires_at':apt.hold_expires_at,'price_snapshot_sha256':apt.price_snapshot_sha256,'version':apt.booking_version,'currency':apt.booking_currency,'receipt':receipt,'payment_attempt_id':str(latest_attempt.id) if latest_attempt else None,'payment_attempt_state':latest_attempt.state if latest_attempt else None,'payment_provider':latest_attempt.provider if latest_attempt else None}
 
 def binding(attempt):
@@ -215,6 +227,10 @@ async def apply_result(db,appointment_id,attempt_id,result,*,source='server_retr
         else:apt.booking_payment_state='payment_processing'
     apt.booking_version=(apt.booking_version or 0)+1
     db.add(BookingPaymentEvent(tenant_id=apt.tenant_id,appointment_id=apt.id,attempt_id=attempt.id,source=source,before_state=previous,after_state=apt.booking_payment_state,event_at=now(),provider=attempt.provider,provider_account_id=attempt.provider_account_id,provider_event_id=event_id,proof_sha256=result.proof_digest))
+    if result.state=='succeeded':
+        from app.services.booking_application_accounting import ensure_manual_accounting_tasks
+        await db.flush()
+        await ensure_manual_accounting_tasks(db,receipt=receipt)
     await db.commit()
     return apt,attempt
 
@@ -351,17 +367,46 @@ async def dispatch_connect_event(db,event):
     elif kind=='charge.refunded':
         await locks(db,apt.tenant_id)
         apt=await db.scalar(select(Appointment).where(Appointment.id==apt.id).with_for_update().execution_options(populate_existing=True))
-        receipt=await db.scalar(select(BookingReceipt).where(BookingReceipt.attempt_id==attempt.id,BookingReceipt.provider_account_id==account,BookingReceipt.provider_intent_id==intent_id).with_for_update())
+        receipt=await db.scalar(select(BookingReceipt).where(BookingReceipt.attempt_id==attempt.id,BookingReceipt.provider_account_id==account,BookingReceipt.provider_intent_id==intent_id).with_for_update().execution_options(populate_existing=True))
         if not receipt:fail('booking_receipt_unavailable','Booking receipt not yet verified.')
         if await db.scalar(select(BookingPaymentEvent.id).where(BookingPaymentEvent.provider=='stripe_connect',BookingPaymentEvent.provider_account_id==account,BookingPaymentEvent.provider_event_id==event['id'])):return True
         refunded=obj.get('amount_refunded')
         if (obj.get('id')!=receipt.charge_id or obj.get('currency')!='usd' or obj.get('amount')!=receipt.amount_received_minor or not isinstance(refunded,int) or isinstance(refunded,bool) or not 0<=refunded<=receipt.amount_received_minor):fail('booking_refund_mismatch','Booking refund evidence could not be verified.')
-        receipt.refunded_amount_minor=max(refunded,receipt.refunded_amount_minor)
-        if refunded:
-            apt.booking_payment_state='refunded' if receipt.refunded_amount_minor==receipt.amount_received_minor else 'refund_pending'
-            if apt.status==AppointmentStatus.CONFIRMED:apt.status=AppointmentStatus.PENDING
+        previous_refunded=receipt.refunded_amount_minor
+        actual_refunded=max(refunded,previous_refunded)
+        after_state='refunded' if actual_refunded==receipt.amount_received_minor else 'refund_pending' if actual_refunded else apt.booking_payment_state
+        refund_event=BookingPaymentEvent(tenant_id=apt.tenant_id,appointment_id=apt.id,attempt_id=attempt.id,source='verified_connect_webhook',after_state=after_state,provider='stripe_connect',provider_account_id=account,provider_event_id=event['id'],event_at=now(),verified_refund_amount_minor=actual_refunded,proof_sha256=digest({'charge':obj['id'],'refunded':refunded}))
+        db.add(refund_event)
+        await db.flush()  # durable provider evidence must precede aggregate change
+        receipt.refunded_amount_minor=actual_refunded
+        if actual_refunded!=previous_refunded:
+            receipt.version+=1
+            apt.booking_payment_state=after_state
             apt.booking_version+=1
-        db.add(BookingPaymentEvent(tenant_id=apt.tenant_id,appointment_id=apt.id,attempt_id=attempt.id,source='verified_connect_webhook',after_state=apt.booking_payment_state,provider='stripe_connect',provider_account_id=account,provider_event_id=event['id'],event_at=now(),proof_sha256=digest({'charge':obj['id'],'refunded':refunded})))
+        await db.flush()
+        if receipt.refunded_amount_minor!=previous_refunded:
+            from app.services.booking_application_accounting import mark_manual_accounting_needs_review
+            await mark_manual_accounting_needs_review(db,tenant_id=apt.tenant_id,receipt_id=receipt.id,source_event_id=refund_event.id,reason='Verified booking refund changed prepaid liability.')
+            from app.services.booking_receipt_application import invalidate_application_settlements
+            await invalidate_application_settlements(db,apt.tenant_id,receipt.id)
+        await db.commit()
+    elif kind in {'charge.dispute.created','charge.dispute.updated','charge.dispute.closed'}:
+        await locks(db,apt.tenant_id)
+        apt=await db.scalar(select(Appointment).where(Appointment.id==apt.id,Appointment.tenant_id==attempt.tenant_id).with_for_update().execution_options(populate_existing=True))
+        receipt=await db.scalar(select(BookingReceipt).where(BookingReceipt.tenant_id==apt.tenant_id,BookingReceipt.attempt_id==attempt.id).with_for_update().execution_options(populate_existing=True))
+        if not receipt:fail('booking_receipt_unavailable','Booking receipt not yet verified.')
+        if await db.scalar(select(BookingPaymentEvent.id).where(BookingPaymentEvent.provider=='stripe_connect',BookingPaymentEvent.provider_account_id==account,BookingPaymentEvent.provider_event_id==event['id'])):return True
+        amount=obj.get('amount');charge=obj.get('charge');charge=charge.get('id') if isinstance(charge,dict) else charge
+        if charge!=receipt.charge_id or obj.get('currency')!='usd' or not isinstance(amount,int) or isinstance(amount,bool) or not 0<amount<=receipt.amount_received_minor:
+            fail('booking_dispute_mismatch','Booking dispute evidence could not be verified.')
+        dispute_event=BookingPaymentEvent(tenant_id=apt.tenant_id,appointment_id=apt.id,attempt_id=attempt.id,source='verified_connect_webhook',after_state='payment_received_review',provider='stripe_connect',provider_account_id=account,provider_event_id=event['id'],event_at=now(),verified_dispute_amount_minor=amount,proof_sha256=digest({'dispute':obj.get('id'),'charge':charge,'amount':amount,'status':obj.get('status')}))
+        db.add(dispute_event);await db.flush()
+        apt.booking_payment_state='payment_received_review';apt.booking_version+=1;receipt.version+=1
+        await db.flush()
+        from app.services.booking_application_accounting import mark_manual_accounting_needs_review
+        from app.services.booking_receipt_application import invalidate_application_settlements
+        await mark_manual_accounting_needs_review(db,tenant_id=apt.tenant_id,receipt_id=receipt.id,source_event_id=dispute_event.id,reason='Verified booking dispute requires financial review.')
+        await invalidate_application_settlements(db,apt.tenant_id,receipt.id)
         await db.commit()
     return True
 

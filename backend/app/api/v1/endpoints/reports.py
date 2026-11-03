@@ -4,6 +4,7 @@ performance, all filterable by date range (This Year/Quarter/Month/Week,
 last-period equivalents, or a custom range).
 """
 from app.services.source_collection_reporting import confirmed_collection_receipt_clause,receipt_gross_expression
+from app.services.booking_financial_reporting import BookingPrepaymentsReport, booking_prepayments_for_period
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Dict, List, Literal, Optional, Tuple
@@ -77,6 +78,7 @@ class DashboardMetric(BaseModel):
 
 
 class ReportsDashboardResponse(BaseModel):
+    booking_prepayments: BookingPrepaymentsReport
     source_collection_unallocated_receipts: str = "0.00"
     source_collection_unapplied_receipts: str = "0.00"
     source_collection_parts_profit_attribution_pending: bool = False
@@ -361,7 +363,10 @@ async def get_reports_dashboard(
 
     revenue_trend = [TrendPoint(label=revenue_buckets[i][2], value=str(v)) for i, v in enumerate(revenue_by_period)]
 
+    booking_prepayments=await booking_prepayments_for_period(db,tenant_id,rng.utc_start,rng.utc_end)
+
     return ReportsDashboardResponse(
+        booking_prepayments=booking_prepayments,
         source_collection_unallocated_receipts=str(unallocated_receipts),
         source_collection_unapplied_receipts=str(unapplied_receipts),
         source_collection_parts_profit_attribution_pending=parts_profit_pending,

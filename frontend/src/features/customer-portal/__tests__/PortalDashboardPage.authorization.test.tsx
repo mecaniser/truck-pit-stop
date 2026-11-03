@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/stores/authStore'
+import type { VisitRequestResult } from '@/features/booking/booking-contract'
 import type { Invoice, Quote, RepairOrder, Vehicle } from '@/types'
 const mocks=vi.hoisted(()=>({get:vi.fn()}))
 vi.mock('@/lib/api',()=>({default:{get:mocks.get}}))
@@ -11,12 +12,13 @@ const vehicle=(id='a')=>({id,tenant_id:'tenant',customer_id:'customer',unit_numb
 const order=(overrides:Partial<RepairOrder>={})=>({id:'ro',vehicle_id:'a',status:'in_progress',description:'Additional brake work',quote_sent:true,quote_approved:false,updated_at:'2026-11-03T12:00:00Z',...overrides} as RepairOrder)
 const quote=(overrides:Partial<Quote>={})=>({id:'q',revision:1,sent_to_customer:true,is_approved:false,is_declined:false,total_amount:'450.00',created_at:'2026-11-03T12:00:00Z',...overrides} as Quote)
 const invoice=(overrides:Partial<Invoice>={})=>({id:'inv',invoice_number:'TPS-1687',repair_order_id:'ro',source:'native',status:'sent',total_amount:'100.00',payment_summary:{state:'unpaid',applied_amount:'0.00',balance_due:'100.00',pending_amount:'0.00',basis:'settlement',note:null},...overrides} as Invoice)
-function show({invoices=[invoice()],orders=[] as RepairOrder[],vehicles=[] as Vehicle[],revisions=[] as Quote[],historyFails=false,invoiceFails=false,appointmentFails=false,query='',page='home'}={}){
+function show({invoices=[invoice()],orders=[] as RepairOrder[],vehicles=[] as Vehicle[],revisions=[] as Quote[],historyFails=false,invoiceFails=false,appointmentFails=false,requests=[] as VisitRequestResult[],query='',page='home'}={}){
   const state={invoices,invoiceFails}
   mocks.get.mockImplementation(async(url:string)=>{
     if(url==='/vehicles')return{data:vehicles}
     if(url==='/repair-orders')return{data:orders}
     if(url==='/invoices'){if(state.invoiceFails)throw new Error('Unavailable');return{data:state.invoices}}
+    if(url==='/appointments/visit-requests')return{data:requests}
     if(url==='/appointments'){if(appointmentFails)throw new Error('Unavailable');return{data:[]}}
     if(url.includes('/history')){if(historyFails)throw new Error('Forbidden');return{data:{revisions,events:[]}}}
     throw new Error(`Unexpected request ${url}`)
@@ -88,5 +90,15 @@ describe('actual task-first portal',()=>{
   })
   it.each(['declined','approved','closed'] as const)('does not resurrect %s authorization as an action',async kind=>{
     show({invoices:[],orders:[order(kind==='closed'?{status:'invoiced'}:{})],revisions:[quote({is_declined:kind==='declined',is_approved:kind==='approved'})]});await screen.findByRole('heading',{name:'Account balance'});expect(screen.queryByRole('link',{name:'Review request'})).not.toBeInTheDocument()
+  })
+})
+
+describe('Today visit request status',()=>{
+  it('shows a shop-accepted arrival date without calling it a paid reservation',async()=>{
+    show({invoices:[],vehicles:[vehicle()],requests:[{id:'request-a',booking_kind:'request',request_reference:'VR-A',status:'accepted',version:2,service_name:'Inspection',vehicle_id:'a',preferred_date:null,accepted_arrival_date:'2099-11-04'}]})
+    expect(await screen.findByRole('heading',{name:'Visit accepted'})).toBeInTheDocument()
+    expect(screen.getByText('Nov 4, 2099')).toHaveAttribute('datetime','2099-11-04')
+    expect(screen.getByText(/The shop will start as availability allows/)).toBeInTheDocument()
+    expect(screen.queryByText(/^Paid$|^Confirmed$|^Reserved$/)).not.toBeInTheDocument()
   })
 })

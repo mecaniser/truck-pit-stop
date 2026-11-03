@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import BookingCheckout from '../BookingCheckout'
 import type { BookingReservation, BookingCapability } from '../booking-contract'
+import type { Vehicle } from '@/types'
 import type { ReactNode } from 'react'
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), confirmStripe: vi.fn(), loadStripe: vi.fn() }))
 vi.mock('@/lib/api', () => ({ default: { get: mocks.get, post: mocks.post } }))
@@ -13,10 +14,11 @@ const capability: BookingCapability = { available: true, provider: 'quickbooks_p
 function reservation(overrides: Partial<BookingReservation> = {}): BookingReservation {
   return { id: 'appointment-a', confirmation_number: 'BOOK-A', customer_id: 'customer-a', vehicle_id: 'truck-a', service_id: 'oil', service_name: 'Oil', scheduled_at: '2026-11-04T14:00:00Z', duration_minutes: 60, status: 'pending', price: '123.45', customer_notes: null, paid_at: null, created_at: new Date().toISOString(), booking_kind: 'reserve', version: 1, price_snapshot_sha256: 'snapshot-a', hold_expires_at: new Date(Date.now() + 900000).toISOString(), booking_payment_state: 'unpaid_hold', currency: 'usd', ...overrides }
 }
-function mount(appointment = reservation(), cap = capability) {
+const vehicle = { id: 'truck-a', unit_number: '609', year: 2021, make: 'Volvo', model: 'VNR', license_plate: 'ABC123' } as Vehicle
+function mount(appointment = reservation(), cap = capability, unit: Vehicle | null = vehicle) {
   mocks.get.mockResolvedValue({ data: appointment })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><BookingCheckout appointment={appointment} capability={cap} onDone={vi.fn()} /></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><BookingCheckout appointment={appointment} capability={cap} vehicle={unit} onDone={vi.fn()} /></QueryClientProvider>)
   return client
 }
 beforeEach(() => { mocks.get.mockReset(); mocks.post.mockReset(); mocks.confirmStripe.mockReset(); mocks.loadStripe.mockReset(); mocks.loadStripe.mockResolvedValue({}) })
@@ -213,4 +215,29 @@ it('rechecks a server-bound attempt after reload without starting another charge
   fireEvent.click(check)
   expect(await screen.findByRole('heading', { name: 'Time reserved' })).toBeInTheDocument()
   expect(mocks.post).toHaveBeenCalledExactlyOnceWith('/appointments/appointment-a/confirm-payment', { attempt_id: 'known-attempt', expected_version: 1 })
+})
+describe('saved reservation summary', () => {
+  it.each(['paid', 'expired_unpaid'])('shows the saved service, vehicle and shop-local schedule for %s checkout', state => {
+    mount(reservation({ status: state === 'paid' ? 'confirmed' : 'pending', booking_payment_state: state, receipt: state === 'paid' ? { id: 'receipt-a' } : null }))
+    const summary = screen.getByRole('region', { name: 'Your visit' })
+    expect(within(summary).getByText('Oil')).toBeInTheDocument()
+    expect(within(summary).getByText(/Unit #609.*2021 Volvo/)).toBeInTheDocument()
+    expect(within(summary).getByText(/Nov 4, 2026.*9:00 AM EST/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'View visits' })).toBeInTheDocument()
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+  it.each(['missing zone', 'invalid zone', 'invalid timestamp'])('does not guess a timezone or schedule for %s', invalid => {
+    mount(reservation({ status: 'confirmed', booking_payment_state: 'paid', receipt: { id: 'receipt-a' }, scheduled_at: invalid === 'invalid timestamp' ? 'not-a-date' : '2026-11-04T14:00:00Z' }), { ...capability, shop_timezone: invalid === 'missing zone' ? '' : invalid === 'invalid zone' ? 'Unknown/Shop' : capability.shop_timezone })
+    expect(within(screen.getByRole('region', { name: 'Your visit' })).getByText('Unavailable')).toBeInTheDocument()
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+  it('does not substitute a different vehicle for the saved reservation', () => {
+    mount(reservation({ status: 'confirmed', booking_payment_state: 'paid', receipt: { id: 'receipt-a' } }), capability, { ...vehicle, id: 'another-truck' })
+    const summary = screen.getByRole('region', { name: 'Your visit' })
+    expect(within(summary).getByText('Unavailable')).toBeInTheDocument()
+    expect(within(summary).queryByText(/609/)).not.toBeInTheDocument()
+    expect(within(summary).queryByText('truck-a')).not.toBeInTheDocument()
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+
 })

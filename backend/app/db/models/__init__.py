@@ -278,3 +278,6 @@ from app.db.models.source_debt_handoff import SourceDebtHandoff, EtsReceiptUpdat
 
 from app.db.models.booking_payment import BookingPaymentAttempt, BookingReceipt, BookingPaymentEvent
 from app.db.models.visit_request import VisitRequest
+
+from app.db.models.booking_fulfillment import VisitRequestEvent, BookingRepairOrderLink
+from app.db.models.booking_application import BookingReceiptApplication, BookingAccountingReviewTask, BookingAccountingReviewEvent

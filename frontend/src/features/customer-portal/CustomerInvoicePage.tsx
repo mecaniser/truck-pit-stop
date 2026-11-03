@@ -1,7 +1,7 @@
 import { collectionAppliedPrincipal } from '@/features/source-collection/collectionAppliedPrincipal'
 import { customerInvoiceLabel, customerInvoiceMemo } from '@/lib/invoiceIdentity'
 import { ControlButton } from '@/components/ui/Controls'
-import { currentInvoicePaymentSummary } from '@/lib/invoicePaymentPresentation'
+import { currentInvoicePaymentSummary, invoiceAppliedPaymentLabel } from '@/lib/invoicePaymentPresentation'
 import InvoicePaymentSummary from '@/components/InvoicePaymentSummary'
 import { invoicePaymentLabels } from '@/lib/invoicePaymentLabels'
 import InvoiceReviewLink from '@/components/InvoiceReviewLink'
@@ -658,6 +658,9 @@ export default function CustomerInvoicePage() {
                 : []),
               ...((isHistoricalInvoice || selectedMethod === 'card') && pricing.cardFee > 0
                 ? [['Card Processing Fee', pricing.cardFee] as [string, number]]
+                : []),
+              ...(splitSettlement && paymentSummary?.applied_amount != null && isPositiveMoney(paymentSummary.prepayment_applied_amount)
+                ? [[invoiceAppliedPaymentLabel(paymentSummary), -Number(paymentSummary.applied_amount)] as [string, number]]
                 : []),
             ]).map(([label, amount], index, rows) => (
               <div key={label} className={`flex items-center justify-between py-[9px] text-[13px] ${index < rows.length - 1 ? 'border-b border-[#1e2432]' : ''}`}>

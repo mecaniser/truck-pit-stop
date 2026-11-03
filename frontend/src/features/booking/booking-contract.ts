@@ -39,7 +39,11 @@ export interface VisitRequestResult {
   id: string
   booking_kind: 'request'
   request_reference: string
-  status: 'requested' | 'availability_review' | 'withdrawn'
+  status: 'requested' | 'availability_review' | 'accepted' | 'declined' | 'withdrawn' | 'fulfilled'
+  version?: number
+  accepted_arrival_date?: string | null
+  customer_notes?: string | null
+  fulfilled_repair_order_id?: string | null
   preferred_date: string | null
   service_id?: string
   service_name?: string

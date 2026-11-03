@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 import re
+from urllib.parse import quote
 
 import httpx
 
@@ -237,16 +238,15 @@ async def get_refund(
     *, connection: QuickBooksConnection, charge_id: str, refund_id: str,
 ) -> QuickBooksRefund:
     """Retrieve a known refund under its original charge; never resubmit money."""
-    if not connection.encrypted_access_token or any(
-        not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,255}", value)
-        for value in (charge_id, refund_id)
-    ):
+    if (not connection.encrypted_access_token
+        or not isinstance(charge_id,str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,255}",charge_id)
+        or not isinstance(refund_id,str) or not 1<=len(refund_id)<=255 or any(ord(char)<32 for char in refund_id)):
         raise QuickBooksPaymentError("QuickBooks refund identity is invalid", outcome_unknown=True)
     access_token = decrypt_quickbooks_token(connection.encrypted_access_token)
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(settings.QUICKBOOKS_HTTP_TIMEOUT_SECONDS)) as client:
             response = await client.get(
-                f"{payments_base_url()}/quickbooks/v4/payments/charges/{charge_id}/refunds/{refund_id}",
+                f"{payments_base_url()}/quickbooks/v4/payments/charges/{quote(charge_id, safe='')}/refunds/{quote(refund_id, safe='')}",
                 headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
             )
         if response.status_code >= 400:

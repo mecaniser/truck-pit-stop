@@ -74,8 +74,8 @@ async def update_setting(db, customer_id, actor, body, key):
     return state(customer)
 
 
-async def issuance_default(db, order, tenant):
-    customer = await active_customer(db, order.customer_id, tenant.id, lock=True)
+async def issuance_default(db, order, tenant, *, lock=True):
+    customer = await active_customer(db, order.customer_id, tenant.id, lock=lock)
     if order.is_internal or not customer.tax_exempt:
         return None
     audit = await db.scalar(select(CustomerTaxExemptionAudit).where(

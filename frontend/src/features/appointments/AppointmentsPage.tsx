@@ -13,6 +13,7 @@ import { Spinner } from '@/components/ui'
 import api from '@/lib/api'
 import type { Appointment, Vehicle } from '@/types'
 import { DateBlock, formatMoney, Pill } from '@/features/customer-portal/portal-ui'
+import CustomerVisitRequestCard from './CustomerVisitRequestCard'
 import type { VisitRequestResult } from '@/features/booking/booking-contract'
 
 const statusStyles: Record<string, string> = {
@@ -37,10 +38,10 @@ export default function AppointmentsPage() {
     queryFn: ({ signal }) => getPortalItems<Appointment>('/appointments', {}, signal),
   })
   const vehiclesQuery = useQuery({queryKey:['vehicles',user?.tenant_id,user?.customer_id],queryFn: ({ signal }) => getPortalItems<Vehicle>('/vehicles', {}, signal)})
-  const requestsQuery = useQuery({ queryKey: ['visit-requests', user?.tenant_id, user?.customer_id], queryFn: ({ signal }) => getPortalItems<VisitRequestResult>('/visit-requests', {}, signal) })
+  const requestsQuery = useQuery({ queryKey: ['visit-requests', user?.tenant_id, user?.customer_id], queryFn: ({ signal }) => getPortalItems<VisitRequestResult>('/appointments/visit-requests', {}, signal) })
   const vehicles=vehiclesQuery.data || []
   const scope=resolveVehicleScope(vehicles,requestedVehicle)
-  const requests = requestsQuery.isError ? [] : (requestsQuery.data || []).filter(request => request.status !== 'withdrawn' && (!scope.vehicleId || !request.vehicle_id || request.vehicle_id === scope.vehicleId))
+  const requests = requestsQuery.isError ? [] : (requestsQuery.data || []).filter(request => (!scope.vehicleId || !request.vehicle_id || request.vehicle_id === scope.vehicleId))
 
   const cancelMutation = useMutation({
     mutationFn: async (appointmentId: string) => api.post(`/appointments/${appointmentId}/cancel`),
@@ -82,8 +83,8 @@ export default function AppointmentsPage() {
       </header>
 
       <section aria-label="Visit requests" className="space-y-3">
-        <h2 className="text-base font-bold">Awaiting shop confirmation</h2>
-        {requestsQuery.isLoading ? <p role="status">Loading visit requests…</p> : requestsQuery.isError ? <div role="alert"><p>Visit requests couldn’t load.</p><ControlButton className="cp-secondary" onClick={() => { void requestsQuery.refetch() }}>Try requests again</ControlButton></div> : requests.length ? requests.map(request => <article key={request.id} className="cp-panel p-4 space-y-2"><h3 className="font-bold">{request.service_name || 'Service visit request'}</h3><p className="text-sm text-[#a2a9bb]">{vehicles.some(vehicle => vehicle.id === request.vehicle_id) ? vehicleIdentity(vehicles.find(vehicle => vehicle.id === request.vehicle_id)!) : 'Vehicle not specified'}</p><p className="text-sm">The shop will confirm availability. No start time is reserved.</p>{request.preferred_date && <p className="text-sm">Preferred date: <time dateTime={request.preferred_date}>{format(new Date(`${request.preferred_date}T12:00:00`), 'MMM d, yyyy')}</time></p>}<p className="text-xs">Request {request.request_reference}</p></article>) : <p className="text-sm text-[#a2a9bb]">No visit requests awaiting confirmation.</p>}
+        <h2 className="text-base font-bold">Visit requests</h2>
+        {requestsQuery.isLoading ? <p role="status">Loading visit requests…</p> : requestsQuery.isError ? <div role="alert"><p>Visit requests couldn’t load.</p><ControlButton className="cp-secondary" onClick={() => { void requestsQuery.refetch() }}>Try requests again</ControlButton></div> : requests.length ? requests.map(request => <CustomerVisitRequestCard key={`${request.id}:${request.version}`} request={request} vehicleLabel={vehicles.some(vehicle => vehicle.id === request.vehicle_id) ? vehicleIdentity(vehicles.find(vehicle => vehicle.id === request.vehicle_id)!) : 'Vehicle not specified'}/>) : <p className="text-sm text-[#a2a9bb]">No visit requests to show.</p>}
       </section>
 
       {filtered.length === 0 ? (

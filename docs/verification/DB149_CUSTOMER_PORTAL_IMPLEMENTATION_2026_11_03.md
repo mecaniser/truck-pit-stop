@@ -1,5 +1,45 @@
 # DB-149 customer portal implementation review — 2026-11-03
 
+## Current fulfillment handoff (supersedes the historical stages below)
+
+Accountable owner: Frontend & UX. Branch `codex/portal-task-first-implementation`; [draft PR767](https://github.com/mecaniser/truck-pit-stop/pull/767). Current main8e1c264e is integrated. Preview only: no merge, deployment, production payment flag, real charge/refund, customer outreach or production financial-record change.
+
+Frozen architecture: [two booking paths](../contracts/portal-verified-booking-prepayment-v1.md) and [operational fulfillment/application](../contracts/portal-booking-fulfillment-followup.md). Migrations198/199/200 are additive; destructive downgrade is refused. Original preview databases197/198 and unrelated8000 runtime remain preserved.
+
+The service choice appears once: reserve a time with verified full payment, or request a visit without payment or a guaranteed start. Fifteen-minute server checkout holds expire only when proven unpaid. Unknown provider outcomes cannot start a duplicate charge. Staff can accept an arrival date, decline, withdraw or record actual check-in without turning an unpaid request into reserved capacity. Verified prepayment links to the exact tenant/customer/vehicle work order and applies immutably during genuine invoice issuance; the application, settlement, accounting tasks and publishing outboxes share the transaction.
+
+Applications do not create another Payment, sale or cash receipt. Provider/account/configuration/realm/charge evidence and fresh locked balances are checked. Current itemized invoice economics must match the reviewed server hash. Applied amounts appear consistently in customer/guest/PDF/email projections. Invalid evidence exposes unavailable balances and suppresses payment controls. Definitive external refunds/disputes remain retained even when they require review; pending/unknown evidence is not treated as settled.
+
+External bookkeeping is deliberately manual: exact receipt/application review tasks require explicit evidence and remain export-held even after acknowledgment. Fleet accounting snapshots fail closed rather than sending incomplete financial replacement data. Ordinary provider financial facts and unrelated invoices continue through the existing worker; held accounting prefixes are excluded before batch limits. The QBO existing-refund check uses provider GETs only; no refund initiation is included. An unreadable/unknown refund reference remains fail-closed and has no discard override in this change. This operational limitation must be reviewed before production activation.
+
+### Final source checks
+
+Full frontend244 files/2676 tests pass, TypeScript and production build/control check pass. Current backend critical801 pass/51 explicit PostgreSQL opt-in skips. Actual independent PostgreSQL: full/partial issuance and post-queue-flush atomic rollback3/3; strict missing/empty/mismatched charge binding5/5; prior application race, retained refund and dispute cases pass. Independent final source QA/Security GO:112 backend/52 frontend delta,18 ordinary-issuance/application regressions and54 booking result-display checks. Counts overlap. Exact-head hosted CI remains a separate gate; no local result is claimed as deployment evidence.
+
+Runtime acceptance caught a real MissingGreenlet while email publishing accessed an expired relationship. The failed transaction left zero invoices/applications/settlements/notifications/outboxes; existing receipt and link were intact. Fixed by awaited relationship loading at each actual publication boundary. Real ASGI tests retain actual checklist, financial wakeup, QBO-hold and email queue helpers; only final external delivery is absent. Independent source review and actual browser retry passed.
+
+### Actual application preview
+
+Frontend5173 is owned source `/tmp/portal-task-first-implementation/frontend`, proxy8016. API uses frozen source and new fictional `portal_booking_fulfillment_final_qa` database at schema200, outbound provider access unavailable. Fresh canonical schema catalog matches migration200; all203 table fingerprints survived guarded schema alignment/restarts. No old fixture or production financial record was edited. Only explicit fictional fixtures and their normal workflow records were created; no card data entered/tokenized and no Pay button submitted. No mail worker/delivery or real provider call occurred.
+
+At1440×1000 and390×1100: actual single/fleet customer login, Today-first tasks, selected fleet vehicle persistence, common-needs/search, one-time booking choice, optional-date no-payment request review, accepted arrival date, server reservation slot/review/held card form, saved confirmed state, and partial invoice payment choice checked. Mobile invoice has390px document width and44px amount/full/partial/continue controls. Reservation result includes saved service, exact authorized vehicle and shop-local schedule; missing details are unavailable.
+
+Real staff UI linked and issued all three fictional prepaid scenarios:180 receipt applied180 to180 invoice leaves0;180 receipt applied180 to240 invoice leaves60;180 receipt applied100 to100 invoice leaves80 unapplied and0 due. No new charge. Customer Today shows only60 outstanding; partial invoice shows180 applied,60 due, and permits30 preview leaving30 after confirmation. Continue/payment was not clicked. Manual external bookkeeping remained pending; no fabricated acknowledgment/export success.
+
+Actual screenshots live under `/Users/sergio_m1_promax/.codex/visualizations/2026/10/31/01a1903f-abe6-7d20-bd1a-7bf7df5f4a4a/portal-implementation/fulfillment/`: `customer-choice-desktop/mobile.png`, `customer-request-review-desktop/mobile.png`, `customer-reservation-checkout-desktop/mobile.png`, `customer-fleet-accepted-desktop/mobile.png`, `customer-partial-invoice-desktop/mobile.png`, staff application/result captures. Private runtime receipts are under `/tmp/portal-booking-fulfillment-qa-runtime/final/`, including publication rollback and source-aligned restart evidence. Screenshots use intentionally fictional shop/account/service text, not production copy or financial data.
+
+| Before | After | Why |
+|---|---|---|
+| Unclear booking/payment authority | One familiar reserve/request choice after service | One meaningful decision, followed by the selected path |
+| Payment success without useful visit identity | Saved service, exact vehicle and shop-local schedule | Customers can verify what they reserved |
+| Prepayment could be charged again on the service invoice | One immutable applied credit and the true remainder | Preserve money and clarify what remains to pay |
+| Mobile field/action crowding | Shared44px controls, bounded desktop checkout, no overflow | Predictable keyboard and touch interaction |
+
+The historical stages below are retained as an audit trail. Their counts, runtime addresses and earlier activation blockers do not override this current handoff.
+
+---
+
+
 Owner: Frontend & UX. Branch: `codex/portal-task-first-implementation`, based on `8582077ba3069e1e1ddbf1dd2d934d7ff80ca58a`.
 Status: implementation and local acceptance review; [PR767](https://github.com/mecaniser/truck-pit-stop/pull/767), source commit `461cee28`. No merge/deploy authorization for this change.
 
@@ -103,3 +143,6 @@ Production activation limit: this repository currently has no appointment-to-rep
 
 
 Final source handoffdc657801: protected backend715 pass/14 explicit skips; PostgreSQL7 pass; repeated task entry unit/real PostgreSQL2 pass and independent worker/runtime7 pass. Worker wrapper now uses existing process-local `run_async` so pooled connections survive repeated Celery entries. Critical manifest38 backend files; disjoint327 remaining. Exact CI41728886935 passed backend remaining4755/462 skipped, backend critical, frontend checks, migration graph, dependencies and Playwright smoke. Full frontend repeated the known Fleet account-switch test5000ms timeout; no new booking test failed. Narrow test-only correction replaces repeated global role walks with named account-panel queries and explicitly controls/awaits the deferred profile save. Exact save payload, session-epoch advance and no cross-account password POST assertions are strengthened, not skipped. Owner6/6 and fresh independent6/6 pass; no product-source or timeout change. Final commit CI must pass before release consideration.
+
+
+Baseline57a6c41e exact CI41730483454: all7 checks pass, including full frontend after the deterministic account-switch regression correction and full backend. This clears that committed customer-preview baseline; it does not clear the newly identified operational fulfillment gaps. Follow-up Architecture contract freezes staff date-only request acknowledgment and immutable prepaid invoice application before implementation. No unpaid request becomes a reserved/paid appointment. Production remains off while staff operational fulfillment and accounting application are implemented and independently accepted.

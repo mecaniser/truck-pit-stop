@@ -64,6 +64,14 @@ export default function SettlementSummaryCard({
     ['Available to pay', summary.allocatable_balance],
   ]
 
+  if (summary.payment_verification_required) return (
+    <section className={`rounded-2xl border p-4 text-sm ${panel}`} aria-label="Invoice payment summary">
+      <h2 className="font-bold">Payment status needs review</h2>
+      <dl className="mt-3 flex justify-between gap-4"><dt>Balance due</dt><dd>Unavailable</dd></dl>
+      <p className={`mt-3 ${quiet}`}>Contact the shop before making another payment.</p>
+    </section>
+  )
+
   const customerCompact = audience === 'customer' && streamlined
   if (customerCompact && figures.length === 0 && !resolution && allocations.length === 0 && !children) return null
 

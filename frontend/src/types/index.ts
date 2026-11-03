@@ -735,6 +735,7 @@ export interface InvoiceDetail extends Invoice {
 }
 
 export interface InvoicePaymentPresentation {
+  prepayment_applied_amount?: string | null
   state: 'paid' | 'unpaid' | 'partially_paid' | 'payment_pending' | 'partially_paid_pending' | 'overdue' | 'cancelled' | 'unknown'
   applied_amount: string | null
   balance_due: string | null

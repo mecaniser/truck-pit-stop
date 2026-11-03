@@ -30,7 +30,7 @@ vi.mock('../../../hooks/useTenantBranding', () => ({
   default: () => ({ data: { name: 'Truck Pit Stop Wisconsin', logo_url: null, state: 'WI' } }),
 }))
 vi.mock('@tanstack/react-query', () => ({
-  useQuery: () => ({ data: { unread_count_staff: shellState.unreadCount } }),
+  useQuery: ({ queryKey }: { queryKey: unknown[] }) => ({ data: queryKey[0] === 'staff-visit-requests' ? [] : { unread_count_staff: shellState.unreadCount } }),
 }))
 vi.mock('../../../features/customers/CustomersPage', () => ({ default: () => <h1>Customers surface</h1> }))
 vi.mock('../../../features/repair-orders/RepairOrdersPage', () => ({ default: () => <h1>Repair Orders surface</h1> }))

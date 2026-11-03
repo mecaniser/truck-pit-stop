@@ -79,9 +79,17 @@ async def test_dashboard_revenue_trend_preserves_cash_total_tenant_scope_and_zer
     )
     order = SimpleNamespace(id=order_id, total_parts_cost=Decimal("0.00"), total_labor_cost=Decimal("30.00"))
     empty = SimpleNamespace(all=lambda: [])
+    # This cash-revenue fixture has no booking receipts or applications. Keep
+    # the real read-only reporting helper and supply its two aggregate shapes.
+    booking_receipts = SimpleNamespace(one=lambda: SimpleNamespace(
+        receipt_count=0, gross=0, refunds=0, unverified=0, unverified_gross=0,
+        liability=0, overdrawn=0, review_count=0,
+    ))
+    booking_applications = SimpleNamespace(one=lambda: (0, 0))
     db = SimpleNamespace(execute=AsyncMock(side_effect=[
         SimpleNamespace(all=lambda: [(payment, invoice, order) for payment in payments]),
         empty, empty, empty, SimpleNamespace(scalar=lambda: Decimal("0.00")),
+        booking_receipts, booking_applications,
     ]))
     user = SimpleNamespace(role=UserRole.GARAGE_OWNER, tenant_id=tenant_id)
 

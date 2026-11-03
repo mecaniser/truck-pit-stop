@@ -49,3 +49,37 @@ it('preserves fee disclosures and unknown historical tender when settlement refr
   expect(chosen.applied_amount).toBeNull()
   expect(chosen.note).toContain('optional card processing fees')
 })
+
+
+it('labels prepayment as part of the applied total without changing the remaining balance', () => {
+  render(<InvoicePaymentSummary summary={{ ...base, prepayment_applied_amount: '400.00' }} />)
+  expect(screen.getByText('Prepayment applied')).toBeInTheDocument()
+  expect(screen.getAllByText('$400.00')).toHaveLength(1)
+  expect(screen.getByText('$600.00')).toBeInTheDocument()
+})
+
+it('keeps mixed payments as one applied total', () => {
+  render(<InvoicePaymentSummary summary={{ ...base, prepayment_applied_amount: '200.00' }} />)
+  expect(screen.getByText('Payments applied (including prepayment)')).toBeInTheDocument()
+  expect(screen.getAllByText('$400.00')).toHaveLength(1)
+  expect(screen.getByText('$600.00')).toBeInTheDocument()
+})
+
+it('uses the fresh authoritative prepayment breakdown', () => {
+  const current = { feature_enabled: true, outstanding_balance: '200.00', confirmed_principal: '800.00', active_pending_principal: '0.00', prepayment_applied_amount: '400.00' } as InvoiceSettlementSummary
+  const chosen = currentInvoicePaymentSummary({ ...base, prepayment_applied_amount: '200.00' }, current)!
+  expect(chosen.prepayment_applied_amount).toBe('400.00')
+  expect(chosen.applied_amount).toBe('800.00')
+  expect(chosen.balance_due).toBe('200.00')
+})
+
+it('does not show cached paid amounts when fresh source verification is required', () => {
+  const current = { feature_enabled: false, payment_verification_required: true, outstanding_balance: '0.00', confirmed_principal: '1000.00', active_pending_principal: '0.00' } as InvoiceSettlementSummary
+  const chosen = currentInvoicePaymentSummary({ ...base, state: 'paid', balance_due: '0.00' }, current)!
+  render(<InvoicePaymentSummary summary={chosen} />)
+  expect(chosen.state).toBe('unknown')
+  expect(chosen.applied_amount).toBeNull()
+  expect(chosen.balance_due).toBeNull()
+  expect(screen.getByText('Unavailable')).toBeInTheDocument()
+  expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
+})
