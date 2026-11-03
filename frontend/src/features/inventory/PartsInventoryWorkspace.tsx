@@ -1,6 +1,6 @@
 import WorkspaceRecordLink from '@/components/WorkspaceRecordLink'
 import { readWorkspaceVisit, type WorkspaceVisit } from '../dashboard/workspaceVisit'
-import { shopWorkReturnUrl, shopWorkDestinationUrl, shopWorkQueryScope } from '@/features/dashboard/shopWorkNavigation'
+import { shopWorkReturnUrl, shopWorkQueryScope } from '@/features/dashboard/shopWorkNavigation'
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { pricingError, pricingMoney } from '@/features/parts-pricing/contract'
@@ -480,12 +480,14 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const linkedPartId = searchParams.get('selected')
-  const shopWorkOrigin = Boolean(shopWorkReturnUrl(searchParams))
+  // Derive context from the bounded board-return contract, never a supplied URL.
+  const boardReturnUrl = shopWorkReturnUrl(searchParams)
+  const boardContext = new URLSearchParams(boardReturnUrl?.split('?')[1])
+  const boardOrigin = boardContext.get('work_view')
+  boardContext.delete('work_view')
+  if (boardOrigin) boardContext.set('shop_work', boardOrigin)
   const purchasingParams = new URLSearchParams({ view: 'orders' })
-  if (shopWorkOrigin) {
-    purchasingParams.set('shop_work', 'overview')
-    if (searchParams.has('task')) purchasingParams.set('task', searchParams.get('task')!)
-  }
+  boardContext.forEach((value, key) => purchasingParams.set(key, value))
   const purchasingUrl = `/dashboard/garage/purchasing?${purchasingParams}`
   const queryClient = useQueryClient()
   const { data: branding } = useTenantBranding()
@@ -538,9 +540,9 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
     navigate(url, { state })
   }
   const linkedRecordUrl = (kind: 'repair_order' | 'purchase_order', id: string) => {
-    return shopWorkOrigin ? shopWorkDestinationUrl({ kind, id, view: 'orders' }, searchParams.get('task') ?? undefined)
-      : kind === 'repair_order' ? `/dashboard/repair-orders?selected=${encodeURIComponent(id)}`
+    const url = kind === 'repair_order' ? `/dashboard/repair-orders?selected=${encodeURIComponent(id)}`
       : `/dashboard/garage/purchasing?view=orders&purchase_order=${encodeURIComponent(id)}`
+    return boardContext.size ? `${url}&${boardContext}` : url
   }
   useEffect(() => {
     const timer = window.setTimeout(() => {
