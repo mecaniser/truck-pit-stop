@@ -136,3 +136,18 @@ To repeat with the populated local QA shop, supply DB151_QA_URL (loopback only),
 Local runtime verified November 3: Vite PID7423 serves the shop-work-overview frontend on 5215. Its API proxy reaches container dieselbridge_api_db151 on 8041, mounted from the same checkout. Database postgres/truckpitstop_db151 is at migration 197, DB/Redis ready. Screenshots use synthetic shop records.
 
 [Customer History after returning](assets/db151-workspace/customer-history.png) · [Ordering after returning from PO-208](assets/db151-workspace/inventory-ordering.png)
+
+## Shop Work board choices, November 3, 2026
+
+[Before and after, all four views](assets/db151-board/comparison.html). The screenshots use the same signed-in local QA shop. Zero active jobs, two repairs in Closeout, five attention tasks. Billing coverage was incomplete; the board did not treat that as a collectible balance.
+
+| View | Previous decision | Verified behavior |
+| --- | --- | --- |
+| Overview | Two rows started with the same brake chamber name; identify the task in a separate action column. | One link per task, action first. Review stock opens that Inventory part; Review core return opens its distinct Purchasing core. Back focuses the chosen task. |
+| Active work | Search and filter an empty queue, then decide between Overview and Closeout. | With no active jobs, one link opens the first current Overview task, repair 1049 here. Close returns to Active work. The clear shop offers Overview with no invented task. Busy shop search still recovers from a filtered miss. |
+| Closeout | Pick from three queues even when two have no records. | If one queue has work it is a label. If multiple have work, they remain selectable. Pending work comes before history; an explicitly requested lane remains available. Invoiced status says Review invoice without claiming a collectible balance. |
+| Activity | Event count looked like a workload. Filters had to be chosen again after returning. | History carries no task badge. Events with a repair link to it. Close/reload preserve the chosen filter and Clear activity filters recovers an empty result without reopening Filters. |
+
+**Runtime receipt (2026-11-03, local):** Vite PID7423 at 127.0.0.1:5215 serves shop-work-overview/frontend, branch codex/shop-work-destination-layout, pre-change head 6209fccc. Local proxy points to port8041 and reaches /health/ready. dieselbridge_api_db151 mounts the same checkout's backend; postgres/truckpitstop_db151 migration197, DB and Redis ready. Existing uncommitted Settings edits excluded. Browser verified changed rendering and exact records; no financial, inventory, or repair-state change.
+
+**Verification:** 89 focused frontend tests across six suites, changed-source lint, shared controls, TypeScript and production build passed. Three signed-in Playwright scenarios passed using the populated quiet, busy and clear shops. Quiet repeated all four views at 1440px and 390px. The test spaces those two runs for the local API's one-minute rate limit. Repeat from e2e with DB151_QA_URL (loopback) and DB151_OWNER_PASSWORD: playwright test -c playwright.db151-local.config.ts db151-board-decisions. Screenshot comparison and interactions establish fewer choices; no human decision-time study was performed.
