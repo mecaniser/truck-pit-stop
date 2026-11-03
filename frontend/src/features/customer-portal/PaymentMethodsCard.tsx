@@ -1,5 +1,6 @@
 import { ControlButton } from '@/components/ui/Controls'
 import { useState, useEffect } from 'react'
+import { useAuthStore } from '@/stores/authStore'
 import { Spinner } from '@/components/ui'
 import type { Stripe } from '@stripe/stripe-js'
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js'
@@ -26,7 +27,12 @@ const CARD_BRANDS: Record<string, string> = {
   unionpay: '💳 UnionPay',
 }
 
-function AddCardForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: () => void }) {
+function paymentError(err: unknown, fallback: string): string {
+  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  return typeof detail === 'string' ? detail : fallback
+}
+
+function AddCardForm({ accountId, onSuccess, onCancel }: { accountId: string; onSuccess: () => void; onCancel: () => void }) {
   const stripe = useStripe()
   const elements = useElements()
   const [error, setError] = useState<string | null>(null)
@@ -42,6 +48,9 @@ function AddCardForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel:
     try {
       // Get setup intent from backend
       const { data } = await api.post('/payments/setup-intent')
+      if (data.stripe_account_id !== accountId) {
+        throw new Error('Payment account changed')
+      }
       
       const cardElement = elements.getElement(CardElement)
       if (!cardElement) {
@@ -57,8 +66,8 @@ function AddCardForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel:
       } else if (setupIntent?.status === 'succeeded') {
         onSuccess()
       }
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to add card')
+    } catch (err: unknown) {
+      setError(paymentError(err, 'Unable to add your card. Refresh and try again.'))
     } finally {
       setProcessing(false)
     }
@@ -82,7 +91,7 @@ function AddCardForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel:
       </div>
       
       {error && (
-        <p className="text-sm text-red-400">{error}</p>
+        <p role="alert" className="text-sm text-red-400">{error}</p>
       )}
 
       <div className="flex gap-3">
@@ -106,17 +115,44 @@ function AddCardForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel:
   )
 }
 
-function PaymentMethodsList() {
+function PaymentMethodsList({ scope }: { scope: string }) {
   const queryClient = useQueryClient()
   const [showAddForm, setShowAddForm] = useState(false)
   const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null)
 
-  useEffect(() => {
-    setStripePromise(getStripeForAccount().catch(() => null))
-  }, [])
+  const [stripeLoadError, setStripeLoadError] = useState(false)
+  const [stripeReady, setStripeReady] = useState(false)
+  const [stripeRetry, setStripeRetry] = useState(0)
+  const methodsKey = ['payment-methods', scope]
+  const config = useQuery<{ stripe_account_id: string }>({
+    queryKey: ['payment-methods-config', scope],
+    queryFn: async () => (await api.get('/payments/methods/config')).data,
+    retry: false,
+  })
+  const accountId = config.data?.stripe_account_id
 
-  const { data: methods, isLoading } = useQuery<PaymentMethod[]>({
-    queryKey: ['payment-methods'],
+  useEffect(() => {
+    let active = true
+    setStripeReady(false)
+    setStripeLoadError(false)
+    setStripePromise(null)
+    if (accountId) {
+      const promise = getStripeForAccount(accountId).then((stripe) => {
+        if (!stripe) throw new Error('Stripe is unavailable')
+        if (active) setStripeReady(true)
+        return stripe
+      }).catch(() => {
+        if (active) setStripeLoadError(true)
+        return null
+      })
+      setStripePromise(promise)
+    }
+    return () => { active = false }
+  }, [accountId, stripeRetry])
+
+  const { data: methods, isLoading, isError, error: methodsError, refetch, isFetching } = useQuery<PaymentMethod[]>({
+    queryKey: methodsKey,
+    retry: false,
     queryFn: async () => {
       const response = await api.get('/payments/methods')
       return response.data
@@ -128,7 +164,7 @@ function PaymentMethodsList() {
       await api.delete(`/payments/methods/${id}`)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['payment-methods'] })
+      queryClient.invalidateQueries({ queryKey: methodsKey })
     },
   })
 
@@ -137,13 +173,13 @@ function PaymentMethodsList() {
       await api.post(`/payments/methods/${id}/default`)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['payment-methods'] })
+      queryClient.invalidateQueries({ queryKey: methodsKey })
     },
   })
 
   const handleAddSuccess = () => {
     setShowAddForm(false)
-    queryClient.invalidateQueries({ queryKey: ['payment-methods'] })
+    queryClient.invalidateQueries({ queryKey: methodsKey })
   }
 
   if (isLoading) {
@@ -156,7 +192,14 @@ function PaymentMethodsList() {
 
   return (
     <div className="space-y-4">
-      {methods && methods.length > 0 ? (
+      {isError ? (
+        <div role="alert" className="space-y-2 text-sm text-red-400">
+          <p>{paymentError(methodsError, 'Unable to load saved payment methods. Please try again.')}</p>
+          <ControlButton type="button" onClick={() => { void refetch() }} disabled={isFetching} className="underline">
+            {isFetching ? 'Retrying...' : 'Retry loading cards'}
+          </ControlButton>
+        </div>
+      ) : methods && methods.length > 0 ? (
         <div className="space-y-3">
           {methods.map((method) => (
             <div
@@ -211,14 +254,30 @@ function PaymentMethodsList() {
         <p className="text-gray-400 text-sm">No payment methods on file.</p>
       )}
 
-      {showAddForm && stripePromise ? (
+      {(config.isError || stripeLoadError) && (
+        <div role="alert" className="space-y-2 text-sm text-red-400">
+          <p>{config.isError
+            ? paymentError(config.error, 'Unable to load the secure card form. Please try again.')
+            : 'Unable to load the secure card form. Please try again.'}</p>
+          <ControlButton type="button" className="underline" onClick={() => {
+            if (config.isError) void config.refetch()
+            else setStripeRetry((value) => value + 1)
+          }}>Retry card form</ControlButton>
+        </div>
+      )}
+      {(deleteMutation.isError || setDefaultMutation.isError) && (
+        <p role="alert" className="text-sm text-red-400">
+          {paymentError(deleteMutation.error || setDefaultMutation.error, 'Unable to update your saved card. Please try again.')}
+        </p>
+      )}
+      {showAddForm && stripePromise && stripeReady && accountId ? (
         <Elements stripe={stripePromise}>
-          <AddCardForm onSuccess={handleAddSuccess} onCancel={() => setShowAddForm(false)} />
+          <AddCardForm accountId={accountId} onSuccess={handleAddSuccess} onCancel={() => setShowAddForm(false)} />
         </Elements>
       ) : (
         <ControlButton
           onClick={() => setShowAddForm(true)}
-          disabled={!stripePromise}
+          disabled={!stripeReady || config.isError}
           className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#30384b]  text-gray-400 transition-colors hover:border-violet-400/60 hover:text-violet-300"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -232,6 +291,8 @@ function PaymentMethodsList() {
 }
 
 export default function PaymentMethodsCard() {
+  const user = useAuthStore((state) => state.user)
+  const scope = JSON.stringify([user?.id, user?.tenant_id, user?.customer_id])
   return (
     <div className="h-fit rounded-2xl border border-[#232939] bg-[#12161f] p-6">
       <div className="flex items-center gap-2 mb-4">
@@ -243,7 +304,7 @@ export default function PaymentMethodsCard() {
       <p className="text-gray-400 text-sm mb-4">
         Saved cards can be used for quick checkout when paying for services.
       </p>
-      <PaymentMethodsList />
+      <PaymentMethodsList key={scope} scope={scope} />
     </div>
   )
 }

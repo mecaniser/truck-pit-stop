@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 import stripe
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.customer import Customer
@@ -28,6 +29,19 @@ async def ensure_connected_stripe_customer(
     platform account cannot be attached to a direct charge, so recreate it in
     the connected account when necessary.
     """
+    # Every invoice/setup caller must serialize recovery on the same row. Reload
+    # after acquiring the lock: the supplied ORM instance may predate another
+    # request's committed recovery. No financial rows are locked inside here.
+    customer = (await db.execute(
+        select(Customer).where(
+            Customer.id == customer.id,
+            Customer.tenant_id == customer.tenant_id,
+            Customer.deleted_at.is_(None),
+        ).with_for_update().execution_options(populate_existing=True)
+    )).scalar_one_or_none()
+    if customer is None:
+        raise ValueError("Active payment customer not found")
+
     customer_params = {
         "email": customer.email,
         "name": _customer_name(customer),

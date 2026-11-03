@@ -56,6 +56,7 @@ PORTAL_PAYMENT_NOTE = "Payment made by customer portal flow."
 
 class SetupIntentResponse(BaseModel):
     client_secret: str
+    stripe_account_id: str
 
 
 class PaymentMethodResponse(BaseModel):
@@ -221,44 +222,58 @@ async def get_stripe_config():
     return ConfigResponse(publishable_key=settings.STRIPE_PUBLISHABLE_KEY)
 
 
+class SavedCardConfigResponse(BaseModel):
+    stripe_account_id: str
+
+
+async def _saved_card_context(db: AsyncSession, user: User):
+    if user.role != UserRole.CUSTOMER or not user.customer_id or not user.tenant_id:
+        raise HTTPException(status_code=403, detail="Only customers can manage payment methods")
+    query = select(Customer).where(
+        Customer.id == user.customer_id,
+        Customer.tenant_id == user.tenant_id,
+        Customer.deleted_at.is_(None),
+    )
+    customer = (await db.execute(query)).scalar_one_or_none()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    tenant = (await db.execute(select(Tenant).where(
+        Tenant.id == user.tenant_id, Tenant.is_active.is_(True),
+    ))).scalar_one_or_none()
+    if not tenant or not tenant.stripe_account_id or not tenant.stripe_onboarding_complete:
+        raise HTTPException(status_code=409, detail="This shop has not finished setting up Stripe payments.")
+    return customer, tenant.stripe_account_id
+
+
+@router.get("/methods/config", response_model=SavedCardConfigResponse)
+async def saved_card_config(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    _, account_id = await _saved_card_context(db, current_user)
+    return SavedCardConfigResponse(stripe_account_id=account_id)
+
+
 @router.post("/setup-intent", response_model=SetupIntentResponse)
 async def create_setup_intent(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Create a SetupIntent for saving a payment method"""
-    if current_user.role != UserRole.CUSTOMER or not current_user.customer_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only customers can add payment methods",
-        )
-    
-    # Get customer record
-    result = await db.execute(select(Customer).where(Customer.id == current_user.customer_id))
-    customer = result.scalar_one_or_none()
-    
-    if not customer:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
-    
+    customer, account_id = await _saved_card_context(db, current_user)
+
     # Create or retrieve Stripe customer
     try:
-        if not customer.stripe_customer_id:
-            stripe_customer = stripe.Customer.create(
-                email=customer.email,
-                name=f"{customer.first_name} {customer.last_name}",
-                metadata={"customer_id": str(customer.id)},
-            )
-            customer.stripe_customer_id = stripe_customer.id
-            await db.commit()
-            logger.info("stripe_customer_created", customer_id=str(customer.id), stripe_customer_id=stripe_customer.id)
-        
+        customer_id = await ensure_connected_stripe_customer(db, customer, account_id)
+
         # Create SetupIntent
         setup_intent = stripe.SetupIntent.create(
-            customer=customer.stripe_customer_id,
+            customer=customer_id,
+            stripe_account=account_id,
             payment_method_types=["card"],
         )
         
-        return SetupIntentResponse(client_secret=setup_intent.client_secret)
+        return SetupIntentResponse(client_secret=setup_intent.client_secret, stripe_account_id=account_id)
     except stripe.error.StripeError as e:
         logger.error("stripe_setup_intent_failed", customer_id=str(customer.id), error=str(e))
         record_payment_error(error_type=type(e).__name__, provider="stripe")
@@ -274,25 +289,22 @@ async def list_payment_methods(
     current_user: User = Depends(get_current_active_user),
 ):
     """List customer's saved payment methods"""
-    if current_user.role != UserRole.CUSTOMER or not current_user.customer_id:
+    customer, account_id = await _saved_card_context(db, current_user)
+    if not customer.stripe_customer_id:
         return paginated_or_list([], 0, skip, limit, paginated)
-    
-    # Get customer record
-    result = await db.execute(select(Customer).where(Customer.id == current_user.customer_id))
-    customer = result.scalar_one_or_none()
-    
-    if not customer or not customer.stripe_customer_id:
-        return paginated_or_list([], 0, skip, limit, paginated)
-    
+
     try:
         # Get payment methods from Stripe
         payment_methods = stripe.PaymentMethod.list(
             customer=customer.stripe_customer_id,
             type="card",
+            stripe_account=account_id,
         )
         
         # Get default payment method
-        stripe_customer = stripe.Customer.retrieve(customer.stripe_customer_id)
+        stripe_customer = stripe.Customer.retrieve(customer.stripe_customer_id, stripe_account=account_id)
+        if stripe_customer.get("deleted"):
+            raise HTTPException(status_code=409, detail="Saved cards could not be loaded. Add a card to reconnect your payment profile.")
         default_pm_id = stripe_customer.invoice_settings.default_payment_method
         
         items = [
@@ -310,6 +322,8 @@ async def list_payment_methods(
         response_items = items[skip : skip + limit] if paginated else items
         return paginated_or_list(response_items, total, skip, limit, paginated)
     except stripe.error.StripeError as e:
+        if isinstance(e, stripe.error.InvalidRequestError) and e.code == "resource_missing":
+            raise HTTPException(status_code=409, detail="Saved cards could not be loaded. Add a card to reconnect your payment profile.") from e
         logger.error("stripe_list_payment_methods_failed", customer_id=str(customer.id), error=str(e))
         record_payment_error(error_type=type(e).__name__, provider="stripe")
         raise
@@ -322,23 +336,18 @@ async def delete_payment_method(
     current_user: User = Depends(get_current_active_user),
 ):
     """Delete a saved payment method"""
-    if current_user.role != UserRole.CUSTOMER or not current_user.customer_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    
-    # Verify payment method belongs to this customer
-    result = await db.execute(select(Customer).where(Customer.id == current_user.customer_id))
-    customer = result.scalar_one_or_none()
-    
+    customer, account_id = await _saved_card_context(db, current_user)
+
     if not customer or not customer.stripe_customer_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No payment methods")
     
     # Verify ownership via Stripe
     try:
-        pm = stripe.PaymentMethod.retrieve(payment_method_id)
+        pm = stripe.PaymentMethod.retrieve(payment_method_id, stripe_account=account_id)
         if pm.customer != customer.stripe_customer_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your payment method")
         
-        stripe.PaymentMethod.detach(payment_method_id)
+        stripe.PaymentMethod.detach(payment_method_id, stripe_account=account_id)
         logger.info("payment_method_deleted", customer_id=str(customer.id), payment_method_id=payment_method_id)
     except stripe.error.InvalidRequestError as e:
         logger.warning("stripe_delete_payment_method_failed", payment_method_id=payment_method_id, error=str(e))
@@ -356,24 +365,21 @@ async def set_default_payment_method(
     current_user: User = Depends(get_current_active_user),
 ):
     """Set a payment method as default"""
-    if current_user.role != UserRole.CUSTOMER or not current_user.customer_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    
-    result = await db.execute(select(Customer).where(Customer.id == current_user.customer_id))
-    customer = result.scalar_one_or_none()
-    
+    customer, account_id = await _saved_card_context(db, current_user)
+
     if not customer or not customer.stripe_customer_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No payment methods")
     
     # Verify ownership and set as default
     try:
-        pm = stripe.PaymentMethod.retrieve(payment_method_id)
+        pm = stripe.PaymentMethod.retrieve(payment_method_id, stripe_account=account_id)
         if pm.customer != customer.stripe_customer_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your payment method")
         
         stripe.Customer.modify(
             customer.stripe_customer_id,
             invoice_settings={"default_payment_method": payment_method_id},
+            stripe_account=account_id,
         )
         logger.info("default_payment_method_set", customer_id=str(customer.id), payment_method_id=payment_method_id)
     except stripe.error.InvalidRequestError as e:

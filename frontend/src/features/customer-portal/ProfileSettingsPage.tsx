@@ -679,8 +679,9 @@ function ContactDetailsSection() {
     queryFn: async () => (await api.get(`/customers/${user!.customer_id}`)).data,
     enabled: Boolean(user?.customer_id),
   })
-  const { data: paymentMethods = [] } = useQuery<SavedPaymentMethod[]>({
-    queryKey: ['payment-methods'],
+  const { data: paymentMethods = [], isLoading: cardsLoading, isError: cardsError } = useQuery<SavedPaymentMethod[]>({
+    queryKey: ['payment-methods', JSON.stringify([user?.id, user?.tenant_id, user?.customer_id])],
+    retry: false,
     queryFn: async () => (await api.get('/payments/methods')).data,
   })
 
@@ -832,7 +833,9 @@ function ContactDetailsSection() {
           </div>
           <p className="mt-3 text-[11px] text-[#8b92a5]">Zelle has no processing fee.</p>
           <p className="mt-1 text-[11px] text-[#8b92a5]">
-            {defaultCard ? `Card on file: ${defaultCard.brand} ···${defaultCard.last4}` : 'No card on file'}
+            {cardsError ? 'Saved cards unavailable. Open Payments to retry.'
+              : cardsLoading ? 'Loading saved cards…'
+                : defaultCard ? `Card on file: ${defaultCard.brand} ···${defaultCard.last4}` : 'No card on file'}
           </p>
         </section>
 
