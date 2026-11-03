@@ -5,10 +5,11 @@ import './importedBilling.css'
 import { ImportedBillingSourceLink } from './ImportedBillingSourceLink'
 import { importedBillingWarnings } from './importedBillingWarnings'
 import { importedMoney, importedPaymentLabel, importedBillingSeverity, type ImportedBilling } from './importedBilling'
-import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, ChevronRight, Plus, TriangleAlert } from 'lucide-react'
+import { RepairOrderListFilter, type OrderListView } from './RepairOrderListFilter'
 import { StaffSearchField } from '@/components/ui'
-import { REPAIR_ORDERS_QUEUE_LABEL, type RepairOrdersQueueOrigin } from './repairOrdersPresentation'
+import type { RepairOrdersQueueOrigin } from './repairOrdersPresentation'
 
 export type RepairOrdersLedgerRow = {
   id: string
@@ -43,6 +44,8 @@ export default function RepairOrdersLedger({
   statusOptions,
   selectedId,
   queueOrigin,
+  allowQueueViews = true,
+  partialQueue = false,
   isFetching,
   errorMessage,
   loadedCount,
@@ -54,7 +57,7 @@ export default function RepairOrdersLedger({
   onStatusChange,
   onOpenOrder,
   onCreateOrder,
-  onShowAllOrders,
+  onViewChange,
   onLoadMore,
   pageTitle = 'Repair Orders',
   pageDescription = 'Review and update repair work from check-in through payment.',
@@ -76,6 +79,8 @@ export default function RepairOrdersLedger({
   statusOptions: Array<{ value: string; label: string; count?: number }>
   selectedId: string | null
   queueOrigin: RepairOrdersQueueOrigin | null
+  allowQueueViews?: boolean
+  partialQueue?: boolean
   isFetching: boolean
   errorMessage?: string | null
   loadedCount: number
@@ -88,7 +93,7 @@ export default function RepairOrdersLedger({
   onStatusChange: (value: string) => void
   onOpenOrder: (id: string, options?: { focusWorkspace?: boolean }) => void
   onCreateOrder: () => void
-  onShowAllOrders: () => void
+  onViewChange: (view: OrderListView) => void
   onLoadMore: () => void
   pageTitle?: string
   pageDescription?: string
@@ -104,13 +109,7 @@ export default function RepairOrdersLedger({
   valueSummaryLabel?: string
   hideValueSummary?: boolean
 }) {
-  const queueLabel = !compact && queueOrigin ? REPAIR_ORDERS_QUEUE_LABEL[queueOrigin] : null
-  const filtered = Boolean(searchQuery || statusFilter !== 'all' || overdue)
-  const [scopeMenuOpen, setScopeMenuOpen] = useState(false)
-  const scopeControlRef = useRef<HTMLDivElement>(null)
-  const scopeTriggerRef = useRef<HTMLButtonElement>(null)
-  const scopeMenuId = useId()
-  const statusMenu = useRef<HTMLDivElement>(null)
+  const filtered = Boolean(queueOrigin || searchQuery || statusFilter !== 'all' || overdue)
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null)
   const onLoadMoreRef = useRef(onLoadMore)
   useEffect(() => { onLoadMoreRef.current = onLoadMore }, [onLoadMore])
@@ -137,29 +136,6 @@ export default function RepairOrdersLedger({
     return () => { active = false; observer.disconnect() }
   }, [showPagination, autoLoadEnabled, hasMore, isFetching, isLoadingMore, errorMessage, loadedCount])
 
-  const [statusOpen, setStatusOpen] = useState(false)
-  // A menu closes when you look away from it, not only on a second click.
-  useEffect(() => {
-    if (!statusOpen) return
-    const closeOutside = (event: MouseEvent | FocusEvent) => {
-      const target = event.target as Node | null
-      if (target && statusMenu.current?.contains(target)) return
-      setStatusOpen(false)
-    }
-    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      setStatusOpen(false)
-      statusMenu.current?.querySelector('button')?.focus()
-    }
-    document.addEventListener('pointerdown', closeOutside)
-    document.addEventListener('focusin', closeOutside)
-    document.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.removeEventListener('pointerdown', closeOutside)
-      document.removeEventListener('focusin', closeOutside)
-      document.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [statusOpen])
   const [expandedBriefId, setExpandedBriefId] = useState<string | null>(null)
   // A brief unmounted the instant it closed, so it could only ever animate in.
   // Keeping the closing one mounted until its transition ends lets it leave
@@ -188,28 +164,6 @@ export default function RepairOrdersLedger({
   // open workspace here.
   const requestOnRow = !selectedId && !compact
   const [lastLedgerInteractionWasPointer, setLastLedgerInteractionWasPointer] = useState(false)
-  const scopeCount = queueLabel ? `${totalOrders} ${totalOrders === 1 ? 'order' : 'orders'}` : null
-
-  useEffect(() => {
-    if (!scopeMenuOpen) return
-
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (!scopeControlRef.current?.contains(event.target as Node)) setScopeMenuOpen(false)
-    }
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      setScopeMenuOpen(false)
-      scopeTriggerRef.current?.focus()
-    }
-
-    document.addEventListener('pointerdown', closeOnOutsidePointer)
-    document.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.removeEventListener('pointerdown', closeOnOutsidePointer)
-      document.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [scopeMenuOpen])
-
   return (
     <section className={`db-repair-orders-new db-repair-orders-controls${compact ? ' db-repair-orders-new--compact' : ''}`} aria-labelledby="repair-orders-title" aria-busy={isFetching}>
       {notice}
@@ -232,66 +186,10 @@ export default function RepairOrdersLedger({
           onChange={(event) => onSearchChange(event.target.value)}
           placeholder="Order, customer, or truck"
         />
-        <div className="db-repair-orders-new__filters">
-          {!compact && (
-            <>
-              {/* The narrow column used a native select, which renders OS chrome
-                  that ignores the appearance mode and states the current filter
-                  only after you open it. A listbox keeps the control on one line,
-                  names the active status on its face, and is themed like the rest
-                  of the surface. */}
-              <div data-db-control-shell="proxy" className="db-repair-orders-new__status-select" ref={statusMenu}>
-                <ControlButton controlKind="action"
-                  type="button"
-                  aria-haspopup="listbox"
-                  aria-expanded={statusOpen}
-                  aria-label="Order status"
-                  onClick={() => setStatusOpen((current) => !current)}
-                >
-                  <span>{statusFilter === 'all' ? 'All statuses' : statusOptions.find((option) => option.value === statusFilter)?.label ?? 'All statuses'}</span>
-                  <ChevronDown aria-hidden="true" />
-                </ControlButton>
-                {statusOpen && (
-                  <ul role="listbox" aria-label="Order status options">
-                    {statusOptions.map((option) => (
-                      <li key={option.value} role="presentation">
-                        <ControlButton controlKind="content"
-                          type="button"
-                          role="option"
-                          aria-selected={option.value === statusFilter}
-                          onClick={() => {
-                            onStatusChange(option.value)
-                            setStatusOpen(false)
-                          }}
-                        >
-                          <span>{option.label}</span>
-                          {option.count !== undefined && <span className="db-repair-orders-new__status-count">{option.count}</span>}
-                        </ControlButton>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <div className="db-repair-orders-new__status-tabs" role="group" aria-label="Filter repair orders by status">
-                {statusOptions.map((option) => (
-                  <ControlButton controlKind="action"
-                    type="button"
-                    key={option.value}
-                    aria-pressed={statusFilter === option.value}
-                    onClick={() => onStatusChange(option.value)}
-                  >
-                    {option.label}
-                    {option.count !== undefined && <span className="db-repair-orders-new__status-count">{option.count}</span>}
-                  </ControlButton>
-                ))}
-              </div>
-            </>
-          )}
-          {onOverdueChange && <ControlButton controlKind="action" type="button" className="db-order-overdue-filter" aria-pressed={overdue} onClick={() => onOverdueChange(!overdue)}>
+          {compact && onOverdueChange && <ControlButton controlKind="action" type="button" className="db-order-overdue-filter" aria-pressed={overdue} onClick={() => onOverdueChange(!overdue)}>
             {overdue && <Check aria-hidden="true" />}
             <span>{queueOrigin || compact && !overdue ? 'All overdue work' : 'Overdue'}</span>
           </ControlButton>}
-        </div>
       </div>
 
       <section
@@ -305,38 +203,15 @@ export default function RepairOrdersLedger({
         <header>
           <div className="db-repair-orders-ledger__caption">
             <h2 className={compact ? undefined : 'sr-only'}>{sectionTitle}</h2>
-            {queueLabel && (
-              <div ref={scopeControlRef} className="db-repair-orders-ledger__scope-control">
-                <ControlButton controlKind="action"
-                  ref={scopeTriggerRef}
-                  type="button"
-                  aria-haspopup="menu"
-                  aria-expanded={scopeMenuOpen}
-                  aria-controls={scopeMenuId}
-                  aria-label={`Repair Orders scope: ${queueLabel}${scopeCount ? `, ${scopeCount}` : ''}`}
-                  onClick={() => setScopeMenuOpen((open) => !open)}
-                >
-                  <span>{queueLabel}</span>
-                  {scopeCount && <span aria-hidden="true">· {scopeCount}</span>}
-                  <ChevronDown aria-hidden="true" />
-                </ControlButton>
-                {scopeMenuOpen && (
-                  <div id={scopeMenuId} role="menu" aria-label="Repair Orders scope" className="db-repair-orders-ledger__scope-menu">
-                    <ControlButton controlKind="content"
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setScopeMenuOpen(false)
-                        onShowAllOrders()
-                      }}
-                    >
-                      All repair orders
-                    </ControlButton>
-                  </div>
-                )}
-              </div>
-            )}
-            {!queueLabel && <span>{filtered ? `${totalOrders} matching` : `${totalOrders} total`}</span>}
+            {!compact && <RepairOrderListFilter
+              view={queueOrigin ?? (overdue ? 'overdue' : 'all')}
+              allowQueueViews={allowQueueViews}
+              status={statusFilter}
+              options={statusOptions}
+              onViewChange={onViewChange}
+              onStatusChange={onStatusChange}
+            />}
+            <span>{partialQueue ? `${totalOrders} shown` : queueOrigin ? `${totalOrders} ${totalOrders === 1 ? 'order' : 'orders'}` : filtered ? `${totalOrders} matching` : `${totalOrders} total`}</span>
           </div>
           <div className="db-repair-orders-ledger__totals">
             {!hideValueSummary && <div className="db-repair-orders-ledger__value-summary" aria-live="polite">
@@ -369,7 +244,7 @@ export default function RepairOrdersLedger({
         ) : rows.length === 0 ? (
           <div className="db-repair-orders-ledger__empty" role="status">
             <strong>{filtered ? 'No repair orders match this view' : 'No repair orders yet'}</strong>
-            <span>{filtered ? 'Adjust the search or status filter.' : 'Create the first repair order when a truck checks in.'}</span>
+            <span>{filtered ? (partialQueue ? 'Try All repair orders to search beyond this queue.' : 'Change the view, status, or search.') : 'Create the first repair order when a truck checks in.'}</span>
           </div>
         ) : (
           <div
@@ -413,7 +288,7 @@ export default function RepairOrdersLedger({
                       type="button"
                       className="db-repair-orders-ledger__record"
                       data-has-deadline={!!row.deadline || undefined}
-                      aria-label={`Open repair order ${row.orderNumber}`}
+                      id={`repair-open-${row.id}`} aria-label={`Open repair order ${row.orderNumber}`}
                       aria-current={isOpenInWorkspace ? 'true' : undefined}
                       onKeyDown={(event) => {
                         if (event.key !== 'Enter' && event.key !== ' ') return
@@ -453,13 +328,13 @@ export default function RepairOrdersLedger({
                       className="db-repair-orders-ledger__details-toggle"
                       aria-expanded={isBriefOpen}
                       aria-controls={briefId}
-                      aria-label={`${isBriefOpen ? 'Hide' : 'Show'} details for ${row.orderNumber}`}
+                      aria-label={`${isBriefOpen ? 'Hide' : 'Show'} preview for ${row.orderNumber}`}
                       onClick={(event) => {
                         event.stopPropagation()
                         setExpandedBriefId((current) => current === row.id ? null : row.id)
                       }}
                     >
-                      <span aria-hidden="true">Details</span>
+                      <span aria-hidden="true">Preview</span>
                       <ChevronDown aria-hidden="true" />
                     </ControlButton>}
                   </div>

@@ -36,7 +36,7 @@ it('applies overdue/search/customer/vehicle filters consistently before paginati
   for (const url of ['/repair-orders', '/repair-orders/status-counts', '/repair-orders/value-summary']) {
     expect(api.get).toHaveBeenCalledWith(url, expect.objectContaining({ params: expect.objectContaining({ overdue: true, search: 'Brake', customer_id: 'customer-1', vehicle_id: 'vehicle-1' }) }))
   }
-  expect(screen.getByRole('button', { name: 'Overdue', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByRole('button', { name: 'Filter repair orders: Overdue' })).toBeVisible()
   expect(screen.getByText(/Overdue · Oct 16, 5:00 PM EDT/)).toBeVisible()
   fireEvent.click(screen.getByRole('button', { name: /Load more/ }))
   await screen.findByRole('button', { name: 'Open repair order RO-26' })
@@ -82,11 +82,15 @@ it('returns an Overview-origin exact repair order to Overview on close', async (
   expect(screen.getByTestId('location')).toHaveTextContent('/dashboard?work_view=overview')
 })
 
-it('offers a fixed Overview return while preserving the requested repair ID', async () => {
+it('preserves the workspace structure and safe Overview close for an exact repair ID', async () => {
   mount('/dashboard/repair-orders?selected=order-1&shop_work=overview&return=https://evil.test')
   await screen.findByRole('button', { name: 'Close repair order' })
   expect(screen.getByTestId('location')).toHaveTextContent('selected=order-1')
-  fireEvent.click(screen.getByRole('button', { name: 'Back to Shop Work' }))
+  expect(screen.queryByRole('button', { name: 'Back to Shop Work' })).not.toBeInTheDocument()
+  const workspace = document.querySelector('.db-repair-orders-workspace')!
+  expect(workspace.firstElementChild).toHaveClass('db-repair-orders-new')
+  expect(workspace.querySelector(':scope > .db-slide-panel-workspace')).not.toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Close repair order' }))
   expect(screen.getByTestId('location')).toHaveTextContent('/dashboard?work_view=overview')
 })
 
@@ -116,4 +120,44 @@ it('clears a selected repair workspace across tenant identity changes before the
   client.clear()
   auth.user = { id: 'actor-1', tenant_id: 'tenant-1', role: 'garage_owner' }
   auth.authSessionEpoch = 1
+})
+
+it('separates closeout membership from status, preserves record and search, and restores the view on Back', async () => {
+  const original = api.get.getMockImplementation()!
+  api.get.mockImplementation((url: string, config) => url === '/dashboard/action-queue'
+    ? Promise.resolve({ data: { orders_ready_to_close: [
+      { ...order, status: 'completed' },
+      { ...order, id: 'order-2', order_number: 'RO-2', status: 'invoiced' },
+    ] } })
+    : original(url, config))
+  mount('/dashboard/repair-orders?queue=ready_to_close&shop_work=overview&selected=order-1&search=Brake')
+  const choose = async (option: string) => {
+    fireEvent.click(await screen.findByRole('button', { name: /^Filter repair orders:/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: option }))
+  }
+  await screen.findByRole('button', { name: 'Open repair order RO-2' })
+  await choose('Completed')
+  expect(screen.queryByRole('button', { name: 'Open repair order RO-2' })).toBeNull()
+  expect(screen.getByText('1 order')).toBeVisible()
+  expect(screen.queryByText('Filtered order value')).toBeNull()
+  await choose('Overdue')
+  const location = () => new URLSearchParams(screen.getByTestId('location').textContent!.split('?')[1])
+  expect(Object.fromEntries(location())).toEqual({ shop_work: 'overview', selected: 'order-1', search: 'Brake', status: 'completed', overdue: 'true' })
+  await choose('All repair orders')
+  expect(location().has('overdue')).toBe(false)
+  expect(location().get('status')).toBe('completed')
+  fireEvent.click(screen.getByRole('button', { name: 'Browser Back' }))
+  await screen.findByRole('button', { name: 'Filter repair orders: Overdue · Completed' })
+  fireEvent.click(screen.getByRole('button', { name: 'Browser Back' }))
+  await screen.findByRole('button', { name: 'Filter repair orders: Ready to Close · Completed' })
+  expect(location().get('selected')).toBe('order-1')
+})
+
+it('keeps a customer-scoped archive out of tenant-wide work queues', async () => {
+  mount('/dashboard/repair-orders?queue=ready_to_close&customer_id=customer-1')
+  await screen.findByRole('button', { name: 'Open repair order RO-1' })
+  fireEvent.click(screen.getByRole('button', { name: 'Filter repair orders: All repair orders' }))
+  expect(await screen.findByRole('menuitem', { name: 'Overdue' })).toBeVisible()
+  expect(screen.queryByRole('menuitem', { name: 'Ready to Close' })).toBeNull()
+  expect(api.get.mock.calls.map(([url]) => url)).not.toContain('/dashboard/action-queue')
 })

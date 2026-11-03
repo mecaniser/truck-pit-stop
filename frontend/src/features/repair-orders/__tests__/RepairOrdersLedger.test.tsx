@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -111,7 +111,7 @@ const renderLedger = (overrides: Partial<React.ComponentProps<typeof RepairOrder
     onStatusChange: vi.fn(),
     onOpenOrder: vi.fn(),
     onCreateOrder: vi.fn(),
-    onShowAllOrders: vi.fn(),
+    onViewChange: vi.fn(),
     onLoadMore: vi.fn(),
     ...overrides,
   }
@@ -127,7 +127,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
       source_invoice_url:'https://easytruck.shop/shop1/services/7001/invoice',
     } }] })
     expect(screen.queryByRole('region', { name: 'Why billing needs attention' })).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Show details for RO-1017' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Show preview for RO-1017' }))
     const reasons = screen.getByRole('region', { name: 'Why billing needs attention' })
     expect(reasons).toHaveTextContent('Related operations have different customer or vehicle identities. Shared billing needs review.')
     expect(reasons).toHaveTextContent('ETS source amounts differ from the imported financial records.')
@@ -189,23 +189,21 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(screen.getByText('Filtered order value')).toBeInTheDocument()
     expect(screen.getByText('$102,345.67')).toBeInTheDocument()
   })
-  it('keeps search, all statuses and the selected overdue toggle independent', async () => {
+  it('changes the list view independently of status and returns keyboard focus to one selector', async () => {
     const user = userEvent.setup()
-    const { props, rerender } = renderLedger({ queueOrigin: null, onOverdueChange: vi.fn() })
-    expect(screen.getByRole('button', { name: 'Order status' })).toHaveTextContent('All statuses')
+    const { props, rerender } = renderLedger({ queueOrigin: null })
     await user.type(screen.getByRole('searchbox', { name: 'Search repair orders' }), 'brake')
     expect(props.onSearchChange).toHaveBeenCalled()
-    await user.click(screen.getByRole('button', { name: 'Overdue', exact: true }))
-    expect(props.onOverdueChange).toHaveBeenCalledWith(true)
+    await user.click(screen.getByRole('button', { name: 'Filter repair orders: All repair orders' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Overdue' }))
+    expect(props.onViewChange).toHaveBeenCalledWith('overdue')
     expect(props.onStatusChange).not.toHaveBeenCalled()
-    rerender(<RepairOrdersLedger {...props} overdue />)
-    expect(screen.getByRole('button', { name: 'Overdue', exact: true })).toHaveAttribute('aria-pressed', 'true')
-    await user.click(screen.getByRole('button', { name: 'Order status' }))
+    rerender(<RepairOrdersLedger {...props} overdue statusFilter="assigned" />)
+    const trigger = screen.getByRole('button', { name: 'Filter repair orders: Overdue · Assigned' })
+    await user.click(trigger)
     await user.keyboard('{Escape}')
-    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Order status' })).toHaveFocus()
-    await user.click(screen.getByRole('button', { name: 'Overdue', exact: true }))
-    expect(props.onOverdueChange).toHaveBeenLastCalledWith(false)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    await waitFor(() => expect(trigger).toHaveFocus())
     expect(props.onOpenOrder).not.toHaveBeenCalled()
   })
 
@@ -261,7 +259,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(screen.getByText('Review and update repair work from check-in through payment.')).toBeInTheDocument()
     expect(screen.queryByText('One canonical record from check-in through paid invoice.')).not.toBeInTheDocument()
     expect(screen.queryByText('Shop Work handoff')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Repair Orders scope: On the Floor, 1 order' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Filter repair orders: On the Floor' })).toBeInTheDocument()
     expect(screen.getByRole('article', { name: 'Repair order RO-1017' })).toHaveAttribute('data-order-id', 'ro-real-17')
   })
 
@@ -272,7 +270,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
   ] as const)('preserves the %s queue origin without converting it into order state', (queueOrigin, label) => {
     renderLedger({ queueOrigin })
 
-    expect(screen.getByRole('button', { name: `Repair Orders scope: ${label}, 1 order` })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: `Filter repair orders: ${label}` })).toBeInTheDocument()
   })
 
   it('preserves search, status, explicit workspace opening, create, paging and the deliberate scope change', async () => {
@@ -281,24 +279,19 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
 
     await user.type(screen.getByRole('searchbox', { name: 'Search repair orders' }), 'RO-1017')
     expect(props.onSearchChange).toHaveBeenLastCalledWith('7')
-    await user.click(screen.getByRole('button', { name: 'In Progress' }))
-    expect(props.onStatusChange).toHaveBeenCalledWith('in_progress')
-    // The compact control is a listbox now, not a native select: it names the
-    // active status on its face instead of only inside the popup.
-    await user.click(screen.getByRole('button', { name: 'Order status' }))
-    await user.click(within(screen.getByRole('listbox', { name: 'Order status options' }))
-      .getByRole('option', { name: 'In Progress' }))
+    await user.click(screen.getByRole('button', { name: 'Filter repair orders: On the Floor' }))
+    await user.click(screen.getByRole('menuitem', { name: 'In Progress' }))
     expect(props.onStatusChange).toHaveBeenLastCalledWith('in_progress')
-    await user.click(screen.getByRole('button', { name: 'Show details for RO-1017' }))
+    await user.click(screen.getByRole('button', { name: 'Show preview for RO-1017' }))
     expect(props.onOpenOrder).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Open repair order RO-1017 from details' }))
     expect(props.onOpenOrder).toHaveBeenCalledWith('ro-real-17')
     await user.click(screen.getByRole('button', { name: 'New repair order' }))
     expect(props.onCreateOrder).toHaveBeenCalledOnce()
-    await user.click(screen.getByRole('button', { name: 'Repair Orders scope: On the Floor, 30 orders' }))
-    expect(screen.getByRole('menu', { name: 'Repair Orders scope' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Filter repair orders: On the Floor' }))
+    expect(screen.getByRole('menu')).toBeInTheDocument()
     await user.click(screen.getByRole('menuitem', { name: 'All repair orders' }))
-    expect(props.onShowAllOrders).toHaveBeenCalledOnce()
+    expect(props.onViewChange).toHaveBeenCalledWith('all')
     await user.click(screen.getByRole('button', { name: /Load more repair orders/ }))
     expect(props.onLoadMore).toHaveBeenCalledOnce()
   })
@@ -317,7 +310,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
   })
 
   it('stops offering more once the whole set is loaded', () => {
-    renderLedger({ loadedCount: 60, totalOrders: 60, hasMore: false })
+    renderLedger({ queueOrigin: null, loadedCount: 60, totalOrders: 60, hasMore: false })
 
     expect(screen.queryByRole('button', { name: /Load more/ })).not.toBeInTheDocument()
     expect(screen.getByText('60 orders')).toBeInTheDocument()
@@ -368,20 +361,10 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(LEDGER_CSS).toContain('width: 20px; height: 20px')
   })
 
-  it('aligns the selected-record header and filter controls to shared dimensions', () => {
-    expect(LEDGER_CSS).toContain('--db-repair-orders-control-height: var(--control-height)')
-    expect(LEDGER_CSS).toContain('--db-repair-orders-side-control-width: 184px')
-    expect(LEDGER_CSS).toContain('.db-presentation-new .db-repair-orders-new__search { height: auto; align-self: center; padding: 0; }')
-    expect(LEDGER_CSS).toContain('.db-repair-orders-new__status-select { position: relative; display: none; min-width: 0; height: auto; }')
-    expect(LEDGER_CSS).toContain('grid-template-columns: minmax(0, 1fr) var(--db-repair-orders-side-control-width)')
-    expect(LEDGER_CSS).toContain('width: var(--db-repair-orders-side-control-width); min-height: var(--db-repair-orders-control-height); margin-inline-end: 3px')
-    expect(LEDGER_CSS).toContain('.db-repair-orders-new__create { width: 100%; margin-top: 13px; }')
-  })
-
   it('keeps Details in the navigator and opens the workspace only from the record or explicit secondary action', async () => {
     const user = userEvent.setup()
     const { props } = renderLedger()
-    const details = screen.getByRole('button', { name: 'Show details for RO-1017' })
+    const details = screen.getByRole('button', { name: 'Show preview for RO-1017' })
 
     await user.click(details)
     expect(props.onOpenOrder).not.toHaveBeenCalled()
@@ -399,10 +382,10 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     const user = userEvent.setup()
     renderLedger()
 
-    await user.click(screen.getByRole('button', { name: 'Show details for RO-1017' }))
+    await user.click(screen.getByRole('button', { name: 'Show preview for RO-1017' }))
     expect(screen.getByRole('region', { name: 'Order brief for RO-1017' })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Hide details for RO-1017' }))
+    await user.click(screen.getByRole('button', { name: 'Hide preview for RO-1017' }))
     // It stays mounted to play the exit, but stops being announced while it does.
     const closing = document.querySelector('.db-repair-orders-ledger__brief-reveal')
     expect(closing).toHaveAttribute('data-closing')
@@ -418,7 +401,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
   it('keeps the disclosure plane inert and protects Details from canonical row activation', async () => {
     const user = userEvent.setup()
     const { props } = renderLedger()
-    const details = screen.getByRole('button', { name: 'Show details for RO-1017' })
+    const details = screen.getByRole('button', { name: 'Show preview for RO-1017' })
 
     await user.click(details)
     const brief = screen.getByRole('region', { name: 'Order brief for RO-1017' })
@@ -446,7 +429,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     const user = userEvent.setup()
     renderLedger()
     const ledger = screen.getByRole('region', { name: 'Repair order ledger' })
-    const details = screen.getByRole('button', { name: 'Show details for RO-1017' })
+    const details = screen.getByRole('button', { name: 'Show preview for RO-1017' })
 
     await user.click(details)
     expect(ledger).toHaveAttribute('data-pointer-interaction', 'true')
@@ -514,7 +497,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     }
     const { props } = renderLedger({ rows: [...rows, secondRow], totalOrders: 2, selectedId: 'ro-real-17' })
 
-    await user.click(screen.getByRole('button', { name: 'Show details for RO-1018' }))
+    await user.click(screen.getByRole('button', { name: 'Show preview for RO-1018' }))
     const brief = screen.getByRole('region', { name: 'Order brief for RO-1018' })
     // The brief carries only what the row cannot: the full request and the
     // operational facts. Customer and vehicle title the row, so repeating them
@@ -538,7 +521,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     // The selected row offers no brief of its own: the workspace beside the list
     // is already that order's detail, so a second copy on the row repeated the
     // customer, truck and work request rather than adding anything.
-    expect(screen.queryByRole('button', { name: 'Show details for RO-1017' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Show preview for RO-1017' })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Order brief for RO-1017' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Open repair order RO-1017 from details' })).not.toBeInTheDocument()
     // Inspecting another row still works and still leaves the selection alone.
@@ -560,7 +543,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     }
     renderLedger({ rows: [noVehicleRow] })
 
-    await user.click(screen.getByRole('button', { name: 'Show details for RO-1019' }))
+    await user.click(screen.getByRole('button', { name: 'Show preview for RO-1019' }))
     const brief = screen.getByRole('region', { name: 'Order brief for RO-1019' })
     expect(within(brief).queryByRole('region', { name: 'Vehicle' })).not.toBeInTheDocument()
   })
@@ -583,7 +566,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     // and it reads on the row rather than in a Vehicle block inside the brief.
     const row = screen.getByRole('article', { name: 'Repair order RO-1020' })
     expect(row).toHaveTextContent('2020 Volvo VNL 760')
-    await user.click(screen.getByRole('button', { name: 'Show details for RO-1020' }))
+    await user.click(screen.getByRole('button', { name: 'Show preview for RO-1020' }))
     expect(screen.queryByRole('region', { name: 'Vehicle' })).not.toBeInTheDocument()
     expect(screen.getAllByText('2020 Volvo VNL 760')).toHaveLength(1)
   })
@@ -609,26 +592,18 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(screen.getByRole('region', { name: '#RO-1017' })).not.toHaveFocus()
   })
 
-  it('keeps every canonical status filter reachable in both the quick-filter row and compact select', () => {
+  it('keeps every allowed status available in the single view selector', async () => {
+    const user = userEvent.setup()
     renderLedger()
-
-    const quickFilterGroup = screen.getByRole('group', { name: 'Filter repair orders by status' })
-    const trigger = screen.getByRole('button', { name: 'Order status' })
-
-    // The trigger states the active filter without being opened.
-    expect(trigger).toHaveTextContent('All')
-
-    fireEvent.click(trigger)
-    const list = screen.getByRole('listbox', { name: 'Order status options' })
+    await user.click(screen.getByRole('button', { name: 'Filter repair orders: On the Floor' }))
+    const menu = screen.getByRole('menu')
     for (const option of statusOptions) {
-      expect(quickFilterGroup).toContainElement(screen.getByRole('button', { name: option.label }))
-      expect(within(list).getByRole('option', { name: option.label })).toBeInTheDocument()
+      expect(within(menu).getByRole('menuitem', { name: option.value === 'all' ? 'Any status, selected' : option.label })).toBeInTheDocument()
     }
-    expect(within(list).getByRole('option', { name: 'All' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('covers loading/error, filtered empty and no-selection states without invented records', () => {
-    const { rerender, props } = renderLedger({ rows: [], isFetching: true })
+    const { rerender, props } = renderLedger({ queueOrigin: null, rows: [], isFetching: true })
     expect(screen.getByText('Updating…')).toBeInTheDocument()
     expect(screen.getByText('No repair orders yet')).toBeInTheDocument()
 

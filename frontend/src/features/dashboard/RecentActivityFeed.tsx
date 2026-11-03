@@ -3,11 +3,13 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Popover, PopoverButton, PopoverGroup, PopoverPanel } from '@headlessui/react'
 import DatePicker from '@/components/DatePicker'
 import { Spinner } from '@/components/ui'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { formatDistanceToNow, isToday, isYesterday, format } from 'date-fns'
 import {
   FileText, FilePlus, CheckCircle2, CreditCard, OctagonX, Trash2, ClipboardList, CircleAlert, SlidersHorizontal, X, ChevronRight, History, RefreshCw,
 } from 'lucide-react'
+import WorkspaceRecordLink from '@/components/WorkspaceRecordLink'
+import { activityBoardParams } from './shopWorkNavigation'
 import api from '@/lib/api'
 import { getAuthenticatedSessionIdentity, useAuthStore } from '@/stores/authStore'
 import { useActivityFeed, type ActivityEvent, type ActivityFeedResponse } from './activityFeedQuery'
@@ -73,10 +75,17 @@ function ScopedRecentActivityFeed({ className }: { className?: string }) {
   const [loadMoreError, setLoadMoreError] = useState(false)
   const olderRequest = useRef<AbortController | null>(null)
 
-  const [actorFilter, setActorFilter] = useState('')
-  const [eventTypeFilter, setEventTypeFilter] = useState('')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
+  const [params, setParams] = useSearchParams()
+  const actorFilter = params.get('actor_id') || ''
+  const eventTypeFilter = params.get('event_type') || ''
+  const dateFrom = params.get('date_from') || ''
+  const dateTo = params.get('date_to') || ''
+  const setFilter = (key: string, value: string) => setParams(prev => {
+    const next = new URLSearchParams(prev)
+    if (value) next.set(key, value)
+    else next.delete(key)
+    return next
+  }, { replace: true })
 
   const filterParams = {
     actor_id: actorFilter || undefined,
@@ -143,7 +152,11 @@ function ScopedRecentActivityFeed({ className }: { className?: string }) {
   const dayGroups = useMemo(() => groupByDay(items), [items])
   const hasActiveFilters = !!(actorFilter || eventTypeFilter || dateFrom || dateTo)
 
-  const clearFilters = () => { setActorFilter(''); setEventTypeFilter(''); setDateFrom(''); setDateTo('') }
+  const clearFilters = () => setParams(prev => {
+    const next = new URLSearchParams(prev)
+    for (const key of ['actor_id', 'event_type', 'date_from', 'date_to']) next.delete(key)
+    return next
+  }, { replace: true })
   const filterCount = [actorFilter, eventTypeFilter, dateFrom, dateTo].filter(Boolean).length
   const filterDescription = [
     actorFilter && (data?.available_actors.find(actor => actor.id === actorFilter)?.name || 'Selected staff'),
@@ -171,15 +184,15 @@ function ScopedRecentActivityFeed({ className }: { className?: string }) {
               <PopoverPanel className="db-work-popover__panel" role="dialog" aria-label="Activity filters">
                 <div className="db-work-popover__heading"><strong>Filter activity</strong><ControlButton controlKind="icon" type="button" className="db-work-icon-button" aria-label="Close activity filters" onClick={() => close()}><X aria-hidden="true" /></ControlButton></div>
                 <div className="db-work-activity__filters">
-                  <div><span>Staff</span><ShopWorkSelect label="Activity staff" value={actorFilter} onChange={setActorFilter} options={[
+                  <div><span>Staff</span><ShopWorkSelect label="Activity staff" value={actorFilter} onChange={value => setFilter('actor_id', value)} options={[
                     { value: '', label: 'All staff' }, ...(data?.available_actors || []).map(actor => ({ value: actor.id, label: actor.name })),
                   ]} /></div>
-                  <div><span>Activity</span><ShopWorkSelect label="Activity type" value={eventTypeFilter} onChange={setEventTypeFilter} options={[
+                  <div><span>Activity</span><ShopWorkSelect label="Activity type" value={eventTypeFilter} onChange={value => setFilter('event_type', value)} options={[
                     { value: '', label: 'All activity' }, ...EVENT_TYPE_OPTIONS,
                   ]} /></div>
-                  <DatePicker label="From date" value={dateFrom} onChange={setDateFrom} max={dateTo || undefined} showDayDetails={false} />
-                  <DatePicker label="To date" value={dateTo} onChange={setDateTo} min={dateFrom || undefined} showDayDetails={false} />
-                  {hasActiveFilters && <ControlButton type="button" className="db-work-control" onClick={() => { clearFilters(); close() }}><X aria-hidden="true" />Clear filters</ControlButton>}
+                  <DatePicker label="From date" value={dateFrom} onChange={value => setFilter('date_from', value)} max={dateTo || undefined} showDayDetails={false} />
+                  <DatePicker label="To date" value={dateTo} onChange={value => setFilter('date_to', value)} min={dateFrom || undefined} showDayDetails={false} />
+                  {hasActiveFilters && (items.length > 0 || isError) && <ControlButton type="button" className="db-work-control" onClick={() => { clearFilters(); close() }}><X aria-hidden="true" />Clear filters</ControlButton>}
                 </div>
               </PopoverPanel>
             </>}
@@ -188,18 +201,25 @@ function ScopedRecentActivityFeed({ className }: { className?: string }) {
       </header>
       {isError ? <div className="db-work-state" role="alert"><CircleAlert aria-hidden="true" /><div><strong>{isForbidden ? 'Activity is unavailable for this account' : 'Activity could not be loaded'}</strong><p>{isForbidden ? 'Your available work remains in the other Shop Work views.' : 'Try again to check recent changes.'}</p>{!isForbidden && <ControlButton type="button" className="db-work-control" onClick={() => { void refetch() }} disabled={isFetching}><RefreshCw aria-hidden="true" />Retry activity</ControlButton>}</div></div>
         : isLoading ? <div className="db-work-state" role="status"><span aria-hidden="true"><Spinner size="sm" /></span><strong>Loading activity…</strong></div>
-          : dayGroups.length === 0 ? <div className="db-work-state" role="status"><History aria-hidden="true" /><div><strong>{hasActiveFilters ? 'No activity matches these filters' : 'No recent activity'}</strong><p>{hasActiveFilters ? 'Change the filters to check another staff member or date.' : 'Repair, quote, invoice, and payment updates will appear here.'}</p></div></div>
+          : dayGroups.length === 0 ? <div className="db-work-state" role="status"><History aria-hidden="true" /><div><strong>{hasActiveFilters ? 'No activity matches these filters' : 'No recent activity'}</strong><p>{hasActiveFilters ? 'No events were found for this selection.' : 'Repair, quote, invoice, and payment updates will appear here.'}</p>{hasActiveFilters && <ControlButton type="button" className="db-work-control" onClick={clearFilters}>Clear activity filters</ControlButton>}</div></div>
             : <>
               <div className="db-work-activity__days">{dayGroups.map(day => <section key={day.dateKey} aria-label={day.label}>
                 <h3>{day.label}</h3>
                 <ol>{day.events.map(event => {
                   const Icon = EVENT_ICON[event.event_type] || ClipboardList
-                  return <li key={event.id}><ControlButton controlKind="content" type="button" className="db-work-activity__event" disabled={!event.order_id} onClick={() => event.order_id && navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(event.order_id)}`)}>
+                  const content = <>
                     <Icon className="db-work-activity__event-icon" aria-hidden="true" data-outcome={['invoice_paid', 'payment_recorded', 'ro_completed'].includes(event.event_type) ? 'complete' : ['ro_cancelled', 'ro_deleted'].includes(event.event_type) ? 'removed' : undefined} />
-                    <span className="db-work-activity__identity"><strong>{event.label}</strong><span>{[event.order_number, event.actor_name || 'System'].filter(Boolean).join(' · ')}</span></span>
+                    <span className="db-work-activity__identity"><strong>{event.label}</strong><span>{[event.order_number && `Repair order ${event.order_number}`, event.actor_name || 'System'].filter(Boolean).join(' · ')}</span></span>
                     <time dateTime={event.occurred_at} title={format(new Date(event.occurred_at), 'MMM d, yyyy h:mm a')}>{formatDistanceToNow(new Date(event.occurred_at), { addSuffix: true })}</time>
                     {event.order_id && <ChevronRight className="db-work-activity__open" aria-hidden="true" />}
-                  </ControlButton></li>
+                  </>
+                  if (!event.order_id) return <li key={event.id}><div className="db-work-activity__event">{content}</div></li>
+                  const dest = activityBoardParams(params)
+                  dest.set('shop_work', 'activity')
+                  dest.set('selected', event.order_id)
+                  const href = `/dashboard/repair-orders?${dest}`
+                  return <li key={event.id}><WorkspaceRecordLink className="db-work-activity__event" href={href} onOpen={() => navigate(href)}
+                    aria-label={`${event.label}: open repair order ${event.order_number || ''}`.trim()}>{content}</WorkspaceRecordLink></li>
                 })}</ol>
               </section>)}</div>
               {(hasMore || olderItems.length > 0) && <footer className="db-work-activity__footer">

@@ -647,7 +647,8 @@ describe('DB-151 exact purchasing destinations', () => {
   it('keeps a draft requested in Receiving unavailable instead of receiving another PO', async () => {
     installSelectionLifecycleFixture()
     openRecord({ initialTab: 'purchase-orders', initialPurchaseOrderId: 'po-second', purchaseOrderMode: 'receiving' })
-    expect(await screen.findByText('This purchase order could not be loaded.')).toBeInTheDocument()
+    expect(await screen.findByText(/PO-SECOND is draft and cannot receive deliveries/i)).toBeVisible()
+    expect(screen.getByRole('button', { name: 'View purchase order' })).toBeVisible()
     expect(screen.queryByRole('heading', { name: 'PO-FIRST' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Submit purchase order' })).not.toBeInTheDocument()
   })

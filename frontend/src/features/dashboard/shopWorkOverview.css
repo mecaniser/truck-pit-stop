@@ -6,14 +6,14 @@
 .db-overview__section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .db-overview__section-heading h2 { margin: 0; font-size: 1.1rem; font-weight: 730; color: var(--workspace-text); }
 .db-overview__section-heading > span { color: var(--workspace-muted); font-size: .78rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.db-overview__lead { border-radius: 12px; background: var(--overview-warm); padding: 16px 20px; margin-bottom: 8px; }
+.db-overview__lead { border-radius: 12px; background: var(--overview-warm); margin-bottom: 8px; }
 .db-overview__lead-meta { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; color: var(--workspace-muted); font-size: .75rem; }
 .db-overview__lead-meta > span { display: inline-flex; align-items: center; gap: 7px; }
 .db-overview svg, .db-overview__state svg { width: 17px; height: 17px; flex-shrink: 0; }
 .db-overview__lead h3 { margin: 0 0 8px; font-size: clamp(1.15rem, 1.5vw, 1.45rem); line-height: 1.25; font-weight: 740; letter-spacing: -.025em; overflow-wrap: anywhere; }
 .db-overview__lead p { margin: 0 0 14px; color: var(--workspace-muted); font-size: .83rem; line-height: 1.5; }
 .db-overview__primary { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 38px; padding: 9px 14px; border: 1px solid var(--overview-accent, #b74710); border-radius: 7px; background: var(--overview-accent, #b74710); color: var(--overview-on-accent, #fff); font-size: .8rem; font-weight: 680; }
-.db-overview__row { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 19px 0; border-bottom: 1px solid var(--workspace-border); }
+.db-overview__row { border-bottom: 1px solid var(--workspace-border); }
 .db-overview__domain-icon { align-self: start; margin-top: 4px; color: var(--workspace-muted); }
 .db-overview__row h3, .db-overview__upcoming h3 { margin: 0 0 5px; font-size: .9rem; font-weight: 680; overflow-wrap: anywhere; }
 .db-overview__row p { margin: 0; color: var(--workspace-muted); font-size: .78rem; line-height: 1.5; }
@@ -60,7 +60,7 @@
 .db-overview__more { margin-top: 18px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--workspace-border); background: var(--surface-raised); color: var(--workspace-text); font-size: .8rem; }
 .db-overview__overflow { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
 .db-overview__overflow p { flex-basis: 100%; }
-@media(max-width:1100px) { .db-overview__row { grid-template-columns: 22px minmax(0,1fr); }.db-overview__row > button { grid-column: 2; justify-self: start; }.db-overview__grid { grid-template-columns: minmax(0,1fr) 220px; gap: 24px; } }
+@media(max-width:1100px) { .db-overview__grid { grid-template-columns: minmax(0,1fr) 220px; gap: 24px; } }
 @media(max-width:760px) { .db-overview__grid { grid-template-columns: 1fr; }.db-overview__upcoming { padding-top: 20px; border-top: 1px solid var(--workspace-border); } }
 @media(pointer:coarse) { .db-overview button { min-height: 44px; } }
 
@@ -73,3 +73,22 @@
     max-width: 100%;
   }
 }
+
+.db-overview a { text-decoration: none; scroll-margin-block: 12px; }
+.db-overview a:focus-visible { outline: 2px solid var(--workspace-text); outline-offset: 3px; }
+.db-overview a.db-overview__link:hover { text-decoration: underline; }
+@media (pointer: coarse), (max-width: 760px) { .db-overview a { min-height: 44px; } }
+.db-overview :is(.db-overview__row, .db-overview__upcoming li):focus-within {
+  background: color-mix(in srgb, var(--overview-accent) 6%, transparent);
+  box-shadow: inset 3px 0 var(--overview-accent);
+}
+.db-overview__lead:focus-within { box-shadow: inset 3px 0 var(--overview-accent); }
+
+/* Each task has one hit area and a visible verb, including at phone widths. */
+.db-overview__task { display: grid; align-items: center; gap: 12px; min-height: 44px; color: var(--workspace-text); }
+.db-overview__lead .db-overview__task { grid-template-columns: minmax(0,1fr) auto; padding: 16px 20px; border-radius: inherit; }
+.db-overview__row .db-overview__task { grid-template-columns: 18px minmax(0,1fr) auto; padding: 14px 8px; }
+.db-overview__task > svg:last-child { color: var(--overview-accent); }
+.db-overview__task:hover h3 { text-decoration: underline; }
+.db-overview__row h3 span { font-weight: 500; }
+.db-overview__lead .db-overview__task p { margin: 4px 0 0; }

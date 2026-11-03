@@ -1,7 +1,9 @@
+import { useLocation, useSearchParams } from 'react-router-dom'
+import { shopWorkQueryScope } from '../dashboard/shopWorkNavigation'
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useEffect, useState, Fragment } from 'react'
 import { Spinner, LoadingLine } from '@/components/ui'
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -40,7 +42,16 @@ export default function SuppliersPage() {
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth < 640 : false
   )
-  const [search, setSearch] = useState('')
+  const [params, setParams] = useSearchParams()
+  const location = useLocation()
+  const scope = useAuthStore(state => shopWorkQueryScope(state.user, state.authSessionEpoch))
+  const search = params.get('supplierSearch') ?? ''
+  const setSearch = (value: string) => {
+    const next = new URLSearchParams(params)
+    if (value) next.set('supplierSearch', value)
+    else next.delete('supplierSearch')
+    setParams(next, { replace: true, state: location.state })
+  }
   const [editing, setEditing] = useState<Supplier | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
@@ -53,14 +64,14 @@ export default function SuppliersPage() {
 
   // Debounced server-side search: ILIKE + squashed matching + pg_trgm typo
   // tolerance, relevance-ranked (see backend suppliers endpoint).
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState(search.trim())
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 300)
     return () => clearTimeout(t)
   }, [search])
 
-  const { data: suppliers, isLoading } = useQuery<Supplier[]>({
-    queryKey: ['suppliers', debouncedSearch],
+  const { data: suppliers, isLoading, isError, refetch } = useQuery<Supplier[]>({
+    queryKey: ['suppliers', debouncedSearch, scope],
     queryFn: async () => {
       const pageSize = 100
       let skip = 0
@@ -81,7 +92,7 @@ export default function SuppliersPage() {
       }
       return all
     },
-    placeholderData: keepPreviousData,
+    placeholderData: (previous, query) => query?.queryKey.includes(scope) ? previous : undefined,
   })
 
   const {
@@ -241,9 +252,11 @@ export default function SuppliersPage() {
             </div>
             {isLoading ? (
               <div className="p-6"><LoadingLine className="text-gray-300">Loading suppliers…</LoadingLine></div>
+             ) : isError ? (
+              <div role="alert" className="p-6">Suppliers could not be loaded. <ControlButton type="button" onClick={() => void refetch()}>Retry</ControlButton></div>
             ) : filteredSuppliers.length === 0 ? (
               <div className="p-6 text-sm text-gray-300">
-                No suppliers match your search. {suppliers && suppliers.length === 0 ? 'Add your first supplier with the button above.' : 'Try a different filter.'}
+                {search.trim() ? 'No suppliers match your search.' : 'No suppliers have been added yet.'}
               </div>
             ) : activeViewMode === 'list' ? (
               <>

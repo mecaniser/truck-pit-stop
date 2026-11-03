@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { shopWorkDestinationUrl } from '../shopWorkNavigation'
 import ShopWorkOverview, { type ShopWorkOverviewData, type ShopWorkItem, type OverviewSourceStatus } from '../ShopWorkOverview'
 const item = (overrides: Partial<ShopWorkItem> = {}): ShopWorkItem => ({ id: 'inventory:part-a', source: 'inventory', destination: { kind: 'inventory', id: 'part-a', view: null }, title: 'Brake chamber T30', reason: 'stock_preparation', action_label: 'Review stock', status: 'needs_review', created_at: null, due_at: null, due_kind: null, evidence: 'verified', quantity: 2, related_repair_order_ids: [], ...overrides })
 const source = (overrides: Partial<OverviewSourceStatus> = {}): OverviewSourceStatus => ({ id: 'inventory', state: 'ready', checked_at: '2026-11-01T15:00:00Z', reason: null, total: 1, shown: 1, has_more: false, ...overrides })
@@ -12,30 +13,36 @@ function setup(value?: ShopWorkOverviewData, overrides = {}) {
 describe('Shop Work overview', () => {
  it('shows a stock task exactly once with zero active jobs and opens the exact record', () => {
   const { props } = setup(data()); expect(document.querySelectorAll('[data-work-id="inventory:part-a"]')).toHaveLength(1)
-  fireEvent.click(screen.getByRole('button', { name: 'Review stock: Brake chamber T30' }))
-  expect(props.onOpen).toHaveBeenCalledWith({ kind: 'inventory', id: 'part-a', view: null }); expect(screen.queryByText(/caught up/i)).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('link', { name: 'Review stock: Brake chamber T30' }))
+  expect(props.onOpen).toHaveBeenCalledWith(shopWorkDestinationUrl(item().destination, 'attention:inventory:part-a'), 'attention:inventory:part-a'); expect(screen.queryByText(/caught up/i)).not.toBeInTheDocument()
  })
  it('opens cross-domain identities without duplicating their editors or financial amounts', () => {
   const rows = [item(), item({ id: 'return:r2', title: 'Return R2', source: 'returns', destination: { kind: 'vendor_return', id: 'r2', view: null }, action_label: 'Review return' }), item({ id: 'account:c3', title: 'Customer C3', source: 'receivables', destination: { kind: 'customer_account', id: 'c3', view: null }, action_label: 'Review account', quantity: null, reason: 'account_verification_required' })]
-  const { props } = setup(data({ actions: rows })); rows.forEach(row => fireEvent.click(screen.getByRole('button', { name: `${row.action_label}: ${row.title}` })))
-  expect(props.onOpen.mock.calls.map(args => args[0])).toEqual(rows.map(row => row.destination)); expect(screen.queryByRole('textbox')).not.toBeInTheDocument(); expect(screen.queryByText(/\$/)).not.toBeInTheDocument()
+  const { props } = setup(data({ actions: rows })); rows.forEach(row => fireEvent.click(screen.getByRole('link', { name: `${row.action_label}: ${row.title}` })))
+  expect(props.onOpen.mock.calls.map(args => args[0])).toEqual(rows.map(row => shopWorkDestinationUrl(row.destination, `attention:${row.id}`))); expect(screen.queryByRole('textbox')).not.toBeInTheDocument(); expect(screen.queryByText(/\$/)).not.toBeInTheDocument()
  })
  it('shows actual future dates as expected delivery and opens the PO receiving context', () => {
   const row = item({ id: 'po:p1', source: 'purchasing', title: 'PO-208', action_label: 'Review delivery', destination: { kind: 'purchase_order', id: 'p1', view: 'receiving' }, due_at: '2026-11-02T16:30:00Z', due_kind: 'expected_delivery' })
   const { props } = setup(data({ upcoming: [row] })); const upcoming = screen.getByRole('complementary'); expect(upcoming).toHaveTextContent('Nov 2, 11:30 AM'); expect(upcoming).not.toHaveTextContent('confirmed')
-  fireEvent.click(within(upcoming).getByRole('button', { name: 'Review delivery: PO-208' })); expect(props.onOpen).toHaveBeenCalledWith(row.destination)
+  fireEvent.click(within(upcoming).getByRole('link', { name: 'Review delivery: PO-208' })); expect(props.onOpen).toHaveBeenCalledWith(shopWorkDestinationUrl(row.destination, `upcoming:${row.id}`), `upcoming:${row.id}`)
  })
  it('does not claim all clear for unavailable or partially verified sources', () => {
   setup(data({ actions: [], actions_total: null, sources: [source({ id: 'receivables', state: 'partial', reason: 'account_review_only', total: null, shown: 0 }), source({ state: 'unavailable', total: null, shown: 0 })] }))
-  fireEvent.click(screen.getByRole('button', { name: '2 areas need review' }))
-  expect(screen.getByText('No confirmed actions in the checked work')).toBeInTheDocument(); expect(screen.getByText(/Collectible balances require verification/)).toBeInTheDocument(); expect(screen.queryByText(/caught up/)).not.toBeInTheDocument(); expect(screen.getByText('0 shown')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Inventory unavailable' }))
+  expect(screen.getByText('No confirmed actions in the checked work')).toBeInTheDocument(); expect(screen.getByText(/Invoice balances are reviewed in each customer/)).toBeInTheDocument(); expect(screen.queryByText(/caught up/)).not.toBeInTheDocument(); expect(screen.getByText('0 shown')).toBeInTheDocument()
  })
  it('does not turn an unknown account source into a claim that more records exist', () => {
   const { props } = setup(data({ actions: [], actions_total: null, has_more_actions: true, sources: [source({ id: 'receivables', state: 'partial', reason: 'classification_unavailable', total: null, shown: 0, has_more: true })] }))
   expect(screen.queryByRole('button', { name: 'Customer accounts', exact: true })).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: 'Accounts unverified' }))
-  expect(screen.getByText('Invoice balances could not be verified. Check customer accounts before following up on payment.')).toBeInTheDocument(); expect(screen.queryByText('More records are available in this workspace.')).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: 'Open Customer accounts' })); expect(props.onWorkspace).toHaveBeenCalledExactlyOnceWith('/dashboard/customers'); expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Billing data incomplete' }))
+  expect(screen.getByText('Invoice balances could not be checked. This board cannot confirm which payments are due.')).toBeInTheDocument(); expect(screen.queryByText('More records are available in this workspace.')).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Open Customer accounts' })).not.toBeInTheDocument(); expect(props.onWorkspace).not.toHaveBeenCalled()
+ })
+ it('keeps routine billing coverage out of attention controls and avoids an all-clear claim', () => {
+  setup(data({ actions: [], sources: [source({ total: 0 }), source({ id: 'receivables', state: 'partial', reason: 'account_review_only', total: null })] }))
+  expect(screen.queryByRole('button', { name: /Accounts|Billing data|Customer accounts/ })).not.toBeInTheDocument()
+  expect(screen.getByText(/Invoice balances are reviewed in each customer/)).toBeInTheDocument()
+  expect(screen.queryByText(/caught up|flagged areas/)).not.toBeInTheDocument()
  })
  it('scopes an empty-state claim to accessible checked workspaces', () => {
   setup(data({ actions: [], actions_total: 0, sources: [source({ total: 0, shown: 0 }), source({ id: 'receivables', state: 'restricted', total: null, shown: 0 })] }))
@@ -51,9 +58,17 @@ describe('Shop Work overview', () => {
   const actions = Array.from({ length: 8 }, (_, i) => item({ id: `inventory:${i}`, title: `Part ${i}` })); const { props } = setup(data({ actions, actions_total: null, has_more_actions: true, sources: [source({ has_more: true, state: 'ready', total: 10, shown: 8 })] }))
   expect(document.querySelectorAll('[data-work-id]')).toHaveLength(6); fireEvent.click(screen.getByRole('button', { name: 'Show next 2 tasks' })); expect(document.querySelectorAll('[data-work-id]')).toHaveLength(8); fireEvent.click(screen.getByRole('button', { name: 'Inventory', exact: true })); expect(props.onWorkspace).toHaveBeenCalledWith('/dashboard/garage/inventory')
  })
+ it('opens the Cores list directly and omits a schedule shortcut when only purchasing overflowed', () => {
+  const { props } = setup(data({ has_more_actions: true, has_more_upcoming: true, sources: [
+    source({ id: 'cores', has_more: true }), source({ id: 'schedule' }), source({ id: 'purchasing', has_more: true }),
+  ] }))
+  fireEvent.click(screen.getByRole('button', { name: 'Cores' }))
+  expect(props.onWorkspace).toHaveBeenCalledWith('/dashboard/garage/purchasing?view=returns&custody=cores')
+  expect(within(screen.getByRole('complementary')).queryByRole('button', { name: 'Repair commitments' })).not.toBeInTheDocument()
+ })
  it('routes incomplete upcoming coverage without asserting more dated work exists', () => {
   const { props } = setup(data({ upcoming_total: null, has_more_upcoming: true, sources: [source({ id: 'purchasing', state: 'partial', reason: 'source_limit', total: null, has_more: true })] }))
-  expect(screen.getByText('Upcoming commitments could not be fully checked.')).toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Purchasing unverified' })); expect(screen.queryByText('More dated work is available in its workspace.')).not.toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Open Purchasing', exact: true })); expect(props.onWorkspace).toHaveBeenCalledWith('/dashboard/garage/purchasing?view=orders')
+  expect(screen.getByText('Upcoming commitments could not be fully checked.')).toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Purchasing incomplete' })); expect(screen.queryByText('More dated work is available in its workspace.')).not.toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Open Purchasing', exact: true })); expect(props.onWorkspace).toHaveBeenCalledWith('/dashboard/garage/purchasing?view=orders')
  })
  it('keeps unavailable status visible and supports keyboard dismissal with focus restored', async () => {
   const user = userEvent.setup()
@@ -68,6 +83,19 @@ describe('Shop Work overview', () => {
  it('omits source controls and destinations for disabled or restricted areas', () => {
   setup(data({ sources: [source(), source({ id: 'receivables', state: 'restricted', has_more: true }), source({ id: 'purchasing', state: 'disabled', has_more: true })], has_more_actions: true }))
   expect(screen.queryByRole('button', { name: /unverified|unavailable|areas need review|Customer accounts|Purchasing/ })).not.toBeInTheDocument()
+ })
+ it.each(['attention', 'upcoming'])('restores a previously hidden %s record and focuses its link', section => {
+  const items = Array.from({ length: 15 }, (_, index) => item({ id: `inventory:part-${index}`, title: `Part ${index}`, destination: { kind: 'inventory', id: `part-${index}`, view: null } }))
+  const target = `${section}:inventory:part-10`
+  setup(data({ actions: items, upcoming: items }), { resumeTask: target })
+  const link = document.getElementById(target)!
+  expect(link).toHaveFocus()
+  expect(link).toHaveAttribute('href', shopWorkDestinationUrl(items[10].destination, target))
+  expect(screen.getAllByText('Part 10')).toHaveLength(1)
+ })
+ it('returns to the queue heading when the reviewed task is gone', () => {
+  setup(data(), { resumeTask: 'attention:inventory:removed' })
+  expect(screen.getByRole('heading', { name: 'Needs your attention' })).toHaveFocus()
  })
  it('keeps unknown local times unknown', () => { setup(data({ timezone: null, upcoming: [item({ due_at: '2026-11-02T16:30:00Z', due_kind: 'repair_start' })] })); expect(screen.getByText('Time unavailable')).toBeInTheDocument() })
 })

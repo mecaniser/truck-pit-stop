@@ -50,9 +50,10 @@ export type CustomerDetailPanelProps = {
   setDetailTab: (tab: 'overview' | 'history') => void
   expandedHistoryId: string | null
   setExpandedHistoryId: (id: string | null) => void
-  HistoryRoDetail: (props: { customerId: string; orderId: string; onOpenOrder?: (orderId: string) => void }) => ReactNode
+  HistoryRoDetail: (props: { customerId: string; orderId: string; onOpenOrder?: (orderId: string) => void; restoreFocus?: boolean }) => ReactNode
   onCreateOrder?: () => void
   createOrderButtonRef?: React.Ref<HTMLButtonElement>
+  restoreOrderFocus?: string
   onOpenHistoryOrder?: (orderId: string) => void
 
   customerVehicles?: Vehicle[]
@@ -115,6 +116,7 @@ export default function CustomerDetailPanel({
   setExpandedHistoryId,
   HistoryRoDetail,
   onOpenHistoryOrder,
+  restoreOrderFocus,
   onCreateOrder,
   createOrderButtonRef,
   customerVehicles,
@@ -309,7 +311,7 @@ export default function CustomerDetailPanel({
                           {isExpanded && selectedCustomer && (
                             <tr className="bg-white">
                               <td colSpan={5} className="px-4 py-3 border-t border-amber-100">
-                                <HistoryRoDetail customerId={selectedCustomer.id} orderId={ro.id} onOpenOrder={onOpenHistoryOrder} />
+                                <HistoryRoDetail customerId={selectedCustomer.id} orderId={ro.id} onOpenOrder={onOpenHistoryOrder} restoreFocus={restoreOrderFocus === ro.id} />
                               </td>
                             </tr>
                           )}

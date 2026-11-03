@@ -1,4 +1,5 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import RecentActivityFeed from '../RecentActivityFeed'
@@ -9,7 +10,11 @@ vi.mock('../activityFeedQuery', () => ({ useActivityFeed: (filters: Record<strin
 vi.mock('@/stores/authStore', async importOriginal => ({ ...await importOriginal<typeof import('@/stores/authStore')>(), useAuthStore: (select: (s: unknown) => unknown) => select({ user: state.user, authSessionEpoch: state.epoch, isAuthenticated: state.isAuthenticated, logoutInProgress: state.logoutInProgress, authProvider: state.authProvider }) }))
 vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ appearance: {} }), appearanceTokenRecord: () => ({}) }))
 vi.mock('@/lib/api', () => ({ default: { get: state.get } }))
-vi.mock('react-router-dom', () => ({ useNavigate: () => state.navigate }))
+vi.mock('react-router-dom', async importOriginal => {
+  const original = await importOriginal<typeof import('react-router-dom')>()
+  return { ...original, useNavigate: () => state.navigate }
+})
+const render = (ui: React.ReactElement) => rtlRender(ui, { wrapper: ({ children }) => <MemoryRouter>{children}</MemoryRouter> })
 const event = (id: string, actor: string, time: string) => ({ id, event_type: 'ro_created', label: `Created ${id}`, occurred_at: `2026-11-01T${time}:00Z`, actor_name: actor, order_id: `order-${id}`, order_number: `RO-${id}` })
 const page: ActivityFeedResponse = { items: [event('1', 'Alex', '15:00'), event('2', 'Sam', '14:00'), event('3', 'Alex', '13:00')], next_cursor: null, has_more: false, available_actors: [{ id: 'alex', name: 'Alex' }], warnings: [] }
 afterEach(() => vi.unstubAllGlobals())
@@ -18,8 +23,8 @@ describe('Shop Work activity consistency', () => {
   it('keeps events in time order across actors and opens the exact existing record', () => {
     render(<RecentActivityFeed />)
     expect(screen.getAllByRole('listitem').map(row => row.textContent)).toEqual([expect.stringContaining('Created 1'), expect.stringContaining('Created 2'), expect.stringContaining('Created 3')])
-    fireEvent.click(screen.getByRole('button', { name: /Created 2/ }))
-    expect(state.navigate).toHaveBeenCalledWith('/dashboard/repair-orders?selected=order-2')
+    fireEvent.click(screen.getByRole('link', { name: /Created 2/ }))
+    expect(state.navigate).toHaveBeenCalledWith('/dashboard/repair-orders?shop_work=activity&selected=order-2')
     expect(screen.queryByText(/3 actions/)).not.toBeInTheDocument()
   })
   it('keeps named filters behind one control and supports nested selection, date entry and reset', async () => {
@@ -51,7 +56,7 @@ describe('Shop Work activity consistency', () => {
     expect(screen.getByRole('status')).toHaveTextContent('No recent activity')
     state.isError = true; state.error = { response: { status: 403 } }; rerender(<RecentActivityFeed />)
     expect(screen.getByRole('alert')).toHaveTextContent('unavailable for this account')
-    expect(screen.queryByRole('button', { name: /Created/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Created/ })).not.toBeInTheDocument()
   })
   it('keeps incomplete coverage visible without a stack of warning banners', async () => {
     state.data = { ...page, warnings: ['Invoice activity could not be checked.', 'Payment history is incomplete.'] }
@@ -87,8 +92,8 @@ describe('Shop Work activity consistency', () => {
     state.data = { ...page, items: [event('filtered', 'Sam', '11:00')], has_more: false }
     rerender(<RecentActivityFeed />)
     await act(async () => finish({ data: { ...page, items: [event('stale-filter', 'Alex', '12:00')] } }))
-    expect(screen.queryByRole('button', { name: /Created stale-filter/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Created filtered/ })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Created stale-filter/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Created filtered/ })).toBeInTheDocument()
   })
   it.each(['tenant', 'session'])('discards an older page that finishes after the %s changes', async change => {
     state.data = { ...page, next_cursor: 'older-a', has_more: true }
@@ -101,12 +106,13 @@ describe('Shop Work activity consistency', () => {
     state.data = { ...page, items: [event('new-scope', 'Sam', '11:00')], has_more: false }
     rerender(<RecentActivityFeed />)
     await act(async () => finish({ data: { ...page, items: [event('stale-scope', 'Alex', '12:00')] } }))
-    expect(screen.queryByRole('button', { name: /Created stale-scope/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Created new-scope/ })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Created stale-scope/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Created new-scope/ })).toBeInTheDocument()
   })
   it('leaves events without a record readable and non-actionable', () => {
     state.data = { ...page, items: [{ ...page.items[0], order_id: null }] }
     render(<RecentActivityFeed />)
-    expect(screen.getByRole('button', { name: /Created 1/ })).toBeDisabled()
+    expect(screen.getByText('Created 1')).toBeVisible()
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
   })
 })

@@ -248,7 +248,7 @@ describe('DB-035C customer workstation', () => {
     expect(screen.getByTestId('customers-location')).toHaveTextContent('?view=list')
     expect(document.querySelector('.db-customer-detail-workspace')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'View' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Details' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Preview' })).not.toBeInTheDocument()
   })
 
   it('inspects a different customer without replacing the selected workspace or URL', async () => {
@@ -256,7 +256,7 @@ describe('DB-035C customer workstation', () => {
     renderPage('/dashboard/customers?view=list&selected=customer-1')
 
     expect(await screen.findByRole('region', { name: 'Northline Logistics' })).toBeInTheDocument()
-    const details = await screen.findAllByRole('button', { name: 'Details' })
+    const details = await screen.findAllByRole('button', { name: 'Preview' })
     const requestsBeforeInspection = apiMocks.get.mock.calls.length
     fireEvent.click(details[1])
 
@@ -271,7 +271,7 @@ describe('DB-035C customer workstation', () => {
     installApiFixture([customer, secondCustomer])
     renderPage()
 
-    const details = await screen.findAllByRole('button', { name: 'Details' })
+    const details = await screen.findAllByRole('button', { name: 'Preview' })
     const firstDetails = details[0]!
     firstDetails.focus()
     fireEvent.click(firstDetails)
@@ -300,7 +300,7 @@ describe('DB-035C customer workstation', () => {
     const secondRecord = await screen.findByRole('listitem', { name: /Miles Freight/ })
     expect(within(secondRecord).queryByRole('button', { name: 'Open customer' })).not.toBeInTheDocument()
 
-    const details = await screen.findAllByRole('button', { name: 'Details' })
+    const details = await screen.findAllByRole('button', { name: 'Preview' })
     fireEvent.click(details[1])
     const inspectedBrief = await screen.findByRole('region', { name: 'Miles Freight details' })
     expect(within(inspectedBrief).getAllByRole('button', { name: 'Open customer' })).toHaveLength(1)
@@ -342,7 +342,7 @@ describe('DB-035C customer workstation', () => {
 
     const secondRecord = await screen.findByRole('listitem', { name: /Miles Freight/ })
     const summary = secondRecord.querySelector<HTMLElement>('.db-customer-navigator__summary')!
-    const details = within(secondRecord).getByRole('button', { name: 'Details' })
+    const details = within(secondRecord).getByRole('button', { name: 'Preview' })
     const name = within(secondRecord).getByRole('button', { name: 'Open Miles Freight customer workspace' })
 
     fireEvent.click(details)
@@ -373,13 +373,13 @@ describe('DB-035C customer workstation', () => {
     const record = await screen.findByRole('listitem', { name: /Northline Logistics/ })
     expect(within(record).getByText('Northline Logistics')).toBeInTheDocument()
     expect(within(record).getByText('(704) 555-0102')).toBeInTheDocument()
-    expect(within(record).getByRole('button', { name: 'Details' })).toHaveAttribute('aria-expanded', 'false')
+    expect(within(record).getByRole('button', { name: 'Preview' })).toHaveAttribute('aria-expanded', 'false')
     expect(within(record).queryByRole('button', { name: 'Open customer' })).not.toBeInTheDocument()
     expect(within(record).queryByText('dispatch@northline.test')).not.toBeInTheDocument()
 
     const locationBefore = screen.getByTestId('customers-location').textContent
     const requestsBefore = apiMocks.get.mock.calls.length
-    fireEvent.click(within(record).getByRole('button', { name: 'Details' }))
+    fireEvent.click(within(record).getByRole('button', { name: 'Preview' }))
 
     const brief = await screen.findByRole('region', { name: 'Northline Logistics details' })
     expect(within(brief).getByText('dispatch@northline.test')).toBeInTheDocument()
@@ -410,7 +410,7 @@ describe('DB-035C customer workstation', () => {
 
     const navigator = await screen.findByRole('list', { name: 'Customers' })
     const record = within(navigator).getByRole('listitem', { name: /Northline Logistics/ })
-    const details = within(record).getByRole('button', { name: 'Details' })
+    const details = within(record).getByRole('button', { name: 'Preview' })
     expect(within(record).queryByRole('button', { name: 'Open customer' })).not.toBeInTheDocument()
 
     fireEvent.click(details)
@@ -558,9 +558,11 @@ describe('DB-151 customer account route and return', () => {
     renderPage('/dashboard/customers?selected=customer-2&tab=account&shop_work=overview')
     expect(await screen.findByTestId('linked-account')).toHaveTextContent('Account for customer-2')
     expect(apiMocks.get).toHaveBeenCalledWith('/customers/customer-2')
+    const surface = document.querySelector('.db-customers-workspace')!
+    expect(surface.firstElementChild).toContainElement(screen.getByRole('heading', { name: 'Customers', exact: true }))
     await userEvent.click(screen.getByRole('button', { name: 'Overview', exact: true }))
     expect(screen.getByTestId('customers-location')).toHaveTextContent('selected=customer-2&tab=overview&shop_work=overview')
-    await userEvent.click(screen.getAllByRole('button', { name: 'Back to Shop Work' })[0])
+    await userEvent.click(await screen.findByRole('button', { name: 'Back to Shop Work' }))
     expect(screen.getByTestId('customers-location')).toHaveTextContent('?work_view=overview')
   })
   it('retains a safe return when the exact customer is unavailable', async () => {
@@ -570,7 +572,7 @@ describe('DB-151 customer account route and return', () => {
     renderPage('/dashboard/customers?selected=missing-customer&tab=account&shop_work=overview')
     await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/customers/missing-customer'))
     expect(screen.queryByTestId('linked-account')).not.toBeInTheDocument()
-    await userEvent.click(screen.getAllByRole('button', { name: 'Back to Shop Work' })[0])
+    await userEvent.click(await screen.findByRole('button', { name: 'Back to Shop Work' }))
     expect(screen.getByTestId('customers-location')).toHaveTextContent('?work_view=overview')
   })
 })
