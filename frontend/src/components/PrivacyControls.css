@@ -1,11 +1,16 @@
 .privacy-controls { --control-height: 44px; --control-focus-color: #fbbf24; color: #f8fafc; font: 14px/1.6 ui-sans-serif, system-ui, sans-serif; }
-.privacy-settings { position: fixed; bottom: 10px; left: 12px; z-index: 60; }
 .privacy-controls button { min-height: 44px; padding: 9px 14px; border: 1px solid #94a3b8; border-radius: 8px; background: #142238; color: #f8fafc; cursor: pointer; font: inherit; }
 .privacy-controls button:hover { background: #243b58; }
 .privacy-controls :is(a, button):focus-visible { outline: 3px solid #fbbf24; outline-offset: 3px; }
-.privacy-panel { position: fixed; bottom: 64px; left: 12px; z-index: 60; width: min(560px, calc(100vw - 24px)); max-height: calc(100dvh - 90px); overflow-y: auto; background: #0f172a; padding: 20px; border: 1px solid #94a3b8; border-radius: 12px; box-shadow: 0 12px 36px #0008; }
+.privacy-panel { position: fixed; bottom: 20px; left: 12px; z-index: 60; width: min(560px, calc(100vw - 24px)); max-height: calc(100dvh - 90px); overflow-y: auto; background: #0f172a; padding: 20px; border: 1px solid #94a3b8; border-radius: 12px; box-shadow: 0 12px 36px #0008; }
 .privacy-panel h2 { margin: 0 0 8px; font-size: 18px; color: #f8fafc; }
 .privacy-panel p { margin: 8px 0; color: #e2e8f0; }
 .privacy-panel a { color: #fcd34d; text-decoration: underline; }
 .privacy-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 @media (max-width: 480px) { .privacy-actions { flex-direction: column; } }
+
+.cookie-settings-link { min-height: 44px; padding: 8px 0; border: 0; background: transparent; color: inherit; font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.cookie-settings-link:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+.cookie-privacy-settings { margin-top: 24px; padding-top: 24px; border-top: 1px solid currentColor; }
+.cookie-privacy-settings h3 { font-size: 16px; font-weight: 600; }
+.cookie-privacy-settings p { margin-block: 8px; font-size: 14px; }

@@ -1,3 +1,4 @@
+import { CookiePrivacySettings } from '@/components/PrivacyControls'
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { useState, useEffect, useId, useRef } from 'react'
@@ -3915,7 +3916,7 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
       {/* Content */}
       <div className="flex-1 min-h-[400px] lg:min-h-[600px]">
         {activeSection === 'profile' && <ProfileSection />}
-        {activeSection === 'security' && <SecuritySection />}
+        {activeSection === 'security' && <><SecuritySection /><CookiePrivacySettings /></>}
         {activeSection === 'appearance' && <AppearanceSection />}
         {activeSection === 'integrations' && isSuperAdmin && <PlatformIntegrationsSection />}
         {activeSection === 'garageProfile' && <GarageProfileSection />}
