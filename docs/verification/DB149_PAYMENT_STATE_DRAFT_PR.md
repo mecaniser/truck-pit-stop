@@ -35,3 +35,7 @@ Synthetic services and network have been removed; all receipts/checkouts and sha
 ## Publication blocker
 
 The attempted exact branch push was rejected by automatic approval review before command execution: publishing an external branch creates an organizational commitment, and the reviewer did not accept delegation context as explicit trusted user authorization for this exact destination/change. No remote branch or PR was created, no alternate publication path was attempted, and nothing was merged/deployed. Prepared source/docs remain local. The next step requires explicit trusted user authorization to publish the payment-only draft to `mecaniser/truck-pit-stop`; that does not authorize merge/deployment or formal PR approval. Exact rejection is retained in sibling `payment-security-gaps/draft-publication-blocker.json`.
+
+## Explicit publication authorization and retry
+
+The user subsequently answered “yes” to the exact payment-only draft publication request for `mecaniser/truck-pit-stop`, expressly excluding merge/deployment. Current main was fetched again as7b56fe25; dry merge succeeds, no existing remote branch or PR was found. One exact previously denied push retry is authorized; if denied again it will stop without an alternate path. Product/test bytes remain615a15c5. Earlier rejection above is historical, not silently discarded.
