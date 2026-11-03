@@ -3,7 +3,6 @@
   "build": {
     "builder": "DOCKERFILE",
     "dockerfilePath": "backend/Dockerfile.ets-sync",
-      "backend/requirements.lock",
     "watchPatterns": [
       "backend/scripts/easytruck_sync/**",
       "backend/scripts/fix_legacy_invoice_numbers.py",
