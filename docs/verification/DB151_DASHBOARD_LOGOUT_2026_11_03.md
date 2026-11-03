@@ -26,6 +26,36 @@ Expanded client boundary: while logoutInProgress is true, actual App unmounts th
 
 Failing-first actual-App/shell tests10fail/1pass and inbox-writer tests2fail. Fresh full regression, new independent review and genuine backend repeat required before release. Initial automated GO is historical until that repeat.
 
+## Regression reconciliation
+
+Canonical ConnectedInbox integration fixture previously replaced the entire authStore and lacked the newly used real session helper. Updated to partial import plus explicit authenticated demo identity only for the dashboard integration block; cache assertion now requires the full scoped key.25/25 integration cases pass; fresh independent expanded gate114/114 across10files with no skips. Application source unchanged after252fbf.
+
+Final full frontend run exposed one pre-existing asynchronous inventory URL-cleanup assertion: it waited for filter=stock, already present in the initial URL, then checked selected was gone before the queued navigation committed. Both assertions now share waitFor, retaining exact filter and selected absence plus no-write checks. Inventory application source is unchanged. Focused2/2 pass; repeat full frontend required.
+
+Main advanced only in release documentation to2f401615; merged preserving both board histories with no product/dependency/test changes. Full backend rerun in corrected, network-isolated Python3.11/Node22 image:5337passed/468skipped/0failures; skips remain explicit dedicated PostgreSQL/Redis and disabled-test exclusions, as previously inventoried.
+
+## Revised genuine-backend acceptance
+
+Normal browser login against a newly seeded disposable PostgreSQL/Redis backend used two synthetic tenant owners, real cookies, real authorization and real response payloads. No auth-store injection or payment submission. Desktop1440px and phone390px slow logout both showed only `Signing out…`; browser Back to `/dashboard/settings` during the request also showed only that generic state. Desktop request trace contained the logout200 and subsequent public unauthenticated bootstrap401s, with no new dashboard, appearance, branding or conversation reads after intent. Completed logout reached normal login. The same tab then switched B→A with a warm B dashboard cache: only A shop, repair and stock appeared. A→B was also checked.
+
+For reliable phone timing, an external QA-only ASGI wrapper delayed real response delivery12s, with assertions for `ENVIRONMENT=test` and the exact disposable database suffix. It leaves authentication, handler execution, contents and cookies unchanged and is excluded from product source/PR. A20s delay of real overview/daily-workset response delivery then proved both requests end in `net::ERR_ABORTED`, canceled=true, when navigating away. No delayed data reappeared. All12 financial/inventory table row fingerprints are identical before/after. No production data or financial writes.
+
+Evidence in workspace `dashboard-lifecycle-evidence`: `final-desktop-pending-logout-ax.txt`, `final-desktop-pending-logout.png`, `final-desktop-back-pending-ax.txt`, `final-desktop-logout-network.json`, `final-mobile-pending-ax.txt`, `final-mobile-pending.png`, `final-mobile-back-pending-ax.txt`, `tenant-a-after-warm-b-ax.txt`, `tenant-b-isolation-ax.txt`, `real-delayed-refresh-cancellation.json`. Fingerprints: sibling `dashboard-lifecycle-runtime/before.json` and `after.json`. No credentials/headers are retained in request evidence.
+
+Full frontend2518/2518 across230files and lint pass on d6f56120; full backend5337pass/468skip/0failures in network-isolated Python3.11/Node22 image.463 skips require dedicated PostgreSQL fixtures,2 require Redis fixtures,3 are explicitly disabled enrollment/Zelle/reporting cases; they remain coverage debt, not passes. Independent114/114 no-skip security/QA probes passed. Inactive actors, failed logout and late positive/negative response races are covered by actual-store/component probes; the browser exercise uses active synthetic owners and controlled transport latency, not actual provider failures.
+
+Main then advanced to efc4cc94 (#763 cookie-control placement), integrated as ba289343 preserving both board histories. Logout-specific product source remains identical252fbf; global source is not identical because the main cookie changes are included. Final post-integration frontend/build/lint and independent checks are required before release; exact-head hosted CI, PR/merge and production acceptance remain pending. Rollback signals above still apply.
+
+PR765 published as draft at a5021c1b. First post#763 full run:2523 assertions passed across230files, but one unhandled repair-order fixture error made the run fail. The create test asserted POST payload before selected-workspace navigation settled; file teardown reset API promise mocks while the component was mounted. Explicit cleanup now precedes mock resets; all16 focused assertions remain, no RepairOrders product change. Focused pre/post16pass; failure was full-run timing dependent. A clean full rerun is required; no error suppression or weakened assertion. Independent reviewer agrees with narrow cleanup scope. Final browser check after canceled B reads and completed logout/relogin shows only A data (`tenant-a-after-delayed-b-response-ax.txt`).
+
+
+## Final integrated local gate
+
+Full repeat after explicit fixture cleanup: **2523/2523 tests,230/230 files, zero unhandled errors**,175.72s. Changed-source lint passes12 files; integrated production build passes. Final backend5337pass/468skip remains applicable: backend/requirements unchanged throughout this frontend-only branch. Independent Security/QA accepted both the original client privacy scope and the latest main integration (47 focused tests), plus16/16 teardown cases with no unhandled errors; earlier114 adverse probes also passed. Implementation gate GO; protected exact-head CI and production release remain distinct pending gates. Normal genuine-backend Active empty state, Closeout PRIVATE-A row and Activity PRIVATE-A link also verified after switching tenants.
+
+Independent receipt is retained in workspace `dashboard-lifecycle-evidence/INDEPENDENT_SECURITY_QA_EXPANDED.md`; no implementing agent submitted a GitHub PR review. The source diff contains no QA latency wrapper, seeded accounts, credentials, backend changes or held recovery work. Test-only fixture corrections preserve all prior assertions.
+
+Latest main d6a76cfa (#766) adds only cookie-release documentation. Merged preserving both board histories; product, tests and dependencies are byte-identical to the clean2523-test run. Protected exact-head CI must run on the resulting conflict-free head.
 ## Shared browser handoff
 
 The first correction hid Closeout in the tab initiating logout. A second warm tab still rendered shop A’s row while the real logout was held open. The revised client persists a signed-out projection immediately and observes session changes across tabs, including Back, reload and late cookie-bootstrap responses. Each authenticated identity receives its own React Query client. Global notifications are cleared when an identity changes, and late Lightning Order responses cannot announce A’s order to B.
@@ -41,3 +71,5 @@ Runtime: isolated Vite on 5297 proxies the same checkout’s mounted backend on 
 The first hosted frontend gate caught two WebSocket regressions in the in-place account-switch path. The store preserves explicit identity transitions and advances the session epoch so the socket reconnects. All asynchronous profile updates pass their originating epoch and cannot apply to a different account. The socket, auth store, dashboard and shell regression suites passed 57/57 after correction.
 
 A delayed profile save also cannot start a password change, display old update feedback, or sign out the next user. An independent reviewer held the profile update and, separately, the password response across an identity switch. Both checks and a delayed staff logout timer passed. The final settings, socket and portal regression run passed 79 tests. These tests simulate password changes; they do not change real passwords.
+
+PR765 merged the earlier same-tab correction. PR764 contains the remaining cross-tab, report-cache, notification and login handoff protections. Integrating PR765 preserved its unrelated fixture corrections; Shop Work and sign-out product code remains identical to the tested PR764 candidate.
