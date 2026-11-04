@@ -69,7 +69,7 @@ class TokenCardSaveRequest(CardSaveRequest):
     @classmethod
     def opaque_token_only(cls, value: SecretStr) -> SecretStr:
         token = value.get_secret_value()
-        if token.isdigit() or not re.fullmatch(r'[A-Za-z0-9._~\-]+', token):
+        if re.sub(r'[._~\-]', '', token).isdigit() or not re.fullmatch(r'[A-Za-z0-9._~\-]+', token):
             raise ValueError('A secure card token is required')
         return value
 

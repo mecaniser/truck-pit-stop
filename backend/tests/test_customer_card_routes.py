@@ -139,6 +139,7 @@ async def test_token_only_save_delegates_to_orchestrator(app_context):
     {'expected_context':KEY,'idempotency_key':'bad key','token':'opaque-token'},
     {'expected_context':KEY,'token':'opaque-token'},
     {'expected_context':KEY,'idempotency_key':'request','token':'x'*2049},
+    *[{'expected_context':KEY,'idempotency_key':'request','token':token} for token in ['4242-4242-4242-4242','4242.4242.4242.4242','4242_4242_4242_4242','123-456']],
 ])
 async def test_invalid_or_raw_card_bodies_never_reach_provider_service(app_context,body):
     c=app_context
