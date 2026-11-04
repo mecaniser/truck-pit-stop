@@ -57,6 +57,9 @@
     "tests/test_booking_*.py",
     "tests/test_zelle_explicit_confirmation*.py",
     "tests/test_db048_invoice_settlements.py",
-    "tests/test_zelle_websocket_updates.py"
+    "tests/test_zelle_websocket_updates.py",
+    "tests/test_db048_cash_payment_timing.py",
+    "tests/test_db048_new_receipt_authorization.py",
+    "tests/test_db048_payment_checkout.py"
   ]
 }

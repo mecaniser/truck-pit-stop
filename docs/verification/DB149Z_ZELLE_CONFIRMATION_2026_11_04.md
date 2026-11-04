@@ -21,3 +21,9 @@ The shop receives a durable Payment review task. Eligible configured staff SMS i
 No migration or financial backfill. Current schema remains 200. Screenshots and preservation receipts are private local review artifacts. Hosted exact-head CI remains a separate PR gate. Deployment requires user approval of desktop/mobile previews.
 
 [Contract](../contracts/zelle-explicit-transfer-confirmation.md).
+
+## Authorized release gate follow-up
+
+User approved previews and authorized PR772 merge/deploy plus read-only live customer/guest/shop desktop/mobile acceptance. Current-main reconciliation changes only disjoint Motive scripts and preserves both board histories; reviewed payment product source remains byte-identical. Initial hosted run41884398687: protected backend926 passed/67 explicit skips, frontend/build and browser smoke passed, disjoint full frontend2308 passed. Full backend found4 failures (4710 passed/462 skipped): existing positive receipt fixtures omitted explicit report intent and an existing quote fixture relied on a read flushing its preceding writer. Reproduced before correction; scoped test-only setup changes preserve all original authorization/export/fee assertions and add quote projection-purity assertions. The three affected files are now protected regressions. No product guard or financial record changed. Final corrected-head CI and deployed acceptance remain separate gates.
+
+Owner122/122 and independent122/122 passed on the correction, with product hash unchanged. Partition guards and diff checks passed.

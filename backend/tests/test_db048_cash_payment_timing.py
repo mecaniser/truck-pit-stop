@@ -281,6 +281,7 @@ async def test_first_confirmed_partial_exports_full_invoice_and_applied_receipt(
     created = await create_attempt(db_session, invoice=invoice, tenant=tenant, customer_id=customer.id,
         actor=owner, amount=Decimal("20"), rail="zelle", expected_settlement_version=settlement.version,
         idempotency_key="partial", source=source, subject_type=subject,
+        transfer_sent_confirmed=subject == "customer",
         subject_id=owner.id if subject == "staff" else customer.id)
     assert await first_export_awaits_payment(db_session, invoice)
     result = await confirm_attempt(db_session, attempt_id=created.attempt.id, tenant=tenant, actor=owner,
