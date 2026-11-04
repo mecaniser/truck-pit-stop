@@ -9,7 +9,7 @@ The customer sees Add Card, masked saved cards, Set default, and Remove. The ten
 - Resolve the authenticated customer, tenant, selected provider, merchant account and environment on every request. Bind mutations and list reads to an opaque context version; reject stale contexts before provider writes.
 - PAN/CVC travel directly from browser to the selected processor. DieselBridge receives only the opaque token and stores provider references plus masked metadata, never raw card details. Invalid request bodies must not be reflected in validation responses.
 - QuickBooks vault customer references are separate from accounting customers. Saving a card must not create a QBO customer, invoice, charge or payment.
-- Persist a stable wallet identity and operation receipt before creating a provider card. An uncertain outcome blocks further saves pending reconciliation; an empty list cannot clear that hold.
+- For QuickBooks token saves, persist a stable wallet identity and operation receipt before creating a provider card. An uncertain QuickBooks save outcome blocks further saves pending reconciliation; an empty list cannot clear that hold. Stripe continues to use its existing SetupIntent confirmation with a stable request key per form; this change does not add durable cross-form Stripe uncertainty holds.
 - List failures are errors, not an empty wallet. Unavailable shops get one neutral message, never a Stripe onboarding instruction for a QuickBooks shop.
 - Existing provider-specific wallets remain isolated when provider/account/environment changes. Default/removal requires ownership in the selected wallet.
 
@@ -30,6 +30,8 @@ The customer sees Add Card, masked saved cards, Set default, and Remove. The ten
 
 ## Release gates
 
-Pending: integrated backend/frontend checks, database migration validation, signed-in desktop/mobile acceptance, actual Intuit sandbox lifecycle, independent Security/QA, PR exact-head CI, merge, successful deployment and affected-tenant acceptance.
+Completed locally:181 focused backend tests,27 frontend tests, exact-lock production build/typecheck, isolated PostgreSQL migration up/down/up and constraints, and independent Security GO. Signed-in simulated-provider desktop tests cover save/list/default/remove/read failure and durable unknown QuickBooks save hold. Independent QA reproduced181 backend,27 frontend and1 PostgreSQL check; its known-rejection same-form retry finding is being corrected.
+
+Pending: actual Intuit sandbox lifecycle, final independent QA, PR exact-head CI, merge, successful deployment and affected-tenant acceptance.
 
 Rollback triggers: incorrect merchant routing, unauthorized wallet access, unexpected provider mutation or inability to load saved cards. Roll back application release; preserve additive vault tables and operation receipts for reconciliation. Do not delete vault data or retry uncertain saves automatically.
