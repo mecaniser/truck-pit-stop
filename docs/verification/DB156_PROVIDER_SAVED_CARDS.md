@@ -30,8 +30,20 @@ The customer sees Add Card, masked saved cards, Set default, and Remove. The ten
 
 ## Release gates
 
-Completed locally:181 focused backend tests,27 frontend tests, exact-lock production build/typecheck, isolated PostgreSQL migration up/down/up and constraints, and independent Security GO. Signed-in simulated-provider desktop tests cover save/list/default/remove/read failure and durable unknown QuickBooks save hold. Independent QA reproduced181 backend,27 frontend and1 PostgreSQL check; its known-rejection same-form retry finding is being corrected.
+Completed locally:181 focused backend tests,27 frontend tests, exact-lock production build/typecheck, isolated PostgreSQL migration up/down/up and constraints, and independent Security GO. Signed-in simulated-provider desktop tests cover save/list/default/remove/read failure and durable unknown QuickBooks save hold. Independent QA reproduced181 backend,27 frontend and1 PostgreSQL check; its known-rejection same-form retry finding is corrected and independently verified with30 frontend tests.
 
-Pending: actual Intuit sandbox lifecycle, final independent QA, PR exact-head CI, merge, successful deployment and affected-tenant acceptance.
+Pending: PR exact-head CI, merge, successful deployment and affected-tenant acceptance.
 
 Rollback triggers: incorrect merchant routing, unauthorized wallet access, unexpected provider mutation or inability to load saved cards. Roll back application release; preserve additive vault tables and operation receipts for reconciliation. Do not delete vault data or retry uncertain saves automatically.
+
+## Genuine Intuit sandbox acceptance
+
+On November4, source55e3d5e8 passed the real browser flow against actual `app.main:app`, authentication and PostgreSQL. The simulated adapter was removed and browser token interception cleared before testing. Browser card fields went to the official Intuit sandbox token endpoint; DieselBridge received only the token. Save returned success and the UI showed masked Visa4369 exp12/2026 with “Card saved”. Hard reload retained the card, Set default survived reload, and normal Remove confirmation returned an empty wallet.
+
+Direct Intuit Cards list/get calls independently agreed with the saved masked card under the exact server-owned `dbv1_<profile UUID hex>` namespace. After removal, Intuit list returned an empty array. The local save receipt is confirmed; repair order, invoice and payment counts remained zero. No QBO accounting customer or charge was created. Exactly one normal sandbox OAuth refresh occurred before acceptance, with rotated credentials durably preserved in the original approved sandbox connection.
+
+Runtime: frontend `http://127.0.0.1:5216`, PID73723, `/private/tmp/db156-provider-cards/frontend`; API `http://127.0.0.1:8216`, `db156-acceptance-api` mounted from this checkout/backend, actual app.main, disposable `db156_acceptance` PostgreSQL and private Redis. Canonical approved external configuration supplies sandbox credentials; none are copied into the worktree. Database/Redis readiness and frontend proxy verified. Existing5173/8000 runtimes preserved. Desktop and390px mobile rendering checked; mobile document width390 and Add Card target44px. This local runtime is aligned and browser-verified.
+
+[Saved card, desktop](db156/genuine-card-saved.png) · [Saved card, mobile](db156/genuine-card-saved-mobile.png) · [After removal](db156/genuine-empty.png).
+
+Full PostgreSQL evidence additionally passed migrations001 through200, then201 upgrade/downgrade/re-upgrade, preserving all prior table column definitions including booking applications. Four explicit PostgreSQL tests passed with zero skips. Independent Security and implementation/runtime QA GO at55e3d5e8. QA independently reran30 frontend tests, inspected real saved/default screenshots and executed the read-only Intuit verifier after removal, confirming an empty provider vault, confirmed receipt and zero financial rows. [PR776](https://github.com/mecaniser/truck-pit-stop/pull/776) remains draft until final gates finish.
