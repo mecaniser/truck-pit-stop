@@ -275,3 +275,4 @@ from app.db.models.conversation_contact import ConversationContactLink, ContactR
 from app.db.models.vehicle_issue import VehicleIssue, VehicleIssueLink, VehicleIssueRequest, VehicleIssueEvent
 
 from app.db.models.source_debt_handoff import SourceDebtHandoff, EtsReceiptUpdateTask, SourceReceiptLink, SourceDebtEvent
+from app.db.models.customer_payment_profile import CustomerPaymentProfile, SavedCardOperation
