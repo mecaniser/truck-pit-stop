@@ -25,7 +25,10 @@
     "src/features/appointments/__tests__/VisitRequestsPage.test.tsx",
     "src/features/appointments/__tests__/StaffReservationsPage.test.tsx",
     "src/features/payments/__tests__/prepayment-verification.test.tsx",
-    "src/components/__tests__/InvoicePaymentSummary.test.tsx"
+    "src/components/__tests__/InvoicePaymentSummary.test.tsx",
+    "src/lib/__tests__/calendarDate.test.ts",
+    "src/features/customer-portal/__tests__/PortalDashboardPage.authorization.test.tsx",
+    "src/features/invoice-access/__tests__/InvoiceAccessPage.payment.test.tsx"
   ],
   "backend": [
     "tests/test_schema_preflight.py",

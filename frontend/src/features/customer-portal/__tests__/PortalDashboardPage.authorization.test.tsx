@@ -102,3 +102,12 @@ describe('Today visit request status',()=>{
     expect(screen.queryByText(/^Paid$|^Confirmed$|^Reserved$/)).not.toBeInTheDocument()
   })
 })
+
+
+describe('invoice due calendar dates', () => {
+  it.each([['2026-11-03', 'Due Nov 3, 2026'], ['2026-11-03T00:00:00Z', 'Due Nov 3, 2026'], ['2026-11-03T00:00:00+00:00', 'Due Nov 3, 2026'], ['2026-11-03T00:00:00.000Z', 'Due Nov 3, 2026'], ['2026-11-03T00:00:00.000000+00:00', 'Due Nov 3, 2026'], ['2026-02-30T00:00:00Z', 'Due Unavailable'], ['2026-02-30', 'Due Unavailable'], ['invalid', 'Due Unavailable']])('renders %s without shifting the calendar day or crashing', async (date, label) => {
+    show({ invoices: [invoice({ due_date: date })] })
+    expect(await screen.findByText(label)).toBeInTheDocument()
+    expect(screen.queryByText('Due Nov 2, 2026')).not.toBeInTheDocument()
+  })
+})

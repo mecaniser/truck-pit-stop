@@ -33,3 +33,18 @@ describe('guest invoice payment clarity', () => {
     expect(screen.queryByText('This invoice is already paid')).not.toBeInTheDocument()
   })
 })
+
+
+describe('guest invoice due calendar dates', () => {
+  it.each([['2026-11-03', /Due Nov 3, 2026/], ['2026-11-03T00:00:00Z', /Due Nov 3, 2026/], ['2026-11-03T00:00:00+00:00', /Due Nov 3, 2026/], ['2026-11-03T00:00:00.000Z', /Due Nov 3, 2026/], ['2026-11-03T00:00:00.000000+00:00', /Due Nov 3, 2026/], ['2026-02-30T00:00:00Z', /Due Unavailable/], ['2026-02-30', /Due Unavailable/], ['invalid', /Due Unavailable/]])('renders %s without shifting the calendar day or crashing', async (date, label) => {
+    mocks.post.mockResolvedValue({ data: {
+      invoice_id: 'demo', invoice_number: 'DEMO', order_number: 'RO-DEMO', customer_name: 'Sample Customer', vehicle_info: 'Sample truck',
+      status: 'sent', is_paid: false, subtotal: '100.00', total_amount: '100.00', amount_due: '100.00', due_date: date,
+      shop_supplies_amount: '0.00', service_fee_amount: '0.00', tax_amount: '0.00', discount_amount: '0.00',
+      payment_summary: { state: 'unpaid', applied_amount: '0.00', balance_due: '100.00', pending_amount: null, basis: 'settlement', note: null },
+    } })
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter initialEntries={['/invoice/sample-token']}><Routes><Route path="/invoice/:token" element={<InvoiceAccessPage/>}/></Routes></MemoryRouter></QueryClientProvider>)
+    expect(await screen.findByText(label)).toBeInTheDocument()
+    expect(screen.queryByText(/Due Nov 2, 2026/)).not.toBeInTheDocument()
+  })
+})

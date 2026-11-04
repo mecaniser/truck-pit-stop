@@ -1,3 +1,4 @@
+import { formatCalendarDate } from '@/lib/calendarDate'
 import { collectionAppliedPrincipal } from '@/features/source-collection/collectionAppliedPrincipal'
 import { customerInvoiceLabel, customerInvoiceMemo } from '@/lib/invoiceIdentity'
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
@@ -605,7 +606,7 @@ export default function InvoiceAccessPage() {
           <h1 className="text-3xl font-bold text-gray-900">{customerInvoiceLabel(invoice)}</h1>
           <p className="text-gray-600 mt-1">
             {!(invoice.source_collection && !invoice.source_collection.is_source_history) && <>Order {invoice.order_number}</>}
-            {invoice.due_date ? ` • Due ${format(new Date(invoice.due_date), 'MMM d, yyyy')}` : ''}
+            {invoice.due_date ? ` • Due ${formatCalendarDate(invoice.due_date)}` : ''}
           </p>
           <div className="flex gap-2 mt-3 print:hidden">
             <a data-db-control="action"

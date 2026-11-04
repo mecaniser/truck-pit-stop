@@ -1,3 +1,4 @@
+import { formatCalendarDate } from '@/lib/calendarDate'
 import { customerInvoiceMemo, customerInvoiceLabel } from '@/lib/invoiceIdentity'
 import { ControlButton } from '@/components/ui/Controls'
 import CashReceiptBreakdown from './CashReceiptBreakdown'
@@ -348,7 +349,7 @@ function CustomerDashboard() {
                           )}
                         </span>
                         {order.status === 'invoiced' && order.invoice_due_date && (
-                          <span className="text-amber-200">Due {format(new Date(order.invoice_due_date), 'MMM d, yyyy')}</span>
+                          <span className="text-amber-200">Due {formatCalendarDate(order.invoice_due_date)}</span>
                         )}
                       </p>
                       {order.description && (
