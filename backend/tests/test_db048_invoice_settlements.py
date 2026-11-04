@@ -348,7 +348,7 @@ async def test_pending_zelle_reserves_only_declared_principal_and_replay_is_idem
         actor=owner, amount=Decimal("500"), rail="zelle",
         expected_settlement_version=settlement.version,
         idempotency_key="zelle-500", source="customer_portal",
-        subject_type="customer", subject_id=customer.id,
+        transfer_sent_confirmed=True, subject_type="customer", subject_id=customer.id,
         sender_evidence={"sender_email": "customer@example.com"},
     )
     replay = await create_attempt(
@@ -356,7 +356,7 @@ async def test_pending_zelle_reserves_only_declared_principal_and_replay_is_idem
         actor=owner, amount=Decimal("500"), rail="zelle",
         expected_settlement_version=1,
         idempotency_key="zelle-500", source="customer_portal",
-        subject_type="customer", subject_id=customer.id,
+        transfer_sent_confirmed=True, subject_type="customer", subject_id=customer.id,
         sender_evidence={"sender_email": "customer@example.com"},
     )
     assert replay.replayed is True
@@ -1916,7 +1916,7 @@ async def test_disabled_settlement_read_is_non_mutating(db_session, monkeypatch)
     await db_session.flush()
     with pytest.raises(SettlementDomainError) as error:
         await read_invoice_settlement(invoice.id, db=db_session, current_user=owner)
-    assert error.value.code == "split_payments_disabled"
+    assert error.value.code == "invoice_settlement_unavailable"
     assert await db_session.scalar(select(func.count()).select_from(InvoiceSettlement).where(
         InvoiceSettlement.invoice_id == invoice.id,
     )) == 0
@@ -2061,7 +2061,7 @@ async def test_readiness_requires_exact_current_zelle_submission_marker(
         expected_settlement_version=settlement.version,
         idempotency_key="current-zelle-readiness",
         source="compatibility_adapter",
-        subject_type="customer",
+        transfer_sent_confirmed=True, subject_type="customer",
         subject_id=customer.id,
         sender_evidence={"compatibility_submitted_at": marker.isoformat()},
     )
@@ -2098,7 +2098,7 @@ async def test_gate_off_existing_settlement_remains_read_only_and_blocks_legacy_
         expected_settlement_version=settlement.version,
         idempotency_key="rollback-existing-attempt",
         source="customer_portal",
-        subject_type="customer",
+        transfer_sent_confirmed=True, subject_type="customer",
         subject_id=customer.id,
     )
     tenant.invoice_split_payments_enabled = False
@@ -2189,7 +2189,7 @@ async def test_pending_zelle_submission_evidence_roundtrips_only_to_staff(db_ses
     creation = await create_attempt(db_session, invoice=invoice, tenant=tenant,
         customer_id=customer.id, actor=None, amount=Decimal("10.00"), rail="zelle",
         expected_settlement_version=settlement.version, idempotency_key="customer-zelle-evidence",
-        source="customer_portal", subject_type="customer", subject_id=customer.id, sender_evidence=evidence)
+        source="customer_portal", transfer_sent_confirmed=True, subject_type="customer", subject_id=customer.id, sender_evidence=evidence)
     for audience in ("staff", "customer", "guest"):
         page = await allocation_page(db_session, invoice=invoice, cursor=None, limit=25, audience=audience)
         item = page.items[0]
@@ -2206,7 +2206,9 @@ async def test_pending_zelle_submission_evidence_roundtrips_only_to_staff(db_ses
             assert "sender@example.com" not in page.model_dump_json()
             assert "ZELLE-CUSTOMER" not in page.model_dump_json()
         assert "internal-only" not in page.model_dump_json()
-    assert creation.attempt.manual_evidence == evidence
+    assert {k:v for k,v in creation.attempt.manual_evidence.items() if k not in {"reported_at","transfer_sent_confirmed"}} == {k:v for k,v in evidence.items() if k != "compatibility_submitted_at"}
+    assert creation.attempt.manual_evidence["transfer_sent_confirmed"] is True
+    assert creation.attempt.manual_evidence["reported_at"]
 
 
 @pytest.mark.asyncio

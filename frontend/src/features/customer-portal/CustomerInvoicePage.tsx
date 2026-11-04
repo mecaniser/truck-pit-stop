@@ -379,9 +379,9 @@ export default function CustomerInvoicePage() {
             <span>{isCollectionInvoice || invoice.source_collection ? customerInvoiceLabel(invoice) : invoice.order_number}</span>
             <span aria-hidden="true">·</span>
             <span className="text-[#d9a521]">{invoice.vehicle_info}</span>
-            <span className="rounded-full border border-violet-400/35 bg-violet-400/10 px-2.5 py-0.5 text-[11px] font-bold text-[#a78bfa]">
+            {!(splitSettlement && isPositiveMoney(splitSettlement.active_pending_principal)) && <span className="rounded-full border border-violet-400/35 bg-violet-400/10 px-2.5 py-0.5 text-[11px] font-bold text-[#a78bfa]">
               {isLinkedSourceHistory ? 'Historical record' : paymentSummary ? invoicePaymentLabels[paymentSummary.state] : isPaid ? 'paid' : 'invoiced'}
-            </span>
+            </span>}
           </p>
           {(isHistoricalInvoice || splitSettlement || cashReceipt || paymentSummary) && (
             <p className="mt-2.5 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#8b92a5]">{isLinkedSourceHistory ? 'Original invoice total' : isHistoricalInvoice && !paymentSummary ? 'Invoice total (recorded)' : paymentSummary?.state === 'cancelled' ? 'Invoice status' : cashReceipt ? 'Total paid in cash' : 'Balance due'}</p>
@@ -389,7 +389,7 @@ export default function CustomerInvoicePage() {
           <h1 id="payment-total" className={`${splitSettlement ? 'mt-1' : 'mt-2.5'} whitespace-nowrap text-[38px] font-extrabold leading-none tracking-[-0.02em] tabular-nums sm:text-[46px]`}>
             {isLinkedSourceHistory ? money((invoice.source_collection?.original_issued_total ?? invoice.total_amount)) : isHistoricalInvoice && !paymentSummary ? money(invoice.total_amount) : paymentSummary?.state === 'cancelled' ? 'Cancelled' : paymentSummary?.balance_due === null ? 'Unavailable' : money(cashReceipt?.amount ?? splitSettlement?.outstanding_balance ?? paymentSummary?.balance_due ?? (isPaid ? '0' : pricing.selectedTotal))}
           </h1>
-          {!isHistoricalInvoice && !cashReceipt && !isPaid && <p className={`mt-1 min-h-5 text-[13px] font-bold ${selectedMethod === 'zelle' ? 'text-[#2dd4bf]' : 'text-[#8b92a5]'}`}>
+          {!isHistoricalInvoice && !cashReceipt && !isPaid && !splitSettlement && <p className={`mt-1 min-h-5 text-[13px] font-bold ${selectedMethod === 'zelle' ? 'text-[#2dd4bf]' : 'text-[#8b92a5]'}`}>
             {splitSettlement
               ? selectedMethod === 'zelle'
                 ? 'No card fee with Zelle'
@@ -675,7 +675,7 @@ export default function CustomerInvoicePage() {
 
         <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[11px] text-[#5c6375]">
           <Lock className="h-3 w-3" />
-          {isHistoricalInvoice ? 'Historical invoice · Read-only record' : paymentSummary?.state === 'cancelled' ? 'Cancelled invoice · No payment requested' : paymentSummary?.state === 'unknown' ? 'Contact the shop to confirm payment details' : cashReceipt ? 'Cash payment recorded · Receipt available to download' : 'Secure payment · Receipt emailed instantly'}
+          {isHistoricalInvoice ? 'Historical invoice · Read-only record' : paymentSummary?.state === 'cancelled' ? 'Cancelled invoice · No payment requested' : paymentSummary?.state === 'unknown' ? 'Contact the shop to confirm payment details' : cashReceipt ? 'Cash payment recorded · Receipt available to download' : 'Secure invoice access'}
         </p>
       </div>
     </div>

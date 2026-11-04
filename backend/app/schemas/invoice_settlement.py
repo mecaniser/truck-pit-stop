@@ -141,6 +141,7 @@ class SenderEvidence(BaseModel):
 
 
 class PaymentAttemptCreate(BaseModel):
+    transfer_sent_confirmed: StrictBool = False
     amount: Money
     rail: PaymentRail
     expected_settlement_version: int = Field(ge=1)

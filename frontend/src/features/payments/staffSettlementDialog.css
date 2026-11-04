@@ -1,0 +1,26 @@
+/* The shared receipt dialog renders light-tone payment controls. Keep their
+   semantic tokens local so a dark staff shell cannot wash out review labels. */
+.db-payment-dialog {
+  --workspace-text: #101827;
+  --workspace-muted: #526176;
+  --workspace-border: #cbd5e1;
+  --text-primary: #101827;
+  --text-secondary: #526176;
+  --surface-canvas: #f8fafc;
+  --surface-raised: #f8fafc;
+  --surface-overlay: #fff;
+  color: var(--text-primary);
+  color-scheme: light;
+}
+@media (forced-colors: active) {
+  .db-payment-dialog {
+    --workspace-text: CanvasText;
+    --workspace-muted: CanvasText;
+    --workspace-border: CanvasText;
+    --text-primary: CanvasText;
+    --text-secondary: CanvasText;
+    --surface-canvas: Canvas;
+    --surface-raised: Canvas;
+    --surface-overlay: Canvas;
+  }
+}

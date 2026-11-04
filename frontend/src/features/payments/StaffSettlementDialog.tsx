@@ -21,6 +21,7 @@ import SettlementSummaryCard from './SettlementSummaryCard'
 import InvoiceDetailsDisclosure from './InvoiceDetailsDisclosure'
 import type { InvoiceSettlementSummary } from './types'
 import { useInvoiceAllocations, useInvoiceSettlement } from './useInvoiceSettlement'
+import './staffSettlementDialog.css'
 
 function OpenStaffSettlementDialog({
   invoiceId,
@@ -106,7 +107,7 @@ function OpenStaffSettlementDialog({
 
   return (
     <div className="fixed inset-0 z-[10000] overflow-y-auto bg-black/60 p-3 backdrop-blur-sm sm:p-6" role="presentation" onMouseDown={event => { if (event.currentTarget === event.target) onClose() }}>
-      <section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="staff-settlement-heading" className="mx-auto w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-2xl">
+      <section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="staff-settlement-heading" className="db-payment-dialog mx-auto w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-2xl">
         <header className="flex items-start justify-between gap-4 border-b border-slate-200 bg-white px-4 py-4 sm:px-5">
           <div>
             <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-slate-500">Invoice {invoiceNumber}</p>

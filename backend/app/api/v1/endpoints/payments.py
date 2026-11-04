@@ -1067,14 +1067,15 @@ async def submit_customer_zelle_payment(
         lock=True,
     ) if tenant else None
     if settlement is not None:
-        principal = money(body.amount if body.amount is not None else allocatable_balance(settlement))
-        key = (
-            idempotency_header
-            or f"compat:customer-zelle:{invoice.id}:{current_user.id}:{principal}"
-        ).strip()
+        from app.services.zelle_transfer_reports import compatibility_report_intent
+        key, original_amount = await compatibility_report_intent(
+            db, invoice=invoice, subject_type="customer", subject_id=current_user.id,
+            amount=body.amount, idempotency_header=idempotency_header,
+        )
+        principal = original_amount if original_amount is not None else money(allocatable_balance(settlement))
         if not key or len(key) > 255:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid Idempotency-Key")
-        await create_attempt(
+        creation = await create_attempt(
             db,
             invoice=invoice,
             tenant=tenant,
@@ -1087,12 +1088,24 @@ async def submit_customer_zelle_payment(
             source="compatibility_adapter",
             subject_type="customer",
             subject_id=current_user.id,
+            transfer_sent_confirmed=True,
             sender_evidence={
                 "sender_email": sender_email,
                 "sender_phone": sender_phone,
                 "notes": notes,
-                "compatibility_submitted_at": compatibility_submitted_at.isoformat(),
+                **({"compatibility_submitted_at": invoice.zelle_pending_submitted_at.isoformat()}
+                   if invoice.zelle_pending_submitted_at else {}),
             },
+        )
+
+        await db.commit()
+        if not creation.replayed:
+            from app.services.zelle_transfer_reports import broadcast_report_invalidation
+            await broadcast_report_invalidation(db,invoice=invoice,customer_id=current_user.customer_id)
+        return SubmitCustomerZellePaymentResponse(
+            status="success",
+            message="Transfer reported. Shop staff will verify receipt.",
+            pending_zelle_confirmation=True,
         )
 
     was_pending = invoice.pending_zelle_confirmation

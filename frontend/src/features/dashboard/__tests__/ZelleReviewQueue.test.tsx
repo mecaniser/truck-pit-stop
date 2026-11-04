@@ -1,0 +1,143 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { act, fireEvent, render, screen } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { User } from '@/types'
+import { useAuthStore } from '@/stores/authStore'
+import ZelleReviewQueue from '../ZelleReviewQueue'
+import { useZelleReviewQueue, type ZelleReviewRow } from '../useZelleReviewQueue'
+
+const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), dialog: vi.fn(), legacy: vi.fn(), open: vi.fn() }))
+vi.mock('@/lib/api', () => ({ default: { get: mocks.get, post: mocks.post } }))
+vi.mock('@/features/payments/StaffSettlementDialog', () => ({ default: (props: { invoiceId: string; invoiceNumber: string; onClose: () => void }) => { mocks.dialog(props); return <div role="dialog" aria-label={`Review invoice ${props.invoiceNumber}`}><button onClick={props.onClose}>Close review</button></div> } }))
+function row(overrides: Partial<ZelleReviewRow> = {}): ZelleReviewRow {
+  return { kind: 'canonical_zelle_attempt', invoice_id: 'native-copy-1687', repair_order_id: 'archived-source-ro', display_invoice_number: 'TPS-1687', customer_id: 'reviewed-payer', customer_display_name: 'Actual Billed Fleet', principal_amount: '168.44', attempt_id: 'attempt-1687', settlement_id: 'settlement-1687', settlement_version: 3, created_at: '2026-11-04T12:00:00Z', reported_at: '2026-11-04T12:00:00Z', report_status: 'explicit_report', review_mode: 'canonical_attempt', can_confirm: true, ...overrides }
+}
+function Harness({ compact = false }: { compact?: boolean }) {
+  const queue = useZelleReviewQueue()
+  return <ZelleReviewQueue queue={queue} compact={compact} onOpenQueue={mocks.open} onOpenLegacy={mocks.legacy}/>
+}
+function show(compact = false) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><Harness compact={compact}/></QueryClientProvider>)
+  return client
+}
+beforeEach(() => {
+  vi.clearAllMocks()
+  mocks.get.mockReset()
+  mocks.get.mockResolvedValue({ data: { rows: [row()], next_cursor: null } })
+  useAuthStore.setState({ isAuthenticated: true, logoutInProgress: false, authProvider: 'legacy', authSessionEpoch: 1, user: { id: 'owner-a', tenant_id: 'tenant-a', role: 'garage_owner', is_active: true, permissions: { payments: true } } as User })
+})
+describe('durable staff Zelle payment review', () => {
+  it('opens exact invoice settlement for the reported partial amount, including an archived source order', async () => {
+    show()
+    expect(await screen.findByText('Actual Billed Fleet')).toBeInTheDocument()
+    expect(screen.getByText('Invoice TPS-1687')).toBeInTheDocument()
+    expect(screen.getByText('$168.44')).toBeInTheDocument()
+    expect(screen.queryByText('$268.44')).not.toBeInTheDocument()
+    expect(screen.getByText('Customer reported transfer sent')).toBeInTheDocument()
+    expect(mocks.post).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Review Zelle request for invoice TPS-1687' }))
+    expect(screen.getByRole('dialog', { name: 'Review invoice TPS-1687' })).toBeInTheDocument()
+    expect(mocks.dialog.mock.lastCall?.[0]).toMatchObject({ invoiceId: 'native-copy-1687', invoiceNumber: 'TPS-1687' })
+    expect(mocks.legacy).not.toHaveBeenCalled()
+    expect(mocks.get.mock.calls.every(([url]) => url === '/payments/zelle-review-queue')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Close review' }))
+    expect(screen.getByRole('heading', { name: 'Payment review' })).toHaveFocus()
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+  it('loads every cursor page read-only and deduplicates an exact repeated attempt', async () => {
+    mocks.get.mockResolvedValueOnce({ data: { rows: [row()], next_cursor: 'cursor-next' } }).mockResolvedValueOnce({ data: { rows: [row(), row({ invoice_id: 'invoice-b', display_invoice_number: 'TPS-42', attempt_id: 'attempt-b', principal_amount: '20.00' })], next_cursor: null } })
+    show()
+    expect(await screen.findByText('Invoice TPS-42')).toBeInTheDocument()
+    expect(screen.getAllByText('Invoice TPS-1687')).toHaveLength(1)
+    expect(mocks.get).toHaveBeenNthCalledWith(2, '/payments/zelle-review-queue', expect.objectContaining({ params: { limit: 100, cursor: 'cursor-next' }, signal: expect.any(AbortSignal) }))
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+  it('keeps historical unverified requests visible without claiming a transfer was sent', async () => {
+    mocks.get.mockResolvedValue({ data: { rows: [row({ report_status: 'unverified_request', reported_at: null })], next_cursor: null } })
+    show()
+    expect(await screen.findByText('Payment request awaiting review')).toBeInTheDocument()
+    expect(screen.queryByText(/transfer sent/i)).not.toBeInTheDocument()
+    expect(screen.getByText('$168.44')).toBeInTheDocument()
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+  it('keeps a legacy-only submission on its separately labeled existing review path', async () => {
+    mocks.get.mockResolvedValue({ data: { rows: [row({ kind: 'legacy_zelle_submission', review_mode: 'legacy_invoice', report_status: 'legacy_report', attempt_id: null })], next_cursor: null } })
+    show()
+    expect(await screen.findByText('Invoice amount')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Review Zelle report for invoice TPS-1687' }))
+    expect(screen.getByText('Reported transfer')).toBeInTheDocument()
+    expect(screen.queryByText(/legacy/i)).not.toBeInTheDocument()
+    expect(mocks.legacy).toHaveBeenCalledExactlyOnceWith('archived-source-ro')
+    expect(mocks.dialog).not.toHaveBeenCalled()
+  })
+  it('leaves nonconfirmable requests read-only', async () => {
+    mocks.get.mockResolvedValue({ data: { rows: [row({ can_confirm: false })], next_cursor: null } })
+    show()
+    expect(await screen.findByText('Review unavailable')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Review Zelle/ })).not.toBeInTheDocument()
+    expect(mocks.dialog).not.toHaveBeenCalled()
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+  it('uses one compact discovery entry and opens the existing Closeout queue', async () => {
+    show(true)
+    expect(await screen.findByText('1 Zelle request awaiting review')).toBeInTheDocument()
+    expect(screen.queryByText('Invoice TPS-1687')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Review payments' }))
+    expect(mocks.open).toHaveBeenCalledOnce()
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+  it('does not turn a failed read into an empty queue and retries read-only', async () => {
+    mocks.get.mockRejectedValueOnce(new Error('Unavailable'))
+    show()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Zelle requests couldn’t load')
+    expect(screen.queryByText('No Zelle requests awaiting review.')).not.toBeInTheDocument()
+    mocks.get.mockResolvedValue({ data: { rows: [row()], next_cursor: null } })
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByText('Invoice TPS-1687')).toBeInTheDocument()
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+  it('does not silently accept a repeated cursor as a complete queue', async () => {
+    mocks.get.mockResolvedValue({ data: { rows: [row()], next_cursor: 'repeated' } })
+    show()
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    expect(screen.queryByText('Invoice TPS-1687')).not.toBeInTheDocument()
+    expect(mocks.get).toHaveBeenCalledTimes(2)
+  })
+  it.each(['customer', 'fleet_manager', 'driver', 'mechanic', 'garage_admin', 'receptionist'] as const)('does not read or expose queue data to ungranted %s', async role => {
+    useAuthStore.setState({ user: { ...useAuthStore.getState().user!, role, permissions: {} } })
+    show()
+    expect(screen.queryByRole('heading', { name: 'Payment review' })).not.toBeInTheDocument()
+    expect(mocks.get).not.toHaveBeenCalled()
+  })
+  it.each(['garage_owner', 'garage_admin'] as const)('allows the existing payment authority for %s', async role => {
+    useAuthStore.setState({ user: { ...useAuthStore.getState().user!, role, permissions: role === 'garage_owner' ? {} : { payments: true } } })
+    show()
+    expect(await screen.findByText('Invoice TPS-1687')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Review Zelle request for invoice TPS-1687' })).toBeInTheDocument()
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+  it.each(['receptionist', 'super_admin', 'mechanic', 'customer', 'fleet_manager', 'driver'] as const)('denies %s even with a payments flag', role => {
+    useAuthStore.setState({ user: { ...useAuthStore.getState().user!, role, permissions: { payments: true } } })
+    show()
+    expect(screen.queryByRole('heading', { name: 'Payment review' })).not.toBeInTheDocument()
+    expect(mocks.get).not.toHaveBeenCalled()
+  })
+  it('unmounts an open invoice review on authorization loss', async () => {
+    show()
+    fireEvent.click(await screen.findByRole('button', { name: 'Review Zelle request for invoice TPS-1687' }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    act(() => useAuthStore.setState({ logoutInProgress: true }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByText('Actual Billed Fleet')).not.toBeInTheDocument()
+  })
+  it('pauses a warm queue on failed refresh instead of preserving a confirm action', async () => {
+    const client = show()
+    await screen.findByText('Invoice TPS-1687')
+    mocks.get.mockRejectedValue(new Error('Unavailable'))
+    await act(async () => { await client.refetchQueries({ queryKey: ['zelle-review-queue'] }) })
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Review Zelle/ })).not.toBeInTheDocument()
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+})

@@ -658,7 +658,7 @@ export default function InvoiceAccessPage() {
               <span className="text-gray-700 font-medium">{invoice.source_collection?.is_source_history ? 'Original invoice total' : paymentSummary?.state === 'cancelled' ? 'Invoice status' : 'Balance due'}</span>
               <span className="text-3xl font-bold text-gray-900">{invoice.source_collection?.is_source_history ? formatMoney(invoice.source_collection.original_issued_total) : paymentSummary?.state === 'cancelled' ? 'Cancelled' : paymentSummary?.balance_due === null ? 'Unavailable' : formatMoney(isPaid ? '0' : splitSettlement?.outstanding_balance ?? paymentSummary?.balance_due ?? invoice.amount_due)}</span>
             </div>
-            <p className="text-xs text-gray-500 mt-2">{invoice.source_collection?.is_source_history ? 'Historical record' : `Status: ${paymentSummary ? invoicePaymentLabels[paymentSummary.state] : invoice.status.replace('_', ' ')}`}</p>
+            {!(splitSettlement && isPositiveMoney(splitSettlement.active_pending_principal)) && <p className="text-xs text-gray-500 mt-2">{invoice.source_collection?.is_source_history ? 'Historical record' : `Status: ${paymentSummary ? invoicePaymentLabels[paymentSummary.state] : invoice.status.replace('_', ' ')}`}</p>}
           </div>
 
           {!invoice.source_collection?.is_source_history && !splitSettlement && <InvoicePaymentSummary summary={paymentSummary} />}
