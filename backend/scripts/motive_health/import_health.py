@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 from datetime import timedelta
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from app.db.models.customer import Customer
 from app.db.models.user import User
@@ -16,8 +16,9 @@ from app.services import fleet_diagnostics as service
 from app.services import fleet_telemetry as telemetry
 from app.services.fleet_telemetry import active_membership, now
 from fastapi import HTTPException
+from scripts.motive_health.targets import normalize_targets, resolve
 from scripts.motive_sync.import_locations import time_value
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 
 
 def source_hash(document):
@@ -146,7 +147,11 @@ async def batch(
     apply=False,
     expected_customer_id=None,
     eligible=None,
+    reviewed_targets=None,
 ):
+    targets = normalize_targets(reviewed_targets)
+    if targets and expected_customer_id is None:
+        raise ValueError("Reviewed health targets require a default fleet pin")
     await service.authorize(db, tenant_id, actor_id)
     results, matched = [], set()
     for row in document["vehicles"]:
@@ -170,8 +175,8 @@ async def batch(
             else:
                 try:
                     read = time_value(vitals["source_read_at"])
-                    vehicle, member = await service.resolve(
-                        db, tenant_id, row["vin"], now(), expected_customer_id
+                    vehicle, member = await resolve(
+                        db, tenant_id, row, now(), expected_customer_id, targets
                     )
                     if not telemetry.within(member, read):
                         raise ValueError("Vitals outside current membership")
@@ -236,12 +241,15 @@ async def batch(
         if row["state"] == "unavailable":
             if row.get("vin"):
                 try:
-                    vehicle, _ = await service.resolve(
-                        db, tenant_id, row["vin"], now(), expected_customer_id
+                    vehicle, _ = await resolve(
+                        db, tenant_id, row, now(), expected_customer_id, targets
                     )
                     matched.add(vehicle.id)
                 except HTTPException as exc:
-                    if exc.status_code != 409:
+                    if exc.status_code != 409 or (
+                        isinstance(exc.detail, dict)
+                        and exc.detail.get("code") == "reviewed_health_target_mismatch"
+                    ):
                         raise
             results.append(
                 {
@@ -260,8 +268,8 @@ async def batch(
             )
             continue
         try:
-            vehicle, _ = await service.resolve(
-                db, tenant_id, body.vin, now(), expected_customer_id
+            vehicle, member = await resolve(
+                db, tenant_id, row, now(), expected_customer_id, targets
             )
             matched.add(vehicle.id)
             capture, action = await service.capture(
@@ -272,7 +280,7 @@ async def batch(
                 company_label,
                 company_id,
                 apply=apply,
-                expected_customer_id=expected_customer_id,
+                expected_customer_id=member.fleet_customer_id,
             )
         except HTTPException as exc:
             reason = exc.detail.get("code") if isinstance(exc.detail, dict) else None
@@ -306,7 +314,19 @@ async def batch(
                 Customer.deleted_at.is_(None),
                 *active_membership(now()),
                 *(
-                    [FleetMembership.fleet_customer_id == expected_customer_id]
+                    [
+                        or_(
+                            FleetMembership.fleet_customer_id == expected_customer_id,
+                            *[
+                                and_(
+                                    Vehicle.id == UUID(target["vehicle_id"]),
+                                    FleetMembership.fleet_customer_id
+                                    == UUID(target["fleet_customer_id"]),
+                                )
+                                for target in targets.values()
+                            ],
+                        )
+                    ]
                     if expected_customer_id
                     else []
                 ),
