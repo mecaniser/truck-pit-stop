@@ -1,6 +1,6 @@
 # DB-149RSL — Payment request resolution
 
-Status: implemented; isolated desktop/mobile acceptance passed. Draft review and protected integration CI pending. Not merged or deployed.
+Status: implemented; isolated desktop/mobile acceptance passed. [PR778](https://github.com/mecaniser/truck-pit-stop/pull/778) is draft; protected exact-head integration CI pending. Latest main `e64c2e2f` is integrated; only the board required preserving both histories. Not merged or deployed.
 
 Accountable owner: Backend & Integrations. Contract: [payment-attempt-resolution-v1](../contracts/payment-attempt-resolution-v1.md).
 
