@@ -45,7 +45,10 @@ backend suite:128passed; independent Security backend suite:99passed. Collector,
 task and diagnostic Node suite:37passed. Ruff and backend partition verification
 passed. Final login Chromium suite:103passed. Shared login/timestamp regression suite:
 90passed. Independent Security cleared final helper40c00f3e after challenge and
-completed-disposal probes; independent final QA remains a merge gate.
+completed-disposal probes; independent final QA127Node/128Python passed on final helper40c00f3e/tests
+e51f06fa. [PR775](https://github.com/mecaniser/truck-pit-stop/pull/775) awaits
+protected checks. Signed-in production26baseline shows both readings unavailable
+with canonical service odometer536528; private screenshot retained outside Git.
 
 ## Release acceptance (pending)
 
