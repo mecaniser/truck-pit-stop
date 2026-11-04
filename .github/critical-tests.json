@@ -28,7 +28,10 @@
     "src/components/__tests__/InvoicePaymentSummary.test.tsx",
     "src/lib/__tests__/calendarDate.test.ts",
     "src/features/customer-portal/__tests__/PortalDashboardPage.authorization.test.tsx",
-    "src/features/invoice-access/__tests__/InvoiceAccessPage.payment.test.tsx"
+    "src/features/invoice-access/__tests__/InvoiceAccessPage.payment.test.tsx",
+    "src/features/payments/__tests__/zelle-explicit-confirmation.test.tsx",
+    "src/features/dashboard/__tests__/ZelleReviewQueue.test.tsx",
+    "src/features/dashboard/__tests__/zelleReviewProjection.test.ts"
   ],
   "backend": [
     "tests/test_schema_preflight.py",
@@ -51,6 +54,12 @@
     "tests/test_request_performance.py",
     "tests/test_appointment_payment_unavailable.py",
     "tests/test_verified_booking_flow.py",
-    "tests/test_booking_*.py"
+    "tests/test_booking_*.py",
+    "tests/test_zelle_explicit_confirmation*.py",
+    "tests/test_db048_invoice_settlements.py",
+    "tests/test_zelle_websocket_updates.py",
+    "tests/test_db048_cash_payment_timing.py",
+    "tests/test_db048_new_receipt_authorization.py",
+    "tests/test_db048_payment_checkout.py"
   ]
 }

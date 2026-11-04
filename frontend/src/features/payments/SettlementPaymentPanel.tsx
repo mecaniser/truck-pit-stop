@@ -5,11 +5,12 @@ import { Label, Listbox, ListboxButton, ListboxOption, ListboxOptions } from '@h
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import type { Stripe } from '@stripe/stripe-js'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Banknote, Building2, Check, ChevronDown, Clock3, Copy, CreditCard, Landmark, MoreHorizontal, Send, Truck } from 'lucide-react'
+import { Banknote, Building2, Check, ChevronDown, Copy, CreditCard, Landmark, MoreHorizontal, Send, Truck } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 import { Spinner } from '@/components/ui'
 import QuickBooksPaymentPanel from '@/features/customer-portal/QuickBooksPaymentPanel'
+import PaymentStatusRefresh from './PaymentStatusRefresh'
 import { getStripeForAccount } from '@/lib/stripe'
 
 import { chargeQuickBooksPaymentAttempt, confirmPaymentAttempt, createIdempotencyKey, createPaymentAttempt, fetchPaymentQuote, paymentApiError } from './api'
@@ -19,6 +20,7 @@ import type { InlineInvoiceChargeControls } from './InvoiceChargeControls'
 import type {
   InvoiceSettlementSummary,
   PaymentAttemptResponse,
+  PaymentAttemptCreate,
   PaymentRail,
   FleetProvider,
   SettlementAccess,
@@ -76,7 +78,7 @@ function StripeAttemptForm({
     <form onSubmit={submit} className="space-y-4" aria-label="Secure card payment">
       <PaymentElement />
       {error && <p role="alert" className={`rounded-xl border p-3 text-sm ${tone === 'dark' ? 'border-red-500/30 bg-red-500/10 text-red-200' : 'border-red-200 bg-red-50 text-red-700'}`}>{error}</p>}
-      <ControlButton type="submit" disabled={!stripe || busy} className="flex  w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent-600,#b9472f)] px-4 text-sm font-extrabold text-white hover:brightness-110 disabled:opacity-50">
+      <ControlButton type="submit" disabled={!stripe || busy} className="flex  w-full items-center justify-center gap-2 rounded-xl bg-[color-mix(in_srgb,var(--accent-600,#b9472f)_75%,#000)] px-4 text-sm font-extrabold text-white hover:brightness-110 disabled:opacity-50">
         {busy && <Spinner size="sm" />}
         {busy ? 'Confirming…' : `Pay ${formatMoney(attempt.provider_charge_amount)} with card`}
       </ControlButton>
@@ -138,6 +140,17 @@ function InvoicePaymentPanel({
   const [senderEmail, setSenderEmail] = useState(senderDefaults?.email || '')
   const [senderPhone, setSenderPhone] = useState(senderDefaults?.phone || '')
   const [attempt, setAttempt] = useState<PaymentAttemptResponse | null>(null)
+  const [zelleDraft, setZelleDraft] = useState<{ amount: string; version: number; recipient: string; memo: string; key: string } | null>(null)
+  const reportRequest = useRef<{ key: string; body: PaymentAttemptCreate } | null>(null)
+  const [reportStarted, setReportStarted] = useState(false)
+  const zelleHeading = useRef<HTMLHeadingElement>(null)
+  const instructionTrigger = useRef<HTMLButtonElement>(null)
+  const draftWasOpen = useRef(false)
+  useEffect(() => {
+    if (zelleDraft) zelleHeading.current?.focus()
+    else if (draftWasOpen.current) instructionTrigger.current?.focus()
+    draftWasOpen.current = Boolean(zelleDraft)
+  }, [zelleDraft])
   const [receivedAmount, setReceivedAmount] = useState('')
   const [stripe, setStripe] = useState<Stripe | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
@@ -233,12 +246,13 @@ function InvoicePaymentPanel({
       if (rail === 'fleet_payment' && (!reference.trim() || (fleetProvider === 'Other' && !fleetProviderName.trim()))) throw new Error('Enter the Fleet provider and instrument reference.')
       const normalized = normalizeMoney(currentAmount)
       if (!normalized) throw new Error('Enter a valid amount')
-      const created = await createPaymentAttempt(
-        access,
-        {
+      const reportingZelle = rail === 'zelle' && audience !== 'staff'
+      if (reportingZelle && (!zelleDraft || zelleDraft.version !== summary.version || zelleDraft.recipient !== zelleRecipient?.display || zelleDraft.memo !== zelleRecipient?.memo || normalized !== zelleDraft.amount)) throw new Error('These payment details changed. Review the invoice before reporting your transfer.')
+      const body: PaymentAttemptCreate = {
           amount: normalized,
           rail,
           expected_settlement_version: summary.version,
+          ...(reportingZelle ? { transfer_sent_confirmed: true } : {}),
           sender_evidence: rail === 'zelle' || audience === 'staff'
             ? {
                 sender_email: senderEmail.trim() || null,
@@ -251,10 +265,11 @@ function InvoicePaymentPanel({
                 } : {}),
               }
             : null,
-        },
-        createIdempotencyKey(),
-      )
-      return created
+        }
+      if (reportingZelle && !reportRequest.current) reportRequest.current = { key: zelleDraft!.key, body }
+      const request = reportingZelle ? reportRequest.current! : { key: createIdempotencyKey(), body }
+      if (reportingZelle) setReportStarted(true)
+      return createPaymentAttempt(access, request.body, request.key)
     },
     onSuccess: async created => {
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
@@ -263,7 +278,10 @@ function InvoicePaymentPanel({
       latestSummary.current = created.settlement
       setAmount(null)
       setEditingAmount(false)
-      setAttempt(created)
+      setAttempt(created.rail === 'zelle' && audience !== 'staff' ? null : created)
+      setZelleDraft(null)
+      setReportStarted(false)
+      reportRequest.current = null
       setReceivedAmount(created.principal_amount)
       onUpdated(created.settlement)
       if (created.provider_client_secret && created.provider === 'stripe_connect') {
@@ -273,12 +291,13 @@ function InvoicePaymentPanel({
         setAttempt(null)
         toast.success(`${RAIL_META[rail!].label} payment recorded.`)
       } else if (rail === 'zelle') {
-        toast.success('Follow the Zelle instructions below.')
+        toast.success('Transfer reported.')
       }
     },
     onError: error => {
       if (!mounted.current) return
       const parsed = paymentApiError(error)
+      if (typeof parsed.status === 'number' && parsed.status < 500) { setReportStarted(false); reportRequest.current = null }
       const publicMessage = /source_|handoff_|bill_to_|configuration/.test(parsed.code) || /\b(DBN|ETS|idempotency|mapping|reconciling)\b/i.test(parsed.message)
         ? 'Please refresh this invoice or contact the shop before paying.' : parsed.message
       toast.error(audience === 'staff' ? parsed.message : publicMessage)
@@ -473,7 +492,7 @@ function InvoicePaymentPanel({
         {!attempt.attempt_version && <p role="alert" className="mt-3 text-sm text-red-500">Confirmation version is missing. Refresh this invoice before confirming.</p>}
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <ControlButton type="button" onClick={() => setAttempt(null)} disabled={confirmMutation.isPending} className={` px-3 text-sm font-bold ${quiet}`}>Back</ControlButton>
-          <ControlButton type="button" onClick={() => confirmMutation.mutate()} disabled={!attempt.attempt_version || !receivedAmountValid || confirmMutation.isPending} className=" rounded-xl bg-[var(--accent-600,#b9472f)] px-4 text-sm font-extrabold text-white disabled:opacity-50">
+          <ControlButton type="button" onClick={() => confirmMutation.mutate()} disabled={!attempt.attempt_version || !receivedAmountValid || confirmMutation.isPending} className=" rounded-xl bg-[color-mix(in_srgb,var(--accent-600,#b9472f)_75%,#000)] px-4 text-sm font-extrabold text-white disabled:opacity-50">
             {confirmMutation.isPending ? 'Confirming…' : `Confirm ${label} received`}
           </ControlButton>
         </div>
@@ -481,52 +500,50 @@ function InvoicePaymentPanel({
     )
   }
 
-  if (attempt && rail === 'zelle' && attempt.state === 'pending') {
-    return (
-      <section className={`rounded-2xl border p-4 ${panel}`} aria-labelledby="zelle-reservation-heading">
-        <div className="flex items-start gap-3">
-          <Clock3 className="mt-0.5 h-5 w-5 text-amber-500" />
-          <div>
-            <h2 id="zelle-reservation-heading" className="font-extrabold">Pay with Zelle</h2>
-            <p className={`mt-1 text-sm ${quiet}`}>
-              Send the exact amount. The remaining invoice balance stays available for another payment.
-            </p>
-          </div>
-        </div>
-        <div className={`mt-4 divide-y rounded-xl border ${dark ? 'divide-[#2a3245] border-[#2a3245]' : 'divide-slate-200 border-slate-200'}`}>
-          {[
-            ['Amount', formatMoney(attempt.principal_amount), attempt.principal_amount],
-            ...(zelleRecipient ? [['Recipient', zelleRecipient.display, zelleRecipient.display]] : []),
-            ...(zelleRecipient ? [['Memo', zelleRecipient.memo, zelleRecipient.memo]] : []),
-          ].map(([label, display, value]) => (
-            <div key={label} className="flex min-h-[52px] items-center justify-between gap-3 px-3 py-2">
-              <div className="min-w-0"><p className={`text-[11px] ${quiet}`}>{label}</p><p className="truncate font-bold tabular-nums">{display}</p></div>
-              <ControlButton type="button" onClick={() => copy(value, label)} className="flex  items-center gap-1 text-xs font-bold text-sky-500">
-                {copied === label ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}{copied === label ? 'Copied' : 'Copy'}
-              </ControlButton>
-            </div>
-          ))}
-        </div>
-        <p className={`mt-3 text-xs ${quiet}`}>
-          {attempt.expires_at ? `Please send by ${new Date(attempt.expires_at).toLocaleString()}. ` : ''}
-          The shop will confirm your payment after receiving it.
-        </p>
-        {isPositiveMoney(summary.allocatable_balance) && (
-          <ControlButton
-            type="button"
-            onClick={() => setAttempt(null)}
-            className="mt-4 flex  w-full items-center justify-center rounded-xl border border-current px-4 text-sm font-extrabold"
-          >
-            Make another payment · {formatMoney(summary.allocatable_balance)} available
+  if (zelleDraft && audience !== 'staff') {
+    const errorStatus = createMutation.isError ? paymentApiError(createMutation.error).status : undefined
+    const knownRejection = typeof errorStatus === 'number' && errorStatus < 500
+    const unchanged = zelleDraft.version === summary.version && zelleDraft.recipient === zelleRecipient?.display
+      && zelleDraft.memo === zelleRecipient?.memo && isValidPrincipalAmount(zelleDraft.amount, summary.allocatable_balance)
+    return <section className={`rounded-2xl border p-4 ${panel}`} aria-labelledby="zelle-instructions-heading">
+      <h2 ref={zelleHeading} id="zelle-instructions-heading" tabIndex={-1} className="font-extrabold">Pay with Zelle</h2>
+      <p className={`mt-2 text-sm ${quiet}`}>Send this transfer in your banking app, then tell the shop below.</p>
+      <dl className={`mt-4 divide-y border-y ${dark ? 'divide-[#2a3245] border-[#2a3245]' : 'divide-slate-200 border-slate-200'}`}>
+        {[
+          ['Amount', formatMoney(zelleDraft.amount), zelleDraft.amount],
+          ['Recipient', zelleDraft.recipient, zelleDraft.recipient],
+          ['Memo', zelleDraft.memo, zelleDraft.memo],
+        ].map(([label, display, value]) => <div key={label} className="flex min-h-[60px] items-center justify-between gap-3 py-3">
+          <div className="min-w-0"><dt className={`text-xs ${quiet}`}>{label}</dt><dd className="break-words font-bold tabular-nums">{display}</dd></div>
+          <ControlButton type="button" aria-label={`Copy ${label.toLowerCase()}`} onClick={() => { void copy(value, label) }} className="inline-flex shrink-0 items-center gap-1 px-2 text-xs font-bold">
+            {copied === label ? <Check size={15} /> : <Copy size={15} />}{copied === label ? 'Copied' : 'Copy'}
           </ControlButton>
-        )}
-      </section>
-    )
+        </div>)}
+      </dl>
+      <div className="mt-4 space-y-3">
+        <label className="block text-xs font-bold">Sender email or phone (optional)<ControlInput disabled={reportStarted} value={senderEmail || senderPhone} onChange={event => { const value = event.target.value; if (value.includes('@')) { setSenderEmail(value); setSenderPhone('') } else { setSenderPhone(value); setSenderEmail('') } }} className={`mt-1 w-full rounded-xl border px-3 text-sm ${input}`} /></label>
+        <ControlButton type="button" aria-expanded={showTransferDetails} onClick={() => setShowTransferDetails(!showTransferDetails)} className={`text-sm font-semibold underline underline-offset-4 ${quiet}`}>{showTransferDetails ? 'Hide transfer details' : 'Add transfer details (optional)'}</ControlButton>
+        {showTransferDetails && <div className="grid gap-3 sm:grid-cols-2">
+          <label className="text-xs font-bold">Zelle transaction reference (optional)<ControlInput disabled={reportStarted} maxLength={255} value={reference} onChange={event => setReference(event.target.value)} className={`mt-1 w-full rounded-xl border px-3 ${input}`} /></label>
+          <label className="text-xs font-bold">Note to shop (optional)<ControlInput disabled={reportStarted} maxLength={1000} value={note} onChange={event => setNote(event.target.value)} className={`mt-1 w-full rounded-xl border px-3 ${input}`} /></label>
+        </div>}
+      </div>
+      <p className={`mt-4 text-xs ${quiet}`}>Report only after sending. The shop will verify receipt before marking the invoice paid.</p>
+      {!unchanged && <p role="alert" className="mt-3 text-sm">The invoice or payment details changed. Return to the invoice to review them.</p>}
+      {createMutation.isError && <div className="mt-3 space-y-3"><p role="alert" className="text-sm">{knownRejection ? 'Your transfer report wasn’t saved. Review the details and try again.' : 'We couldn’t confirm your report was saved. Check the status or retry this report.'}</p><PaymentStatusRefresh access={access} summary={summary} tone={tone} onUpdated={onUpdated} /></div>}
+      <div className="mt-4 flex flex-wrap justify-end gap-3">
+        <ControlButton type="button" disabled={createMutation.isPending || (reportStarted && unchanged)} onClick={() => { setZelleDraft(null); reportRequest.current = null; setReportStarted(false); createMutation.reset() }} className={`rounded-xl border px-3 text-sm font-semibold ${dark ? 'border-[#3a465e]' : 'border-slate-300'}`}>Back to invoice</ControlButton>
+        <ControlButton type="button" disabled={!unchanged || !canSubmit || createMutation.isPending} onClick={() => createMutation.mutate()} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[color-mix(in_srgb,var(--accent-600,#b9472f)_75%,#000)] px-4 text-sm font-extrabold text-white disabled:opacity-50">
+          {createMutation.isPending && <Spinner size="sm" />}{createMutation.isPending ? 'Reporting…' : createMutation.isError ? 'Retry report' : "I’ve sent the payment"}
+        </ControlButton>
+      </div>
+    </section>
   }
 
   if (!noncashAvailable && (!cash || (!cash.allowed && !cashSelected))) {
     const resolving = isPositiveMoney(summary.unapplied_credit) || isPositiveMoney(summary.refund_pending)
     const pending = isPositiveMoney(summary.active_pending_principal)
+    const quietPending = pending && !resolving
     const settled = !isPositiveMoney(summary.outstanding_balance)
     const title = resolving ? 'Payment review needed' : pending ? 'Payment awaiting confirmation' : settled ? 'Invoice paid in full' : !cash && summary.allowed_actions?.confirm_cash ? 'Other payment methods are unavailable.' : 'Payment unavailable'
     const explanation = resolving
@@ -535,13 +552,9 @@ function InvoicePaymentPanel({
       : settled ? 'There is no remaining balance to collect.'
       : audience === 'staff' ? summary.allowed_actions?.payment_unavailable_reason ?? cash?.reason ?? 'Payment collection is unavailable. Review the invoice’s accounting status.' : 'Online payment is currently unavailable. Contact the shop for help.'
     return (
-      <div className={`rounded-2xl border p-4 text-sm ${panel}`} role="status">
-        <p className="font-bold">{title}</p>
-        <p className={`mt-1 ${quiet}`}>{explanation}</p>
-        <ControlButton type="button" onClick={() => {
-          void queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
-          void queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
-        }} className="mt-3  rounded-xl border border-current px-3 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-500,#d25d43)]">Refresh payment status</ControlButton>
+      <div className={quietPending ? 'px-1 text-sm' : `rounded-2xl border p-4 text-sm ${panel}`}>
+        {!quietPending && <><p className="font-bold">{title}</p><p className={`mt-1 ${quiet}`}>{explanation}</p></>}
+        <div className="mt-3"><PaymentStatusRefresh access={access} summary={summary} tone={tone} onUpdated={onUpdated} /></div>
       </div>
     )
   }
@@ -624,7 +637,7 @@ function InvoicePaymentPanel({
           />
         </div>
         <span id={`settlement-amount-help-${summary.invoice_id}`} className={`mt-1 block min-h-4 text-xs ${currentAmount.length > 0 && !amountValid ? 'text-red-500' : quiet}`}>
-          {currentAmount.length > 0 && !amountValid ? `Enter at least $0.01 and no more than ${formatMoney(summary.allocatable_balance)}, the amount available to pay.` : audience === 'staff' ? 'Card fees are calculated only on the card-funded portion.' : 'Card fees apply to card payments.'}
+          {currentAmount.length > 0 && !amountValid ? `Enter at least $0.01 and no more than ${formatMoney(summary.allocatable_balance)}, the amount available to pay.` : rail !== 'card' ? '' : audience === 'staff' ? 'Card fees are calculated only on the card-funded portion.' : 'Card fees apply to card payments.'}
         </span>
       </label>}
       {audience !== 'staff' && amountValid && (moneyToCents(currentAmount) ?? 0n) < (moneyToCents(summary.allocatable_balance) ?? 0n) && <p className={`mt-2 text-sm ${quiet}`} role="status">
@@ -697,20 +710,19 @@ function InvoicePaymentPanel({
       {submissionBlockedReason && <p role="status" className="sr-only">{submissionBlockedReason}</p>}
       {cashSelected && <fieldset disabled={submissionBlocked} className="min-w-0 border-0 p-0">{cash?.confirmation}</fieldset>}
 
-      {!cashSelected && rail === 'zelle' && audience !== 'staff' && (
-        <div className="mt-3 grid gap-3">
-          <label className="block"><span className={`mb-1 block text-xs font-bold ${quiet}`}>Sender email or phone <span className="font-normal">(optional)</span></span><ControlInput value={senderEmail || senderPhone} onChange={event => { const value = event.target.value; value.includes('@') ? (setSenderEmail(value), setSenderPhone('')) : (setSenderPhone(value), setSenderEmail('')) }} className={` w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
-          <ControlButton controlKind="action" type="button" aria-expanded={showTransferDetails} onClick={() => setShowTransferDetails(!showTransferDetails)} className={` justify-self-start rounded-lg text-sm font-semibold underline underline-offset-4 focus-visible:ring-2 ${quiet}`}>{showTransferDetails ? 'Hide transfer details' : 'Add transfer details (optional)'}</ControlButton>
-          {showTransferDetails && <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block text-xs font-bold">Zelle transaction reference (optional)<ControlInput maxLength={255} value={reference} onChange={event => setReference(event.target.value)} className={`mt-1  w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
-            <label className="block text-xs font-bold">Note to shop (optional)<ControlInput maxLength={1000} value={note} onChange={event => setNote(event.target.value)} className={`mt-1  w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
-          </div>}
-        </div>
-      )}
-
-      {!cashSelected && noncashAvailable && <><ControlButton type="button" onClick={() => createMutation.mutate()} disabled={!canSubmit || createMutation.isPending} className="mt-4 flex  w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent-600,#b9472f)] px-4 text-sm font-extrabold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
+      {!cashSelected && rail === 'zelle' && audience !== 'staff' && !zelleRecipient?.display && <p role="status" className={`mt-3 text-sm ${quiet}`}>Zelle instructions are unavailable. Contact the shop.</p>}
+      {!cashSelected && noncashAvailable && <><ControlButton ref={instructionTrigger} type="button" onClick={() => {
+        if (rail === 'zelle' && audience !== 'staff') {
+          const normalized = normalizeMoney(currentAmount)
+          if (!normalized || !canSubmit || !zelleRecipient?.display) return
+          setAmount(normalized); reportRequest.current = null; setReportStarted(false); createMutation.reset()
+          setZelleDraft({ amount: normalized, version: summary.version, recipient: zelleRecipient.display, memo: zelleRecipient.memo, key: createIdempotencyKey() })
+          return
+        }
+        createMutation.mutate()
+      }} disabled={!canSubmit || createMutation.isPending || (rail === 'zelle' && audience !== 'staff' && !zelleRecipient?.display)} className="mt-4 flex  w-full items-center justify-center gap-2 rounded-xl bg-[color-mix(in_srgb,var(--accent-600,#b9472f)_75%,#000)] px-4 text-sm font-extrabold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
         {createMutation.isPending && <Spinner size="sm" />}
-        {createMutation.isPending ? 'Preparing…' : rail === 'card' ? `Continue to ${providerLabel}` : audience === 'staff' ? `Record ${rail ? RAIL_META[rail].label : 'payment'}` : 'Continue with Zelle'}
+        {createMutation.isPending ? 'Preparing…' : rail === 'card' ? `Continue to ${providerLabel}` : audience === 'staff' ? `Record ${rail ? RAIL_META[rail].label : 'payment'}` : 'View Zelle instructions'}
       </ControlButton>
       {audience === 'staff' && <p className={`mt-2 text-center text-[11px] ${quiet}`}>Applied after {rail === 'card' ? 'provider' : 'shop'} confirmation.</p>}
       </>}
@@ -722,7 +734,7 @@ function InvoicePaymentPanel({
 export default function SettlementPaymentPanel(props: Parameters<typeof InvoicePaymentPanel>[0]) {
   // Draft amounts, evidence and provider attempts cannot follow a different
   // invoice, including customer/guest callers that do not key this component.
-  return <InvoicePaymentPanel key={`${props.audience}:${props.summary.invoice_id}`} {...props} />
+  return <InvoicePaymentPanel key={`${props.audience}:${props.summary.invoice_id}:${props.access.kind === 'guest' ? props.access.token : props.access.invoiceId}`} {...props} />
 }
 
 export { SettlementPaymentPanel }

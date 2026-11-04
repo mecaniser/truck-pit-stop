@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from html import escape
 from typing import Optional
 from uuid import UUID
 
+from fastapi import HTTPException
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,7 +13,7 @@ from app.core.config import settings
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.services.email_service import send_email
-from app.services.automated_sms_service import enqueue_automated_sms
+from app.services.automated_sms_service import enqueue_automated_sms, valid_phone
 from app.services.messaging_service import _normalize_for_twilio
 
 
@@ -29,6 +31,7 @@ async def collect_staff_contacts(
             and_(
                 User.tenant_id == tenant_id,
                 User.is_active.is_(True),
+                User.deleted_at.is_(None),
                 User.role.in_([UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST]),
             )
         )
@@ -49,7 +52,7 @@ async def collect_staff_contacts(
     return emails, phones
 
 
-async def enqueue_staff_sms(db, *, tenant_id, domain_event_id, template_name, body, mechanic_id=None):
+async def enqueue_staff_sms(db, *, tenant_id, domain_event_id, template_name, body, mechanic_id=None, skip_unconsented=False):
     """Explicit staff identities, one normalized address per business event."""
     if not settings.SMS_AUTOMATION_OUTBOX_ENABLED:
         return
@@ -67,21 +70,31 @@ async def enqueue_staff_sms(db, *, tenant_id, domain_event_id, template_name, bo
         phone = _normalize_for_twilio(user.phone) if user.phone else None
         if phone and user.role != UserRole.MECHANIC:
             has_staff_phone = True
-        if not phone or phone in seen:
+        if not phone or phone in seen or (skip_unconsented and not valid_phone(phone)):
             continue
         seen.add(phone)
-        await enqueue_automated_sms(
-            db, tenant_id=tenant_id, domain_event_id=domain_event_id,
-            template_name=template_name, to=phone, body=body, recipient_user_id=user.id,
-        )
+        try:
+            await enqueue_automated_sms(
+                db, tenant_id=tenant_id, domain_event_id=domain_event_id,
+                template_name=template_name, to=phone, body=body, recipient_user_id=user.id,
+            )
+        except HTTPException as exc:
+            if not (skip_unconsented and exc.status_code == 409 and isinstance(exc.detail, dict)
+                    and exc.detail.get('code') == 'consent_required'):
+                raise
     if not has_staff_phone:
         tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one_or_none()
         phone = _normalize_for_twilio(tenant.phone) if tenant and tenant.phone else None
-        if phone and phone not in seen:
-            await enqueue_automated_sms(
-                db, tenant_id=tenant_id, domain_event_id=domain_event_id,
-                template_name=template_name, to=phone, body=body, recipient_tenant_contact=True,
-            )
+        if phone and phone not in seen and (not skip_unconsented or valid_phone(phone)):
+            try:
+                await enqueue_automated_sms(
+                    db, tenant_id=tenant_id, domain_event_id=domain_event_id,
+                    template_name=template_name, to=phone, body=body, recipient_tenant_contact=True,
+                )
+            except HTTPException as exc:
+                if not (skip_unconsented and exc.status_code == 409 and isinstance(exc.detail, dict)
+                        and exc.detail.get('code') == 'consent_required'):
+                    raise
 
 
 async def _send_staff_alert(
@@ -163,12 +176,12 @@ async def send_pending_zelle_submission_alert(
         <h2 style="color: #b45309;">Zelle Payment Submitted</h2>
         <p>A customer marked a Zelle payment as submitted and this invoice now needs confirmation.</p>
         <div style="background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; padding: 16px; margin: 16px 0;">
-            <p style="margin: 0 0 8px 0;"><strong>Invoice:</strong> {invoice_number}</p>
-            <p style="margin: 0 0 8px 0;"><strong>Order:</strong> {order_number}</p>
-            <p style="margin: 0 0 8px 0;"><strong>Customer:</strong> {customer_name}</p>
+            <p style="margin: 0 0 8px 0;"><strong>Invoice:</strong> {escape(invoice_number)}</p>
+            <p style="margin: 0 0 8px 0;"><strong>Order:</strong> {escape(order_number)}</p>
+            <p style="margin: 0 0 8px 0;"><strong>Customer:</strong> {escape(customer_name)}</p>
             <p style="margin: 0 0 8px 0;"><strong>Amount:</strong> ${amount:,.2f}</p>
-            <p style="margin: 0 0 8px 0;"><strong>Source:</strong> {source_label}</p>
-            <p style="margin: 0;"><strong>Sender info:</strong> {sender_line}</p>
+            <p style="margin: 0 0 8px 0;"><strong>Source:</strong> {escape(source_label)}</p>
+            <p style="margin: 0;"><strong>Sender info:</strong> {escape(sender_line)}</p>
         </div>
         <p style="margin: 24px 0;">
             <a href="{staff_url}" style="background: #b45309; color: #fff; text-decoration: none; padding: 10px 16px; border-radius: 6px;">

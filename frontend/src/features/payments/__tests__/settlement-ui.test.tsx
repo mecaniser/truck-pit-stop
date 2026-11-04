@@ -184,19 +184,20 @@ describe('SettlementPaymentPanel', () => {
     expect(screen.queryByRole('radio', { name: /check/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('radio', { name: /ach/i })).not.toBeInTheDocument()
     await user.click(screen.getByRole('radio', { name: /zelle/i }))
+    await user.click(screen.getByRole('button', { name: 'View Zelle instructions' }))
+    expect(paymentApi.createPaymentAttempt).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Add transfer details (optional)' }))
     await user.type(screen.getByLabelText('Zelle transaction reference (optional)'), 'ZELLE-PORTAL-334')
     await user.type(screen.getByLabelText('Note to shop (optional)'), 'Sent by dispatch')
-    await user.click(screen.getByRole('button', { name: /continue with zelle/i }))
+    await user.click(screen.getByRole('button', { name: 'I’ve sent the payment' }))
     expect(JSON.stringify(paymentApi.createPaymentAttempt.mock.calls[0]?.[1])).not.toContain('TPS-1687')
     expect(paymentApi.createPaymentAttempt).toHaveBeenCalledWith(
       { kind: 'authenticated', invoiceId: fixture.summary.invoice_id },
       expect.objectContaining({ amount: '334.00', rail: 'zelle', expected_settlement_version: 2, sender_evidence: expect.objectContaining({reference:'ZELLE-PORTAL-334',note:'Sent by dispatch'}) }),
       'test-idempotency-key',
     )
-    expect(await screen.findByText('Pay with Zelle')).toBeInTheDocument()
-    expect(screen.getByText('pay@example.com')).toBeInTheDocument()
-    expect(screen.getByText('TPS-1687')).toBeInTheDocument()
+    expect(screen.queryByText('Pay with Zelle')).not.toBeInTheDocument()
+    expect(paymentApi.createPaymentAttempt.mock.calls[0][1].transfer_sent_confirmed).toBe(true)
   })
 
   it('keeps the remaining balance payable after a partial Zelle reservation', async () => {
@@ -243,10 +244,10 @@ describe('SettlementPaymentPanel', () => {
     const amount = screen.getByLabelText(/^(amount applied to invoice|payment amount)$/i)
     await user.clear(amount)
     await user.type(amount, '500')
-    await user.click(screen.getByRole('button', { name: /continue with zelle/i }))
-
-    const continueButton = await screen.findByRole('button', { name: /make another payment.*\$334\.00 available/i })
-    await user.click(continueButton)
+    await user.click(screen.getByRole('button', { name: 'View Zelle instructions' }))
+    expect(paymentApi.createPaymentAttempt).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'I’ve sent the payment' }))
+    await waitFor(() => expect(paymentApi.createPaymentAttempt).toHaveBeenCalledTimes(1))
     expect(screen.getByRole('heading', { name: /payment method/i })).toBeInTheDocument()
     expect(screen.getByLabelText(/^(amount applied to invoice|payment amount)$/i)).toHaveValue('334.00')
   })

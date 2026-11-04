@@ -116,8 +116,12 @@ export default function ShopCockpitActionLedger({
   activeCount,
   closeoutUnavailable = false,
   closeoutState,
+  paymentReview,
+  paymentReviewCount,
   onWorkViewChange,
 }: {
+  paymentReview?: ReactNode
+  paymentReviewCount?: number
   projection: ActionQueueProjection
   isManager: boolean
   canViewActivity: boolean
@@ -182,7 +186,7 @@ export default function ShopCockpitActionLedger({
   // Keep pending closeout visible even while Active work or Activity is open.
   // Closed Today is history, not outstanding work. Deduplicate projected IDs.
   const pendingPaymentOrders = projection.orders_needing_action.filter(order => order.pending_zelle_confirmation)
-  const closeoutCount = new Set([...projection.orders_ready_to_close, ...pendingPaymentOrders].map(order => order.id)).size
+  const closeoutCount = new Set([...projection.orders_ready_to_close, ...pendingPaymentOrders].map(order => order.id)).size + (paymentReviewCount || 0)
   // Payment reviews lead needs_action. If its capped page contains only payment
   // reviews, unseen entries may include more; never claim an exact count then.
   const closeoutHasMore = projection.orders_ready_to_close_has_more || (
@@ -261,6 +265,7 @@ export default function ShopCockpitActionLedger({
       </header>
 
       {notificationRegion}
+      {paymentReview}
       {quickOrderForm}
 
         {/* Section header for the whole queue block. The view switch leads the

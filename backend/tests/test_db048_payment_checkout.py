@@ -87,7 +87,12 @@ async def test_partial_card_quote_respects_existing_cumulative_allocation(db_ses
     await create_attempt(db_session, invoice=ctx[3], tenant=ctx[0], customer_id=ctx[2].id,
         actor=ctx[1], amount=Decimal("33.33"), rail="card", expected_settlement_version=1,
         idempotency_key="prior-card", source="staff", subject_type="staff", subject_id=ctx[1].id)
+    # Persist the preceding writer's projection; quote GET deliberately never flushes.
+    await db_session.flush()
+    before = (ctx[4].version, ctx[4].active_pending_principal, ctx[4].last_event_sequence)
+    assert ctx[4].active_pending_principal == Decimal("33.33")
     result = await quote(db_session, ctx, amount="33.33", version=ctx[4].version)
+    assert before == (ctx[4].version, ctx[4].active_pending_principal, ctx[4].last_event_sequence)
     fee, tax = await _card_fee_allocation(db_session, ctx[4], Decimal("33.33"))
     assert result.card_fee_amount == fee and result.card_fee_tax_amount == tax
     assert await db_session.scalar(select(func.count()).select_from(InvoicePaymentAttempt)) == 1

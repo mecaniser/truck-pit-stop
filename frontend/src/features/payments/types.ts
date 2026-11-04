@@ -109,6 +109,7 @@ export interface PaymentSenderEvidence {
 }
 
 export interface PaymentAttemptCreate {
+  transfer_sent_confirmed?: boolean
   amount: string
   rail: PaymentRail
   expected_settlement_version: number
