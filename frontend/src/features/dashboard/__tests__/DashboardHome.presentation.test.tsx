@@ -39,6 +39,8 @@ vi.mock('@tanstack/react-query', async () => {
   return { ...actual,
   useQuery: (options: { queryKey: unknown[] }) => { const { queryKey } = options; testState.queryKeys.push(queryKey); if (testState.realQueries && ['shop-work-overview', 'dashboard-action-queue', 'dashboard-daily-workset'].includes(queryKey[0] as string)) return actual.useQuery(options); return queryKey[0] === 'shop-work-overview'
     ? { ...testState.query, data: { as_of: '2026-11-01T15:00:00Z', timezone: 'America/New_York', scope: 'shop', active_jobs: 1, sources: [], actions: [], upcoming: [], actions_total: 0, upcoming_total: 0, has_more_actions: false, has_more_upcoming: false }, refetch: testState.overviewRefetch, error: testState.overviewError ? new Error('overview offline') : null }
+    : ['staff-visit-requests', 'staff-reservations', 'zelle-review-queue'].includes(queryKey[0] as string)
+    ? { ...testState.query, data: [], isError: false, isSuccess: true }
     : queryKey[0] === 'dashboard-wip-aging'
     ? { ...testState.query, data: wipFixture, isError: false }
     : queryKey[0] === 'activity-feed'

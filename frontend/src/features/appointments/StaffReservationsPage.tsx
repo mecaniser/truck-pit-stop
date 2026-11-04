@@ -12,6 +12,7 @@ import api from '@/lib/api'
 import { requestVehicleLabel } from './visit-requests'
 import { bookingTimeLabel, canApplyPrepayment, decimalLabel, minorLabel, reservationLabel, validPrepayment, type BookingAccountingTask, type BookingPrepaymentView, type StaffBooking } from './booking-fulfillment'
 import RefundVerificationDialog from './RefundVerificationDialog'
+import { shopWorkReturnUrl } from '@/features/dashboard/shopWorkNavigation'
 import './visit-requests.css'
 import './booking-fulfillment.css'
 
@@ -29,13 +30,14 @@ function ReservationsWorkspace({ identity }: { identity: string }) {
   return <ReservationsList identity={identity} onSelect={id => select(id)}/>
 }
 function ReservationsList({ identity, onSelect }: { identity: string; onSelect: (id: string) => void }) {
+  const [params] = useSearchParams()
   const query = useQuery({ queryKey: ['staff-reservations', identity], queryFn: ({ signal }) => getPortalItems<StaffBooking>('/appointments', {}, signal), retry: false, refetchInterval: 60000 })
   const rows = query.isError ? [] : query.data || []
   const customerIds = [...new Set(rows.map(row => row.customer_id))]
   const vehicleIds = [...new Set(rows.map(row => row.vehicle_id).filter((id): id is string => !!id))]
   const customers = useQueries({ queries: customerIds.map(id => ({ queryKey: ['staff-reservation-customer', identity, id], queryFn: async ({ signal }: { signal: AbortSignal }) => { const result = (await api.get(`/customers/${id}`, { signal })).data as Customer; if (result.id !== id) throw new Error('Customer unavailable'); return result }, retry: false })) })
   const vehicles = useQueries({ queries: vehicleIds.map(id => ({ queryKey: ['staff-reservation-vehicle', identity, id], queryFn: async ({ signal }: { signal: AbortSignal }) => { const result = (await api.get(`/vehicles/${id}`, { signal })).data as Vehicle; if (result.id !== id) throw new Error('Vehicle unavailable'); return result }, retry: false })) })
-  return <div className="visit-requests"><header className="visit-requests-header"><div><h1>Reservations</h1><p className="visit-requests-muted">Review booked visits and their prepayments.</p></div><Link data-db-control="action" className="visit-request-button" to="/dashboard">Back to Shop Work</Link></header>{query.isLoading ? <p role="status">Loading reservations…</p> : query.isError ? <div role="alert"><p>Reservations couldn’t load.</p><ControlButton className="visit-request-button" onClick={() => { void query.refetch() }}>Try again</ControlButton></div> : rows.length ? rows.map(row => {
+  return <div className="visit-requests"><header className="visit-requests-header"><div><h1>Reservations</h1><p className="visit-requests-muted">Review booked visits and their prepayments.</p></div>{!shopWorkReturnUrl(params) && <Link data-db-control="action" className="visit-request-button" to="/dashboard">Back to Shop Work</Link>}</header>{query.isLoading ? <p role="status">Loading reservations…</p> : query.isError ? <div role="alert"><p>Reservations couldn’t load.</p><ControlButton className="visit-request-button" onClick={() => { void query.refetch() }}>Try again</ControlButton></div> : rows.length ? rows.map(row => {
     const customer = customers[customerIds.indexOf(row.customer_id)]
     const vehicle = row.vehicle_id ? vehicles[vehicleIds.indexOf(row.vehicle_id)] : null
     const customerName = customer?.isError ? 'Customer unavailable' : customer?.data ? customer.data.company_name || [customer.data.first_name, customer.data.last_name].filter(Boolean).join(' ') || 'Customer' : 'Loading customer…'

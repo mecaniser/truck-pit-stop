@@ -265,7 +265,6 @@ export default function ShopCockpitActionLedger({
       </header>
 
       {notificationRegion}
-      {paymentReview}
       {quickOrderForm}
 
         {/* Section header for the whole queue block. The view switch leads the
@@ -314,6 +313,8 @@ export default function ShopCockpitActionLedger({
             <span className="db-action-ledger__caption-meta">{lastUpdatedLabel || 'Updated recently'}</span>
           </div>
         </header>
+
+        {queueView === 'queue' && !showingActive && !showingOverview && paymentReview}
 
         {/* Queue-only controls: the chips and search filter the queue, so
             they leave with it. */}

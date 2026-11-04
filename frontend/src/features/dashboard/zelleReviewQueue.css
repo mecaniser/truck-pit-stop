@@ -1,12 +1,12 @@
 .db-zelle-review { color: var(--workspace-text, #e2e8f0); border: 1px solid var(--workspace-border, #334155); border-radius: 14px; padding: 16px; margin: 12px 0; min-width: 0; flex-shrink: 0; background: var(--surface-raised, #152033); }
-.db-zelle-review header, .db-zelle-review--compact, .db-zelle-review article { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.db-zelle-review header, .db-zelle-review article { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .db-zelle-review h2 { font-size: 1rem; font-weight: 700; }
-.db-zelle-review p, .db-zelle-review__amount span, .db-zelle-review--compact span { color: var(--workspace-muted, #a5b4c8); font-size: .82rem; margin-top: 4px; }
-.db-zelle-review--compact span, .db-zelle-review__amount span, .db-zelle-review__amount strong { display: block; }
+.db-zelle-review p, .db-zelle-review__amount span { color: var(--workspace-muted, #a5b4c8); font-size: .82rem; margin-top: 4px; }
+.db-zelle-review__amount span, .db-zelle-review__amount strong { display: block; }
 .db-zelle-review__rows { max-height: 38vh; overflow-y: auto; margin-top: 12px; }
 .db-zelle-review article { padding: 12px 0; border-top: 1px solid var(--workspace-border, #334155); }
 .db-zelle-review article > div:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .db-zelle-review__amount { text-align: right; font-variant-numeric: tabular-nums; }
 .db-zelle-review button { min-height: 44px; white-space: nowrap; flex-shrink: 0; }
 .db-zelle-review h2:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
-@media (max-width: 600px) { .db-zelle-review article { flex-wrap: wrap; gap: 12px; } .db-zelle-review article > div:first-child { flex-basis: 60%; } .db-zelle-review article > button { margin-left: auto; } .db-zelle-review--compact { align-items: flex-start; flex-wrap: wrap; } }
+@media (max-width: 600px) { .db-zelle-review article { flex-wrap: wrap; gap: 12px; } .db-zelle-review article > div:first-child { flex-basis: 60%; } .db-zelle-review article > button { margin-left: auto; } }

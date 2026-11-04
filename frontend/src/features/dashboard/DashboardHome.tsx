@@ -39,7 +39,9 @@ import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import SuggestingInput from '@/components/SuggestingInput'
 import RecentActivityFeed from './RecentActivityFeed'
 import { useActivityFeed, activityCountLabel } from './activityFeedQuery'
-import ZelleReviewQueue from './ZelleReviewQueue'
+import ZelleReviewQueue, { BoardPaymentReview } from './ZelleReviewQueue'
+import { useShopWorkVisits } from './useShopWorkVisits'
+import { projectShopWorkReviews } from './shopWorkReviewProjection'
 import { useZelleReviewQueue } from './useZelleReviewQueue'
 import { withoutDuplicateZelle } from './zelleReviewProjection'
 import ShopCockpitActionLedger, { type ActionQueueLane } from './ShopCockpitActionLedger'
@@ -430,6 +432,7 @@ function AuthenticatedDashboardHome() {
   const location = useLocation()
   const queryClient = useQueryClient()
   const zelleReview = useZelleReviewQueue()
+  const boardVisits = useShopWorkVisits()
   const projectZelleReview = <T extends { id: string; pending_zelle_confirmation?: boolean }>(rows: T[]) => withoutDuplicateZelle(rows, zelleReview.rows, zelleReview.allowed && zelleReview.isSuccess)
   const selectedShopWorkRecord = new URLSearchParams(location.search).get('selected')
 
@@ -570,6 +573,11 @@ function AuthenticatedDashboardHome() {
     refetchOnWindowFocus: true,
     retry: false,
   })
+  const boardOverview = projectShopWorkReviews(overviewQuery.data, overviewQuery.isError,
+    { allowed: boardVisits.allowed, rows: boardVisits.requests.data || [], loading: boardVisits.requests.isLoading, failed: boardVisits.requests.isError },
+    { allowed: boardVisits.allowed, rows: boardVisits.reservations.data || [], loading: boardVisits.reservations.isLoading, failed: boardVisits.reservations.isError },
+    { allowed: zelleReview.allowed, rows: zelleReview.rows, loading: zelleReview.isLoading, failed: zelleReview.isError })
+
   const shopValueSummaryQuery = useQuery<OrderValueSummary>({
     queryKey: ['dashboard-daily-workset', 'value-summary', ...dashboardIdentity, shopValueScope.lane, debouncedShopValueSearch],
     placeholderData: undefined,
@@ -590,6 +598,8 @@ function AuthenticatedDashboardHome() {
   const lastUpdated = dataUpdatedAt ? new Date(dataUpdatedAt) : null
   
   const handleManualRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['staff-visit-requests'] })
+    queryClient.invalidateQueries({ queryKey: ['staff-reservations'] })
     queryClient.invalidateQueries({ queryKey: ['zelle-review-queue'] })
     queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
     queryClient.invalidateQueries({ queryKey: ['shop-work-overview'] })
@@ -953,7 +963,7 @@ function AuthenticatedDashboardHome() {
       orders_closed_today: dailyWorkbench?.closed_today.items ?? [],
       orders_closed_today_has_more: dailyWorkbench?.closed_today.has_more ?? false,
     }
-    const nextTask = !overviewQuery.isError && overviewQuery.data?.actions[0]
+    const nextTask = boardOverview.actions.find(item => item.actionable !== false)
     const nextHref = nextTask ? shopWorkDestinationUrl(nextTask.destination, undefined, 'active') : '/dashboard?work_view=overview'
     const quietNext = <WorkspaceRecordLink className="db-work-control db-work-next" href={nextHref} onOpen={() => navigate(nextHref)}>
       {nextTask ? `${nextTask.action_label}: ${nextTask.title}` : 'View shop overview'} <ArrowRight aria-hidden="true" />
@@ -963,10 +973,12 @@ function AuthenticatedDashboardHome() {
     }
 
     return (
+      <>
+      <BoardPaymentReview queue={zelleReview} selectedId={new URLSearchParams(location.search).get('payment_review')} onClose={() => { const params = new URLSearchParams(location.search); params.delete('payment_review'); navigate(`/dashboard?${params}`, { replace: true }) }}/>
       <ShopCockpitActionLedger
         projection={projection}
         paymentReviewCount={zelleReview.allowed && zelleReview.isSuccess ? zelleReview.rows.length : undefined}
-        paymentReview={<ZelleReviewQueue queue={zelleReview} compact={workView !== 'closeout' || queueView === 'activity'} onOpenQueue={() => { setWorkView('closeout'); setQueueView('queue'); navigate('/dashboard?work_view=closeout') }} onOpenLegacy={id => openRecord(id, 'needs_action')}/>}
+        paymentReview={zelleReview.allowed && (zelleReview.isLoading || zelleReview.isError || zelleReview.rows.length > 0) ? <ZelleReviewQueue queue={zelleReview} onOpenLegacy={id => openRecord(id, 'needs_action')}/> : null}
         workView={workView}
         onWorkViewChange={(view) => {
           if (view === 'overview' && workView !== 'overview') void overviewQuery.refetch()
@@ -982,11 +994,12 @@ function AuthenticatedDashboardHome() {
           : activeLoading ? <div className="db-work-state" role="status"><Spinner size="sm" />Loading closeout…</div> : null}
         closeoutUnavailable={!!dailyWorkbenchError || isDailyWorkbenchLoading}
         overview={<ShopWorkOverview
-          data={overviewQuery.data}
+          data={boardOverview}
+          visitsAvailable={boardVisits.allowed}
           loading={overviewQuery.isLoading}
-          failed={!!overviewQuery.error}
-          refreshing={overviewQuery.isFetching}
-          onRetry={() => { void overviewQuery.refetch() }}
+          failed={!!overviewQuery.error && !!overviewQuery.data}
+          refreshing={overviewQuery.isFetching || boardVisits.requests.isFetching || boardVisits.reservations.isFetching || zelleReview.isFetching}
+          onRetry={handleManualRefresh}
           resumeTask={new URLSearchParams(location.search).get('task')}
           onOpen={(href, task) => {
             // Replace the current history entry so browser Back and the workspace breadcrumb agree.
@@ -1045,6 +1058,7 @@ function AuthenticatedDashboardHome() {
         onValueScopeChange={setShopValueScope}
         initialLaneFilter={returnedQueue || 'all'}
       />
+      </>
     )
   }
 
@@ -1054,7 +1068,7 @@ function AuthenticatedDashboardHome() {
         isExpandedFont ? 'gap-4 2xl:gap-3' : 'gap-5 2xl:gap-4'
       }`}
     >
-      <ZelleReviewQueue queue={zelleReview} onOpenQueue={() => undefined} onOpenLegacy={id => navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}&queue=needs_action`)}/>
+      <ZelleReviewQueue queue={zelleReview} onOpenLegacy={id => navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}&queue=needs_action`)}/>
       {/* Header */}
       <div className="flex-shrink-0">
         <div className="flex flex-row items-start justify-between gap-3 lg:items-end">
