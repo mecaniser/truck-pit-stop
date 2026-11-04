@@ -48,3 +48,42 @@ async def resolve(db, tenant_id, row, stamp, default_customer_id, targets):
     if target and str(vehicle.id) != target["vehicle_id"]:
         fail(409, "reviewed_health_target_mismatch")
     return vehicle, member
+
+
+async def resolve_vitals(
+    db,
+    tenant_id,
+    row,
+    stamp,
+    source_time,
+    default_customer_id,
+    targets,
+    company_id,
+    company_label,
+):
+    if row.get("vin") is not None:
+        vehicle, member = await resolve(
+            db, tenant_id, row, stamp, default_customer_id, targets
+        )
+        return vehicle, member, None
+    from app.services import dashboard_vehicle_bindings as bindings
+
+    target = targets.get(row["provider_vehicle_id"])
+    customer_id = UUID(target["fleet_customer_id"]) if target else default_customer_id
+    try:
+        vehicle, member, binding = await bindings.resolve(
+            db,
+            tenant_id,
+            company_id,
+            row["provider_vehicle_id"],
+            source_time,
+            company_label=company_label,
+            expected_customer_id=customer_id,
+        )
+    except HTTPException as exc:
+        if target and exc.status_code == 409:
+            fail(409, "reviewed_health_target_mismatch")
+        raise
+    if target and str(vehicle.id) != target["vehicle_id"]:
+        fail(409, "reviewed_health_target_mismatch")
+    return vehicle, member, binding

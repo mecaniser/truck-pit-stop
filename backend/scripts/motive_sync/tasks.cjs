@@ -64,8 +64,8 @@ function openTasks(output,scope,{maxAgeMs=15*60*1000,now=()=>Date.now(),log=valu
   },
  };
 }
-const diagnosticPhases=new Set(['trip_reviewed_directory','trip_reviewed_before','trip_reviewed_after','login_navigate','login_auth_redirect','login_origin_check','login_form_check','login_legacy_link','login_legacy_retry','login_legacy_redirect','login_email','login_password','login_submit','login_app_redirect']);
-const loginErrors=new Set(['login_form_timeout','login_form_ambiguous','login_legacy_link_ambiguous','login_legacy_link_invalid','login_legacy_redirect_loop']);
+const diagnosticPhases=new Set(['trip_reviewed_directory','trip_reviewed_before','trip_reviewed_after','login_navigate','login_auth_redirect','login_origin_check','login_form_check','login_legacy_link','login_legacy_retry','login_legacy_redirect','login_email','login_lookup_email','login_lookup_submit','login_password','login_submit','login_app_redirect']);
+const loginErrors=new Set(['login_form_timeout','login_form_ambiguous','login_legacy_link_ambiguous','login_legacy_link_invalid','login_legacy_redirect_loop','login_form_target','login_account_mismatch','login_fallback_config']);
 function failureDiagnostic(error) {
  const proof=tripDiagnostics.diagnostic(error);
  if(proof)return proof;

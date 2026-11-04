@@ -1,6 +1,6 @@
 const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm');
 const fs=require('node:fs'),path=require('node:path'),{EventEmitter}=require('node:events'),{createRequire}=require('node:module');
-const {prepareHealthLogin}=require('./login.cjs');
+const {prepareHealthLogin,lookupPasswordLogin}=require('./login.cjs');
 const actualRequire=createRequire(path.join(__dirname,'collect.cjs'));
 function credentialOrigin(){const value=new URL('https://auth.gomotive.com');value.username='fixture-user';value.password='synthetic-only';return value.href.slice(0,-1);}
 function fixture(options={}){
@@ -44,7 +44,7 @@ async function collector(options={}){
   if(name==='node:fs')return {writeFileSync(){},chmodSync(){},renameSync(){}};
   if(name==='../motive_sync/tasks.cjs')return {phase:value=>f.events.push(value),closeBrowser:browser=>browser.close()};
   if(name==='../motive_sync/node_modules/playwright')return {chromium:{launch:async()=>{f.events.push('launch');return f.browser;}}};
-  if(name==='./login.cjs')return {prepareHealthLogin:(browser,opts)=>prepareHealthLogin(browser,{...opts,diagnostic:value=>f.events.push(value),timeout:options.timeout||200,now:options.clock?f.now:undefined})};
+  if(name==='./login.cjs')return {prepareHealthLogin:(browser,opts)=>prepareHealthLogin(browser,{...opts,lookupEmail:undefined,lookupPassword:undefined,diagnostic:value=>f.events.push(value),timeout:options.timeout||200,now:options.clock?f.now:undefined})};
   return actualRequire(name);
  };
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'collect.cjs'),'utf8'),{require:mockedRequire,module,process:{env:{MOTIVE_EMAIL:'fixture@example.invalid',MOTIVE_PASSWORD:'synthetic-only'}},URL,console});
@@ -157,4 +157,179 @@ test('real Chromium foreign replacement document fails closed and closes both co
 
 test('replacement ambiguous form remains terminal without a third context or credentials',async()=>{
  const f=await collector({contexts:[{form:'loop'},{form:'legacy',ambiguous:true}]});assert.equal(f.error.message,'login_form_ambiguous');assert.equal(f.contexts.length,2);assert.equal(f.events.filter(x=>Array.isArray(x)&&x[0]==='fill').length,0);assert.ok(f.closed());
+});
+
+const lookupCredentials={lookupEmail:'fixture@example.invalid',lookupPassword:'synthetic-only'};
+async function modernFixture(options={}){
+ const {chromium}=require('playwright');
+ const raw=await chromium.launch({headless:true,args:['--no-proxy-server','--host-resolver-rules=MAP * ~NOTFOUND']});
+ const requests=[],contexts=[],events=[],inputEvents=[];
+ const browser={async newContext(config){
+  const ordinal=contexts.length,context=await raw.newContext(config);contexts.push(context);events.push(['create',ordinal]);
+  const close=context.close.bind(context);context.close=async()=>{events.push(['close',ordinal]);if(ordinal===1&&options.secondClose)await options.secondClose();await close();events.push(['closed',ordinal]);};
+  await context.exposeBinding('fixtureInput',(_source,name)=>inputEvents.push(name));
+  await context.addInitScript(()=>document.addEventListener('input',event=>window.fixtureInput(event.target.name)));
+  await context.route('**/*',async route=>{
+   const request=route.request(),url=new URL(request.url());requests.push({url:request.url(),method:request.method(),body:request.postData()});
+   if(!['https://app.gomotive.com','https://auth.gomotive.com','https://evil.invalid'].includes(url.origin))return route.abort();
+   const html=body=>route.fulfill({contentType:'text/html',body});
+   if(url.origin==='https://app.gomotive.com'){
+    if(url.pathname==='/fleet')return html('<h1>Fleet</h1>');
+    return html("<script>location.replace('https://auth.gomotive.com/login/lookup')</script>");
+   }
+   if(url.origin==='https://evil.invalid')return html('<h1>Foreign</h1>');
+   if(url.pathname==='/login/lookup'){
+    const legacy=options.legacyLoops?`<a href="#" onclick="event.preventDefault();location.assign('/login/lookup?returned='+Date.now())">Use legacy login</a>`:'';
+    const attributes=options.lookupAttributes||'action="/login/authenticate" method="post"';
+    const extra=options.duplicateLookup?'<form action="/login/authenticate" method="post"><input name="email"><button>Continue</button></form>':'';
+    return html(`${options.lookupHead||''}<form ${attributes}><input name="email" ${options.lookupInput||'type="email"'}><button ${options.lookupButton||'type="submit"'}>Continue</button>${options.lookupFormExtra||''}</form>${legacy}${extra}${options.lookupExtra||''}`);
+   }
+   if(url.pathname==='/login/authenticate'&&request.method()==='POST'){
+    const body=new URLSearchParams(request.postData());
+    if(body.has('user_profile[password]')){
+     if(options.rejectPassword)return html('<h1>Invalid credentials</h1>');
+     return html(`<script>location.replace('${options.foreignFinal?'https://evil.invalid/':'https://app.gomotive.com/fleet'}')</script>`);
+    }
+    if(options.foreignLookup)return html("<script>location.replace('https://evil.invalid/login/authenticate')</script>");
+    const hidden=options.hiddenEmail===false?'':`<input type="${options.hiddenType||'hidden'}" name="user_profile[email]" ${options.hiddenAttributes||''} value="${options.hiddenEmail||lookupCredentials.lookupEmail}">`;
+    return html(`${options.passwordHead||''}<form ${options.passwordAttributes||'action="/login/authenticate" method="post"'}>${hidden}<input ${options.passwordInput||'type="password"'} name="user_profile[password]"><button ${options.passwordButton||'type="submit"'}>Log in</button>${options.passwordFormExtra||''}</form>${options.duplicatePassword?'<input type="password" name="user_profile[password]">':''}${options.passwordExtra||''}`);
+   }
+   return html('<h1>Unexpected request</h1>');
+  });return context;
+ },close:()=>raw.close()};
+ return {browser,contexts,events,requests,inputEvents};
+}
+const posts=f=>f.requests.filter(r=>r.method==='POST');
+test('real Chromium modern native forms submit email and password exactly once',async()=>{
+ const f=await modernFixture(),diagnostics=[];
+ try{
+  const result=await lookupPasswordLogin(f.browser,{...lookupCredentials,fallbackTimeout:3000,diagnostic:v=>diagnostics.push(v)});
+  assert.equal(result.authenticated,true);assert.equal(result.page.url(),'https://app.gomotive.com/fleet');
+  assert.equal(f.contexts.length,1);assert.equal(posts(f).length,2);
+  assert.deepEqual([...new URLSearchParams(posts(f)[0].body)],[['email',lookupCredentials.lookupEmail]]);
+  assert.deepEqual([...new URLSearchParams(posts(f)[1].body)],[['user_profile[email]',lookupCredentials.lookupEmail],['user_profile[password]',lookupCredentials.lookupPassword]]);
+  assert.deepEqual(diagnostics,['health_login_lookup_recovery','health_login_lookup_recovered']);
+ }finally{await f.browser.close();}
+});
+test('modern fallback begins only after both anonymous legacy contexts are disposed',async()=>{
+ const f=await modernFixture({legacyLoops:true});
+ try{
+  const result=await prepareHealthLogin(f.browser,{...lookupCredentials,timeout:3000,fallbackTimeout:3000,diagnostic(){}});
+  assert.equal(result.authenticated,true);assert.equal(f.contexts.length,3);assert.equal(posts(f).length,2);
+  assert.ok(f.events.findIndex(e=>e[0]==='close'&&e[1]===1)<f.events.findIndex(e=>e[0]==='create'&&e[1]===2));
+ }finally{await f.browser.close();}
+});
+const extraFormRejections=[];
+for(const stage of ['lookup','password']){
+ const prefix=stage==='lookup'?'lookup':'password',posted=stage==='lookup'?0:1;
+ for(const [name,markup] of [['OTP','<input name="otp" autocomplete="one-time-code">'],['textarea','<textarea name="challenge"></textarea>'],['select','<select name="challenge"><option>Confirm</option></select>'],['challenge iframe','<iframe src="about:blank" title="Challenge"></iframe>']])extraFormRejections.push([`${stage} visible ${name}`,{[`${prefix}FormExtra`]:markup},'login_form_ambiguous',posted]);
+ for(const [name,markup] of [['separate OTP form','<form><input name="otp"></form>'],['off-form textarea','<textarea name="challenge"></textarea>'],['off-form select','<select name="challenge"><option>Confirm</option></select>']])extraFormRejections.push([`${stage} ${name}`,{[`${prefix}Extra`]:markup},'login_form_ambiguous',posted]);
+ for(const attribute of ['formaction','formmethod','formtarget','form'])extraFormRejections.push([`${stage} present-empty ${attribute}`,{[`${prefix}Button`]:`${attribute}=""`},'login_form_target',posted]);
+ extraFormRejections.push([`${stage} present-empty input form`,{[`${prefix}Input`]:`type="${stage==='lookup'?'email':'password'}" form=""`},'login_form_target',posted]);
+ extraFormRejections.push([`${stage} foreign baseURI`,{[`${prefix}Head`]:'<base href="https://evil.invalid/">'},'login_form_target',posted]);
+ extraFormRejections.push([`${stage} base target`,{[`${prefix}Head`]:'<base target="_blank">'},'login_form_target',posted]);
+ extraFormRejections.push([`${stage} empty base target`,{[`${prefix}Head`]:'<base target="">'},'login_form_target',posted]);
+}
+for(const [name,options,error,expectedPosts] of [
+ ...extraFormRejections,
+ ['duplicate hidden lookup email',{lookupExtra:'<input type="hidden" name="email" value="other@example.invalid">'},'login_form_ambiguous',0],
+ ['hidden password on lookup',{lookupExtra:'<input type="hidden" name="user_profile[password]" value="other">'},'login_form_ambiguous',0],
+ ['duplicate hidden password',{passwordExtra:'<input type="hidden" name="user_profile[password]" value="other">'},'login_form_ambiguous',1],
+ ['duplicate hidden account',{passwordExtra:'<input type="hidden" name="user_profile[email]" value="other@example.invalid">'},'login_form_ambiguous',1],
+ ['hidden lookup email on password',{passwordExtra:'<input type="hidden" name="email" value="other@example.invalid">'},'login_form_ambiguous',1],
+ ['hidden account form rebinding',{hiddenAttributes:'form="other"'},'login_account_mismatch',1],
+ ['hidden account empty form rebinding',{hiddenAttributes:'form=""'},'login_account_mismatch',1],
+ ['foreign lookup action',{lookupAttributes:'action="https://evil.invalid/login/authenticate" method="post"'},'login_form_target',0],
+ ['lookup GET',{lookupAttributes:'action="/login/authenticate" method="get"'},'login_form_target',0],
+ ['lookup query',{lookupAttributes:'action="/login/authenticate?x=1" method="post"'},'login_form_target',0],
+ ['lookup target',{lookupAttributes:'action="/login/authenticate" method="post" target="_blank"'},'login_form_target',0],
+ ['lookup formaction',{lookupButton:'formaction="https://evil.invalid/"'},'login_form_target',0],
+ ['lookup formmethod',{lookupButton:'formmethod="get"'},'login_form_target',0],
+ ['lookup formtarget',{lookupButton:'formtarget="_blank"'},'login_form_target',0],
+ ['lookup form override',{lookupButton:'form="other"'},'login_form_target',0],
+ ['lookup invalid input type',{lookupInput:'type="password"'},'login_form_target',0],
+ ['lookup input form override',{lookupInput:'type="email" form="other"'},'login_form_target',0],
+ ['lookup non-submit',{lookupButton:'type="button"'},'login_form_target',0],
+ ['disjoint duplicate lookup',{duplicateLookup:true},'login_form_ambiguous',0],
+ ['foreign password action',{passwordAttributes:'action="https://evil.invalid/login/authenticate" method="post"'},'login_form_target',1],
+ ['password exposed input',{passwordInput:'type="text"'},'login_form_target',1],
+ ['password input form override',{passwordInput:'type="password" form="other"'},'login_form_target',1],
+ ['password GET',{passwordAttributes:'action="/login/authenticate" method="get"'},'login_form_target',1],
+ ['password submit override',{passwordButton:'formaction="https://evil.invalid/"'},'login_form_target',1],
+ ['missing hidden account',{hiddenEmail:false},'login_form_ambiguous',1],
+ ['wrong hidden account',{hiddenEmail:'other@example.invalid'},'login_account_mismatch',1],
+ ['visible account',{hiddenType:'text'},'login_form_ambiguous',1],
+ ['duplicate disjoint password',{duplicatePassword:true},'login_form_ambiguous',1],
+ ['foreign lookup redirect',{foreignLookup:true},'origin_or_timeout',1],
+ ['foreign final redirect',{foreignFinal:true},'timeout',2],
+ ['credential rejection',{rejectPassword:true},'timeout',2],
+])test(`real Chromium modern ${name} fails closed without retry`,async()=>{
+ const f=await modernFixture(options);
+ try{
+  await assert.rejects(lookupPasswordLogin(f.browser,{...lookupCredentials,fallbackTimeout:5000,diagnostic(){}}),e=>error==='origin_or_timeout'?['login_origin','login_form_timeout'].includes(e.message)||e.name==='TimeoutError':error==='timeout'?e.message==='login_form_timeout'||e.name==='TimeoutError':e.message===error);
+  assert.equal(posts(f).length,expectedPosts);assert.equal(f.contexts.length,1);
+  await new Promise(resolve=>setTimeout(resolve,20));assert.equal(f.events.filter(e=>e[0]==='close').length,1);
+  for(const request of f.requests){
+   const url=new URL(request.url);
+   assert.equal(url.search,'',`credential query leak: ${url.origin}${url.pathname}`);
+   if(request.method==='POST'){assert.equal(url.origin,'https://auth.gomotive.com');assert.equal(url.pathname,'/login/authenticate');}
+   if(url.origin!=='https://auth.gomotive.com')assert.equal(request.body,null);
+  }
+  const passwordPosts=posts(f).filter(r=>new URLSearchParams(r.body).has('user_profile[password]'));
+  assert.equal(passwordPosts.length,expectedPosts===2?1:0);
+  assert.equal(f.inputEvents.filter(name=>name==='user_profile[password]').length,expectedPosts===2?1:0);
+ }finally{await f.browser.close();}
+});
+test('modern original deadline disposes a late context before any page or credentials',async()=>{
+ let closed=0,pages=0;
+ const browser={async newContext(){await new Promise(resolve=>setTimeout(resolve,60));return {async close(){closed++;},async newPage(){pages++;}};}};
+ await assert.rejects(lookupPasswordLogin(browser,{...lookupCredentials,fallbackTimeout:15,diagnostic(){}}),/login_form_timeout/);
+ await new Promise(resolve=>setTimeout(resolve,80));assert.equal(closed,1);assert.equal(pages,0);
+});
+test('modern original deadline disposes a late page and its context',async()=>{
+ let contextsClosed=0,pagesClosed=0;
+ const browser={async newContext(){return {async close(){contextsClosed++;},async newPage(){await new Promise(resolve=>setTimeout(resolve,60));return {async close(){pagesClosed++;},setDefaultTimeout(){throw Error('late page used');}};}};}};
+ await assert.rejects(lookupPasswordLogin(browser,{...lookupCredentials,fallbackTimeout:15,diagnostic(){}}),/login_form_timeout/);
+ await new Promise(resolve=>setTimeout(resolve,80));assert.equal(contextsClosed,1);assert.equal(pagesClosed,1);
+});
+for(const credentials of [{lookupEmail:lookupCredentials.lookupEmail},{lookupPassword:lookupCredentials.lookupPassword}])test('one missing modern credential keeps persistent legacy loops terminal',async()=>{
+ const f=fixture({contexts:[{form:'loop'},{form:'loop'}]});
+ try{await assert.rejects(prepareHealthLogin(f.browser,{...credentials,timeout:200,diagnostic(){}}),/login_legacy_redirect_loop/);assert.equal(f.contexts.length,2);assert.ok(f.contexts.every(c=>c.closed));assert.equal(f.events.filter(e=>Array.isArray(e)&&e[0]==='fill').length,0);}
+ finally{await f.browser.close();}
+});
+for(const config of [{lookupEmail:[]},{lookupPassword:{}},{fallbackTimeout:0},{fallbackTimeout:15001},{fallbackTimeout:Infinity}])test('invalid modern fallback config cannot create a context',async()=>{
+ let created=0;
+ await assert.rejects(lookupPasswordLogin({async newContext(){created++;}},{...lookupCredentials,...config,diagnostic(){}}),/login_fallback_config/);assert.equal(created,0);
+});
+function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
+test('modern fallback waits for second anonymous disposal to fully resolve before creating credential context',async()=>{
+ const closing=deferred(),release=deferred();
+ const f=await modernFixture({legacyLoops:true,secondClose:()=>{closing.resolve();return release.promise;}});
+ try{
+  const pending=prepareHealthLogin(f.browser,{...lookupCredentials,timeout:3000,fallbackTimeout:5000,diagnostic(){}});
+  await closing.promise;await new Promise(resolve=>setTimeout(resolve,30));
+  assert.equal(f.contexts.length,2);assert.equal(posts(f).length,0);assert.equal(f.inputEvents.length,0);
+  release.resolve();const result=await pending;
+  assert.equal(result.authenticated,true);assert.equal(f.contexts.length,3);assert.equal(posts(f).length,2);
+  assert.ok(f.events.findIndex(e=>e[0]==='closed'&&e[1]===1)<f.events.findIndex(e=>e[0]==='create'&&e[1]===2));
+ }finally{release.resolve();await f.browser.close();}
+});
+test('rejected second anonymous disposal prevents third context and every credential fill',async()=>{
+ const closing=deferred(),release=deferred();
+ const f=await modernFixture({legacyLoops:true,secondClose:()=>{closing.resolve();return release.promise;}});
+ try{
+  const rejection=assert.rejects(prepareHealthLogin(f.browser,{...lookupCredentials,timeout:3000,fallbackTimeout:5000,diagnostic(){}}),/fixture_second_close_failed/);
+  await closing.promise;release.reject(new Error('fixture_second_close_failed'));await rejection;
+  assert.equal(f.contexts.length,2);assert.equal(posts(f).length,0);assert.equal(f.inputEvents.length,0);
+ }finally{await f.browser.close();}
+});
+test('hung second anonymous disposal consumes modern deadline without third context or credentials',async()=>{
+ const closing=deferred(),release=deferred();
+ const f=await modernFixture({legacyLoops:true,secondClose:()=>{closing.resolve();return release.promise;}});
+ try{
+  const rejection=assert.rejects(prepareHealthLogin(f.browser,{...lookupCredentials,timeout:3000,fallbackTimeout:15,diagnostic(){}}),/login_form_timeout/);
+  await closing.promise;await rejection;
+  assert.equal(f.contexts.length,2);assert.equal(posts(f).length,0);assert.equal(f.inputEvents.length,0);
+  release.resolve();await new Promise(resolve=>setTimeout(resolve,30));assert.equal(f.contexts.length,2);
+ }finally{release.resolve();await f.browser.close();}
 });
