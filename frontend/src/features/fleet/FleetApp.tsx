@@ -10,7 +10,7 @@ import {
   ChevronsLeft, ChevronsRight, Pencil, Search, Check, Link2, Route,
 } from 'lucide-react'
 import api from '../../lib/api'
-import { useAuthStore } from '../../stores/authStore'
+import { isCurrentAuthEpoch, useAuthStore } from '../../stores/authStore'
 import { getPasswordValidationError } from '../../lib/passwordPolicy'
 import type { BoardTruck, FleetBoard as FleetBoardData } from './types'
 import { STATUS_META, fleetUnitLabel, fmt, pmState, initials } from './helpers'
@@ -231,9 +231,10 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
                   type="button"
                   role="menuitem"
                   className="is-danger"
-                  onClick={async () => {
+                  onClick={() => {
                     setProfileMenuOpen(false)
-                    try { await logout() } finally { navigate('/login', { replace: true }) }
+                    void logout()
+                    navigate('/login', { replace: true })
                   }}
                 >
                   <LogOut size={17} aria-hidden="true" />
@@ -823,7 +824,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function FleetSettingsModal({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate()
-  const { user, setUser, logout } = useAuthStore()
+  const { user, setUser, authSessionEpoch, logout } = useAuthStore()
 
   const [profile, setProfile] = useState({
     first_name: user?.first_name || '',
@@ -883,7 +884,8 @@ function FleetSettingsModal({ onClose }: { onClose: () => void }) {
       }
       if (emailChanged) payload.password = pwd.current_password
       const res = await api.put('/auth/me', payload)
-      if (res.data?.user) setUser(res.data.user)
+      if (!isCurrentAuthEpoch(authSessionEpoch)) return
+      if (res.data?.user) setUser(res.data.user, authSessionEpoch)
 
       if (wantsPasswordChange) {
         // Changing the password invalidates all sessions — force a fresh login.
@@ -891,8 +893,10 @@ function FleetSettingsModal({ onClose }: { onClose: () => void }) {
           current_password: pwd.current_password,
           new_password: pwd.new_password,
         })
+        if (!isCurrentAuthEpoch(authSessionEpoch)) return
         toast.success('Profile saved. Password changed — please log in again.')
-        try { await logout() } finally { navigate('/login', { replace: true }) }
+        void logout()
+        navigate('/login', { replace: true })
         return
       }
       // Email changes return a verification message; name/phone return the user.
@@ -900,6 +904,7 @@ function FleetSettingsModal({ onClose }: { onClose: () => void }) {
       closePwd()
       setProfileEditing(false)
     } catch (e: any) {
+      if (!isCurrentAuthEpoch(authSessionEpoch)) return
       toast.error(e.response?.data?.detail || 'Failed to save changes')
     } finally {
       setSaving(false)

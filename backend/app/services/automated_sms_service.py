@@ -163,8 +163,15 @@ async def domain_eligibility(db, op, tenant):
             if not invoice or invoice.deleted_at or invoice.voided_at or invoice.status in {InvoiceStatus.PAID, InvoiceStatus.CANCELLED}:
                 return 'domain_event_obsolete'
             order = await db.scalar(select(RepairOrder).where(RepairOrder.id == invoice.repair_order_id, RepairOrder.tenant_id == op.tenant_id).execution_options(populate_existing=True))
-            if not order or order.deleted_at or order.status == RepairOrderStatus.CANCELLED:
+            canonical_zelle = op.template_name == 'pending_zelle_staff_submit_sms' and event.startswith('zelle-attempt-report:')
+            if not order or order.status == RepairOrderStatus.CANCELLED or (order.deleted_at and not (canonical_zelle and invoice.accounting_policy == 'source_collection_hold')):
                 return 'domain_event_obsolete'
+            if canonical_zelle and invoice.accounting_policy == 'source_collection_hold':
+                from app.services.source_debt_handoff import invoice_handoff
+                try:
+                    await invoice_handoff(db,invoice,require_active=True)
+                except SettlementDomainError:
+                    return 'domain_event_obsolete'
             current_hash = await financial_snapshot(db, op.tenant_id, op.domain_event_id)
             routing_identity = [str(op.binding_id), op.twilio_account_sid, op.messaging_service_sid] if op.binding_id else []
             if op.payload_hash != digest([op.from_number, op.to_number, op.body, current_hash] + routing_identity):
@@ -178,6 +185,16 @@ async def domain_eligibility(db, op, tenant):
                     return 'financial_balance_review_required'
                 ordinal = int(event.removeprefix('reminder:'))
                 if invoice.status not in {InvoiceStatus.SENT, InvoiceStatus.OVERDUE} or ordinal < 1 or invoice.reminder_count < ordinal or invoice.zelle_pending_submitted_at or not tenant.invoice_reminders_enabled or order.customer_id != op.recipient_id or invoice.is_internal:
+                    return 'domain_event_obsolete'
+            elif canonical_zelle:
+                from app.db.models.invoice_settlement import InvoicePaymentAttempt
+                attempt_id=UUID(event.removeprefix('zelle-attempt-report:'))
+                attempt=await db.scalar(select(InvoicePaymentAttempt).where(
+                    InvoicePaymentAttempt.id==attempt_id,InvoicePaymentAttempt.invoice_id==invoice.id,
+                    InvoicePaymentAttempt.tenant_id==op.tenant_id,InvoicePaymentAttempt.deleted_at.is_(None))
+                    .execution_options(populate_existing=True))
+                evidence=attempt.manual_evidence if attempt else {}
+                if not attempt or attempt.rail!='zelle' or attempt.state!='pending' or evidence.get('transfer_sent_confirmed') is not True or not evidence.get('reported_at'):
                     return 'domain_event_obsolete'
             else:
                 if not invoice.zelle_pending_submitted_at:
@@ -254,6 +271,10 @@ async def eligibility(db, op, sender):
     elif op.recipient_kind == 'user':
         user = await db.scalar(select(User).where(User.id == op.recipient_id, User.tenant_id == op.tenant_id).execution_options(populate_existing=True))
         if not user or not user.is_active or user.deleted_at or user.role not in STAFF_ROLES or _normalize_for_twilio(user.phone or '') != op.to_number:
+            return 'recipient_unavailable'
+        if op.template_name == 'pending_zelle_staff_submit_sms' and user.role not in {
+            UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST,
+        }:
             return 'recipient_unavailable'
     elif op.recipient_kind == 'tenant_contact':
         if op.recipient_id != tenant.id or _normalize_for_twilio(tenant.phone or '') != op.to_number:

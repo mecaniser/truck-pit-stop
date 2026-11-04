@@ -1,5 +1,6 @@
-import { AlertTriangle, CheckCircle2, Clock3, RefreshCw } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { AlertTriangle, CheckCircle2, ChevronDown, Clock3, RefreshCw } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { ControlButton } from '@/components/ui/Controls'
 
 import { formatMoney, isPositiveMoney } from './money'
 import type { InvoiceSettlementSummary, PaymentAllocation } from './types'
@@ -43,6 +44,7 @@ export default function SettlementSummaryCard({
   audience?: 'staff' | 'customer'
   children?: ReactNode
 }) {
+  const [activityOpen, setActivityOpen] = useState(false)
   const dark = tone === 'dark'
   const panel = dark
     ? 'border-[#2a3245] bg-[#151b27] text-[#edf0f6]'
@@ -63,6 +65,14 @@ export default function SettlementSummaryCard({
     ['Pending', summary.active_pending_principal],
     ['Available to pay', summary.allocatable_balance],
   ]
+
+  if (summary.payment_verification_required) return (
+    <section className={`rounded-2xl border p-4 text-sm ${panel}`} aria-label="Invoice payment summary">
+      <h2 className="font-bold">Payment status needs review</h2>
+      <dl className="mt-3 flex justify-between gap-4"><dt>Balance due</dt><dd>Unavailable</dd></dl>
+      <p className={`mt-3 ${quiet}`}>Contact the shop before making another payment.</p>
+    </section>
+  )
 
   const customerCompact = audience === 'customer' && streamlined
   if (customerCompact && figures.length === 0 && !resolution && allocations.length === 0 && !children) return null
@@ -123,8 +133,10 @@ export default function SettlementSummaryCard({
 
       {!resolutionOnly && allocations.length > 0 && (
         <div className={`border-t ${divider}`}>
-          <p className={`px-3 pt-3 text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>Payment history</p>
-          <ol className={`divide-y ${dark ? 'divide-[#2a3245]' : 'divide-slate-200'}`}>
+          {customerCompact ? <ControlButton type="button" aria-expanded={activityOpen} aria-controls={`payment-activity-${summary.invoice_id}`} onClick={() => setActivityOpen(open => !open)} className="flex w-full items-center justify-between gap-3 px-3 text-sm font-semibold">
+            <span>Payment activity <span className={quiet}>({allocations.length})</span></span><ChevronDown size={16} aria-hidden="true" className={activityOpen ? 'rotate-180' : undefined} />
+          </ControlButton> : <p className={`px-3 pt-3 text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>Payment history</p>}
+          {(!customerCompact || activityOpen) && <ol id={`payment-activity-${summary.invoice_id}`}  className={`divide-y ${dark ? 'divide-[#2a3245]' : 'divide-slate-200'}`}>
             {allocations.map((allocation) => (
               <li key={allocation.id} className="flex items-start justify-between gap-3 px-3 py-2.5 text-sm">
                 <div className="min-w-0">
@@ -142,10 +154,10 @@ export default function SettlementSummaryCard({
                     </p>
                   )}
                 </div>
-                <span className="shrink-0 font-bold tabular-nums">{formatMoney(allocation.applied_principal_amount)}</span>
+                <span className="shrink-0 text-right font-bold tabular-nums">{allocation.state === 'pending' && <span className={`block text-[11px] font-normal ${quiet}`}>Requested</span>}{formatMoney(allocation.state === 'pending' ? allocation.principal_amount : allocation.applied_principal_amount)}</span>
               </li>
             ))}
-          </ol>
+          </ol>}
         </div>
       )}
     </section>

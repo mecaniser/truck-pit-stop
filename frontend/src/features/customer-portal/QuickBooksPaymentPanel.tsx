@@ -9,6 +9,8 @@ interface QuickBooksPaymentPanelProps {
   tokenUrl: string
   onSuccess: () => void
   onToken?: (token: string) => Promise<void>
+  /** The caller presents its server-verified result, including pending outcomes. */
+  onTokenHandlesResult?: boolean
   submitLabel?: string
   tone?: 'dark' | 'light'
   successMessage?: string
@@ -73,7 +75,7 @@ const validateFields = (fields: CardFields): CardFieldErrors => {
   return errors
 }
 
-export default function QuickBooksPaymentPanel({ invoiceId, tokenUrl, onSuccess, onToken, submitLabel, tone = 'dark', successMessage = 'Payment successful!', failureMessage = 'Payment could not be completed. Please try another method.', processingLabel = 'Processing...', onProcessingChange }: QuickBooksPaymentPanelProps) {
+export default function QuickBooksPaymentPanel({ invoiceId, tokenUrl, onSuccess, onToken, onTokenHandlesResult = false, submitLabel, tone = 'dark', successMessage = 'Payment successful!', failureMessage = 'Payment could not be completed. Please try another method.', processingLabel = 'Processing...', onProcessingChange }: QuickBooksPaymentPanelProps) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fields, setFields] = useState<CardFields>(EMPTY_FIELDS)
@@ -134,6 +136,7 @@ export default function QuickBooksPaymentPanel({ invoiceId, tokenUrl, onSuccess,
 
       if (onToken) {
         await onToken(tokenPayload.value)
+        if (onTokenHandlesResult) return
         toast.success(successMessage)
         onSuccess()
         return

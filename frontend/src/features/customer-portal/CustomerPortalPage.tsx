@@ -1,7 +1,8 @@
+import { formatCalendarDate } from '@/lib/calendarDate'
 import { customerInvoiceMemo, customerInvoiceLabel } from '@/lib/invoiceIdentity'
 import { ControlButton } from '@/components/ui/Controls'
 import CashReceiptBreakdown from './CashReceiptBreakdown'
-import { useState, useEffect, useRef, type MouseEvent as ReactMouseEvent, type TouchEvent } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { Spinner } from '@/components/ui'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
@@ -14,10 +15,11 @@ import BookingPage from '../booking/BookingPage'
 import AppointmentsPage from '../appointments/AppointmentsPage'
 import ProfileSettingsPage from './ProfileSettingsPage'
 import CustomerInvoicePage from './CustomerInvoicePage'
-import PortalDashboardPage from './PortalDashboardPage'
+import PortalDashboardPage, { PortalInvoicesPage } from './PortalDashboardPage'
+import { getPortalItems, resolveVehicleScope, scopedPortalPath } from './portal-context'
 import PortalVehiclesPage from './PortalVehiclesPage'
 import MotivePortalPage, { MotivePortalEntry } from './MotivePortalPage'
-import { Camera, CheckCircle, ChevronDown, ChevronUp, ClipboardList, Truck, Wrench, CreditCard, FileText, ArrowLeft, Calendar, Download, Home, User, History, MoreHorizontal, ChevronLeft } from 'lucide-react'
+import { Camera, CheckCircle, ChevronDown, ChevronUp, ClipboardList, Truck, Wrench, CreditCard, FileText, ArrowLeft, Calendar, Download, Home, User } from 'lucide-react'
 import type { Stripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import toast from 'react-hot-toast'
@@ -347,7 +349,7 @@ function CustomerDashboard() {
                           )}
                         </span>
                         {order.status === 'invoiced' && order.invoice_due_date && (
-                          <span className="text-amber-200">Due {format(new Date(order.invoice_due_date), 'MMM d, yyyy')}</span>
+                          <span className="text-amber-200">Due {formatCalendarDate(order.invoice_due_date)}</span>
                         )}
                       </p>
                       {order.description && (
@@ -716,45 +718,52 @@ function CustomerRepairs() {
   const [showZelleDetails, setShowZelleDetails] = useState(false)
   const [showQuickBooksPayment, setShowQuickBooksPayment] = useState(false)
   const isActiveRepairsView = isActiveRepairsSearch(location.search)
+  const requestedVehicle = new URLSearchParams(location.search).get('vehicle_id')
   
-  const { data: orders, isLoading } = useQuery<RepairOrder[]>({
-    queryKey: ['repair-orders'],
-    queryFn: async () => {
-      const pageSize = 100
-      let skip = 0
-      const all: RepairOrder[] = []
-      while (true) {
-        const response = await api.get('/repair-orders', { params: { paginated: true, skip, limit: pageSize } })
-        const data = response.data
-        all.push(...data.items)
-        if (!data.has_more || data.items.length === 0) break
-        skip = data.skip + data.limit
-      }
-      return all
-    },
+  const tenant = user?.tenant_id
+  const customer = user?.customer_id
+  const vehiclesQuery = useQuery({
+    queryKey: ['vehicles', tenant, customer],
+    queryFn: ({ signal }) => getPortalItems<Vehicle>('/vehicles', {}, signal),
   })
+  const ordersQuery = useQuery({
+    queryKey: ['repair-orders', tenant, customer],
+    queryFn: ({ signal }) => getPortalItems<RepairOrder>('/repair-orders', {}, signal),
+  })
+  const scope = resolveVehicleScope(vehiclesQuery.data || [], requestedVehicle)
+  const orders = useMemo(() => scope.invalid ? [] : ordersQuery.data?.filter(order => !requestedVehicle || order.vehicle_id === scope.vehicleId), [scope.invalid, scope.vehicleId, ordersQuery.data, requestedVehicle])
+  const selectedOrderAuthorized = Boolean(selectedOrder && orders?.some(order => order.id === selectedOrder.id))
 
-  const { data: allInvoices = [] } = useQuery<Invoice[]>({
-    queryKey: ['customer-history-invoices'],
-    queryFn: async () => (await api.get('/invoices')).data,
+  useEffect(() => {
+    setSelectedOrder(null)
+    setShowPayment(false)
+    setStripeOptions(null)
+    setStripeInstance(null)
+    setShowQuickBooksPayment(false)
+    setShowZelleDetails(false)
+  }, [tenant, customer, requestedVehicle])
+
+  const { data: allInvoices = [], isError: invoicesFailed, refetch: retryInvoices } = useQuery<Invoice[]>({
+    queryKey: ['customer-history-invoices', tenant, customer],
+    queryFn: ({ signal }) => getPortalItems<Invoice>('/invoices', {}, signal),
   })
 
   const { data: selectedOrderDetail } = useQuery<RepairOrderDetail>({
-    queryKey: ['repair-order-detail-customer', selectedOrder?.id],
+    queryKey: ['repair-order-detail-customer', selectedOrder?.id, tenant, customer],
     queryFn: async () => {
       const response = await api.get(`/repair-orders/${selectedOrder!.id}/detail`)
       return response.data
     },
-    enabled: !!selectedOrder?.id,
+    enabled: selectedOrderAuthorized && !!selectedOrder?.id,
   })
 
   const { data: repairPhotos = [] } = useQuery<RepairOrderPhoto[]>({
-    queryKey: ['repair-order-photos-customer', selectedOrder?.id],
+    queryKey: ['repair-order-photos-customer', selectedOrder?.id, tenant, customer],
     queryFn: async () => {
       const response = await api.get(`/repair-orders/${selectedOrder!.id}/photos`)
       return response.data
     },
-    enabled: !!selectedOrder?.id && CUSTOMER_PHOTO_REPAIR_STATUSES.includes(selectedOrder.status),
+    enabled: selectedOrderAuthorized && !!selectedOrder?.id && CUSTOMER_PHOTO_REPAIR_STATUSES.includes(selectedOrder.status),
   })
 
   // Handle navigation state to auto-select an order
@@ -772,7 +781,7 @@ function CustomerRepairs() {
 
   // Fetch invoice for selected order if it's invoiced
   const { data: invoice } = useQuery<Invoice | null>({
-    queryKey: ['invoice', selectedOrder?.id],
+    queryKey: ['invoice', selectedOrder?.id, tenant, customer],
     queryFn: async () => {
       const response = await api.get('/invoices', {
         params: { repair_order_id: selectedOrder?.id }
@@ -780,22 +789,22 @@ function CustomerRepairs() {
       const invoices = response.data as Invoice[]
       return invoices[0] || null
     },
-    enabled: !!selectedOrder && ['invoiced', 'paid'].includes(selectedOrder.status),
+    enabled: selectedOrderAuthorized && !!selectedOrder && ['invoiced', 'paid'].includes(selectedOrder.status),
   })
 
   const { data: zelleInfo } = useQuery<ZelleInfoResponse>({
-    queryKey: ['customer-zelle-info', invoice?.id],
+    queryKey: ['customer-zelle-info', invoice?.id, tenant, customer],
     queryFn: async () => {
       const response = await api.get(`/payments/zelle-info/${invoice!.id}`)
       return response.data as ZelleInfoResponse
     },
-    enabled: !!invoice && selectedOrder?.status === 'invoiced',
+    enabled: selectedOrderAuthorized && !!invoice && selectedOrder?.status === 'invoiced',
   })
 
   const { data: quickBooksPayment, isLoading: isQuickBooksPaymentLoading } = useQuery<QuickBooksPaymentAvailability>({
-    queryKey: ['quickbooks-payment-availability', invoice?.id],
+    queryKey: ['quickbooks-payment-availability', invoice?.id, tenant, customer],
     queryFn: async () => (await api.get(`/quickbooks/payments/availability/${invoice!.id}`)).data,
-    enabled: !!invoice && selectedOrder?.status === 'invoiced',
+    enabled: selectedOrderAuthorized && !!invoice && selectedOrder?.status === 'invoiced',
   })
 
   const zelleAmount = invoice
@@ -840,12 +849,12 @@ function CustomerRepairs() {
   }
 
   const { data: authorizationHistory } = useQuery<AuthorizationHistory>({
-    queryKey: ['authorization-history', selectedOrder?.id],
+    queryKey: ['authorization-history', selectedOrder?.id, tenant, customer],
     queryFn: async () => {
       const response = await api.get(`/quotes/repair-order/${selectedOrder!.id}/history`)
       return response.data as AuthorizationHistory
     },
-    enabled: !!selectedOrder?.id && selectedOrder.quote_sent === true,
+    enabled: selectedOrderAuthorized && !!selectedOrder?.id && selectedOrder.quote_sent === true,
   })
   const selectedQuote = latestCustomerVisibleAuthorization(authorizationHistory?.revisions)
 
@@ -986,7 +995,7 @@ function CustomerRepairs() {
     },
   })
 
-  if (isLoading) {
+  if (ordersQuery.isLoading || vehiclesQuery.isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
         <Spinner size="xl" />
@@ -994,8 +1003,15 @@ function CustomerRepairs() {
     )
   }
 
+  if (ordersQuery.isError || vehiclesQuery.isError) {
+    return <div className="cp-root cp-panel cp-error" role="alert"><div><h1>Repairs unavailable</h1><p>We couldn’t load your repairs and vehicles.</p></div><ControlButton className="cp-secondary" onClick={() => { void ordersQuery.refetch(); void vehiclesQuery.refetch() }}>Try again</ControlButton></div>
+  }
+  if (scope.invalid) {
+    return <div className="cp-root cp-panel cp-error" role="alert"><div><h1>Vehicle unavailable</h1><p>This vehicle is not available in your account. Choose one of your vehicles to view repairs.</p><Link className="cp-secondary" to={isActiveRepairsView ? '/portal/repairs?view=active' : '/portal/repairs'}>View all vehicles</Link></div></div>
+  }
+
   // Detail view for selected order
-  if (selectedOrder) {
+  if (selectedOrder && selectedOrderAuthorized) {
     const displayOrder = selectedOrderDetail ?? selectedOrder
     const services = (() => {
       try {
@@ -1365,7 +1381,7 @@ function CustomerRepairs() {
   if (isActiveRepairsView) {
     const activeOrders = (orders?.filter(isActiveRepair) ?? [])
       .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-    const activeInvoiceByOrder = new Map(allInvoices.map(item => [item.repair_order_id, item]))
+    const activeInvoiceByOrder = new Map((invoicesFailed ? [] : allInvoices).map(item => [item.repair_order_id, item]))
     const attentionCount = activeOrders.filter(order =>
       order.status === 'invoiced' || (order.quote_sent === true && order.quote_approved !== true),
     ).length
@@ -1381,7 +1397,7 @@ function CustomerRepairs() {
             </p>
           </div>
           <Link data-db-control="action"
-            to="/portal/repairs"
+            to={scopedPortalPath('/portal/repairs', requestedVehicle)}
             className="inline-flex min-h-[44px] items-center justify-center rounded-[10px] border border-[#272d3d] bg-[#191d2a] px-4 text-xs font-bold text-[#c9cdd8] hover:border-[#343b52]"
           >
             View repair history
@@ -1457,9 +1473,9 @@ function CustomerRepairs() {
   }
 
   // List view - only finalized orders
-  const finalizedStatuses = ['paid', 'completed', 'cancelled']
+  const finalizedStatuses = ['paid', 'completed', 'invoiced', 'cancelled']
   const historyOrders = orders?.filter(o => finalizedStatuses.includes(o.status)) ?? []
-  const invoiceByOrder = new Map(allInvoices.map(item => [item.repair_order_id, item]))
+  const invoiceByOrder = new Map((invoicesFailed ? [] : allInvoices).map(item => [item.repair_order_id, item]))
   const filteredHistory = statusFilter === 'all'
     ? historyOrders
     : historyOrders.filter(order => order.status === statusFilter)
@@ -1470,14 +1486,6 @@ function CustomerRepairs() {
       groups[key] = [...(groups[key] || []), order]
       return groups
     }, {})
-  const paidThisYear = historyOrders.filter(order =>
-    order.status === 'paid' && new Date(order.updated_at).getFullYear() === new Date().getFullYear(),
-  )
-  const paidYtd = paidThisYear.reduce((sum, order) => {
-    const invoiceForOrder = invoiceByOrder.get(order.id)
-    return sum + Number(invoiceForOrder?.total_amount || getOrderTotal(order))
-  }, 0)
-
   const downloadHistoryCsv = () => {
     const rows = [
       ['Date', 'Repair order', 'Services', 'Status', 'Amount'],
@@ -1488,7 +1496,7 @@ function CustomerRepairs() {
           order.order_number,
           order.description || '',
           order.status,
-          Number(invoiceForOrder?.total_amount || getOrderTotal(order)).toFixed(2),
+          invoiceForOrder ? Number(invoiceForOrder.total_amount).toFixed(2) : 'Unavailable',
         ]
       }),
     ]
@@ -1509,7 +1517,7 @@ function CustomerRepairs() {
         <div>
           <h1 className="text-2xl font-extrabold tracking-[-0.01em]">Repair history</h1>
           <p className="mt-1 text-[13px] text-[#8b92a5]">
-            {paidThisYear.length} completed orders · <Money className="font-bold text-[#3ecf6f]">{formatMoney(paidYtd)} paid in {new Date().getFullYear()}</Money>
+            {historyOrders.length} past repairs
           </p>
         </div>
         {historyOrders.length > 12 && (
@@ -1538,23 +1546,20 @@ function CustomerRepairs() {
         </div>
       </div>
 
+      {invoicesFailed && <div role="alert" className="cp-panel cp-error"><p>Invoice amounts couldn’t load.</p><ControlButton onClick={()=>{void retryInvoices()}}>Try again</ControlButton></div>}
       {Object.keys(historyGroups).length > 0 ? (
         <div className="space-y-5">
           {Object.entries(historyGroups).map(([month, monthOrders]) => {
-            const monthTotal = monthOrders.reduce((sum, order) => {
-              const invoiceForOrder = invoiceByOrder.get(order.id)
-              return sum + Number(invoiceForOrder?.total_amount || getOrderTotal(order))
-            }, 0)
             return (
               <section key={month}>
                 <div className="mb-2 flex items-center justify-between gap-4">
                   <h2 className="text-[11px] font-extrabold uppercase tracking-[0.1em]">{month}</h2>
-                  <span className="text-[11px] font-bold text-[#5c6375]">{monthOrders.length} orders · {formatMoney(monthTotal)}</span>
+                  <span className="text-[11px] font-bold text-[#5c6375]">{monthOrders.length} orders</span>
                 </div>
                 <div className="space-y-2">
                   {monthOrders.map(order => {
                     const invoiceForOrder = invoiceByOrder.get(order.id)
-                    const amount = Number(invoiceForOrder?.total_amount || getOrderTotal(order))
+                    const amount = invoiceForOrder ? invoiceForOrder.total_amount : null
                     return (
                 <ControlButton controlKind="content"
                   key={order.id}
@@ -1575,7 +1580,7 @@ function CustomerRepairs() {
                               : 'border-[#272d3d] bg-[#191d2a] text-[#8b92a5]'
                           }`}>{order.status}</span>
                         )}
-                        <Money className="col-start-2 text-sm font-extrabold sm:col-start-auto sm:text-right">{formatMoney(amount)}</Money>
+                        <Money className="col-start-2 text-sm font-extrabold sm:col-start-auto sm:text-right">{amount===null?'Amount unavailable':formatMoney(amount)}</Money>
                         {invoiceForOrder && (
                           <a
                             href={`/api/v1/invoices/${invoiceForOrder.id}/pdf`}
@@ -1607,18 +1612,19 @@ function CustomerRepairs() {
   )
 }
 
+function PortalRepairNavigation({vehicleId}:{vehicleId:string|null}) {
+  const location=useLocation()
+  return <nav aria-label="Repair sections" className="mb-5 flex flex-wrap gap-2">{[['Current','/portal/repairs?view=active'],['Appointments','/portal/appointments'],['History','/portal/repairs']].map(([label,path])=><Link key={path} data-db-control="action" className={`cp-secondary ${location.pathname+location.search===scopedPortalPath(path,vehicleId)?'bg-[#312a54]':''}`} to={scopedPortalPath(path,vehicleId)}>{label}</Link>)}</nav>
+}
+
 export default function CustomerPortalPage() {
   const location = useLocation()
   const portalScrollRef = useRef<HTMLElement>(null)
   const { user } = useAuthStore()
   const { data: tenantBranding } = useTenantBranding()
-  const [mobileNavPage, setMobileNavPage] = useState<'primary' | 'secondary'>('primary')
-  const mobileNavTouchStart = useRef<{ x: number; y: number } | null>(null)
-  const suppressMobileNavClick = useRef(false)
   const profileNameParts = [user?.first_name, user?.last_name].filter(
     (part): part is string => Boolean(part?.trim()),
   )
-  const profileDisplayName = profileNameParts.join(' ').trim() || user?.email || 'Account'
   const portalBrandName = tenantBranding?.name || user?.tenant_name || 'Your shop'
   const profileMonogram = (
     profileNameParts.map((part) => part.charAt(0)).join('') ||
@@ -1648,67 +1654,25 @@ export default function CustomerPortalPage() {
 
   useEffect(() => {
     portalScrollRef.current?.scrollTo({ top: 0 })
-    const isOverflowRoute =
-      location.pathname === '/portal/repairs' ||
-      location.pathname.startsWith('/portal/invoices/') ||
-      location.pathname === '/portal/settings'
-    setMobileNavPage(isOverflowRoute ? 'secondary' : 'primary')
-  }, [location.pathname])
+  }, [location.pathname, location.search])
 
+  const requestedVehicle = new URLSearchParams(location.search).get('vehicle_id')
   const navLinks = [
-    { to: '/portal', label: 'Dashboard', mobileLabel: 'Home', exact: true, icon: Home },
-    { to: '/portal/services', label: 'Services', mobileLabel: 'Services', icon: Wrench },
-    { to: '/portal/appointments', label: 'Appointments', mobileLabel: 'Appts', icon: Calendar },
-    { to: '/portal/vehicles', label: 'Vehicles', mobileLabel: 'Vehicles', icon: Truck },
-    { to: '/portal/repairs', label: 'History', mobileLabel: 'History', icon: History },
+    {to:'/portal',label:'Home',exact:true,icon:Home},
+    {to:'/portal/repairs?view=active',label:'Repairs',icon:Wrench},
+    {to:'/portal/invoices',label:'Invoices',icon:FileText},
+    {to:'/portal/vehicles',label:'Vehicles',icon:Truck},
+    {to:'/portal/settings',label:'Account',icon:User},
   ]
-
-  const isActive = (path: string, exact?: boolean) =>
-    exact
-      ? location.pathname === path
-      : location.pathname === path || (path === '/portal/services' && location.pathname.startsWith('/portal/book/'))
+  const isActive = (path:string, exact?:boolean) => exact ? location.pathname === '/portal' : path.startsWith('/portal/repairs') ? ['/portal/repairs','/portal/appointments','/portal/services'].includes(location.pathname) || location.pathname.startsWith('/portal/book/') : location.pathname.startsWith(path)
 
   const isInvoicePage = location.pathname.startsWith('/portal/invoices/')
-  const mobilePrimaryLinks = navLinks.slice(0, 4)
-  const isMobileMoreActive =
-    location.pathname === '/portal/settings' ||
-    location.pathname === '/portal/repairs' ||
-    isInvoicePage
-
-  const handleMobileNavTouchStart = (event: TouchEvent<HTMLDivElement>) => {
-    const touch = event.touches[0]
-    if (touch) mobileNavTouchStart.current = { x: touch.clientX, y: touch.clientY }
-  }
-
-  const handleMobileNavTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
-    const start = mobileNavTouchStart.current
-    const touch = event.changedTouches[0]
-    mobileNavTouchStart.current = null
-    if (!start || !touch) return
-
-    const deltaX = touch.clientX - start.x
-    const deltaY = touch.clientY - start.y
-    if (Math.abs(deltaX) < 36 || Math.abs(deltaX) <= Math.abs(deltaY) * 1.2) return
-
-    suppressMobileNavClick.current = true
-    window.setTimeout(() => {
-      suppressMobileNavClick.current = false
-    }, 350)
-    if (deltaX < 0 && mobileNavPage === 'primary') setMobileNavPage('secondary')
-    if (deltaX > 0 && mobileNavPage === 'secondary') setMobileNavPage('primary')
-  }
-
-  const handleMobileNavClickCapture = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!suppressMobileNavClick.current) return
-    suppressMobileNavClick.current = false
-    event.preventDefault()
-    event.stopPropagation()
-  }
 
   return (
-    <div data-db-touch-controls className="fixed inset-0 grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-[#0d1018] font-['Helvetica_Neue',Helvetica,Arial,sans-serif] text-[#eceef4]">
+    <div data-customer-portal data-db-touch-controls className="fixed inset-0 grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-[#0d1018] font-['Helvetica_Neue',Helvetica,Arial,sans-serif] text-[#eceef4]">
       <PortalDocumentTitle portalBrandName={portalBrandName} />
       <nav
+        aria-label="Customer portal navigation"
         className="relative z-50 min-w-0 shrink-0 border-b border-[#1e2432] bg-[#0a0d14]"
         style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
@@ -1730,10 +1694,11 @@ export default function CustomerPortalPage() {
 
             <MotivePortalEntry />
             <div className="hidden items-center gap-1.5 md:flex">
-              {!isInvoicePage && navLinks.map(link => (
+              {navLinks.map(link => (
                 <Link data-db-control="action"
                   key={link.to}
-                  to={link.to}
+                  aria-current={isActive(link.to, link.exact) ? 'page' : undefined}
+                  to={scopedPortalPath(link.to,requestedVehicle)}
                   className={`flex h-[34px] items-center rounded-lg px-3 text-[13px] font-bold ${
                     isActive(link.to, link.exact)
                       ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
@@ -1743,17 +1708,7 @@ export default function CustomerPortalPage() {
                   {link.label}
                 </Link>
               ))}
-              <Link
-                to="/portal/settings"
-                aria-label={`Open account for ${profileDisplayName}`}
-                className={`ml-2 flex h-8 w-8 items-center justify-center rounded-full border text-[10px] font-extrabold ${
-                  location.pathname === '/portal/settings'
-                    ? 'border-[#c9bfff] bg-[#312a54] text-white'
-                    : 'border-[#8b7cf7] bg-[#241f3d] text-[#c9bfff]'
-                }`}
-              >
-                {profileMonogram}
-              </Link>
+              <span aria-hidden="true" className="ml-2 flex h-8 w-8 items-center justify-center rounded-full border border-[#8b7cf7] bg-[#241f3d] text-[10px] font-extrabold text-[#c9bfff]">{profileMonogram}</span>
             </div>
 
           </div>
@@ -1783,125 +1738,17 @@ export default function CustomerPortalPage() {
           <Route path="" element={<PortalDashboardPage />} />
           <Route path="services" element={<ServicesPage />} />
           <Route path="book/:serviceId" element={<BookingPage />} />
-          <Route path="appointments" element={<AppointmentsPage />} />
+          <Route path="appointments" element={<><PortalRepairNavigation vehicleId={requestedVehicle}/><AppointmentsPage /></>} />
           <Route path="vehicles" element={<PortalVehiclesPage />} />
-          <Route path="repairs" element={<CustomerRepairs />} />
+          <Route path="repairs" element={<><PortalRepairNavigation vehicleId={requestedVehicle}/><CustomerRepairs /></>} />
+          <Route path="invoices" element={<PortalInvoicesPage />} />
           <Route path="invoices/:invoiceId" element={<CustomerInvoicePage />} />
           <Route path="settings" element={<ProfileSettingsPage />} />
           <Route path="integrations" element={<MotivePortalPage />} />
         </Routes>
       </main>
 
-      <div className={`relative z-50 min-w-0 shrink-0 md:hidden ${isInvoicePage ? 'hidden' : ''}`}>
-        <div
-          className="min-w-0 overflow-hidden border-t border-[#232939] bg-[#0a0d14]/95 pt-1.5 shadow-[0_-12px_32px_rgba(0,0,0,0.28)] backdrop-blur-xl"
-          style={{
-            paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))',
-            paddingLeft: 'max(0.25rem, env(safe-area-inset-left))',
-            paddingRight: 'max(0.25rem, env(safe-area-inset-right))',
-          }}
-          onTouchStart={handleMobileNavTouchStart}
-          onTouchEnd={handleMobileNavTouchEnd}
-          onClickCapture={handleMobileNavClickCapture}
-          aria-label="Customer portal mobile navigation"
-        >
-          <div
-            className={`flex w-[200%] transform-gpu transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-              mobileNavPage === 'secondary' ? '-translate-x-1/2' : 'translate-x-0'
-            }`}
-          >
-            <div className="flex w-1/2 shrink-0 px-1" aria-hidden={mobileNavPage !== 'primary'}>
-              {mobilePrimaryLinks.map(link => {
-                const Icon = link.icon
-                const isLinkActive = isActive(link.to, link.exact)
-                return (
-                  <Link
-                    key={link.to}
-                    to={link.to}
-                    tabIndex={mobileNavPage === 'primary' ? 0 : -1}
-                    className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
-                      isLinkActive
-                        ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
-                        : 'text-[#737b8f] hover:text-[#c9cdd8]'
-                    }`}
-                  >
-                    <Icon className="h-5 w-5" />
-                    <span>{link.mobileLabel}</span>
-                  </Link>
-                )
-              })}
-              <ControlButton controlKind="action"
-                type="button"
-                onClick={() => setMobileNavPage('secondary')}
-                tabIndex={mobileNavPage === 'primary' ? 0 : -1}
-                aria-expanded={mobileNavPage === 'secondary'}
-                aria-controls="portal-mobile-secondary-navigation"
-                className={`flex  min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
-                  isMobileMoreActive
-                    ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
-                    : 'text-[#737b8f] hover:text-[#c9cdd8]'
-                }`}
-              >
-                <MoreHorizontal className="h-5 w-5" />
-                <span>More</span>
-              </ControlButton>
-            </div>
-
-            <div
-              id="portal-mobile-secondary-navigation"
-              className="flex w-1/2 shrink-0 px-1"
-              aria-hidden={mobileNavPage !== 'secondary'}
-            >
-              <ControlButton controlKind="content"
-                type="button"
-                onClick={() => setMobileNavPage('primary')}
-                tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
-                className="flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold text-[#737b8f] transition-colors hover:text-[#c9cdd8]"
-                aria-label="Back to primary navigation"
-              >
-                <ChevronLeft className="h-5 w-5" />
-                <span>Back</span>
-              </ControlButton>
-              <Link
-                to="/portal/repairs?view=active"
-                tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
-                className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
-                  location.pathname === '/portal/repairs' && isActiveRepairsSearch(location.search)
-                    ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
-                    : 'text-[#737b8f] hover:text-[#c9cdd8]'
-                }`}
-              >
-                <Wrench className="h-5 w-5" />
-                <span>Repairs</span>
-              </Link>
-              <Link
-                to="/portal/repairs"
-                tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
-                className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
-                  location.pathname === '/portal/repairs' && !isActiveRepairsSearch(location.search)
-                    ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
-                    : 'text-[#737b8f] hover:text-[#c9cdd8]'
-                }`}
-              >
-                <History className="h-5 w-5" />
-                <span>History</span>
-              </Link>
-              <Link
-                to="/portal/settings"
-                tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
-                className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
-                  location.pathname === '/portal/settings'
-                    ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
-                    : 'text-[#737b8f] hover:text-[#c9cdd8]'
-                }`}
-              >
-                <User className="h-5 w-5" />
-                <span>Account</span>
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
+      <nav aria-label="Customer portal mobile navigation" className="relative z-50 flex min-w-0 shrink-0 justify-around border-t border-[#232939] bg-[#0a0d14] px-1 py-2 md:hidden" style={{paddingBottom:'max(.5rem, env(safe-area-inset-bottom))'}}>{navLinks.map(link=><Link key={link.label} to={scopedPortalPath(link.to,requestedVehicle)} aria-current={isActive(link.to,link.exact)?'page':undefined} className={`flex min-h-[48px] min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-bold ${isActive(link.to,link.exact)?'bg-[#8b7cf7]/10 text-[#c9bfff]':'text-[#a2a9bb]'}`}><link.icon className="h-5 w-5"/><span>{link.label}</span></Link>)}</nav>
     </div>
   )
 }

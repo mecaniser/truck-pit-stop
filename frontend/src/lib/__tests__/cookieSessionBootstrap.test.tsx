@@ -10,7 +10,7 @@ const get = vi.fn()
 const post = vi.fn()
 beforeEach(() => {
   get.mockReset(); post.mockReset()
-  useAuthStore.setState({ isAuthenticated: false, authProvider: 'workos', user: null, logoutInProgress: false })
+  useAuthStore.setState({ isAuthenticated: false, authProvider: 'workos', user: null, logoutInProgress: false, explicitlySignedOut: false, browserSessionId: null })
   vi.spyOn(axios, 'create').mockReturnValue({ get, post } as never)
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers() })
@@ -40,6 +40,25 @@ describe('cookie session bootstrap', () => {
     await waitFor(() => expect(result.current.checkingSession).toBe(false))
     expect(result.current.endReason).toBe('session_expired')
     expect(useAuthStore.getState().isAuthenticated).toBe(false)
+  })
+  it.each(['signed-out', 'replacement'] as const)('discards a late cookie response after a peer %s transition', async phase => {
+    let finish!: (data: { data: typeof user }) => void
+    get.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    renderHook(useCookieSessionBootstrap)
+    // A previous client may not have written a browser session ID. Model a
+    // suspended tab which has not yet received the storage event.
+    const replacement = { ...user, id: 'owner-b', tenant_id: 'shop-b' }
+    const token = `header.${btoa(JSON.stringify({ exp: Date.now() / 1000 + 600 }))}.signature`
+    const saved = phase === 'replacement'
+      ? { isAuthenticated: true, authProvider: 'legacy', user: replacement, token }
+      : { isAuthenticated: false, user: null, explicitlySignedOut: true }
+    await act(async () => {
+      localStorage.setItem('auth-storage', JSON.stringify({ version: 0, state: saved }))
+      finish({ data: user })
+    })
+    if (phase === 'replacement') expect(useAuthStore.getState().user?.id).toBe('owner-b')
+    else expect(useAuthStore.getState()).toMatchObject({ user: null, explicitlySignedOut: true })
+    expect(post).not.toHaveBeenCalled()
   })
   it('does not restore a stale bootstrap response after a new login', async () => {
     let resolve!: (value: unknown) => void

@@ -109,6 +109,8 @@ class InvoiceSettlementSummary(BaseModel):
     currency: str = "USD"
     principal_total: Money
     confirmed_principal: Money
+    prepayment_applied_amount: Optional[str] = None
+    payment_verification_required: bool = False
     active_pending_principal: Money
     outstanding_balance: Money
     allocatable_balance: Money
@@ -139,6 +141,7 @@ class SenderEvidence(BaseModel):
 
 
 class PaymentAttemptCreate(BaseModel):
+    transfer_sent_confirmed: StrictBool = False
     amount: Money
     rail: PaymentRail
     expected_settlement_version: int = Field(ge=1)

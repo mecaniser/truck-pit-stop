@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from app.services.invoice_identity import load_invoice_display_number, pdf_filename_for_number
 from app.services.source_debt_handoff import source_collection_for_invoice, is_collection, invoice_handoff
 from app.services.invoice_payment_presentation import InvoicePaymentSummary, load_payment_summary
@@ -500,11 +501,12 @@ async def read_guest_invoice_settlement(
     body: TokenRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    invoice, _order, customer, tenant = await _load_db048_guest_context(db, body.token)
-    settlement = await _settlement_for_read(
-        db, invoice=invoice, customer_id=customer.id, tenant=tenant,
-    )
-    return await settlement_summary(db, settlement, tenant, audience="guest")
+    with getattr(db, 'no_autoflush', nullcontext()):
+        invoice, _order, customer, tenant = await _load_db048_guest_context(db, body.token)
+        settlement = await _settlement_for_read(
+            db, invoice=invoice, customer_id=customer.id, tenant=tenant,
+        )
+        return await settlement_summary(db, settlement, tenant, audience="guest")
 
 
 @router.post("/allocations", response_model=PaymentAllocationPage)
@@ -514,14 +516,15 @@ async def read_guest_invoice_allocations(
     body: GuestSettlementAllocationsRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    invoice, _order, customer, tenant = await _load_db048_guest_context(db, body.token)
-    await _settlement_for_read(
-        db, invoice=invoice, customer_id=customer.id, tenant=tenant,
-    )
-    return await allocation_page(
-        db, invoice=invoice, cursor=body.cursor, limit=body.limit,
-        audience="guest",
-    )
+    with getattr(db, 'no_autoflush', nullcontext()):
+        invoice, _order, customer, tenant = await _load_db048_guest_context(db, body.token)
+        await _settlement_for_read(
+            db, invoice=invoice, customer_id=customer.id, tenant=tenant,
+        )
+        return await allocation_page(
+            db, invoice=invoice, cursor=body.cursor, limit=body.limit,
+            audience="guest",
+        )
 
 
 @router.post("/overpayments/{overpayment_id}/credit-consent")
@@ -582,6 +585,7 @@ async def create_guest_invoice_payment_attempt(
         source="guest_token",
         subject_type="guest",
         subject_id=customer.id,
+        transfer_sent_confirmed=body.transfer_sent_confirmed,
         sender_evidence=(
             body.sender_evidence.model_dump(exclude_none=True)
             if body.sender_evidence
@@ -606,6 +610,9 @@ async def create_guest_invoice_payment_attempt(
         await db.commit()
     else:
         await db.commit()
+    if body.rail == 'zelle' and body.transfer_sent_confirmed and not creation.replayed:
+        from app.services.zelle_transfer_reports import broadcast_report_invalidation
+        await broadcast_report_invalidation(db,invoice=invoice,customer_id=customer.id)
     return await attempt_response(
         db,
         creation.attempt,
@@ -747,14 +754,15 @@ async def submit_guest_zelle_payment(
         lock=True,
     ) if tenant else None
     if settlement is not None:
-        principal = money(body.amount if body.amount is not None else allocatable_balance(settlement))
-        key = (
-            idempotency_header
-            or f"compat:guest-zelle:{invoice.id}:{customer.id}:{principal}"
-        ).strip()
+        from app.services.zelle_transfer_reports import compatibility_report_intent
+        key, original_amount = await compatibility_report_intent(
+            db, invoice=invoice, subject_type="guest", subject_id=customer.id,
+            amount=body.amount, idempotency_header=idempotency_header,
+        )
+        principal = original_amount if original_amount is not None else money(allocatable_balance(settlement))
         if not key or len(key) > 255:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid Idempotency-Key")
-        await create_attempt(
+        creation = await create_attempt(
             db,
             invoice=invoice,
             tenant=tenant,
@@ -767,12 +775,24 @@ async def submit_guest_zelle_payment(
             source="compatibility_adapter",
             subject_type="guest",
             subject_id=None,
+            transfer_sent_confirmed=True,
             sender_evidence={
                 "sender_email": sender_email,
                 "sender_phone": sender_phone,
                 "notes": notes,
-                "compatibility_submitted_at": compatibility_submitted_at.isoformat(),
+                **({"compatibility_submitted_at": invoice.zelle_pending_submitted_at.isoformat()}
+                   if invoice.zelle_pending_submitted_at else {}),
             },
+        )
+
+        await db.commit()
+        if not creation.replayed:
+            from app.services.zelle_transfer_reports import broadcast_report_invalidation
+            await broadcast_report_invalidation(db,invoice=invoice,customer_id=customer.id)
+        return SubmitGuestZellePaymentResponse(
+            status="success",
+            message="Transfer reported. Shop staff will verify receipt.",
+            pending_zelle_confirmation=True,
         )
 
     was_pending = invoice.pending_zelle_confirmation

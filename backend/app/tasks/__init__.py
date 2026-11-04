@@ -30,9 +30,11 @@ celery_app.conf.update(
         "app.tasks.quickbooks_sync",
         "app.tasks.google_reviews",
         "app.tasks.motive",
+        "app.tasks.booking_payments",
     ),
     # Beat schedule for periodic tasks
     beat_schedule={
+        "expire-booking-holds": {"task": "expire_booking_holds", "schedule": timedelta(minutes=1)},
         "reconcile-motive": {"task": "reconcile_motive", "schedule": timedelta(minutes=5)},
         "process-invoice-reminders-daily": {
             "task": "process_invoice_reminders",

@@ -363,6 +363,12 @@ async def provider_readiness(
         if coherent_order is None:
             ancestry_reasons.append("invoice_settlement_ancestry_requires_review")
             break
+        if current_id == invoice_id and node.source == "easy_truck_shop_import":
+            raw_mirror_order = await db.scalar(select(RepairOrder.id).where(
+                RepairOrder.id == node.repair_order_id, RepairOrder.tenant_id == tenant.id,
+                RepairOrder.source == "easy_truck_shop_import"))
+            if raw_mirror_order is not None:
+                ancestry_reasons.append("raw_imported_invoice_read_only")
         scope_ids.append(current_id)
         if current_id != invoice_id:
             # A replacement may not collect against any predecessor money,
@@ -473,19 +479,32 @@ async def provider_readiness(
         )
         unreconciled_invoice = await db.scalar(
             select(Invoice.id)
-            .join(RepairOrder, RepairOrder.id == Invoice.repair_order_id)
+            .outerjoin(RepairOrder, and_(RepairOrder.id == Invoice.repair_order_id,
+                                        RepairOrder.tenant_id == tenant.id))
             .where(
                 Invoice.tenant_id == tenant.id,
                 Invoice.deleted_at.is_(None),
-                RepairOrder.tenant_id == tenant.id,
                 or_(invoice_id is None, Invoice.id.in_(scope_ids)),
-                RepairOrder.customer_id.is_not(None),
-                ~select(InvoiceSettlement.id).where(
-                    InvoiceSettlement.tenant_id == tenant.id,
-                    InvoiceSettlement.invoice_id == Invoice.id,
-                    InvoiceSettlement.customer_id == case((Invoice.accounting_policy == "source_collection_hold", Invoice.billed_customer_id), else_=RepairOrder.customer_id),
-                    InvoiceSettlement.deleted_at.is_(None),
-                ).correlate(Invoice,RepairOrder).exists(),
+                or_(
+                    # A foreign/missing RO never proves a same-tenant mirror.
+                    RepairOrder.id.is_(None),
+                    and_(
+                        RepairOrder.customer_id.is_not(None),
+                        # Only the tenant-wide prerequisite omits exact raw
+                        # mirrors. Explicit NULL branches retain native rows.
+                        or_(invoice_id is not None,
+                            Invoice.source.is_(None),
+                            Invoice.source != "easy_truck_shop_import",
+                            RepairOrder.source.is_(None),
+                            RepairOrder.source != "easy_truck_shop_import"),
+                        ~select(InvoiceSettlement.id).where(
+                            InvoiceSettlement.tenant_id == tenant.id,
+                            InvoiceSettlement.invoice_id == Invoice.id,
+                            InvoiceSettlement.customer_id == case((Invoice.accounting_policy == "source_collection_hold", Invoice.billed_customer_id), else_=RepairOrder.customer_id),
+                            InvoiceSettlement.deleted_at.is_(None),
+                        ).correlate(Invoice,RepairOrder).exists(),
+                    ),
+                ),
             )
             .limit(1)
         )
@@ -1019,7 +1038,17 @@ async def create_attempt(
     subject_type: str,
     subject_id: Optional[UUID],
     sender_evidence: Optional[dict[str, Any]] = None,
+    transfer_sent_confirmed: bool = False,
 ) -> AttemptCreation:
+    customer_report = rail == "zelle" and subject_type in {"customer", "guest"}
+    if customer_report and transfer_sent_confirmed is not True:
+        raise SettlementDomainError("zelle_transfer_confirmation_required", "Confirm that you sent the transfer before reporting it.", status_code=422)
+    # Reporting/authority markers are owned by the server, not sender inputs.
+    sender_evidence = dict(sender_evidence or {})
+    for marker in ("transfer_sent_confirmed", "reported_at", "actor_user_id", "verified_receipt", "queue_marker", "provider_reference", "provider_charge_id", "provider_intent_id", "verified_at", "received_amount"):
+        sender_evidence.pop(marker, None)
+    if source != "compatibility_adapter":
+        sender_evidence.pop("compatibility_submitted_at", None)
     from app.services.financial_transaction_lock import lock_tenant_financials
     await lock_tenant_financials(db, tenant.id)
     if (
@@ -1091,6 +1120,9 @@ async def create_attempt(
         "amount": str(amount),
         "evidence": sender_evidence or {},
     }
+    legacy_request_hash = _canonical_hash(request_payload)
+    if customer_report:
+        request_payload["transfer_sent_confirmed"] = True
     request_hash = _canonical_hash(request_payload)
     existing = (
         await db.execute(
@@ -1101,7 +1133,8 @@ async def create_attempt(
         )
     ).scalar_one_or_none()
     if existing:
-        if existing.request_hash != request_hash:
+        legacy_replay = customer_report and source == "compatibility_adapter" and existing.request_hash == legacy_request_hash
+        if existing.request_hash != request_hash and not legacy_replay:
             raise SettlementDomainError("idempotency_conflict", "This idempotency key was used for a different request.")
         settlement = await db.get(InvoiceSettlement, existing.settlement_id)
         return AttemptCreation(existing, settlement, replayed=True)
@@ -1155,6 +1188,9 @@ async def create_attempt(
         if rail == "card"
         else None
     )
+    if customer_report:
+        sender_evidence = {**sender_evidence, "transfer_sent_confirmed": True,
+                           "reported_at": datetime.now(timezone.utc).isoformat()}
     attempt = InvoicePaymentAttempt(
         id=uuid4(),
         tenant_id=tenant.id,
@@ -1214,6 +1250,11 @@ async def create_attempt(
             actor=actor,
             evidence={"evidence_fields": sorted(key for key, value in sender_evidence.items() if value)},
         )
+    if customer_report:
+        from app.services.zelle_transfer_reports import enqueue_report_notice
+        await db.flush()
+        await enqueue_report_notice(db, invoice=invoice, tenant=tenant,
+                                    customer_id=customer_id, attempt=attempt)
     return AttemptCreation(attempt, settlement)
 
 
@@ -1369,10 +1410,16 @@ async def _enqueue_accounting(
         except SettlementDomainError as exc:
             if not exc.code.startswith("quickbooks_"):
                 raise
-            link.sync_state = "activation_not_admitted"
-            settlement.accounting_sync_status = "activation_not_admitted"
-            outbox.status = "deferred"
-            outbox.payload = {**outbox.payload, "deferral_reason": exc.code}
+            if exc.code == "quickbooks_booking_accounting_held":
+                link.sync_state = "external_manual"
+                settlement.accounting_sync_status = "external_manual"
+                outbox.status = "suppressed"
+                outbox.payload = {**outbox.payload, "suppression_reason": exc.code}
+            else:
+                link.sync_state = "activation_not_admitted"
+                settlement.accounting_sync_status = "activation_not_admitted"
+                outbox.status = "deferred"
+                outbox.payload = {**outbox.payload, "deferral_reason": exc.code}
     return link
 
 
@@ -2311,7 +2358,7 @@ async def apply_customer_credit(
     ).scalar_one_or_none()
     settlement = await get_or_create_settlement(db, invoice=invoice, customer_id=customer_id, tenant=tenant, lock=True)
     from app.services.invoice_accounting_policy import require_standard_payment
-    await require_standard_payment(db, invoice)
+    await require_standard_payment(db, invoice, new_entry=existing is None)
     if existing:
         if existing.request_hash != request_hash:
             raise SettlementDomainError(

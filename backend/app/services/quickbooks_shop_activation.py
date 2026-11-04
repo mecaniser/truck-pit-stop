@@ -55,6 +55,40 @@ def admitted_invoice_predicate(tenant_column, invoice_column):
         )))
 
 
+def accounting_invoice_predicate(tenant_column, invoice_column):
+    from app.services.booking_application_accounting import invoice_export_hold_clause
+    return and_(~invoice_export_hold_clause(tenant_column, invoice_column),
+                admitted_invoice_predicate(tenant_column, invoice_column))
+
+
+def booking_accounting_event_allowed_clause(event):
+    """Exclude exact held bookkeeping envelopes before a worker batch limit.
+
+    Provider refund submission and payout/fact maintenance are not bookkeeping
+    export events and deliberately retain their existing admission rules.
+    """
+    from app.db.models.invoice_settlement import InvoicePaymentAttempt, PaymentRefund, PaymentAccountingLink
+    from app.services.booking_application_accounting import invoice_export_hold_clause
+    candidate = aliased(Invoice)
+    def normalized(value): return func.lower(func.replace(cast(value, String), "-", ""))
+    matches = [and_(event.aggregate_type.in_(("invoice", "quickbooks_invoice")), candidate.id == event.aggregate_id)]
+    for key in ("invoice_id", "target_invoice_id", "source_invoice_id"):
+        matches.append(normalized(candidate.id) == normalized(event.payload[key].as_string()))
+    for model, kinds, keys in (
+        (InvoicePaymentAttempt, ("invoice_payment_attempt", "payment_attempt"), ("attempt_id", "source_attempt_id")),
+        (PaymentRefund, ("payment_refund",), ("refund_id",)),
+        (PaymentAccountingLink, ("payment_accounting_link",), ("accounting_link_id",)),
+    ):
+        sources = [and_(event.aggregate_type.in_(kinds), model.id == event.aggregate_id)]
+        sources.extend(normalized(model.id) == normalized(event.payload[key].as_string()) for key in keys)
+        matches.append(candidate.id.in_(select(model.invoice_id).where(model.tenant_id == event.tenant_id, or_(*sources))))
+    held = exists(select(candidate.id).where(candidate.tenant_id == event.tenant_id, or_(*matches),
+        invoice_export_hold_clause(candidate.tenant_id, candidate.id)))
+    financial_types = ("quickbooks.invoice.sync.v1", "invoice_payment.accounting_sync", "invoice_refund.accounting_sync",
+        "payment_reversal.accounting_sync", "payment_dispute.accounting_sync", "payment_dispute_recovery.accounting_sync", "customer_credit.accounting_sync")
+    return or_(~event.event_type.in_(financial_types), ~held)
+
+
 def event_selection_predicate(event):
     from app.db.models.invoice_settlement import InvoicePaymentAttempt, PaymentRefund
     candidate = aliased(Invoice)
@@ -74,6 +108,10 @@ def event_selection_predicate(event):
 
 
 async def require_shop_invoice_admission(db, invoice, *, connection=None, payment=False, payment_provider=None):
+    if not payment:
+        from app.services.booking_application_accounting import invoice_has_booking_export_hold
+        if await invoice_has_booking_export_hold(db, invoice.tenant_id, invoice.id):
+            _deny("quickbooks_booking_accounting_held", "Prepayment bookkeeping is managed separately. Automatic export is held.")
     if invoice.accounting_policy == "source_collection_hold":
         if not payment:
             _deny("source_collection_accounting_external", "Collection copies cannot create or export QuickBooks accounting transactions.")
@@ -169,6 +207,26 @@ async def request_environment(connection, *, method, resource):
 
 async def event_admitted(db, event):
     """Never claim managed legacy/payout/unresolved envelopes by guessing scope."""
+    if event.event_type == "quickbooks.invoice.sync.v1" or event.event_type.endswith(".accounting_sync"):
+        from app.services.booking_application_accounting import invoice_has_booking_export_hold
+        from app.db.models.invoice_settlement import InvoicePaymentAttempt, PaymentRefund, PaymentAccountingLink
+        targets = set()
+        payload = event.payload or {}
+        for key in ("invoice_id", "target_invoice_id", "source_invoice_id"):
+            if payload.get(key):
+                try: targets.add(UUID(str(payload[key])))
+                except (ValueError, TypeError): continue
+        if event.event_type == "quickbooks.invoice.sync.v1": targets.add(event.aggregate_id)
+        for model, key in ((InvoicePaymentAttempt, "attempt_id"), (InvoicePaymentAttempt, "source_attempt_id"),
+                           (PaymentRefund, "refund_id"), (PaymentAccountingLink, "accounting_link_id")):
+            if payload.get(key):
+                try: source_id = UUID(str(payload[key]))
+                except (ValueError, TypeError): continue
+                source = await db.scalar(select(model).where(model.id == source_id, model.tenant_id == event.tenant_id))
+                if source is None: continue
+                targets.add(source.invoice_id)
+        for invoice_id in targets:
+            if await invoice_has_booking_export_hold(db, event.tenant_id, invoice_id): return False
     if await load_shop_activation(db, event.tenant_id) is None:
         return True
     from app.db.models.invoice_settlement import InvoicePaymentAttempt, PaymentRefund, PaymentAccountingLink

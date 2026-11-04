@@ -72,6 +72,11 @@ describe('LoginPage "Remember me"', () => {
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
     await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/auth/login', {
+        email: 'owner@example.com',
+        password: 'MyStr0ng@Pass!',
+        remember_me: true,
+      })
       expect(window.localStorage.getItem('db.login.rememberedEmail')).toBe('owner@example.com')
       expect(window.localStorage.getItem('db.login.rememberMe')).toBe('1')
     })
@@ -93,9 +98,36 @@ describe('LoginPage "Remember me"', () => {
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
     await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/auth/login', {
+        email: 'new@example.com',
+        password: 'MyStr0ng@Pass!',
+        remember_me: false,
+      })
       expect(window.localStorage.getItem('db.login.rememberedEmail')).toBeNull()
       expect(window.localStorage.getItem('db.login.rememberMe')).toBeNull()
     })
+  })
+
+  it('submits remember_me false by default without persisting the email', async () => {
+    mockPost.mockResolvedValueOnce({ data: { access_token: 'tok', refresh_token: 'ref' } })
+    mockGet.mockResolvedValueOnce({ data: { id: 'u-1', role: 'garage_owner' } })
+    renderLogin()
+    const user = userEvent.setup()
+    expect(screen.getByRole('checkbox', { name: /remember me/i })).not.toBeChecked()
+    await user.type(document.getElementById('email') as HTMLInputElement, 'owner@example.com')
+    await user.type(document.getElementById('password') as HTMLInputElement, 'MyStr0ng@Pass!')
+    await user.click(screen.getByRole('button', { name: /sign in/i }))
+
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/auth/login', {
+        email: 'owner@example.com',
+        password: 'MyStr0ng@Pass!',
+        remember_me: false,
+      })
+      expect(mockNavigate).toHaveBeenCalledWith('/dashboard')
+    })
+    expect(window.localStorage.getItem('db.login.rememberedEmail')).toBeNull()
+    expect(window.localStorage.getItem('db.login.rememberMe')).toBeNull()
   })
 
   it('auto-redirects an already-authenticated visitor away from /login', async () => {

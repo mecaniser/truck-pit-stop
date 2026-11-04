@@ -1,5 +1,6 @@
 """DB-048 tenant-scoped staff and customer settlement interfaces."""
 from __future__ import annotations
+from contextlib import nullcontext
 
 import base64
 import csv
@@ -243,7 +244,15 @@ async def settlement_summary(
     tax_exemption = await tax_exemption_summary(db, invoice, settlement, tenant, current_user, audience=audience)
     from app.services.invoice_charge_adjustments import summary as charge_summary
     charge_controls = await charge_summary(db, invoice, settlement, tenant, current_user, audience=audience)
+    from app.services.booking_application_proof import booking_invoice_application_proof
+    booking_applied,booking_review=await booking_invoice_application_proof(db,invoice,settlement)
+    if booking_review:
+        actions.create_attempt=actions.confirm_manual=actions.confirm_cash=actions.apply_customer_credit=False
+        actions.rails=[]
+        actions.payment_unavailable_reason='Current balance needs shop verification. Contact the shop before paying.'
     return InvoiceSettlementSummary(
+        prepayment_applied_amount=booking_applied,
+        payment_verification_required=booking_review,
         invoice_id=settlement.invoice_id,
         currency=settlement.currency,
         principal_total=money(settlement.principal_total),
@@ -316,17 +325,18 @@ async def read_invoice_settlement(
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_active_user),
 ):
-    invoice, tenant, customer_id = await invoice_for_principal(db, invoice_id, current_user)
-    settlement = await _settlement_for_read(
-        db,
-        invoice=invoice,
-        tenant=tenant,
-        customer_id=customer_id,
-    )
-    audience = "customer" if current_user.role == UserRole.CUSTOMER else "staff"
-    return await settlement_summary(
-        db, settlement, tenant, audience=audience, current_user=current_user,
-    )
+    with getattr(db, 'no_autoflush', nullcontext()):
+        invoice, tenant, customer_id = await invoice_for_principal(db, invoice_id, current_user)
+        settlement = await _settlement_for_read(
+            db,
+            invoice=invoice,
+            tenant=tenant,
+            customer_id=customer_id,
+        )
+        audience = "customer" if current_user.role == UserRole.CUSTOMER else "staff"
+        return await settlement_summary(
+            db, settlement, tenant, audience=audience, current_user=current_user,
+        )
 
 
 @router.get("/invoices/{invoice_id}/quote", response_model=InvoicePaymentQuote)
@@ -338,46 +348,47 @@ async def read_invoice_payment_quote(
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_active_user),
 ):
-    if not _is_staff(current_user) or not user_has_permission(current_user, "payments"):
-        raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
-    invoice, tenant, customer_id = await invoice_for_principal(db, invoice_id, current_user)
-    from app.services.invoice_accounting_policy import locked_policy, require_standard_payment
-    from app.services.invoice_settlement_service import _card_fee_allocation
-    from app.services.invoice_cash_service import cash_eligibility
-    await locked_policy(db, invoice)
-    await db.refresh(invoice, attribute_names=[column.name for column in Invoice.__table__.columns])
-    await db.refresh(tenant)
-    invoice, tenant, customer_id = await invoice_for_principal(db, invoice_id, current_user)
-    customer = await db.scalar(select(Customer.id).where(Customer.id == customer_id,
-        Customer.tenant_id == tenant.id, Customer.deleted_at.is_(None)))
-    settlement = await db.scalar(select(InvoiceSettlement).where(
-        InvoiceSettlement.invoice_id == invoice.id, InvoiceSettlement.tenant_id == tenant.id,
-        InvoiceSettlement.customer_id == customer_id, InvoiceSettlement.deleted_at.is_(None),
-    ).execution_options(populate_existing=True))
-    if not customer or tenant.deleted_at or not settlement or invoice.is_internal:
-        raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
-    if settlement.version != expected_settlement_version:
-        raise SettlementDomainError("stale_settlement_version", "The invoice balance changed. Refresh before paying.",
-            current_version=settlement.version, retryable=True)
-    if not principal_amount.is_finite() or principal_amount <= 0 or principal_amount != money(principal_amount):
-        raise SettlementDomainError("payment_amount_invalid", "Enter a positive amount in cents.", status_code=422)
-    amount = money(principal_amount)
-    if amount > allocatable_balance(settlement):
-        raise SettlementDomainError("payment_amount_exceeds_allocatable_balance", "The requested amount is no longer available to pay.")
-    fee = fee_tax = Decimal("0.00")
-    if rail == "cash":
-        if not settings.INVOICE_SPLIT_PAYMENTS_ENABLED or not tenant.invoice_split_payments_enabled:
-            raise SettlementDomainError("split_payments_disabled", "Invoice settlement is not enabled for this shop.")
-        reason, _ = await cash_eligibility(db, invoice, settlement, lock=True)
-        if reason or amount != money(settlement.principal_total):
-            raise SettlementDomainError("cash_unavailable", reason or "Cash requires the full invoice balance.")
-    else:
-        await require_feature_ready(db, tenant, invoice_id=invoice.id, lock_ancestry=True)
-        await require_standard_payment(db, invoice, new_entry=True)
-        if rail == "card":
-            fee, fee_tax = await _card_fee_allocation(db, settlement, amount)
-    return InvoicePaymentQuote(settlement_version=settlement.version, rail=rail, principal_amount=amount,
-        card_fee_amount=fee, card_fee_tax_amount=fee_tax, total_amount=amount + fee + fee_tax)
+    with getattr(db, 'no_autoflush', nullcontext()):
+        if not _is_staff(current_user) or not user_has_permission(current_user, "payments"):
+            raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+        invoice, tenant, customer_id = await invoice_for_principal(db, invoice_id, current_user)
+        from app.services.invoice_accounting_policy import locked_policy, require_standard_payment
+        from app.services.invoice_settlement_service import _card_fee_allocation
+        from app.services.invoice_cash_service import cash_eligibility
+        await locked_policy(db, invoice)
+        await db.refresh(invoice, attribute_names=[column.name for column in Invoice.__table__.columns])
+        await db.refresh(tenant)
+        invoice, tenant, customer_id = await invoice_for_principal(db, invoice_id, current_user)
+        customer = await db.scalar(select(Customer.id).where(Customer.id == customer_id,
+            Customer.tenant_id == tenant.id, Customer.deleted_at.is_(None)))
+        settlement = await db.scalar(select(InvoiceSettlement).where(
+            InvoiceSettlement.invoice_id == invoice.id, InvoiceSettlement.tenant_id == tenant.id,
+            InvoiceSettlement.customer_id == customer_id, InvoiceSettlement.deleted_at.is_(None),
+        ).execution_options(populate_existing=True))
+        if not customer or tenant.deleted_at or not settlement or invoice.is_internal:
+            raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+        if settlement.version != expected_settlement_version:
+            raise SettlementDomainError("stale_settlement_version", "The invoice balance changed. Refresh before paying.",
+                current_version=settlement.version, retryable=True)
+        if not principal_amount.is_finite() or principal_amount <= 0 or principal_amount != money(principal_amount):
+            raise SettlementDomainError("payment_amount_invalid", "Enter a positive amount in cents.", status_code=422)
+        amount = money(principal_amount)
+        if amount > allocatable_balance(settlement):
+            raise SettlementDomainError("payment_amount_exceeds_allocatable_balance", "The requested amount is no longer available to pay.")
+        fee = fee_tax = Decimal("0.00")
+        if rail == "cash":
+            if not settings.INVOICE_SPLIT_PAYMENTS_ENABLED or not tenant.invoice_split_payments_enabled:
+                raise SettlementDomainError("split_payments_disabled", "Invoice settlement is not enabled for this shop.")
+            reason, _ = await cash_eligibility(db, invoice, settlement, lock=True)
+            if reason or amount != money(settlement.principal_total):
+                raise SettlementDomainError("cash_unavailable", reason or "Cash requires the full invoice balance.")
+        else:
+            await require_feature_ready(db, tenant, invoice_id=invoice.id, lock_ancestry=True)
+            await require_standard_payment(db, invoice, new_entry=True)
+            if rail == "card":
+                fee, fee_tax = await _card_fee_allocation(db, settlement, amount)
+        return InvoicePaymentQuote(settlement_version=settlement.version, rail=rail, principal_amount=amount,
+            card_fee_amount=fee, card_fee_tax_amount=fee_tax, total_amount=amount + fee + fee_tax)
 
 
 def _encode_cursor(created_at: datetime, row_id: UUID) -> str:
@@ -401,14 +412,15 @@ async def list_invoice_allocations(
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_active_user),
 ):
-    invoice, tenant, customer_id = await invoice_for_principal(db, invoice_id, current_user)
-    await _settlement_for_read(
-        db, invoice=invoice, tenant=tenant, customer_id=customer_id,
-    )
-    audience = "customer" if current_user.role == UserRole.CUSTOMER else "staff"
-    return await allocation_page(
-        db, invoice=invoice, cursor=cursor, limit=limit, audience=audience,
-    )
+    with getattr(db, 'no_autoflush', nullcontext()):
+        invoice, tenant, customer_id = await invoice_for_principal(db, invoice_id, current_user)
+        await _settlement_for_read(
+            db, invoice=invoice, tenant=tenant, customer_id=customer_id,
+        )
+        audience = "customer" if current_user.role == UserRole.CUSTOMER else "staff"
+        return await allocation_page(
+            db, invoice=invoice, cursor=cursor, limit=limit, audience=audience,
+        )
 
 
 async def _settlement_for_read(
@@ -423,23 +435,20 @@ async def _settlement_for_read(
     When no DB-048 state exists, disabled/unverified probes remain a stable
     409 and never create rows that would poison backfill reconciliation.
     """
-    settlement = await db.scalar(select(InvoiceSettlement).where(
-        InvoiceSettlement.tenant_id == tenant.id,
-        InvoiceSettlement.invoice_id == invoice.id,
-        InvoiceSettlement.customer_id == customer_id,
-    ))
-    if settlement is not None:
-        return settlement
-    await require_feature_ready(db, tenant, invoice_id=invoice.id)
-    settlement = await get_or_create_settlement(
-        db,
-        invoice=invoice,
-        customer_id=customer_id,
-        tenant=tenant,
-        lock=False,
-    )
-    await db.commit()
-    return settlement
+    with getattr(db, 'no_autoflush', nullcontext()):
+        settlement = await db.scalar(select(InvoiceSettlement).where(
+            InvoiceSettlement.tenant_id == tenant.id,
+            InvoiceSettlement.invoice_id == invoice.id,
+            InvoiceSettlement.customer_id == customer_id,
+            InvoiceSettlement.deleted_at.is_(None),
+        ))
+        if settlement is not None:
+            return settlement
+        raise SettlementDomainError(
+            "invoice_settlement_unavailable",
+            "Current payment information is unavailable. Contact the shop before paying.",
+            status_code=409,
+        )
 
 
 def _masked_payment_reference(reference: Optional[str]) -> Optional[str]:
@@ -461,95 +470,96 @@ async def allocation_page(
     limit: int,
     audience: str,
 ) -> PaymentAllocationPage:
-    query = select(InvoicePaymentAttempt).where(
-        InvoicePaymentAttempt.invoice_id == invoice.id,
-        InvoicePaymentAttempt.tenant_id == invoice.tenant_id,
-        InvoicePaymentAttempt.deleted_at.is_(None),
-    )
-    if cursor:
-        cursor_at, cursor_id = _decode_cursor(cursor)
-        query = query.where(or_(
-            InvoicePaymentAttempt.created_at < cursor_at,
-            (InvoicePaymentAttempt.created_at == cursor_at) & (InvoicePaymentAttempt.id < cursor_id),
-        ))
-    rows = (await db.execute(query.order_by(InvoicePaymentAttempt.created_at.desc(), InvoicePaymentAttempt.id.desc()).limit(limit + 1))).scalars().all()
-    has_more = len(rows) > limit
-    rows = rows[:limit]
-    attempt_ids = [row.id for row in rows]
-    overpayments = {
-        row.source_attempt_id: row
-        for row in (
-            await db.execute(
-                select(PaymentOverpayment).where(
-                    PaymentOverpayment.tenant_id == invoice.tenant_id,
-                    PaymentOverpayment.invoice_id == invoice.id,
-                    PaymentOverpayment.source_attempt_id.in_(attempt_ids),
+    with getattr(db, 'no_autoflush', nullcontext()):
+        query = select(InvoicePaymentAttempt).where(
+            InvoicePaymentAttempt.invoice_id == invoice.id,
+            InvoicePaymentAttempt.tenant_id == invoice.tenant_id,
+            InvoicePaymentAttempt.deleted_at.is_(None),
+        )
+        if cursor:
+            cursor_at, cursor_id = _decode_cursor(cursor)
+            query = query.where(or_(
+                InvoicePaymentAttempt.created_at < cursor_at,
+                (InvoicePaymentAttempt.created_at == cursor_at) & (InvoicePaymentAttempt.id < cursor_id),
+            ))
+        rows = (await db.execute(query.order_by(InvoicePaymentAttempt.created_at.desc(), InvoicePaymentAttempt.id.desc()).limit(limit + 1))).scalars().all()
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        attempt_ids = [row.id for row in rows]
+        overpayments = {
+            row.source_attempt_id: row
+            for row in (
+                await db.execute(
+                    select(PaymentOverpayment).where(
+                        PaymentOverpayment.tenant_id == invoice.tenant_id,
+                        PaymentOverpayment.invoice_id == invoice.id,
+                        PaymentOverpayment.source_attempt_id.in_(attempt_ids),
+                    )
                 )
-            )
-        ).scalars().all()
-    } if attempt_ids else {}
-    overpayment_ids = [row.id for row in overpayments.values()]
-    refunds = {
-        row.overpayment_id: row
-        for row in (
-            await db.execute(
-                select(PaymentRefund).where(
-                    PaymentRefund.tenant_id == invoice.tenant_id,
-                    PaymentRefund.invoice_id == invoice.id,
-                    PaymentRefund.overpayment_id.in_(overpayment_ids),
+            ).scalars().all()
+        } if attempt_ids else {}
+        overpayment_ids = [row.id for row in overpayments.values()]
+        refunds = {
+            row.overpayment_id: row
+            for row in (
+                await db.execute(
+                    select(PaymentRefund).where(
+                        PaymentRefund.tenant_id == invoice.tenant_id,
+                        PaymentRefund.invoice_id == invoice.id,
+                        PaymentRefund.overpayment_id.in_(overpayment_ids),
+                    )
                 )
-            )
-        ).scalars().all()
-    } if overpayment_ids else {}
-    staff_evidence = audience == "staff"
-    return PaymentAllocationPage(
-        items=[PaymentAllocationItem(
-            sender_evidence={
-                key: value for key, value in (row.manual_evidence or {}).items()
-                if key in {"sender_name", "sender_email", "sender_phone", "reference", "reference_number", "note"}
-                and isinstance(value, str) and value.strip()
-            } if staff_evidence and row.rail != "card" else None,
-            id=row.id, attempt_id=row.id, created_at=row.created_at, rail=row.rail,
-            provider=row.provider, state=row.state, attempt_version=row.version,
-            fleet_provider=((row.manual_evidence or {}).get("fleet_provider") if staff_evidence and row.rail == "fleet_payment" else None),
-            fleet_provider_name=((row.manual_evidence or {}).get("fleet_provider_name") if staff_evidence and row.rail == "fleet_payment" else None),
-            authorization_number=((row.manual_evidence or {}).get("authorization_number") if staff_evidence and row.rail == "fleet_payment" else None),
-            failure_code=row.failure_code,
-            principal_amount=money(row.principal_amount),
-            applied_principal_amount=money(row.applied_principal_amount),
-            card_fee_amount=money(row.card_fee_amount),
-            card_fee_tax_amount=money(row.card_fee_tax_amount),
-            applied_card_fee_amount=money(row.applied_card_fee_amount),
-            applied_card_fee_tax_amount=money(row.applied_card_fee_tax_amount),
-            provider_charge_amount=money(row.provider_charge_amount),
-            received_amount=money(row.received_amount) if row.received_amount is not None else None,
-            unapplied_amount=money(row.unapplied_amount), expires_at=row.expires_at,
-            confirmed_at=row.confirmed_at,
-            reference=(
-                row.provider_reference
-                if staff_evidence else _masked_payment_reference(row.provider_reference)
-            ),
-            reference_number=(
-                row.provider_reference
-                if staff_evidence else _masked_payment_reference(row.provider_reference)
-            ),
-            actor_name=row.actor_name_snapshot,
-            accounting_sync_status=(
-                "pending" if row.state == "confirmed" and not row.payment_id else None
-            ),
-            overpayment_id=(overpayments[row.id].id if row.id in overpayments else None),
-            overpayment_state=(overpayments[row.id].state if row.id in overpayments else None),
-            refund_id=(
-                refunds[overpayments[row.id].id].id
-                if row.id in overpayments and overpayments[row.id].id in refunds else None
-            ),
-            refund_state=(
-                refunds[overpayments[row.id].id].state
-                if row.id in overpayments and overpayments[row.id].id in refunds else None
-            ),
-        ) for row in rows],
-        next_cursor=_encode_cursor(rows[-1].created_at, rows[-1].id) if has_more and rows else None,
-    )
+            ).scalars().all()
+        } if overpayment_ids else {}
+        staff_evidence = audience == "staff"
+        return PaymentAllocationPage(
+            items=[PaymentAllocationItem(
+                sender_evidence={
+                    key: value for key, value in (row.manual_evidence or {}).items()
+                    if key in {"sender_name", "sender_email", "sender_phone", "reference", "reference_number", "note"}
+                    and isinstance(value, str) and value.strip()
+                } if staff_evidence and row.rail != "card" else None,
+                id=row.id, attempt_id=row.id, created_at=row.created_at, rail=row.rail,
+                provider=row.provider, state=row.state, attempt_version=row.version,
+                fleet_provider=((row.manual_evidence or {}).get("fleet_provider") if staff_evidence and row.rail == "fleet_payment" else None),
+                fleet_provider_name=((row.manual_evidence or {}).get("fleet_provider_name") if staff_evidence and row.rail == "fleet_payment" else None),
+                authorization_number=((row.manual_evidence or {}).get("authorization_number") if staff_evidence and row.rail == "fleet_payment" else None),
+                failure_code=row.failure_code,
+                principal_amount=money(row.principal_amount),
+                applied_principal_amount=money(row.applied_principal_amount),
+                card_fee_amount=money(row.card_fee_amount),
+                card_fee_tax_amount=money(row.card_fee_tax_amount),
+                applied_card_fee_amount=money(row.applied_card_fee_amount),
+                applied_card_fee_tax_amount=money(row.applied_card_fee_tax_amount),
+                provider_charge_amount=money(row.provider_charge_amount),
+                received_amount=money(row.received_amount) if row.received_amount is not None else None,
+                unapplied_amount=money(row.unapplied_amount), expires_at=row.expires_at,
+                confirmed_at=row.confirmed_at,
+                reference=(
+                    row.provider_reference
+                    if staff_evidence else _masked_payment_reference(row.provider_reference)
+                ),
+                reference_number=(
+                    row.provider_reference
+                    if staff_evidence else _masked_payment_reference(row.provider_reference)
+                ),
+                actor_name=row.actor_name_snapshot,
+                accounting_sync_status=(
+                    "pending" if row.state == "confirmed" and not row.payment_id else None
+                ),
+                overpayment_id=(overpayments[row.id].id if row.id in overpayments else None),
+                overpayment_state=(overpayments[row.id].state if row.id in overpayments else None),
+                refund_id=(
+                    refunds[overpayments[row.id].id].id
+                    if row.id in overpayments and overpayments[row.id].id in refunds else None
+                ),
+                refund_state=(
+                    refunds[overpayments[row.id].id].state
+                    if row.id in overpayments and overpayments[row.id].id in refunds else None
+                ),
+            ) for row in rows],
+            next_cursor=_encode_cursor(rows[-1].created_at, rows[-1].id) if has_more and rows else None,
+        )
 
 
 async def _create_stripe_intent(
@@ -736,6 +746,7 @@ async def create_invoice_payment_attempt(
         idempotency_key=key, source=source, subject_type=subject_type,
         subject_id=identity_user(current_user).id,
         sender_evidence=body.sender_evidence.model_dump(exclude_none=True) if body.sender_evidence else {},
+        transfer_sent_confirmed=body.transfer_sent_confirmed,
     )
     client_secret = None
     provider_token_url = None
@@ -755,6 +766,9 @@ async def create_invoice_payment_attempt(
         await db.commit()
     else:
         await db.commit()
+    if body.rail == 'zelle' and body.transfer_sent_confirmed and not creation.replayed and current_user.role == UserRole.CUSTOMER:
+        from app.services.zelle_transfer_reports import broadcast_report_invalidation
+        await broadcast_report_invalidation(db,invoice=invoice,customer_id=customer_id)
     audience = "customer" if current_user.role == UserRole.CUSTOMER else "staff"
     return await attempt_response(
         db, creation.attempt, creation.settlement, tenant, client_secret,
@@ -2135,3 +2149,9 @@ async def retry_accounting_operation(
     )
     await db.commit()
     return AccountingRetryResponse(operation_id=link.id, state=link.sync_state)
+
+
+@router.get('/zelle-review-queue')
+async def zelle_review_queue(cursor:Optional[str]=None,limit:int=Query(default=50,ge=1,le=100),db:AsyncSession=Depends(get_db),current_user:CurrentUser=Depends(get_current_active_user)):
+    from app.services.zelle_transfer_reports import review_queue
+    return await review_queue(db,current_user,cursor=cursor,limit=limit)

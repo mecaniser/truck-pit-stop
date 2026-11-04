@@ -19,7 +19,13 @@ class FakeInspector:
         self.include_provider_outbox = include_provider_outbox
         self.include_quickbooks_webhook_deleted_at = include_quickbooks_webhook_deleted_at
 
+    def has_table(self, table_name):
+        return True
+
     def get_columns(self, table_name: str):
+        from app.commands.worker_schema_readiness import REQUIRED_COLUMNS
+        if table_name in {'visit_requests','visit_request_events','booking_repair_order_links','booking_receipts','booking_payment_events','booking_receipt_applications','booking_accounting_review_tasks','booking_accounting_review_events'}:
+            return [{'name':name} for name in REQUIRED_COLUMNS[table_name]]
         if table_name == "parts_usage":
             columns = [{"name": "id"}]
             if self.include_source_line:

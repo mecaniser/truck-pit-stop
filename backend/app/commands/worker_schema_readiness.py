@@ -25,6 +25,14 @@ STATEMENT_TIMEOUT_MS = 2000
 LOCK_TIMEOUT_MS = 1000
 EXIT_UNAVAILABLE = 78
 REQUIRED_COLUMNS = {
+    "visit_requests": {"version","accepted_arrival_date","reviewed_by_user_id","reviewed_at","internal_review_note","fulfilled_repair_order_id"},
+    "visit_request_events": {"tenant_id","request_id","request_version","request_sha256","reviewed_vehicle_id"},
+    "booking_repair_order_links": {"tenant_id","appointment_id","repair_order_id","reviewed_vehicle_id"},
+    "booking_receipts": {"version","refunded_amount_minor"},
+    "booking_payment_events": {"verified_refund_amount_minor","verified_dispute_amount_minor","verified_refund_delta_minor","client_idempotency_key","request_sha256","provider_refund_reference"},
+    "booking_receipt_applications": {"tenant_id","receipt_id","invoice_id","settlement_id","amount_minor","invoice_economics_sha256"},
+    "booking_accounting_review_tasks": {"tenant_id","receipt_id","state","version","evidence_snapshot_sha256"},
+    "booking_accounting_review_events": {"tenant_id","task_id","source_event_id","request_sha256"},
     "sms_send_operations": {"id", "tenant_id", "state", "attempt_count", "dispatch_started_at"},
     "automated_sms_operations": {"id", "tenant_id", "event_key", "state", "attempt_count", "dispatch_started_at", "notification_id"},
     "conversation_workflows": {"thread_id", "tenant_id", "version"},

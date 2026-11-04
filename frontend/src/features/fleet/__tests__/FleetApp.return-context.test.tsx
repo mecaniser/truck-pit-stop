@@ -1,12 +1,14 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import type { ReactNode } from 'react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '../../../stores/authStore'
+import { stopSessionKeepAlive } from '../../../lib/sessionKeepAlive'
 
-const apiMocks = vi.hoisted(() => ({ get: vi.fn() }))
+const apiMocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), post: vi.fn() }))
 
 vi.mock('@/lib/api', () => ({ default: apiMocks }))
 vi.mock('react-hot-toast', () => ({ default: { success: vi.fn(), error: vi.fn() } }))
@@ -17,7 +19,7 @@ vi.mock('../TruckDetail', () => ({ default: ({ truckId, onViewTrips }: { truckId
 vi.mock('../FleetModals', () => ({
   AddTruckModal: () => null,
   SchedulePMModal: () => null,
-  SidekickPanel: () => null,
+  SidekickPanel: ({ children, title }: { children: ReactNode; title: string }) => <div role="dialog" aria-label={title}>{children}</div>,
   invalidateFleetAndCockpit: vi.fn(),
 }))
 vi.mock('../FleetPriceBuilderPanel', () => ({ default: () => null }))
@@ -54,6 +56,8 @@ describe('Fleet board return context', () => {
     Element.prototype.scrollTo = vi.fn()
     window.localStorage.removeItem('tps-fleet-state')
     apiMocks.get.mockReset()
+    apiMocks.put.mockReset()
+    apiMocks.post.mockReset()
     apiMocks.get.mockResolvedValue({ data: fleetBoard })
     useAuthStore.setState({
       user: {
@@ -74,7 +78,42 @@ describe('Fleet board return context', () => {
   })
 
   afterEach(() => {
+    stopSessionKeepAlive()
     window.localStorage.removeItem('tps-fleet-state')
+  })
+
+  it('does not continue an earlier profile save into a password change for the next account', async () => {
+    let finish!: () => void
+    const owner = useAuthStore.getState().user!
+    const pendingSave = new Promise(resolve => { finish = () => resolve({ data: { user: owner } }) })
+    apiMocks.put.mockReturnValueOnce(pendingSave)
+    const view = renderFleet(['/fleet'])
+    // This exercises save ordering, so target the controls in their existing
+    // named panel instead of repeatedly computing roles across the Fleet shell.
+    fireEvent.click(screen.getByLabelText('Open profile menu'))
+    fireEvent.click(within(screen.getByLabelText('Profile actions')).getByText('Settings'))
+    const settings = within(screen.getByLabelText('My account'))
+    fireEvent.click(settings.getByText('Edit account', { selector: 'button' }))
+    fireEvent.click(settings.getByText('Change password', { selector: 'button' }))
+    fireEvent.change(settings.getByLabelText('Current password').querySelector('input')!, { target: { value: 'Synthetic-current-1!' } })
+    fireEvent.change(settings.getByLabelText('New password').querySelector('input')!, { target: { value: 'Synthetic-next-2!' } })
+    fireEvent.click(settings.getByText('Save changes', { selector: 'button' }))
+    // save() starts the profile request before its first await. Hold that exact
+    // request open until the original component and authenticated actor are gone.
+    expect(apiMocks.put).toHaveBeenCalledExactlyOnceWith('/auth/me', {
+      first_name: 'Shop', last_name: 'Owner', phone: null, email: 'owner@example.com',
+    })
+    expect(apiMocks.post).not.toHaveBeenCalled()
+    view.unmount()
+    const originatingEpoch = useAuthStore.getState().authSessionEpoch
+    await act(async () => {
+      useAuthStore.getState().login('test-access', 'test-refresh', { ...owner, id: 'b', tenant_id: 'shop-b' })
+      finish()
+      await pendingSave
+    })
+    expect(useAuthStore.getState().authSessionEpoch).toBeGreaterThan(originatingEpoch)
+    expect(apiMocks.post).not.toHaveBeenCalled()
+    expect(useAuthStore.getState().user?.id).toBe('b')
   })
 
   it('opens Fleet map without implying live telemetry or changing the route', async () => {

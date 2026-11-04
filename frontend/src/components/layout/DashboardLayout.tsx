@@ -16,6 +16,7 @@ import TenantBrandLogo from '../brand/TenantBrandLogo'
 import DevRuntimeIdentity from '../dev/DevRuntimeIdentity'
 import useTenantBranding from '@/hooks/useTenantBranding'
 import { ShopSearchButton, ShopSearchProvider } from '@/features/global-search/ShopSearch'
+import VisitRequestsEntry from '@/features/appointments/VisitRequestsEntry'
 
 const STAFF_RAIL_STORAGE_KEY = 'db-staff-rail-expanded'
 const STAFF_NAV_CATEGORIES: Record<string, string> = {
@@ -28,6 +29,7 @@ const CustomersPage = lazy(lazyRouteLoader(() => import('@/features/customers/Cu
 const RepairOrdersPage = lazy(lazyRouteLoader(() => import('@/features/repair-orders/RepairOrdersPage')))
 const MyGaragePage = lazy(lazyRouteLoader(() => import('@/features/garage/MyGaragePage')))
 const DashboardHome = lazy(lazyRouteLoader(() => import('@/features/dashboard/DashboardHome')))
+const VisitRequestsPage = lazy(lazyRouteLoader(() => import('@/features/appointments/VisitRequestsPage')))
 const UnifiedSettingsPage = lazy(lazyRouteLoader(() => import('@/features/dashboard/UnifiedSettingsPage')))
 const PlatformDashboard = lazy(lazyRouteLoader(() => import('@/features/platform-admin/PlatformDashboard')))
 const GaragesPage = lazy(lazyRouteLoader(() => import('@/features/platform-admin/GaragesPage')))
@@ -214,6 +216,7 @@ export default function DashboardLayout() {
     : undefined
   
   const getCurrentPageLabel = () => {
+    if (location.pathname === '/dashboard/visit-requests') return 'Service visits'
     if (location.pathname === '/dashboard/settings') return 'Profile Settings'
     if (location.pathname === '/dashboard/mechanics') return 'Technician Board'
     if (location.pathname.startsWith('/dashboard/mechanics/')) return 'Technician Detail'
@@ -578,6 +581,7 @@ export default function DashboardLayout() {
           }`}
         >
           <Suspense fallback={location.pathname === "/dashboard/messages" ? <InboxLoading /> : <div className="min-h-24" role="status" aria-live="polite">Loading workspace…</div>}>
+          {location.pathname === '/dashboard' && !new URLSearchParams(location.search).has('selected') && <VisitRequestsEntry/>}
           <Routes>
             {/* Platform Admin Routes (SUPER_ADMIN only) */}
             {user?.role === 'super_admin' ? (
@@ -594,6 +598,7 @@ export default function DashboardLayout() {
               /* Garage Staff Routes */
               <>
                 <Route path="customers" element={<CustomersPage />} />
+                <Route path="visit-requests" element={<VisitRequestsPage />} />
                 <Route path="repair-orders" element={<RepairOrdersPage />} />
                 <Route
                   path="messages/previous"

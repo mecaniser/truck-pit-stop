@@ -39,7 +39,7 @@ function show(audience: 'staff' | 'customer' | 'guest' = 'staff') {
     const [cashSelected, selectCash] = useState(false)
     const payment = (controls?: Parameters<typeof SettlementPaymentPanel>[0]['chargeControls']) => <SettlementPaymentPanel
       access={audience === 'guest' ? { kind: 'guest', token: 'fixture-token' } : { kind: 'authenticated', invoiceId: summary.invoice_id }}
-      summary={summary} audience={audience} tone="light" onUpdated={setSummary} chargeControls={controls}
+      zelleRecipient={{ display: 'billing@example.test', memo: 'Invoice test' }} summary={summary} audience={audience} tone="light" onUpdated={setSummary} chargeControls={controls}
       submissionBlockedReason={blocked ? 'Saving charges' : undefined}
       cashTender={audience === 'staff' ? { allowed: true, selected: cashSelected, pending: false, select: selectCash, confirmation: <button>Confirm full cash</button> } : undefined} />
     return <><output aria-label="Current invoice">{summary.invoice_id}</output><button onClick={() => { active = { ...active, version: active.version + 1 }; setSummary(active) }}>Version refresh</button>
@@ -201,13 +201,21 @@ describe('Payment panel explicit drafts and fee refresh', () => {
     if (audience === 'staff') await enterPartial('500')
     else { await userEvent.clear(amountInput()); await userEvent.type(amountInput(), '500') }
     await userEvent.click(screen.getByRole('radio', { name: /^Zelle/ }))
-    if (audience !== 'staff') await userEvent.click(screen.getByRole('button', { name: 'Add transfer details (optional)' }))
+    if (audience !== 'staff') {
+      await userEvent.click(screen.getByRole('button', { name: 'View Zelle instructions' }))
+      expect(api.createPaymentAttempt).not.toHaveBeenCalled()
+      await userEvent.click(screen.getByRole('button', { name: 'Add transfer details (optional)' }))
+    }
     await userEvent.type(screen.getByRole('textbox', { name: /^Zelle transaction reference/ }), 'INVOICE-A-ONLY')
     await userEvent.click(screen.getByRole('button', { name: 'Another invoice' }))
     if (audience === 'staff') expect(screen.queryByRole('textbox', { name: 'Amount applied to invoice' })).not.toBeInTheDocument()
     else expect(amountInput()).toHaveValue('1160.49')
     await userEvent.click(screen.getByRole('radio', { name: /^Zelle/ }))
-    if (audience !== 'staff') await userEvent.click(screen.getByRole('button', { name: 'Add transfer details (optional)' }))
+    if (audience !== 'staff') {
+      await userEvent.click(screen.getByRole('button', { name: 'View Zelle instructions' }))
+      expect(api.createPaymentAttempt).not.toHaveBeenCalled()
+      await userEvent.click(screen.getByRole('button', { name: 'Add transfer details (optional)' }))
+    }
     expect(screen.getByRole('textbox', { name: /^Zelle transaction reference/ })).toHaveValue('')
   })
 

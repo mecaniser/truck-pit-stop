@@ -37,6 +37,8 @@ export interface SettlementAllowedActions {
 }
 
 export interface InvoiceSettlementSummary {
+  prepayment_applied_amount?: string | null
+  payment_verification_required?: boolean
   charge_controls?: {
     tax_exempt: boolean
     shop_supplies_enabled: boolean
@@ -107,6 +109,7 @@ export interface PaymentSenderEvidence {
 }
 
 export interface PaymentAttemptCreate {
+  transfer_sent_confirmed?: boolean
   amount: string
   rail: PaymentRail
   expected_settlement_version: number

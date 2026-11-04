@@ -28,7 +28,7 @@ import { isAxiosError } from 'axios'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { formatUSPhone } from '@/utils/phone'
-import { getAuthenticatedSessionIdentity, useAuthStore } from '../../stores/authStore'
+import { getAuthenticatedSessionIdentity, syncStoredSession, useAuthStore } from '../../stores/authStore'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useNotificationManager } from '../../hooks/useNotificationManager'
@@ -39,6 +39,9 @@ import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import SuggestingInput from '@/components/SuggestingInput'
 import RecentActivityFeed from './RecentActivityFeed'
 import { useActivityFeed, activityCountLabel } from './activityFeedQuery'
+import ZelleReviewQueue from './ZelleReviewQueue'
+import { useZelleReviewQueue } from './useZelleReviewQueue'
+import { withoutDuplicateZelle } from './zelleReviewProjection'
 import ShopCockpitActionLedger, { type ActionQueueLane } from './ShopCockpitActionLedger'
 import WipAgingPanel from './WipAgingPanel'
 import WorkspaceRecordLink from '@/components/WorkspaceRecordLink'
@@ -426,6 +429,8 @@ function AuthenticatedDashboardHome() {
   const navigate = useNavigate()
   const location = useLocation()
   const queryClient = useQueryClient()
+  const zelleReview = useZelleReviewQueue()
+  const projectZelleReview = <T extends { id: string; pending_zelle_confirmation?: boolean }>(rows: T[]) => withoutDuplicateZelle(rows, zelleReview.rows, zelleReview.allowed && zelleReview.isSuccess)
   const selectedShopWorkRecord = new URLSearchParams(location.search).get('selected')
 
   // Quick order form
@@ -585,6 +590,7 @@ function AuthenticatedDashboardHome() {
   const lastUpdated = dataUpdatedAt ? new Date(dataUpdatedAt) : null
   
   const handleManualRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['zelle-review-queue'] })
     queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
     queryClient.invalidateQueries({ queryKey: ['shop-work-overview'] })
     queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
@@ -661,12 +667,14 @@ function AuthenticatedDashboardHome() {
   const teamCapacityGridHeightClass = isExpandedFont
     ? 'md:max-h-60 lg:max-h-40 2xl:max-h-44'
     : 'md:max-h-56 lg:max-h-36 2xl:max-h-40'
-  const needsActionCount = stats?.orders_needing_action?.length || 0
+  const legacyNeedsAction = projectZelleReview(stats?.orders_needing_action ?? [])
+  const legacyReadyToClose = projectZelleReview(stats?.orders_ready_to_close ?? [])
+  const needsActionCount = legacyNeedsAction.length
   const onFloorCount = stats?.orders_on_floor?.length || 0
-  const readyToCloseCount = stats?.orders_ready_to_close?.length || 0
-  const needsActionOrders = filterQueueOrders(stats?.orders_needing_action ?? [], laneSearchQueries[0])
+  const readyToCloseCount = legacyReadyToClose.length
+  const needsActionOrders = filterQueueOrders(legacyNeedsAction, laneSearchQueries[0])
   const onFloorOrders = filterQueueOrders(stats?.orders_on_floor ?? [], laneSearchQueries[1])
-  const readyToCloseOrders = filterQueueOrders(stats?.orders_ready_to_close ?? [], laneSearchQueries[2])
+  const readyToCloseOrders = filterQueueOrders(legacyReadyToClose, laneSearchQueries[2])
   const setLaneSearchQuery = (lane: 0 | 1 | 2, value: string) => {
     setLaneSearchQueries((current) => ({ ...current, [lane]: value }))
   }
@@ -785,6 +793,8 @@ function AuthenticatedDashboardHome() {
     if (!validateQuickForm()) {
       return
     }
+    const stillCurrent = () => !syncStoredSession() && getAuthenticatedSessionIdentity(useAuthStore.getState()) === identity
+    if (!stillCurrent()) return
     setQuickSubmitting(true)
     try {
       const response = await api.post('/repair-orders/quick', {
@@ -792,6 +802,7 @@ function AuthenticatedDashboardHome() {
         vehicle_description: quickTruck.trim() || null,
         complaint: quickComplaint.trim() || null,
       })
+      if (!stillCurrent()) return
       const order = response.data
       toast.success(
         <span>
@@ -806,10 +817,11 @@ function AuthenticatedDashboardHome() {
       setShowQuickForm(false)
       handleManualRefresh()
     } catch (err: unknown) {
+      if (!stillCurrent()) return
       const detail = isAxiosError<{ detail?: string }>(err) ? err.response?.data?.detail : undefined
       toast.error(detail || 'Failed to create order')
     } finally {
-      setQuickSubmitting(false)
+      if (stillCurrent()) setQuickSubmitting(false)
     }
   }
 
@@ -930,12 +942,13 @@ function AuthenticatedDashboardHome() {
 
   if (presentationVariant === 'new') {
     const returnedQueue = returnedShopWorkQueue || (workView === 'closeout' && ['needs_action', 'ready_to_close', 'closed_today'].includes(requestedShopWorkQueue || '') ? requestedShopWorkQueue as ActionQueueLane : undefined)
+    // The invoice queue replaces projected Zelle alerts only after every page loaded.
     const projection = {
-      orders_needing_action: dailyWorkbench?.needs_attention.items ?? [],
+      orders_needing_action: projectZelleReview(dailyWorkbench?.needs_attention.items ?? []),
       orders_needing_action_has_more: dailyWorkbench?.needs_attention.has_more ?? false,
       orders_on_floor: dailyWorkbench?.on_floor.items ?? [],
       orders_on_floor_has_more: dailyWorkbench?.on_floor.has_more ?? false,
-      orders_ready_to_close: dailyWorkbench?.ready_to_close.items ?? [],
+      orders_ready_to_close: projectZelleReview(dailyWorkbench?.ready_to_close.items ?? []),
       orders_ready_to_close_has_more: dailyWorkbench?.ready_to_close.has_more ?? false,
       orders_closed_today: dailyWorkbench?.closed_today.items ?? [],
       orders_closed_today_has_more: dailyWorkbench?.closed_today.has_more ?? false,
@@ -952,6 +965,8 @@ function AuthenticatedDashboardHome() {
     return (
       <ShopCockpitActionLedger
         projection={projection}
+        paymentReviewCount={zelleReview.allowed && zelleReview.isSuccess ? zelleReview.rows.length : undefined}
+        paymentReview={<ZelleReviewQueue queue={zelleReview} compact={workView !== 'closeout' || queueView === 'activity'} onOpenQueue={() => { setWorkView('closeout'); setQueueView('queue'); navigate('/dashboard?work_view=closeout') }} onOpenLegacy={id => openRecord(id, 'needs_action')}/>}
         workView={workView}
         onWorkViewChange={(view) => {
           if (view === 'overview' && workView !== 'overview') void overviewQuery.refetch()
@@ -1039,6 +1054,7 @@ function AuthenticatedDashboardHome() {
         isExpandedFont ? 'gap-4 2xl:gap-3' : 'gap-5 2xl:gap-4'
       }`}
     >
+      <ZelleReviewQueue queue={zelleReview} onOpenQueue={() => undefined} onOpenLegacy={id => navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}&queue=needs_action`)}/>
       {/* Header */}
       <div className="flex-shrink-0">
         <div className="flex flex-row items-start justify-between gap-3 lg:items-end">
@@ -1349,7 +1365,7 @@ function AuthenticatedDashboardHome() {
                 )}
                 <div className={getLaneBodyClass(0)}>
                   <div className="p-2.5 space-y-2 2xl:space-y-1.5 overflow-y-auto h-full scrollbar-dark">
-                    {!stats?.orders_needing_action?.length ? (
+                    {!legacyNeedsAction.length ? (
                       <p className="text-gray-500 text-sm 2xl:text-base text-center py-6">All clear</p>
                     ) : !needsActionOrders.length ? (
                       <p className="text-gray-500 text-sm 2xl:text-base text-center py-6">No matching orders</p>

@@ -656,6 +656,8 @@ async def confirm_full_cash(db, *, invoice, tenant, customer_id, actor,
         return existing.payment_id, settlement
     if settlement.version != expected_settlement_version:
         raise SettlementDomainError("stale_settlement_version", "The invoice changed. Refresh before recording cash.", current_version=settlement.version)
+    from app.services.booking_invoice_guard import require_booking_prepayment_resolved
+    await require_booking_prepayment_resolved(db, tenant.id, invoice.repair_order_id)
     reason, events = await cash_eligibility(db, invoice, settlement, lock=True)
     if reason:
         raise SettlementDomainError("cash_unavailable", reason)

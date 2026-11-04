@@ -9,6 +9,7 @@ from uuid import UUID
 
 from app.services import fleet_diagnostics as service
 from scripts.motive_health.import_health import batch, source_hash, validate
+from scripts.motive_health.targets import normalize_targets
 from scripts.motive_sync.runner import private_json
 
 
@@ -39,8 +40,12 @@ async def run(
     commit=False,
     recovery=False,
     expected_customer_id=None,
+    reviewed_targets=None,
 ):
     validate(document, company_label, company_id, recovery=recovery)
+    targets = normalize_targets(reviewed_targets)
+    if targets and expected_customer_id is None:
+        raise ValueError("Reviewed health targets require a default fleet pin")
     identity = {
         "tenant_id": str(tenant_id),
         "actor_id": str(actor_id),
@@ -51,6 +56,9 @@ async def run(
         else None,
         "source_sha256": source_hash(document),
     }
+    # Preserve exact legacy attempt identity when no reviewed exception is used.
+    if targets:
+        identity["reviewed_targets"] = targets
     attempt_path = str(receipt_path) + ".attempt.json"
     if recovery:
         if not commit:
@@ -63,6 +71,7 @@ async def run(
             not in {"validated", "commit_pending", "committed", "verified"}
             or receipt.get("attempt_sha256") != source_hash(attempt)
             or any(attempt.get(key) != value for key, value in identity.items())
+            or attempt.get("reviewed_targets") != identity.get("reviewed_targets")
         ):
             raise ValueError("Recovery intent or immutable identity mismatch")
         if (
@@ -86,6 +95,7 @@ async def run(
             apply=False,
             expected_customer_id=expected_customer_id,
             eligible=eligible,
+            reviewed_targets=targets,
         )
         await db.rollback()
     eligible = {
@@ -121,6 +131,7 @@ async def run(
             apply=True,
             expected_customer_id=expected_customer_id,
             eligible=eligible,
+            reviewed_targets=targets,
         )
         replay = await batch(
             db,
@@ -132,6 +143,7 @@ async def run(
             apply=True,
             expected_customer_id=expected_customer_id,
             eligible=eligible,
+            reviewed_targets=targets,
         )
         if any(
             row["status"] != "unchanged"
@@ -155,6 +167,7 @@ async def run(
             apply=False,
             expected_customer_id=expected_customer_id,
             eligible=eligible,
+            reviewed_targets=targets,
         )
         saved_ids = {
             row["client_request_id"]: row["capture_id"]
@@ -202,6 +215,9 @@ def main():
     from app.db.session import AsyncSessionLocal
 
     expected = os.environ.get("MOTIVE_HEALTH_FLEET_CUSTOMER_ID")
+    targets = normalize_targets(
+        json.loads(os.environ.get("MOTIVE_HEALTH_REVIEWED_TARGETS", "{}"))
+    )
     receipt = asyncio.run(
         run(
             AsyncSessionLocal,
@@ -214,6 +230,7 @@ def main():
             commit=args.commit,
             recovery=args.recover,
             expected_customer_id=UUID(expected) if expected else None,
+            reviewed_targets=targets,
         )
     )
     counts = {}

@@ -123,7 +123,9 @@ async def test_payment_evidence_query_count_is_bounded_for_page(db_session,proje
     assert sum('FROM invoice_settlements' in s for s in statements)==1
     assert sum('FROM payments' in s for s in statements)==1
     # Existing charge-adjustment selectin loading remains page-batched too.
-    assert len(statements)==(5 if projected else 6)
+    # One batched application-proof read, independent of page length.
+    assert len(statements)==(6 if projected else 7)
+    assert sum('FROM booking_receipt_applications' in statement for statement in statements)==1
     assert all(s.lstrip().upper().startswith('SELECT') for s in statements)
 
 

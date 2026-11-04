@@ -35,6 +35,8 @@ async def create(db, ctx, *, rail="zelle", source="staff", evidence=None, key="n
     return await create_attempt(db, invoice=ctx[3], tenant=ctx[0], customer_id=ctx[2].id,
         actor=ctx[1] if source == "staff" else None, amount=Decimal("10"), rail=rail,
         expected_settlement_version=ctx[4].version, idempotency_key=key, source=source,
+        # These receipt fixtures model an explicit report, not instruction viewing.
+        transfer_sent_confirmed=rail == "zelle" and source != "staff",
         subject_type="staff" if source == "staff" else "guest" if source == "guest_token" else "customer",
         subject_id=ctx[1].id if source == "staff" else ctx[2].id, sender_evidence=evidence)
 
