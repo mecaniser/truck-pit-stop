@@ -36,6 +36,8 @@ api_router.include_router(activity.router, prefix="/activity", tags=["activity"]
 api_router.include_router(services.router, prefix="/services", tags=["services"])
 api_router.include_router(labor_book_time.router, prefix="/labor-book-time", tags=["labor-book-time"])
 api_router.include_router(appointments.router, prefix="/appointments", tags=["appointments"])
+from app.api.v1.endpoints import customer_cards
+api_router.include_router(customer_cards.router, prefix="/payments/cards", tags=["saved-cards"])
 api_router.include_router(payments.router, prefix="/payments", tags=["payments"])
 api_router.include_router(invoice_settlements.router, prefix="/payments", tags=["invoice-settlements"])
 api_router.include_router(mechanics.router, prefix="/mechanics", tags=["mechanics"])

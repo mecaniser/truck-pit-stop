@@ -16,7 +16,10 @@
     "src/hooks/__tests__/useWebSocket.test.tsx",
     "src/features/repair-orders/__tests__/RepairOrdersPage.abort.test.tsx",
     "src/features/repair-orders/__tests__/PriceBuilderPanel.pending-feedback.test.tsx",
-    "src/lib/__tests__/apiCancellation.test.ts"
+    "src/lib/__tests__/apiCancellation.test.ts",
+    "src/features/customer-portal/__tests__/PaymentMethodsCard.test.tsx",
+    "src/features/customer-portal/__tests__/ProfileSettingsPage.cards.test.tsx",
+    "src/features/customer-portal/__tests__/QuickBooksPaymentPanel.test.tsx"
   ],
   "backend": [
     "tests/test_schema_preflight.py",
@@ -36,6 +39,9 @@
     "tests/test_ro_pricing_discounts.py",
     "tests/test_discount_cost_floor.py",
     "tests/test_workspace_typeaheads.py",
-    "tests/test_request_performance.py"
+    "tests/test_request_performance.py",
+    "tests/test_customer_card*.py",
+    "tests/test_quickbooks_vault_client.py",
+    "tests/test_saved_card_accounts.py"
   ]
 }
