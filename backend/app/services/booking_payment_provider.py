@@ -6,6 +6,7 @@ caller durably reserves its attempt/idempotency binding before calling create.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
@@ -23,6 +24,7 @@ from app.db.models.invoice_settlement import TenantPaymentProviderConfiguration
 from app.db.models.quickbooks_connection import QuickBooksConnection
 from app.db.models.tenant import Tenant
 from app.services import quickbooks_payments_service as qbp
+from app.services.invoice_settlement_service import provider_readiness
 
 
 class BookingProviderError(RuntimeError):
@@ -96,11 +98,13 @@ def _environment_admitted(environment: str) -> bool:
     return environment == expected
 
 
-async def _connection(db, tenant_id: UUID) -> QuickBooksConnection | None:
-    return await db.scalar(select(QuickBooksConnection).where(
+async def _connection(db, tenant_id: UUID, *, fresh=False) -> QuickBooksConnection | None:
+    statement=select(QuickBooksConnection).where(
         QuickBooksConnection.tenant_id == tenant_id,
         QuickBooksConnection.deleted_at.is_(None),
-    ))
+    )
+    if fresh:statement=statement.execution_options(populate_existing=True,autoflush=False)
+    return await db.scalar(statement)
 
 
 def _healthy_qbo(connection: QuickBooksConnection | None) -> bool:
@@ -112,48 +116,73 @@ def _healthy_qbo(connection: QuickBooksConnection | None) -> bool:
         and connection.refresh_token_expires_at and _utc(connection.refresh_token_expires_at) > now)
 
 
+async def _fresh_booking_binding(db, tenant_id, config, *, expected=None):
+    """Read current authority for one immutable config; no persistence or IO."""
+    identity=(config.tenant_id,config.version,config.selected_provider,
+              config.provider_account_snapshot,config.qbo_realm_snapshot)
+    with getattr(db,'no_autoflush',nullcontext()):
+        tenant=await db.scalar(select(Tenant).where(Tenant.id==tenant_id,
+            Tenant.is_active.is_(True),Tenant.deleted_at.is_(None))
+            .execution_options(populate_existing=True,autoflush=False))
+        current=await db.scalar(select(TenantPaymentProviderConfiguration).where(
+            TenantPaymentProviderConfiguration.tenant_id==tenant_id,
+            TenantPaymentProviderConfiguration.version==identity[1],
+            TenantPaymentProviderConfiguration.is_active.is_(True),
+            TenantPaymentProviderConfiguration.deleted_at.is_(None))
+            .execution_options(populate_existing=True,autoflush=False))
+        if (not tenant or not tenant.is_active or tenant.deleted_at is not None or not current or identity!=(current.tenant_id,current.version,
+            current.selected_provider,current.provider_account_snapshot,current.qbo_realm_snapshot)
+            or current.tenant_id!=tenant_id or not current.is_active or getattr(current,'deleted_at',None)
+            or current.writer_strategy!='dieselbridge' or not _booking_admitted(tenant_id)):
+            return None
+        connection=await _connection(db,tenant_id,fresh=True)
+        readiness=await provider_readiness(db,tenant,config=current)
+        if readiness.status!='ready':return None
+        if current.selected_provider=='quickbooks_payments':
+            environment=settings.QUICKBOOKS_PAYMENTS_ENVIRONMENT.strip().lower()
+            if (not quickbooks_payments_enabled_for_tenant(tenant_id)
+                or environment not in {'sandbox','production'} or not _environment_admitted(environment)
+                or not _healthy_qbo(connection) or str(connection.realm_id)!=current.provider_account_snapshot
+                or str(connection.realm_id)!=current.qbo_realm_snapshot):return None
+            binding=BookingProviderBinding('quickbooks_payments',str(connection.realm_id),current.version,environment,tenant_id)
+        elif current.selected_provider=='stripe_connect':
+            environment=_stripe_environment()
+            if (not settings.STRIPE_CONNECT_INVOICE_PAYMENTS_APPROVED or not settings.STRIPE_CONNECT_WEBHOOK_SECRET
+                or not tenant.stripe_onboarding_complete or not tenant.stripe_account_id
+                or current.provider_account_snapshot!=tenant.stripe_account_id or not environment
+                or not _environment_admitted(environment)):return None
+            binding=BookingProviderBinding('stripe_connect',tenant.stripe_account_id,current.version,environment,tenant_id)
+        else:return None
+        if expected is not None and binding!=expected:return None
+        return binding
+
+
 async def booking_provider_capability(db, tenant: Tenant) -> BookingProviderCapability:
-    if not tenant or not tenant.is_active or tenant.deleted_at is not None or not _booking_admitted(tenant.id):
-        return BookingProviderCapability()
-    config = await db.scalar(select(TenantPaymentProviderConfiguration).where(
-        TenantPaymentProviderConfiguration.tenant_id == tenant.id,
-        TenantPaymentProviderConfiguration.is_active.is_(True),
-        TenantPaymentProviderConfiguration.deleted_at.is_(None),
-    ))
-    if not config or config.readiness_state != 'ready' or config.writer_strategy != 'dieselbridge':
-        return BookingProviderCapability(reason_code='booking_provider_not_ready')
-    if config.selected_provider == 'quickbooks_payments':
-        environment = settings.QUICKBOOKS_PAYMENTS_ENVIRONMENT.strip().lower()
-        connection = await _connection(db, tenant.id)
-        if (not quickbooks_payments_enabled_for_tenant(tenant.id) or environment not in {'sandbox', 'production'}
-            or not _environment_admitted(environment)
-            or not _healthy_qbo(connection) or str(connection.realm_id) != config.provider_account_snapshot
-            or str(connection.realm_id) != config.qbo_realm_snapshot):
-            return BookingProviderCapability(reason_code='booking_provider_not_ready')
-        binding = BookingProviderBinding('quickbooks_payments', str(connection.realm_id), config.version, environment, tenant.id)
-        return BookingProviderCapability(True, binding, f'{qbp.payments_base_url()}/quickbooks/v4/payments/tokens', 'Online reservations are available.', None)
-    if config.selected_provider == 'stripe_connect':
-        environment = _stripe_environment()
-        if (not settings.STRIPE_CONNECT_INVOICE_PAYMENTS_APPROVED or not settings.STRIPE_CONNECT_WEBHOOK_SECRET
-            or not tenant.stripe_onboarding_complete or not tenant.stripe_account_id
-            or config.provider_account_snapshot != tenant.stripe_account_id or not environment
-            or not _environment_admitted(environment)):
-            return BookingProviderCapability(reason_code='booking_provider_not_ready')
-        return BookingProviderCapability(True, BookingProviderBinding('stripe_connect', tenant.stripe_account_id, config.version, environment, tenant.id), None, 'Online reservations are available.', None)
-    return BookingProviderCapability(reason_code='booking_provider_not_ready')
+    if not tenant or not _booking_admitted(tenant.id):return BookingProviderCapability()
+    with getattr(db,'no_autoflush',nullcontext()):
+        config=await db.scalar(select(TenantPaymentProviderConfiguration).where(
+            TenantPaymentProviderConfiguration.tenant_id==tenant.id,
+            TenantPaymentProviderConfiguration.is_active.is_(True),
+            TenantPaymentProviderConfiguration.deleted_at.is_(None))
+            .execution_options(populate_existing=True,autoflush=False))
+        binding=await _fresh_booking_binding(db,tenant.id,config) if config else None
+    if binding is None:return BookingProviderCapability(reason_code='booking_provider_not_ready')
+    token_url=f'{qbp.payments_base_url()}/quickbooks/v4/payments/tokens' if binding.provider=='quickbooks_payments' else None
+    return BookingProviderCapability(True,binding,token_url,'Online reservations are available.',None)
 
 
 async def _bound_configuration(db, binding: BookingProviderBinding, *, new_charge: bool):
-    config = await db.scalar(select(TenantPaymentProviderConfiguration).where(
-        TenantPaymentProviderConfiguration.tenant_id == binding.tenant_id,
-        TenantPaymentProviderConfiguration.version == binding.configuration_version,
-        TenantPaymentProviderConfiguration.deleted_at.is_(None),
-    ))
-    if (not config or config.selected_provider != binding.provider or config.provider_account_snapshot != binding.account_id
-        or (new_charge and (not config.is_active or config.readiness_state != 'ready' or config.writer_strategy != 'dieselbridge'
-                            or not _booking_admitted(binding.tenant_id) or not _environment_admitted(binding.environment)))):
-        raise BookingProviderError('Online payment is unavailable for this reservation.')
-    return config
+    with getattr(db,'no_autoflush',nullcontext()):
+        config = await db.scalar(select(TenantPaymentProviderConfiguration).where(
+            TenantPaymentProviderConfiguration.tenant_id == binding.tenant_id,
+            TenantPaymentProviderConfiguration.version == binding.configuration_version,
+            TenantPaymentProviderConfiguration.deleted_at.is_(None),
+        ).execution_options(populate_existing=True,autoflush=False))
+        if (not config or config.selected_provider != binding.provider
+            or config.provider_account_snapshot != binding.account_id
+            or (new_charge and await _fresh_booking_binding(db,binding.tenant_id,config,expected=binding) is None)):
+            raise BookingProviderError('Online payment is unavailable for this reservation.')
+        return config
 
 
 def _metadata(metadata: dict[str, str], binding: BookingProviderBinding) -> dict[str, str]:
