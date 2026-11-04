@@ -291,7 +291,7 @@ function InvoicePaymentPanel({
         setAttempt(null)
         toast.success(`${RAIL_META[rail!].label} payment recorded.`)
       } else if (rail === 'zelle') {
-        toast.success('Transfer reported.')
+        toast.success('Transfer reported. The shop will verify receipt.')
       }
     },
     onError: error => {

@@ -34,6 +34,11 @@ function reported(): PaymentAttemptResponse {
 beforeEach(() => { vi.clearAllMocks(); api.fetchSettlement.mockResolvedValue(base); api.fetchAllocations.mockResolvedValue({ items: [] }) })
 
 describe('Zelle transfer report boundary', () => {
+  it('keeps next steps visible on a fully pending customer invoice after reload', () => {
+    render(<SettlementSummaryCard summary={reported().settlement} audience="customer" streamlined />)
+    expect(screen.getByText(/Check this invoice for updates/)).toHaveTextContent('Don’t send the pending amount again.')
+  })
+
   it.each(['customer', 'guest'] as const)('shows instructions and returns without reserving money for %s', async audience => {
     show(base, audience)
     await instructions()

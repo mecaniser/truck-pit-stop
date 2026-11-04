@@ -102,6 +102,10 @@ export default function SettlementSummaryCard({
         ))}
       </dl>}
 
+      {audience === 'customer' && pending && <p className={`border-t px-3 py-3 text-sm ${divider} ${quiet}`}>
+        {allocations.some(allocation => allocation.rail === 'zelle' && allocation.state === 'pending') ? 'The shop will verify your reported transfer.' : 'Payment confirmation is pending.'} Check this invoice for updates. Don’t send the pending amount again.
+      </p>}
+
       {children}
 
       {resolution && (
