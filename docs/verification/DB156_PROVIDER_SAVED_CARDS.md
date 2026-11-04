@@ -47,3 +47,7 @@ Runtime: frontend `http://127.0.0.1:5216`, PID73723, `/private/tmp/db156-provide
 [Saved card, desktop](db156/genuine-card-saved.png) · [Saved card, mobile](db156/genuine-card-saved-mobile.png) · [After removal](db156/genuine-empty.png).
 
 Full PostgreSQL evidence additionally passed migrations001 through200, then201 upgrade/downgrade/re-upgrade, preserving all prior table column definitions including booking applications. Four explicit PostgreSQL tests passed with zero skips. Independent Security and implementation/runtime QA GO at55e3d5e8. QA independently reran30 frontend tests, inspected real saved/default screenshots and executed the read-only Intuit verifier after removal, confirming an empty provider vault, confirmed receipt and zero financial rows. [PR776](https://github.com/mecaniser/truck-pit-stop/pull/776) remains draft until final gates finish.
+
+## CI test compatibility correction
+
+The first integrated critical CI run found one test-only failure on FastAPI0.162: an endpoint-registration assertion assumed the framework flattened its internal route list. The corrected test dispatches real HTTP requests through the full API router for config/save/delete.33 route tests pass on both the existing local framework and an isolated FastAPI0.162/Pydantic2.14 installation matching CI; independent QA accepts the correction. No application source changed, so genuine provider/runtime evidence remains applicable. A fresh exact-head CI run is required.

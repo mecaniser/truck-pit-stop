@@ -183,9 +183,17 @@ async def test_mutations_require_context_and_safe_card_identity(app_context,meth
     c.mutate.assert_not_awaited()
 
 
-def test_main_router_registers_generic_card_endpoints():
+@pytest.mark.asyncio
+async def test_main_router_registers_generic_card_endpoints(app_context):
     from app.api.v1.router import api_router
-    paths={(route.path,tuple(sorted(getattr(route, 'methods', []) or []))) for route in api_router.routes}
-    assert ('/payments/cards/config',('GET',)) in paths
-    assert ('/payments/cards/save',('POST',)) in paths
-    assert ('/payments/cards/{method_id}',('DELETE',)) in paths
+    c = app_context
+    registered_app = FastAPI()
+    registered_app.include_router(api_router)
+    registered_app.dependency_overrides.update(c.app.dependency_overrides)
+    c.app = registered_app
+    assert (await call(c, 'GET', '/config')).json()['provider'] == 'quickbooks_payments'
+    saved = await call(c, 'POST', '/save', json={
+        'expected_context': KEY, 'idempotency_key': 'registered-route', 'token': 'opaque-token',
+    })
+    assert saved.status_code == 200 and saved.json() == {'status': 'saved'}
+    assert (await call(c, 'DELETE', '/card_one', params={'expected_context': KEY})).status_code == 204
