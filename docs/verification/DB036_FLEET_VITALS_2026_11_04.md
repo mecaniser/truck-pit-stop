@@ -314,3 +314,80 @@ was created. All source hashes match the final frozen combined scope. Security
 GO independently passed205 auth +44 shared tests and reproduced closure of both
 findings. No reviewer made a live provider request. These are offline source
 gates; deployed capture/readback and successful natural scheduling remain open.
+
+
+## Final worker release acceptance — PASS
+
+Backend & Integrations accountable. PR786 merged
+`7b95539d8e80015f16116c1659992b313017930e` after all seven checks in
+CI `41932522416` passed. The checked `098309087072179798d808110a80475287aef470`
+tree is identical to the merge tree. Latest main's unrelated Settings work was
+preserved; the reviewed collector source hashes did not change during integration.
+The backend archive digest is
+`7eab45ce8f72c220fb43a1bafdf1e9811a1ae115dc100d6ac5740165b7f256bc`.
+
+| Evidence | Verified result |
+| --- | --- |
+| Worker deployment | `31ff64ad-73fe-4740-83f5-c97ed0b6cbc2` |
+| Natural scheduled execution | `c77085a7-3956-4e0a-9889-d52bdccbe664`, 23:32:27–23:37:55 UTC, EXITED |
+| Schedule | Existing `30 * * * *`, preserved; no manual trigger for this execution |
+| Source | 21 directory rows, 21 rows with both readings, complete, company verified before/after |
+| Source digest | `e5e4d669b42c6083584dee69fad9e725fc2a5d1f81997f80a47a0e416b8ea245` |
+| Receipt/replay | 41 verified and unchanged on replay ; 21 vitals, 20 diagnostic captures; no pending imports |
+| Current projection | 25 active truck records checked:21 exact source/receipt/saved/projection matches, four null cases |
+| Protected state | All six pre/post vehicle, membership and relationship fingerprints equal |
+| Runtime QA | Independent GO on terminal evidence, runtime hashes, current projection and protected-state equality |
+
+All seven runtime files match the approved release: health collector `9b729f97`,
+auth `5d22def7`, targets `7836fe93`, importer `0d5ac645`, shared reader `4bad4b34`,
+tasks `90f1a004` and static diagnostics `a9653009`. Receipt source/attempt hashes
+were recomputed from the retained terminal artifact before API readback. Private
+raw evidence remains outside Git with mode 0600; no VIN/GPS/credential values are
+in this release record.
+
+Elis 603 and 609 retain their exact vehicle/provider identities and Elis ownership;
+603's existing 77 Cargo operating membership and 609's reviewed Elis target remain
+as approved. Canonical service mileage, VINs, owners, memberships and customer
+relationships were not modified. Truck 26 uses its existing reviewed VIN-less
+binding without inventing a VIN.
+
+The source exceptions remain honest: 5 and 532 expose blank readings, while Elis 24
+and 42 are absent from the connected account's complete active/deactivated source
+inventory. Their current projections remain null. No service reading or another
+vehicle's measurement was substituted.
+
+### Display and API boundary
+
+Independent QA inspected the existing production 603/609/26 screenshots and the
+four unavailable-panel records. Together with exhaustive current projection
+parity, these cover the unchanged display journey. The additional full 25-popup
+repeat was not completed after the Mac locked; it is optional assurance under
+the explicitly approved acceptance plan. No frontend or public API changed.
+
+The serving API `cf35df0179835208cf117b34f1664d646d20d050` is ready and passed
+the current readback. Its incidental automatic image
+`7ec975f0-d858-47c8-9e94-01dfa735a61d` was still BUILDING at worker acceptance
+(dependency downloads), and is not claimed deployed. Architecture verified that
+the API runs Uvicorn and reads stored telemetry through unchanged
+`fleet_telemetry.attach` / `fleet_diagnostics.read`; it does not invoke the changed
+collector/auth scripts. The dedicated health worker executes them. The compatible
+serving API therefore satisfies this worker-only outcome while the separate API
+build continues. This is not a claim that the whole platform has the same build.
+
+### Verification-tool correction
+
+The private inotify observer initially subscribed to access/open events and could
+loop on its own reads of old receipts. The mask was corrected to mutation-only
+`0xFCE`; regression fixtures include pre-existing verified receipts and capture
+terminal output before 5 ms exit. Root terminated only the two exact faulty private
+Python observer processes, leaving the business worker untouched. The corrected
+observer captured the verified terminal artifact and all integrity checks passed.
+A separate late observer and QA's redundant SSH readback had transport failures;
+neither produced acceptance evidence or altered the successful gate. No provider
+job was created solely to retrieve forensic files. Older failed raw sources remain
+retained on the persistent volume; the accepted current source is fully exported.
+
+The scoped fleet-vitals coverage and automatic collection outcome is accepted.
+Other DB-036 workstreams retain their own board states. This proves the observed
+natural execution and exact available dashboard readings, not physical-device
+verification or a guarantee against future provider outages/layout changes.
