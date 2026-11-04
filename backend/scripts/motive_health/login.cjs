@@ -7,31 +7,45 @@ function trusted(raw,path){
  if(url.origin!==AUTH||url.username||url.password||url.pathname!==path)throw new Error('login_origin');
  return url;
 }
+function loginError(category,guard){return Object.assign(new Error(category),{loginGuard:guard});}
+async function completelyEmptyStartup(page){
+ return page.evaluate(()=>{
+  if(!document.body||document.querySelector('form,input,textarea,select,button,iframe,[contenteditable]')||document.body.innerText.trim())return false;
+  return !Array.from(document.body.querySelectorAll('*')).some(element=>{
+   if(['SCRIPT','STYLE','LINK','META','NOSCRIPT','TEMPLATE'].includes(element.tagName))return false;
+   const rect=element.getBoundingClientRect(),style=getComputedStyle(element);
+   return rect.width>0&&rect.height>0&&style.display!=='none'&&style.visibility!=='hidden';
+  });
+ });
+}
 async function reviewedForm(page,stage,email){
- trusted(page.url(),stage==='lookup'?'/login/lookup':'/login/authenticate');
+ try{trusted(page.url(),stage==='lookup'?'/login/lookup':'/login/authenticate');}catch{throw loginError('login_origin','origin');}
  const lookup=page.locator('input[name="email"]:visible');
  const password=page.locator('input[name="user_profile[password]"]:visible');
- if(await lookup.count()!==(stage==='lookup'?1:0)||await password.count()!==(stage==='password'?1:0)||await page.locator('input[name="user_profile[email]"]:visible').count())throw new Error('login_form_ambiguous');
- for(const [name,count] of [['email',stage==='lookup'?1:0],['user_profile[password]',stage==='password'?1:0],['user_profile[email]',stage==='password'?1:0]])if(await page.locator(`input[name="${name}"]`).count()!==count)throw new Error('login_form_ambiguous');
+ const lookupCount=await lookup.count(),passwordCount=await password.count(),accountVisible=await page.locator('input[name="user_profile[email]"]:visible').count();
+ if(lookupCount!==(stage==='lookup'?1:0)||passwordCount!==(stage==='password'?1:0)||accountVisible)throw loginError('login_form_ambiguous',lookupCount===0&&passwordCount===0&&accountVisible===0?'credential_missing':'credential_ambiguous');
+ for(const [name,count] of [['email',stage==='lookup'?1:0],['user_profile[password]',stage==='password'?1:0],['user_profile[email]',stage==='password'?1:0]])if(await page.locator(`input[name="${name}"]`).count()!==count)throw loginError('login_form_ambiguous','credential_count');
  const input=stage==='lookup'?lookup:password;
  const inputType=(await input.getAttribute('type')||'text').toLowerCase();
- if(!(stage==='lookup'?['text','email'].includes(inputType):inputType==='password')||await input.getAttribute('form')!==null)throw new Error('login_form_target');
+ if(!(stage==='lookup'?['text','email'].includes(inputType):inputType==='password')||await input.getAttribute('form')!==null)throw loginError('login_form_target','input_target');
  const form=page.locator('form').filter({has:input});
  const name=stage==='lookup'?'Continue':'Log in';
- if(await form.count()!==1||await page.getByRole('button',{name,exact:true}).count()!==1)throw new Error('login_form_ambiguous');
+ if(await form.count()!==1)throw loginError('login_form_ambiguous','form_count');
+ if(await page.getByRole('button',{name,exact:true}).count()!==1)throw loginError('login_form_ambiguous','button_count');
  const button=form.getByRole('button',{name,exact:true});
- if(await button.count()!==1)throw new Error('login_form_ambiguous');
- if(await page.locator('input:visible').count()!==1||await page.locator('textarea:visible,select:visible,iframe:visible').count())throw new Error('login_form_ambiguous');
+ if(await button.count()!==1)throw loginError('login_form_ambiguous','button_count');
+ if(await page.locator('input:visible').count()!==1)throw loginError('login_form_ambiguous','visible_control_count');
+ if(await page.locator('textarea:visible,select:visible,iframe:visible').count())throw loginError('login_form_ambiguous','challenge_control');
  // Use the browser's effective native action, including document.baseURI.
  const action=await form.evaluate(element=>element.action);
- let target;try{target=trusted(action,'/login/authenticate');}catch{throw new Error('login_form_target');}
- if(target.search||target.hash||(await form.getAttribute('method')||'get').toLowerCase()!=='post'||!['','_self'].includes(await form.getAttribute('target')||''))throw new Error('login_form_target');
- if(await page.locator('base[target]').count())throw new Error('login_form_target');
- for(const attribute of ['formaction','formmethod','formtarget','form'])if(await button.getAttribute(attribute)!==null)throw new Error('login_form_target');
- const type=await button.getAttribute('type');if(type&&type.toLowerCase()!=='submit')throw new Error('login_form_target');
+ let target;try{target=trusted(action,'/login/authenticate');}catch{throw loginError('login_form_target','form_action');}
+ if(target.search||target.hash||(await form.getAttribute('method')||'get').toLowerCase()!=='post'||!['','_self'].includes(await form.getAttribute('target')||''))throw loginError('login_form_target','form_target');
+ if(await page.locator('base[target]').count())throw loginError('login_form_target','base_target');
+ for(const attribute of ['formaction','formmethod','formtarget','form'])if(await button.getAttribute(attribute)!==null)throw loginError('login_form_target','submit_override');
+ const type=await button.getAttribute('type');if(type&&type.toLowerCase()!=='submit')throw loginError('login_form_target','submit_type');
  if(stage==='password'){
   const hidden=form.locator('input[name="user_profile[email]"]');
-  if(await hidden.count()!==1||await hidden.getAttribute('type')!=='hidden'||await hidden.getAttribute('form')!==null||await hidden.inputValue()!==email)throw new Error('login_account_mismatch');
+  if(await hidden.count()!==1||await hidden.getAttribute('type')!=='hidden'||await hidden.getAttribute('form')!==null||await hidden.inputValue()!==email)throw loginError('login_account_mismatch','account_mismatch');
  }
  return {input,button};
 }
@@ -49,6 +63,18 @@ async function lookupPasswordLogin(browser,{lookupEmail,lookupPassword,phase=()=
    try{remaining();}catch(error){if(dispose)close(value);throw error;}return value;
   }finally{clearTimeout(timer);}
  }
+ async function initialForm(page,stage){
+  let waitingForEmpty=false;
+  try{
+   for(;;){
+    try{trusted(page.url(),stage==='lookup'?'/login/lookup':'/login/authenticate');}catch{throw loginError('login_origin','origin');}
+    waitingForEmpty=false;
+    if(!await budget(()=>completelyEmptyStartup(page)))return budget(()=>reviewedForm(page,stage,lookupEmail));
+    waitingForEmpty=true;
+    await budget(()=>page.waitForTimeout(Math.min(25,remaining())));
+   }
+  }catch(error){if(waitingForEmpty&&error?.message==='login_form_timeout')error.loginGuard='empty_startup_deadline';throw error;}
+ }
  try{
   diagnostic('health_login_lookup_recovery');
   await budget(anonymousCleanup);
@@ -56,16 +82,19 @@ async function lookupPasswordLogin(browser,{lookupEmail,lookupPassword,phase=()=
   const page=await budget(()=>context.newPage(),true);page.setDefaultTimeout(15000);
   phase('login_navigate');await budget(()=>page.goto(APP,{waitUntil:'domcontentloaded',timeout:remaining()}));
   phase('login_auth_redirect');await budget(()=>page.waitForURL('https://auth.gomotive.com/login/lookup**',{timeout:remaining()}));
-  phase('login_lookup_email');
+  phase('login_lookup_form_ready');
   let form=await budget(()=>reviewedForm(page,'lookup',lookupEmail));
+  phase('login_lookup_email');
   await budget(()=>form.input.fill(lookupEmail,{timeout:remaining()}));
-  form=await budget(()=>reviewedForm(page,'lookup',lookupEmail));
+  phase('login_lookup_revalidate');form=await budget(()=>reviewedForm(page,'lookup',lookupEmail));
   if(await budget(()=>form.input.inputValue())!==lookupEmail)throw new Error('login_account_mismatch');
   phase('login_lookup_submit');await budget(()=>form.button.click({timeout:remaining()}));
   await budget(()=>page.waitForURL('https://auth.gomotive.com/login/authenticate**',{timeout:remaining()}));
-  phase('login_password');form=await budget(()=>reviewedForm(page,'password',lookupEmail));
+  phase('login_password_form_ready');form=await initialForm(page,'password');
+  phase('login_password');
   await budget(()=>form.input.fill(lookupPassword,{timeout:remaining()}));
-  form=await budget(()=>reviewedForm(page,'password',lookupEmail));
+  phase('login_password_revalidate');form=await budget(()=>reviewedForm(page,'password',lookupEmail));
+  if(await budget(()=>form.input.inputValue())!==lookupPassword)throw loginError('login_form_target','credential_value_changed');
   phase('login_submit');await budget(()=>form.button.click({timeout:remaining()}));
   phase('login_app_redirect');await budget(()=>page.waitForURL('https://app.gomotive.com/**',{timeout:remaining()}));
   remaining();diagnostic('health_login_lookup_recovered');return {context,page,authenticated:true};

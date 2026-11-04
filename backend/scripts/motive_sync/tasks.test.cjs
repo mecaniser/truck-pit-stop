@@ -86,3 +86,15 @@ test('browser cleanup has a fixed deadline',async()=>{
  await closeBrowser({close:async()=>{}});
  await assert.rejects(closeBrowser({close:()=>new Promise(()=>{})},{timeoutMs:20}),/browser_cleanup_failed/);
 });
+
+
+test('login diagnostics expose only fixed guards and phases, never arbitrary detail',()=>{
+ const {phase,failureDiagnostic}=require('./tasks.cjs');
+ for(const position of ['login_lookup_form_ready','login_lookup_revalidate','login_password_form_ready','login_password_revalidate']){
+  phase(position);
+  assert.deepEqual(failureDiagnostic(Object.assign(new Error('login_form_ambiguous'),{loginGuard:'credential_count',privateDetail:'PRIVATE_VALUE'})),{login_guard:'credential_count',phase:position,error_kind:'login_form_ambiguous'});
+ }
+ assert.equal(JSON.stringify(failureDiagnostic(Object.assign(new Error('login_form_ambiguous'),{loginGuard:'PRIVATE_VALUE'}))).includes('PRIVATE'),false);
+ assert.equal(Object.hasOwn(failureDiagnostic(Object.assign(new Error('PRIVATE_VALUE'),{loginGuard:'credential_count'})),'login_guard'),false);
+ phase('PRIVATE_VALUE');assert.equal(failureDiagnostic(new Error('login_form_ambiguous')).phase,'other');
+});
