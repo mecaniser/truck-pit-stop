@@ -7,10 +7,10 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { isCurrentAuthEpoch, useAuthStore } from '../../stores/authStore'
+import { getAuthenticatedSessionIdentity, isCurrentAuthEpoch, useAuthStore } from '../../stores/authStore'
 import api from '../../lib/api'
 import { Customer } from '../../types'
-import PaymentMethodsCard from './PaymentMethodsCard'
+import PaymentMethodsCard, { type SavedCardConfig } from './PaymentMethodsCard'
 import VehiclesCard from './VehiclesCard'
 import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 import toast from 'react-hot-toast'
@@ -676,7 +676,8 @@ function PreferenceToggle({
 }
 
 function ContactDetailsSection() {
-  const { user, setUser, authSessionEpoch } = useAuthStore()
+  const auth = useAuthStore()
+  const { user, setUser, authSessionEpoch } = auth
   const queryClient = useQueryClient()
   const [preferences, setPreferences] = useState<CustomerPortalPreferences>(() => getPortalPreferences(user?.customer_id))
 
@@ -685,11 +686,22 @@ function ContactDetailsSection() {
     queryFn: async () => (await api.get(`/customers/${user!.customer_id}`)).data,
     enabled: Boolean(user?.customer_id),
   })
-  const { data: paymentMethods = [], isLoading: cardsLoading, isError: cardsError } = useQuery<SavedPaymentMethod[]>({
-    queryKey: ['payment-methods', JSON.stringify([user?.id, user?.tenant_id, user?.customer_id])],
+  const cardScope = getAuthenticatedSessionIdentity(auth)
+  const cardConfig = useQuery<SavedCardConfig>({
+    queryKey: ['payment-methods-config', cardScope],
+    enabled: Boolean(cardScope),
+    queryFn: async () => (await api.get('/payments/cards/config')).data,
     retry: false,
-    queryFn: async () => (await api.get('/payments/methods')).data,
   })
+  const cards = useQuery<SavedPaymentMethod[]>({
+    queryKey: ['payment-methods', cardScope, cardConfig.data?.context_key],
+    enabled: Boolean(cardScope) && cardConfig.data?.available === true,
+    retry: false,
+    queryFn: async () => (await api.get('/payments/cards', { params: { expected_context: cardConfig.data?.context_key } })).data,
+  })
+  const paymentMethods = cards.data || []
+  const cardsLoading = cardConfig.isLoading || cards.isLoading
+  const cardsError = cardConfig.isError || cards.isError || cardConfig.data?.available === false
 
   const { register, handleSubmit, reset, setValue, watch, formState: { errors, isDirty } } = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
@@ -841,7 +853,8 @@ function ContactDetailsSection() {
           </div>
           <p className="mt-3 text-[11px] text-[#8b92a5]">Zelle has no processing fee.</p>
           <p className="mt-1 text-[11px] text-[#8b92a5]">
-            {cardsError ? 'Saved cards unavailable. Open Payments to retry.'
+            {cardConfig.data?.save_pending ? 'Card save unconfirmed. Open Payments for details.'
+              : cardsError ? 'Saved cards unavailable. Open Payments to retry.'
               : cardsLoading ? 'Loading saved cards…'
                 : defaultCard ? `Card on file: ${defaultCard.brand} ···${defaultCard.last4}` : 'No card on file'}
           </p>

@@ -226,23 +226,14 @@ class SavedCardConfigResponse(BaseModel):
     stripe_account_id: str
 
 
-async def _saved_card_context(db: AsyncSession, user: User):
-    if user.role != UserRole.CUSTOMER or not user.customer_id or not user.tenant_id:
-        raise HTTPException(status_code=403, detail="Only customers can manage payment methods")
-    query = select(Customer).where(
-        Customer.id == user.customer_id,
-        Customer.tenant_id == user.tenant_id,
-        Customer.deleted_at.is_(None),
-    )
-    customer = (await db.execute(query)).scalar_one_or_none()
-    if not customer:
-        raise HTTPException(status_code=404, detail="Customer not found")
-    tenant = (await db.execute(select(Tenant).where(
-        Tenant.id == user.tenant_id, Tenant.is_active.is_(True),
-    ))).scalar_one_or_none()
-    if not tenant or not tenant.stripe_account_id or not tenant.stripe_onboarding_complete:
-        raise HTTPException(status_code=409, detail="This shop has not finished setting up Stripe payments.")
-    return customer, tenant.stripe_account_id
+async def _saved_card_context(db: AsyncSession, user: User, *, lock: bool = False):
+    # Compatibility endpoints remain Stripe-only, but cannot override the shop's
+    # selected processor, even when stale clients still call these routes.
+    from app.services.customer_card_context import resolve_card_context, unavailable
+    context = await resolve_card_context(db, user, lock=lock)
+    if context.provider != 'stripe_connect':
+        unavailable()
+    return context.customer, context.account
 
 
 @router.get("/methods/config", response_model=SavedCardConfigResponse)
@@ -260,11 +251,17 @@ async def create_setup_intent(
     current_user: User = Depends(get_current_active_user),
 ):
     """Create a SetupIntent for saving a payment method"""
-    customer, account_id = await _saved_card_context(db, current_user)
+    customer, account_id = await _saved_card_context(db, current_user, lock=True)
 
     # Create or retrieve Stripe customer
     try:
         customer_id = await ensure_connected_stripe_customer(db, customer, account_id)
+        # Customer recovery may commit. Reacquire provider selection before an
+        # intent mutation so a concurrent processor change cannot leak through
+        # a compatibility client without the new context key.
+        _, current_account = await _saved_card_context(db, current_user, lock=True)
+        if current_account != account_id:
+            raise HTTPException(status_code=409, detail="Card settings changed. Refresh before trying again.")
 
         # Create SetupIntent
         setup_intent = stripe.SetupIntent.create(
@@ -336,7 +333,7 @@ async def delete_payment_method(
     current_user: User = Depends(get_current_active_user),
 ):
     """Delete a saved payment method"""
-    customer, account_id = await _saved_card_context(db, current_user)
+    customer, account_id = await _saved_card_context(db, current_user, lock=True)
 
     if not customer or not customer.stripe_customer_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No payment methods")
@@ -365,7 +362,7 @@ async def set_default_payment_method(
     current_user: User = Depends(get_current_active_user),
 ):
     """Set a payment method as default"""
-    customer, account_id = await _saved_card_context(db, current_user)
+    customer, account_id = await _saved_card_context(db, current_user, lock=True)
 
     if not customer or not customer.stripe_customer_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No payment methods")
