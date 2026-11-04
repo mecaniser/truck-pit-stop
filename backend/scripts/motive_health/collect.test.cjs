@@ -75,3 +75,47 @@ test('live Other details owns vitals only for exact provider and VIN',()=>{
  assert.throws(()=>liveVitals({...snapshot,url:snapshot.url.replace('app.gomotive.com','example.test')},identity,vin));
  assert.throws(()=>liveVitals({...snapshot,fields:[...snapshot.fields,{label:'VIN',value:vin}]},identity,vin),/identity/);
 });
+
+// Reviewed VIN-less Live vitals contract, grounded on truck26 Nov4 DOM.
+const {boundLiveVitals,boundLiveVitalsSnapshot}=require('./collect.cjs');
+const identity={href:'#/fleetview/vehicles/summary/123',unit:'26'};
+const proof={vin:null,source_vin_state:'not_displayed'};
+const fields=[{label:'GROUPS',value:'0 groups'},{label:'ODOMETER',value:'548,550.82 mi'},{label:'ENGINE HOURS',value:'21,109'},{label:'MAKE/MODEL',value:'Synthetic truck'},{label:'DATA SOURCE',value:'AI Dashcam Plus'}];
+const snapshot={url:'https://app.gomotive.com/en-US/#/fleetview/map/vehicle/123-null-null/123/live',fields,vin_fields:[]};
+
+test('reviewed no-VIN Live table preserves actual odometer, hours and zero',()=>{
+ assert.deepEqual(boundLiveVitals(snapshot,identity,proof),{odometer_miles:548550.82,engine_hours:21109});
+ assert.deepEqual(boundLiveVitals({...snapshot,fields:[{label:'ODOMETER',value:'0 mi'},{label:'ENGINE HOURS',value:'0'}]},identity,proof),{odometer_miles:0,engine_hours:0});
+ assert.deepEqual(boundLiveVitals({...snapshot,fields:[{label:'ODOMETER',value:'—'},{label:'ENGINE HOURS',value:'0'}]},identity,proof),{odometer_miles:null,engine_hours:0});
+});
+
+test('VIN-less Live never accepts a true, malformed, ambiguous or contradictory VIN',()=>{
+ for(const value of ['1M8GDM9AXKP042788','PENDING-26','malformed'])assert.throws(()=>boundLiveVitals({...snapshot,vin_fields:[{label:'VIN',value}]},identity,proof),/identity_changed/);
+ assert.throws(()=>boundLiveVitals({...snapshot,vin_fields:[{label:'VIN',value:''},{label:'VIN',value:''}]},identity,proof),/identity_changed/);
+ assert.throws(()=>boundLiveVitals(snapshot,identity,{vin:'1M8GDM9AXKP042788',source_vin_state:null}),/identity_changed/);
+ assert.throws(()=>boundLiveVitals(snapshot,identity,{vin:null,source_vin_state:'unknown'}),/identity_changed/);
+ assert.throws(()=>boundLiveVitals({...snapshot,url:snapshot.url.replace('/123/live','/456/live')},identity,proof),/source_changed/);
+ assert.throws(()=>boundLiveVitals({...snapshot,url:snapshot.url.replace('app.gomotive.com','foreign.example')},identity,proof),/source_changed/);
+});
+
+test('duplicate or missing vital labels do not prove a loaded Live table',()=>{
+ assert.throws(()=>boundLiveVitals({...snapshot,fields:fields.filter(f=>f.label!=='ENGINE HOURS')},identity,proof),/layout_changed/);
+ assert.throws(()=>boundLiveVitals({...snapshot,fields:[...fields,fields[1]]},identity,proof),/layout_changed/);
+});
+
+test('grounded VIN-less DOM selects one loaded detail table and retains hidden VIN contradictions',async()=>{
+ const {chromium}=require('../motive_sync/node_modules/playwright');
+ const browser=await chromium.launch({headless:true});
+ try{
+  const page=await browser.newPage();
+  const table=(extra='')=>`<table class="ui fixed table unstackable detail-table"><tbody><tr><td>GROUPS</td><td>0 groups</td></tr><tr><td>ODOMETER</td><td>548550.82 mi</td></tr><tr><td>ENGINE HOURS</td><td>21109</td></tr>${extra}</tbody></table>`;
+  await page.setContent(table());
+  let observed=await page.evaluate(boundLiveVitalsSnapshot);
+  assert.equal(observed.fields.length,3);assert.deepEqual(observed.vin_fields,[]);
+  await page.setContent(table('<tr style="display:none"><td>VIN</td><td>1M8GDM9AXKP042788</td></tr>'));
+  observed=await page.evaluate(boundLiveVitalsSnapshot);
+  assert.equal(observed.vin_fields[0].value,'1M8GDM9AXKP042788');
+  await page.setContent(table()+table());
+  observed=await page.evaluate(boundLiveVitalsSnapshot);assert.deepEqual(observed.fields,[]);
+ }finally{await browser.close();}
+});

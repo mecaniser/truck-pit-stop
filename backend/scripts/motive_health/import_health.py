@@ -10,13 +10,14 @@ from app.db.models.customer import Customer
 from app.db.models.user import User
 from app.db.models.vehicle import Vehicle
 from app.db.models.vehicle_relationship import FleetMembership
+from app.schemas.dashboard_vehicle_binding import BoundTelemetryCapture
 from app.schemas.fleet_diagnostic import DiagnosticCapture
 from app.schemas.fleet_telemetry import TelemetryCapture
 from app.services import fleet_diagnostics as service
 from app.services import fleet_telemetry as telemetry
 from app.services.fleet_telemetry import active_membership, now
 from fastapi import HTTPException
-from scripts.motive_health.targets import normalize_targets, resolve
+from scripts.motive_health.targets import normalize_targets, resolve, resolve_vitals
 from scripts.motive_sync.import_locations import time_value
 from sqlalchemy import and_, or_, select
 
@@ -79,6 +80,11 @@ def validate(document, company_label, company_id, *, recovery=False):
             if not re.fullmatch(r"[A-HJ-NPR-Z0-9]{17}", vin):
                 raise ValueError("Invalid source VIN")
             vins.add(vin)
+        absence = row.get("source_vin_state")
+        if absence is not None and (
+            vin is not None or absence not in {"not_displayed", "explicitly_empty"}
+        ):
+            raise ValueError("Conflicting source VIN evidence")
         if row.get("state") not in ("captured", "unavailable"):
             raise ValueError("Invalid health capture state")
         read = time_value(row["source_read_at"])
@@ -91,8 +97,12 @@ def validate(document, company_label, company_id, *, recovery=False):
             raise ValueError("Captured health requires verified VIN")
         vitals = row.get("vitals")
         if vitals is not None:
-            if not isinstance(vitals, dict) or not vin:
-                raise ValueError("Vitals require verified VIN")
+            if not isinstance(vitals, dict) or not (
+                vin or absence in {"not_displayed", "explicitly_empty"}
+            ):
+                raise ValueError(
+                    "Vitals require verified VIN or reviewed absence proof"
+                )
             read = time_value(vitals["source_read_at"])
             if not started <= read <= finished:
                 raise ValueError("Vitals time outside collection")
@@ -175,29 +185,55 @@ async def batch(
             else:
                 try:
                     read = time_value(vitals["source_read_at"])
-                    vehicle, member = await resolve(
-                        db, tenant_id, row, now(), expected_customer_id, targets
+                    vehicle, member, binding = await resolve_vitals(
+                        db,
+                        tenant_id,
+                        row,
+                        now(),
+                        read,
+                        expected_customer_id,
+                        targets,
+                        company_id,
+                        company_label,
                     )
                     if not telemetry.within(member, read):
                         raise ValueError("Vitals outside current membership")
                     actor = await db.get(User, actor_id)
-                    body = TelemetryCapture(
-                        client_request_id=request,
-                        fleet_customer_id=member.fleet_customer_id,
-                        vin=row["vin"],
-                        provider_company_label=company_label,
-                        provider_vehicle_id=row["provider_vehicle_id"],
-                        provider_vehicle_number=row["unit"],
-                        odometer_miles=vitals.get("odometer_miles"),
-                        engine_hours=vitals.get("engine_hours"),
-                        observed_at=None,
-                        evidence_note=json.dumps(
+                    values = {
+                        "client_request_id": request,
+                        "fleet_customer_id": member.fleet_customer_id,
+                        "vin": row["vin"],
+                        "provider_company_label": company_label,
+                        "provider_vehicle_id": row["provider_vehicle_id"],
+                        "provider_vehicle_number": row["unit"],
+                        "odometer_miles": vitals.get("odometer_miles"),
+                        "engine_hours": vitals.get("engine_hours"),
+                        "observed_at": None,
+                        "evidence_note": json.dumps(
                             {
                                 "kind": "motive_health_vitals_v1",
                                 "source_read_at": vitals["source_read_at"],
                                 "company_id": company_id,
                             }
                         ),
+                    }
+                    if binding:
+                        # Fleet projection revalidates bound captures using the
+                        # existing shared camelCase source-time evidence contract.
+                        evidence = json.loads(values["evidence_note"])
+                        evidence.update(
+                            sourceReadTime=vitals["source_read_at"],
+                            source_vin_state=row["source_vin_state"],
+                        )
+                        values.update(
+                            dashboard_binding_id=binding.id,
+                            source_company_id=company_id,
+                            source_read_at=read,
+                            source_vin_state=row["source_vin_state"],
+                            evidence_note=json.dumps(evidence),
+                        )
+                    body = (BoundTelemetryCapture if binding else TelemetryCapture)(
+                        **values
                     )
                     # Dry-run must exercise the real contract without leaving writes.
                     savepoint = await db.begin_nested() if not apply else None
@@ -208,6 +244,19 @@ async def batch(
                         if created:
                             saved.captured_at = read
                             await db.flush()
+                        if binding:
+                            from app.services import dashboard_vehicle_bindings
+
+                            if (
+                                saved.id
+                                not in await dashboard_vehicle_bindings.valid_capture_ids(
+                                    db, tenant_id, [saved]
+                                )
+                            ):
+                                raise ValueError(
+                                    "Bound vitals projection identity unavailable"
+                                )
+                        matched.add(vehicle.id)
                         vitals_item.update(
                             vehicle_id=str(vehicle.id),
                             capture_id=str(saved.id),
@@ -226,6 +275,8 @@ async def batch(
                     if eligible is None and reason in {
                         "exact_unique_vin_required",
                         "unique_current_membership_required",
+                        "reviewed_vehicle_binding_required",
+                        "reviewed_vehicle_binding_invalid",
                     }:
                         results.append(
                             {**vitals_item, "status": "excluded", "reason": reason}
@@ -239,10 +290,21 @@ async def batch(
             "client_request_id": None,
         }
         if row["state"] == "unavailable":
-            if row.get("vin"):
+            if row.get("vin") or row.get("source_vin_state") in {
+                "not_displayed",
+                "explicitly_empty",
+            }:
                 try:
-                    vehicle, _ = await resolve(
-                        db, tenant_id, row, now(), expected_customer_id, targets
+                    vehicle, _, _ = await resolve_vitals(
+                        db,
+                        tenant_id,
+                        row,
+                        now(),
+                        time_value(row["source_read_at"]),
+                        expected_customer_id,
+                        targets,
+                        company_id,
+                        company_label,
                     )
                     matched.add(vehicle.id)
                 except HTTPException as exc:
