@@ -22,8 +22,9 @@ def setup(monkeypatch, name='quickbooks_payments'):
         STRIPE_CONNECT_INVOICE_PAYMENTS_APPROVED=True, STRIPE_CONNECT_WEBHOOK_SECRET='fixture'))
     monkeypatch.setattr(provider, 'quickbooks_payments_enabled_for_tenant', lambda value: value == tenant_id)
     monkeypatch.setattr(provider.qbp, 'payments_base_url', lambda:'https://sandbox.api.intuit.com')
-    db = SimpleNamespace(scalar=AsyncMock(side_effect=lambda query: connection if 'quickbooks_connections' in str(query) else config))
     tenant = SimpleNamespace(id=tenant_id,is_active=True,deleted_at=None,stripe_account_id='acct_own',stripe_onboarding_complete=True)
+    db = SimpleNamespace(scalar=AsyncMock(side_effect=lambda query: tenant if 'FROM tenants' in str(query) else connection if 'quickbooks_connections' in str(query) else config))
+    monkeypatch.setattr(provider,'provider_readiness',AsyncMock(return_value=SimpleNamespace(status='ready')))
     binding = provider.BookingProviderBinding(name, config.provider_account_snapshot, 3, 'sandbox', tenant_id)
     metadata = {'purpose':'booking_prepayment_v1','tenant_id':str(tenant_id),'customer_id':str(uuid4()),
         'appointment_id':str(uuid4()),'booking_payment_attempt_id':str(uuid4()),'price_snapshot_sha256':'a'*64}

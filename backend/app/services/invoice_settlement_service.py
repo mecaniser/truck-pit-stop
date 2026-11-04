@@ -363,6 +363,12 @@ async def provider_readiness(
         if coherent_order is None:
             ancestry_reasons.append("invoice_settlement_ancestry_requires_review")
             break
+        if current_id == invoice_id and node.source == "easy_truck_shop_import":
+            raw_mirror_order = await db.scalar(select(RepairOrder.id).where(
+                RepairOrder.id == node.repair_order_id, RepairOrder.tenant_id == tenant.id,
+                RepairOrder.source == "easy_truck_shop_import"))
+            if raw_mirror_order is not None:
+                ancestry_reasons.append("raw_imported_invoice_read_only")
         scope_ids.append(current_id)
         if current_id != invoice_id:
             # A replacement may not collect against any predecessor money,
@@ -473,19 +479,32 @@ async def provider_readiness(
         )
         unreconciled_invoice = await db.scalar(
             select(Invoice.id)
-            .join(RepairOrder, RepairOrder.id == Invoice.repair_order_id)
+            .outerjoin(RepairOrder, and_(RepairOrder.id == Invoice.repair_order_id,
+                                        RepairOrder.tenant_id == tenant.id))
             .where(
                 Invoice.tenant_id == tenant.id,
                 Invoice.deleted_at.is_(None),
-                RepairOrder.tenant_id == tenant.id,
                 or_(invoice_id is None, Invoice.id.in_(scope_ids)),
-                RepairOrder.customer_id.is_not(None),
-                ~select(InvoiceSettlement.id).where(
-                    InvoiceSettlement.tenant_id == tenant.id,
-                    InvoiceSettlement.invoice_id == Invoice.id,
-                    InvoiceSettlement.customer_id == case((Invoice.accounting_policy == "source_collection_hold", Invoice.billed_customer_id), else_=RepairOrder.customer_id),
-                    InvoiceSettlement.deleted_at.is_(None),
-                ).correlate(Invoice,RepairOrder).exists(),
+                or_(
+                    # A foreign/missing RO never proves a same-tenant mirror.
+                    RepairOrder.id.is_(None),
+                    and_(
+                        RepairOrder.customer_id.is_not(None),
+                        # Only the tenant-wide prerequisite omits exact raw
+                        # mirrors. Explicit NULL branches retain native rows.
+                        or_(invoice_id is not None,
+                            Invoice.source.is_(None),
+                            Invoice.source != "easy_truck_shop_import",
+                            RepairOrder.source.is_(None),
+                            RepairOrder.source != "easy_truck_shop_import"),
+                        ~select(InvoiceSettlement.id).where(
+                            InvoiceSettlement.tenant_id == tenant.id,
+                            InvoiceSettlement.invoice_id == Invoice.id,
+                            InvoiceSettlement.customer_id == case((Invoice.accounting_policy == "source_collection_hold", Invoice.billed_customer_id), else_=RepairOrder.customer_id),
+                            InvoiceSettlement.deleted_at.is_(None),
+                        ).correlate(Invoice,RepairOrder).exists(),
+                    ),
+                ),
             )
             .limit(1)
         )
