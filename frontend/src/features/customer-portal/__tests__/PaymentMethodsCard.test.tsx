@@ -122,6 +122,27 @@ describe('provider-neutral saved cards', () => {
     expect(Object.keys(m.post.mock.calls[0][1]).sort()).toEqual(['expected_context','idempotency_key','token'])
     expect(screen.queryByText(/quickbooks|intuit|stripe/i)).not.toBeInTheDocument()
   })
+  it.each([400, 409, undefined])('rotates a card-save key only for definitive rejection (status %s)', async status => {
+    m.get.mockImplementation(async path => ({ data: path.endsWith('/config') ? qbpConfig : [] }))
+    m.fetch.mockResolvedValueOnce({ ok:true, json:async()=>({value:'first-token'}) })
+      .mockResolvedValueOnce({ ok:true, json:async()=>({value:'corrected-token'}) })
+    m.post.mockRejectedValueOnce({ response: status ? { status, data:{detail:'Unable to save your card.'} } : undefined })
+      .mockResolvedValueOnce({ data:{status:'saved'} })
+    mount(); await openForm(); fillCard()
+    fireEvent.click(screen.getByRole('button',{name:'Add Card'}))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to save your card.')
+    await waitFor(()=>expect(screen.getByRole('button',{name:'Add Card'})).toBeEnabled())
+    fillCard()
+    fireEvent.change(screen.getByLabelText('Card number'), {target:{value:'4012888888881881'}})
+    fireEvent.click(screen.getByRole('button',{name:'Add Card'}))
+    await waitFor(()=>expect(m.post).toHaveBeenCalledTimes(2))
+    expect(m.post.mock.calls[1][1].token).toBe('corrected-token')
+    const first=m.post.mock.calls[0][1].idempotency_key
+    const second=m.post.mock.calls[1][1].idempotency_key
+    if(status===400) expect(second).not.toBe(first)
+    else expect(second).toBe(first)
+    expect(m.loader).not.toHaveBeenCalled()
+  })
   it('keeps an unconfirmed save on hold without resubmitting or calling Stripe', async () => {
     let pending=false
     m.get.mockImplementation(async path=>({data:path.endsWith('/config')?{...qbpConfig,save_pending:pending}:[]}))

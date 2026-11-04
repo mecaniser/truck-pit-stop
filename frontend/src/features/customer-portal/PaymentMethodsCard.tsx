@@ -87,7 +87,7 @@ function StripeCardForm({ config, onSuccess, onCancel, onRefresh }: {
 function TokenCardForm({ config, onSuccess, onCancel, onRefresh }: {
   config: SavedCardConfig; onSuccess: () => void; onCancel: () => void; onRefresh: () => void
 }) {
-  const [requestKey] = useState(() => crypto.randomUUID())
+  const [requestKey, setRequestKey] = useState(() => crypto.randomUUID())
   const [processing, setProcessing] = useState(false)
   return <div className="space-y-3">
     <QuickBooksPaymentPanel tokenUrl={config.token_url || ''} submitLabel="Add Card" processingLabel="Adding..."
@@ -100,6 +100,10 @@ function TokenCardForm({ config, onSuccess, onCancel, onRefresh }: {
           })
           if (data.status !== 'saved') throw new Error('Card save unconfirmed')
         } catch (cause: unknown) {
+          const status = (cause as { response?: { status?: number } })?.response?.status
+          // Corrected card details start a new operation after a definitive rejection.
+          // Uncertain outcomes must retain their key.
+          if (status === 400) setRequestKey(crypto.randomUUID())
           onRefresh()
           throw cause
         }
