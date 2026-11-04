@@ -33,6 +33,36 @@ function reported(): PaymentAttemptResponse {
 }
 beforeEach(() => { vi.clearAllMocks(); api.fetchSettlement.mockResolvedValue(base); api.fetchAllocations.mockResolvedValue({ items: [] }) })
 
+describe('Customer payment choices', () => {
+  it.each([
+    ['customer', 'quickbooks_payments'], ['guest', 'quickbooks_payments'],
+    ['customer', 'stripe_connect'], ['guest', 'stripe_connect'],
+  ] as const)('uses familiar payment labels for %s with %s', async (audience, provider) => {
+    show({ ...base, card_provider: provider }, audience)
+    expect(screen.getByRole('radio', { name: 'Card Credit or debit', exact: true })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: 'Zelle No card fee', exact: true })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Continue with card', exact: true })).toBeEnabled()
+    expect(screen.queryByText(/QuickBooks|Stripe/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pay in full', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.click(screen.getByRole('button', { name: 'Pay part', exact: true }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Payment amount', exact: true }), '50.00')
+    expect(screen.getByRole('textbox', { name: 'Payment amount', exact: true })).toHaveValue('50.00')
+    expect(api.createPaymentAttempt).not.toHaveBeenCalled()
+  })
+  it('discloses shop-assisted methods without creating a payment or enabling unsupported rails', async () => {
+    show()
+    const other = screen.getByRole('button', { name: 'Other payment methods', exact: true })
+    expect(other).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText(/Contact the shop about bank transfers/)).not.toBeInTheDocument()
+    await userEvent.click(other)
+    expect(other).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText(/bank transfers or fleet checks\/codes \(EFS, Comchek, T-Chek\)/)).toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: /ACH|EFS|Fleet/ })).not.toBeInTheDocument()
+    expect(api.createPaymentAttempt).not.toHaveBeenCalled()
+    await userEvent.keyboard('{Tab}')
+  })
+})
+
 describe('Zelle transfer report boundary', () => {
   it.each(['customer', 'guest'] as const)('shows instructions and returns without reserving money for %s', async audience => {
     show(base, audience)

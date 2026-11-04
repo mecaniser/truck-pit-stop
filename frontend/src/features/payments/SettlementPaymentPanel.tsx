@@ -134,6 +134,7 @@ function InvoicePaymentPanel({
   const [amount, setAmount] = useState<string | null>(null)
   const [editingAmount, setEditingAmount] = useState(false)
   const [expandedTenders, setExpandedTenders] = useState(false)
+  const [otherMethodsOpen, setOtherMethodsOpen] = useState(false)
   const [showTransferDetails, setShowTransferDetails] = useState(false)
   const [reference, setReference] = useState('')
   const [note, setNote] = useState('')
@@ -241,10 +242,10 @@ function InvoicePaymentPanel({
     && summary.allowed_actions?.create_attempt !== false
     && (!referenceRequired || reference.trim()),
   )
-  const providerLabel = summary.card_provider === 'stripe_connect'
+  const providerLabel = audience !== 'staff' ? 'Card' : summary.card_provider === 'stripe_connect'
     ? 'Stripe Connect'
     : summary.card_provider === 'quickbooks_payments'
-      ? audience === 'staff' ? 'QBO Payments' : 'QuickBooks Payments'
+      ? 'QBO Payments'
       : 'Card'
 
   const createMutation = useMutation({
@@ -421,7 +422,7 @@ function InvoicePaymentPanel({
       <section className={`rounded-2xl border p-4 ${panel}`}>
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <p className={`text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>QuickBooks Payments</p>
+            {audience === 'staff' && <p className={`text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>QuickBooks Payments</p>}
             <h2 className="mt-1 font-extrabold">Complete secure card payment</h2>
           </div>
           <ControlButton type="button" onClick={() => setAttempt(null)} className={` px-2 text-sm font-bold ${quiet}`}>Back</ControlButton>
@@ -446,7 +447,7 @@ function InvoicePaymentPanel({
       <section className={`rounded-2xl border p-4 ${panel}`}>
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <p className={`text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>{providerLabel}</p>
+            {audience === 'staff' && <p className={`text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>{providerLabel}</p>}
             <h2 className="mt-1 font-extrabold">Complete secure card payment</h2>
           </div>
           <ControlButton type="button" onClick={() => { setAttempt(null); setStripe(null) }} className={` px-2 text-sm font-bold ${quiet}`}>Back</ControlButton>
@@ -584,7 +585,7 @@ function InvoicePaymentPanel({
       </div>
 
       <div id={`payment-tenders-${summary.invoice_id}`} className="mt-3" role="radiogroup" aria-label="Payment tender">
-        <div className={`grid gap-2 ${audience === 'staff' ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+        <div className={`grid gap-2 ${audience === 'staff' ? 'sm:grid-cols-3' : 'grid-cols-2'}`}>
           {tenders.map((item, index) => {
             const meta = item === 'cash' ? { label: 'Cash', detail: 'Full payment only', icon: Banknote } : RAIL_META[item]
             const Icon = meta.icon
@@ -611,7 +612,7 @@ function InvoicePaymentPanel({
                 }}
                 className={`flex min-h-11 items-center gap-2 rounded-xl border px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-500,#d25d43)] disabled:cursor-not-allowed disabled:opacity-50 ${selected ? dark ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-emerald-700 bg-emerald-50' : input}`}>
                 <Icon className="h-4 w-4 shrink-0" />
-                <span className="min-w-0"><span className="block text-sm font-extrabold">{item === 'card' ? providerLabel : audience === 'staff' && item === 'fleet_payment' ? 'EFS codes' : meta.label}</span>{audience !== 'staff' && <span className={`block text-[11px] ${quiet}`}>{meta.detail}</span>}</span>
+                <span className="min-w-0"><span className="block text-sm font-extrabold">{item === 'card' ? providerLabel : audience === 'staff' && item === 'fleet_payment' ? 'EFS codes' : meta.label}</span>{audience !== 'staff' && <span className={`block text-[11px] ${quiet}`}>{item === 'card' ? 'Credit or debit' : item === 'zelle' ? 'No card fee' : meta.detail}</span>}</span>
               </ControlButton>
             )
           })}
@@ -622,6 +623,12 @@ function InvoicePaymentPanel({
         {!cashSelected && noncashAvailable && <ControlButton type="button" disabled={createMutation.isPending} onClick={() => { setAmount(editingAmount ? null : currentAmount); setEditingAmount(!editingAmount) }} className="ml-auto  rounded-lg px-2 font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">
           {editingAmount ? 'Pay full balance' : 'Pay partial amount'}
         </ControlButton>}
+      </div>}
+      {audience !== 'staff' && noncashAvailable && !allowedRails.some(item => item === 'ach' || item === 'fleet_payment') && <div className="mt-2">
+        <ControlButton type="button" aria-expanded={otherMethodsOpen} aria-controls={`other-payment-methods-${summary.invoice_id}`} onClick={() => setOtherMethodsOpen(value => !value)} className={`flex min-h-11 items-center gap-2 rounded-lg px-1 text-xs font-semibold ${quiet}`}>
+          Other payment methods<ChevronDown aria-hidden="true" className={`h-4 w-4 ${otherMethodsOpen ? 'rotate-180' : ''}`} />
+        </ControlButton>
+        {otherMethodsOpen && <p id={`other-payment-methods-${summary.invoice_id}`} className={`mt-1 text-sm ${quiet}`}>Contact the shop about bank transfers or fleet checks/codes (EFS, Comchek, T-Chek).</p>}
       </div>}
       {audience !== 'staff' && !cashSelected && noncashAvailable && <div className="mt-4 grid grid-cols-2 gap-2" role="group" aria-label="Payment amount choice">
         <ControlButton type="button" aria-pressed={!editingAmount} onClick={() => { setAmount(null); setEditingAmount(false) }} className={`whitespace-nowrap rounded-xl border px-3 text-sm font-bold ${!editingAmount ? dark ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-emerald-700 bg-emerald-50' : input}`}>Pay in full</ControlButton>
@@ -730,7 +737,7 @@ function InvoicePaymentPanel({
         createMutation.mutate()
       }} disabled={!canSubmit || createMutation.isPending || (rail === 'zelle' && audience !== 'staff' && !zelleRecipient?.display)} className="mt-4 flex  w-full items-center justify-center gap-2 rounded-xl bg-[color-mix(in_srgb,var(--accent-600,#b9472f)_75%,#000)] px-4 text-sm font-extrabold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
         {createMutation.isPending && <Spinner size="sm" />}
-        {createMutation.isPending ? 'Preparing…' : rail === 'card' ? `Continue to ${providerLabel}` : audience === 'staff' ? `Record ${rail ? RAIL_META[rail].label : 'payment'}` : 'View Zelle instructions'}
+        {createMutation.isPending ? 'Preparing…' : rail === 'card' ? audience === 'staff' ? `Continue to ${providerLabel}` : 'Continue with card' : audience === 'staff' ? `Record ${rail ? RAIL_META[rail].label : 'payment'}` : 'View Zelle instructions'}
       </ControlButton>
       {audience === 'staff' && <p className={`mt-2 text-center text-[11px] ${quiet}`}>Applied after {rail === 'card' ? 'provider' : 'shop'} confirmation.</p>}
       </>}

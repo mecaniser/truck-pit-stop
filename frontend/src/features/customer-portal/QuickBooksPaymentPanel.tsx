@@ -122,7 +122,7 @@ export default function QuickBooksPaymentPanel({ invoiceId, tokenUrl, onSuccess,
       })
       const tokenPayload = await tokenResponse.json().catch(() => null)
       if (!tokenResponse.ok || typeof tokenPayload?.value !== 'string') {
-        throw new Error('QuickBooks could not securely prepare this payment.')
+        throw new Error('Your card payment could not be prepared securely.')
       }
       setFields(EMPTY_FIELDS)
 

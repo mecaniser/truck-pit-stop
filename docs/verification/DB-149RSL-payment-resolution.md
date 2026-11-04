@@ -46,3 +46,13 @@ Existing live invoice and its payment attempts remain unchanged. Final independe
 ## Release boundary
 
 Preview approval is required before merging or deploying this change. Do not clear existing pending attempts as part of release. Historical attempts require their own audited resolution with verified evidence. Roll back code if cross-account disclosure, duplicate reservation release, receipt loss, or unsafe unknown-card retry appears.
+
+## Payment-choice refinement (2026-11-04)
+
+Frontend & UX Fast UI iteration, same existing payment contract. Customer and guest see Card and Zelle side by side from320px, provider-neutral card-entry headings and Continue with card. Pay in full and Pay part remain separate from method selection. Other payment methods discloses shop-assisted bank-transfer/fleet-code enquiries without enabling customer ACH or EFS submission. EFS MoneyCodes are a valid method; a customer code-submission and shop-authorization flow remains separate backend/contract scope. Staff provider labels and permitted rails are preserved.
+
+72 focused tests pass, changed-source ESLint and production build/typecheck pass. Actual customer desktop1440, mobile390 and narrow320 plus guest390 checks show equal54.5px-high method choices with no horizontal overflow; keyboard switching and partial50 draft pass. Disclosures and amount/method changes submit no payment. Only read-only existing fictional previews were used; no backend source/configuration or financial writes.
+
+Runtime preflight: branch codex/payment-attempt-resolution baseline b5d5c107; frontend PID51925 cwd /private/tmp/payment-attempt-resolution/frontend, API8018 read-only bind from the same checkout, ENVIRONMENT=test/database payment_resolution_qa/schema200. Direct and proxied /health/ready200; actual rendered Card and Zelle text confirms changed source. URL http://127.0.0.1:5175/portal/invoices/35917ebd-6132-4068-986d-10382875b160 is aligned and browser-verified. No service restart or migration.
+
+Updated screenshots: choices-desktop.png, choices-mobile.png and choices-guest-mobile.png in the same local artifact directory. Impeccable detector has no findings. Prior head b5d5c107 passed all7 CI jobs; the new UI refinement requires its own exact-head CI before release. No merge or deployment.
