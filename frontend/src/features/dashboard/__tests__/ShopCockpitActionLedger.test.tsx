@@ -276,7 +276,7 @@ describe('DB-035 Stage 3 Action Ledger', () => {
 
 describe('invoice-only payment review integration', () => {
   it('includes canonical review requests in Closeout and renders their single owning section', () => {
-    renderLedger({ activeWork: <div>Active panel</div>, paymentReviewCount: 2, paymentReview: <section aria-label="Canonical payment review">Two invoice requests</section> })
+    renderLedger({ workView: 'closeout', activeWork: <div>Active panel</div>, paymentReviewCount: 2, paymentReview: <section aria-label="Canonical payment review">Two invoice requests</section> })
     expect(screen.getByRole('button', { name: /Closeout\s*3/ })).toBeInTheDocument()
     expect(screen.getAllByRole('region', { name: 'Canonical payment review' })).toHaveLength(1)
     expect(screen.queryByRole('tab', { name: /^Payment review/ })).not.toBeInTheDocument()
