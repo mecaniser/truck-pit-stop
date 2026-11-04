@@ -117,3 +117,30 @@ matching surrounding reads cannot authorize a contradictory middle snapshot.
 Validate before promoting its values in VIN and reviewed-absence paths. The same
 both-null fallback applies to bound vitals only after fresh post-Live absence and
 identity proof. Positive/zero partial Live values remain unmerged.
+
+
+## Password-form readiness and diagnostic contract
+
+The PR783 canary failed before the password-submission phase. Its generic
+ambiguity category cannot establish whether initial loading, duplicate controls
+or post-fill validation failed. Independent offline probes reproduce both loading
+and contradictory forms; no production cause is asserted.
+
+Permit waiting only before password entry, on the exact trusted password route,
+for a demonstrably empty document: no forms, inputs (including hidden inputs),
+editable controls, buttons or iframes, no rendered body text or other rendered
+content. The wait consumes the original 15-second fallback budget, uses the same
+page/context, and performs no navigation or credential retry. Lookup validation
+remains immediate and strict. Any nonempty/partial state proceeds to the existing
+strict review and fails for contradictions, duplicates, challenges, wrong account
+or unsafe form destination. Review again after password fill and verify the
+password input still contains the supplied value before the single submission;
+never refill or retry if the form changed.
+
+Expose only fixed validation-phase and guard enums through the existing failure
+event. Never serialize URLs, account values, field values, DOM or provider tokens.
+Independent QA/Security must prove blank-to-ready success, blank timeout, blank
+to contradiction, post-fill mutation, one-fill/one-submit limits, unchanged
+context count, strict destination/account checks and diagnostics privacy. New
+source/receipt/projection parity and natural scheduled execution remain release
+gates; prior-image success is historical evidence only.

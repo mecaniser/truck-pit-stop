@@ -168,7 +168,15 @@ async function modernFixture(options={}){
   const ordinal=contexts.length,context=await raw.newContext(config);contexts.push(context);events.push(['create',ordinal]);
   const close=context.close.bind(context);context.close=async()=>{events.push(['close',ordinal]);if(ordinal===1&&options.secondClose)await options.secondClose();await close();events.push(['closed',ordinal]);};
   await context.exposeBinding('fixtureInput',(_source,name)=>inputEvents.push(name));
-  await context.addInitScript(()=>document.addEventListener('input',event=>window.fixtureInput(event.target.name)));
+  await context.addInitScript(mode=>document.addEventListener('input',event=>{
+   window.fixtureInput(event.target.name);
+   if(event.target.name==='user_profile[password]'&&mode){
+    if(mode==='replace')event.target.form.outerHTML=event.target.form.outerHTML;
+    if(mode==='remove')event.target.form.remove();
+    if(mode==='duplicate')event.target.form.insertAdjacentHTML('beforeend','<input type="password" name="user_profile[password]">');
+    if(mode==='account')event.target.form.querySelector('input[type="hidden"]').value='other@example.invalid';
+   }
+  }),options.postFill);
   await context.route('**/*',async route=>{
    const request=route.request(),url=new URL(request.url());requests.push({url:request.url(),method:request.method(),body:request.postData()});
    if(!['https://app.gomotive.com','https://auth.gomotive.com','https://evil.invalid'].includes(url.origin))return route.abort();
@@ -192,7 +200,9 @@ async function modernFixture(options={}){
     }
     if(options.foreignLookup)return html("<script>location.replace('https://evil.invalid/login/authenticate')</script>");
     const hidden=options.hiddenEmail===false?'':`<input type="${options.hiddenType||'hidden'}" name="user_profile[email]" ${options.hiddenAttributes||''} value="${options.hiddenEmail||lookupCredentials.lookupEmail}">`;
-    return html(`${options.passwordHead||''}<form ${options.passwordAttributes||'action="/login/authenticate" method="post"'}>${hidden}<input ${options.passwordInput||'type="password"'} name="user_profile[password]"><button ${options.passwordButton||'type="submit"'}>Log in</button>${options.passwordFormExtra||''}</form>${options.duplicatePassword?'<input type="password" name="user_profile[password]">':''}${options.passwordExtra||''}`);
+    const passwordBody=`${options.passwordHead||''}<form ${options.passwordAttributes||'action="/login/authenticate" method="post"'}>${hidden}<input ${options.passwordInput||'type="password"'} name="user_profile[password]"><button ${options.passwordButton||'type="submit"'}>Log in</button>${options.passwordFormExtra||''}</form>${options.duplicatePassword?'<input type="password" name="user_profile[password]">':''}${options.passwordExtra||''}`;
+    if(options.passwordDelay||options.passwordNever)return html(`<main>${options.passwordStartup||''}</main>${options.passwordNever?'':`<script>setTimeout(()=>document.querySelector('main').innerHTML=${JSON.stringify(passwordBody)},${options.passwordDelay})</script>`}`);
+    return html(passwordBody);
    }
    return html('<h1>Unexpected request</h1>');
   });return context;
@@ -332,4 +342,55 @@ test('hung second anonymous disposal consumes modern deadline without third cont
   assert.equal(f.contexts.length,2);assert.equal(posts(f).length,0);assert.equal(f.inputEvents.length,0);
   release.resolve();await new Promise(resolve=>setTimeout(resolve,30));assert.equal(f.contexts.length,2);
  }finally{release.resolve();await f.browser.close();}
+});
+test('real Chromium truly empty password startup waits before exactly one password fill and POST',async()=>{
+ const f=await modernFixture({passwordDelay:100}),phases=[];
+ try{
+  const result=await lookupPasswordLogin(f.browser,{...lookupCredentials,fallbackTimeout:5000,phase:p=>phases.push(p),diagnostic(){}});
+  assert.equal(result.authenticated,true);assert.equal(f.contexts.length,1);assert.equal(posts(f).length,2);assert.equal(f.inputEvents.filter(n=>n==='user_profile[password]').length,1);
+  assert.ok(phases.indexOf('login_password_form_ready')<phases.indexOf('login_password'));assert.ok(phases.indexOf('login_password')<phases.indexOf('login_password_revalidate'));assert.ok(phases.indexOf('login_password_revalidate')<phases.indexOf('login_submit'));
+ }finally{await f.browser.close();}
+});
+test('never-ready empty password startup consumes existing deadline without password fill or retry',async()=>{
+ const f=await modernFixture({passwordNever:true}),phases=[];
+ try{
+  await assert.rejects(lookupPasswordLogin(f.browser,{...lookupCredentials,fallbackTimeout:1500,phase:p=>phases.push(p),diagnostic(){}}),e=>e.message==='login_form_timeout'&&e.loginGuard==='empty_startup_deadline');
+  assert.equal(f.contexts.length,1);assert.equal(posts(f).length,1);assert.equal(f.inputEvents.filter(n=>n==='user_profile[password]').length,0);assert.equal(phases.at(-1),'login_password_form_ready');
+ }finally{await f.browser.close();}
+});
+for(const [name,markup] of [
+ ['hidden input','<input type="hidden" name="unreviewed">'],
+ ['empty form','<form></form>'],
+ ['editable control','<div contenteditable="true"></div>'],
+ ['iframe','<iframe style="display:none" src="about:blank"></iframe>'],
+ ['OTP','<input name="otp" autocomplete="one-time-code">'],
+ ['SSO text','<a href="#">Continue with SSO</a>'],
+ ['rendered challenge','<div style="width:20px;height:20px;background:black"></div>'],
+])test(`password startup containing ${name} is not treated as blank or retried`,async()=>{
+ const f=await modernFixture({passwordDelay:250,passwordStartup:markup});
+ try{
+  await assert.rejects(lookupPasswordLogin(f.browser,{...lookupCredentials,fallbackTimeout:5000,diagnostic(){}}),e=>e.message==='login_form_ambiguous'&&e.loginGuard==='credential_missing');assert.equal(f.contexts.length,1);assert.equal(posts(f).length,1);assert.equal(f.inputEvents.filter(n=>n==='user_profile[password]').length,0);
+ }finally{await f.browser.close();}
+});
+for(const [name,options,error,guard] of [
+ ['duplicate',{duplicatePassword:true},'login_form_ambiguous','credential_ambiguous'],
+ ['wrong account',{hiddenEmail:'other@example.invalid'},'login_account_mismatch','account_mismatch'],
+ ['unsafe action',{passwordAttributes:'action="https://evil.invalid/login/authenticate" method="post"'},'login_form_target','form_action'],
+ ['challenge',{passwordFormExtra:'<iframe src="about:blank"></iframe>'},'login_form_ambiguous','challenge_control'],
+])test(`empty startup followed by ${name} stays fatal before password fill`,async()=>{
+ const f=await modernFixture({passwordDelay:50,...options});
+ try{
+  await assert.rejects(lookupPasswordLogin(f.browser,{...lookupCredentials,fallbackTimeout:5000,diagnostic(){}}),e=>e.message===error&&e.loginGuard===guard);assert.equal(f.contexts.length,1);assert.equal(posts(f).length,1);assert.equal(f.inputEvents.filter(n=>n==='user_profile[password]').length,0);
+ }finally{await f.browser.close();}
+});
+for(const [name,postFill,error,guard] of [
+ ['removed form','remove','login_form_ambiguous','credential_missing'],
+ ['duplicate password','duplicate','login_form_ambiguous','credential_ambiguous'],
+ ['changed account','account','login_account_mismatch','account_mismatch'],
+ ['valid-looking empty replacement','replace','login_form_target','credential_value_changed'],
+])test(`post-fill ${name} fails strict revalidation without refilling or submitting`,async()=>{
+ const f=await modernFixture({postFill}),phases=[];
+ try{
+  await assert.rejects(lookupPasswordLogin(f.browser,{...lookupCredentials,fallbackTimeout:5000,phase:p=>phases.push(p),diagnostic(){}}),e=>e.message===error&&e.loginGuard===guard);assert.equal(f.contexts.length,1);assert.equal(posts(f).length,1);assert.equal(f.inputEvents.filter(n=>n==='user_profile[password]').length,1);assert.equal(phases.at(-1),'login_password_revalidate');assert.equal(phases.includes('login_submit'),false);
+ }finally{await f.browser.close();}
 });
