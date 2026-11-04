@@ -242,6 +242,7 @@ async def reconcile_due_card_attempts(
     deadline.  An explicitly cancelled/failed intent releases the reservation;
     non-terminal or unreachable intents retain it and are revisited shortly.
     """
+    from app.services.payment_attempt_resolution import TerminalNoChargeProof
     now = datetime.now(timezone.utc)
     query = select(InvoicePaymentAttempt.id).where(
         InvoicePaymentAttempt.state == "pending",
@@ -278,7 +279,7 @@ async def reconcile_due_card_attempts(
     for attempt_id in attempt_ids:
         attempt = (await db.execute(select(InvoicePaymentAttempt).where(
             InvoicePaymentAttempt.id == attempt_id,
-        ).with_for_update())).scalar_one_or_none()
+        ).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
         if not attempt or attempt.state != "pending":
             result["deferred"] += 1
             continue
@@ -308,7 +309,12 @@ async def reconcile_due_card_attempts(
                 QuickBooksConnection.status == "connected",
                 QuickBooksConnection.deleted_at.is_(None),
             ))
-            if not connection:
+            configuration=await db.scalar(select(TenantPaymentProviderConfiguration).where(
+                TenantPaymentProviderConfiguration.tenant_id==attempt.tenant_id,
+                TenantPaymentProviderConfiguration.version==attempt.provider_configuration_version,
+                TenantPaymentProviderConfiguration.deleted_at.is_(None),
+            ))
+            if not connection or not configuration or configuration.selected_provider!="quickbooks_payments" or connection.realm_id!=configuration.qbo_realm_snapshot or attempt.provider_account_id!=configuration.provider_account_snapshot:
                 await _record_card_reconciliation_failure(
                     db,
                     attempt=attempt,
@@ -370,6 +376,7 @@ async def reconcile_due_card_attempts(
                     expected_attempt_version=attempt.version,
                     failure_code="provider_reservation_expired",
                     idempotency_key=f"qbp-reconcile:{attempt.id}:{charge.id}:expired",
+                    terminal_proof=TerminalNoChargeProof(attempt.tenant_id,attempt.id,attempt.provider,charge.id,"provider_terminal_no_charge"),
                     expired=True,
                 )
                 result["released"] += 1
@@ -418,7 +425,7 @@ async def reconcile_due_card_attempts(
                 )
                 result["confirmed"] += 1
                 continue
-            if status_value in cancelable:
+            if status_value in cancelable and type(intent.get("amount_received")) is int and intent.get("amount_received")==0 and type(intent.get("amount_capturable")) is int and intent.get("amount_capturable")==0:
                 cancelled = cancel_intent(
                     attempt.provider_intent_id,
                     stripe_account=attempt.provider_account_id,
@@ -431,7 +438,8 @@ async def reconcile_due_card_attempts(
                     allowed_statuses={"canceled"},
                 )
                 status_value = cancelled_validated.status
-            if status_value in terminal_release:
+                intent = cancelled
+            if status_value in terminal_release and type(intent.get("amount_received")) is int and intent.get("amount_received")==0 and type(intent.get("amount_capturable")) is int and intent.get("amount_capturable")==0:
                 await fail_attempt(
                     db,
                     attempt_id=attempt.id,
@@ -440,6 +448,7 @@ async def reconcile_due_card_attempts(
                     expected_attempt_version=attempt.version,
                     failure_code="provider_reservation_expired",
                     idempotency_key=f"stripe-reconcile:{attempt.provider_account_id}:{intent_id}:expired",
+                    terminal_proof=TerminalNoChargeProof(attempt.tenant_id,attempt.id,attempt.provider,intent_id,"provider_cancelled"),
                     expired=True,
                 )
                 result["released"] += 1

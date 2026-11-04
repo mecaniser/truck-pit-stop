@@ -1,4 +1,5 @@
 from __future__ import annotations
+from unittest.mock import AsyncMock
 
 import json
 from datetime import datetime, timedelta, timezone
@@ -719,6 +720,7 @@ async def test_late_card_success_refunds_full_unearned_gross_and_preserves_charg
         actor=None, expected_attempt_version=card.attempt.version,
         failure_code="provider_status_requires_review",
         idempotency_key="late-card-release", expired=True,
+        terminal_proof=__import__("app.services.payment_attempt_resolution",fromlist=["TerminalNoChargeProof"]).TerminalNoChargeProof(tenant.id,card.attempt.id,card.attempt.provider,"pi_late_card","mocked_terminal_provider_proof"),
     )
     manual = await create_attempt(
         db_session, invoice=invoice, tenant=tenant, customer_id=customer.id,
@@ -1249,7 +1251,7 @@ async def test_quickbooks_payments_partial_attempt_uses_scoped_provider_and_conf
 
 
 @pytest.mark.asyncio
-async def test_quickbooks_payments_unknown_outcome_stays_pending_and_reconciles_safely(
+async def test_quickbooks_payments_unknown_no_id_stays_pending_and_never_recharges(
     db_session, monkeypatch,
 ):
     tenant, owner, customer, invoice = await _financial_context(
@@ -1327,7 +1329,7 @@ async def test_quickbooks_payments_unknown_outcome_stays_pending_and_reconciles_
             idempotency_key="qbp-unknown-attempt-charge",
         )
     assert error.value.code == "card_provider_outcome_unknown"
-    assert error.value.retryable is True
+    assert error.value.retryable is False
     await db_session.refresh(creation.attempt)
     assert creation.attempt.state == "pending"
     assert creation.attempt.failure_code == "quickbooks_payment_outcome_unknown"
@@ -1338,42 +1340,18 @@ async def test_quickbooks_payments_unknown_outcome_stays_pending_and_reconciles_
     ))).scalars().all()
     assert len(events) == 1
 
-    async def pending_retry(**kwargs):
-        assert kwargs["request_id"] == f"db048-attempt-{creation.attempt.id}"
-        return SimpleNamespace(
-            id="qbp-charge-recovered-after-timeout",
-            amount=kwargs["amount"],
-            status="PENDING",
-        )
-
-    monkeypatch.setattr(settlement_endpoints, "create_quickbooks_charge", pending_retry)
-    assert await settlement_endpoints.charge_quickbooks_settlement_attempt(
-        db_session,
-        attempt=creation.attempt,
-        invoice=invoice,
-        tenant=tenant,
-        actor=owner,
-        payment_token="fresh-opaque-browser-token",
-        expected_attempt_version=creation.attempt.version,
-        idempotency_key="qbp-unknown-attempt-charge-retry",
-    ) is None
+    create_again=AsyncMock(side_effect=AssertionError("Unknown request must not create another charge"))
+    monkeypatch.setattr(settlement_endpoints,"create_quickbooks_charge",create_again)
+    with pytest.raises(SettlementDomainError) as replay_error:
+        await settlement_endpoints.charge_quickbooks_settlement_attempt(db_session,attempt=creation.attempt,invoice=invoice,tenant=tenant,actor=owner,payment_token="fresh-opaque-browser-token",expected_attempt_version=creation.attempt.version,idempotency_key="different-browser-retry")
+    assert replay_error.value.code == "provider_outcome_unknown"
+    create_again.assert_not_called()
     creation.attempt.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
-
-    async def captured_reconciliation(**kwargs):
-        assert kwargs["charge_id"] == "qbp-charge-recovered-after-timeout"
-        return SimpleNamespace(
-            id=kwargs["charge_id"],
-            amount=money(creation.attempt.provider_charge_amount),
-            status="CAPTURED",
-        )
-
-    monkeypatch.setattr(reconciliation_service, "get_quickbooks_charge", captured_reconciliation)
-    result = await reconcile_due_card_attempts(db_session, tenant_id=tenant.id)
-    await db_session.flush()
-    assert result == {"checked": 1, "confirmed": 1, "released": 0, "deferred": 0}
-    assert creation.attempt.state == "confirmed"
-    assert money(settlement.active_pending_principal) == Decimal("0.00")
-    assert money(settlement.confirmed_principal) == Decimal("25.00")
+    result=await reconcile_due_card_attempts(db_session,tenant_id=tenant.id)
+    assert result == {"checked":1,"confirmed":0,"released":0,"deferred":1}
+    assert creation.attempt.state == "pending"
+    assert money(settlement.active_pending_principal) == Decimal("25.00")
+    assert money(settlement.confirmed_principal) == Decimal("0.00")
 
 
 @pytest.mark.asyncio
@@ -1871,7 +1849,7 @@ async def test_expired_card_reconciliation_does_not_touch_inaccessible_lifecycle
 
 
 @pytest.mark.asyncio
-async def test_card_provider_create_failure_retains_failed_audit_and_releases_hold(db_session, monkeypatch):
+async def test_card_provider_create_unknown_retains_audit_and_reservation(db_session, monkeypatch):
     tenant, owner, customer, invoice = await _financial_context(db_session, monkeypatch, fee=Decimal("0"))
     settlement = await get_or_create_settlement(db_session, invoice=invoice, customer_id=customer.id, tenant=tenant)
     creation = await create_attempt(
@@ -1896,16 +1874,16 @@ async def test_card_provider_create_failure_retains_failed_audit_and_releases_ho
             idempotency_key="card-create-fails",
             actor=owner,
         )
-    assert error.value.code == "card_provider_error"
+    assert error.value.code == "card_provider_outcome_unknown"
     retained = await db_session.scalar(select(InvoicePaymentAttempt).where(
         InvoicePaymentAttempt.id == creation.attempt.id,
     ))
     retained_settlement = await db_session.get(InvoiceSettlement, creation.settlement.id)
-    assert retained.state == "failed"
-    assert money(retained_settlement.active_pending_principal) == Decimal("0.00")
+    assert retained.state == "pending"
+    assert money(retained_settlement.active_pending_principal) == Decimal("25.00")
     assert await db_session.scalar(select(func.count()).select_from(InvoicePaymentLedgerEvent).where(
         InvoicePaymentLedgerEvent.attempt_id == retained.id,
-        InvoicePaymentLedgerEvent.event_type == "payment_failed",
+        InvoicePaymentLedgerEvent.event_type == "provider_outcome_unknown",
     )) == 1
 
 

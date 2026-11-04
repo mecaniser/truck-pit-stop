@@ -31,7 +31,9 @@
     "src/features/invoice-access/__tests__/InvoiceAccessPage.payment.test.tsx",
     "src/features/payments/__tests__/zelle-explicit-confirmation.test.tsx",
     "src/features/dashboard/__tests__/ZelleReviewQueue.test.tsx",
-    "src/features/dashboard/__tests__/zelleReviewProjection.test.ts"
+    "src/features/dashboard/__tests__/zelleReviewProjection.test.ts",
+    "src/features/payments/__tests__/attempt-resolution.test.tsx",
+    "src/features/payments/__tests__/allocation-resolution-api.test.ts"
   ],
   "backend": [
     "tests/test_schema_preflight.py",
@@ -60,6 +62,9 @@
     "tests/test_zelle_websocket_updates.py",
     "tests/test_db048_cash_payment_timing.py",
     "tests/test_db048_new_receipt_authorization.py",
-    "tests/test_db048_payment_checkout.py"
+    "tests/test_db048_payment_checkout.py",
+    "tests/test_payment_attempt_resolution*.py",
+    "tests/test_payment_source_step_up.py",
+    "tests/test_db048_accounting_reconciliation.py"
   ]
 }

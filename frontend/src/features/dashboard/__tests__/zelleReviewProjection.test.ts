@@ -3,7 +3,7 @@ import { withoutDuplicateZelle } from '../zelleReviewProjection'
 import type { ZelleReviewRow } from '../useZelleReviewQueue'
 
 const order = { id: 'ro-a', pending_zelle_confirmation: true, status: 'pending_review', quote_sent: true, hold_reason: 'Parts needed', promised_finish_at: '2026-11-05T18:00:00Z', is_overdue: true }
-const request: ZelleReviewRow = { kind: 'legacy_zelle_submission', invoice_id: 'invoice-a', repair_order_id: 'ro-a', display_invoice_number: 'TPS-1687', customer_id: 'payer-a', customer_display_name: 'Billed customer', principal_amount: '168.44', attempt_id: null, settlement_id: 'settlement-a', settlement_version: 3, created_at: '2026-11-04T12:00:00Z', reported_at: '2026-11-04T12:00:00Z', report_status: 'legacy_report', review_mode: 'legacy_invoice', can_confirm: true }
+const request: ZelleReviewRow = { kind: 'legacy_zelle_submission', rail: 'zelle', resolution: null, invoice_id: 'invoice-a', repair_order_id: 'ro-a', display_invoice_number: 'TPS-1687', customer_id: 'payer-a', customer_display_name: 'Billed customer', principal_amount: '168.44', attempt_id: null, settlement_id: 'settlement-a', settlement_version: 3, created_at: '2026-11-04T12:00:00Z', reported_at: '2026-11-04T12:00:00Z', report_status: 'legacy_report', review_mode: 'legacy_invoice', can_confirm: true }
 
 describe('exact payment-review projection deduplication', () => {
   it('does not hide a projected payment when the successful queue is empty', () => {

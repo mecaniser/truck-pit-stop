@@ -23,6 +23,7 @@ import type {
   PaymentAttemptCreate,
   PaymentRail,
   FleetProvider,
+  PaymentAllocation,
   SettlementAccess,
 } from './types'
 
@@ -102,6 +103,7 @@ function InvoicePaymentPanel({
   submissionBlockedReason,
   taxExemptionControl,
   chargeControls,
+  allocations = [],
 }: {
   access: SettlementAccess
   summary: InvoiceSettlementSummary
@@ -114,6 +116,7 @@ function InvoicePaymentPanel({
   submissionBlockedReason?: string
   taxExemptionControl?: ReactNode
   chargeControls?: InlineInvoiceChargeControls
+  allocations?: PaymentAllocation[]
 }) {
   const queryClient = useQueryClient()
   const latestSummary = useRef(summary)
@@ -155,6 +158,11 @@ function InvoicePaymentPanel({
   const [stripe, setStripe] = useState<Stripe | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const [providerSubmitted, setProviderSubmitted] = useState(false)
+  useEffect(() => {
+    if (!attempt) return
+    const current = allocations.find(row => row.attempt_id === attempt.attempt_id)
+    if (current && current.state !== 'pending') { setAttempt(null); setStripe(null); setProviderSubmitted(false) }
+  }, [allocations, attempt])
   const railRefs = useRef<Array<HTMLButtonElement | null>>([])
   const dark = tone === 'dark'
   const panel = dark ? 'border-[#2a3245] bg-[#111722] text-[#edf0f6]' : 'border-slate-200 bg-white text-slate-950'
@@ -570,7 +578,7 @@ function InvoicePaymentPanel({
       <fieldset disabled={createMutation.isPending || cash?.pending} className="m-0 min-w-0 border-0 p-0">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 id={`settlement-payment-${summary.invoice_id}`} className="font-extrabold">Payment method</h2>
+          <h2 id={`settlement-payment-${summary.invoice_id}`} tabIndex={-1} className="font-extrabold">Payment method</h2>
         </div>
         {audience !== 'staff' && <p className={`text-xs ${quiet}`}>Up to {formatMoney(summary.allocatable_balance)}</p>}
       </div>
