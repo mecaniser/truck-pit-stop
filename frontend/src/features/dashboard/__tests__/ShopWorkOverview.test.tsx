@@ -99,3 +99,16 @@ describe('Shop Work overview', () => {
  })
  it('keeps unknown local times unknown', () => { setup(data({ timezone: null, upcoming: [item({ due_at: '2026-11-02T16:30:00Z', due_kind: 'repair_start' })] })); expect(screen.getByText('Time unavailable')).toBeInTheDocument() })
 })
+
+it('keeps Service visits discoverable when there are no active jobs or review tasks', () => {
+  render(<ShopWorkOverview data={data({ actions: [], actions_total: 0, active_jobs: 0 })} loading={false} failed={false} refreshing={false} onRetry={vi.fn()} onOpen={vi.fn()} onWorkspace={vi.fn()} visitsAvailable/>)
+  expect(screen.getByRole('link', { name: 'Service visits' })).toHaveAttribute('href', '/dashboard/visit-requests?shop_work=overview')
+  expect(screen.queryByText('0 requests awaiting review')).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Review payments' })).not.toBeInTheDocument()
+})
+it('waits for a returning task to load before restoring focus', () => {
+  const props = { loading: false, failed: false, onRetry: vi.fn(), onOpen: vi.fn(), onWorkspace: vi.fn(), resumeTask: 'attention:inventory:part-a' }
+  const view = render(<ShopWorkOverview {...props} refreshing data={data({ actions: [] })}/>)
+  view.rerender(<ShopWorkOverview {...props} refreshing={false} data={data({ actions: [item()] })}/>)
+  expect(screen.getByRole('link', { name: 'Review stock: Brake chamber T30' })).toHaveFocus()
+})

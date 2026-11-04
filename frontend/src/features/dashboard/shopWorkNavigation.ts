@@ -1,5 +1,5 @@
 export type ShopWorkDestination = {
-  kind: 'repair_order' | 'inventory' | 'purchase_order' | 'vendor_return' | 'core' | 'customer_account'
+  kind: 'repair_order' | 'inventory' | 'purchase_order' | 'vendor_return' | 'core' | 'customer_account' | 'visit_request' | 'reservation' | 'payment_review'
   id: string
   view: string | null
 }
@@ -42,6 +42,21 @@ export function shopWorkDestinationUrl(destination: ShopWorkDestination, task?: 
   if (task) params.set('task', task)
   let path: string
   switch (destination.kind) {
+    case 'visit_request':
+      path = '/dashboard/visit-requests'
+      params.set('request', destination.id)
+      break
+    case 'reservation':
+      path = '/dashboard/visit-requests'
+      params.set('view', 'reservations')
+      params.set('appointment_id', destination.id)
+      break
+    case 'payment_review':
+      path = '/dashboard'
+      params.delete('shop_work')
+      params.set('work_view', origin)
+      params.set('payment_review', destination.id)
+      break
     case 'repair_order':
       path = '/dashboard/repair-orders'
       params.set('selected', destination.id)
