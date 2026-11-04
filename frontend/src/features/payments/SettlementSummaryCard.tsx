@@ -5,6 +5,8 @@ import { ControlButton } from '@/components/ui/Controls'
 import { formatMoney, isPositiveMoney } from './money'
 import type { InvoiceSettlementSummary, PaymentAllocation, SettlementAccess } from './types'
 import PaymentAttemptResolutionControls from './PaymentAttemptResolutionControls'
+import EfsReviewControls from './EfsReviewControls'
+import { EFS_STATUS_LABELS } from './efsApi'
 import { CHECKOUT_LABELS } from './attemptResolutionTypes'
 
 const STATE_LABELS: Record<InvoiceSettlementSummary['state'], string> = {
@@ -52,6 +54,16 @@ export default function SettlementSummaryCard({
 }) {
   const [activityOpen, setActivityOpen] = useState(false)
   const focusedAttempt = useRef<string | null>(null)
+  const seenEfs = useRef(new Set<string>())
+  useEffect(() => {
+    const pending = allocations.filter(row => row.efs?.status === 'awaiting_verification')
+    const fresh = pending.find(row => !seenEfs.current.has(row.attempt_id))
+    pending.forEach(row => seenEfs.current.add(row.attempt_id))
+    if (!fresh || audience !== 'customer') return
+    setActivityOpen(true)
+    const frame = requestAnimationFrame(() => document.getElementById(`payment-request-${fresh.attempt_id}`)?.focus({ preventScroll: true }))
+    return () => cancelAnimationFrame(frame)
+  }, [allocations, audience])
   useEffect(() => {
     if (!reviewAttemptId || !allocations.some(row => row.attempt_id === reviewAttemptId)) return
     const identity = `${summary.invoice_id}:${reviewAttemptId}`
@@ -88,7 +100,8 @@ export default function SettlementSummaryCard({
     <section className={`rounded-2xl border p-4 text-sm ${panel}`} aria-label="Invoice payment summary">
       <h2 className="font-bold">Payment status needs review</h2>
       <dl className="mt-3 flex justify-between gap-4"><dt>Balance due</dt><dd>Unavailable</dd></dl>
-      <p className={`mt-3 ${quiet}`}>Contact the shop before making another payment.</p>
+      <p className={`mt-3 ${quiet}`}>{audience === 'staff' ? 'Review the verified received amount before collecting another payment.' : 'Contact the shop before making another payment.'}</p>
+      {resolutionControls?.audience === 'staff' && allocations.filter(row => row.efs).map(row => <EfsReviewControls key={row.attempt_id} summary={summary} allocation={row} tone={tone} onUpdated={resolutionControls.onUpdated} />)}
     </section>
   )
 
@@ -127,7 +140,7 @@ export default function SettlementSummaryCard({
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
             {isPositiveMoney(summary.refund_pending) && <span className="block">{formatMoney(summary.refund_pending)} refund pending.</span>}
-            {isPositiveMoney(summary.unapplied_credit) && <span className="block">{formatMoney(summary.unapplied_credit)} exceeds the invoice balance. Review this amount before deciding whether to refund it or retain it as customer credit with the customer’s consent.</span>}
+            {isPositiveMoney(summary.unapplied_credit) && <span className="block">{formatMoney(summary.unapplied_credit)} is unapplied. Review this amount before deciding whether to refund it or retain it as customer credit with the customer’s consent.</span>}
           </p>
         </div>
       )}
@@ -159,9 +172,9 @@ export default function SettlementSummaryCard({
               <li key={allocation.id} className="px-3 py-2.5 text-sm">
                 <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p id={`payment-request-${allocation.attempt_id}`} tabIndex={-1} className="font-semibold">{RAIL_LABELS[allocation.rail]} · <span>{allocation.resolution ? CHECKOUT_LABELS[allocation.resolution.checkout_status] : allocation.state.replace(/_/g, ' ')}</span></p>
+                  <p id={`payment-request-${allocation.attempt_id}`} tabIndex={-1} className="font-semibold">{allocation.efs ? 'EFS' : RAIL_LABELS[allocation.rail]} · <span>{allocation.efs ? EFS_STATUS_LABELS[allocation.efs.status] : allocation.resolution ? CHECKOUT_LABELS[allocation.resolution.checkout_status] : allocation.state.replace(/_/g, ' ')}</span></p>
                   <p className={`truncate text-xs ${quiet}`}>
-                    {allocation.actor_name ? `${allocation.actor_name} · ` : ''}
+                    {allocation.efs ? `Code ending in ${allocation.efs.code_last4} · ` : ''}{allocation.actor_name ? `${allocation.actor_name} · ` : ''}
                     {allocation.reference_number ? `Ref ${allocation.reference_number} · ` : ''}
                     {new Date(allocation.confirmed_at || allocation.created_at).toLocaleString()}
                   </p>
@@ -175,6 +188,7 @@ export default function SettlementSummaryCard({
                 </div>
                 <span className="shrink-0 text-right font-bold tabular-nums">{(allocation.state === 'pending' || Boolean(allocation.resolution && ['cancelled', 'failed'].includes(allocation.resolution.checkout_status))) && <span className={`block text-[11px] font-normal ${quiet}`}>Requested</span>}{formatMoney(allocation.state === 'pending' || Boolean(allocation.resolution && ['cancelled', 'failed'].includes(allocation.resolution.checkout_status)) ? allocation.principal_amount : allocation.applied_principal_amount)}</span>
                 </div>
+                {resolutionControls?.audience === 'staff' && allocation.efs && <EfsReviewControls allocation={allocation} summary={summary} tone={tone} onUpdated={resolutionControls.onUpdated} />}
                 {resolutionControls && !summary.payment_verification_required && <PaymentAttemptResolutionControls {...resolutionControls} allocation={allocation} summary={summary} tone={tone} />}
               </li>
             ))}

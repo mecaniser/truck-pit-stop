@@ -281,3 +281,5 @@ from app.db.models.visit_request import VisitRequest
 
 from app.db.models.booking_fulfillment import VisitRequestEvent, BookingRepairOrderLink
 from app.db.models.booking_application import BookingReceiptApplication, BookingAccountingReviewTask, BookingAccountingReviewEvent
+
+from app.db.models.efs_instrument import EfsInstrumentSubmission

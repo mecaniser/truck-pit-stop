@@ -50,6 +50,14 @@ describe('durable staff Zelle payment review', () => {
     expect(screen.getByRole('heading', { name: 'Payment review' })).toHaveFocus()
     expect(mocks.post).not.toHaveBeenCalled()
   })
+  it('opens the exact protected EFS request without using generic manual confirmation', async () => {
+    mocks.get.mockResolvedValue({ data: { rows: [row({ kind: 'canonical_efs_attempt', rail: 'fleet_payment', provider_label: 'EFS', can_confirm: false, resolution: resolution({ rail: 'fleet_payment', checkout_status: 'verification_pending' }), efs: { provider: 'EFS', code_last4: '6789', status: 'awaiting_verification', can_cancel: true, can_reveal: true, can_verify: true, can_reject: true, can_resolve_received_difference: false, difference_review: null } })], next_cursor: null } })
+    show()
+    fireEvent.click(await screen.findByRole('button', { name: 'Review EFS request for invoice TPS-1687' }))
+    expect(mocks.dialog.mock.lastCall?.[0]).toMatchObject({ invoiceId: 'native-copy-1687', reviewAttemptId: 'attempt-1687' })
+    expect(screen.getByText('EFS code awaiting verification')).toBeInTheDocument()
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
   it('loads every cursor page read-only and deduplicates an exact repeated attempt', async () => {
     mocks.get.mockResolvedValueOnce({ data: { rows: [row()], next_cursor: 'cursor-next' } }).mockResolvedValueOnce({ data: { rows: [row(), row({ invoice_id: 'invoice-b', display_invoice_number: 'TPS-42', attempt_id: 'attempt-b', principal_amount: '20.00' })], next_cursor: null } })
     show()

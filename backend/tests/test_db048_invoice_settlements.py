@@ -81,7 +81,11 @@ from app.api.v1.endpoints.quickbooks import QuickBooksChargeRequest
 
 
 def test_guest_invoice_token_has_no_customer_wallet_routes():
-    paths = {route.path for route in invoice_access_endpoints.router.routes}
+    # Inspect the mounted API surface, including nested routers on newer FastAPI.
+    from fastapi import FastAPI
+    app = FastAPI()
+    app.include_router(invoice_access_endpoints.router)
+    paths = set(app.openapi()["paths"])
     assert "/eligible-credits" not in paths
     assert "/customer-credits/{credit_id}/applications" not in paths
     assert "/overpayments/{overpayment_id}/credit-consent" in paths

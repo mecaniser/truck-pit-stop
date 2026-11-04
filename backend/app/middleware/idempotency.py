@@ -61,6 +61,12 @@ class IdempotencyMiddleware:
             return False
         if path in SENSITIVE_NON_IDEMPOTENT_PATHS:
             return False
+        # EFS owns encrypted transaction-coupled replay and fresh authorization.
+        # Reveal responses must never enter this convenience Redis body cache.
+        if path.endswith('/efs-submissions') or '/efs-code/' in path or path.endswith('/efs-verification'):
+            return False
+        if '/attempts/' in path and path.endswith(('/resolution','/resolution/read')):
+            return False
         # Private files must be authenticated before receive(), and their replay
         # and current permission checks belong to the database transaction.
         if is_receipt_path(path):

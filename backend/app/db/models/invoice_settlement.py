@@ -40,6 +40,7 @@ MONEY = Numeric(12, 2)
 class InvoiceSettlement(BaseModel):
     __tablename__ = "invoice_settlements"
     __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_invoice_settlements_tenant_id"),
         UniqueConstraint("invoice_id", name="uq_invoice_settlements_invoice"),
         UniqueConstraint("tenant_id", "invoice_id", name="uq_invoice_settlements_tenant_invoice"),
         ForeignKeyConstraint(
@@ -154,6 +155,7 @@ class TenantPaymentProviderConfiguration(BaseModel):
 class InvoicePaymentAttempt(BaseModel):
     __tablename__ = "invoice_payment_attempts"
     __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_invoice_attempts_tenant_id"),
         UniqueConstraint("tenant_id", "idempotency_key", name="uq_invoice_payment_attempt_idempotency"),
         UniqueConstraint("provider", "provider_account_id", "provider_event_id", name="uq_invoice_payment_provider_event"),
         UniqueConstraint(

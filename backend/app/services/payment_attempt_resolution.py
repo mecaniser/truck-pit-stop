@@ -41,7 +41,7 @@ async def evidence_page(db,attempts):
     blocked=set((await db.scalars(select(PaymentRefund.source_attempt_id).where(PaymentRefund.tenant_id==tenant,PaymentRefund.source_attempt_id.in_(ids),PaymentRefund.deleted_at.is_(None)))).all())
     blocked.update((await db.scalars(select(PaymentProviderDispute.attempt_id).where(PaymentProviderDispute.tenant_id==tenant,PaymentProviderDispute.attempt_id.in_(ids)))).all())
     blocked.update((await db.scalars(select(PaymentAccountingLink.attempt_id).where(PaymentAccountingLink.tenant_id==tenant,PaymentAccountingLink.attempt_id.in_(ids)))).all())
-    return {a.id:dict(events=events[a.id],settlement=settlements.get(a.settlement_id),blocked=a.id in blocked or any(e.event_type=='provider_receipt_needs_review' for e in events[a.id])) for a in attempts}
+    return {a.id:dict(events=events[a.id],settlement=settlements.get(a.settlement_id),blocked=a.id in blocked or any(e.event_type in {'provider_receipt_needs_review','efs_received_difference'} for e in events[a.id])) for a in attempts}
 
 def protocol(info):
     return next((e.evidence_snapshot for e in info['events'] if e.event_type=='card_submission_protocol'),None)
@@ -78,7 +78,7 @@ def projection(a,info,*,actor=None,audience='customer',customer_id=None):
     elif a.rail=='zelle':status='transfer_reported' if (a.manual_evidence or {}).get('transfer_sent_confirmed') is True else 'verification_pending'
     elif a.rail=='card':status='checkout_started' if local_card else 'verification_pending'
     else:status='review_required'
-    if any(e.event_type=='provider_receipt_needs_review' for e in events):status='review_required'
+    if any(e.event_type in {'provider_receipt_needs_review','efs_received_difference'} for e in events):status='review_required'
     if pending and (review or info['blocked'] or (a.rail=='card' and not local_card and not known)):status='review_required'
     reason=None
     if pending and owner:
@@ -90,20 +90,30 @@ def projection(a,info,*,actor=None,audience='customer',customer_id=None):
     legacy_review=bool(resolved and resolved.evidence_snapshot.get('legacy_projection_review_required'))
     if legacy_review:reason=dict(code='legacy_projection_review_required',message='The shop must review this transfer before another payment.')
     if status=='review_required':reason=dict(code='provider_review_required',message='The shop must review this payment before you try again.')
-    if a.rail not in {'zelle','card'}:reason=dict(code='unsupported_resolution_rail',message='This payment request requires shop review.');actions=ResolutionActions()
+    if a.rail not in {'zelle','card'} and not info.get('efs'):reason=dict(code='unsupported_resolution_rail',message='This payment request requires shop review.');actions=ResolutionActions()
     notice=None
     if status=='cancelled':notice=dict(kind='request_cancelled',message='Payment request canceled. No payment was recorded. You can try again.',resolved_at=stamp(cancelled.occurred_at).isoformat())
     if legacy_review and notice:notice['message']='Payment request canceled. The shop must review this transfer before another payment.'
     if resolved and status=='failed':notice=dict(kind='reviewed_release',message='The shop verified that this payment did not complete. You can try again.',resolved_at=stamp(resolved.occurred_at).isoformat())
     elif status=='received' and cancelled:notice=dict(kind='late_receipt',message='Payment was received after the request was canceled. The current balance includes the receipt.',resolved_at=stamp(a.confirmed_at).isoformat() if a.confirmed_at else None)
+    efs=info.get('efs')
+    if efs is not None:
+        status={'awaiting_verification':'verification_pending','received':'received','rejected':'failed','cancelled':'cancelled','review_required':'review_required'}[efs.status]
+        actions=ResolutionActions(cancel_unsent=efs.can_cancel)
+        reason=dict(code='efs_review_required',message='The shop must review this EFS payment.') if efs.status=='review_required' else None
+        if efs.status in {'cancelled','rejected'}:
+            notice=dict(kind='efs_request_closed',message='To try again, use a different code or contact the shop.',resolved_at=stamp(a.failed_at).isoformat() if a.failed_at else None)
     return ResolutionProjection(attempt_id=a.id,invoice_id=a.invoice_id,attempt_version=a.version,settlement_version=s.version if s else 1,
         rail=a.rail,requested_principal=cash(a.principal_amount),currency=a.currency,attempt_state=a.state,checkout_status=status,
-        reservation_amount=cash(a.principal_amount if pending else ZERO),can_retry=a.state in {'failed','expired'} and not blocked and not legacy_review and bool(resolved or any(e.event_type=='terminal_no_charge_verified' for e in events)),
+        reservation_amount=cash(a.principal_amount if pending else ZERO),can_retry=a.state in {'failed','expired'} and not blocked and not legacy_review and (bool(efs and efs.status in {'cancelled','rejected'}) or bool(resolved or any(e.event_type=='terminal_no_charge_verified' for e in events))),
         actions=actions,block_reason=reason,resolution_notice=notice,review_status='resolved' if resolved else 'requested' if review else 'evidence_required' if status=='review_required' else 'none')
 
 async def project_many(db,attempts,*,actor=None,audience='customer',customer_id=None):
     with getattr(db,'no_autoflush',nullcontext()):
         infos=await evidence_page(db,attempts)
+        from app.services.customer_efs import summaries
+        efss=await summaries(db,attempts,actor=actor,audience=audience,customer_id=customer_id)
+        for identity,value in efss.items():infos[identity]['efs']=value
         return {a.id:projection(a,infos[a.id],actor=actor,audience=audience,customer_id=customer_id) for a in attempts}
 
 async def append_protocol(db,a,s,actor):
@@ -196,6 +206,8 @@ async def staff_detail(db,a,*,actor):
     if not money_staff(actor):error('invoice_not_found','Invoice not found.',404)
     with getattr(db,'no_autoflush',nullcontext()):
         info=(await evidence_page(db,[a]))[a.id];b=binding(a,info)
+        from app.services.customer_efs import summaries
+        info['efs']=(await summaries(db,[a],actor=actor,audience='staff')).get(a.id)
         missing=[key for key in ('provider_account_id','environment','configuration_version') if not b.get(key)]
         return dict(resolution=projection(a,info,actor=actor,audience='staff'),binding=b,
             evidence_requirements=dict(can_submit_terminal_evidence=a.state=='pending' and a.rail=='card' and not info['blocked'] and not missing,requires_provider_case=True,requires_document=False,
@@ -274,6 +286,15 @@ async def execute(db,attempt_id,command,key,*,actor=None,guest_invoice=None,gues
     key=key.strip();event_key='resolution:'+key
     a,s,invoice=await locked_context(db,attempt_id,actor=actor,guest_invoice=guest_invoice,guest_customer_id=guest_customer_id)
     audience='guest' if guest_invoice else 'staff' if money_staff(actor) else 'customer'
+    from app.services.customer_efs import protected,claim_for,reject_secret
+    if protected(a):
+        from app.core import efs_crypto
+        from app.services.customer_efs import key as efs_command_key
+        try:code=efs_crypto.decrypt(await claim_for(db,a,True))
+        except efs_crypto.EfsCryptoUnavailable:error('efs_unavailable','EFS is unavailable. Contact the shop.',503)
+        reject_secret(code,command.reason,command.reason_code)
+        key=efs_command_key(key,a.tenant_id);event_key='resolution:'+key
+        if command.action!='cancel_unsent' or not command.reason or len(command.reason.strip())<3:error('efs_cancel_confirmation_required','Confirm this request cancellation and enter a reason.',422)
     body=command.model_dump(mode='json',exclude={'token'})
     request_hash=digest(dict(command=body,attempt_id=str(a.id),invoice_id=str(invoice.id),tenant_id=str(a.tenant_id),customer_id=str(a.customer_id),actor_id=str(identity_user(actor).id) if actor else None,subject=audience))
     previous=await db.scalar(select(Event).where(Event.tenant_id==a.tenant_id,Event.idempotency_key==event_key))
@@ -283,6 +304,8 @@ async def execute(db,attempt_id,command,key,*,actor=None,guest_invoice=None,gues
     if a.version!=command.expected_attempt_version:error('stale_attempt_version','The payment request changed. Refresh before continuing.',current_version=a.version)
     if s.version!=command.expected_settlement_version:error('stale_settlement_version','The invoice balance changed. Refresh before continuing.',current_version=s.version)
     info=(await evidence_page(db,[a]))[a.id]
+    from app.services.customer_efs import summaries
+    info['efs']=(await summaries(db,[a],actor=actor,audience=audience,customer_id=guest_customer_id)).get(a.id)
     dto=projection(a,info,actor=actor,audience=audience,customer_id=guest_customer_id)
     if a.state!='pending':error('attempt_resolution_not_allowed','This request was already resolved. Refresh its current status.')
     allowed=getattr(dto.actions,command.action)
@@ -307,7 +330,7 @@ async def execute(db,attempt_id,command,key,*,actor=None,guest_invoice=None,gues
     if command.action=='request_review':
         a.version+=1;s.version+=1
         await append_ledger_event(db,settlement=s,attempt=a,event_type='review_requested',idempotency_key=event_key+':review',actor=actor,evidence={**private,'resulting_attempt_version':a.version,'resulting_settlement_version':s.version})
-    elif command.action=='cancel_unsent' and (a.rail=='zelle' or (protocol(info) and not started(info) and not a.provider_intent_id and not a.provider_charge_id)):
+    elif command.action=='cancel_unsent' and (a.rail=='zelle' or protected(a) or (protocol(info) and not started(info) and not a.provider_intent_id and not a.provider_charge_id)):
         await _release(db,a,s,actor=actor,event_type='attempt_cancelled',key=event_key+':cancel',evidence=private)
     else:
         # The command is durable before external reads/cancellation. Replays never repeat IO.

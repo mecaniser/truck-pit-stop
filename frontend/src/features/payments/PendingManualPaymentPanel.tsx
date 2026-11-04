@@ -137,7 +137,7 @@ export default function PendingManualPaymentPanel({
   onUpdated: (next: InvoiceSettlementSummary) => void
   includeLate?: boolean
 }) {
-  const pending = allocations.filter(allocation => (allocation.state === 'pending' && allocation.rail !== 'card' && summary.allowed_actions?.confirm_manual === true)
+  const pending = allocations.filter(allocation => (allocation.state === 'pending' && allocation.rail !== 'card' && !allocation.efs && summary.allowed_actions?.confirm_manual === true)
     || (includeLate && allocation.rail === 'zelle' && allocation.resolution?.actions.record_late_receipt === true))
   if (pending.length === 0) return null
   return (

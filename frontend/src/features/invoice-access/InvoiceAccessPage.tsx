@@ -760,6 +760,7 @@ export default function InvoiceAccessPage() {
                 }}
               />
               <SettlementPaymentPanel
+                hideVerificationNotice
                 access={settlementAccess}
                 summary={splitSettlement}
                 allocations={allocationQuery.data?.items ?? []}

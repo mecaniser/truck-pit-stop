@@ -77,7 +77,8 @@ from app.services.quickbooks_payments_service import (
 from app.api.v1.endpoints.quickbooks import _refresh_connection_if_needed
 
 
-router = APIRouter()
+from app.core.payment_privacy import SensitivePaymentRoute
+router = APIRouter(route_class=SensitivePaymentRoute)
 stripe.api_key = settings.STRIPE_SECRET_KEY
 STAFF_ROLES = {UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST}
 
@@ -246,10 +247,21 @@ async def settlement_summary(
     charge_controls = await charge_summary(db, invoice, settlement, tenant, current_user, audience=audience)
     from app.services.booking_application_proof import booking_invoice_application_proof
     booking_applied,booking_review=await booking_invoice_application_proof(db,invoice,settlement)
+    from app.services.customer_efs import has_review
+    booking_review = booking_review or await has_review(db,invoice.tenant_id,invoice.id)
     if booking_review:
         actions.create_attempt=actions.confirm_manual=actions.confirm_cash=actions.apply_customer_credit=False
         actions.rails=[]
         actions.payment_unavailable_reason='Current balance needs shop verification. Contact the shop before paying.'
+    from app.services.customer_efs import submit_capability,unapplied_review
+    if await unapplied_review(db,invoice.tenant_id,invoice.id):
+        actions.create_attempt=actions.confirm_manual=actions.confirm_cash=actions.apply_customer_credit=False
+        actions.rails=[]
+        actions.payment_unavailable_reason='Unapplied EFS funds need shop review before another payment.'
+    actions.submit_efs,actions.efs_unavailable_reason=await submit_capability(db,invoice,settlement,tenant,actor=current_user,audience=audience)
+    if booking_review:
+        actions.submit_efs=False
+        actions.efs_unavailable_reason='The shop must verify the received amount before another payment.'
     return InvoiceSettlementSummary(
         prepayment_applied_amount=booking_applied,
         payment_verification_required=booking_review,
@@ -295,7 +307,10 @@ async def attempt_response(
 ) -> PaymentAttemptResponse:
     from app.services.payment_attempt_resolution import project_many
     resolution = (await project_many(db,[attempt],actor=current_user,audience=audience,customer_id=attempt.customer_id if audience=="guest" else None))[attempt.id]
+    from app.services.customer_efs import summaries
+    efs=(await summaries(db,[attempt],actor=current_user,audience=audience,customer_id=attempt.customer_id if audience=="guest" else None)).get(attempt.id)
     return PaymentAttemptResponse(
+        efs=efs,
         resolution=resolution,
         attempt_id=attempt.id, invoice_id=attempt.invoice_id,
         principal_amount=money(attempt.principal_amount),
@@ -519,8 +534,11 @@ async def allocation_page(
         staff_evidence = audience == "staff"
         from app.services.payment_attempt_resolution import project_many
         resolutions=await project_many(db,rows,actor=current_user,audience=audience,customer_id=customer_id)
+        from app.services.customer_efs import summaries
+        efs_summaries=await summaries(db,rows,actor=current_user,audience=audience,customer_id=customer_id)
         return PaymentAllocationPage(
             items=[PaymentAllocationItem(
+                efs=efs_summaries.get(row.id),
                 resolution=resolutions[row.id],
                 sender_evidence={
                     key: value for key, value in (row.manual_evidence or {}).items()
@@ -2200,3 +2218,6 @@ async def read_attempt_resolution_detail(attempt_id:UUID,db:AsyncSession=Depends
 async def read_attempt_review_queue(cursor:Optional[str]=None,limit:int=Query(default=50,ge=1,le=100),db:AsyncSession=Depends(get_db),current_user:CurrentUser=Depends(get_current_active_user)):
     from app.services.zelle_transfer_reports import review_queue
     return await review_queue(db,current_user,cursor=cursor,limit=limit,include_cards=True)
+
+from app.api.v1.endpoints.customer_efs import payments_router as customer_efs_router
+router.include_router(customer_efs_router)
