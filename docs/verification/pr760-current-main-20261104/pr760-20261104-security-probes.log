@@ -1,0 +1,9 @@
+
+ RUN  v5.1.0 /private/tmp/pr760-20261104-security-probes
+
+
+ Test Files  1 passed (1)
+      Tests  14 passed (14)
+   Start at  16:19:45
+   Duration  2.13s (tests 50%, import 21%, environment 14%, transform 13%, setup 2%)
+

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import { useAuthStore } from '../stores/authStore'
@@ -80,7 +80,12 @@ const quickBooksConnection = {
   last_webhook_error: null,
 }
 
-function renderPage(initialEntry = '/dashboard/settings') {
+function HistoryProbe() {
+  const navigate = useNavigate()
+  return <><output data-testid="settings-url">{useLocation().search}</output><button onClick={() => navigate(-1)}>Browser Back</button></>
+}
+
+function renderPage(initialEntry = '/dashboard/settings', withHistory = false) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -92,6 +97,7 @@ function renderPage(initialEntry = '/dashboard/settings') {
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]}>
         <UnifiedSettingsPage />
+        {withHistory && <HistoryProbe />}
       </MemoryRouter>
     </QueryClientProvider>
   )
@@ -130,6 +136,18 @@ describe('UnifiedSettingsPage garage logo import', () => {
       refreshToken: 'refresh',
       isAuthenticated: true,
     })
+  })
+
+  it('keeps the selected section on a fresh visit and restores it with browser Back', async () => {
+    const user = userEvent.setup()
+    renderPage('/dashboard/settings?section=security', true)
+    const sidebar = within(document.querySelector<HTMLElement>('.db-settings-sidebar')!)
+    const security = sidebar.getByRole('button', { name: 'Security' })
+    expect(security).toHaveAttribute('data-active', 'true')
+    await user.click(sidebar.getByRole('button', { name: 'Shop Profile' }))
+    expect(screen.getByTestId('settings-url')).toHaveTextContent('section=garageProfile')
+    await user.click(screen.getByRole('button', { name: 'Browser Back' }))
+    expect(security).toHaveAttribute('data-active', 'true')
   })
 
   it('saves and clears the customer invoice review URL', async () => {
@@ -252,6 +270,7 @@ describe('UnifiedSettingsPage compact mobile section selector', () => {
     const configuration = heading.closest<HTMLElement>('.db-settings-fleet-config')
 
     expect(configuration).not.toBeNull()
+    await within(configuration!).findByLabelText('Password')
     expect(within(configuration!).getAllByText(/Fleet Company|Default Operating Authority/)).toHaveLength(2)
     expect(configuration!.querySelectorAll('.db-settings-fleet-config__summary')).toHaveLength(2)
     expect(within(configuration!).getByLabelText('Password')).toBeInTheDocument()
@@ -444,6 +463,13 @@ describe('UnifiedSettingsPage payment disclosures', () => {
     }
     expect(apiMocks.put).not.toHaveBeenCalled()
     expect(apiMocks.post).not.toHaveBeenCalled()
+  })
+
+  it('resolves a restricted section URL to Profile without reading protected settings', async () => {
+    useAuthStore.setState({ user: { ...useAuthStore.getState().user!, role: 'garage_admin', permissions: {} } })
+    renderPage('/dashboard/settings?section=payments')
+    expect(await screen.findByRole('button', { name: 'Edit Profile' })).toBeVisible()
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/stripe/connect/status')
   })
 
   it('does not mount payment controls through an OAuth return without permission', async () => {
@@ -979,5 +1005,97 @@ describe('UnifiedSettingsPage payment disclosures', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByRole('alertdialog', { name: 'Verify Zelle contact changes' })).toBeInTheDocument()
     expect(apiMocks.post.mock.calls.filter(([path]) => path === '/auth/step-up-grants')).toHaveLength(2)
+  })
+})
+
+
+describe('Fleet configuration access and read states', () => {
+  const settings = {
+    sales_tax_rate: 7.25, shop_supplies_rate: 5, service_fee_rate: 2,
+    labor_rate: 145, internal_labor_rate: 65,
+    fleet_company_name: 'Verified Fleet',
+    default_fleet_authority_customer_id: 'fleet-1',
+    default_fleet_authority_company_name: 'Verified Authority',
+  }
+  const reads = (path: string) => {
+    if (path === '/admin/tax-fee-settings') return Promise.resolve({ data: settings })
+    if (path === '/fleet/settings') return Promise.resolve({ data: { fleet_managers: [] } })
+    if (path === '/fleet/companies') return Promise.resolve({ data: [] })
+    if (path === '/fleet/board') return Promise.resolve({ data: { trucks: [] } })
+    return Promise.resolve({ data: garageProfile })
+  }
+  const configuration = () => document.querySelector<HTMLElement>('.db-settings-fleet-config')!
+  beforeEach(() => {
+    apiMocks.get.mockReset(); apiMocks.post.mockReset(); apiMocks.put.mockReset()
+    apiMocks.get.mockImplementation(reads)
+    useAuthStore.setState({
+      user: { id: 'fleet-owner', email: 'owner@example.com', first_name: 'Fleet', last_name: 'Owner',
+        phone: null, role: 'garage_owner', is_active: true, tenant_id: 'fleet-tenant', customer_id: null },
+      token: 'token', refreshToken: 'refresh', isAuthenticated: true,
+    })
+  })
+
+  it('keeps Fleet Overview available without fetching or unlocking restricted configuration', async () => {
+    useAuthStore.setState({ user: { ...useAuthStore.getState().user!, role: 'garage_admin', permissions: {} } })
+    renderPage('/dashboard/settings?section=fleet')
+    expect(await screen.findByText(/Fleet configuration requires Taxes & Fees access/)).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Manage on Fleet board' })).toBeVisible()
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/admin/tax-fee-settings')
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/fleet/companies')
+    expect(within(configuration()).queryByText('Not set')).not.toBeInTheDocument()
+    expect(within(configuration()).queryByRole('button', { name: 'Unlock' })).not.toBeInTheDocument()
+    expect(within(configuration()).queryByLabelText('Password')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['garage_owner', {}],
+    ['garage_admin', { taxes_fees: true }],
+  ] as const)('preserves loaded configuration and unlock for authorized %s', async (role, permissions) => {
+    useAuthStore.setState({ user: { ...useAuthStore.getState().user!, role, permissions } })
+    renderPage('/dashboard/settings?section=fleet')
+    expect(await screen.findByText('Verified Fleet')).toBeVisible()
+    expect(screen.getByText('Verified Authority')).toBeVisible()
+    expect(within(configuration()).getByRole('button', { name: 'Unlock' })).toBeVisible()
+  })
+
+  it('does not show empty settings or unlock while the configuration read is pending', async () => {
+    apiMocks.get.mockImplementation((path: string) => path === '/admin/tax-fee-settings' ? new Promise(() => {}) : reads(path))
+    renderPage('/dashboard/settings?section=fleet')
+    expect(await screen.findByText('Loading fleet configuration…')).toBeVisible()
+    expect(within(configuration()).queryByText('Not set')).not.toBeInTheDocument()
+    expect(within(configuration()).queryByRole('button', { name: 'Unlock' })).not.toBeInTheDocument()
+  })
+
+  it('explains server-denied configuration even when a client grant is stale', async () => {
+    apiMocks.get.mockImplementation((path: string) => path === '/admin/tax-fee-settings'
+      ? Promise.reject({ isAxiosError: true, response: { status: 403 } }) : reads(path))
+    renderPage('/dashboard/settings?section=fleet')
+    expect(await screen.findByText(/Fleet configuration requires Taxes & Fees access/)).toBeVisible()
+    expect(within(configuration()).queryByText('Not set')).not.toBeInTheDocument()
+    expect(within(configuration()).queryByRole('button', { name: 'Unlock' })).not.toBeInTheDocument()
+    expect(within(configuration()).queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+  })
+
+  it('retries a failed read explicitly without treating it as empty configuration', async () => {
+    let failed = true
+    apiMocks.get.mockImplementation((path: string) => path === '/admin/tax-fee-settings' && failed
+      ? Promise.reject(new Error('Network unavailable')) : reads(path))
+    renderPage('/dashboard/settings?section=fleet')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Fleet configuration could not be loaded.')
+    expect(within(configuration()).queryByText('Not set')).not.toBeInTheDocument()
+    expect(within(configuration()).queryByRole('button', { name: 'Unlock' })).not.toBeInTheDocument()
+    failed = false
+    await userEvent.setup().click(within(configuration()).getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByText('Verified Fleet')).toBeVisible()
+    expect(within(configuration()).getByRole('button', { name: 'Unlock' })).toBeVisible()
+  })
+
+  it('hides previously loaded configuration immediately when its grant is revoked', async () => {
+    renderPage('/dashboard/settings?section=fleet')
+    expect(await screen.findByText('Verified Fleet')).toBeVisible()
+    act(() => useAuthStore.setState({ user: { ...useAuthStore.getState().user!, role: 'garage_admin', permissions: {} } }))
+    expect(screen.getByText(/Fleet configuration requires Taxes & Fees access/)).toBeVisible()
+    expect(screen.queryByText('Verified Fleet')).not.toBeInTheDocument()
+    expect(within(configuration()).queryByRole('button', { name: 'Unlock' })).not.toBeInTheDocument()
   })
 })

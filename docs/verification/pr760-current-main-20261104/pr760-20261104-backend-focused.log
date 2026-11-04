@@ -1,0 +1,92 @@
+................................                                         [100%]
+=============================== warnings summary ===============================
+app/db/base.py:6
+  /app/app/db/base.py:6: MovedIn20Warning: The ``declarative_base()`` function is now available as sqlalchemy.orm.declarative_base(). (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    Base = declarative_base()
+
+app/core/config.py:8
+  /app/app/core/config.py:8: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.14/migration/
+    class Settings(BaseSettings):
+
+app/schemas/repair_order.py:133
+  /app/app/schemas/repair_order.py:133: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.14/migration/
+    class PartsUsageResponse(BaseModel):
+
+app/schemas/repair_order.py:169
+  /app/app/schemas/repair_order.py:169: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.14/migration/
+    class RepairOrderHistoryEventResponse(BaseModel):
+
+app/schemas/repair_order.py:268
+  /app/app/schemas/repair_order.py:268: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.14/migration/
+    class LaborResponse(BaseModel):
+
+app/schemas/repair_order.py:298
+  /app/app/schemas/repair_order.py:298: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.14/migration/
+    class RepairOrderPhotoResponse(BaseModel):
+
+app/schemas/repair_order.py:391
+  /app/app/schemas/repair_order.py:391: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.14/migration/
+    class RepairOrderResponse(RepairOrderBase):
+
+app/schemas/repair_order.py:481
+  /app/app/schemas/repair_order.py:481: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.14/migration/
+    class RepairOrderPMServiceEntry(BaseModel):
+
+app/schemas/repair_order.py:623
+  /app/app/schemas/repair_order.py:623: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.14/migration/
+    class RecommendedServiceResponse(BaseModel):
+
+app/api/v1/endpoints/quotes.py:233
+  /app/app/api/v1/endpoints/quotes.py:233: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.14/migration/
+    class QuoteResponse(BaseModel):
+
+app/schemas/fleet.py:24
+  /app/app/schemas/fleet.py:24: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.14/migration/
+    class InspectionItemResponse(BaseModel):
+
+app/schemas/fleet.py:62
+  /app/app/schemas/fleet.py:62: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.14/migration/
+    class InspectionResponse(BaseModel):
+
+app/schemas/fleet.py:136
+  /app/app/schemas/fleet.py:136: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.14/migration/
+    class IncidentResponse(BaseModel):
+
+app/schemas/fleet.py:200
+  /app/app/schemas/fleet.py:200: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.14/migration/
+    class PMServiceEntry(BaseModel):
+
+app/schemas/fleet.py:212
+  /app/app/schemas/fleet.py:212: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.14/migration/
+    class PMDayLoad(BaseModel):
+
+app/schemas/vehicle.py:50
+  /app/app/schemas/vehicle.py:50: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.14/migration/
+    class VehicleResponse(VehicleBase):
+
+app/schemas/vehicle.py:98
+  /app/app/schemas/vehicle.py:98: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.14/migration/
+    class VehicleRelationshipResponse(BaseModel):
+
+app/api/v1/endpoints/invoices.py:449
+  /app/app/api/v1/endpoints/invoices.py:449: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.14/migration/
+    class InvoiceResponse(BaseModel):
+
+tests/test_internal_fleet_repairs.py::test_billable_fleet_invoice_uses_truck_contact_snapshot
+  /app/app/schemas/customer.py:98: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.14/migration/
+    class CustomerResponse(CustomerBase):
+
+tests/test_internal_fleet_repairs.py::test_billable_fleet_invoice_uses_truck_contact_snapshot
+  /app/app/schemas/customer.py:131: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.14/migration/
+    class VehicleInCustomer(BaseModel):
+
+tests/test_internal_fleet_repairs.py::test_billable_fleet_invoice_uses_truck_contact_snapshot
+  /app/app/schemas/customer.py:153: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.14/migration/
+    class CustomerWithVehiclesResponse(CustomerBase):
+
+tests/test_fleet_board.py::test_schedule_pm_rejects_invalid_bundle_before_schedule_or_order_mutation
+  /app/app/api/v1/endpoints/fleet.py:3805: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+    _validated_service_work_values(services)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+32 passed, 22 warnings in 10.24s

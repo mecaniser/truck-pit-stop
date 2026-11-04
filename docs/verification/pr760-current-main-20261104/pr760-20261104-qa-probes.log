@@ -1,0 +1,9 @@
+
+ RUN  v5.1.0 /private/tmp/pr760-20261104-qa-probes
+
+
+ Test Files  1 passed (1)
+      Tests  19 passed (19)
+   Start at  16:20:05
+   Duration  1.79s (tests 54%, import 21%, environment 14%, transform 8%, setup 2%)
+
