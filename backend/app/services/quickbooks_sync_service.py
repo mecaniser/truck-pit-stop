@@ -69,6 +69,11 @@ async def enqueue_quickbooks_invoice_sync(
     )
     from app.services.invoice_accounting_policy import HISTORICAL_HOLD
     policy = await locked_policy(db, invoice)
+    from app.services.booking_application_accounting import invoice_has_booking_export_hold
+    if await invoice_has_booking_export_hold(db, invoice.tenant_id, invoice.id):
+        invoice.quickbooks_sync_status = "manual_review"
+        invoice.quickbooks_sync_error = "Prepayment bookkeeping is managed separately. Automatic export is held."
+        return None
     if policy in (HISTORICAL_HOLD, "source_collection_hold"):
         return None
     if policy == LOCAL_CASH:
@@ -157,7 +162,7 @@ async def _claim_next_quickbooks_sync_event(
 ) -> tuple[UUID, str] | None:
     """Lease one event immediately before processing it."""
     claim_now = _now()
-    from app.services.quickbooks_shop_activation import admitted_invoice_predicate, event_admitted
+    from app.services.quickbooks_shop_activation import accounting_invoice_predicate, event_admitted
     due = or_(
         (ProviderOutboxEvent.status == "pending") & (ProviderOutboxEvent.available_at <= claim_now),
         (ProviderOutboxEvent.status == "processing") & ProviderOutboxEvent.locked_until.is_not(None)
@@ -168,7 +173,7 @@ async def _claim_next_quickbooks_sync_event(
         # admission. Skipping a denied head never starves another tenant.
         event = await db.scalar(select(ProviderOutboxEvent).where(
             ProviderOutboxEvent.event_type == QUICKBOOKS_INVOICE_SYNC_EVENT,
-            admitted_invoice_predicate(ProviderOutboxEvent.tenant_id, ProviderOutboxEvent.aggregate_id),
+            accounting_invoice_predicate(ProviderOutboxEvent.tenant_id, ProviderOutboxEvent.aggregate_id),
             due, ProviderOutboxEvent.id.not_in(skipped),
         ).order_by(ProviderOutboxEvent.available_at, ProviderOutboxEvent.created_at).limit(1))
         if event is None:

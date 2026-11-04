@@ -86,6 +86,13 @@ def _foreign_key_matches(foreign_keys: Iterable[dict[str, Any]]) -> bool:
 def collect_schema_issues(inspector: Any) -> list[str]:
     """Return all required-object mismatches without exposing connection details."""
     issues: list[str] = []
+    from app.commands.worker_schema_readiness import REQUIRED_COLUMNS
+    for table in ('visit_requests','visit_request_events','booking_repair_order_links','booking_receipts','booking_payment_events','booking_receipt_applications','booking_accounting_review_tasks','booking_accounting_review_events'):
+        if not inspector.has_table(table):
+            issues.append(f'missing required table {table}')
+            continue
+        missing=REQUIRED_COLUMNS[table]-{column['name'] for column in inspector.get_columns(table)}
+        if missing:issues.append(f'missing required columns {table}: '+', '.join(sorted(missing)))
 
     parts_usage_columns = {column["name"] for column in inspector.get_columns("parts_usage")}
     if "source_line_id" not in parts_usage_columns:

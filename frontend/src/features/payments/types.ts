@@ -37,6 +37,8 @@ export interface SettlementAllowedActions {
 }
 
 export interface InvoiceSettlementSummary {
+  prepayment_applied_amount?: string | null
+  payment_verification_required?: boolean
   charge_controls?: {
     tax_exempt: boolean
     shop_supplies_enabled: boolean

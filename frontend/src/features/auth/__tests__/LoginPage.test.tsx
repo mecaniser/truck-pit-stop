@@ -79,7 +79,9 @@ describe('LoginPage', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/email is required/i)).toBeInTheDocument()
+      expect(screen.getByText(/password is required/i)).toBeInTheDocument()
     })
+    expect(mockPost).not.toHaveBeenCalled()
   })
 
   it('calls API on valid submit', async () => {

@@ -243,7 +243,15 @@ async def settlement_summary(
     tax_exemption = await tax_exemption_summary(db, invoice, settlement, tenant, current_user, audience=audience)
     from app.services.invoice_charge_adjustments import summary as charge_summary
     charge_controls = await charge_summary(db, invoice, settlement, tenant, current_user, audience=audience)
+    from app.services.booking_application_proof import booking_invoice_application_proof
+    booking_applied,booking_review=await booking_invoice_application_proof(db,invoice,settlement)
+    if booking_review:
+        actions.create_attempt=actions.confirm_manual=actions.confirm_cash=actions.apply_customer_credit=False
+        actions.rails=[]
+        actions.payment_unavailable_reason='Current balance needs shop verification. Contact the shop before paying.'
     return InvoiceSettlementSummary(
+        prepayment_applied_amount=booking_applied,
+        payment_verification_required=booking_review,
         invoice_id=settlement.invoice_id,
         currency=settlement.currency,
         principal_total=money(settlement.principal_total),

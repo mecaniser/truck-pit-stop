@@ -1,12 +1,13 @@
-from typing import List, Optional
+from typing import List, Optional, Literal
 from uuid import UUID
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import secrets
 import string
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func
-from pydantic import BaseModel
+from sqlalchemy import select, and_, func, or_
+from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr, StrictBool, Field
 from decimal import Decimal
 
 from app.core.dependencies import get_db, get_current_active_user
@@ -18,14 +19,20 @@ from app.db.models.service import Service, ServicePart
 from app.db.models.inventory import Inventory
 from app.db.models.tenant import Tenant
 from app.db.models.appointment import Appointment, AppointmentStatus
-from app.services.stripe_service import create_payment_intent
 from sqlalchemy.orm import selectinload
+from app.services import booking_payments as booking
+
+from app.api.v1.endpoints.visit_requests import staff_router as visit_request_staff_router
+from app.services import booking_fulfillment as fulfillment
 
 router = APIRouter()
+router.include_router(visit_request_staff_router,prefix="/visit-requests",tags=["visit requests"])
 
 
 # Schemas
 class AppointmentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    booking_kind: str | None = None
     service_id: UUID
     vehicle_id: Optional[UUID] = None
     scheduled_at: datetime
@@ -55,6 +62,19 @@ class AppointmentResponse(BaseModel):
 
     class Config:
         from_attributes = True
+        extra = "allow"
+
+    booking_kind: str | None = None
+    booking_payment_version: int | None = None
+    booking_payment_state: str | None = None
+    hold_expires_at: datetime | None = None
+    price_snapshot_sha256: str | None = None
+    version: int | None = None
+    currency: str | None = None
+    receipt: dict | None = None
+    payment_attempt_id: str | None = None
+    payment_attempt_state: str | None = None
+    payment_provider: str | None = None
 
 
 class PaymentIntentResponse(BaseModel):
@@ -65,6 +85,8 @@ class PaymentIntentResponse(BaseModel):
 class TimeSlot(BaseModel):
     time: str
     available: bool
+    starts_at: datetime
+    timezone: str
 
 
 def generate_confirmation_number() -> str:
@@ -80,100 +102,67 @@ async def create_appointment(
     data: AppointmentCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
-    """Create a new appointment (customer or staff)"""
-    
-    # Determine customer_id
+    """Create an idempotent unpaid hold; only verified full payment confirms it."""
+    appointment = await booking.reserve(db, current_user, data, idempotency_key)
+    return await booking.snapshot(db, appointment)
+
+
+class BookingAttemptCreate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    expected_version: int
+    price_snapshot_sha256: str
+    quickbooks_token: str | None = None
+
+class BookingPaymentVerify(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    attempt_id: UUID
+    expected_version: int
+
+@router.get('/payment-capability')
+async def booking_payment_capability(service_id: UUID, db: AsyncSession=Depends(get_db), current_user: User=Depends(get_current_active_user)):
+    if not current_user.tenant_id or current_user.role != UserRole.CUSTOMER: raise HTTPException(404,'Service not found')
+    service=await db.scalar(select(Service).where(Service.id==service_id,Service.tenant_id==current_user.tenant_id,Service.is_active.is_(True),Service.deleted_at.is_(None)))
+    tenant=await db.get(Tenant,current_user.tenant_id)
+    if not service or not tenant:raise HTTPException(404,'Service not found')
+    try:await booking.price(service,tenant)
+    except HTTPException as error:
+        return {'available':False,'provider':None,'reason_code':error.detail['code'],'message':error.detail['message'],'shop_timezone':tenant.timezone,'currency':'usd','token_url':None}
+    capability=await booking.provider.booking_provider_capability(db,tenant)
+    return {'available':capability.available,'provider':capability.binding.provider if capability.binding else None,'reason_code':capability.reason_code,'message':capability.message,'shop_timezone':tenant.timezone,'currency':'usd','token_url':capability.token_url}
+
+@router.post('/{appointment_id}/payment-attempts')
+async def start_booking_payment(appointment_id: UUID, body:BookingAttemptCreate, db:AsyncSession=Depends(get_db),current_user:User=Depends(get_current_active_user),idempotency_key:str|None=Header(None,alias='Idempotency-Key')):
+    return await booking.start_attempt(db,current_user,appointment_id,body,idempotency_key)
+
+async def _reject_unverified_appointment_payment(
+    appointment_id: UUID,
+    db: AsyncSession,
+    current_user: User,
+):
+    """Admit only the appointment's tenant/principal, then fail without writes."""
+    staff_roles = (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST)
+    if not current_user.tenant_id or current_user.role not in (UserRole.CUSTOMER, *staff_roles):
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    filters = [
+        Appointment.id == appointment_id,
+        Appointment.tenant_id == current_user.tenant_id,
+        Appointment.deleted_at.is_(None),
+    ]
     if current_user.role == UserRole.CUSTOMER:
         if not current_user.customer_id:
-            raise HTTPException(status_code=400, detail="Customer profile not found")
-        customer_id = current_user.customer_id
-        
-        # Get tenant from customer
-        result = await db.execute(select(Customer).where(Customer.id == customer_id))
-        customer = result.scalar_one_or_none()
-        if not customer:
-            raise HTTPException(status_code=404, detail="Customer not found")
-        tenant_id = customer.tenant_id
-    else:
-        # Staff creating appointment - would need customer_id in request
-        raise HTTPException(status_code=400, detail="Staff appointment creation not yet implemented")
-    
-    # Get service (with parts for computing price when base_price is null)
-    result = await db.execute(
-        select(Service)
-        .where(Service.id == data.service_id)
-        .options(selectinload(Service.service_parts).selectinload(ServicePart.inventory_item))
-    )
-    service = result.scalar_one_or_none()
-    if not service or not service.is_active:
-        raise HTTPException(status_code=404, detail="Service not found or inactive")
-
-    if service.tenant_id != tenant_id:
-        raise HTTPException(status_code=403, detail="Service not available")
-
-    if service.base_price is not None:
-        appointment_price = Decimal(str(service.base_price))
-    else:
-        tenant_result = await db.execute(select(Tenant.labor_rate).where(Tenant.id == tenant_id))
-        labor_rate = Decimal(str(tenant_result.scalar_one_or_none() or "100.00"))
-        labor_cost = (labor_rate * Decimal(service.duration_minutes) / Decimal(60)).quantize(Decimal("0.01"))
-        parts_cost = Decimal("0.00")
-        for sp in service.service_parts:
-            inv = sp.inventory_item
-            if inv and inv.deleted_at is None:
-                parts_cost += Decimal(str(inv.selling_price)) * Decimal(sp.quantity)
-        appointment_price = (labor_cost + parts_cost).quantize(Decimal("0.01"))
-    
-    # Validate vehicle if required
-    if service.requires_vehicle:
-        if not data.vehicle_id:
-            raise HTTPException(status_code=400, detail="Vehicle is required for this service")
-        
-        result = await db.execute(
-            select(Vehicle).where(
-                and_(Vehicle.id == data.vehicle_id, Vehicle.customer_id == customer_id)
-            )
-        )
-        vehicle = result.scalar_one_or_none()
-        if not vehicle:
-            raise HTTPException(status_code=404, detail="Vehicle not found")
-    
-    # Generate confirmation number
-    confirmation_number = generate_confirmation_number()
-    
-    # Create appointment
-    appointment = Appointment(
-        tenant_id=tenant_id,
-        customer_id=customer_id,
-        vehicle_id=data.vehicle_id,
-        service_id=data.service_id,
-        scheduled_at=data.scheduled_at,
-        duration_minutes=service.duration_minutes,
-        status=AppointmentStatus.PENDING,
-        price=appointment_price,
-        customer_notes=data.customer_notes,
-        confirmation_number=confirmation_number,
-    )
-    
-    db.add(appointment)
-    await db.commit()
-    await db.refresh(appointment)
-    
-    return AppointmentResponse(
-        id=str(appointment.id),
-        confirmation_number=appointment.confirmation_number,
-        customer_id=str(appointment.customer_id),
-        vehicle_id=str(appointment.vehicle_id) if appointment.vehicle_id else None,
-        service_id=str(appointment.service_id),
-        service_name=service.name,
-        scheduled_at=appointment.scheduled_at,
-        duration_minutes=appointment.duration_minutes,
-        status=appointment.status.value,
-        price=str(appointment.price),
-        customer_notes=appointment.customer_notes,
-        paid_at=appointment.paid_at,
-        created_at=appointment.created_at,
+            raise HTTPException(status_code=404, detail="Appointment not found")
+        filters.append(Appointment.customer_id == current_user.customer_id)
+    result = await db.execute(select(Appointment.id).where(*filters).execution_options(autoflush=False))
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "code": "appointment_payment_verification_unavailable",
+            "message": "Online payment for this appointment is unavailable. Contact the shop for help.",
+        },
     )
 
 
@@ -183,39 +172,8 @@ async def create_appointment_payment(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Create a Stripe payment intent for an appointment"""
-    
-    result = await db.execute(select(Appointment).where(Appointment.id == appointment_id))
-    appointment = result.scalar_one_or_none()
-    
-    if not appointment:
-        raise HTTPException(status_code=404, detail="Appointment not found")
-    
-    # Verify ownership
-    if current_user.role == UserRole.CUSTOMER:
-        if appointment.customer_id != current_user.customer_id:
-            raise HTTPException(status_code=403, detail="Access denied")
-    
-    if appointment.status != AppointmentStatus.PENDING:
-        raise HTTPException(status_code=400, detail="Appointment is not pending payment")
-    
-    # Create Stripe payment intent
-    payment_intent = create_payment_intent(
-        amount=appointment.price,
-        metadata={
-            "appointment_id": str(appointment.id),
-            "confirmation_number": appointment.confirmation_number,
-        }
-    )
-    
-    # Store payment intent ID
-    appointment.stripe_payment_intent_id = payment_intent.id
-    await db.commit()
-    
-    return PaymentIntentResponse(
-        client_secret=payment_intent.client_secret,
-        appointment_id=str(appointment.id),
-    )
+    """Payment remains unavailable until a shop-bound verified flow exists."""
+    await _reject_unverified_appointment_payment(appointment_id, db, current_user)
 
 
 @router.post("/{appointment_id}/confirm-payment")
@@ -223,25 +181,12 @@ async def confirm_appointment_payment(
     appointment_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    body: BookingPaymentVerify | None = None,
 ):
-    """Confirm payment was successful and update appointment status"""
-    
-    result = await db.execute(select(Appointment).where(Appointment.id == appointment_id))
-    appointment = result.scalar_one_or_none()
-    
-    if not appointment:
-        raise HTTPException(status_code=404, detail="Appointment not found")
-    
-    if current_user.role == UserRole.CUSTOMER:
-        if appointment.customer_id != current_user.customer_id:
-            raise HTTPException(status_code=403, detail="Access denied")
-    
-    # Update status
-    appointment.status = AppointmentStatus.CONFIRMED
-    appointment.paid_at = datetime.utcnow()
-    await db.commit()
-    
-    return {"status": "confirmed", "confirmation_number": appointment.confirmation_number}
+    """Never infer payment success from a caller's confirmation request."""
+    if body is None:
+        await _reject_unverified_appointment_payment(appointment_id, db, current_user)
+    return await booking.verify_attempt(db,current_user,appointment_id,body)
 
 
 @router.get("", response_model=List[AppointmentResponse])
@@ -257,7 +202,9 @@ async def list_appointments(
 ):
     """List appointments (filtered by user role)"""
 
-    filters = []
+    filters = [Appointment.tenant_id == current_user.tenant_id, Appointment.deleted_at.is_(None)]
+    if current_user.role not in {UserRole.CUSTOMER, *booking.STAFF}:
+        return paginated_or_list([], 0, skip, limit, paginated)
 
     if current_user.role == UserRole.CUSTOMER:
         if not current_user.customer_id:
@@ -293,24 +240,7 @@ async def list_appointments(
     result = await db.execute(query)
     rows = result.all()
 
-    items = [
-        AppointmentResponse(
-            id=str(apt.id),
-            confirmation_number=apt.confirmation_number,
-            customer_id=str(apt.customer_id),
-            vehicle_id=str(apt.vehicle_id) if apt.vehicle_id else None,
-            service_id=str(apt.service_id),
-            service_name=svc.name,
-            scheduled_at=apt.scheduled_at,
-            duration_minutes=apt.duration_minutes,
-            status=apt.status.value,
-            price=str(apt.price),
-            customer_notes=apt.customer_notes,
-            paid_at=apt.paid_at,
-            created_at=apt.created_at,
-        )
-        for apt, svc in rows
-    ]
+    items = [await booking.snapshot(db, apt, svc.name, actor=current_user) for apt, svc in rows]
     return paginated_or_list(items, total, skip, limit, paginated)
 
 
@@ -320,40 +250,8 @@ async def get_appointment(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    result = await db.execute(
-        select(Appointment, Service)
-        .join(Service)
-        .where(Appointment.id == appointment_id)
-    )
-    row = result.one_or_none()
-    
-    if not row:
-        raise HTTPException(status_code=404, detail="Appointment not found")
-    
-    apt, svc = row
-    
-    # Check access
-    if current_user.role == UserRole.CUSTOMER:
-        if apt.customer_id != current_user.customer_id:
-            raise HTTPException(status_code=403, detail="Access denied")
-    elif current_user.tenant_id != apt.tenant_id:
-        raise HTTPException(status_code=403, detail="Access denied")
-    
-    return AppointmentResponse(
-        id=str(apt.id),
-        confirmation_number=apt.confirmation_number,
-        customer_id=str(apt.customer_id),
-        vehicle_id=str(apt.vehicle_id) if apt.vehicle_id else None,
-        service_id=str(apt.service_id),
-        service_name=svc.name,
-        scheduled_at=apt.scheduled_at,
-        duration_minutes=apt.duration_minutes,
-        status=apt.status.value,
-        price=str(apt.price),
-        customer_notes=apt.customer_notes,
-        paid_at=apt.paid_at,
-        created_at=apt.created_at,
-    )
+    appointment = await booking.admitted_appointment(db,current_user,appointment_id)
+    return await booking.snapshot(db,appointment,actor=current_user)
 
 
 @router.put("/{appointment_id}", response_model=AppointmentResponse)
@@ -363,25 +261,22 @@ async def update_appointment(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    result = await db.execute(
-        select(Appointment, Service)
-        .join(Service)
-        .where(Appointment.id == appointment_id)
-    )
-    row = result.one_or_none()
-    
-    if not row:
-        raise HTTPException(status_code=404, detail="Appointment not found")
-    
-    apt, svc = row
-    
-    # Staff only for updates
-    if current_user.role == UserRole.CUSTOMER:
-        raise HTTPException(status_code=403, detail="Customers cannot update appointments directly")
-    
-    if current_user.tenant_id != apt.tenant_id:
-        raise HTTPException(status_code=403, detail="Access denied")
-    
+    await booking.locks(db,current_user.tenant_id)
+    apt=await booking.admitted_appointment(db,current_user,appointment_id,write=True)
+    if current_user.role not in booking.STAFF: raise HTTPException(404,'Appointment not found')
+    svc=await db.get(Service,apt.service_id)
+    if apt.booking_payment_version == 1:
+        allowed_advances={(AppointmentStatus.CONFIRMED,AppointmentStatus.IN_PROGRESS),(AppointmentStatus.IN_PROGRESS,AppointmentStatus.COMPLETED)}
+        if data.status is not None and data.status != apt.status and (apt.status,data.status) not in allowed_advances:
+            booking.fail('booking_status_transition_unavailable','Only verified reservations can advance through shop service. Use the separate cancellation action.')
+        if data.status and data.status in {AppointmentStatus.CONFIRMED,AppointmentStatus.IN_PROGRESS,AppointmentStatus.COMPLETED}:
+            receipt=await db.scalar(select(booking.BookingReceipt).where(booking.BookingReceipt.id==apt.confirmed_receipt_id,booking.BookingReceipt.tenant_id==apt.tenant_id,booking.BookingReceipt.appointment_id==apt.id))
+            if not receipt or receipt.amount_received_minor-receipt.refunded_amount_minor != int(Decimal(apt.price)*100) or apt.booking_payment_state!='paid':
+                booking.fail('booking_verified_payment_required','Verified full payment is required before confirming this reservation.')
+        if data.scheduled_at is not None:
+            booking.fail('booking_snapshot_immutable','A prepaid reservation cannot be changed through this action.')
+        if data.status==AppointmentStatus.CANCELLED:
+            booking.fail('booking_cancel_required','Use the reservation cancellation action.')
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(apt, field, value)
@@ -414,19 +309,13 @@ async def cancel_appointment(
 ):
     """Cancel an appointment"""
     
-    result = await db.execute(select(Appointment).where(Appointment.id == appointment_id))
-    apt = result.scalar_one_or_none()
-    
-    if not apt:
-        raise HTTPException(status_code=404, detail="Appointment not found")
-    
-    # Check access
-    if current_user.role == UserRole.CUSTOMER:
-        if apt.customer_id != current_user.customer_id:
-            raise HTTPException(status_code=403, detail="Access denied")
-    elif current_user.tenant_id != apt.tenant_id:
-        raise HTTPException(status_code=403, detail="Access denied")
-    
+    await booking.locks(db,current_user.tenant_id)
+    apt=await booking.admitted_appointment(db,current_user,appointment_id,write=True)
+    if apt.booking_payment_version==1:
+        live=await db.scalar(select(booking.BookingPaymentAttempt.id).where(booking.BookingPaymentAttempt.appointment_id==apt.id,booking.BookingPaymentAttempt.state.in_(booking.LIVE)))
+        if live:booking.fail('booking_payment_pending','Payment verification is pending. Contact the shop before cancelling.')
+        if apt.booking_payment_state=='unpaid_hold':apt.booking_payment_state='expired_unpaid'
+        apt.booking_version+=1
     # Can only cancel pending or confirmed
     if apt.status not in [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED]:
         raise HTTPException(status_code=400, detail="Cannot cancel appointment in current status")
@@ -446,50 +335,137 @@ async def get_available_slots(
 ):
     """Get available time slots for a service on a given date"""
     
-    result = await db.execute(select(Service).where(Service.id == service_id))
+    result = await db.execute(select(Service).where(
+        Service.id == service_id,
+        Service.tenant_id == current_user.tenant_id,
+        Service.is_active.is_(True),
+        Service.deleted_at.is_(None),
+    ))
     service = result.scalar_one_or_none()
     
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
+    if service.duration_minutes<=0:
+        booking.fail("booking_service_unavailable","This service duration must be reviewed before reserving.")
     
-    # Get existing appointments for this day
-    start_of_day = datetime.combine(date_str, datetime.min.time())
-    end_of_day = datetime.combine(date_str, datetime.max.time())
+    result = await db.execute(select(Tenant.timezone).where(Tenant.id == service.tenant_id))
+    timezone_name = result.scalar_one_or_none()
+    try:
+        shop_zone = ZoneInfo(timezone_name)
+    except (ZoneInfoNotFoundError, TypeError, ValueError):
+        raise HTTPException(status_code=409, detail="Shop timezone is unavailable")
+    start_of_day = datetime.combine(date_str, datetime.min.time(), tzinfo=shop_zone).astimezone(timezone.utc)
+    end_of_day = datetime.combine(date_str + timedelta(days=1), datetime.min.time(), tzinfo=shop_zone).astimezone(timezone.utc)
     
     result = await db.execute(
         select(Appointment).where(
             and_(
                 Appointment.tenant_id == service.tenant_id,
-                Appointment.scheduled_at >= start_of_day,
-                Appointment.scheduled_at <= end_of_day,
-                Appointment.status.in_([AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS]),
+                Appointment.deleted_at.is_(None),
+                # Include earlier appointments that may extend into this shop day.
+                Appointment.scheduled_at < end_of_day,
+                or_(Appointment.status.in_([AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS]), (Appointment.booking_payment_version == 1) & (Appointment.status == AppointmentStatus.PENDING)),
             )
         )
     )
-    existing = result.scalars().all()
+    existing = []
+    for appointment in result.scalars().all():
+        if getattr(appointment,'status',AppointmentStatus.CONFIRMED) == AppointmentStatus.PENDING and not (appointment.booking_payment_state == 'payment_processing' or (appointment.booking_payment_state == 'unpaid_hold' and appointment.hold_expires_at and booking.utc(appointment.hold_expires_at)>booking.now())):
+            continue
+        # Naive legacy/test values follow the database UTC convention.
+        starts_at = appointment.scheduled_at.replace(tzinfo=appointment.scheduled_at.tzinfo or timezone.utc).astimezone(timezone.utc)
+        ends_at = starts_at + timedelta(minutes=appointment.duration_minutes)
+        if ends_at > start_of_day:
+            existing.append((starts_at, ends_at))
     
     # Generate time slots (8am - 5pm, every 30 min)
     slots = []
-    current_time = datetime.combine(date_str, datetime.strptime("08:00", "%H:%M").time())
-    end_time = datetime.combine(date_str, datetime.strptime("17:00", "%H:%M").time())
+    current_time = datetime.combine(date_str, datetime.strptime("08:00", "%H:%M").time(), tzinfo=shop_zone)
+    end_time = datetime.combine(date_str, datetime.strptime("17:00", "%H:%M").time(), tzinfo=shop_zone)
     
     while current_time < end_time:
         # Check if slot conflicts with existing appointments
-        slot_end = current_time + timedelta(minutes=service.duration_minutes)
+        slot_start = current_time.astimezone(timezone.utc)
+        slot_end = slot_start + timedelta(minutes=service.duration_minutes)
         available = True
         
-        for apt in existing:
-            apt_end = apt.scheduled_at + timedelta(minutes=apt.duration_minutes)
-            # Check for overlap
-            if not (slot_end <= apt.scheduled_at or current_time >= apt_end):
+        for apt_start, apt_end in existing:
+            # Adjacent appointments do not overlap.
+            if not (slot_end <= apt_start or slot_start >= apt_end):
                 available = False
                 break
         
         slots.append(TimeSlot(
             time=current_time.strftime("%H:%M"),
             available=available,
+            starts_at=slot_start,
+            timezone=timezone_name,
         ))
         
         current_time += timedelta(minutes=30)
     
     return slots
+
+
+class BookingRepairOrderLinkBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    repair_order_id:UUID
+    expected_booking_version:StrictInt=Field(ge=1)
+    reason:StrictStr=Field(min_length=3,max_length=4000)
+    expected_vehicle_id:UUID|None=None
+
+@router.post('/{appointment_id}/repair-order-link')
+async def link_booking_repair_order(appointment_id:UUID,body:BookingRepairOrderLinkBody,db:AsyncSession=Depends(get_db),current_user:User=Depends(get_current_active_user),idempotency_key:str|None=Header(None,alias='Idempotency-Key')):
+    return await fulfillment.link_appointment(db,current_user,appointment_id,body,idempotency_key)
+
+
+class BookingInvoiceOptions(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    due_date:date|None=None
+    discount_amount:Decimal=Field(default=Decimal('0.00'),ge=0,decimal_places=2)
+
+class BookingReceiptApplyBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    repair_order_id:UUID
+    receipt_id:UUID
+    expected_booking_version:StrictInt=Field(ge=1)
+    expected_receipt_version:StrictInt=Field(ge=1)
+    amount_minor:StrictInt=Field(gt=0)
+    expected_invoice_economics_sha256:StrictStr=Field(pattern=r'^[a-f0-9]{64}$')
+    invoice_options:BookingInvoiceOptions=Field(default_factory=BookingInvoiceOptions)
+    accounting_mode:Literal['external_manual']
+
+@router.post('/{appointment_id}/issue-invoice-with-prepayment')
+async def issue_invoice_with_booking_prepayment(appointment_id:UUID,body:BookingReceiptApplyBody,db:AsyncSession=Depends(get_db),current_user:User=Depends(get_current_active_user),idempotency_key:str|None=Header(None,alias='Idempotency-Key')):
+    from app.services.booking_receipt_application import issue_and_apply
+    return await issue_and_apply(db,current_user,appointment_id,body,idempotency_key)
+
+class BookingAccountingAckBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    expected_version:StrictInt=Field(ge=1)
+    evidence_reference:StrictStr=Field(min_length=3,max_length=1000)
+    external_company_reference:StrictStr=Field(min_length=1,max_length=255)
+    review_note:StrictStr=Field(min_length=3,max_length=4000)
+    receipt_liability_recorded:StrictBool
+    application_to_ar_recorded:StrictBool
+
+@router.post('/{appointment_id}/accounting-reviews/{task_id}/acknowledge')
+async def acknowledge_booking_accounting(appointment_id:UUID,task_id:UUID,body:BookingAccountingAckBody,db:AsyncSession=Depends(get_db),current_user:User=Depends(get_current_active_user),idempotency_key:str|None=Header(None,alias='Idempotency-Key')):
+    from app.services.booking_application_accounting import acknowledge_manual_accounting
+    from app.services.booking_receipt_application import prepayment_view
+    task=await acknowledge_manual_accounting(db,tenant_id=current_user.tenant_id,appointment_id=appointment_id,task_id=task_id,actor=current_user,idempotency_key=booking.key(idempotency_key),**body.model_dump())
+    await db.commit()
+    apt=await booking.admitted_appointment(db,current_user,appointment_id)
+    return await prepayment_view(db,apt)
+
+
+class BookingRefundVerificationBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    refund_id:StrictStr=Field(min_length=1,max_length=255)
+    expected_receipt_version:StrictInt=Field(ge=1)
+    expected_booking_version:StrictInt=Field(ge=1)
+
+@router.post('/{appointment_id}/refund-verifications')
+async def verify_existing_booking_refund(appointment_id:UUID,body:BookingRefundVerificationBody,db:AsyncSession=Depends(get_db),current_user:User=Depends(get_current_active_user),idempotency_key:str|None=Header(None,alias='Idempotency-Key')):
+    from app.services.booking_refund_verification import verify_existing_refund
+    return await verify_existing_refund(db,current_user,appointment_id,body,idempotency_key)

@@ -450,6 +450,10 @@ async def _invoice_accounting_context(
 
 
 async def _invoice_outstanding_amount(db: AsyncSession, invoice: Invoice) -> Decimal:
+    from app.db.models.booking_application import BookingReceiptApplication
+    if await db.scalar(select(BookingReceiptApplication.id).where(BookingReceiptApplication.tenant_id==invoice.tenant_id,BookingReceiptApplication.invoice_id==invoice.id).limit(1)):
+        from app.services.invoice_settlement_service import SettlementDomainError
+        raise SettlementDomainError('booking_canonical_settlement_required','Use the current invoice balance; legacy payment calculation is unavailable.')
     paid_total = (await db.execute(
         select(func.coalesce(func.sum(Payment.amount), 0)).where(
             Payment.invoice_id == invoice.id,

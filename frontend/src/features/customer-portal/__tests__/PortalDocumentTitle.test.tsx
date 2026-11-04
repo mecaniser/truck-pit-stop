@@ -27,7 +27,7 @@ describe('PortalDocumentTitle', () => {
 
   it('maps every customer portal surface to a customer-facing title', () => {
     const cases = [
-      ['/portal', '', 'Dashboard'],
+      ['/portal', '', 'Today'],
       ['/portal/services', '', 'Services'],
       ['/portal/book/service-1', '', 'Book Service'],
       ['/portal/appointments', '', 'Appointments'],
@@ -35,6 +35,8 @@ describe('PortalDocumentTitle', () => {
       ['/portal/repairs', '', 'Repair History'],
       ['/portal/repairs', '?view=active', 'Active Repairs'],
       ['/portal/invoices/invoice-1', '', 'Invoice'],
+      ['/portal/invoices', '?vehicle_id=vehicle-1', 'Invoices'],
+      ['/portal/integrations', '', 'Integrations'],
       ['/portal/settings', '', 'Account'],
     ]
 
@@ -53,7 +55,7 @@ describe('PortalDocumentTitle', () => {
       </MemoryRouter>,
     )
 
-    expect(document.title).toBe('Dashboard | NorthStar Shop Customer Portal')
+    expect(document.title).toBe('Today | NorthStar Shop Customer Portal')
 
     await act(async () => {
       view.getByRole('button', { name: 'Open active repairs' }).click()

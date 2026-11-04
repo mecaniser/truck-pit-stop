@@ -84,3 +84,6 @@ api_router.include_router(platform_sms_onboarding.router, prefix="/admin/tenants
 
 from app.api.v1.endpoints import source_debt_handoffs
 api_router.include_router(source_debt_handoffs.router, prefix="/source-debt-handoffs", tags=["source-debt-handoffs"])
+
+from app.api.v1.endpoints import visit_requests
+api_router.include_router(visit_requests.router, prefix='/visit-requests', tags=['visit requests'])

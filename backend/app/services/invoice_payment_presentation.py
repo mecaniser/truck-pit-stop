@@ -23,6 +23,8 @@ class InvoicePaymentSummary(BaseModel):
     balance_due: Optional[str] = None
     pending_amount: Optional[str] = None
     note: Optional[str] = None
+    prepayment_applied_amount: Optional[str] = None
+    payment_verification_required: bool = False
     basis: str = 'unknown'  # settlement, cash_receipt, legacy_payments, status_only, cancelled, unknown
 
 
@@ -98,11 +100,20 @@ async def load_payment_summary(db, invoice, cash_receipt=None):
             Payment.tenant_id==invoice.tenant_id,Payment.invoice_id==invoice.id,
             Payment.deleted_at.is_(None),
         ))).scalars().all()
-    return project_payment_summary(invoice, settlement, payments, cash_receipt)
+    summary=project_payment_summary(invoice, settlement, payments, cash_receipt)
+    return await _with_booking_proof(db,invoice,settlement,summary)
+
+
+async def _with_booking_proof(db,invoice,settlement,summary,*,applications=None):
+    from app.services.booking_application_proof import booking_invoice_application_proof
+    applied,requires_review=await booking_invoice_application_proof(db,invoice,settlement,rows=applications)
+    if requires_review:
+        return InvoicePaymentSummary(state='unknown',payment_verification_required=True,note='Current balance needs shop verification. Contact the shop before paying.')
+    return summary.model_copy(update={'prepayment_applied_amount':applied})
 
 
 async def load_payment_summaries(db, invoices, *, tenant_id, cash_receipts=None):
-    """Project an authorized invoice page with at most two evidence reads.
+    """Project an authorized invoice page with batched settlement/tender/application reads.
 
     Callers pass current ORM invoices already selected by customer/tenant access
     rules, never persisted list payloads. No projection is initialized or saved.
@@ -131,13 +142,18 @@ async def load_payment_summaries(db, invoices, *, tenant_id, cash_receipts=None)
             ))).scalars().all()
             for payment in rows:
                 payments.setdefault(payment.invoice_id, []).append(payment)
+    from app.db.models.booking_application import BookingReceiptApplication
+    applications={}
+    if evidence_ids:
+        for application in (await db.scalars(select(BookingReceiptApplication).where(BookingReceiptApplication.tenant_id==tenant_id,BookingReceiptApplication.invoice_id.in_(evidence_ids)))).all():
+            applications.setdefault(application.invoice_id,[]).append(application)
     return {
-        invoice.id: project_payment_summary(
+        invoice.id: await _with_booking_proof(db,invoice,settlements.get(invoice.id),project_payment_summary(
             invoice,
             settlements.get(invoice.id),
             payments.get(invoice.id, ()),
             cash_receipts.get(invoice.id),
-        )
+        ),applications=applications.get(invoice.id,[]))
         for invoice in invoices
     }
 
@@ -147,8 +163,10 @@ def payment_summary_html(summary):
     labels = {'paid':'PAID','unpaid':'UNPAID','partially_paid':'PARTIALLY PAID','payment_pending':'PAYMENT PENDING','partially_paid_pending':'PARTIALLY PAID · PAYMENT PENDING','overdue':'OVERDUE','cancelled':'CANCELLED','unknown':'BALANCE NEEDS VERIFICATION'}
     rows = [f'<p><strong>{labels.get(summary.state, "BALANCE NEEDS VERIFICATION")}</strong></p>']
     if summary.applied_amount is not None:
-        label = 'Cash received' if summary.basis == 'cash_receipt' else 'Payments / credits applied'
+        label = 'Cash received' if summary.basis == 'cash_receipt' else 'Prepayment applied' if summary.prepayment_applied_amount==summary.applied_amount else 'Payments / credits applied'
         rows.append(f'<p>{label}: ${Decimal(summary.applied_amount):,.2f}</p>')
+    if summary.prepayment_applied_amount and summary.prepayment_applied_amount!=summary.applied_amount:
+        rows.append(f'<p>Included prepayment: ${Decimal(summary.prepayment_applied_amount):,.2f}</p>')
     if summary.pending_amount is not None:
         rows.append(f'<p>Awaiting confirmation: ${Decimal(summary.pending_amount):,.2f}</p>')
     if summary.balance_due is not None:

@@ -331,6 +331,18 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
                         collection_review_reasons[candidate.id] = exc.code
             except SettlementDomainError:
                 pass
+    from app.services.booking_application_proof import booking_invoice_application_proof
+    from app.db.models.booking_application import BookingReceiptApplication
+    booking_applications={}
+    invoice_ids=[row[0].id for row in invoices]
+    if invoice_ids:
+        for application in (await db.scalars(select(BookingReceiptApplication).where(BookingReceiptApplication.tenant_id==tenant_id,BookingReceiptApplication.invoice_id.in_(invoice_ids)))).all():
+            booking_applications.setdefault(application.invoice_id,[]).append(application)
+    booking_invalid_ids=set()
+    for candidate, _order, _bill_to in invoices:
+        candidate_settlements=settlement_rows.get(candidate.id,[])
+        _,requires_review=await booking_invoice_application_proof(db,candidate,candidate_settlements[0] if len(candidate_settlements)==1 else None,rows=booking_applications.get(candidate.id,[]))
+        if requires_review:booking_invalid_ids.add(candidate.id)
     trusted_credit_invoice_ids = set()
     trusted_credit_settlements = {}
     mixed_payment_invoice_ids = {payment.invoice_id for payment in payments if payment.source == "easy_truck_shop_import"}
@@ -342,7 +354,7 @@ async def account_snapshot(db: AsyncSession, *, tenant_id: UUID, customer_id: UU
         linked = settlement_rows.get(invoice.id, [])
         imported = (invoice.id not in verified_collection_ids and (invoice.source == "easy_truck_shop_import" or order.source == "easy_truck_shop_import"
                     or invoice.accounting_policy == "historical_export_hold"))
-        if (classifications[invoice.id] == "real" and not imported and order.deleted_at is None
+        if (invoice.id not in booking_invalid_ids and classifications[invoice.id] == "real" and not imported and order.deleted_at is None
                 and not order.is_internal and not customer.is_internal_fleet and not invoice.is_internal
                 and not invoice.voided_at and invoice.id not in superseded_ids
                 and invoice.status in {InvoiceStatus.SENT, InvoiceStatus.PAID, InvoiceStatus.OVERDUE}

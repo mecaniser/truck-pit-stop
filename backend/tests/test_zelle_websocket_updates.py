@@ -18,6 +18,8 @@ from slowapi.errors import RateLimitExceeded
 from app.api.v1.endpoints import invoice_access, payments
 from app.core.dependencies import get_current_active_user, get_db
 from app.core.rate_limit import limiter
+from app.db.models.appointment import Appointment
+from app.db.models.booking_application import BookingReceiptApplication
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.invoice_settlement import InvoiceSettlement
@@ -58,6 +60,22 @@ class _FakePaymentsSession:
             return _ScalarResult(self.tenant)
         raise AssertionError(f"Unexpected query entity: {entity}")
 
+    async def scalars(self, statement):
+        entity = statement.column_descriptions[0].get("entity")
+        self.queried_entities.append(entity)
+        assert entity in {Appointment,BookingReceiptApplication}, f"Unexpected scalar-list query entity: {entity}"
+        if entity is Appointment:
+            assert statement.column_descriptions[0].get("name") == "id"
+            assert {self.invoice.tenant_id,self.invoice.repair_order_id}.issubset(set(statement.compile().params.values()))
+        else:
+            assert {self.invoice.tenant_id,self.invoice.id}.issubset(set(statement.compile().params.values()))
+        # These legacy-invoice fixtures have no linked booking prepayment.
+        # Keep the production admission guard and its tenant/order lookup active.
+        class EmptyBookings:
+            def all(self):
+                return []
+        return EmptyBookings()
+
     async def scalar(self, statement):
         entity = statement.column_descriptions[0].get("entity")
         self.queried_entities.append(entity)
@@ -73,6 +91,11 @@ class _FakePaymentsSession:
         if selected == "id":
             assert {self.invoice.tenant_id, self.invoice.id}.issubset(set(statement.compile().params.values()))
             assert statement._for_update_arg is not None
+            return None
+        if statement.get_execution_options().get('populate_existing'):
+            # Read-only booking application proof uses the already admitted
+            # exact invoice/tenant, without initializing a settlement.
+            assert {self.invoice.tenant_id,self.invoice.id}.issubset(set(statement.compile().params.values()))
             return None
         assert {
             self.invoice.tenant_id,

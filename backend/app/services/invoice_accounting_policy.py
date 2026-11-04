@@ -112,6 +112,16 @@ async def require_exportable_invoice(invoice):
 async def require_standard_payment(db, invoice, *, verified_provider_fact=False, new_entry=False, attempt=None):
     from app.services.invoice_settlement_service import SettlementDomainError
     policy = await locked_policy(db, invoice)
+    if new_entry and not verified_provider_fact:
+        from app.services.booking_invoice_guard import require_booking_prepayment_resolved
+        await require_booking_prepayment_resolved(db, invoice.tenant_id, invoice.repair_order_id)
+    if not verified_provider_fact:
+        from app.services.booking_application_proof import booking_invoice_application_proof
+        from app.db.models.invoice_settlement import InvoiceSettlement
+        settlement=await db.scalar(select(InvoiceSettlement).where(InvoiceSettlement.tenant_id==invoice.tenant_id,InvoiceSettlement.invoice_id==invoice.id).execution_options(populate_existing=True))
+        _,booking_review=await booking_invoice_application_proof(db,invoice,settlement)
+        if booking_review:
+            raise SettlementDomainError('booking_application_verification_required','Current balance needs shop verification before another payment.')
     if policy == "source_collection_hold":
         from app.services.source_debt_handoff import invoice_handoff
         await invoice_handoff(db, invoice, require_active=not verified_provider_fact, check_source=not verified_provider_fact)

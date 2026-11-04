@@ -135,6 +135,12 @@ async def stripe_connect_webhook(
     
     event_type = event["type"]
     data_object = event["data"]["object"]
+    # Booking evidence is dispatched before invoice handlers and requires the dedicated Connect signature.
+    from app.services.booking_payments import dispatch_connect_event
+    if settings.STRIPE_CONNECT_WEBHOOK_SECRET and await dispatch_connect_event(db,event):
+        return {"status":"success"}
+    if (data_object.get('metadata') or {}).get('purpose') == 'booking_prepayment_v1':
+        raise HTTPException(status_code=400, detail='Booking payments require verified Connect delivery')
     delivery_tenant = await _record_webhook_delivery(db, event, event_type, data_object)
 
     if event_type == "account.updated":
@@ -219,6 +225,8 @@ async def stripe_payment_webhook(
     
     event_type = event["type"]
     data_object = event["data"]["object"]
+    if (data_object.get('metadata') or {}).get('purpose') == 'booking_prepayment_v1':
+        raise HTTPException(status_code=400, detail='Booking payments require verified Connect delivery')
     delivery_tenant = await _record_webhook_delivery(db, event, event_type, data_object)
     
     logger.info("stripe_webhook_received", event_type=event_type, event_id=event.get("id"))

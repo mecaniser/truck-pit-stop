@@ -1,7 +1,8 @@
+import { formatCalendarDate } from '@/lib/calendarDate'
 import { collectionAppliedPrincipal } from '@/features/source-collection/collectionAppliedPrincipal'
 import { customerInvoiceLabel, customerInvoiceMemo } from '@/lib/invoiceIdentity'
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
-import { currentInvoicePaymentSummary } from '@/lib/invoicePaymentPresentation'
+import { currentInvoicePaymentSummary, invoiceAppliedPaymentLabel } from '@/lib/invoicePaymentPresentation'
 import InvoicePaymentSummary from '@/components/InvoicePaymentSummary'
 import { invoicePaymentLabels } from '@/lib/invoicePaymentLabels'
 import type { InvoicePaymentPresentation } from '@/types'
@@ -605,7 +606,7 @@ export default function InvoiceAccessPage() {
           <h1 className="text-3xl font-bold text-gray-900">{customerInvoiceLabel(invoice)}</h1>
           <p className="text-gray-600 mt-1">
             {!(invoice.source_collection && !invoice.source_collection.is_source_history) && <>Order {invoice.order_number}</>}
-            {invoice.due_date ? ` • Due ${format(new Date(invoice.due_date), 'MMM d, yyyy')}` : ''}
+            {invoice.due_date ? ` • Due ${formatCalendarDate(invoice.due_date)}` : ''}
           </p>
           <div className="flex gap-2 mt-3 print:hidden">
             <a data-db-control="action"
@@ -696,6 +697,10 @@ export default function InvoiceAccessPage() {
                 <span>{cashReceipt ? 'Total paid in cash' : 'Invoice total'}</span>
                 <span>{formatMoney(cashReceipt?.amount ?? invoice.total_amount)}</span>
               </div>
+              {splitSettlement && !cashReceipt && paymentSummary?.applied_amount != null && isPositiveMoney(paymentSummary.prepayment_applied_amount) && <div className="flex items-center justify-between text-gray-700">
+                <span>{invoiceAppliedPaymentLabel(paymentSummary)}</span>
+                <span>{formatMoney(`-${paymentSummary.applied_amount}`)}</span>
+              </div>}
             </div>
           </div>}
 

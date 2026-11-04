@@ -12,7 +12,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, case, or_, select
+from sqlalchemy import and_, case, or_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user, get_db
@@ -318,7 +318,11 @@ async def list_invoices(
             or updated_before <= updated_since or updated_before > datetime.now(timezone.utc)):
         raise HTTPException(status_code=422, detail="Invalid UTC sync window")
     effective = _effective_updated_at()
-    query = _invoice_query(key).add_columns(effective.label("effective_updated_at")).where(
+    from app.services.booking_application_accounting import invoice_export_hold_clause
+    # One MVCC snapshot covers every invoice in this incremental page window.
+    # Never omit a held invoice and let a receiver mistake absence for deletion.
+    booking_hold = func.max(case((invoice_export_hold_clause(key.tenant_id, Invoice.id), 1), else_=0)).over()
+    query = _invoice_query(key).add_columns(effective.label("effective_updated_at"), booking_hold.label("booking_accounting_hold")).where(
         effective >= updated_since,
         effective < updated_before,
     )
@@ -339,10 +343,12 @@ async def list_invoices(
                                   and_(FleetInvoiceScopeEvent.effective_at == cursor_at,
                                        or_(cursor_kind == 0, FleetInvoiceScopeEvent.id > cursor_id))))
     rows = (await db.execute(query.order_by(effective, Invoice.id).limit(limit + 1))).all()
+    if any(row[-1] for row in rows):
+        raise HTTPException(status_code=409, detail={"code": "booking_accounting_export_held", "message": "This invoice window includes prepayment bookkeeping managed separately. Keep previously imported records."})
     removal_rows = (await db.execute(events.order_by(FleetInvoiceScopeEvent.effective_at,
                                                     FleetInvoiceScopeEvent.id).limit(limit + 1))).scalars().all()
     combined = [(effective_at, 0, inv.id, _item(inv, order, vehicle, effective_at))
-                for inv, order, _customer, vehicle, effective_at in rows]
+                for inv, order, _customer, vehicle, effective_at, _booking_hold in rows]
     combined += [(event.effective_at, 1, event.id, {
         "event_type": "access_removed", "shop_id": str(event.tenant_id),
         "invoice_id": str(event.invoice_id), "event_id": str(event.id),
@@ -369,6 +375,9 @@ async def invoice_pdf(
     if not row:
         raise HTTPException(status_code=404, detail="Invoice not found")
     invoice, order, customer, vehicle = row
+    from app.services.booking_application_accounting import invoice_has_booking_export_hold
+    if await invoice_has_booking_export_hold(db, key.tenant_id, invoice.id):
+        raise HTTPException(status_code=409, detail={"code": "booking_accounting_export_held", "message": "This invoice’s prepayment bookkeeping is managed separately. Automatic accounting export is held."})
     tenant = await db.get(Tenant, key.tenant_id)
     labor, parts = await _load_line_items(db, order.id, invoice)
     cash_receipt = await load_cash_receipt(db, invoice)

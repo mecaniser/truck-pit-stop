@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Numeric, Boolean, ForeignKey, Text, JSON, text
+from sqlalchemy import Column, String, Integer, Numeric, Boolean, ForeignKey, Text, JSON, text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from decimal import Decimal
@@ -27,6 +27,7 @@ class ServiceCategory(BaseModel):
 class Service(BaseModel):
     """Individual services offered by the garage"""
     __tablename__ = "services"
+    __table_args__ = (UniqueConstraint("tenant_id","id",name="uq_booking_service_tenant_id"),)
 
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     tenant = relationship("Tenant", backref="services")

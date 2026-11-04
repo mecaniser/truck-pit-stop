@@ -636,11 +636,21 @@ export interface Appointment {
   customer_notes: string | null
   paid_at: string | null
   created_at: string
+  booking_kind?: 'reserve'
+  booking_payment_version?: number | null
+  booking_payment_state?: string | null
+  hold_expires_at?: string | null
+  version?: number
+  price_snapshot_sha256?: string
+  currency?: string
+  receipt?: { id?: string; amount?: string; refunded_amount?: string; currency?: string } | null
 }
 
 export interface TimeSlot {
   time: string
   available: boolean
+  starts_at: string
+  timezone: string
 }
 
 export interface Supplier {
@@ -725,6 +735,7 @@ export interface InvoiceDetail extends Invoice {
 }
 
 export interface InvoicePaymentPresentation {
+  prepayment_applied_amount?: string | null
   state: 'paid' | 'unpaid' | 'partially_paid' | 'payment_pending' | 'partially_paid_pending' | 'overdue' | 'cancelled' | 'unknown'
   applied_amount: string | null
   balance_due: string | null

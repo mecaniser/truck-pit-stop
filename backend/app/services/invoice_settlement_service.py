@@ -1369,10 +1369,16 @@ async def _enqueue_accounting(
         except SettlementDomainError as exc:
             if not exc.code.startswith("quickbooks_"):
                 raise
-            link.sync_state = "activation_not_admitted"
-            settlement.accounting_sync_status = "activation_not_admitted"
-            outbox.status = "deferred"
-            outbox.payload = {**outbox.payload, "deferral_reason": exc.code}
+            if exc.code == "quickbooks_booking_accounting_held":
+                link.sync_state = "external_manual"
+                settlement.accounting_sync_status = "external_manual"
+                outbox.status = "suppressed"
+                outbox.payload = {**outbox.payload, "suppression_reason": exc.code}
+            else:
+                link.sync_state = "activation_not_admitted"
+                settlement.accounting_sync_status = "activation_not_admitted"
+                outbox.status = "deferred"
+                outbox.payload = {**outbox.payload, "deferral_reason": exc.code}
     return link
 
 
@@ -2311,7 +2317,7 @@ async def apply_customer_credit(
     ).scalar_one_or_none()
     settlement = await get_or_create_settlement(db, invoice=invoice, customer_id=customer_id, tenant=tenant, lock=True)
     from app.services.invoice_accounting_policy import require_standard_payment
-    await require_standard_payment(db, invoice)
+    await require_standard_payment(db, invoice, new_entry=existing is None)
     if existing:
         if existing.request_hash != request_hash:
             raise SettlementDomainError(

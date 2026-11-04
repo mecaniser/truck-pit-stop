@@ -923,7 +923,10 @@ export default function ProfileSettingsPage() {
 
   const selectSection = (section: SettingsSection) => {
     setActiveSection(section)
-    setSearchParams(section === 'profile' ? {} : { tab: section }, { replace: true })
+    const next = new URLSearchParams(searchParams)
+    if (section === 'profile') next.delete('tab')
+    else next.set('tab', section)
+    setSearchParams(next, { replace: true })
   }
 
   return (

@@ -1,7 +1,7 @@
 import { collectionAppliedPrincipal } from '@/features/source-collection/collectionAppliedPrincipal'
 import { customerInvoiceLabel, customerInvoiceMemo } from '@/lib/invoiceIdentity'
 import { ControlButton } from '@/components/ui/Controls'
-import { currentInvoicePaymentSummary } from '@/lib/invoicePaymentPresentation'
+import { currentInvoicePaymentSummary, invoiceAppliedPaymentLabel } from '@/lib/invoicePaymentPresentation'
 import InvoicePaymentSummary from '@/components/InvoicePaymentSummary'
 import { invoicePaymentLabels } from '@/lib/invoicePaymentLabels'
 import InvoiceReviewLink from '@/components/InvoiceReviewLink'
@@ -34,6 +34,7 @@ import {
   useInvoiceSettlement,
 } from '@/features/payments'
 
+import { scopedPortalPath } from './portal-context'
 import CashReceiptBreakdown from './CashReceiptBreakdown'
 import QuickBooksPaymentPanel from './QuickBooksPaymentPanel'
 import { getPortalPreferences } from './portal-preferences'
@@ -253,7 +254,7 @@ export default function CustomerInvoicePage() {
   }
 
   const paymentState = location.state as {
-    paymentOrigin?: 'History' | 'Dashboard'
+    paymentOrigin?: 'History' | 'Dashboard' | 'Today' | 'Invoices'
     invoiceQueue?: string[]
   } | null
   const invoiceQueue = paymentState?.invoiceQueue?.filter(Boolean) || []
@@ -365,7 +366,7 @@ export default function CustomerInvoicePage() {
     <div className="min-h-full bg-[#10131c] px-4 pb-8 text-[#eceef4] sm:px-6">
       <div className="mx-auto w-full max-w-[640px] pb-6 pt-4">
         <div className="mb-2">
-          <BackPill destination={backDestination} />
+          <BackPill destination={backDestination} fallbackTo={scopedPortalPath(backDestination === 'History' ? '/portal/repairs' : backDestination === 'Invoices' ? '/portal/invoices' : '/portal', new URLSearchParams(location.search).get('vehicle_id'))} />
         </div>
 
         <section className="py-2 text-center" aria-labelledby="payment-total">
@@ -657,6 +658,9 @@ export default function CustomerInvoicePage() {
                 : []),
               ...((isHistoricalInvoice || selectedMethod === 'card') && pricing.cardFee > 0
                 ? [['Card Processing Fee', pricing.cardFee] as [string, number]]
+                : []),
+              ...(splitSettlement && paymentSummary?.applied_amount != null && isPositiveMoney(paymentSummary.prepayment_applied_amount)
+                ? [[invoiceAppliedPaymentLabel(paymentSummary), -Number(paymentSummary.applied_amount)] as [string, number]]
                 : []),
             ]).map(([label, amount], index, rows) => (
               <div key={label} className={`flex items-center justify-between py-[9px] text-[13px] ${index < rows.length - 1 ? 'border-b border-[#1e2432]' : ''}`}>

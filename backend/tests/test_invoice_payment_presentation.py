@@ -131,3 +131,25 @@ def test_cash_receipt_all_pdf_generators_use_same_totals(monkeypatch):
     for field in ('total_amount','tax_amount','service_fee_amount','discount_amount','cash_receipt','payment_summary'):
         assert captures[0][field]==captures[1][field]
     assert captures[0]['total_amount']==Decimal('101')
+
+
+def test_mixed_invoice_credit_labels_prepayment_as_included_subset_in_email_and_pdf(monkeypatch):
+    from app.services.invoice_payment_presentation import InvoicePaymentSummary
+    from app.services import pdf_service
+    from app.api.v1.endpoints.invoices import _build_invoice_pdf_bytes
+    from test_invoice_review_link import entities
+    summary=InvoicePaymentSummary(state='partially_paid',applied_amount='120.00',prepayment_applied_amount='100.00',balance_due='60.00',basis='settlement')
+    html=payment_summary_html(summary)
+    assert 'Payments / credits applied: $120.00' in html
+    assert 'Included prepayment: $100.00' in html
+    assert 'Prepayment applied: $100.00' not in html
+    tenant,invoice,order,customer=entities();invoice.status='sent';invoice.total_amount=Decimal('180');invoice.subtotal=Decimal('180')
+    paragraphs=[];original=pdf_service._p
+    def capture(text,*args,**kwargs):
+        paragraphs.append(text)
+        return original(text,*args,**kwargs)
+    monkeypatch.setattr(pdf_service,'_p',capture)
+    document=_build_invoice_pdf_bytes(invoice,order,customer,None,tenant,[],[],None,payment_summary=summary)
+    assert document.startswith(b'%PDF')
+    assert 'Included prepayment' in paragraphs and 'Prepayment applied' not in paragraphs
+    assert 'Payments / credits applied' in paragraphs

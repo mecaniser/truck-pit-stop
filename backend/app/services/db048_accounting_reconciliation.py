@@ -5846,8 +5846,10 @@ async def process_due_db048_outbox_events(
     now = datetime.now(timezone.utc)
     limit = batch_size or settings.PROVIDER_OUTBOX_BATCH_SIZE
     async with session_factory() as db:
+        from app.services.quickbooks_shop_activation import booking_accounting_event_allowed_clause
         rows = (await db.execute(select(ProviderOutboxEvent).where(
             ProviderOutboxEvent.event_type.in_(WORKER_EVENTS),
+            booking_accounting_event_allowed_clause(ProviderOutboxEvent),
             or_(
                 and_(ProviderOutboxEvent.status == "pending", ProviderOutboxEvent.available_at <= now),
                 and_(ProviderOutboxEvent.status == "processing", ProviderOutboxEvent.locked_until <= now),

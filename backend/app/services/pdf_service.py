@@ -567,8 +567,10 @@ def generate_invoice_pdf(
         pending = payment_summary.get("pending_amount")
         payment_rows = []
         if applied is not None:
-            label = "Cash received" if payment_summary.get("basis") == "cash_receipt" else "Payments / credits applied"
+            label = "Cash received" if payment_summary.get("basis") == "cash_receipt" else "Prepayment applied" if payment_summary.get("prepayment_applied_amount") == applied else "Payments / credits applied"
             payment_rows.append(total_row(label, Decimal(applied) + (Decimal(source_collection["source_prior_allocated"]) if collection_copy else Decimal("0"))))
+        if payment_summary.get("prepayment_applied_amount") and payment_summary["prepayment_applied_amount"]!=applied:
+            payment_rows.append(total_row("Included prepayment",Decimal(payment_summary["prepayment_applied_amount"])))
         if pending is not None:
             payment_rows.append(total_row("Awaiting confirmation", Decimal(pending)))
         if balance is not None:

@@ -116,7 +116,7 @@ function InvoicePaymentPanel({
   const queryClient = useQueryClient()
   const latestSummary = useRef(summary)
   useEffect(() => { latestSummary.current = summary }, [summary])
-  const accepts = (next: InvoiceSettlementSummary) => mounted.current && next.invoice_id === latestSummary.current.invoice_id && next.version >= latestSummary.current.version
+  const accepts = (next: InvoiceSettlementSummary) => mounted.current && next.invoice_id === latestSummary.current.invoice_id && next.version >= latestSummary.current.version && !(latestSummary.current.payment_verification_required && !next.payment_verification_required && next.version <= latestSummary.current.version)
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
@@ -188,7 +188,7 @@ function InvoicePaymentPanel({
     return () => window.clearTimeout(timer)
   }, [quoteAmount])
   const quoteRequired = audience === 'staff' && access.kind === 'authenticated' && Boolean(summary.breakdown)
-  const canQuote = quoteRequired && Boolean(selectedRail && quoteAmount && (cashSelected ? cash?.allowed : amountValid && noncashAvailable))
+  const canQuote = !summary.payment_verification_required && quoteRequired && Boolean(selectedRail && quoteAmount && (cashSelected ? cash?.allowed : amountValid && noncashAvailable))
   const quoteEnabled = canQuote && pricedAmount === quoteAmount
   const quoteQuery = useQuery({
     queryKey: ['invoice-payment-quote', summary.invoice_id, summary.version, selectedRail, quoteAmount],
@@ -212,6 +212,7 @@ function InvoicePaymentPanel({
   const referenceRequired = audience === 'staff' && rail !== 'card'
   const canSubmit = Boolean(
     rail
+    && !summary.payment_verification_required
     && amountValid
     && allowedRails.includes(rail)
     && (rail !== 'fleet_payment' || fleetProvider !== 'Other' || fleetProviderName.trim())
@@ -227,6 +228,7 @@ function InvoicePaymentPanel({
 
   const createMutation = useMutation({
     mutationFn: async () => {
+      if (latestSummary.current.payment_verification_required) throw new Error('Payment status needs review before another payment.')
       if (!rail) throw new Error('Select a payment method')
       if (rail === 'fleet_payment' && (!reference.trim() || (fleetProvider === 'Other' && !fleetProviderName.trim()))) throw new Error('Enter the Fleet provider and instrument reference.')
       const normalized = normalizeMoney(currentAmount)
@@ -358,6 +360,13 @@ function InvoicePaymentPanel({
       },
     },
   }) : null, [attempt?.provider_client_secret, dark])
+
+  if (summary.payment_verification_required) return (
+    <div className={`rounded-2xl border p-4 text-sm ${panel}`} role="status">
+      <p className="font-bold">Payment status needs review</p>
+      <p className={`mt-1 ${quiet}`}>Contact the shop before making another payment.</p>
+    </div>
+  )
 
   if (summary.state === 'paid' && !isPositiveMoney(summary.unapplied_credit) && !isPositiveMoney(summary.refund_pending)) return null
 
