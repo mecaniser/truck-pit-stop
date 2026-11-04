@@ -1,0 +1,99 @@
+{
+  "services": {
+    "postgres": {
+      "image": "postgres:15-alpine",
+      "environment": {
+        "POSTGRES_USER": "settingsqa",
+        "POSTGRES_PASSWORD": "isolated-test-only",
+        "POSTGRES_DB": "settingsqa"
+      },
+      "tmpfs": [
+        "/var/lib/postgresql/data"
+      ],
+      "networks": [
+        "isolated"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "pg_isready -U settingsqa"
+        ],
+        "interval": "2s",
+        "timeout": "2s",
+        "retries": 30
+      }
+    },
+    "redis": {
+      "image": "redis:7-alpine",
+      "command": [
+        "redis-server",
+        "--save",
+        "",
+        "--appendonly",
+        "no"
+      ],
+      "networks": [
+        "isolated"
+      ]
+    },
+    "api": {
+      "image": "db761-api:local",
+      "environment": {
+        "ENVIRONMENT": "test",
+        "DATABASE_URL": "postgresql+asyncpg://settingsqa:isolated-test-only@postgres:5432/settingsqa",
+        "REDIS_URL": "redis://redis:6379/0",
+        "SECRET_KEY": "[GENERATED_TEST_SECRET]",
+        "FRONTEND_URL": "http://127.0.0.1:5284",
+        "PUBLIC_API_BASE_URL": "http://127.0.0.1:8284",
+        "CORS_ORIGINS": "[\"http://localhost:5284\",\"http://127.0.0.1:5284\"]",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "LOAD_TEST_SEED_CONFIRM": "seed-performance-data",
+        "QA_PASSWORD": "[GENERATED_DISPOSABLE_PASSWORD]",
+        "PYTHONPATH": "/app"
+      },
+      "volumes": [
+        "/tmp/dbn-pr760-fleet-current-main-20261104/backend:/app:ro",
+        "/tmp/pr760-current-runtime:/qa:ro"
+      ],
+      "command": [
+        "sh",
+        "-c",
+        "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+      ],
+      "depends_on": {
+        "postgres": {
+          "condition": "service_healthy"
+        },
+        "redis": {
+          "condition": "service_started"
+        }
+      },
+      "networks": [
+        "isolated"
+      ]
+    },
+    "gateway": {
+      "image": "python:3.12-alpine",
+      "command": [
+        "python",
+        "/qa/gateway.py"
+      ],
+      "volumes": [
+        "/tmp/pr760-current-runtime:/qa:ro"
+      ],
+      "ports": [
+        "127.0.0.1:8284:8000"
+      ],
+      "networks": [
+        "isolated",
+        "edge"
+      ]
+    }
+  },
+  "networks": {
+    "isolated": {
+      "internal": true
+    },
+    "edge": {}
+  }
+}

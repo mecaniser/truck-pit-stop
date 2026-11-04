@@ -11,6 +11,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { isCurrentAuthEpoch, useAuthStore } from '../../stores/authStore'
 import type { User as UserType } from '../../types'
 import api from '../../lib/api'
+import { isAxiosError } from 'axios'
 import {
   createPaymentStepUpGrant,
   paymentStepUpError,
@@ -1409,17 +1410,17 @@ function PaymentsSection() {
     if (result === 'return') {
       toast.success('Stripe setup saved. We are checking your account status.')
       refetch()
-      setSearchParams({}, { replace: true })
+      setSearchParams({ section: 'payments' }, { replace: true })
     } else if (result === 'refresh') {
       toast('Your Stripe setup session expired. Continue setup to resume.')
       refetch()
-      setSearchParams({}, { replace: true })
+      setSearchParams({ section: 'payments' }, { replace: true })
     } else if (result) {
       const messages: Record<string, string> = {
         error: 'Stripe could not complete setup. Please try again.',
       }
       toast.error(messages[result] || 'Stripe could not complete the connection.')
-      setSearchParams({}, { replace: true })
+      setSearchParams({ section: 'payments' }, { replace: true })
     }
   }, [searchParams, refetch, setSearchParams])
 
@@ -1905,7 +1906,7 @@ function QuickBooksIntegrationCard({
     if (message) {
       result === 'connected' ? toast.success(message) : toast.error(message)
       queryClient.invalidateQueries({ queryKey: ['quickbooks-status'] })
-      setSearchParams({}, { replace: true })
+      setSearchParams({ section: 'payments' }, { replace: true })
     }
   }, [queryClient, searchParams, setSearchParams])
 
@@ -2796,6 +2797,8 @@ function FeesSection() {
 function FleetSection() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const user = useAuthStore((state) => state.user)
+  const canConfigureFleet = canSeeSection(user, 'taxes_fees')
   const [fleetCompanyName, setFleetCompanyName] = useState('')
   const [defaultFleetAuthorityCustomerId, setDefaultFleetAuthorityCustomerId] = useState('')
   const [isUnlocked, setIsUnlocked] = useState(false)
@@ -2804,8 +2807,16 @@ function FleetSection() {
   const [isVerifying, setIsVerifying] = useState(false)
 
   // The fleet company name is stored on the tax/fee settings endpoint today.
-  const { data: taxFeeSettings } = useQuery<TaxFeeSettings>({
+  const {
+    data: taxFeeSettings,
+    isPending: configurationPending,
+    isError: configurationFailed,
+    error: configurationError,
+    isFetching: configurationFetching,
+    refetch: retryConfiguration,
+  } = useQuery<TaxFeeSettings>({
     queryKey: ['tax-fee-settings'],
+    enabled: canConfigureFleet,
     queryFn: async () => {
       const response = await api.get('/admin/tax-fee-settings')
       return response.data
@@ -2823,6 +2834,7 @@ function FleetSection() {
 
   const { data: fleetCompanies = [] } = useQuery<Array<{ id: string; company_name: string; fleet_enabled: boolean; is_internal_fleet: boolean }>>({
     queryKey: ['fleet-companies'],
+    enabled: canConfigureFleet,
     queryFn: async () => (await api.get('/fleet/companies')).data,
   })
 
@@ -2835,6 +2847,7 @@ function FleetSection() {
     },
   })
   const trucks = fleetBoard?.trucks || []
+  const configurationDenied = !canConfigureFleet || (isAxiosError(configurationError) && configurationError.response?.status === 403)
 
   useEffect(() => {
     if (taxFeeSettings) {
@@ -2911,7 +2924,20 @@ function FleetSection() {
           <span>Fleet Configuration</span>
         </div>
 
-        {!isUnlocked ? (
+        {configurationDenied ? (
+          <p role="status" className="text-sm text-zinc-400">
+            Fleet configuration requires Taxes &amp; Fees access. Ask the shop owner to grant access.
+          </p>
+        ) : configurationPending ? (
+          <p role="status" className="text-sm text-zinc-400">Loading fleet configuration…</p>
+        ) : configurationFailed ? (
+          <div role="alert" className="space-y-3 text-sm text-zinc-400">
+            <p>Fleet configuration could not be loaded.</p>
+            <ControlButton type="button" onClick={() => void retryConfiguration()} disabled={configurationFetching} className={industrialStyles.btnSecondary}>
+              {configurationFetching ? 'Retrying…' : 'Retry'}
+            </ControlButton>
+          </div>
+        ) : !isUnlocked ? (
           <div className="space-y-4">
             <dl className="grid gap-3 sm:grid-cols-2">
               <div className="db-settings-fleet-config__summary">
@@ -3681,7 +3707,7 @@ function canSeeSection(user: UserType | null, gatedKey?: string): boolean {
   return false
 }
 
-function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperAdmin, user }: { activeSection: SettingsSection, setActiveSection: (s: SettingsSection) => void, isGarageUser: boolean, isSuperAdmin: boolean, user: UserType | null }) {
+function SidebarLayout({ requestedSection, setActiveSection, isGarageUser, isSuperAdmin, user }: { requestedSection: string | null, setActiveSection: (s: SettingsSection) => void, isGarageUser: boolean, isSuperAdmin: boolean, user: UserType | null }) {
   const mobileSectionMenuId = useId()
   const mobileSectionSelectorRef = useRef<HTMLDivElement>(null)
   const [isMobileSectionMenuOpen, setIsMobileSectionMenuOpen] = useState(false)
@@ -3692,7 +3718,11 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
     ...(isSuperAdmin ? PLATFORM_SECTIONS : []),
     ...(isGarageUser ? [...garageSections, ...additionalServiceSections] : []),
   ]
-  const activeSectionMeta = allSections.find((section) => section.id === activeSection) ?? allSections[0]
+  const activeSectionMeta = allSections.find((section) => section.id === requestedSection) ?? allSections[0]
+  const activeSection = activeSectionMeta.id
+  useEffect(() => {
+    scrollSurfaceToTop(document.querySelector<HTMLElement>('.db-settings-workspace'))
+  }, [activeSection])
   const ActiveSectionIcon = activeSectionMeta.icon
   const mobileSectionGroups = [
     { label: 'Account', sections: PROFILE_SECTIONS },
@@ -3945,56 +3975,24 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
 
 export default function UnifiedSettingsPage() {
   const { user } = useAuthStore()
-  const [settingsSearchParams, setSettingsSearchParams] = useSearchParams()
-  const requestedSection = settingsSearchParams.get('section')
-  const [activeSection, setActiveSection] = useState<SettingsSection>(() => (
-    requestedSection === 'fleet' ? 'fleet' : requestedSection === 'fees' || requestedSection === 'payments' ? 'payments' : 'profile'
-  ))
-
+  const [params, setParams] = useSearchParams()
   const isGarageUser = user?.role === 'garage_owner' || user?.role === 'garage_admin'
   const isSuperAdmin = user?.role === 'super_admin'
+  const paymentsReturn = params.has('quickbooks') || params.has('stripe')
+  const section = paymentsReturn || params.get('section') === 'fees' ? 'payments' : params.get('section')
 
-  useEffect(() => {
-    scrollSurfaceToTop(document.querySelector<HTMLElement>('.db-settings-workspace'))
-  }, [activeSection])
+  function selectSection(next: SettingsSection) {
+    if (next === (section ?? 'profile')) return
+    const search = new URLSearchParams(params)
+    search.delete('quickbooks')
+    search.delete('stripe')
+    if (next === 'profile') search.delete('section')
+    else search.set('section', next)
+    setParams(search)
+  }
 
-  useEffect(() => {
-    if (settingsSearchParams.has('quickbooks') && isGarageUser) {
-      setActiveSection('payments')
-    }
-  }, [isGarageUser, settingsSearchParams])
+  return <SidebarLayout requestedSection={section} setActiveSection={selectSection} isGarageUser={isGarageUser} isSuperAdmin={isSuperAdmin} user={user ?? null} />
 
-  // Fleet is the only Settings surface that hands off to a separate board.
-  // Keep that context in the existing Settings URL so either browser Back or
-  // Fleet's return control restores the originating section after remounting.
-  useEffect(() => {
-    if (activeSection === 'fleet' && requestedSection !== 'fleet') {
-      const nextSearchParams = new URLSearchParams(settingsSearchParams)
-      nextSearchParams.set('section', 'fleet')
-      setSettingsSearchParams(nextSearchParams, { replace: true })
-    }
-    if (activeSection !== 'fleet' && requestedSection === 'fleet') {
-      const nextSearchParams = new URLSearchParams(settingsSearchParams)
-      nextSearchParams.delete('section')
-      setSettingsSearchParams(nextSearchParams, { replace: true })
-    }
-  }, [activeSection, requestedSection, setSettingsSearchParams, settingsSearchParams])
-
-  // If the active section becomes inaccessible (e.g. the owner revoked a
-  // grant), fall back to the profile section instead of a blank pane.
-  useEffect(() => {
-    const gated = [...GARAGE_SECTIONS, ...ADDITIONAL_SERVICE_SECTIONS].find((s) => s.id === activeSection)
-    if (gated && !canSeeSection(user ?? null, gated.gatedKey)) {
-      setActiveSection('profile')
-    }
-    if (activeSection === 'integrations' && !isSuperAdmin) {
-      setActiveSection('profile')
-    }
-  }, [activeSection, isSuperAdmin, user])
-
-  return (
-    <SidebarLayout activeSection={activeSection} setActiveSection={setActiveSection} isGarageUser={isGarageUser} isSuperAdmin={isSuperAdmin} user={user ?? null} />
-  )
 }
 
 // Add keyframes for animations

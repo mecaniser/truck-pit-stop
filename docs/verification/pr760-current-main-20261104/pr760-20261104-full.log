@@ -1,0 +1,248 @@
+
+> truck-pit-stop-frontend@1.0.0 test
+> vitest --run
+
+
+ RUN  v5.1.0 /private/tmp/dbn-pr760-fleet-current-main-20261104/frontend
+
+Error: AggregateError
+    at Object.dispatchError (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/xhr/xhr-utils.js:62:19)
+    at Request.<anonymous> (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/xhr/XMLHttpRequest-impl.js:655:18)
+    at Request.emit (node:events:531:35)
+    at ClientRequest.<anonymous> (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/helpers/http-request.js:127:14)
+    at ClientRequest.emit (node:events:519:28)
+    at emitErrorEvent (node:_http_client:108:11)
+    at Socket.socketErrorListener (node:_http_client:575:5)
+    at Socket.emit (node:events:519:28)
+    at emitErrorNT (node:internal/streams/destroy:170:8)
+    at emitErrorCloseNT (node:internal/streams/destroy:129:3) undefined
+Error: AggregateError
+    at Object.dispatchError (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/xhr/xhr-utils.js:62:19)
+    at Request.<anonymous> (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/xhr/XMLHttpRequest-impl.js:655:18)
+    at Request.emit (node:events:531:35)
+    at ClientRequest.<anonymous> (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/helpers/http-request.js:127:14)
+    at ClientRequest.emit (node:events:519:28)
+    at emitErrorEvent (node:_http_client:108:11)
+    at Socket.socketErrorListener (node:_http_client:575:5)
+    at Socket.emit (node:events:519:28)
+    at emitErrorNT (node:internal/streams/destroy:170:8)
+    at emitErrorCloseNT (node:internal/streams/destroy:129:3) undefined
+Error: Uncaught [TypeError: Failed to fetch dynamically imported module: /assets/MyGaragePage-BqMbfKJl.js]
+    at reportException (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/helpers/runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:353:9)
+    at invokeEventListeners (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:4213:16)
+    at invokeGuardedCallback (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:4277:31)
+    at beginWork$1 (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:27490:7)
+    at performUnitOfWork (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:26599:12) TypeError: Failed to fetch dynamically imported module: /assets/MyGaragePage-BqMbfKJl.js
+    at /private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/src/components/__tests__/RouteErrorBoundary.test.tsx:23:22
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3276:10)
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3922:64
+Error: Uncaught [TypeError: Failed to fetch dynamically imported module: /assets/MyGaragePage-BqMbfKJl.js]
+    at reportException (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/helpers/runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:353:9)
+    at invokeEventListeners (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:4213:16)
+    at invokeGuardedCallback (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:4277:31)
+    at beginWork$1 (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:27490:7)
+    at performUnitOfWork (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:26599:12) TypeError: Failed to fetch dynamically imported module: /assets/MyGaragePage-BqMbfKJl.js
+    at /private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/src/components/__tests__/RouteErrorBoundary.test.tsx:23:22
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3276:10)
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3922:64
+Error: Uncaught [TypeError: Failed to fetch dynamically imported module: /assets/MyGaragePage-BqMbfKJl.js]
+    at reportException (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/helpers/runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:353:9)
+    at invokeEventListeners (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:4213:16)
+    at invokeGuardedCallback (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:4277:31)
+    at beginWork$1 (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:27490:7)
+    at performUnitOfWork (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:26599:12) TypeError: Failed to fetch dynamically imported module: /assets/MyGaragePage-BqMbfKJl.js
+    at /private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/src/components/__tests__/RouteErrorBoundary.test.tsx:32:22
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3276:10)
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3922:64
+Error: Uncaught [TypeError: Failed to fetch dynamically imported module: /assets/MyGaragePage-BqMbfKJl.js]
+    at reportException (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/helpers/runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:353:9)
+    at invokeEventListeners (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:4213:16)
+    at invokeGuardedCallback (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:4277:31)
+    at beginWork$1 (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:27490:7)
+    at performUnitOfWork (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:26599:12) TypeError: Failed to fetch dynamically imported module: /assets/MyGaragePage-BqMbfKJl.js
+    at /private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/src/components/__tests__/RouteErrorBoundary.test.tsx:32:22
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3276:10)
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3922:64
+Error: Uncaught [Error: boom in module body]
+    at reportException (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/helpers/runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:353:9)
+    at invokeEventListeners (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:4213:16)
+    at invokeGuardedCallback (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:4277:31)
+    at beginWork$1 (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:27490:7)
+    at performUnitOfWork (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:26599:12) Error: boom in module body
+    at /private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/src/components/__tests__/RouteErrorBoundary.test.tsx:39:45
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3276:10)
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3922:64
+Error: Uncaught [Error: boom in module body]
+    at reportException (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/helpers/runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:353:9)
+    at invokeEventListeners (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:4213:16)
+    at invokeGuardedCallback (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:4277:31)
+    at beginWork$1 (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:27490:7)
+    at performUnitOfWork (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:26599:12) Error: boom in module body
+    at /private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/src/components/__tests__/RouteErrorBoundary.test.tsx:39:45
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3276:10)
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3922:64
+Error: Uncaught [Error: boom in module body]
+    at reportException (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/helpers/runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:353:9)
+    at invokeEventListeners (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:4213:16)
+    at invokeGuardedCallback (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:4277:31)
+    at beginWork$1 (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:27490:7)
+    at performUnitOfWork (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:26599:12) Error: boom in module body
+    at /private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/src/components/__tests__/RouteErrorBoundary.test.tsx:45:45
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3276:10)
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3922:64
+Error: Uncaught [Error: boom in module body]
+    at reportException (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/helpers/runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:353:9)
+    at invokeEventListeners (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:4213:16)
+    at invokeGuardedCallback (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:4277:31)
+    at beginWork$1 (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:27490:7)
+    at performUnitOfWork (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:26599:12) Error: boom in module body
+    at /private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/src/components/__tests__/RouteErrorBoundary.test.tsx:45:45
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3276:10)
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3922:64
+Error: Uncaught [TypeError: Failed to fetch dynamically imported module: /assets/MyGaragePage-BqMbfKJl.js]
+    at reportException (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/helpers/runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:353:9)
+    at invokeEventListeners (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:4213:16)
+    at invokeGuardedCallback (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:4277:31)
+    at beginWork$1 (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:27490:7)
+    at performUnitOfWork (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:26599:12) TypeError: Failed to fetch dynamically imported module: /assets/MyGaragePage-BqMbfKJl.js
+    at /private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/src/components/__tests__/RouteErrorBoundary.test.tsx:61:24
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3276:10)
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3922:64
+Error: Uncaught [TypeError: Failed to fetch dynamically imported module: /assets/MyGaragePage-BqMbfKJl.js]
+    at reportException (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/helpers/runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:353:9)
+    at invokeEventListeners (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:4213:16)
+    at invokeGuardedCallback (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:4277:31)
+    at beginWork$1 (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:27490:7)
+    at performUnitOfWork (/private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/react-dom/cjs/react-dom.development.js:26599:12) TypeError: Failed to fetch dynamically imported module: /assets/MyGaragePage-BqMbfKJl.js
+    at /private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/src/components/__tests__/RouteErrorBoundary.test.tsx:61:24
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3276:10)
+    at file:///private/tmp/dbn-pr760-fleet-current-main-20261104/frontend/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3922:64
+
+ Test Files  249 passed (249)
+      Tests  2797 passed (2797)
+   Start at  16:15:36
+   Duration  397.21s (tests 56%, environment 20%, import 16%, transform 4%, setup 3%)
+
+    Isolate  249 workers spawned · ~397ms startup each (spawn + environment, per file)
+             at least ~98.44s faster with isolate: false — reuses workers across files instead of one per file
+

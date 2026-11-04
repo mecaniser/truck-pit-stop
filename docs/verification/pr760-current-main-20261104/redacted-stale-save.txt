@@ -1,0 +1,15 @@
+### Result
+{"status":403,"detail":"You do not have access to this setting. Ask the shop owner to grant access.","errorVisible":true,"dirtyEditorStillPresent":1,"reloadHidesConfiguration":true,"noOverflow":true}
+### Ran Playwright code
+```js
+await (async(page)=>{
+ const promise=page.waitForResponse(r=>r.request().method()==='PUT'&&r.url().includes('/admin/tax-fee-settings'));await page.getByRole('button',{name:'Save Changes',exact:true}).click();const response=await promise;const data=await response.json();if(response.status()!==403)throw new Error('Expected stale403');await page.getByText(data.detail,{exact:true}).last().waitFor();const dirtyEditorStillPresent=await page.getByPlaceholder('e.g. 77 Cargo').count();await page.screenshot({path:'/tmp/pr760-current-runtime/stale-save-denied.png',fullPage:true,animations:'disabled'});await page.reload();await page.getByText('Fleet configuration requires Taxes & Fees access. Ask the shop owner to grant access.',{exact:true}).waitFor();return{status:response.status(),detail:data.detail,errorVisible:true,dirtyEditorStillPresent,reloadHidesConfiguration:true,noOverflow:await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)};
+}
+)(page);
+```
+### Page
+- Page URL: http://127.0.0.1:5284/dashboard/settings?section=fleet
+- Page Title: DieselBridge | Repair Shop Workflow
+- Console: 3 errors, 0 warnings
+### Events
+- New console entries: .playwright-cli/console-2026-11-04T21-22-36-007Z.log#L18-L22
