@@ -358,7 +358,7 @@ async function collect(output) {
   const vins=new Set(),reviewed=allowlist();
   for(const identity of directory.rows) {
    const provider=identity.href.split('/').pop(),boundReviewed=isReviewed(reviewed,COMPANY_ID,provider);
-   const proof=boundReviewed?await readReviewedIdentity(context,identity):{vin:await readVehicleVin(context,identity)};
+   const proof=boundReviewed?await readReviewedIdentity(context,identity):{vin:await readVehicleVin(context,identity,{onStage:stage=>phase('health_identity_'+stage)})};
    const vin=proof.vin;if(vin&&vins.has(vin))throw new Error('duplicate_vin');if(vin)vins.add(vin);
    const vitals=vin?await readVitals(context,identity,vin):boundReviewed?await readBoundVitals(context,identity,proof):null;
    const observation=vin?await tasks.run('health_vehicle',[identity.href,vin],async()=>({...(await vehicleCodes(context,identity)),source_read_at:new Date().toISOString()}),{cacheable:row=>row.state==='captured'}):{state:'unavailable',count_before:null,count_after:null,explicit_empty:false,codes:[],reason:'vin_unavailable'};
