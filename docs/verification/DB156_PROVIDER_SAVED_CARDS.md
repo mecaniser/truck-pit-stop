@@ -23,6 +23,8 @@ The customer sees Add Card, masked saved cards, Set default, and Remove. The ten
 
 - Read-only live shop settings: Truck Pit Stop selects QuickBooks, active for card payments, production connected; Stripe not set up. Read-only backend checks confirm active selection, matching merchant snapshots, payment scope and valid tokens. No production/provider mutations performed during investigation.
 - Route contract tests:29 passed, including rejected sensitive input returning only a generic validation message.
+- Genuine sandbox preparation: one normal OAuth refresh succeeded against the existing approved local sandbox connection; rotated credentials were durably preserved at their source. No production token or payment changes.
+- Frontend exact-lock build/typecheck and25 focused tests pass. The earlier typecheck failure came from a stale shared dependency directory; isolated exact-lock dependencies resolved it without unrelated source changes.
 - Full application and actual Intuit sandbox acceptance are separate required evidence. Neither is implied by mocked unit tests.
 - Local5173 serves another worktree;8000 serves the existing db761 sandbox. Both preserved. Isolated DB156 runtime planned on5216/8216 using synthetic fixtures.
 
