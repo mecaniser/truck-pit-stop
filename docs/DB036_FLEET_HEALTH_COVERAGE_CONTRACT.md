@@ -87,3 +87,33 @@ including late resources. After repeated transient failures, retain the last
 verified Summary and original readtime, with unknown hours left null. A second
 attempt failing before Summary must not erase a previously verified Summary.
 Fresh tests and independent QA/Security must cover these boundaries before release.
+
+## Canary correction: wait for authorized page readiness
+
+The recovery canary stopped on its first vehicle before importing. Static logs
+prove auth success and collection failure, but do not identify the exact exception.
+Separate exact-source Chromium fixtures reproduce two legitimate loading states:
+a Live click whose hash changes50ms later, and a blank VIN cell filled50ms later.
+Both were rejected prematurely. The baseline fixture with immediate readiness works.
+
+Architecture permits a wait within the same existing deadline, not another retry.
+Only the exact verified starting Summary URL is transitional; it must resolve to
+the expected provider Live route. Wrong providers, origins, paths, auth/challenges,
+nonempty different or malformed VINs and duplicate VINs remain immediately fatal.
+Missing table or blank/missing loading VIN may remain pending until exactly one
+expected VIN is rendered. Run source-auth checks during readiness polling. Bound
+VIN-less reads retain their separate reviewed-absence contract. Pending timeout may
+use existing bounded transient read recovery with honest original-time Summary.
+
+After every Live route/VIN/challenge guard succeeds, two null Live measurements
+must not discard an available verified Summary odometer. Return that Summary with
+its original source readtime. Do not retry, merge different-time fields or refresh
+the timestamp merely for unavailable values. Any present Live value, including
+zero, retains the existing Live partial result. Static read-stage/failure categories
+may be logged; URLs, VINs, auth values and challenge tokens remain private.
+
+The actual field-bearing Summary snapshot must itself satisfy pure summaryIdentity;
+matching surrounding reads cannot authorize a contradictory middle snapshot.
+Validate before promoting its values in VIN and reviewed-absence paths. The same
+both-null fallback applies to bound vitals only after fresh post-Live absence and
+identity proof. Positive/zero partial Live values remain unmerged.

@@ -103,3 +103,25 @@ must finish successfully before proceeding. Unknown/missing/malformed readings d
 not manufacture retries or values. Auth/challenge presence checks inspect only
 attributes, not values/tokens. Existing bound/auth/import/receipt contracts retain
 their approved hashes. Protected checks and live release gates remain pending.
+
+## PR780 live failure and readiness correction
+
+PR780 merged1d57758d with all seven checks passing and identical checked tree.
+API8c55b2d0 served that revision and readiness passed. Healthimage415ea940 canary
+20ee26cd authenticated, then failed its first vehicle read21:11:43UTC before any
+import. Static logs do not identify the exact exception. Offline exact-source
+fixtures independently reproduce delayedLivehash and blank-loadingVIN failures.
+The known-working PR775 collector was restored as imagece2d5033; configuration,
+source scope, hourly schedule, prior snapshots and business records were preserved.
+
+Current manualMotiveLive audit verified21uniqueproviders with both numerical
+fields, matching genuineVINs or reviewed26absence, with account verified before/
+after. Raw source/forensic/visual evidence stays private outside Git.
+
+The readiness correction waits only through authorized loading states, validates
+the actual field-bearing Summary snapshot, and preserves verified Summary/time
+when both Live fields are unavailable. Identity/auth/route contradictions remain
+terminal, including contradictory middle snapshots. Frozen19d611fa/test318a53a4
+passed84collector cases;103login and24task/diagnostic regressions pass. Fresh final
+independent gates and protectedCI are required before merge; exact deployed capture,
+per-field readback, production display and naturalexecution remain required.
