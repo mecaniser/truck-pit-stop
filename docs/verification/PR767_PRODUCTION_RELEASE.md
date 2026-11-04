@@ -13,23 +13,23 @@ Accountable product owner: Frontend & UX. Release execution: Release & Reliabili
 
 ## Live acceptance and boundary
 
-Actual signed-in Elis customer account,1440x1000 desktop and390x1100 mobile. Today-first fleet home, exact Unit603 scope, common-needs discovery, DOT search, service choice once, request optional date/details/final review and preserved vehicle context pass. No horizontal overflow at390px; reviewed action controls44px high. Stop before Send request. The existing invoice remained pending confirmation; no second payment was requested or submitted.
+Actual signed-in customer account,1440x1000 desktop and390x1100 mobile. Today-first fleet home, exact authorized vehicle scope, common-needs discovery, service search, service choice once, request optional date/details/final review and preserved vehicle context pass. No horizontal overflow at390px; reviewed action controls44px high. Stop before Send request. No invoice payment was submitted.
 
 Reserve a time is correctly disabled under current production readiness, with customer-facing unavailability text. No card details entered, tokens created, payment attempts submitted, or holds created. The full prepaid checkout/success/expiry paths were previously accepted with isolated fictional fixtures; this live read-only pass is not provider payment certification.
 
-Actual local screenshots: `/Users/sergio_m1_promax/.codex/visualizations/2026/10/31/01a1903f-abe6-7d20-bd1a-7bf7df5f4a4a/portal-implementation/release-767/`. Private read-only runtime/financial receipts: `/tmp/pr767-release/`.
+Actual screenshots and detailed read-only runtime/financial receipts are retained in the private local release artifacts; customer and transaction identifiers are omitted from this public record.
 
 ## Prepaid activation remains blocked
 
 BothWeb andWorker booking enable/approved-tenant flags remain absent/off. Active provider configurationv1 is an immutable not_ready snapshot. QBO realm/account mappings and scopes match; stored access token is expired and refresh token remains valid. No OAuth refresh, provider configuration write or feature activation was performed.
 
-Fresh merged readiness is blocked by401 historical raw ETS mirror invoices without settlement rows (337paid/64sent). This is not evidence of401 unpaid customer debts. The earlier402 cohort included one legal bill-to collection mismatch; PR767 already fixes that predicate, and the current handoff settlement matches the approved billed customer. Do not reassign the customer or rewrite the settlement to satisfy an obsolete predicate.
+Fresh merged readiness is blocked by historical raw ETS mirror invoices without settlement rows. The detailed cohort is retained privately; it is not evidence of unpaid customer debts. PR767 already corrects the collection legal bill-to predicate. Do not reassign customers or rewrite settlements to satisfy an obsolete predicate.
 
 The existing financial backfill command may create settlement/attempt/ledger rows and was NOT run under the no-financial-record-change constraint. Architecture identified a possible separate code-only correction: exclude only proven raw ETS mirror rows from tenant-wide missing-settlement readiness, keep direct imported checkout read-only, and retain all native-payment/Zelle/ancestry/source-handoff/tenant protections. This correction is a follow-up contract, not part of PR767 and not silently enabled. After its independent gate, activation still requires the normal authenticated credential-health and audited fresh provider-configuration workflow, exact TPS-only environment admission and worker readiness. Do not edit immutablev1 or force-ready values.
 
 ## Financial preservation evidence
 
-Read-only repeatable-read snapshots before and after release match invoice, repair-order/labor/parts, quote, payment, settlement, ledger, accounting-link and source-handoff fingerprints. Normal production activity prevents claiming every database row was globally frozen: an existing pending card attempt retained its pending/receivedNULL/applied0/unapplied0 money state but its row hash/updated_at changed, and the provider outbox advanced. No new attempt count, payment or ledger entry was created by this verification. Additive appointment columns change its full-row shape. Exact changed fields of that pre-existing attempt cannot be reconstructed from hash-only baseline; this limitation is explicit.
+Private read-only repeatable-read snapshots compare invoice, repair-order/labor/parts, quote, payment, settlement, ledger, accounting-link and source-handoff fingerprints. Detailed results and ordinary live background attempt/outbox activity exceptions are retained privately. This verification submitted no payment or financial mutation. Additive appointment columns change its full-row shape; a globally frozen production database is not claimed. Hash-only baselines cannot reconstruct individual changed fields.
 
 ## Small acceptance correction
 
