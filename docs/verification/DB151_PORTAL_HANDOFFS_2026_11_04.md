@@ -4,7 +4,7 @@ Owner: Frontend & UX. Lane: Fast UI. Branch: `codex/portal-review-next-steps`.
 
 ## Outcome
 
-- Visit requests combine optional date and notes on one screen, then retain the explicit review/send boundary.
+- Visit requests combine optional date and notes on one screen, then retain the explicit review/send boundary. Preferred-date input stays left-aligned with its label (desktop x335, width320) instead of inheriting centered shared-control alignment.
 - Success explains shop review, checking the accepted arrival date before coming in, and that no start time is reserved.
 - View request opens its exact authorized `request_id`. Reload retains it; unrelated reservation filters, empty-reservation messaging and new-booking action are omitted from this record view. Missing IDs show unavailable with All visits recovery.
 - Pending customer invoices retain guidance to check this invoice and not send the pending amount again. Zelle allocations identify shop verification; other pending rails retain neutral confirmation wording.
