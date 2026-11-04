@@ -125,3 +125,57 @@ terminal, including contradictory middle snapshots. Frozen19d611fa/test318a53a4
 passed84collector cases;103login and24task/diagnostic regressions pass. Fresh final
 independent gates and protectedCI are required before merge; exact deployed capture,
 per-field readback, production display and naturalexecution remain required.
+
+
+## Follow-up release gate — 21:47 UTC
+
+PR783 merged `8c2406c259920f798390d135eba15525d39c080a` after all
+seven protected checks. API deployment `c34eaba0-20cf-44ec-bc44-79565813957f`
+and health image `20035ae0-92cb-4059-988d-7e9a0be8b733` became ready. Manual
+execution `daa7d3f2-7497-4006-af83-9d2f271531d0` failed at
+`login_password` / `login_form_ambiguous`, before the password-submission
+phase and before collecting/importing readings. Existing logging cannot
+distinguish empty loading DOM, duplicate/extra controls, or pre/post-fill
+validation. No production root cause is asserted from that category alone.
+
+Independent offline Chromium probes reproduce the identical category for both
+an empty password document that becomes valid after 100–200ms and duplicate
+password fields. Architecture approved a pre-credential empty-document wait
+within the existing 15-second fallback budget, with every strict form/origin/
+account/challenge check preserved and no extra credential submission or context.
+Owner: Backend & Integrations; branch `codex/health-login-readiness`. Fresh
+independent QA/Security and source/receipt/projection/runtime gates remain open.
+
+Separately, the restored PR775 natural execution
+`870720fa-db32-49ce-8477-d5216a08ce78`, starting 21:33:24UTC, succeeded with
+21 both-field vitals and19 diagnostics (40 verified/replayed captures), exact
+source/saved/current API projection parity across the21 available trucks,
+and four unavailable projections. This is evidence for that older image only.
+The full25-panel visual sweep remains blocked by the locked Mac; user unlock
+was requested. Previously captured603/609/26 panels remain narrower evidence.
+
+
+Auth candidate frozen for independent gates: login source `6b713bcd` and tests
+`15b938e3`, shared diagnostic source `193b5447` and tests `42621d09`. Owner
+Chromium suite 120/120 and diagnostic suite 12/12 pass. The 17 new login cases
+cover empty readiness, contradiction/deadline failures and changed post-fill
+forms/values with no refill or submission retry. Strict lookup checks remain
+immediate. Independent QA/Security and protected CI remain pending at handoff.
+
+
+Fresh independent Security GO on the frozen `6b713bcd` / `193b5447` sources: 120 login
+and 12 diagnostic tests passed. Separate intercepted Chromium probes proved
+blank-to-valid one-fill/one-submit success, foreign-origin/challenge transitions
+stopping before password entry, and valid-looking post-fill form replacement
+stopping without refill/submission. No foreign POST or credential-query leak.
+No remaining P0/P1/P2 security finding; live and scheduled gates remain open.
+
+
+Fresh independent offline QA GO on the same frozen hashes:216/216 Node tests
+(120 login,84 collector,12 diagnostics) and eight independent intercepted
+Chromium probes passed. Empty-to-valid performs one password fill/submission;
+nonempty loading, challenge, duplicate controls, post-fill clear/replacement/
+action changes and deadline exhaustion stop without retry. No live provider
+requests were made by reviewers. The private extractor now requires explicit
+expected login hash for the new version and preserves its strict21-both-fields
+API acceptance gate. No live release acceptance is implied by these tests.
