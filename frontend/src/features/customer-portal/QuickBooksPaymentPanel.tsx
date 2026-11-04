@@ -11,6 +11,10 @@ interface QuickBooksPaymentPanelProps {
   onToken?: (token: string) => Promise<void>
   submitLabel?: string
   tone?: 'dark' | 'light'
+  successMessage?: string
+  failureMessage?: string
+  processingLabel?: string
+  onProcessingChange?: (processing: boolean) => void
 }
 
 type CardFields = {
@@ -22,6 +26,8 @@ type CardFields = {
 }
 
 type CardFieldErrors = Partial<Record<keyof CardFields, string>>
+
+const TOKEN_URLS = new Set(['https://sandbox.api.intuit.com/quickbooks/v4/payments/tokens', 'https://api.intuit.com/quickbooks/v4/payments/tokens'])
 
 const EMPTY_FIELDS: CardFields = { name: '', number: '', expiry: '', cvc: '', postalCode: '' }
 
@@ -67,7 +73,7 @@ const validateFields = (fields: CardFields): CardFieldErrors => {
   return errors
 }
 
-export default function QuickBooksPaymentPanel({ invoiceId, tokenUrl, onSuccess, onToken, submitLabel, tone = 'dark' }: QuickBooksPaymentPanelProps) {
+export default function QuickBooksPaymentPanel({ invoiceId, tokenUrl, onSuccess, onToken, submitLabel, tone = 'dark', successMessage = 'Payment successful!', failureMessage = 'Payment could not be completed. Please try another method.', processingLabel = 'Processing...', onProcessingChange }: QuickBooksPaymentPanelProps) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fields, setFields] = useState<CardFields>(EMPTY_FIELDS)
@@ -98,8 +104,10 @@ export default function QuickBooksPaymentPanel({ invoiceId, tokenUrl, onSuccess,
     const expiryDigits = digitsOnly(fields.expiry, 6)
 
     setIsProcessing(true)
+    onProcessingChange?.(true)
     setError(null)
     try {
+      if (!TOKEN_URLS.has(tokenUrl)) throw new Error('Secure card form is unavailable')
       // Intuit receives card data directly. DieselBridge receives only the opaque token.
       const tokenResponse = await fetch(tokenUrl, {
         method: 'POST',
@@ -126,7 +134,7 @@ export default function QuickBooksPaymentPanel({ invoiceId, tokenUrl, onSuccess,
 
       if (onToken) {
         await onToken(tokenPayload.value)
-        toast.success('Payment successful!')
+        toast.success(successMessage)
         onSuccess()
         return
       }
@@ -147,9 +155,10 @@ export default function QuickBooksPaymentPanel({ invoiceId, tokenUrl, onSuccess,
       const detail = typeof cause === 'object' && cause && 'response' in cause
         ? (cause as { response?: { data?: { detail?: string } } }).response?.data?.detail
         : null
-      setError(typeof detail === 'string' ? detail : 'Payment could not be completed. Please try another method.')
+      setError(typeof detail === 'string' && !/stripe|quickbooks|intuit|square/i.test(detail) ? detail : failureMessage)
     } finally {
       setIsProcessing(false)
+      onProcessingChange?.(false)
     }
   }
 
@@ -182,10 +191,10 @@ export default function QuickBooksPaymentPanel({ invoiceId, tokenUrl, onSuccess,
           {fieldErrors.postalCode && <span id="qbp-postal-error" className="mt-1 block text-xs text-red-600">{fieldErrors.postalCode}</span>}
         </label>
       </div>
-      {error && <p className={`rounded-xl border p-3 text-sm ${isDark ? 'border-red-500/30 bg-red-500/10 text-red-300' : 'border-red-200 bg-red-50 text-red-700'}`}>{error}</p>}
+      {error && <p role="alert" className={`rounded-xl border p-3 text-sm ${isDark ? 'border-red-500/30 bg-red-500/10 text-red-300' : 'border-red-200 bg-red-50 text-red-700'}`}>{error}</p>}
       <ControlButton type="submit" disabled={isProcessing} className={`flex  w-full items-center justify-center gap-2 rounded-xl px-4 font-extrabold hover:brightness-110 disabled:opacity-60 ${isDark ? 'bg-[#8b7cf7] text-[#0e1118]' : 'bg-[var(--accent-600,#b9472f)] text-white'}`}>
         <CreditCard className="h-5 w-5" />
-        {isProcessing ? 'Processing...' : submitLabel || 'Submit secure payment'}
+        {isProcessing ? processingLabel : submitLabel || 'Submit secure payment'}
       </ControlButton>
     </form>
   )
