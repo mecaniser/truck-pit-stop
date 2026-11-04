@@ -1,8 +1,8 @@
 # DB-149EFS — Customer EFS submissions
 
-Status: implemented and verified in the isolated runtime; ready for customer preview review. Not merged or deployed. Backend & Integrations accountable; Frontend & UX owns presentation. Independent source QA/Security approved the final backend digest `707d2a4e8046e8b34b4ff9cee7a582acc148de4d2696ab7ac31f11bd4004c6df`; final preview receipt review is recorded on the board.
+Status: implemented and verified in the isolated runtime; ready for customer preview review. Not merged or deployed. Backend & Integrations accountable; Frontend & UX owns presentation. Independent QA/Security approved the final source and whole preview/PR scope at backend digest `707d2a4e8046e8b34b4ff9cee7a582acc148de4d2696ab7ac31f11bd4004c6df`, reviewed frontend, actual UI captures and final preservation receipts.
 
-Contract: [customer-efs-submissions-v1](../contracts/customer-efs-submissions-v1.md). Branch `codex/customer-efs-payments`, based on draft PR778 head `c4094ede907eb222592fc47aee99981d36ca2a75`. This EFS outcome is separately reviewable and depends on the payment-request recovery work in PR778.
+Contract: [customer-efs-submissions-v1](../contracts/customer-efs-submissions-v1.md). [Draft PR784](https://github.com/mecaniser/truck-pit-stop/pull/784), branch `codex/customer-efs-payments`, based on draft PR778 head `c4094ede907eb222592fc47aee99981d36ca2a75`. This EFS outcome is separately reviewable and targets the payment-request recovery branch in PR778. Protected main-branch release CI and production approval remain future release gates; local and independent checks above are the completed preview evidence.
 
 ## Customer flow
 
