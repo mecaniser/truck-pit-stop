@@ -1,5 +1,5 @@
 """Provider-bound vault identities; never raw card or single-use token storage."""
-from sqlalchemy import Column, String, ForeignKey, UniqueConstraint, CheckConstraint, ForeignKeyConstraint
+from sqlalchemy import Column, String, ForeignKey, UniqueConstraint, CheckConstraint, ForeignKeyConstraint, Index, text
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.base import BaseModel
 
@@ -12,6 +12,7 @@ class CustomerPaymentProfile(BaseModel):
         UniqueConstraint('tenant_id', 'customer_id', 'provider', 'provider_account_id', 'environment', name='uq_customer_vault_context'),
         UniqueConstraint('provider', 'provider_account_id', 'environment', 'provider_customer_id', name='uq_customer_vault_owner'),
         CheckConstraint("provider IN ('stripe_connect','quickbooks_payments')", name='ck_customer_vault_provider'),
+        CheckConstraint("(provider = 'stripe_connect' AND environment IN ('test','live')) OR (provider = 'quickbooks_payments' AND environment IN ('sandbox','production'))", name='ck_customer_vault_provider_environment'),
         CheckConstraint("environment IN ('test','live','sandbox','production')", name='ck_customer_vault_environment'),
     )
     tenant_id = Column(UUID(as_uuid=True), ForeignKey('tenants.id'), nullable=False, index=True)
@@ -28,6 +29,9 @@ class SavedCardOperation(BaseModel):
     __table_args__ = (
         ForeignKeyConstraint(['tenant_id','customer_id','profile_id'], ['customer_payment_profiles.tenant_id','customer_payment_profiles.customer_id','customer_payment_profiles.id'], name='fk_saved_card_operation_owner'),
         UniqueConstraint('profile_id', 'idempotency_key', name='uq_saved_card_operation_key'),
+        UniqueConstraint('profile_id', 'token_hash', name='uq_saved_card_operation_token'),
+        CheckConstraint("state != 'confirmed' OR provider_card_id IS NOT NULL", name='ck_saved_card_operation_receipt'),
+        Index('uq_saved_card_operation_open', 'profile_id', unique=True, postgresql_where=text("state IN ('pending','unconfirmed') AND deleted_at IS NULL"), sqlite_where=text("state IN ('pending','unconfirmed') AND deleted_at IS NULL")),
         CheckConstraint("state IN ('pending','identity_pending','unconfirmed','confirmed','failed')", name='ck_saved_card_operation_state'),
     )
     tenant_id = Column(UUID(as_uuid=True), ForeignKey('tenants.id'), nullable=False, index=True)

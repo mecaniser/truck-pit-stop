@@ -105,7 +105,7 @@ async def _request(
     if method == "POST":
         if (not isinstance(token, str) or not 1 <= len(token) <= 2048
                 or not re.fullmatch(r"[A-Za-z0-9._~\-]+", token)
-                or token.isdigit()):
+                or re.sub(r'[^A-Za-z0-9]', '', token).isdigit()):
             raise VaultError("The secure card token is invalid.")
         path += "/createFromToken"
     try:

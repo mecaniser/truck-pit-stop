@@ -186,7 +186,7 @@ async def _record_outcome(db, identity, state, card_id=None):
 
 def _token_hash(token):
     if (not isinstance(token, str) or not 1 <= len(token) <= 2048
-            or token.isdigit() or not re.fullmatch(r'[A-Za-z0-9._~\-]+', token)):
+            or re.sub(r'[^A-Za-z0-9]', '', token).isdigit() or not re.fullmatch(r'[A-Za-z0-9._~\-]+', token)):
         raise HTTPException(status_code=422, detail='A secure card token is required')
     return sha256(token.encode()).hexdigest()
 

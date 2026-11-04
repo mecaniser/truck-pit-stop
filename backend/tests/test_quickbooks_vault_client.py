@@ -170,7 +170,7 @@ async def test_invalid_context_never_reaches_provider(connection,install,overrid
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('token', ['', '4242424242424242','x'*2049,'opaque\ntoken','a/b'])
+@pytest.mark.parametrize('token', ['', '4242424242424242','4242-4242-4242-4242','4242.4242.4242.4242','12-3','4242_4242_4242_4242','x'*2049,'opaque\ntoken','a/b'])
 async def test_invalid_token_never_reaches_provider(connection,install,token):
     install(lambda request:pytest.fail('No provider call permitted'))
     with pytest.raises(vault.VaultError) as exc:
