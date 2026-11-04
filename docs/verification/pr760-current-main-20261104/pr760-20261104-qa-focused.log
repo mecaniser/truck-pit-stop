@@ -1,0 +1,9 @@
+
+ RUN  v5.1.0 /private/tmp/dbn-pr760-fleet-current-main-20261104/frontend
+
+
+ Test Files  1 passed (1)
+      Tests  42 passed (42)
+   Start at  16:17:42
+   Duration  7.60s (tests 87%, import 6%, environment 4%, transform 3%, setup 1%)
+
