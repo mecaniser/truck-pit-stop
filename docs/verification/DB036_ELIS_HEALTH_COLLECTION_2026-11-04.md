@@ -140,11 +140,32 @@ on the correct609 detail before rollout, but clicks cannot complete while locked
 The user has been asked to unlock; no live popup acceptance is claimed yet.
 
 
-## Remaining acceptance gate
+## Production visual acceptance completed — 2026-11-04
 
-Collection is released and independently accepted through the deployed backend.
-The signed-in popup visual gate remains blocked by the locked Mac; the item is
-not marked Done. The only user action requested is unlocking the Mac; the agent
-will perform the actual regression clicks. Do not represent source/API acceptance
-as completed visual acceptance. No extra collection trigger is needed for this
-remaining browser check.
+After the user unlocked the Mac, the agent opened a dedicated signed-in production
+Fleet tab. The browser connector's click path timed out; native Chrome controls
+completed the actual journeys without changing any business records.
+
+-609: selected the existing Elis Logistics LLC (DBN)609 detail, clicked View health,
+then observed Mileage672634.54mi and Engine hours8293h in the Truck health panel.
+Fault codes remained visible alongside the readings. Service odometer652767mi is
+separate and unchanged. A clear browser screenshot was saved locally at
+`/tmp/db036-health-ui-proof/609.png` and directly inspected by independent QA.
+-603: closed609's panel, returned to Fleet board, clicked the exact
+`Open Elis Logistics LLC (DBN) 603 truck details` button, then View health.
+The correct Elis603 header and rendered health fields show693231.19mi/23546h,
+with fault codes alongside and separate service odometer682225mi.
+Selected actual native accessibility output is retained locally at
+`/tmp/db036-health-ui-proof/visible-readings.txt` and reviewed by independent QA.
+A603 screenshot retrieval timed out; no603 screenshot is claimed.
+
+Both panels display a November4 dashboard capture. These observations verify the
+visible fields and record identity; they do not establish provider observation-time
+precision, present device health, or continuously fresh collection.
+
+Fresh independent **UI evidence QA GO** follows direct inspection of609's screenshot
+and review of603's retained native click/AX evidence. Together with the earlier
+independent production backend readback, the requested collection/display outcome
+passes acceptance. No new collection trigger, import, status change, inspection,
+repair, payment, fleet membership or other business-record mutation was performed
+for this visual check. The previously blocked visual gate is now closed.
