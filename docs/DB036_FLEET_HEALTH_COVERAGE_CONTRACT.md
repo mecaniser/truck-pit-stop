@@ -69,3 +69,21 @@ reported zero devices). Truck26 had548550.82mi and21109h with no displayed VIN;
 it must use its existing reviewed binding. Thus21of25 local active memberships
 have both readings available in this account. This is source availability proof,
 not proof of successful scheduled ingestion; the latter remains a release gate.
+
+## Live gate correction: bounded source-read recovery
+
+The first canary completed21vitals captures, but truck70's Live read fell back to
+its verified Summary, leaving the new engine-hours field null. Its older98hours
+remained honestly projected; current authenticated Live showed104hours and a
+matching VIN. Capture count alone was insufficient acceptance evidence.
+
+Architecture approves one fresh-page retry for classified transient Live timeout
+or transport errors, in the existing authenticated context and a fixed per-vehicle
+budget. Each attempt retains exact Summary identity and Live provider/VIN checks.
+Never retry credentials/imports, identity/session/route contradictions, ambiguity,
+challenges, unknown errors or merely missing/malformed measurements. Wait for the
+observed engine-hours label before capturing Live data. Dispose every page,
+including late resources. After repeated transient failures, retain the last
+verified Summary and original readtime, with unknown hours left null. A second
+attempt failing before Summary must not erase a previously verified Summary.
+Fresh tests and independent QA/Security must cover these boundaries before release.
