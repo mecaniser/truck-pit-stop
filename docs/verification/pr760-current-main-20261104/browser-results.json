@@ -1,0 +1,298 @@
+{
+  "owner-history2": {
+    "rows": [
+      {
+        "step": "desktop-security",
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=security"
+      },
+      {
+        "step": "desktop-reload",
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=appearance"
+      },
+      {
+        "step": "desktop-back",
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=security"
+      },
+      {
+        "step": "desktop-forward",
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=appearance"
+      },
+      {
+        "step": "phone-reload",
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=security"
+      },
+      {
+        "step": "phone-back",
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=appearance"
+      },
+      {
+        "step": "phone-forward",
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=security"
+      }
+    ],
+    "escapeClosed": true,
+    "noOverflow": true
+  },
+  "owner-unlock": {
+    "unlocked": true,
+    "url": "http://127.0.0.1:5284/dashboard/settings?section=fleet"
+  },
+  "owner-save": {
+    "status": 200,
+    "data": {
+      "sales_tax_rate": 7.25,
+      "shop_supplies_rate": 4.5,
+      "service_fee_rate": 2.25,
+      "labor_rate": 145,
+      "internal_labor_rate": 65,
+      "fleet_company_name": "Owner Current Main Saved Fleet",
+      "default_fleet_authority_customer_id": "f630ae5c-7dbc-4374-a492-9cc7d90d05c6",
+      "default_fleet_authority_company_name": "Alternate Current QA Authority"
+    },
+    "persistedAfterReload": true,
+    "url": "http://127.0.0.1:5284/dashboard/settings?section=fleet"
+  },
+  "restricted-history": {
+    "role": "restricted",
+    "security": "http://127.0.0.1:5284/dashboard/settings?section=security",
+    "appearance": "http://127.0.0.1:5284/dashboard/settings?section=appearance",
+    "reload": "http://127.0.0.1:5284/dashboard/settings?section=appearance",
+    "back": "http://127.0.0.1:5284/dashboard/settings?section=security",
+    "forward": "http://127.0.0.1:5284/dashboard/settings?section=appearance"
+  },
+  "restricted-matrix": {
+    "rows": [
+      {
+        "width": 1440,
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=fleet",
+        "unlock": 0,
+        "notSet": 0,
+        "overview": 1,
+        "noOverflow": true
+      },
+      {
+        "width": 390,
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=fleet",
+        "unlock": 0,
+        "notSet": 0,
+        "overview": 1,
+        "noOverflow": true
+      }
+    ],
+    "denied": [
+      {
+        "search": "section=payments",
+        "profile": true
+      },
+      {
+        "search": "section=fees",
+        "profile": true
+      },
+      {
+        "search": "section=integrations",
+        "profile": true
+      },
+      {
+        "search": "section=unknown",
+        "profile": true
+      },
+      {
+        "search": "stripe=return",
+        "profile": true
+      },
+      {
+        "search": "quickbooks=connected",
+        "profile": true
+      }
+    ],
+    "protectedReads": []
+  },
+  "restricted-mobile-history": {
+    "rows": [
+      {
+        "step": "desktop-security",
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=security"
+      },
+      {
+        "step": "desktop-reload",
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=appearance"
+      },
+      {
+        "step": "desktop-back",
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=security"
+      },
+      {
+        "step": "desktop-forward",
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=appearance"
+      },
+      {
+        "step": "phone-reload",
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=security"
+      },
+      {
+        "step": "phone-back",
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=appearance"
+      },
+      {
+        "step": "phone-forward",
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=security"
+      }
+    ],
+    "escapeClosed": true,
+    "noOverflow": true
+  },
+  "granted-history": {
+    "role": "granted",
+    "security": "http://127.0.0.1:5284/dashboard/settings?section=security",
+    "appearance": "http://127.0.0.1:5284/dashboard/settings?section=appearance",
+    "reload": "http://127.0.0.1:5284/dashboard/settings?section=appearance",
+    "back": "http://127.0.0.1:5284/dashboard/settings?section=security",
+    "forward": "http://127.0.0.1:5284/dashboard/settings?section=appearance"
+  },
+  "granted-mobile-history": {
+    "rows": [
+      {
+        "step": "desktop-security",
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=security"
+      },
+      {
+        "step": "desktop-reload",
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=appearance"
+      },
+      {
+        "step": "desktop-back",
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=security"
+      },
+      {
+        "step": "desktop-forward",
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=appearance"
+      },
+      {
+        "step": "phone-reload",
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=security"
+      },
+      {
+        "step": "phone-back",
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=appearance"
+      },
+      {
+        "step": "phone-forward",
+        "url": "http://127.0.0.1:5284/dashboard/settings?section=security"
+      }
+    ],
+    "escapeClosed": true,
+    "noOverflow": true
+  },
+  "granted-save": {
+    "status": 200,
+    "data": {
+      "sales_tax_rate": 7.25,
+      "shop_supplies_rate": 4.5,
+      "service_fee_rate": 2.25,
+      "labor_rate": 145,
+      "internal_labor_rate": 65,
+      "fleet_company_name": "Admin Mobile Current Saved Fleet",
+      "default_fleet_authority_customer_id": "67c075d2-595f-4ac7-b08d-f475336bce3d",
+      "default_fleet_authority_company_name": "Performance Fleet"
+    },
+    "persistedAfterReload": true,
+    "noOverflow": true
+  },
+  "owner-read-failures-final": {
+    "loading": {
+      "visible": true,
+      "falseEmpty": 0
+    },
+    "errorVisible": true,
+    "aborted": 2,
+    "retryReal200": true,
+    "noOverflow": true
+  },
+  "restricted-write": {
+    "status": 403,
+    "detail": "You do not have access to this setting. Ask the shop owner to grant access."
+  },
+  "stale-prepare": {
+    "unlockedDirtyEditor": true,
+    "width": 390
+  },
+  "stale-save": {
+    "status": 403,
+    "detail": "You do not have access to this setting. Ask the shop owner to grant access.",
+    "errorVisible": true,
+    "dirtyEditorStillPresent": 1,
+    "reloadHidesConfiguration": true,
+    "noOverflow": true
+  },
+  "owner-links": {
+    "rows": [
+      {
+        "search": "section=fees",
+        "resolved": "http://127.0.0.1:5284/dashboard/settings?section=fees",
+        "reload": "http://127.0.0.1:5284/dashboard/settings?section=fees"
+      },
+      {
+        "search": "stripe=return",
+        "resolved": "http://127.0.0.1:5284/dashboard/settings?section=payments",
+        "reload": "http://127.0.0.1:5284/dashboard/settings?section=payments"
+      },
+      {
+        "search": "stripe=refresh",
+        "resolved": "http://127.0.0.1:5284/dashboard/settings?section=payments",
+        "reload": "http://127.0.0.1:5284/dashboard/settings?section=payments"
+      },
+      {
+        "search": "quickbooks=connected",
+        "resolved": "http://127.0.0.1:5284/dashboard/settings?section=payments",
+        "reload": "http://127.0.0.1:5284/dashboard/settings?section=payments"
+      }
+    ],
+    "providerExchange": false
+  },
+  "owner-restore": {
+    "status": 200,
+    "data": {
+      "sales_tax_rate": 7.25,
+      "shop_supplies_rate": 4.5,
+      "service_fee_rate": 2.25,
+      "labor_rate": 145,
+      "internal_labor_rate": 65,
+      "fleet_company_name": "Original Current Main QA Fleet",
+      "default_fleet_authority_customer_id": "67c075d2-595f-4ac7-b08d-f475336bce3d",
+      "default_fleet_authority_company_name": "Performance Fleet"
+    },
+    "restoredAfterReload": true
+  },
+  "owner-board-roundtrip": {
+    "rows": [
+      {
+        "width": 1440,
+        "board": "http://127.0.0.1:5284/fleet",
+        "returned": "http://127.0.0.1:5284/dashboard/settings?section=fleet",
+        "fleet": true
+      },
+      {
+        "width": 390,
+        "board": "http://127.0.0.1:5284/fleet",
+        "returned": "http://127.0.0.1:5284/dashboard/settings?section=fleet",
+        "fleet": true
+      }
+    ]
+  },
+  "restricted-board-roundtrip": {
+    "rows": [
+      {
+        "width": 1440,
+        "board": "http://127.0.0.1:5284/fleet",
+        "returned": "http://127.0.0.1:5284/dashboard/settings?section=fleet",
+        "fleet": true
+      },
+      {
+        "width": 390,
+        "board": "http://127.0.0.1:5284/fleet",
+        "returned": "http://127.0.0.1:5284/dashboard/settings?section=fleet",
+        "fleet": true
+      }
+    ]
+  }
+}

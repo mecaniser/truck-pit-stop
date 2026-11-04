@@ -1,0 +1,21 @@
+{
+  "verifiedMain": "1d57758d887ddbd26e1d4660a58573c653b61f6d",
+  "verifiedPR760Head": "66818d29376a0f7d27cda77ea34e77e74dbb2a73",
+  "preparedCandidate": "21d8e4b55bb66a0fa1124f184b20ac74d15ac5b2",
+  "testedSource": "63780dd292f41b2a037510dc7d8dc6c76d085d35",
+  "frontendTree": "bf7e230e024e2dd3768e5cbfaa3cdd2662220dce",
+  "backendTree": "27e0cef3fa5457829fa5f5fcb5a5f2b807760ce8",
+  "backendMainEqual": true,
+  "files": {
+    "frontend/src/features/dashboard/UnifiedSettingsPage.tsx": {
+      "preparedBlob": "90b60b4041321090e84303d8d871db4a2dd585d2",
+      "currentBlob": "90b60b4041321090e84303d8d871db4a2dd585d2",
+      "sha256": "265b0b84e6d1bae3244321f2758753e8367806f9f62e0c23ec607870472190bf"
+    },
+    "frontend/src/__tests__/UnifiedSettingsPage.test.tsx": {
+      "preparedBlob": "20084935dbc5cf45b8d97dbb21abe9a7b4efdde8",
+      "currentBlob": "20084935dbc5cf45b8d97dbb21abe9a7b4efdde8",
+      "sha256": "9d7c483198271f0792fd1cdc4cd1b169a16694d8469cf71b7b3e19801c19f779"
+    }
+  }
+}

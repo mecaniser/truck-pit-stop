@@ -1,0 +1,5 @@
+async(page)=>{
+ await page.getByPlaceholder('e.g. 77 Cargo').fill('Owner Current Main Saved Fleet');await page.getByRole('combobox',{name:'Default Operating Authority',exact:true}).click();await page.getByRole('option',{name:'Alternate Current QA Authority',exact:true}).click();
+ const response=page.waitForResponse(r=>r.request().method()==='PUT'&&r.url().includes('/admin/tax-fee-settings'));await page.getByRole('button',{name:'Save Changes',exact:true}).click();const r=await response;const data=await r.json();if(r.status()!==200)throw new Error('Save failed '+r.status());
+ await page.reload();const config=page.locator('.db-settings-fleet-config');await config.getByText('Owner Current Main Saved Fleet',{exact:true}).waitFor();await config.getByText('Alternate Current QA Authority',{exact:true}).waitFor();await page.screenshot({path:'/tmp/pr760-current-runtime/owner-saved-reloaded.png',fullPage:true,animations:'disabled'});return{status:r.status(),data,persistedAfterReload:true,url:page.url()};
+}

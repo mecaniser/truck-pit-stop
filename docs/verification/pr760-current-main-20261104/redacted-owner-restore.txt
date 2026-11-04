@@ -1,0 +1,12 @@
+### Result
+{"status":200,"data":{"sales_tax_rate":7.25,"shop_supplies_rate":4.5,"service_fee_rate":2.25,"labor_rate":145,"internal_labor_rate":65,"fleet_company_name":"Original Current Main QA Fleet","default_fleet_authority_customer_id":"67c075d2-595f-4ac7-b08d-f475336bce3d","default_fleet_authority_company_name":"Performance Fleet"},"restoredAfterReload":true}
+### Ran Playwright code
+```js
+await (async(page)=>{await page.setViewportSize({width:1440,height:1000});await page.goto('http://127.0.0.1:5284/dashboard/settings?section=fleet');await page.locator('.db-settings-fleet-config').getByText('Admin Mobile Current Saved Fleet',{exact:true}).waitFor();await page.getByRole('textbox',{name:'Password',exact:true}).fill("[GENERATED_DISPOSABLE_PASSWORD]");await page.getByRole('button',{name:'Unlock',exact:true}).click();await page.getByPlaceholder('e.g. 77 Cargo').fill('Original Current Main QA Fleet');const response=page.waitForResponse(r=>r.request().method()==='PUT'&&r.url().includes('/admin/tax-fee-settings'));await page.getByRole('button',{name:'Save Changes',exact:true}).click();const res=await response;const data=await res.json();if(res.status()!==200)throw new Error('Restore '+res.status());await page.reload();await page.locator('.db-settings-fleet-config').getByText('Original Current Main QA Fleet',{exact:true}).waitFor();await page.screenshot({path:'/tmp/pr760-current-runtime/owner-restored.png',fullPage:true,animations:'disabled'});return{status:res.status(),data,restoredAfterReload:true};})(page);
+```
+### Page
+- Page URL: http://127.0.0.1:5284/dashboard/settings?section=fleet
+- Page Title: DieselBridge | Repair Shop Workflow
+- Console: 1 errors, 0 warnings
+### Events
+- New console entries: .playwright-cli/console-2026-11-04T21-17-49-854Z.log#L50-L55
