@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/stores/authStore'
-import VisitRequestsPage, { VisitRequestsEntry } from '../VisitRequestsPage'
+import VisitRequestsPage from '../VisitRequestsPage'
 import type { StaffVisitRequest } from '../visit-requests'
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
 vi.mock('@/lib/api', () => ({ default: { get: mocks.get, post: mocks.post } }))
@@ -11,9 +11,9 @@ vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ appearance: { mod
 function request(overrides: Partial<StaffVisitRequest> = {}): StaffVisitRequest {
   return { id: 'request-a', request_reference: 'VR-A', status: 'requested', version: 1, customer: { id: 'customer-a', display_name: 'Alex Driver', company_name: 'Sample Fleet', email: 'alex@example.test', phone: null }, service: { id: 'service-a', name: 'Inspection' }, vehicle: { id: 'truck-a', unit_number: '12', make: 'Volvo', model: 'Source model', year: 2021, license_plate: 'ABC123' }, preferred_date: '2099-11-04', accepted_arrival_date: null, customer_notes: 'Check an air leak', internal_review_note: 'Staff context', created_at: '2026-11-03T12:00:00Z', reviewed_at: null, can_review: true, ...overrides }
 }
-function mount(entry = false, url = '/dashboard/visit-requests') {
+function mount(_entry = false, url = '/dashboard/visit-requests') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[url]}>{entry ? <VisitRequestsEntry/> : <VisitRequestsPage/>}</MemoryRouter></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[url]}><VisitRequestsPage/></MemoryRouter></QueryClientProvider>)
   return client
 }
 beforeEach(() => {
@@ -39,11 +39,14 @@ describe('staff visit request review', () => {
     expect(await screen.findByText('Check an air leak')).toBeInTheDocument()
     expect(mocks.post).not.toHaveBeenCalled()
   })
-  it('shows actual customer, vehicle, service and notes with complete pagination and a pending count', async () => {
+  it('loads complete pagination and opens only the requested record', async () => {
     mocks.get.mockImplementation(async (_url: string, config: { params: { skip: number } }) => ({ data: { items: [request({ id: config.params.skip ? 'request-b' : 'request-a', status: config.params.skip ? 'accepted' : 'requested' })], skip: config.params.skip, limit: 100, has_more: !config.params.skip } }))
-    mount(true)
-    expect(await screen.findByText('1 request awaiting review')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Review visits' })).toHaveAttribute('href', '/dashboard/visit-requests')
+    mount(false, '/dashboard/visit-requests?request=request-b&shop_work=overview&task=upcoming:visit:request-b')
+    expect(await screen.findByText('Visit accepted')).toBeInTheDocument()
+    expect(screen.queryByText('Awaiting shop review')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Needs review' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Back to Shop Work' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Reservations', exact: true })).toHaveAttribute('href', '/dashboard/visit-requests?shop_work=overview&task=upcoming%3Avisit%3Arequest-b&view=reservations')
     expect(mocks.get).toHaveBeenCalledTimes(2)
     expect(mocks.get.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal)
     expect(mocks.post).not.toHaveBeenCalled()
@@ -116,7 +119,7 @@ describe('staff visit request review', () => {
   it('does not display a failed queue read as zero pending requests', async () => {
     mocks.get.mockRejectedValue(new Error('Unavailable'))
     mount(true)
-    expect(await screen.findByText('Requests couldn’t load')).toBeInTheDocument()
+    expect(await screen.findByText('Visit requests couldn’t load.')).toBeInTheDocument()
     expect(screen.queryByText('0 requests awaiting review')).not.toBeInTheDocument()
     expect(mocks.post).not.toHaveBeenCalled()
   })
@@ -168,5 +171,24 @@ describe('staff visit request review', () => {
     fireEvent.click(submit)
     await waitFor(() => expect(mocks.post).toHaveBeenCalledExactlyOnceWith('/appointments/visit-requests/request-a/accept', { expected_version: 7, arrival_date: '2099-11-06', internal_note: 'Customer requested the following day' }, { headers: { 'Idempotency-Key': expect.any(String) } }))
     expect(dialog.querySelector('input[type=datetime-local]')).toBeNull()
+  })
+})
+
+describe('exact visit destination', () => {
+  it('never substitutes another request when the selected id is missing or belongs to another shop', async () => {
+    mount(false, '/dashboard/visit-requests?request=foreign-shop&shop_work=overview')
+    expect(await screen.findByRole('alert')).toHaveTextContent('This visit request is no longer available.')
+    expect(screen.queryByText('Sample Fleet')).not.toBeInTheDocument()
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+  it('opens the chosen pending record without starting review or accepting it', async () => {
+    mocks.get.mockResolvedValue({ data: [request(), request({ id: 'other', customer_notes: 'Other customer note' })] })
+    mount(false, '/dashboard/visit-requests?request=request-a')
+    expect(await screen.findByText('Check an air leak')).toBeInTheDocument()
+    expect(screen.queryByText('Other customer note')).not.toBeInTheDocument()
+    expect(mocks.post).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Start review' }))
+    expect(screen.getByRole('dialog', { name: 'Start review' })).toBeInTheDocument()
+    expect(mocks.post).not.toHaveBeenCalled()
   })
 })

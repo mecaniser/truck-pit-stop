@@ -12,13 +12,13 @@ vi.mock('@/features/payments/StaffSettlementDialog', () => ({ default: (props: {
 function row(overrides: Partial<ZelleReviewRow> = {}): ZelleReviewRow {
   return { kind: 'canonical_zelle_attempt', invoice_id: 'native-copy-1687', repair_order_id: 'archived-source-ro', display_invoice_number: 'TPS-1687', customer_id: 'reviewed-payer', customer_display_name: 'Actual Billed Fleet', principal_amount: '168.44', attempt_id: 'attempt-1687', settlement_id: 'settlement-1687', settlement_version: 3, created_at: '2026-11-04T12:00:00Z', reported_at: '2026-11-04T12:00:00Z', report_status: 'explicit_report', review_mode: 'canonical_attempt', can_confirm: true, ...overrides }
 }
-function Harness({ compact = false }: { compact?: boolean }) {
+function Harness() {
   const queue = useZelleReviewQueue()
-  return <ZelleReviewQueue queue={queue} compact={compact} onOpenQueue={mocks.open} onOpenLegacy={mocks.legacy}/>
+  return <ZelleReviewQueue queue={queue} onOpenLegacy={mocks.legacy}/>
 }
-function show(compact = false) {
+function show() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><Harness compact={compact}/></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><Harness/></QueryClientProvider>)
   return client
 }
 beforeEach(() => {
@@ -79,14 +79,6 @@ describe('durable staff Zelle payment review', () => {
     expect(mocks.dialog).not.toHaveBeenCalled()
     expect(mocks.post).not.toHaveBeenCalled()
   })
-  it('uses one compact discovery entry and opens the existing Closeout queue', async () => {
-    show(true)
-    expect(await screen.findByText('1 Zelle request awaiting review')).toBeInTheDocument()
-    expect(screen.queryByText('Invoice TPS-1687')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Review payments' }))
-    expect(mocks.open).toHaveBeenCalledOnce()
-    expect(mocks.post).not.toHaveBeenCalled()
-  })
   it('does not turn a failed read into an empty queue and retries read-only', async () => {
     mocks.get.mockRejectedValueOnce(new Error('Unavailable'))
     show()
@@ -139,5 +131,24 @@ describe('durable staff Zelle payment review', () => {
     expect(await screen.findByRole('alert')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Review Zelle/ })).not.toBeInTheDocument()
     expect(mocks.post).not.toHaveBeenCalled()
+  })
+})
+
+describe('direct board payment review', () => {
+  it('resolves a deep link against the current authorized queue and opens the exact invoice', async () => {
+    const { BoardPaymentReview } = await import('../ZelleReviewQueue')
+    function Direct() { const queue = useZelleReviewQueue(); return <BoardPaymentReview queue={queue} selectedId="attempt-1687" onClose={mocks.open}/> }
+    render(<QueryClientProvider client={new QueryClient()}><Direct/></QueryClientProvider>)
+    expect(await screen.findByRole('dialog', { name: 'Review invoice TPS-1687' })).toBeInTheDocument()
+    expect(mocks.dialog.mock.lastCall?.[0]).toMatchObject({ invoiceId: 'native-copy-1687' })
+    fireEvent.click(screen.getByRole('button', { name: 'Close review' })); expect(mocks.open).toHaveBeenCalledOnce()
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+  it.each(['missing', 'foreign-shop', 'archived-source-ro'])('does not fall back to another invoice for %s', async selectedId => {
+    const { BoardPaymentReview } = await import('../ZelleReviewQueue')
+    function Direct() { const queue = useZelleReviewQueue(); return <BoardPaymentReview queue={queue} selectedId={selectedId} onClose={mocks.open}/> }
+    render(<QueryClientProvider client={new QueryClient()}><Direct/></QueryClientProvider>)
+    expect(await screen.findByText('This request is no longer available for review.')).toBeInTheDocument()
+    expect(mocks.dialog).not.toHaveBeenCalled(); expect(mocks.post).not.toHaveBeenCalled()
   })
 })
