@@ -179,3 +179,138 @@ action changes and deadline exhaustion stop without retry. No live provider
 requests were made by reviewers. The private extractor now requires explicit
 expected login hash for the new version and preserves its strict21-both-fields
 API acceptance gate. No live release acceptance is implied by these tests.
+
+
+## PR785 merge and display acceptance clarification
+
+PR785 merged `d242868c8510a2e8b061ede9449777b2e612d9ce` at22:14:06UTC
+after all seven checks in CI41921297155 passed. The merge tree is identical
+to checked head `a5bcdb7ae902fc237b17d3d3612d8a22118de342`. The tracked backend
+archive digest is `ffb018fe431a47e8183e5f4dda0e210e448f7a746ace35aeb99d65be2b5fc341`.
+API deployment `1166be17-c153-4f07-820d-6a277355e941` and health image
+`f4790844-5565-447b-ac33-792ba238ebbb` are pending runtime acceptance.
+
+Independent QA directly inspected the retained production603/609/26 screenshots
+and four unavailable-panel records. They cover the affected identity paths,
+both populated fields, separate canonical service readings and unavailable
+source states. Subsequent changes touch no frontend or public API. QA therefore
+approved those display cases plus exhaustive new current API parity as the
+changed-journey acceptance plan. This explicitly replaces the later self-added
+full25-popup requirement; that additional visual sweep was not completed after
+the Mac locked. This is a plan clarification, not live acceptance. All21 exact
+source/receipt/saved/current projection matches, four null projections, unchanged
+protected fingerprints and natural corrected-image execution remain required.
+
+
+## PR785 manual canary returned — outer identity read
+
+API `1166be17` became ready and public build SHA equals `d242868c`. Health image
+`f4790844` became ready. Runtime attests collector `19d611fa`, login `6b713bcd`
+and shared diagnostics `193b5447`; release artifact hashes remain exact.
+
+Manual execution `dccff8a7-16f9-4162-9483-a7148850d97a`, requested22:19:53UTC,
+authenticated through every new validation phase and app redirect. It exhausted
+three transient `vehicle_identity` attempts before any health-vitals phase,
+vehicle progress or import. Final category is browser timeout; imports were
+prohibited. The unchanged shared outer reader has multiple timeout-capable
+awaits, while its VIN-presence timeout is swallowed; current logs cannot locate
+the failed await or establish missing VIN data. No candidate regression or
+provider root cause is asserted. Shared reader, dependency locks and Dockerfile
+are byte-identical to the successful PR775 image.
+
+Retained failed source path:
+`/data/motive-health/20261104T221955Z-5af0e1f2-11d4-404d-a22f-9b9a2dfdad60/source.json`.
+The live observer lost its SSH payload at container exit; failure forensics will
+be recovered during the existing scheduled run, without a separate provider job.
+The earlier failed PR783 source was recovered privately: zero vehicle rows,
+incomplete source, no receipt/attempt, static login-password failure marker.
+
+The authenticated IAB Health directory still renders all21 expected provider
+identities; a fresh first-vehicle document renders the exact Live link. This
+proves current source UI availability, not readiness in the Railway context.
+Architecture approved retaining the current fail-closed image for the already
+scheduled22:30 execution. Rolling back PR775 would not change the implicated
+outer helper. If repeated, use static substage diagnostics before changing any
+timeout/retry/identity policy. Live and natural acceptance remain open.
+
+
+## Scheduled failure and actual official-form finding
+
+The22:30 schedule produced execution `20d60623-e81f-47a0-b0c5-4c3b932f6c84`
+at22:35:35UTC, using scheduled redeployment
+`cb118037-2b48-4897-ba63-72484dcd3c4a`. It failed at lookup revalidation with
+`credential_count` before lookup submission or import. The redeployment carries
+the prior CLI release message and the new validation phases, but its image digest
+differs from `f4790844`; exact runtime hashes were not captured during this short
+failed execution. No identical-image assertion is made.
+
+Direct official-page inspection without a real account identifier found one
+visible native lookup email and two additional hidden generic-email fields in
+separate auxiliary forms. Each auxiliary form has the complete seven-control
+profile recorded in the contract; all controls are hidden and no values were
+read. Existing6b713bcd rejects the shape in an offline Chromium reproduction. A
+separate native-semantics fixture posts only the selected form's own email.
+
+One public native lookup with a synthetic reserved-domain identifier exposed
+the password document without entering or submitting a password. Its selected
+form owns password+hidden account; a separate optional SSO form owns its own
+hidden generic email, and the same two auxiliary forms remain. These unrelated
+controls must not be counted as participating native credentials. The exact
+source structure is retained privately with no field values.
+
+Architecture/Security approved the bounded ownership/profile contract before
+implementation. It preserves visible-input/challenge checks, native destination
+and account/value guards, and rejects all unclassified or rebound controls.
+Auxiliary and SSO forms are never filled or submitted. Login helper/tests only
+are assigned to Backend; new independent code gates and exact corrected live/
+scheduled proof remain required. Runtime alignment is blocked by the owned dirty
+documentation and missing isolated configuration; shared5173/8000 listeners were
+preserved. No source UI or current automation success is claimed.
+
+
+## Native ownership candidate and independent return
+
+The initial ownership candidate `9ac9a825` passed178 tests but independent
+Security reproduced a P1 native-submitter mismatch: a JavaScript-created nested
+foreign form owned the selected button while the outer form passed review. The
+intercepted fixture sent synthetic hidden metadata abroad; it did not transmit
+the native password/account and made no live requests. The candidate was returned
+before merge/deployment.
+
+Corrected source `f1c46e4c` binds input, matching hidden account and submitter to
+the exact reviewed native form handle. Owner182/182 Chromium tests passed,
+including nested foreign/other-auth forms at both stages. Fresh independent
+review is required; the earlier candidate is not approved.
+
+The same recovery adds observational outer-reader substages, with no retry,
+timeout, identity or navigation changes. WeakMap metadata preserves frozen and
+non-Error throws and exposes only fixed stages/coarse route state. Owner57/57
+shared collector/task/login-diagnostic tests passed. Health collector `9b729f97`,
+shared reader `4bad4b34`, diagnostics module `a9653009` and task projection
+`90f1a004` are frozen for the combined gate. This work still has no successful
+corrected-source runtime or scheduled acceptance.
+
+
+The corrected ownership candidate `f1c46e4c` was returned again by Security for
+a P2 native account ambiguity: a hidden SELECT owned by the native form could
+add a second account field because only INPUT elements were counted. This was
+reproduced with intercepted synthetic requests, not a foreign transmission.
+Neither rejected ownership candidate was released.
+
+Final auth `5d22def7` / tests `ec8ab008` count all actual standard form-associated
+credential controls, including off-form selects/textareas/buttons/fieldsets/
+objects/outputs; expected credentials must still be the correct INPUT controls.
+Owner205/205 tests passed. Fresh independent Security GO:205 auth and44 shared
+tests passed, both reported defects closed in separate adversarial probes, no
+remaining P0/P1/P2 finding. Shared observability hashes remain unchanged. Fresh
+QA, protected CI and actual corrected runtime/scheduled acceptance remain open.
+
+
+Fresh combined offline QA GO on final `5d22def7` / `ec8ab008`:402/402 Node
+tests and21 independent intercepted Chromium probes passed. Negative native,
+off-form, non-INPUT, nested and changed-ownership cases blocked password POST;
+ignored auxiliary/SSO value getters were never read and only one modern context
+was created. All source hashes match the final frozen combined scope. Security
+GO independently passed205 auth +44 shared tests and reproduced closure of both
+findings. No reviewer made a live provider request. These are offline source
+gates; deployed capture/readback and successful natural scheduling remain open.

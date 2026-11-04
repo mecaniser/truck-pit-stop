@@ -154,3 +154,95 @@ test('timestamp ownership basis cannot change around the same coordinate capture
  let n=0;
  await assert.rejects(stableObservation({timestamp:async()=>({rawTimestamp:'Oct 13, 2026, 5:34 PM',sourceAge:null,timestampReason:null,...(n++?{timestampBasis:'inline_location'}:{})}),point:async()=>[35,-80],verifyVin:async()=>{},address:null}),/source_changed/);
 });
+
+const {readVehicleVinOnce,readVehicleVin}=require('./collect_trips.cjs');
+const identityReadDiagnostics=require('./vehicle_identity_diagnostics.cjs');
+const identityLink={href:'#/fleetview/vehicles/summary/123',unit:'synthetic'};
+function identityReadFixture({failAt,error=Object.assign(new Error('PRIVATE_SOURCE'),{name:'TimeoutError'}),cleanupError,url:overrideUrl,body='VIN\n'+VIN}={}) {
+ const calls=[];let url='about:blank';
+ const action=async stage=>{calls.push(stage);if(stage===failAt)throw error;};
+ const page={
+  setDefaultTimeout(value){calls.push(['default_timeout',value]);},
+  async goto(value,options){calls.push(['goto_options',options]);await action('goto_summary');url=overrideUrl||value;},
+  getByRole(role,options){calls.push(['role',role,options]);return {filter(options){calls.push(['filter',options]);return {first(){return {waitFor:()=>action('wait_live_link')};}};}};},
+  async waitForFunction(fn,arg,options){calls.push(['vin_wait_options',options]);await action('vin_presence_wait');},
+  url(){return url;},
+  locator(selector){assert.equal(selector,'body');return {innerText:async()=>{await action('read_summary');return body;}};},
+  async close(){calls.push('cleanup');if(cleanupError)throw cleanupError;},
+ };
+ return {calls,page,error,context:{newPage:async()=>{await action('new_page');return page;}}};
+}
+for(const [stage,route] of [['new_page','unavailable'],['goto_summary','about_blank'],['wait_live_link','expected_summary'],['read_summary','expected_summary']])test(`VIN read diagnostics identify ${stage} without changing the thrown error`,async()=>{
+ const f=identityReadFixture({failAt:stage});const seen=[];
+ await assert.rejects(readVehicleVinOnce(f.context,identityLink,{onStage:s=>seen.push(s)}),e=>e===f.error);
+ assert.deepEqual(identityReadDiagnostics.diagnostic(f.error),{identity_step:stage,identity_route:route});
+ assert.equal(f.calls.filter(x=>x==='cleanup').length,stage==='new_page'?0:1);
+ assert.equal(seen.at(-1),stage==='new_page'?'new_page':'cleanup');
+});
+test('VIN diagnostic observers receive only static stages and do not alter successful reads or deadlines',async()=>{
+ const f=identityReadFixture(),seen=[];
+ assert.equal(await readVehicleVinOnce(f.context,identityLink,{onStage:s=>seen.push(s)}),VIN);
+ assert.deepEqual(seen,['new_page','goto_summary','wait_live_link','vin_presence_wait','route_check','read_summary','cleanup']);
+ assert.deepEqual(f.calls.find(x=>Array.isArray(x)&&x[0]==='default_timeout'),['default_timeout',15000]);
+ assert.deepEqual(f.calls.find(x=>Array.isArray(x)&&x[0]==='goto_options')[1],{waitUntil:'domcontentloaded',timeout:45000});
+ assert.deepEqual(f.calls.find(x=>Array.isArray(x)&&x[0]==='vin_wait_options')[1],{timeout:15000});
+});
+test('swallowed optional VIN wait remains swallowed and still reads the original summary',async()=>{
+ const f=identityReadFixture({failAt:'vin_presence_wait'});
+ assert.equal(await readVehicleVinOnce(f.context,identityLink),VIN);
+ assert.equal(identityReadDiagnostics.diagnostic(f.error),null);
+ assert.ok(f.calls.includes('read_summary'));assert.equal(f.calls.at(-1),'cleanup');
+});
+test('VIN source guard and existing foreign-origin timeout conversion retain their original outcomes',async()=>{
+ const wrong=identityReadFixture({url:'https://app.gomotive.com/en-US/#/different'});
+ await assert.rejects(readVehicleVinOnce(wrong.context,identityLink),e=>{
+  assert.equal(e.message,'vehicle_source_changed');assert.deepEqual(identityReadDiagnostics.diagnostic(e),{identity_step:'route_check',identity_route:'other_app_route'});return true;
+ });
+ const foreign=identityReadFixture({url:'https://auth.gomotive.com/login/lookup',failAt:'wait_live_link'});
+ await assert.rejects(readVehicleVinOnce(foreign.context,identityLink),e=>{
+  assert.equal(e.message,'session_lost');assert.deepEqual(identityReadDiagnostics.diagnostic(e),{identity_step:'wait_live_link',identity_route:'unexpected_origin'});return true;
+ });
+});
+test('successful cleanup preserves the primary failing step; failing cleanup overrides exactly as before',async()=>{
+ const primary=identityReadFixture({failAt:'wait_live_link'});
+ await assert.rejects(readVehicleVinOnce(primary.context,identityLink),e=>e===primary.error);
+ assert.equal(identityReadDiagnostics.diagnostic(primary.error).identity_step,'wait_live_link');
+ const cleanupError=new Error('PRIVATE_CLEANUP');
+ const both=identityReadFixture({failAt:'wait_live_link',cleanupError});
+ await assert.rejects(readVehicleVinOnce(both.context,identityLink),e=>e===cleanupError);
+ assert.equal(identityReadDiagnostics.diagnostic(cleanupError).identity_step,'cleanup');
+ assert.equal(identityReadDiagnostics.diagnostic(both.error).identity_step,'wait_live_link');
+ const only=identityReadFixture({cleanupError});
+ await assert.rejects(readVehicleVinOnce(only.context,identityLink),e=>e===cleanupError);
+ assert.equal(identityReadDiagnostics.diagnostic(cleanupError).identity_step,'cleanup');
+});
+test('throwing or rejected observers cannot replace successful reads or frozen source errors',async()=>{
+ for(const onStage of [()=>{throw new Error('PRIVATE_OBSERVER');},()=>Promise.reject(new Error('PRIVATE_OBSERVER'))]) {
+  assert.equal(await readVehicleVinOnce(identityReadFixture().context,identityLink,{onStage}),VIN);
+  const error=Object.freeze(Object.assign(new Error('PRIVATE_FROZEN'),{name:'TimeoutError'}));
+  await assert.rejects(readVehicleVinOnce(identityReadFixture({failAt:'wait_live_link',error}).context,identityLink,{onStage}),e=>e===error);
+  assert.equal(identityReadDiagnostics.diagnostic(error).identity_step,'wait_live_link');
+ }
+ const primitive=identityReadFixture({failAt:'new_page',error:'PRIVATE_PRIMITIVE'});
+ await assert.rejects(readVehicleVinOnce(primitive.context,identityLink),e=>e==='PRIVATE_PRIMITIVE');
+ assert.equal(await readVehicleVinOnce(identityReadFixture().context,identityLink,{get onStage(){throw new Error('PRIVATE_OBSERVER');}}),VIN);
+});
+test('diagnostic classification and attachment failure cannot mask a source error',async()=>{
+ const f=identityReadFixture({failAt:'goto_summary'});let reads=0;
+ const link={get href(){if(++reads>1)throw new Error('PRIVATE_METADATA');return identityLink.href;}};
+ await assert.rejects(readVehicleVinOnce(f.context,link),e=>e===f.error);
+ const unavailable=identityReadFixture({failAt:'wait_live_link'});unavailable.page.url=()=>{throw new Error('PRIVATE_URL');};
+ await assert.rejects(readVehicleVinOnce(unavailable.context,identityLink),e=>{
+  // Existing timeout-to-session conversion also reads url and preserves that failure.
+  assert.equal(e.message,'PRIVATE_URL');assert.equal(identityReadDiagnostics.diagnostic(e).identity_route,'unavailable');return true;
+ });
+});
+test('outer VIN retry behavior remains exactly three transient attempts and one fatal attempt',async()=>{
+ let attempts=0;const transient=identityReadFixture({failAt:'wait_live_link'});
+ const context={newPage:async()=>{attempts++;return transient.page;}};
+ await assert.rejects(readVehicleVin(context,identityLink),e=>e===transient.error);
+ assert.equal(attempts,3);assert.equal(transient.calls.filter(x=>x==='cleanup').length,3);
+ attempts=0;const fatal=identityReadFixture({body:'VIN\n'+VIN+'\nVIN\n'+OTHER});
+ await assert.rejects(readVehicleVin({newPage:async()=>{attempts++;return fatal.page;}},identityLink),/ambiguous_vin/);
+ assert.equal(attempts,1);assert.equal(fatal.calls.filter(x=>x==='cleanup').length,1);
+});
