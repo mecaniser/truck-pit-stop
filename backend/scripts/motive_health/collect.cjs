@@ -1,5 +1,5 @@
 const {prepareHealthLogin}=require('./login.cjs');
-const {closeBrowser,phase,openTasks,failed}=require('../motive_sync/tasks.cjs');
+const {closeBrowser,phase,openTasks,failed,transient}=require('../motive_sync/tasks.cjs');
 /* Rendered Motive Health UI only. No private endpoints or extracted sessions. */
 const fs=require('node:fs');
 const {readVehicleVin}=require('../motive_sync/collect_trips.cjs');
@@ -22,6 +22,8 @@ function parseVitals(fields) {
 function liveVitals(snapshot,identity,vin) {
  const {assertLiveProvider}=require('../motive_sync/collect.cjs');
  try{assertLiveProvider(snapshot.url,identity.href.split('/').pop());}catch{throw new Error('vehicle_source_changed');}
+ if(snapshot.table_count!==undefined&&snapshot.table_count!==1)throw new Error('vehicle_vitals_layout_changed');
+ for(const label of ['ODOMETER','ENGINE HOURS'])if(snapshot.fields.filter(f=>f.label.trim().toUpperCase()===label).length>1)throw new Error('vehicle_vitals_layout_changed');
  const vins=snapshot.fields.filter(f=>f.label.trim().toUpperCase()==='VIN');
  if(vins.length!==1||vins[0].value.trim()!==vin)throw new Error('vehicle_identity_changed');
  return parseVitals(snapshot.fields);
@@ -33,30 +35,88 @@ function liveVitalsSnapshot() {
   const cells=row.querySelectorAll(':scope > td');
   return cells.length===2?[{label:cells[0].textContent.trim(),value:cells[1].textContent.trim()}]:[];
  }):[];
- return {url:location.href,fields};
+ return {url:location.href,fields,table_count:tables.length};
 }
-async function readVitals(context,identity,vin) {
- const page=await context.newPage();page.setDefaultTimeout(15000);
- let summary={odometer_miles:null,engine_hours:null,source_read_at:new Date().toISOString()};
- try {
-  await page.goto(ORIGIN+'/en-US/'+identity.href,{waitUntil:'domcontentloaded',timeout:45000});
-  const before=await readReviewedPageIdentity(page,identity);
-  if(before.vin!==vin)throw new Error('vehicle_identity_changed');
-  const fields=(await page.evaluate(summarySnapshot)).fields;
-  const after=await readReviewedPageIdentity(page,identity);
-  if(after.vin!==vin)throw new Error('vehicle_identity_changed');
-  summary={...parseVitals(fields),source_read_at:new Date().toISOString()};
-  // Live > Other details has engine hours; the vehicle summary omits this field.
-  await page.getByRole('link',{name:'Live',exact:true}).filter({visible:true}).first().click();
-  await page.getByText(vin,{exact:true}).first().waitFor();
-  await page.locator('table.detail-table').filter({visible:true}).first().waitFor();
-  const values=liveVitals(await page.evaluate(liveVitalsSnapshot),identity,vin);
-  return {...values,source_read_at:new Date().toISOString()};
- }catch(error){
-  if(['vehicle_identity_changed','vin_changed','vehicle_source_changed','ambiguous_vin'].includes(error.message))throw error;
-  if(new URL(page.url()).origin!==ORIGIN)throw new Error('session_lost');
-  return summary;
- }finally{await page.close();}
+async function assertNoSourceAuthentication(page) {
+ // Read only presence and attributes; never inspect credential/challenge values.
+ const controls=await page.locator('input:visible,textarea:visible,select:visible').evaluateAll(elements=>elements.map(element=>({type:element.getAttribute('type')||'',name:element.getAttribute('name')||'',autocomplete:element.getAttribute('autocomplete')||''})));
+ if(controls.some(control=>control.type.toLowerCase()==='password'||control.autocomplete.toLowerCase().split(/\s+/).includes('one-time-code')||/^(?:otp|totp|verification[-_]?code)$/i.test(control.name)))throw new Error('source_authentication_required');
+ const frames=await page.locator('iframe:visible').evaluateAll(elements=>elements.flatMap(element=>{
+  try{const url=new URL(element.src);return [{origin:url.origin,pathname:url.pathname,credentialed:!!(url.username||url.password)}];}catch{return [];}
+ }));
+ for(const url of frames){
+  if(url.credentialed)continue;
+  const recaptcha=['https://www.google.com','https://www.recaptcha.net','https://recaptcha.google.com'].includes(url.origin)&&url.pathname.startsWith('/recaptcha/');
+  const hcaptcha=['https://hcaptcha.com','https://newassets.hcaptcha.com'].includes(url.origin)&&url.pathname.startsWith('/captcha/');
+  const cloudflare=url.origin==='https://challenges.cloudflare.com'&&url.pathname.startsWith('/cdn-cgi/challenge-platform/');
+  if(recaptcha||hcaptcha||cloudflare)throw new Error('source_authentication_required');
+ }
+}
+async function readVitals(context,identity,vin,{timeoutMs=90000,liveTimeoutMs=15000}={}) {
+ if(!Number.isFinite(timeoutMs)||timeoutMs<=0||timeoutMs>90000||!Number.isFinite(liveTimeoutMs)||liveTimeoutMs<=0||liveTimeoutMs>15000)throw new Error('vehicle_vitals_budget_invalid');
+ const {performance}=require('node:perf_hooks');
+ const {assertLiveProvider}=require('../motive_sync/collect.cjs');
+ const deadline=performance.now()+timeoutMs,provider=identity.href.split('/').pop();
+ let summary,exhausted=false;
+ const timeout=()=>Object.assign(new Error('vehicle_vitals_timeout'),{name:'TimeoutError'});
+ const remaining=()=>{const ms=deadline-performance.now();if(exhausted||ms<=0)throw timeout();return ms;};
+ const dispose=page=>{try{return Promise.resolve(page.close()).catch(()=>{});}catch{return Promise.resolve();}};
+ async function budget(operation,latePage=false){
+  const ms=remaining();let timer,expired=false;
+  const pending=Promise.resolve().then(operation);
+  pending.then(page=>{if(expired&&latePage)dispose(page);},()=>{});
+  try{
+   const value=await Promise.race([pending,new Promise((_,reject)=>{timer=setTimeout(()=>{expired=true;exhausted=true;reject(timeout());},ms);})]);
+   try{remaining();}catch(error){if(latePage)dispose(value);throw error;}return value;
+  }finally{clearTimeout(timer);}
+ }
+ function source(page,navigating){
+  const url=new URL(page.url());
+  if(navigating&&url.href==='about:blank')return;
+  if(url.origin!==ORIGIN)throw new Error('session_lost');
+  if(url.hash===identity.href)return;
+  try{assertLiveProvider(url.href,provider);}catch{throw new Error('vehicle_source_changed');}
+ }
+ for(let attempt=0;attempt<2;attempt++){
+  let page,navigating=true,liveStarted=false;
+  try{
+   page=await budget(()=>context.newPage(),true);page.setDefaultTimeout(Math.min(liveTimeoutMs,remaining()));
+   await budget(()=>page.goto(ORIGIN+'/en-US/'+identity.href,{waitUntil:'domcontentloaded',timeout:Math.min(45000,remaining())}));navigating=false;
+   const before=await budget(()=>readReviewedPageIdentity(page,identity));
+   if(before.vin!==vin)throw new Error('vehicle_identity_changed');
+   const fields=(await budget(()=>page.evaluate(summarySnapshot))).fields;
+   const after=await budget(()=>readReviewedPageIdentity(page,identity));
+   if(after.vin!==vin)throw new Error('vehicle_identity_changed');
+   summary={...parseVitals(fields),source_read_at:new Date().toISOString()};
+   // A fresh page retries only transient rendered reads in this same session.
+   await budget(()=>assertNoSourceAuthentication(page));
+   liveStarted=true;
+   await budget(()=>page.getByRole('link',{name:'Live',exact:true}).filter({visible:true}).first().click({timeout:Math.min(liveTimeoutMs,remaining())}));
+   source(page,false);assertLiveProvider(page.url(),provider);
+   await budget(()=>page.locator('table.detail-table').filter({visible:true}).first().waitFor({timeout:Math.min(liveTimeoutMs,remaining())}));
+   const first=await budget(()=>page.evaluate(liveVitalsSnapshot));
+   if(first.table_count>1)throw new Error('vehicle_vitals_layout_changed');
+   if(first.fields.length)liveVitals(first,identity,vin);
+   await budget(()=>page.getByText(vin,{exact:true}).waitFor({timeout:Math.min(liveTimeoutMs,remaining())}));
+   // VIN and the table can precede the separately rendered hours row.
+   await budget(()=>page.getByText('ENGINE HOURS',{exact:true}).filter({visible:true}).waitFor({timeout:Math.min(liveTimeoutMs,remaining())}));
+   const values=liveVitals(await budget(()=>page.evaluate(liveVitalsSnapshot)),identity,vin);
+   await budget(()=>assertNoSourceAuthentication(page));
+   remaining();return {...values,source_read_at:new Date().toISOString()};
+  }catch(error){
+   if(page){source(page,navigating);if(!navigating&&!exhausted&&deadline>performance.now())await budget(()=>assertNoSourceAuthentication(page));}
+   if(!transient(error)||attempt===0&&!liveStarted)throw error;
+   remaining();
+   // A timed-out wait can leave newly rendered contradictory identity behind.
+   if(page&&new URL(page.url()).origin===ORIGIN&&new URL(page.url()).hash!==identity.href){
+    const latest=await budget(()=>page.evaluate(liveVitalsSnapshot));
+    if(latest.table_count>1||latest.fields.length)liveVitals(latest,identity,vin);
+   }
+   if(attempt===1){if(summary)return summary;throw error;}
+  }finally{
+   if(page){if(!exhausted&&deadline>performance.now())await budget(()=>page.close());else dispose(page);}
+  }
+ }
 }
 function boundLiveVitals(snapshot,identity,proof) {
  const {assertLiveProvider}=require('../motive_sync/collect.cjs');

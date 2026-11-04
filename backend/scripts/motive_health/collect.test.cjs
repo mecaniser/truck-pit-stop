@@ -119,3 +119,137 @@ test('grounded VIN-less DOM selects one loaded detail table and retains hidden V
   observed=await page.evaluate(boundLiveVitalsSnapshot);assert.deepEqual(observed.fields,[]);
  }finally{await browser.close();}
 });
+
+const {readVitals}=require('./collect.cjs');
+const vitalsVin='1M8GDM9AXKP042788',vitalsIdentity={href:'#/fleetview/vehicles/summary/70',unit:'70'};
+async function vitalsFixture(attempts=[{}]){
+ const {chromium}=require('../motive_sync/node_modules/playwright');
+ const browser=await chromium.launch({headless:true,args:['--no-proxy-server','--host-resolver-rules=MAP * ~NOTFOUND']});
+ const raw=await browser.newContext(),pages=[],reads=[],summaries=[];
+ await raw.route('**/*',async route=>{
+  if(new URL(route.request().url()).origin!=='https://app.gomotive.com')return route.fulfill({contentType:'text/html',body:'<h1>Foreign</h1>'});
+  const n=pages.findIndex(p=>p===route.request().frame().page()),setting=attempts[n]||attempts.at(-1);
+  if(setting.network)return route.abort(typeof setting.network==='string'?setting.network:'connectionreset');
+  const cells=[['Fuel type','Diesel'],['Regulated','Yes'],['Availability','Available'],['Groups','0 groups'],['Data source','ELD'],['Odometer',setting.summaryOdo||'567615 mi'],['VIN',setting.summaryVin||vitalsVin]];
+  const summary=`<phx-breadcrumb><span data-testid="breadcrumb-title">70</span></phx-breadcrumb><vehicle-profile-v2-summary><phx-card class="vehicle-profile-card"><section phx-card-header><span phxcardtitle>70</span></section><div class="cells-container">${cells.map(([label,value])=>`<div class="cell"><span class="header">${label}</span><span>${value}</span></div>`).join('')}</div></phx-card></vehicle-profile-v2-summary>`;
+  const liveFields=[['VIN',setting.liveVin||vitalsVin],['ODOMETER',setting.odo??'567618.88 mi'],...(setting.delayedHours||setting.lateWrongVin?[]:[['ENGINE HOURS',setting.hours??'104']])];
+  const table=`<table class="detail-table"><tbody>${liveFields.map(([label,value])=>`<tr><td>${label}</td><td>${value}</td></tr>`).join('')}${setting.duplicateLabel?'<tr><td>ENGINE HOURS</td><td>105</td></tr>':''}</tbody></table>`;
+  const liveHash=`#/fleetview/map/vehicle/${setting.wrongProvider?'71':'70'}-null-null/${setting.wrongProvider?'71':'70'}/live`;
+  const script=`<script>document.querySelector('a').onclick=event=>{event.preventDefault();window.fixtureRead();${setting.foreign?"location.assign('https://evil.invalid/live');":`location.hash=${JSON.stringify(liveHash)};document.querySelector('main').innerHTML='Loading';setTimeout(()=>{document.querySelector('main').innerHTML=${JSON.stringify(table+(setting.duplicateTable?table:'')+(setting.liveExtra||''))};${setting.lateWrongVin?`setTimeout(()=>{document.querySelector('td + td').textContent='1M8GDM9AXKP042789'},50);`:''}${setting.delayedHours?`setTimeout(()=>{document.querySelector('tbody').insertAdjacentHTML('beforeend','<tr><td>ENGINE HOURS</td><td>104</td></tr>')},50);`:''}},${setting.timeout?10000:0});`}};</script>`;
+  await route.fulfill({contentType:'text/html',body:`<main>${summary}${setting.summaryExtra||''}<a href="${liveHash}">Live</a></main>${script}`});
+ });
+ const context={async newPage(){
+  const n=pages.length,setting=attempts[n]||attempts.at(-1);
+  if(setting.latePage)await new Promise(resolve=>setTimeout(resolve,setting.latePage));
+  const page=await raw.newPage();pages.push(page);
+  await page.exposeBinding('fixtureRead',()=>reads.push(n));
+  const evaluate=page.evaluate.bind(page);page.evaluate=async(fn,...args)=>{
+   if(setting.unknown&&fn.name==='liveVitalsSnapshot')throw new Error('fixture_unknown');
+   const result=await evaluate(fn,...args);
+   if(fn.name==='summarySnapshot')summaries.push({n,at:Date.now()});return result;
+  };return page;
+ }};
+ return {browser,context,pages,reads,summaries};
+}
+async function withVitals(attempts,action){const f=await vitalsFixture(attempts);try{await action(f);}finally{await f.browser.close();}}
+const readFixture=f=>readVitals(f.context,vitalsIdentity,vitalsVin,{timeoutMs:8000,liveTimeoutMs:180});
+test('fresh Live retry recovers available precise mileage and104hours after first Timeout',async()=>{
+ await withVitals([{timeout:true},{}],async f=>{
+  const value=await readFixture(f);assert.equal(value.odometer_miles,567618.88);assert.equal(value.engine_hours,104);
+  assert.deepEqual(f.reads,[0,1]);assert.equal(f.pages.length,2);assert.ok(f.pages.every(p=>p.isClosed()));
+ });
+});
+test('two Live Timeouts retain latest verified summary value and original read timestamp',async()=>{
+ await withVitals([{timeout:true},{timeout:true,summaryOdo:'567616 mi'}],async f=>{
+  const value=await readFixture(f);assert.equal(value.odometer_miles,567616);assert.equal(value.engine_hours,null);
+  assert.deepEqual(f.reads,[0,1]);assert.ok(Date.parse(value.source_read_at)<Date.now()-150);assert.ok(f.pages.every(p=>p.isClosed()));
+ });
+});
+test('second transient failure before summary preserves the first verified summary',async()=>{
+ await withVitals([{timeout:true},{network:true}],async f=>{
+  const value=await readFixture(f);assert.equal(value.odometer_miles,567615);assert.equal(value.engine_hours,null);
+  assert.deepEqual(f.reads,[0]);assert.ok(Date.parse(value.source_read_at)<Date.now()-150);assert.ok(f.pages.every(p=>p.isClosed()));
+ });
+});
+test('initial pre-Live navigation failure is terminal without retry or fabricated summary',async()=>{
+ await withVitals([{network:true},{network:true}],async f=>{
+  await assert.rejects(readFixture(f),/CONNECTION_RESET/);assert.equal(f.pages.length,1);assert.ok(f.pages.every(p=>p.isClosed()));
+ });
+});
+for(const [name,setting,reason] of [
+ ['wrong summary VIN',{summaryVin:'1M8GDM9AXKP042789'},'vehicle_identity_changed'],
+ ['VIN contradiction rendering during timed-out hours wait',{lateWrongVin:true},'vehicle_identity_changed'],
+ ['non-allowlisted network error',{network:'failed'},'ERR_FAILED'],
+ ['wrong Live VIN',{liveVin:'1M8GDM9AXKP042789'},'vehicle_identity_changed'],
+ ['wrong provider',{wrongProvider:true},'vehicle_source_changed'],
+ ['foreign origin',{foreign:true},'session_lost'],
+ ['duplicate table',{duplicateTable:true},'vehicle_vitals_layout_changed'],
+ ['duplicate label',{duplicateLabel:true},'vehicle_vitals_layout_changed'],
+ ['unknown error',{unknown:true},'fixture_unknown'],
+])test(`${name} rejects on one page without retry or summary fallback`,async()=>{
+ await withVitals([setting],async f=>{await assert.rejects(readFixture(f),new RegExp(reason));assert.equal(f.pages.length,1);assert.ok(f.pages[0].isClosed());});
+});
+test('Live waits for delayed engine hours after VIN and table have rendered',async()=>{
+ await withVitals([{delayedHours:true}],async f=>{const value=await readFixture(f);assert.equal(value.engine_hours,104);assert.equal(f.pages.length,1);});
+});
+for(const [label,setting,expected] of [['zero',{odo:'0 mi',hours:'0'},[0,0]],['missing',{odo:'—',hours:'—'},[null,null]],['malformed',{odo:'bad mi',hours:'bad'},[null,null]]])test(`${label} vital field values do not trigger retries`,async()=>{
+ await withVitals([setting],async f=>{const value=await readFixture(f);assert.deepEqual([value.odometer_miles,value.engine_hours],expected);assert.equal(f.pages.length,1);});
+});
+test('per-vehicle deadline is shared across attempts and closes every created page',async()=>{
+ await withVitals([{timeout:true},{timeout:true}],async f=>{
+  await assert.rejects(readVitals(f.context,vitalsIdentity,vitalsVin,{timeoutMs:450,liveTimeoutMs:180}),e=>e.name==='TimeoutError');
+  await new Promise(resolve=>setTimeout(resolve,60));assert.ok(f.pages.every(p=>p.isClosed()));assert.ok(f.pages.length<=2);
+ });
+});
+test('page returned after per-vehicle deadline is disposed without navigation',async()=>{
+ await withVitals([{latePage:100}],async f=>{
+  await assert.rejects(readVitals(f.context,vitalsIdentity,vitalsVin,{timeoutMs:20,liveTimeoutMs:10}),e=>e.name==='TimeoutError');
+  await new Promise(resolve=>setTimeout(resolve,250));assert.equal(f.pages.length,1);assert.ok(f.pages[0].isClosed());assert.equal(f.reads.length,0);
+ });
+});
+for(const [name,markup] of [
+ ['password','<input type="password" name="user_password">'],
+ ['autocomplete OTP','<form><input name="securityCheck" autocomplete="section-login one-time-code"></form>'],
+ ['named OTP','<form><input name="otp"></form>'],
+ ['named TOTP','<form><input name="totp"></form>'],
+ ['verification code','<form><input name="verification_code"></form>'],
+ ['known reCAPTCHA','<iframe src="https://www.google.com/recaptcha/api2/anchor"></iframe>'],
+ ['known hCaptcha','<iframe src="https://newassets.hcaptcha.com/captcha/v1/example"></iframe>'],
+ ['known Cloudflare challenge','<iframe src="https://challenges.cloudflare.com/cdn-cgi/challenge-platform/example"></iframe>'],
+])test(`same-origin Live ${name} overlay is terminal without retry or summary fallback`,async()=>{
+ await withVitals([{liveExtra:markup}],async f=>{
+  await assert.rejects(readFixture(f),/source_authentication_required/);assert.equal(f.pages.length,1);assert.deepEqual(f.reads,[0]);assert.ok(f.pages[0].isClosed());
+ });
+});
+test('authentication guard runs before the observed Live click',async()=>{
+ await withVitals([{summaryExtra:'<form><input name="otp"></form>'}],async f=>{
+  await assert.rejects(readFixture(f),/source_authentication_required/);assert.equal(f.pages.length,1);assert.deepEqual(f.reads,[]);
+ });
+});
+test('a same-origin authentication overlay detected after a Live timeout is never retried',async()=>{
+ await withVitals([{lateWrongVin:false,liveExtra:'<form><input name="verificationCode"></form>',delayedHours:true}],async f=>{
+  // Suppress the hours row so the guard must catch the overlay on timeout.
+  const newPage=f.context.newPage.bind(f.context);f.context.newPage=async()=>{const page=await newPage();await page.addInitScript(()=>{const native=window.setTimeout;window.setTimeout=(fn,ms)=>native(fn,ms===50?10000:ms);});return page;};
+  await assert.rejects(readFixture(f),/source_authentication_required/);assert.equal(f.pages.length,1);assert.deepEqual(f.reads,[0]);
+ });
+});
+for(const [name,markup] of [
+ ['ordinary app search','<input name="search" type="search"><input name="code" autocomplete="off">'],
+ ['unrelated iframe','<iframe src="https://evil.invalid/challenge/code"></iframe>'],
+ ['lookalike CAPTCHA host','<iframe src="https://www.google.com.evil.invalid/recaptcha/api2/anchor"></iframe>'],
+ ['unrelated known-host path','<iframe src="https://www.google.com/help/challenge"></iframe>'],
+])test(`${name} does not trigger source authentication guard`,async()=>{
+ await withVitals([{liveExtra:markup}],async f=>{const value=await readFixture(f);assert.equal(value.engine_hours,104);assert.equal(f.pages.length,1);});
+});
+test('rejected active attempt disposal is terminal before any fresh retry page',async()=>{
+ await withVitals([{timeout:true},{}],async f=>{
+  const create=f.context.newPage.bind(f.context);f.context.newPage=async()=>{const page=await create();page.close=async()=>{throw new Error('fixture_close_failed');};return page;};
+  await assert.rejects(readFixture(f),/fixture_close_failed/);assert.equal(f.pages.length,1);assert.deepEqual(f.reads,[0]);assert.equal(f.pages[0].isClosed(),false);
+ });
+});
+test('hung active attempt disposal consumes shared budget and prevents fresh retry page',async()=>{
+ await withVitals([{timeout:true},{}],async f=>{
+  const create=f.context.newPage.bind(f.context);f.context.newPage=async()=>{const page=await create();page.close=()=>new Promise(()=>{});return page;};
+  await assert.rejects(readVitals(f.context,vitalsIdentity,vitalsVin,{timeoutMs:700,liveTimeoutMs:180}),e=>e.name==='TimeoutError');assert.equal(f.pages.length,1);assert.deepEqual(f.reads,[0]);
+ });
+});

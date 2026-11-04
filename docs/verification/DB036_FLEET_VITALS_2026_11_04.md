@@ -64,3 +64,42 @@ loss, receipt/readback mismatch, credential rejection or any import ambiguity.
 Stop saving on these signals; preserve source/receipts for exact recovery and
 restore the previous worker image/configuration if necessary. Never bypass the
 binding, tenant, current membership or protected PR gates to obtain coverage.
+
+## PR775 release and live gate return
+
+PR775 merged as e64c2e2f035e536b7c028e62d450f7683a2fe6a5 after all protected
+checks passed. Production app6144e8df served that exact build SHA and ready
+(database/Redis ok). Health image630af561 retained the approved source hashes and
+hourly schedule; only the existing reviewed26source pair was added, preserving
+all previous variables. Independent Security confirmed live official auth recovery
+in5.273seconds and exact deployed source.
+
+Manual executiona3cf3665 ran20:06:44–20:13:09UTC, verified/replayed40captures
+(21vitals,19diagnostics), and left no pending commit. Truck26now showed548550.86mi/
+21109h in the production panel, with service odometer536528 unchanged. Fingerprints
+of all1520vehicles,48memberships and1482customer relationships, plus the25-truck
+fleet subsets, matched the before-release baseline exactly.
+
+The full live gate correctly failed:70had a new Summary-only567615mi capture,
+engine_hours=null, and its older98hours remained projected. Authenticated Live
+inspection then showed567618.88mi/104h under the matching VIN. Source account was
+verified before and after. A partialcapture must not be described as21freshpairs.
+
+Architecture approved scoped bounded Live-read recovery on follow-up branch
+`codex/fleet-vitals-read-recovery`. Authentication, bound26, importer and receipt
+contracts stay unchanged. Independent gates, protected CI and complete live source/
+receipt/saved/current-projection checks remain required; no finalDone claim yet.
+
+## Read-recovery offline gates
+
+Frozen collectord76d1323 / testsb549b734 passed48routed collector tests and103
+unchanged login regressions. Independent QA repeated48cases plus four cleanup,
+phase, identity and late-page probes; Security repeated48cases plus wrong-provider,
+foreign-origin and same-origin auth-overlay probes. Both cleared offline source.
+Each vehicle gets one fixed90-second budget and at most two fresh pages in its
+existing authenticated context. Initial pre-Live failures are terminal; only an
+actual classified transient Live failure allows the one extra page. Page disposal
+must finish successfully before proceeding. Unknown/missing/malformed readings do
+not manufacture retries or values. Auth/challenge presence checks inspect only
+attributes, not values/tokens. Existing bound/auth/import/receipt contracts retain
+their approved hashes. Protected checks and live release gates remain pending.
