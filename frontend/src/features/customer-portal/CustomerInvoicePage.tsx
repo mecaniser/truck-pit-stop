@@ -443,6 +443,7 @@ export default function CustomerInvoicePage() {
             <SettlementSummaryCard
               summary={splitSettlement}
                 hideConfirmed={Boolean(invoice.source_collection)}
+                hideAvailable={!splitSettlement.payment_verification_required && isPositiveMoney(splitSettlement.allocatable_balance) && (splitSettlement.allowed_actions?.submit_efs === true || (splitSettlement.allowed_actions?.create_attempt !== false && splitSettlement.allowed_actions?.rails?.some(rail => rail === 'card' || rail === 'zelle')))}
               allocations={allocationQuery.data?.items ?? []}
               tone="dark"
               audience="customer"
@@ -655,7 +656,7 @@ export default function CustomerInvoicePage() {
             </a>
           </div>
           {cashReceipt && !isCollectionInvoice ? <CashReceiptBreakdown receipt={cashReceipt} /> : <div>
-            {(isCollectionInvoice ? [['Invoice total', Number((invoice.source_collection?.original_issued_total ?? invoice.total_amount))], ...(isPositiveMoney(collectionApplied) ? [['Payments / credits applied', -Number(collectionApplied)]] : [])] : [
+            {(isCollectionInvoice ? [...(!splitSettlement || money(invoice.source_collection?.original_issued_total ?? invoice.total_amount) !== money(splitSettlement.outstanding_balance) ? [['Invoice total', Number(invoice.source_collection?.original_issued_total ?? invoice.total_amount)]] : []), ...(isPositiveMoney(collectionApplied) ? [['Payments / credits applied', -Number(collectionApplied)]] : [])] : [
               ...(isHistoricalInvoice ? [['Subtotal', Number(invoice.subtotal)] as [string, number]] : [['Labor / Services', labor], ['Parts', parts]]),
               ['Shop Supplies', Number(invoice.shop_supplies_amount || 0)],
               ['Tax', Number(invoice.tax_amount || 0)],

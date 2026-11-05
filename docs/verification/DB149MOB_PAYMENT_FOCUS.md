@@ -1,0 +1,35 @@
+# Customer and guest invoice payment focus
+
+Owner: Frontend & UX. Item: DB-149MOB. Preview only; no deployment authorized for this refinement.
+
+The user requests less repeated balance information and a compact mobile header, while preserving the implemented payment flow. Two independent assessments agree that hierarchy is the main issue; three payment methods and two amount choices are manageable. No additional wizard or mandatory step is proposed.
+
+| Before | Proposed presentation | Reason |
+| --- | --- | --- |
+| Balance, invoice total, available amount, upper limit and amount input repeat figures | One dominant balance; retain distinct pending and draft payment amounts only where needed | Reduce arithmetic and scanning without hiding reservations |
+| Large centered logo and tall header | Compact tenant identity and invoice heading | Put payment controls earlier on mobile |
+| Mobile PDF, print and share text buttons | 44px icon buttons with accessible names | Preserve familiar utilities with less visual weight |
+| Several equally weighted blocks and helpers | One coherent amount/method/action area, with secondary history and help | Make the next action apparent |
+| Full selection can refer to168.44 while debt is268.44 | Keep pending100 and available168.44 clearly distinguished | Avoid implying a partial available amount settles the debt |
+
+The intended model follows familiar checkout conventions and progressive disclosure, as described by [Nielsen Norman Group](https://www.nngroup.com/articles/progressive-disclosure/). Existing Card/Zelle/EFS selection, full/partial payment, draft preservation, explicit Zelle transfer reporting, EFS review and shop verification, cancellation/retry and financial contracts remain intact.
+
+Independent evidence review: source detector found one existing gray-on-amber warning in the unavailable-link contact branch (InvoiceAccessPage line467); no detector finding explained the active payment hierarchy. Payment-panel scan returned no findings. No browser injection was performed. Source and live DOM establish redundant amounts and utility ordering. Screenshot scaling was unreliable during the initial review; visual proof must be checked alongside geometry and the actual browser surface before claiming preview acceptance.
+
+Questions skipped: the user specified the desired refinement and explicitly required preserving the flow.
+
+## Acceptance and runtime evidence
+
+Implemented on `codex/payment-mobile-refinement` based on released `e2e8f720`. Guest header includes tenant logo and shop name; 44px mobile icon utilities retain accessible names. Full/partial selected pills are replaced by a quiet Partial payment action next to the amount, with Pay full balance or Use available to reset. The controlled customer/guest currency field rejects letters, signs, exponents, repeated decimal separators and more than two fractional digits before updating the draft; normal digits/cents, selection/copy/paste/navigation and empty transitional drafts remain supported. Staff amount entry is unchanged.
+
+Payable guest invoice details collapse below payment; paid/history/read-only details remain expanded. The selected method has one truthful fee note: Card shows any fee before payment, Zelle has no card processing fee, and EFS has no card fee but account fees may apply. Architecture confirmed that invoice.service_fee_amount does not establish a current per-payment fee; no new fee policy or speculative fee inference is introduced. Zelle and EFS review actions stack at full width on mobile and remain inline on desktop.
+
+Final checks:196/196 tests across10 focused files; changed-source ESLint across12 TSX files has no warnings/errors; shared-control generation, TypeScript and Vite production build pass; diff check passes.
+
+Actual browser confirmation used existing fictional records through frontend5177 and the intentionally preserved API8019, environment test/database customer_efs_qa. Frontend PID38705/source `/private/tmp/tps-payment-mobile-refinement/frontend` was verified against the served feature. No old API, server, volume, tenant setting or financial record was changed. The fixture has no logo configured, so its preview uses the existing shop_logo_url query fallback with the actual observed public TPS logo; no branding record or hardcoded tenant fallback was added. Private URLs/credentials remain outside the repository.
+
+Guest desktop1440 and mobile390/320 have no horizontal overflow. Mobile utility targets are44x44; method controls are44 high. At390 the Zelle actions are each290x44 on separate rows; at320 EFS review actions are each220x44 on separate rows. Desktop Zelle actions share one row. Actual guest typing rejects abc,1e3 and25.555 while retaining25.50, and switching Card/Zelle/EFS preserves that draft. Portal rejects -20 while preserving20.25; Use available restores168.44 with an existing100 pending request and268.44 due. No submit/cancel/provider/status/receipt action was performed; EFS review used a fictional local code, then returned and cleared it.
+
+Initial browser wrapper/full-page captures could scale incorrectly despite correct DOM geometry. Final evidence uses CDP viewport capture after scrolling settles; malformed intermediary images were excluded. Final desktop/mobile screenshots are under the local `payment-mobile-focus` visualization directory (guest-desktop,guest-mobile,portal-desktop,portal-mobile,zelle-mobile).
+
+Status: preview ready for user review, not deployed. Payment behavior, amount calculations, server authorization and financial records remain unchanged.
