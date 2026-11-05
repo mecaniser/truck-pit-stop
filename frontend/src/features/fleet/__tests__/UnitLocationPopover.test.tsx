@@ -42,16 +42,15 @@ describe('unit location marker', () => {
     expect(screen.getByText('No recent speed reading.')).toBeVisible()
     expect(screen.queryByText('0 mph')).not.toBeInTheDocument()
   })
-  it('opens from the card without opening truck details, and consumes dismissal clicks', async () => {
+  it('keeps location controls off overview cards while preserving card navigation', async () => {
     const open = vi.fn()
     render(<QueryClientProvider client={new QueryClient()}><FleetBoard data={{ trucks: [truck()], stats: { total: 1, active: 1, shop: 0, pm: 0, parts: 0, open_wo: 0, incidents_total: 0 } }} onOpen={open} onOpenRepairOrder={vi.fn()} filter="all" setFilter={vi.fn()} query="" setQuery={vi.fn()} sort="unit" setSort={vi.fn()} /></QueryClientProvider>)
     expect(screen.queryByText('123 Synthetic Road')).not.toBeInTheDocument()
     expect(screen.queryByText('Speed unavailable')).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Location and speed for 603' }))
-    expect(open).not.toHaveBeenCalled()
-    fireEvent.click(document.querySelector('.unit-location-backdrop')!)
+    expect(screen.queryByRole('button', { name: /Location and speed/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(open).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Open 603 truck details' }))
+    expect(open).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'unit-one' }))
   })
   it('expires speed while the popover stays open without borrowing the address time', () => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
