@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/stores/authStore'
@@ -109,5 +109,63 @@ describe('invoice due calendar dates', () => {
     show({ invoices: [invoice({ due_date: date })] })
     expect(await screen.findByText(label)).toBeInTheDocument()
     expect(screen.queryByText('Due Nov 2, 2026')).not.toBeInTheDocument()
+  })
+})
+
+
+describe('overview section roles', () => {
+  it('separates current actions from history and preserves their destinations', async () => {
+    show({vehicles:[vehicle()],orders:[order({id:'done',status:'paid',quote_sent:false,description:'Completed inspection'})]})
+    const attention=await screen.findByRole('region',{name:'Needs your attention'})
+    expect(within(attention).getByRole('link',{name:'Pay invoice'})).toHaveAttribute('href','/portal/invoices/inv?vehicle_id=a')
+    const history=screen.getByRole('region',{name:'Recent activity'})
+    expect(within(history).getByRole('heading',{name:'Completed inspection'})).toBeInTheDocument()
+    expect(within(history).getByRole('link',{name:'View details'})).toHaveAttribute('href','/portal/repairs?vehicle_id=a')
+    expect(within(attention).queryByText('Completed inspection')).not.toBeInTheDocument()
+  })
+  it('distinguishes pending confirmation from the available portion of the total', async () => {
+    show({invoices:[invoice({payment_summary:{state:'payment_pending',applied_amount:'0.00',balance_due:'268.44',pending_amount:'100.00',basis:'settlement',note:null}})]})
+    await screen.findByRole('heading',{name:'Account balance'})
+    const summary=screen.getByRole('heading',{name:'Account balance'}).closest('section')!
+    expect(within(summary).getByText('Total outstanding')).toBeInTheDocument()
+    expect(within(summary).getByText('Pending confirmation').nextElementSibling).toHaveTextContent('$100.00')
+    expect(within(summary).getByText('Available to pay').nextElementSibling).toHaveTextContent('$168.44')
+    expect(within(summary).getByText('$268.44')).toBeInTheDocument()
+  })
+  it('uses a vehicle count while preserving the shop review warning for ambiguous identities', async () => {
+    show({vehicles:[vehicle('a'),{...vehicle('b'),unit_number:'a',license_plate:'P-a'}]})
+    await screen.findByRole('heading',{name:'Your vehicles'})
+    const summary=screen.getByRole('heading',{name:'Your vehicles'}).closest('section')!
+    expect(within(summary).getByText('2 vehicles')).toBeInTheDocument()
+    expect(within(summary).getByText('Some vehicle details need the shop’s review.')).toBeInTheDocument()
+    expect(within(summary).getByRole('link',{name:'Browse all 2 vehicles'})).toHaveAttribute('href','/portal/vehicles')
+  })
+})
+
+
+describe('overview vehicle directory', () => {
+  it('shows three real vehicles and keeps the full count and exact ID destinations', async () => {
+    show({vehicles:[vehicle('a'),vehicle('b'),vehicle('c'),vehicle('d')]})
+    const directory=await screen.findByRole('region',{name:'Your vehicles'})
+    expect(within(directory).getByText('4 vehicles')).toBeInTheDocument()
+    expect(within(directory).getAllByRole('listitem')).toHaveLength(3)
+    expect(within(directory).getByRole('link',{name:/Unit #b/})).toHaveAttribute('href','/portal/vehicles?vehicle_id=b')
+    expect(within(directory).queryByText('Unit #d')).not.toBeInTheDocument()
+    expect(within(directory).getByRole('link',{name:'Browse all 4 vehicles'})).toHaveAttribute('href','/portal/vehicles')
+  })
+  it('keeps the selected vehicle directory scoped while the financial statement opens all invoices', async () => {
+    show({query:'?vehicle_id=b',vehicles:[vehicle('a'),vehicle('b')]})
+    const directory=await screen.findByRole('region',{name:'Your vehicle'})
+    expect(within(directory).getAllByRole('listitem')).toHaveLength(1)
+    expect(within(directory).getByRole('link',{name:/Unit #b/})).toHaveAttribute('href','/portal/vehicles?vehicle_id=b')
+    expect(within(directory).getByRole('link',{name:'Vehicle details'})).toHaveAttribute('href','/portal/vehicles?vehicle_id=b')
+    expect(screen.getByRole('link',{name:'View all invoices'})).toHaveAttribute('href','/portal/invoices')
+  })
+  it('handles an empty vehicle account without inventing records', async () => {
+    show({vehicles:[]})
+    const directory=await screen.findByRole('region',{name:'Your vehicles'})
+    expect(within(directory).getByText('No vehicles yet.')).toBeInTheDocument()
+    expect(within(directory).queryByRole('listitem')).not.toBeInTheDocument()
+    expect(within(directory).getByRole('link',{name:'Manage vehicles'})).toHaveAttribute('href','/portal/vehicles')
   })
 })
