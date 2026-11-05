@@ -21,3 +21,13 @@ Existing fixture runtimes preserved. Earlier API startup attempts rejected older
 Raw browser state is private outside the repository. Local screenshots and browser script are under `output/portal-overview/` and are not committed. Local serving is separate from PR/CI, merge and production release.
 
 Draft PR: https://github.com/mecaniser/truck-pit-stop/pull/799. Current main `21684af1` integrated; append-only CSS conflict resolved by retaining both overview refinements and the booking-field alignment rule.
+
+## Financial statement and vehicle directory refinement — 2026-11-05
+
+User requested stronger differentiation of the two summaries. Account balance now uses a label/value financial statement and an explicit account-wide invoice link. The vehicle section is an unboxed directory with up to three authorized vehicle records, unit/model/plate identity, exact-ID destinations and a compact total count. Selected scope shows only its vehicle; an empty account and colliding identities remain explicit. No records, statuses or API data are invented. Existing primary task button styling stays consistent.
+
+Verification: **55 focused tests passed**, changed TSX/test ESLint passed, production build passed (existing chunk-size advisory), `git diff --check` passed. Real signed-in IAB synthetic fleet account shows three vehicles. Clicking Unit609 opens only that exact vehicle; Home retains scope; View all invoices opens the unscoped account invoice list. Directory keyboard traversal has a solid visible outline. At390px and320px, document width equals viewport width; inspected account/directory layout wraps without clipping. Browser returned to all-vehicle Home and viewport override reset. Updated desktop screenshot: local `output/portal-overview/directory-desktop.png` (fictional local account; not production).
+
+Runtime rechecked at implementation start: branch `codex/portal-overview-hierarchy`, HEAD `ea039aae6d240c4f490d7da77c05039ea7ee85eb` before refinement commit, Vite PID46992/source `truck-portal-overview/frontend`, API container `portal-overview-preview-api`/mount `truck-portal-overview/backend`, proxy5173→8020 readiness200/database+Redis ready. Changed statement/directory rendered directly in the user's open IAB tab. Same isolated cloned synthetic DB and disabled provider settings retained; no restart or migration required in this refinement. **Aligned and browser-verified** at http://127.0.0.1:5173/portal.
+
+Draft PR799 remains the delivery artifact. This is local implementation/verification evidence; protected CI, merge and deployment remain pending.

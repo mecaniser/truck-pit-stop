@@ -138,6 +138,34 @@ describe('overview section roles', () => {
     const summary=screen.getByRole('heading',{name:'Your vehicles'}).closest('section')!
     expect(within(summary).getByText('2 vehicles')).toBeInTheDocument()
     expect(within(summary).getByText('Some vehicle details need the shop’s review.')).toBeInTheDocument()
-    expect(within(summary).getByRole('link',{name:'Browse vehicles'})).toHaveAttribute('href','/portal/vehicles')
+    expect(within(summary).getByRole('link',{name:'Browse all 2 vehicles'})).toHaveAttribute('href','/portal/vehicles')
+  })
+})
+
+
+describe('overview vehicle directory', () => {
+  it('shows three real vehicles and keeps the full count and exact ID destinations', async () => {
+    show({vehicles:[vehicle('a'),vehicle('b'),vehicle('c'),vehicle('d')]})
+    const directory=await screen.findByRole('region',{name:'Your vehicles'})
+    expect(within(directory).getByText('4 vehicles')).toBeInTheDocument()
+    expect(within(directory).getAllByRole('listitem')).toHaveLength(3)
+    expect(within(directory).getByRole('link',{name:/Unit #b/})).toHaveAttribute('href','/portal/vehicles?vehicle_id=b')
+    expect(within(directory).queryByText('Unit #d')).not.toBeInTheDocument()
+    expect(within(directory).getByRole('link',{name:'Browse all 4 vehicles'})).toHaveAttribute('href','/portal/vehicles')
+  })
+  it('keeps the selected vehicle directory scoped while the financial statement opens all invoices', async () => {
+    show({query:'?vehicle_id=b',vehicles:[vehicle('a'),vehicle('b')]})
+    const directory=await screen.findByRole('region',{name:'Your vehicle'})
+    expect(within(directory).getAllByRole('listitem')).toHaveLength(1)
+    expect(within(directory).getByRole('link',{name:/Unit #b/})).toHaveAttribute('href','/portal/vehicles?vehicle_id=b')
+    expect(within(directory).getByRole('link',{name:'Vehicle details'})).toHaveAttribute('href','/portal/vehicles?vehicle_id=b')
+    expect(screen.getByRole('link',{name:'View all invoices'})).toHaveAttribute('href','/portal/invoices')
+  })
+  it('handles an empty vehicle account without inventing records', async () => {
+    show({vehicles:[]})
+    const directory=await screen.findByRole('region',{name:'Your vehicles'})
+    expect(within(directory).getByText('No vehicles yet.')).toBeInTheDocument()
+    expect(within(directory).queryByRole('listitem')).not.toBeInTheDocument()
+    expect(within(directory).getByRole('link',{name:'Manage vehicles'})).toHaveAttribute('href','/portal/vehicles')
   })
 })

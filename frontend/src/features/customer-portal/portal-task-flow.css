@@ -838,3 +838,42 @@
     align-self: flex-start !important;
   }
 }
+
+/* A financial statement and a vehicle directory have distinct reading patterns. */
+.cp-overview .cp-balance-statement {
+  display:flex;
+  justify-content:space-between;
+  align-items:baseline;
+  flex-wrap:wrap;
+  gap:8px 12px;
+  margin-top:20px;
+}
+.cp-overview .cp-balance-statement > span { color:var(--portal-muted); font-size:13px; }
+.cp-overview .cp-balance-statement .cp-balance-total { margin:0; font-size:24px; }
+.cp-overview .cp-balance > .cp-text { margin-top:16px; }
+.cp-overview .cp-vehicle-directory { padding:10px 0 0; }
+.cp-overview .cp-directory-heading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding:0 4px 14px; }
+.cp-overview .cp-directory-heading h2 { font-size:17px; }
+.cp-overview .cp-directory-heading > span { font-size:12px; color:var(--portal-muted); white-space:nowrap; }
+.cp-overview .cp-directory-list { padding:0; margin:0; list-style:none; }
+.cp-overview .cp-directory-list > li { border-top:1px solid var(--portal-border); }
+.cp-overview .cp-directory-vehicle {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  min-height:76px;
+  padding:16px 4px;
+  text-decoration:none;
+  color:var(--portal-text);
+  border-radius:4px;
+}
+.cp-overview .cp-directory-vehicle > svg { flex-shrink:0; color:var(--portal-muted); }
+.cp-overview .cp-directory-vehicle > span { flex:1; min-width:0; overflow-wrap:anywhere; }
+.cp-overview .cp-directory-vehicle strong { display:block; font-size:14px; font-weight:650; }
+.cp-overview .cp-directory-vehicle span > span { display:block; color:var(--portal-muted); font-size:12px; margin-top:3px; }
+.cp-overview .cp-vehicle-directory > .cp-text { margin-top:6px; padding-inline:4px; }
+.cp-overview .cp-directory-notice { font-size:12px; padding:0 4px 12px; }
+.cp-overview .cp-directory-vehicle .cp-directory-notice { color:#f0ca82; padding:0; }
+@media (hover:hover) and (pointer:fine) {
+  .cp-overview .cp-directory-vehicle:hover { background:var(--portal-card); }
+}
