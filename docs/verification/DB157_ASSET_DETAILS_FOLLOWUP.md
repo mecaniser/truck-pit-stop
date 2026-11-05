@@ -264,3 +264,41 @@ for acceptance. Private DOM, images, IDs and fingerprints remain outside Git.
 
 The follow-up is Done. The independent location/speed worker authentication
 repair is recorded under DB-036 and is not included in this runtime approval.
+
+
+## Location placement follow-up: truck page only
+
+On November 5 the user requested removing the map-pin/popover from overview
+cards because the overlay obscured nearby cards. This supersedes the earlier
+card placement; the existing truck-page marker stays as requested.
+
+Frontend & UX owns this Fast UI change. Only FleetBoard's marker import/render,
+its unused wrapper style and the board regression changed. API/data/worker
+contracts, collection and freshness rules are unchanged. Acceptance requires no
+location action, popup or inline address/speed on overview cards, normal card
+navigation and the existing truck-page marker. Local runtime preflight repeated
+on codex/fleet-location-detail-only:5173 absent,8000 remains the preserved
+privacy-safety Docker checkout, approved backend configuration absent. No full
+local product serving is claimed.
+
+Focused component/navigation tests pass33/33; changed-file ESLint and production
+build pass. Concurrent main invoice changes were preserved; only the board's
+new intake notes conflicted and both entries were retained. The final diff
+against main remains four scoped files. All seven checks in
+[run 41983004624](https://github.com/mecaniser/truck-pit-stop/actions/runs/41983004624)
+pass on5b799b6f. [PR795](https://github.com/mecaniser/truck-pit-stop/pull/795) merged
+asfe53543cde8d599daac5a6ad97db7c09f6ef2c60; checked/merged trees match.
+
+Deploymentd9904d4a-6d7b-4999-90c9-dc2024dbca5d succeeded. Public build-version
+matches that merge, built06:59:41.363UTC; database/Redis readiness pass. Actual
+signed-in Chrome shows23 loaded desktop overview cards and zero location
+controls or popups. At375px the overview card has zero location controls/popups
+and document width375. Clicking unit860 opens its page, which retains exactly
+one marker; opening it still shows Address and Speed inside the320px popup.
+The original truck860 page, blank board search and default viewport were
+restored. No records were saved or changed during acceptance. Private DOM and
+screenshots remain outside Git. Owner runtime acceptance is GO; the item is Done.
+
+This closeout changes Markdown only, so additional application runtime testing
+for the closeout itself does not apply. Product release acceptance is the exact
+fe53543c deployment and changed desktop/phone journeys above.
