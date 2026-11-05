@@ -74,3 +74,5 @@
 @media (hover:hover) and (pointer:fine) {
   .cp-payment-requests .db-attempt-secondary.cp-payment-cancel-link:hover { color: var(--request-accent); background: transparent; }
 }
+.cp-payment-result { margin-bottom: 20px; padding: 16px 18px; border: 1px solid var(--request-border); border-radius: 14px; background: var(--request-tint); }
+.cp-payment-result > p { font-size: 15px; font-weight: 650; }

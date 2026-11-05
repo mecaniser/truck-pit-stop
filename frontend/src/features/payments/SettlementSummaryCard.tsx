@@ -56,7 +56,7 @@ export default function SettlementSummaryCard({
   reviewAttemptId?: string
 }) {
   const [historyOpen, setHistoryOpen] = useState(false)
-  const [closedNotice, setClosedNotice] = useState('')
+  const [closedNotice, setClosedNotice] = useState<{ message: string; version: number; canRetry: boolean } | null>(null)
   const previousStatuses = useRef(new Map(allocations.map(row => [row.attempt_id, row.resolution?.checkout_status])))
   const historyTrigger = useRef<HTMLButtonElement>(null)
   useEffect(() => {
@@ -66,9 +66,9 @@ export default function SettlementSummaryCard({
     })
     previousStatuses.current = new Map(allocations.map(row => [row.attempt_id, row.resolution?.checkout_status]))
     if (!closed || audience !== 'customer') return
-    setClosedNotice(closed.resolution?.checkout_status === 'received' ? 'Payment received.' : closed.resolution?.can_retry && !closed.resolution.block_reason ? 'Request closed. You can try another payment.' : 'Request updated. See payment history.')
+    setClosedNotice({ message: closed.resolution?.checkout_status === 'received' ? 'Payment received.' : closed.resolution?.can_retry && !closed.resolution.block_reason ? closed.rail === 'card' ? 'Checkout canceled.' : 'Request canceled.' : 'Request updated. See payment history.', version: summary.version, canRetry: closed.resolution?.can_retry === true && !closed.resolution.block_reason })
     historyTrigger.current?.focus({ preventScroll: true })
-  }, [allocations, audience])
+  }, [allocations, audience, summary.version])
   const focusedAttempt = useRef<string | null>(null)
   const seenEfs = useRef(new Set<string>())
   useEffect(() => {
@@ -105,7 +105,7 @@ export default function SettlementSummaryCard({
   const fullyReserved = audience === 'customer' && streamlined && pending && !isPositiveMoney(summary.allocatable_balance) && formatMoney(summary.active_pending_principal) === formatMoney(summary.outstanding_balance)
   const figures = resolutionOnly ? [] : streamlined ? [
     ...(!hideConfirmed && isPositiveMoney(summary.confirmed_principal) ? [['Paid toward invoice', summary.confirmed_principal]] : []),
-    ...(pending && !fullyReserved ? [[resolutionControls && allocations.some(row => row.state === 'pending' && row.resolution) ? 'In progress' : 'Pending confirmation', summary.active_pending_principal], ...(!hideAvailable ? [['Available to pay', summary.allocatable_balance]] : [])] : []),
+    ...(pending && !fullyReserved ? [...(audience === 'customer' && streamlined && allocations.some(row => row.resolution) ? [] : [['Pending confirmation', summary.active_pending_principal]]), ...(!hideAvailable ? [['Available to pay', summary.allocatable_balance]] : [])] : []),
   ] : [
     ['Invoice total', summary.principal_total],
     ['Confirmed', summary.confirmed_principal],
@@ -129,6 +129,7 @@ export default function SettlementSummaryCard({
     ? ['checkout_started', 'transfer_reported', 'verification_pending', 'review_required'].includes(row.resolution.checkout_status)
     : row.state === 'pending')
   const pastAllocations = allocations.filter(row => !activeAllocations.includes(row))
+  const historicalReviewRequired = customerCompact && pastAllocations.some(row => row.resolution?.block_reason)
   const renderAllocation = (allocation: PaymentAllocation) => (
               <li key={allocation.id} className={customerCompact ? `cp-payment-request ${activeAllocations.includes(allocation) ? 'cp-payment-request--active' : 'cp-payment-request--past'} ${allocation.resolution?.checkout_status === 'checkout_started' && allocation.resolution.actions.cancel_unsent ? 'cp-payment-request--actionable' : ''}` : 'px-3 py-2.5 text-sm'}>
                 <div className="flex items-start justify-between gap-3">
@@ -216,9 +217,16 @@ export default function SettlementSummaryCard({
 
       {!resolutionOnly && allocations.length > 0 && (
         customerCompact ? <>
-          {closedNotice && <p role="status" className={`border-t px-3 py-3 text-sm ${divider} ${quiet}`}>{closedNotice}</p>}
+          {historicalReviewRequired && <p role="status" className="cp-payment-result">The shop needs to review an earlier payment before you try again.</p>}
+          {closedNotice && closedNotice.version === summary.version && <div className="cp-payment-result">
+            <p role="status">{closedNotice.message}</p>
+            {closedNotice.canRetry && isPositiveMoney(summary.allocatable_balance) && summary.allowed_actions?.create_attempt !== false && !summary.payment_verification_required && <ControlButton className="db-attempt-primary mt-3" type="button" onClick={() => {
+              const target = document.getElementById(`settlement-payment-${summary.invoice_id}`)
+              target?.focus({ preventScroll: true }); target?.scrollIntoView({ block: 'start', behavior: 'instant' })
+            }}>Choose payment method</ControlButton>}
+          </div>}
           {activeAllocations.length > 0 && <div className={`border-t ${divider}`}>
-            <h2 className="cp-payment-requests__heading">Payment requests</h2>
+            <h2 className="cp-payment-requests__heading">{fullyReserved ? (activeAllocations.some(row => row.resolution?.checkout_status === 'checkout_started' && row.resolution.actions.cancel_unsent) ? 'Payment options paused' : 'Waiting for confirmation') : 'Open payment requests'}</h2>
             <ol aria-label="Active payment requests" className={`cp-payment-requests__active divide-y ${dark ? 'divide-[#2a3245]' : 'divide-slate-200'}`}>
               {activeAllocations.map(renderAllocation)}
             </ol>
@@ -238,7 +246,7 @@ export default function SettlementSummaryCard({
           </ol>
         </div>
       )}
-      {audience === 'customer' && pending && <p className={`cp-payment-requests__guidance px-3 py-3 text-sm ${quiet}`}>Don’t pay an amount in progress again.</p>}
+      {audience === 'customer' && pending && !allocations.some(row => row.resolution) && <p className={`cp-payment-requests__guidance px-3 py-3 text-sm ${quiet}`}>Don’t pay an amount in progress again.</p>}
 
     </section>
   )
