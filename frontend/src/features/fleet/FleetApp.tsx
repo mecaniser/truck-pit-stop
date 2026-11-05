@@ -1,5 +1,5 @@
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
 import { Spinner } from '@/components/ui'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -26,6 +26,7 @@ import { FLEET_HOME_ADDRESS } from './fleetHome'
 import FleetMap from './FleetMap'
 import FleetTrips, { type TripFilters } from './FleetTrips'
 import { initialTripFilters } from './tripFilters'
+import type { AssetFilter } from './assetIdentity'
 import { SchedulePMModal, SidekickPanel, invalidateFleetAndCockpit } from './FleetModals'
 import FleetPriceBuilderPanel from './FleetPriceBuilderPanel'
 import './fleet.css'
@@ -51,10 +52,10 @@ function getFleetReturnContext(state: unknown) {
   return { returnsToSettings: false, label: 'Shop dashboard' }
 }
 
-interface Persisted { view: View; selId: string | null; filter: any; sort: any }
+interface Persisted { assetFilter: AssetFilter; view: View; selId: string | null; filter: ComponentProps<typeof FleetBoard>['filter']; sort: ComponentProps<typeof FleetBoard>['sort'] }
 function loadState(): Persisted {
-  try { return { view: 'board', selId: null, filter: 'all', sort: 'attention', ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') } }
-  catch { return { view: 'board', selId: null, filter: 'all', sort: 'attention' } }
+  try { return { assetFilter: 'all', view: 'board', selId: null, filter: 'all', sort: 'attention', ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') } }
+  catch { return { assetFilter: 'all', view: 'board', selId: null, filter: 'all', sort: 'attention' } }
 }
 
 export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?: TripFilters } = {}) {
@@ -65,9 +66,11 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
   const init = loadState()
   const [view, setView] = useState<View>(init.view === 'detail' && init.selId ? 'detail' : init.view)
   const [selId, setSelId] = useState<string | null>(init.selId)
+  const lastOpenedAsset = useRef<string | null>(null)
   const [mapFocusId, setMapFocusId] = useState<string | undefined>()
   const [tripFilters, setTripFilters] = useState(() => initialTripsFilters ?? initialTripFilters())
   const [filter, setFilter] = useState(init.filter)
+  const [assetFilter, setAssetFilter] = useState<AssetFilter>(['all', 'tractor', 'trailer', 'unknown', 'other'].includes(init.assetFilter) ? init.assetFilter : 'all')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState(init.sort)
   const [roPanelId, setRoPanelId] = useState<string | null>(null)
@@ -80,8 +83,8 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
   const profileTriggerRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ view, selId, filter, sort }))
-  }, [view, selId, filter, sort])
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ view, selId, filter, sort, assetFilter }))
+  }, [view, selId, filter, sort, assetFilter])
 
   const { data, isLoading, isError, refetch } = useQuery<FleetBoardData>({
     queryKey: ['fleet-board'],
@@ -102,7 +105,7 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
 
   const detailTruck = selId ? trucks.find((truck) => truck.id === selId) : undefined
 
-  const openTruck = useCallback((id: string) => { setSelId(id); setView('detail'); document.querySelector('.fleet-root .scroll')?.scrollTo(0, 0) }, [])
+  const openTruck = useCallback((id: string) => { lastOpenedAsset.current = id; setSelId(id); setView('detail'); document.querySelector('.fleet-root .scroll')?.scrollTo(0, 0) }, [])
   const openTrips = (id: string) => { setTripFilters(current => ({ ...current, vehicleId: id })); setView('trips'); document.querySelector('.fleet-root .scroll')?.scrollTo(0, 0) }
   const goView = (v: View) => { setView(v); if (v !== 'detail') setSelId(null) }
   const toggleRail = () => setRailExpanded((v) => { localStorage.setItem('tps-fleet-rail', v ? '0' : '1'); return !v })
@@ -300,13 +303,13 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
               ) : view === 'detail' && selId ? (
                 <TruckDetail truckId={selId} trucks={trucks} onOpen={openTruck} onViewTrips={openTrips} />
               ) : view === 'board' ? (
-                <FleetBoard data={data} onOpen={(t) => openTruck(t.id)} onOpenRepairOrder={setRoPanelId} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} sort={sort} setSort={setSort} />
+                <FleetBoard focusAssetId={lastOpenedAsset.current} assetFilter={assetFilter} onAssetFilter={setAssetFilter} data={data} onOpen={(t) => openTruck(t.id)} onOpenRepairOrder={setRoPanelId} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} sort={sort} setSort={setSort} />
               ) : view === 'trips' ? (
                 <FleetTrips trucks={trucks} filters={tripFilters} onFilters={setTripFilters} onOpenTruck={openTruck} />
               ) : view === 'map' ? (
                 <MapPage trucks={trucks} onOpen={openTruck} focusId={mapFocusId} onFocusChange={setMapFocusId} />
               ) : (
-                <FleetBoard data={data} onOpen={(t) => openTruck(t.id)} onOpenRepairOrder={setRoPanelId} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} sort={sort} setSort={setSort} />
+                <FleetBoard focusAssetId={lastOpenedAsset.current} assetFilter={assetFilter} onAssetFilter={setAssetFilter} data={data} onOpen={(t) => openTruck(t.id)} onOpenRepairOrder={setRoPanelId} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} sort={sort} setSort={setSort} />
               )}
             </div>
           </div>

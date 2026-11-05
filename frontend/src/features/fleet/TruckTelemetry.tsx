@@ -88,7 +88,7 @@ export function PullMotiveReading({ truck }: { truck: BoardTruck }) {
 }
 
 export function TruckVitals({ truck }: { truck: BoardTruck }) {
-  return <section className="fleet-reference-section"><h3 className="dmap-side-h">Truck vitals</h3><div className="truck-vitals-grid">
+  return <section className="fleet-reference-section"><h3 className="dmap-side-h">{truck.equipment_type === 'trailer' ? 'Trailer readings' : 'Truck vitals'}</h3><div className="truck-vitals-grid">
     <TruckTelemetryValue truck={truck} field="engine_hours" label="Engine hours" />
     <TruckTelemetryValue truck={truck} field="fault_count" label="Open faults" />
   </div><PullMotiveReading key={`${truck.id}:${truck.board_membership_customer_id}`} truck={truck} /></section>

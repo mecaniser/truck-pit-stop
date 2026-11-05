@@ -32,17 +32,17 @@ function checkedTime(value: string) {
   return new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-export default function TruckDiagnostics({ truckId, telemetry }: { truckId: string; telemetry?: FleetTelemetry | null }) {
+export default function TruckDiagnostics({ truckId, telemetry, equipmentType }: { truckId: string; telemetry?: FleetTelemetry | null; equipmentType?: string }) {
   return <Popover className="truck-health">
     <PopoverButton data-db-control="action" className="dbtn dbtn-ghost dhead-health"><Activity size={15} aria-hidden="true" /> View health</PopoverButton>
     <PopoverPanel className="truck-health-panel" focus>
-      <div className="truck-health-header"><div className="truck-health-heading"><h2>Truck health</h2><PopoverButton data-db-control="icon" className="truck-health-close" aria-label="Close truck health"><X size={18} aria-hidden="true" /></PopoverButton></div>
-      <HealthVitals telemetry={telemetry} /></div><TruckDiagnosticsContent truckId={truckId} />
+      <div className="truck-health-header"><div className="truck-health-heading"><h2>{equipmentType === 'trailer' ? 'Trailer health' : 'Truck health'}</h2><PopoverButton data-db-control="icon" className="truck-health-close" aria-label={equipmentType === 'trailer' ? 'Close trailer health' : 'Close truck health'}><X size={18} aria-hidden="true" /></PopoverButton></div>
+      <HealthVitals telemetry={telemetry} isTrailer={equipmentType === 'trailer'} /></div><TruckDiagnosticsContent truckId={truckId} isTrailer={equipmentType === 'trailer'} />
     </PopoverPanel>
   </Popover>
 }
 
-function TruckDiagnosticsContent({ truckId }: { truckId: string }) {
+function TruckDiagnosticsContent({ truckId, isTrailer = false }: { truckId: string; isTrailer?: boolean }) {
   const query = useQuery<DiagnosticsResponse>({
     queryKey: ['fleet-truck-diagnostics', truckId],
     queryFn: async () => (await api.get(`/fleet/trucks/${truckId}/diagnostics`)).data,
@@ -51,7 +51,7 @@ function TruckDiagnosticsContent({ truckId }: { truckId: string }) {
   return <div className="diagnostics-body">
       {query.isLoading ? <p role="status">Loading fault codes…</p>
         : query.isError ? <div role="alert"><p>Fault codes could not be loaded.</p><ControlButton type="button" className="btn" onClick={() => void query.refetch()} disabled={query.isFetching}><RotateCcw size={14} />Try again</ControlButton></div>
-        : !data?.last_checked_at ? <p>No verified dashboard check is available for this truck.</p>
+        : !data?.last_checked_at ? <p>No verified dashboard check is available for this {isTrailer ? 'trailer' : 'truck'}.</p>
         : <>
           <p className="diagnostics-meta">Motive · Dashboard checked <time dateTime={data.last_checked_at}>{checkedTime(data.last_checked_at)}</time></p>
           {data.coverage === 'partial' && <p>Partial capture. Some codes may be unavailable.</p>}
@@ -73,19 +73,19 @@ function TruckDiagnosticsContent({ truckId }: { truckId: string }) {
   </div>
 }
 
-function HealthVitals({ telemetry }: { telemetry?: FleetTelemetry | null }) {
+function HealthVitals({ telemetry, isTrailer = false }: { telemetry?: FleetTelemetry | null; isTrailer?: boolean }) {
   const now = useTelemetryClock()
   const [open, setOpen] = useState(false)
   const [pinned, setPinned] = useState(false)
   const id = useId()
   const fields = ([['odometer', 'Mileage', 'mi'], ['engine_hours', 'Engine hours', 'h']] as const)
-    .map(([field, label, unit]) => ({ label, unit, reading: retained(telemetry?.[field], now) }))
-  const provenance = fields.map(({ label, reading }) => ({ label, caption: reading ? `${reading.source === 'motive_api' ? 'Motive API' : 'Motive dashboard'} · ${readingCaption(reading)}${!reading.observed_at ? ' · Observation time unknown' : reading.observed_precision !== 'minute' ? ` · Observed ${new Date(reading.observed_at).toLocaleString()}` : ''}` : 'No retained reading available.' }))
+    .map(([field, label, unit]) => ({ label, unit, reading: retained(telemetry?.[field], now), notApplicable: field === 'engine_hours' && isTrailer && !retained(telemetry?.[field], now) }))
+  const provenance = fields.map(({ label, reading, notApplicable }) => ({ label, caption: reading ? `${reading.source === 'motive_api' ? 'Motive API' : 'Motive dashboard'} · ${readingCaption(reading)}${!reading.observed_at ? ' · Observation time unknown' : reading.observed_precision !== 'minute' ? ` · Observed ${new Date(reading.observed_at).toLocaleString()}` : ''}` : notApplicable ? 'Not applicable to an unpowered trailer.' : 'No retained reading available.' }))
   const shared = provenance[0].caption === provenance[1].caption && JSON.stringify(fields[0].reading && [fields[0].reading.source, fields[0].reading.observed_at, fields[0].reading.captured_at, fields[0].reading.observed_precision]) === JSON.stringify(fields[1].reading && [fields[1].reading.source, fields[1].reading.observed_at, fields[1].reading.captured_at, fields[1].reading.observed_precision])
   const descriptions = shared ? [{ label: 'Mileage and engine hours', caption: provenance[0].caption }] : provenance
   return <div className="health-vitals-wrap">
-    <dl className="health-vitals">{fields.map(({ label, unit, reading }) =>
-      <div key={label}><dt>{label}</dt><dd>{reading ? `${reading.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${unit}` : 'Unavailable'}</dd></div>
+    <dl className="health-vitals">{fields.map(({ label, unit, reading, notApplicable }) =>
+      <div key={label}><dt>{label}</dt><dd>{reading ? `${reading.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${unit}` : notApplicable ? 'Not applicable' : 'Unavailable'}</dd></div>
     )}</dl>
     <div className="health-vitals-info" onPointerEnter={event => { if (event.pointerType === 'mouse') setOpen(true) }} onPointerLeave={() => { if (!pinned) setOpen(false) }}>
       <ControlButton controlKind="icon" type="button" className="health-vitals-info-button" aria-label="Mileage and engine hours information" aria-expanded={open} aria-describedby={open ? id : undefined}

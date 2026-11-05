@@ -311,6 +311,8 @@ async def end_fleet_membership(
     reason: Optional[str] = None,
     ended_by_user_id: Optional[UUID] = None,
 ) -> bool:
+    from app.services.fleet_assets import guard_lifecycle_change
+    await guard_lifecycle_change(db, tenant_id, [vehicle_id])
     membership = (await db.execute(
         select(FleetMembership).where(
             FleetMembership.tenant_id == tenant_id,
@@ -397,5 +399,7 @@ async def sync_customer_fleet_memberships(
             FleetMembership.deleted_at.is_(None),
         )
     )).scalars().all())
+    from app.services.fleet_assets import guard_lifecycle_change
+    await guard_lifecycle_change(db, customer.tenant_id, [row.vehicle_id for row in memberships])
     for membership in memberships:
         membership.effective_to = now
