@@ -895,3 +895,10 @@
 .cp-vehicle-editor .cp-field input { max-width:none; }
 .cp-vehicle-editor .cp-field [role=alert] { color:#f0ca82; }
 .cp-editor-actions { display:flex; flex-wrap:wrap; gap:12px; margin-top:20px; }
+@layer db-controls {
+  .cp-vehicle-editor .cp-field > input[data-db-control='field'] {
+    align-self:stretch!important;
+    inline-size:100%;
+    max-inline-size:100%;
+  }
+}
