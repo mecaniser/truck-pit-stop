@@ -259,6 +259,14 @@ class FleetAttachmentUpdate(BaseModel):
     expected_attached_vehicle_id: Optional[UUID]
 
 
+class FleetAssetSettingsUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    equipment_type: Literal["unknown", "tractor", "trailer", "other"]
+    attached_vehicle_id: Optional[UUID]
+    expected_equipment_type: Literal["unknown", "tractor", "trailer", "other"]
+    expected_attached_vehicle_id: Optional[UUID]
+
+
 class BoardTruck(BaseModel):
     equipment_type: Literal["unknown", "tractor", "trailer", "other"] = "unknown"
     attached_asset: Optional[FleetAttachedAsset] = None
@@ -606,10 +614,13 @@ class FleetCompanyOption(BaseModel):
 class FleetMembershipCreate(BaseModel):
     vehicle_id: UUID
     fleet_customer_id: UUID
+    tractor_id: Optional[UUID] = None
 
 
 class FleetTruckCreate(BaseModel):
     customer_id: UUID
+    equipment_type: Literal["unknown", "tractor", "trailer", "other"] = "tractor"
+    tractor_id: Optional[UUID] = None
     vin: Optional[str] = None
     unit_number: Optional[str] = None
     make: str
