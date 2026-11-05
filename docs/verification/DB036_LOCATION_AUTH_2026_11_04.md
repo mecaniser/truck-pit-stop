@@ -119,8 +119,43 @@ remaining findings. Independent QA GO repeats 424/424 and 83/83 checks plus 11
 additional boundary probes; see
 [`DB036_LOCATION_AUTH_QA_2026_11_04.md`](DB036_LOCATION_AUTH_QA_2026_11_04.md).
 
-Protected CI, PR/merge/deploy and a later authorized scheduled source/receipt/
-current Fleet readback remain required. Root authorized the focused source
+## Deployment-plan rehearsal — separately approved, not deployed
+
+Independent Security also issued artifact **PLAN GO** after 15 checks, including
+13 negative preflight probes and deterministic regeneration. The rehearsal
+archive binds candidate `1c9fe967eb2eabcd91fabd6ff183d72b9708173d`, not a future
+merged release. Its SHA-256 is
+`9625e41593b5fd7c0356cefd4deb23bffc7a095e4ecd0665d9325e8413734d2e`.
+
+The local plan under `/private/tmp/db036-location-auth-release/` pins 27 critical
+source/config/dependency files, the credential-free cloud baseline hash and the
+exact project/environment/location-service destination. Its final preflight
+compares all 3,197 file/type/mode/content/symlink entries across that reviewed Git
+tree plus the single cloud-config overlay, the immutable archive and the upload
+directory. Runtime source identity must come from file attestation, not an
+inherited deployment message. Original Dockerfile/base selectors are preserved;
+resolved base-image digests are not claimed identical.
+
+The root release owner must first obtain the UI merge and final protected checks,
+regenerate the artifact from the final reviewed merge SHA, and repeat the exact
+preflight immediately before upload without intervening staging edits. Plan GO
+and rehearsal do not establish final artifact identity, deployment, provider
+authentication, fresh speed or automatic location recovery.
+
+The prepared one-shot monitor is read-only: metadata first, then optional SSH
+only for an explicitly identified already-running natural image/execution. It
+retains complete evidence separately from SSH transport status, can pin a
+completed source during a later natural same-image run, and checks source/
+receipt digests, stable persisted/Fleet readback and pending commit evidence.
+It never starts a service or runs a collector, login, import or recovery.
+
+Root's separate November 5 read-only health check confirms 21 trucks still have
+both mileage/engine-hours readings with captures at 04:39–04:44 UTC. That is the
+healthy vitals lane; it does not prove this location/speed repair is released.
+
+Protected CI, PR/merge, final merged artifact/preflight, deployment and a later
+authorized scheduled source/receipt/current Fleet readback remain required.
+Root authorized the focused source
 commit and branch push after independent gates; PR creation waits for the UI
 merge to avoid base churn. No production configuration, provider login, job
 trigger, deployment, production data write, membership or financial change is

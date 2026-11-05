@@ -1,8 +1,10 @@
 # DB-036 location collector authentication recovery
 
 Backend & Integrations owns this high-risk worker correction on
-`codex/motive-location-auth`, base `9ad6809e`. Independent Security and QA,
-protected CI and scheduled runtime acceptance remain required.
+`codex/motive-location-auth`, base `9ad6809e`. Independent Security and QA have
+approved the frozen implementation; the separate artifact plan is approved too.
+Protected CI, a final merged artifact, deployment and scheduled runtime
+acceptance remain required.
 
 ## Evidence and outcome
 
