@@ -18,11 +18,11 @@ describe('account settings navigation', () => {
   it('groups all seven sections and preserves unrelated query parameters', () => {
     mount()
     const nav = screen.getByRole('navigation', { name: 'Account sections' })
-    expect(within(nav).getAllByRole('button')).toHaveLength(7)
+    expect(within(nav).getAllByRole('button')).toHaveLength(8)
     for (const name of ['Account', 'Preferences', 'Business']) expect(within(nav).getByRole('heading', { name })).toBeInTheDocument()
     expect(within(nav).getByRole('button', { name: 'Payment methods' })).toHaveAttribute('aria-current', 'page')
     fireEvent.click(within(nav).getByRole('button', { name: 'Notifications' }))
-    expect(screen.getByRole('heading', { name: 'Notification preferences' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Notifications', exact: true })).toBeInTheDocument()
     expect(screen.getByTestId('location')).toHaveTextContent('?tab=notifications&from=invoice')
   })
   it('opens a deep-linked section and returns to the mobile settings list', () => {
@@ -38,7 +38,7 @@ describe('account settings navigation', () => {
   it('follows URL navigation without a stale selected section', () => {
     mount()
     fireEvent.click(screen.getByRole('button', { name: 'External navigation' }))
-    expect(screen.getByRole('heading', { name: 'Notification preferences' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Notifications', exact: true })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Saved card fixture' })).not.toBeInTheDocument()
   })
   it('falls back to Profile for an unknown section and starts with the mobile list', () => {

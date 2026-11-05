@@ -52,7 +52,7 @@ function EditVehicleForm({ vehicle, onClose }: { vehicle: Vehicle; onClose: () =
     },
   })
 
-  const inputClasses = "w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm"
+  const inputClasses = "w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 text-base"
 
   return (
     <form onSubmit={handleSubmit((data) => mutation.mutate(data))} className="space-y-4">
@@ -66,8 +66,8 @@ function EditVehicleForm({ vehicle, onClose }: { vehicle: Vehicle; onClose: () =
       </div>
 
       <div>
-        <label className="block text-xs font-medium text-gray-400 mb-1">Tag / License Plate</label>
-        <ControlInput {...register('license_plate')} className={inputClasses} placeholder="ABC-1234" />
+        <label htmlFor="vehicle-license_plate" className="block text-xs font-medium text-gray-400 mb-1">Tag / License Plate</label>
+        <ControlInput {...register('license_plate')} id="vehicle-license_plate" className={inputClasses} placeholder="ABC-1234" />
       </div>
 
       {mutation.isError && (
@@ -152,7 +152,7 @@ function AddVehicleForm({ onClose }: { onClose: () => void }) {
   })
 
   const inputClasses = (hasError: boolean) => {
-    const base = "w-full px-3 py-2 bg-white/10 border rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 text-sm"
+    const base = "w-full px-3 py-2 bg-white/10 border rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 text-base"
     return hasError
       ? `${base} border-red-500 focus:ring-red-500`
       : `${base} border-white/20 focus:ring-amber-500`
@@ -166,27 +166,27 @@ function AddVehicleForm({ onClose }: { onClose: () => void }) {
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-medium text-gray-400 mb-1">Make *</label>
-          <ControlInput {...register('make')} className={inputClasses(!!errors.make)} placeholder="Peterbilt" />
+          <label htmlFor="vehicle-make" className="block text-xs font-medium text-gray-400 mb-1">Make *</label>
+          <ControlInput {...register('make')} id="vehicle-make" className={inputClasses(!!errors.make)} placeholder="Peterbilt" />
           {errors.make && <p className="text-xs text-red-400 mt-1">{errors.make.message}</p>}
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-400 mb-1">Model *</label>
-          <ControlInput {...register('model')} className={inputClasses(!!errors.model)} placeholder="579" />
+          <label htmlFor="vehicle-model" className="block text-xs font-medium text-gray-400 mb-1">Model *</label>
+          <ControlInput {...register('model')} id="vehicle-model" className={inputClasses(!!errors.model)} placeholder="579" />
           {errors.model && <p className="text-xs text-red-400 mt-1">{errors.model.message}</p>}
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-medium text-gray-400 mb-1">Year</label>
-          <ControlInput {...register('year')} type="number" className={inputClasses(!!errors.year)} placeholder="2022" />
+          <label htmlFor="vehicle-year" className="block text-xs font-medium text-gray-400 mb-1">Year</label>
+          <ControlInput {...register('year')} id="vehicle-year" type="number" className={inputClasses(!!errors.year)} placeholder="2022" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-400 mb-1">VIN</label>
+          <label htmlFor="vehicle-vin" className="block text-xs font-medium text-gray-400 mb-1">VIN</label>
           <div className="relative">
             <ControlInput
-              {...register('vin', { onChange: (event) => handleVinChange(event.target.value) })}
+              {...register('vin', { onChange: (event) => handleVinChange(event.target.value) })} id="vehicle-vin"
               className={`${inputClasses(false)} pr-9 uppercase`}
               placeholder="1HTMMAAM45H123456"
               maxLength={17}
@@ -198,18 +198,18 @@ function AddVehicleForm({ onClose }: { onClose: () => void }) {
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-medium text-gray-400 mb-1">License Plate</label>
-          <ControlInput {...register('license_plate')} className={inputClasses(false)} placeholder="ABC-1234" />
+          <label htmlFor="vehicle-license_plate" className="block text-xs font-medium text-gray-400 mb-1">License Plate</label>
+          <ControlInput {...register('license_plate')} id="vehicle-license_plate" className={inputClasses(false)} placeholder="ABC-1234" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-400 mb-1">Color</label>
-          <ControlInput {...register('color')} className={inputClasses(false)} placeholder="Red" />
+          <label htmlFor="vehicle-color" className="block text-xs font-medium text-gray-400 mb-1">Color</label>
+          <ControlInput {...register('color')} id="vehicle-color" className={inputClasses(false)} placeholder="Red" />
         </div>
       </div>
 
       <div>
-        <label className="block text-xs font-medium text-gray-400 mb-1">Mileage</label>
-        <ControlInput {...register('mileage')} type="number" className={inputClasses(false)} placeholder="150000" />
+        <label htmlFor="vehicle-mileage" className="block text-xs font-medium text-gray-400 mb-1">Mileage</label>
+        <ControlInput {...register('mileage')} id="vehicle-mileage" type="number" className={inputClasses(false)} placeholder="150000" />
       </div>
 
       {mutation.isError && (
@@ -236,12 +236,12 @@ function AddVehicleForm({ onClose }: { onClose: () => void }) {
   )
 }
 
-export default function VehiclesCard() {
+export default function VehiclesCard({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuthStore()
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
 
-  const { data: vehicles, isLoading } = useQuery<Vehicle[]>({
+  const { data: vehicles, isLoading, isError, refetch, isFetching } = useQuery<Vehicle[]>({
     queryKey: ['customerVehicles', user?.customer_id],
     queryFn: async () => {
       if (!user?.customer_id) return []
@@ -253,21 +253,23 @@ export default function VehiclesCard() {
   })
 
   return (
-    <div className="bg-white/5 rounded-xl p-6 border border-white/10 h-fit">
+    <div className={embedded ? 'space-y-4' : 'bg-white/5 rounded-xl p-6 border border-white/10 h-fit'}>
       <div className="flex items-center gap-2 mb-4">
         <svg className="w-5 h-5 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
         </svg>
-        <h2 className="text-lg font-semibold text-white">My Vehicles</h2>
+        <h2 className="text-lg font-semibold text-white">Vehicles</h2>
       </div>
       <p className="text-gray-400 text-sm mb-4">
-        Vehicles on file for service. You can update plate, color, and mileage.
+        Vehicles on file for service. You can update a vehicle’s license plate.
       </p>
 
       {isLoading ? (
         <div className="flex items-center justify-center py-8">
           <Spinner size="lg" />
         </div>
+      ) : isError ? (
+        <div role="alert" className="space-y-3 text-sm text-red-300"><p>Unable to load your vehicles.</p><ControlButton type="button" disabled={isFetching} onClick={() => void refetch()} className="underline">Retry loading vehicles</ControlButton></div>
       ) : editingVehicle ? (
         <EditVehicleForm vehicle={editingVehicle} onClose={() => setEditingVehicle(null)} />
       ) : showAddForm ? (

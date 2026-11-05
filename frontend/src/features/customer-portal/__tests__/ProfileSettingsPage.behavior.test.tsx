@@ -1,0 +1,133 @@
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
+import { beforeEach, expect, it, vi } from 'vitest'
+import ProfileSettingsPage from '../ProfileSettingsPage'
+
+const m = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), logout: vi.fn() }))
+vi.mock('@/lib/api', () => ({ default: { get: m.get, put: m.put } }))
+vi.mock('@/stores/authStore', async original => ({
+  ...await original<typeof import('@/stores/authStore')>(),
+  isCurrentAuthEpoch: () => true,
+  useAuthStore: () => ({
+    user: { id:'u1',tenant_id:'t1',customer_id:'c1',role:'customer',is_active:true },
+    authSessionEpoch:1,authProvider:'legacy',isAuthenticated:true,logoutInProgress:false,setUser:vi.fn(),logout:m.logout,
+  }),
+}))
+const customer = {first_name:'Test',last_name:'Driver',email:'driver@example.com',updated_at:'2026-11-02T12:00:00Z',created_at:'2026-01-02T12:00:00Z'}
+const config = {provider:'quickbooks_payments',available:true,context_key:'context-one',save_pending:false}
+function mount(query = '') {
+  const client = new QueryClient({defaultOptions:{queries:{retry:false}}})
+  render(<MemoryRouter initialEntries={['/portal/settings'+query]}><QueryClientProvider client={client}><ProfileSettingsPage /></QueryClientProvider></MemoryRouter>)
+  return client
+}
+beforeEach(()=>{
+  vi.resetAllMocks()
+  localStorage.clear()
+  m.get.mockImplementation(async(path:string)=>({data:path.startsWith('/customers/')?customer:path.endsWith('/config')?config:[]}))
+})
+it('updates the checkout explanation without changing the separately labeled saved card', async()=>{
+  m.get.mockImplementation(async(path:string)=>({data:path.startsWith('/customers/')?customer:path.endsWith('/config')?config:[{id:'card1',brand:'Visa',last4:'4242',is_default:true}]}))
+  mount()
+  await screen.findByText('Preferred checkout method')
+  expect(screen.getByRole('button',{name:'zelle',exact:true})).toHaveAttribute('aria-pressed','true')
+  fireEvent.click(screen.getByRole('button',{name:'card',exact:true}))
+  expect(screen.getByRole('button',{name:'card',exact:true})).toHaveAttribute('aria-pressed','true')
+  expect(screen.getByText('Card is preferred. Available cards and fees are shown at checkout.')).toBeInTheDocument()
+  expect(screen.getByText('Saved card for this shop')).toBeInTheDocument()
+  expect(screen.getByText(/Card on file: Visa/)).toBeInTheDocument()
+  expect(screen.getByText(/on this browser/)).toBeInTheDocument()
+})
+it('offers Cancel for dirty contact details and restores saved fields',async()=>{
+  mount();const name=await screen.findByLabelText('First name')
+  expect(screen.getByRole('button',{name:'Save changes'})).toBeDisabled()
+  fireEvent.change(name,{target:{value:'Changed'}})
+  expect(screen.getByRole('button',{name:'Save changes'})).toBeEnabled()
+  expect(screen.getByText('Unsaved changes')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button',{name:'Cancel',exact:true}))
+  expect(name).toHaveValue('Test')
+  expect(screen.getByRole('button',{name:'Save changes'})).toBeDisabled()
+  expect(m.put).not.toHaveBeenCalled()
+})
+it('keeps unsaved fields on failed save and allows retry',async()=>{
+  m.put.mockRejectedValue(new Error('offline'))
+  mount();const name=await screen.findByLabelText('First name')
+  fireEvent.change(name,{target:{value:'Changed'}})
+  fireEvent.click(screen.getByRole('button',{name:'Save changes'}))
+  await waitFor(()=>expect(m.put).toHaveBeenCalledTimes(1))
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Save changes'})).toBeEnabled())
+  expect(name).toHaveValue('Changed')
+})
+it('clears dirty state after successful save and disables fields while pending',async()=>{
+  let saved=customer
+  let finish!: (value:unknown)=>void
+  m.get.mockImplementation(async(path:string)=>({data:path.startsWith('/customers/')?saved:path.endsWith('/config')?config:[]}))
+  m.put.mockImplementation(()=>new Promise(resolve=>{finish=resolve}))
+  mount();const name=await screen.findByLabelText('First name')
+  fireEvent.change(name,{target:{value:'Changed'}})
+  fireEvent.click(screen.getByRole('button',{name:'Save changes'}))
+  await waitFor(()=>expect(name).toBeDisabled())
+  saved={...customer,first_name:'Changed'}
+  finish({data:{user:{...saved}}})
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Save changes'})).toBeDisabled())
+  await waitFor(()=>expect(name).toBeEnabled())
+  expect(name).toHaveValue('Changed')
+  expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument()
+})
+it('does not present disconnected notification controls as working preferences',()=>{
+  mount('?tab=notifications')
+  expect(screen.getByText('Email and text notification preferences cannot be changed here yet.')).toBeInTheDocument()
+  expect(screen.queryByRole('switch')).not.toBeInTheDocument()
+  expect(screen.queryByRole('button',{name:'Invoice ready'})).not.toBeInTheDocument()
+})
+it('places sign out outside Security and associates password fields with their labels',()=>{
+  mount('?tab=security')
+  expect(within(screen.getByRole('navigation',{name:'Account sections'})).getByRole('button',{name:'Sign out'})).toBeInTheDocument()
+  expect(within(screen.getByRole('region',{name:'Security'})).queryByRole('button',{name:'Sign out'})).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button',{name:'Change Password',exact:true}))
+  expect(screen.getByLabelText('Current Password')).toHaveAttribute('autocomplete','current-password')
+  expect(screen.getByLabelText('New Password')).toHaveAttribute('autocomplete','new-password')
+  expect(screen.getByText(/Use at least 8 characters/)).toBeInTheDocument()
+})
+it.each(['shops','vehicles'])('distinguishes failed %s loading from an empty list',async(section)=>{
+  m.get.mockRejectedValue(new Error('offline'))
+  mount('?tab='+section)
+  expect(await screen.findByRole('alert')).toHaveTextContent('Unable to load your '+section)
+  expect(screen.getByRole('button',{name:'Retry loading '+section})).toBeInTheDocument()
+  expect(screen.queryByText(/No vehicles on file|No shops are linked/)).not.toBeInTheDocument()
+})
+it('keeps dirty contact details when section navigation is declined',async()=>{
+  const confirm=vi.spyOn(window,'confirm').mockReturnValue(false)
+  mount();const name=await screen.findByLabelText('First name')
+  fireEvent.change(name,{target:{value:'Changed'}})
+  fireEvent.click(screen.getByRole('button',{name:'Security',exact:true}))
+  expect(confirm).toHaveBeenCalledWith('Discard unsaved contact changes?')
+  expect(name).toHaveValue('Changed')
+  expect(screen.queryByRole('button',{name:'Change Password',exact:true})).not.toBeInTheDocument()
+  confirm.mockRestore()
+})
+it('reports profile load failure with a recovery action',async()=>{
+  m.get.mockRejectedValue(new Error('offline'))
+  mount()
+  expect(await screen.findByRole('alert')).toHaveTextContent('Unable to load your contact details.')
+  expect(screen.getByRole('button',{name:'Retry loading profile'})).toBeInTheDocument()
+})
+
+it('preserves edited fields while refreshing untouched contact details',async()=>{
+  const client=mount()
+  const name=await screen.findByLabelText('First name')
+  fireEvent.change(name,{target:{value:'Changed'}})
+  act(()=>client.setQueryData(['customer','c1'],{...customer,last_name:'Refreshed'}))
+  expect(name).toHaveValue('Changed')
+  await waitFor(()=>expect(screen.getByLabelText('Last name')).toHaveValue('Refreshed'))
+  expect(name).toHaveValue('Changed')
+  expect(screen.getByText('Unsaved changes')).toBeInTheDocument()
+})
+
+it('does not claim a changed checkout preference when browser storage fails',async()=>{
+  mount();await screen.findByText('Preferred checkout method')
+  const storage=vi.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw new Error('storage blocked')})
+  fireEvent.click(screen.getByRole('button',{name:'card',exact:true}))
+  expect(screen.getByRole('button',{name:'zelle',exact:true})).toHaveAttribute('aria-pressed','true')
+  storage.mockRestore()
+})

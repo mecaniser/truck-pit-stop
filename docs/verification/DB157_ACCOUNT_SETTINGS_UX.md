@@ -34,3 +34,23 @@ Baseline TypeScript comparison: clean detached base82c95576 with the same instal
 Final validation: Vite production bundle passes; repository changed-source lint passes across all5 changed frontend files using ESLINT_USE_FLAT_CONFIG=true (installed ESLint8 requires flat-config mode). The plain legacy-mode invocation could not load the flat config; rerun in the correct mode passed.
 
 Draft PR: https://github.com/mecaniser/truck-pit-stop/pull/798. Application implementation commit07b73e0a. Not merged/deployed; protected CI and signed-in acceptance pending.
+
+## Full-surface reconciliation, 2026-11-05
+
+User requested a complete reassessment after identifying issues the initial pass missed. Frontend & UX owns the work under the same Fast UI outcome.
+
+| Surface | Finding and correction |
+| --- | --- |
+| Navigation | Group headings visually distinct from actions. Focus targets are labeled regions, avoiding duplicate hidden headings. Sign out is a separate action below the settings groups, outside Security. Dirty-profile departure and reload warn before discarding edits. |
+| Profile | Explicit Save changes and Cancel with dirty-state feedback; fields locked during save; failures retain input; successful saves clear dirty state; refreshed server values preserve edited fields. Failed initial loading offers Retry. |
+| Checkout preference | Renamed Preferred checkout method and explicitly limited to this browser/invoice opening. Contextual explanation follows Zelle/Card selection. Saved shop card remains a separately labeled fact with a direct management action. Failed browser storage does not falsely update selection. Removed unsupported blanket fee claim. |
+| Security | Existing password API and logout/session behavior preserved. Password labels associated with fields, proper autocomplete, requirements visible before submission, Cancel disabled during submission. Sign out moved to navigation footer. |
+| Appearance | Selected choices expose aria-pressed, color/font choices reflow on narrow screens, preview examples are noninteractive, supporting text improved, browser persistence scope explicit. |
+| Payment methods | Existing provider/session/tenant safeguards, default-card behavior, pending/unconfirmed and recovery states retained. No real payment/provider write. |
+| Vehicles | Removed duplicate title/container; copy accurately describes license-plate editing. Inputs have associated labels and touch-readable sizing. Failed loading offers Retry and is not shown as an empty fleet. |
+| Shops | Failed loading offers Retry; successful empty state no longer claims a linked shop. Existing switching contract unchanged. |
+| Notifications | Source search found only local storage writes and no delivery consumer for the switches. Removed duplicate inert switches and replaced them with an explicit unavailable state. Stored values preserved. Actual notification-delivery controls require a separately scoped capability; this work does not implement them. |
+
+Validation: 45/45 focused tests across six suites, including12 profile behavior tests, existing16 provider-neutral card tests, profile summary/navigation/preferences/vehicle-scope cases. Playwright exercised all seven sections at1366,390,320 (21 section/viewport cases), with no overflow or undersized visible controls, plus profile Cancel, checkout selection/help, and navigation to payment management. Screenshots visually inspected for profile, Security, Appearance and phone adaptation. No page errors; React Router future-flag warnings only. Layout detector reports no findings. Production bundling and changed-source lint recorded below. The only TypeScript failure remains the previously reproduced baseline LoginPage.tsx:118 resolver mismatch.
+
+The preview adapter is synthetic and rejects account/payment writes. Browser evidence establishes presentation and local interaction behavior, not signed-in provider/auth acceptance. Merge/deploy remain unperformed. Notification delivery capability and aligned full-stack acceptance remain explicit limitations.

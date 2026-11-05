@@ -241,6 +241,7 @@ function ProfileSection() {
             </div>
           )}
 
+          <p className="text-sm text-gray-400">Use at least 8 characters, including an uppercase letter, a lowercase letter, and a number.</p>
           <div className="flex gap-3">
             <ControlButton
               type="button"
@@ -323,23 +324,25 @@ function SecuritySection() {
       ) : (
         <form onSubmit={handleSubmit((data) => mutation.mutate(data))} className="space-y-4 max-w-md">
           <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1">Current Password</label>
-            <ControlInput {...register('current_password')} type="password" className={inputClasses(!!errors.current_password)} />
+            <label htmlFor="current_password" className="block text-xs font-medium text-gray-400 mb-1">Current Password</label>
+            <ControlInput {...register('current_password')} id="current_password" autoComplete="current-password" type="password" className={inputClasses(!!errors.current_password)} />
             {errors.current_password && <p className="mt-1 text-xs text-red-400">{errors.current_password.message}</p>}
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1">New Password</label>
-            <ControlInput {...register('new_password')} type="password" className={inputClasses(!!errors.new_password)} />
+            <label htmlFor="new_password" className="block text-xs font-medium text-gray-400 mb-1">New Password</label>
+            <ControlInput {...register('new_password')} id="new_password" autoComplete="new-password" type="password" className={inputClasses(!!errors.new_password)} />
             {errors.new_password && <p className="mt-1 text-xs text-red-400">{errors.new_password.message}</p>}
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1">Confirm New Password</label>
-            <ControlInput {...register('confirm_password')} type="password" className={inputClasses(!!errors.confirm_password)} />
+            <label htmlFor="confirm_password" className="block text-xs font-medium text-gray-400 mb-1">Confirm New Password</label>
+            <ControlInput {...register('confirm_password')} id="confirm_password" autoComplete="new-password" type="password" className={inputClasses(!!errors.confirm_password)} />
             {errors.confirm_password && <p className="mt-1 text-xs text-red-400">{errors.confirm_password.message}</p>}
           </div>
+          <p className="text-sm text-gray-400">Use at least 8 characters, including an uppercase letter, a lowercase letter, and a number.</p>
           <div className="flex gap-3">
             <ControlButton
               type="button"
+              disabled={mutation.isPending}
               onClick={() => { setShowForm(false); reset() }}
               className="px-4  bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors"
             >
@@ -356,17 +359,6 @@ function SecuritySection() {
         </form>
       )}
 
-      <div className="border-t border-white/10 pt-6">
-        <h3 className="text-lg font-semibold text-white mb-2">Sign Out</h3>
-        <p className="text-sm text-gray-400 mb-4">End your session on this device.</p>
-        <ControlButton
-          onClick={() => { logout(); navigate('/login') }}
-          className="px-4  bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-400 text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
-        >
-          <LogOut className="w-4 h-4" />
-          Sign Out
-        </ControlButton>
-      </div>
     </div>
   )
 }
@@ -408,18 +400,18 @@ function AppearanceSection() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <ControlButton
-            className="px-4  rounded-lg text-white text-sm font-medium transition-colors"
-            style={{ backgroundColor: accentColors[500] }}
+          <span aria-hidden="true"
+            className="inline-flex min-h-11 items-center px-4 rounded-lg text-white text-sm font-medium transition-colors"
+            style={{ backgroundColor: accentColors[500], color: accent === 'indigo' ? '#ffffff' : '#0d1018' }}
           >
-            Primary Button
-          </ControlButton>
-          <ControlButton
-            className="px-4  rounded-lg text-sm font-medium transition-colors border"
+            Primary button
+          </span>
+          <span aria-hidden="true"
+            className="inline-flex min-h-11 items-center px-4 rounded-lg text-sm font-medium transition-colors border"
             style={{ borderColor: accentColors[500], color: accentColors[500] }}
           >
-            Secondary Button
-          </ControlButton>
+            Secondary button
+          </span>
           <span 
             className="px-3 py-1.5 rounded-full text-xs font-medium"
             style={{ backgroundColor: accentColors[500] + '20', color: accentColors[400] }}
@@ -432,12 +424,13 @@ function AppearanceSection() {
       {/* Accent Color */}
       <div className="bg-white/5 border border-white/10 rounded-xl p-6">
         <label className="block text-sm font-medium text-gray-300 mb-4">Accent Color</label>
-        <div className="grid grid-cols-5 gap-4">
+        <div className="grid grid-cols-3 gap-4 sm:grid-cols-5">
           {ACCENT_OPTIONS.map((option) => (
             <ControlButton controlKind="content"
               key={option.id}
+              aria-pressed={accent === option.id}
               onClick={() => setAccent(option.id)}
-              className="group flex flex-col items-center gap-2"
+              className="group flex min-h-11 min-w-11 flex-col items-center gap-2 rounded-lg p-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-300"
             >
               <div
                 className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
@@ -467,10 +460,11 @@ function AppearanceSection() {
           <Type className="w-4 h-4 inline mr-2" />
           Font Family
         </label>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {FONT_FAMILY_OPTIONS.map((option) => (
             <ControlButton controlKind="content"
               key={option.id}
+              aria-pressed={fontFamily === option.id}
               onClick={() => setFontFamily(option.id)}
               className={`p-4 rounded-lg border text-left transition-all ${
                 fontFamily === option.id
@@ -482,7 +476,7 @@ function AppearanceSection() {
               <span className={`block text-sm font-medium ${fontFamily === option.id ? 'text-white' : 'text-gray-300'}`}>
                 {option.label}
               </span>
-              <span className="block text-xs text-gray-500 mt-1">Aa Bb Cc 123</span>
+              <span className="block text-xs text-gray-400 mt-1">Aa Bb Cc 123</span>
             </ControlButton>
           ))}
         </div>
@@ -495,6 +489,7 @@ function AppearanceSection() {
           {FONT_SIZE_OPTIONS.map((option) => (
             <ControlButton
               key={option.id}
+              aria-pressed={fontSize === option.id}
               onClick={() => setFontSize(option.id)}
               className={`  px-2 sm:px-4 rounded-lg border text-center transition-all ${
                 fontSize === option.id
@@ -505,7 +500,7 @@ function AppearanceSection() {
               <span className={`block text-xs sm:text-sm font-medium whitespace-nowrap ${fontSize === option.id ? 'text-white' : 'text-gray-300'}`}>
                 {option.label}
               </span>
-              <span className="hidden sm:block text-xs text-gray-500 mt-1">
+              <span className="hidden sm:block text-xs text-gray-400 mt-1">
                 {option.previewPx}px
               </span>
             </ControlButton>
@@ -513,8 +508,8 @@ function AppearanceSection() {
         </div>
       </div>
 
-      <p className="text-xs text-gray-500">
-        All preferences are saved automatically and will persist across sessions.
+      <p className="text-xs text-gray-400">
+        Appearance changes are saved automatically on this browser.
       </p>
     </div>
   )
@@ -525,15 +520,7 @@ function PaymentsSection() {
 }
 
 function VehiclesSection() {
-  return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-white mb-2">My Vehicles</h3>
-        <p className="text-sm text-gray-400">Manage vehicles registered to your account.</p>
-      </div>
-      <VehiclesCard />
-    </div>
-  )
+  return <VehiclesCard embedded />
 }
 
 interface ShopOption {
@@ -548,7 +535,7 @@ function ShopsSection() {
   const navigate = useNavigate()
   const [switching, setSwitching] = useState<string | null>(null)
 
-  const { data: shops = [], isLoading } = useQuery<ShopOption[]>({
+  const { data: shops = [], isLoading, isError, refetch, isFetching } = useQuery<ShopOption[]>({
     queryKey: ['my-shops'],
     queryFn: async () => {
       const res = await api.get('/auth/my-shops')
@@ -576,14 +563,19 @@ function ShopsSection() {
     return <div className="flex items-center justify-center py-12"><Spinner size="lg" /></div>
   }
 
+  if (isError) return <div role="alert" className="space-y-3">
+    <p>Unable to load your shops.</p>
+    <ControlButton type="button" disabled={isFetching} onClick={() => void refetch()} className="text-violet-300 underline">Retry loading shops</ControlButton>
+  </div>
+
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold text-white mb-1">My Shops</h3>
+        <h2 className="text-lg font-semibold text-white mb-1">Shops</h2>
         <p className="text-sm text-gray-400">
           {shops.length > 1
             ? 'Your account is linked to multiple shops. Switch between them here.'
-            : 'Your account is linked to this shop.'}
+            : shops.length === 1 ? 'Your account is linked to this shop.' : 'No shops are linked to your account.'}
         </p>
       </div>
 
@@ -648,32 +640,14 @@ interface SavedPaymentMethod {
   is_default: boolean
 }
 
-function PreferenceToggle({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string
-  checked: boolean
-  onChange: () => void
-}) {
-  return (
-    <ControlButton controlKind="content" type="button" onClick={onChange} className="flex w-full items-center justify-between gap-4 py-2 text-left">
-      <span className="text-[13px] text-[#c9cdd8]">{label}</span>
-      <span className={`relative h-[22px] w-10 rounded-full border ${checked ? 'border-[#8b7cf7] bg-[#8b7cf7]' : 'border-[#343b52] bg-[#272d3d]'}`}>
-        <span className={`absolute top-[2px] h-4 w-4 rounded-full bg-white transition-transform ${checked ? 'translate-x-[19px]' : 'translate-x-[2px]'}`} />
-      </span>
-    </ControlButton>
-  )
-}
-
-function ContactDetailsSection() {
+function ContactDetailsSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
+  const [, setSearchParams] = useSearchParams()
   const auth = useAuthStore()
   const { user, setUser, authSessionEpoch } = auth
   const queryClient = useQueryClient()
   const [preferences, setPreferences] = useState<CustomerPortalPreferences>(() => getPortalPreferences(user?.customer_id))
 
-  const { data: customer, isLoading } = useQuery<Customer>({
+  const { data: customer, isLoading, isError, refetch, isFetching } = useQuery<Customer>({
     queryKey: ['customer', user?.customer_id],
     queryFn: async () => (await api.get(`/customers/${user!.customer_id}`)).data,
     enabled: Boolean(user?.customer_id),
@@ -699,6 +673,14 @@ function ContactDetailsSection() {
     resolver: zodResolver(profileSchema),
   })
 
+  useEffect(() => { onDirtyChange(isDirty) }, [isDirty, onDirtyChange])
+  useEffect(() => () => onDirtyChange(false), [onDirtyChange])
+  useEffect(() => {
+    if (!isDirty) return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [isDirty])
   useEffect(() => {
     if (!customer) return
     reset({
@@ -707,17 +689,17 @@ function ContactDetailsSection() {
       email: customer.email,
       phone: customer.phone || '',
       password: '',
-    })
+    }, { keepDirtyValues: true })
   }, [customer, reset])
 
   const updateMutation = useMutation({
     mutationFn: async (data: ProfileFormData) => (await api.put('/auth/me', data)).data,
-    onSuccess: data => {
+    onSuccess: (data, submitted) => {
       if (!isCurrentAuthEpoch(authSessionEpoch)) return
       setUser(data.user || data, authSessionEpoch)
       queryClient.invalidateQueries({ queryKey: ['customer'] })
       toast.success(data.email_verification_pending ? 'Check your new email to verify the change.' : 'Contact details saved')
-      setValue('password', '')
+      reset({ ...submitted, password: '' })
     },
     onError: (error: { response?: { data?: { detail?: string } } }) => {
       if (!isCurrentAuthEpoch(authSessionEpoch)) return
@@ -726,14 +708,22 @@ function ContactDetailsSection() {
   })
 
   if (isLoading) return <div className="flex min-h-[360px] items-center justify-center"><Spinner size="lg" /></div>
+  if (isError) return <div role="alert" className="space-y-3 rounded-2xl border border-[#232939] bg-[#161a26] p-5">
+    <p>Unable to load your contact details.</p>
+    <ControlButton type="button" disabled={isFetching} onClick={() => void refetch()} className="text-violet-300 underline">Retry loading profile</ControlButton>
+  </div>
   if (!customer) return <div className="rounded-2xl border border-[#232939] bg-[#161a26] p-8 text-center text-[#8b92a5]">Customer profile not found.</div>
 
   const emailChanging = watch('email') !== customer.email
   const defaultCard = paymentMethods.find(method => method.is_default) || paymentMethods[0]
 
   const updatePreferences = (next: CustomerPortalPreferences) => {
-    setPreferences(next)
-    savePortalPreferences(user?.customer_id, next)
+    try {
+      savePortalPreferences(user?.customer_id, next)
+      setPreferences(next)
+    } catch {
+      toast.error('Your browser could not save this checkout preference. Please try again.')
+    }
   }
 
   return (
@@ -745,11 +735,11 @@ function ContactDetailsSection() {
         }
         updateMutation.mutate(data)
       })} className="overflow-hidden rounded-2xl border border-[#232939] bg-[#161a26]">
-        <div className="flex items-center justify-between border-b border-[#1e2432] px-4 py-3.5 sm:px-5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#1e2432] px-4 py-3.5 sm:px-5">
           <span className="text-[11px] font-extrabold uppercase tracking-[0.1em] text-[#8b92a5]">Contact details</span>
-          <span className="text-[11px] text-[#5c6375]">Edit fields, then save</span>
+          <span className="text-xs text-[#a5adbf]">Edit fields, then select Save changes</span>
         </div>
-        <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5">
+        <fieldset disabled={updateMutation.isPending} className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5">
           {[
             { name: 'first_name' as const, label: 'First name', type: 'text' },
             { name: 'last_name' as const, label: 'Last name', type: 'text' },
@@ -797,16 +787,18 @@ function ContactDetailsSection() {
               />
             </label>
           )}
-        </div>
+        </fieldset>
         <div className="flex flex-col gap-2 border-t border-[#1e2432] bg-[#12161f] p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-          <ControlButton
+          <div className="flex flex-wrap items-center gap-3"><ControlButton
             type="submit"
             disabled={!isDirty || updateMutation.isPending}
             className=" rounded-[11px] bg-[#8b7cf7] px-5 text-sm font-extrabold text-[#0e1118] disabled:opacity-50"
           >
             {updateMutation.isPending ? 'Saving…' : 'Save changes'}
           </ControlButton>
-          <span className="text-[11px] text-[#5c6375]">Last updated {format(new Date(customer.updated_at), 'MMM d, yyyy')}</span>
+          {isDirty && <ControlButton type="button" disabled={updateMutation.isPending} onClick={() => reset({ first_name: customer.first_name, last_name: customer.last_name, email: customer.email, phone: customer.phone || '', password: '' })} className="text-gray-300">Cancel</ControlButton>}
+          <span role="status" className="text-xs text-gray-400">{isDirty ? 'Unsaved changes' : ''}</span></div>
+          <span className="text-xs text-[#a5adbf]">Last updated {format(new Date(customer.updated_at), 'MMM d, yyyy')}</span>
         </div>
       </form>
 
@@ -824,12 +816,14 @@ function ContactDetailsSection() {
         </section>
 
         <section className="rounded-[14px] border border-[#232939] bg-[#161a26] p-4">
-          <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#8b92a5]">Default payment</span>
+          <h2 className="text-sm font-semibold">Preferred checkout method</h2>
+          <p className="mt-1 text-xs text-gray-400">Selected automatically when you open an invoice on this browser.</p>
           <div className="mt-3 grid grid-cols-2 gap-2">
             {(['zelle', 'card'] as const).map(method => (
               <ControlButton
                 key={method}
                 type="button"
+                aria-pressed={preferences.defaultPaymentMethod === method}
                 onClick={() => updatePreferences({ ...preferences, defaultPaymentMethod: method })}
                 className={` rounded-[10px] border text-xs font-extrabold uppercase ${
                   preferences.defaultPaymentMethod === method
@@ -843,37 +837,15 @@ function ContactDetailsSection() {
               </ControlButton>
             ))}
           </div>
-          <p className="mt-3 text-[11px] text-[#8b92a5]">Zelle has no processing fee.</p>
-          <p className="mt-1 text-[11px] text-[#8b92a5]">
+          <p role="status" className="mt-3 text-xs text-gray-400">{preferences.defaultPaymentMethod === 'zelle' ? 'Zelle is preferred. Payment instructions are shown on each invoice.' : 'Card is preferred. Available cards and fees are shown at checkout.'}</p>
+          <p className="mt-3 border-t border-[#272d3d] pt-3 text-xs text-[#a5adbf]">Saved card for this shop</p>
+          <p className="mt-1 text-xs text-[#8b92a5]">
             {cardConfig.data?.save_pending ? 'Card save unconfirmed. Open Payment methods for details.'
               : cardsError ? 'Saved cards unavailable. Open Payment methods to retry.'
               : cardsLoading ? 'Loading saved cards…'
                 : defaultCard ? `Card on file: ${defaultCard.brand} ···${defaultCard.last4}` : 'No card on file'}
           </p>
-        </section>
-
-        <section className="rounded-[14px] border border-[#232939] bg-[#161a26] p-4">
-          <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#8b92a5]">Notifications</span>
-          <div className="mt-2 divide-y divide-[#1e2432]">
-            {[
-              ['Invoice ready', 'invoiceReady'],
-              ['Repair status', 'repairStatus'],
-              ['PM reminders', 'pmReminders'],
-            ].map(([label, key]) => (
-              <PreferenceToggle
-                key={key}
-                label={label}
-                checked={preferences.notifications[key as keyof CustomerPortalPreferences['notifications']]}
-                onChange={() => updatePreferences({
-                  ...preferences,
-                  notifications: {
-                    ...preferences.notifications,
-                    [key]: !preferences.notifications[key as keyof CustomerPortalPreferences['notifications']],
-                  },
-                })}
-              />
-            ))}
-          </div>
+          <ControlButton type="button" onClick={() => { if (isDirty && !window.confirm('Discard unsaved contact changes?')) return; setSearchParams(current => { const next = new URLSearchParams(current); next.set('tab', 'payments'); return next }) }} className="mt-2 text-violet-300 underline">Manage payment methods</ControlButton>
         </section>
       </aside>
     </div>
@@ -881,29 +853,10 @@ function ContactDetailsSection() {
 }
 
 function NotificationsSection() {
-  const user = useAuthStore(state => state.user)
-  const [preferences, setPreferences] = useState<CustomerPortalPreferences>(() => getPortalPreferences(user?.customer_id))
-
-  const update = (key: keyof CustomerPortalPreferences['notifications']) => {
-    const next = {
-      ...preferences,
-      notifications: { ...preferences.notifications, [key]: !preferences.notifications[key] },
-    }
-    setPreferences(next)
-    savePortalPreferences(user?.customer_id, next)
-  }
-
-  return (
-    <div>
-      <h2 className="text-lg font-extrabold">Notification preferences</h2>
-      <p className="mt-1 text-sm text-[#8b92a5]">Choose the updates you want to receive.</p>
-      <div className="mt-5 divide-y divide-[#1e2432] rounded-[14px] border border-[#232939] bg-[#12161f] px-4">
-        <PreferenceToggle label="Invoice ready" checked={preferences.notifications.invoiceReady} onChange={() => update('invoiceReady')} />
-        <PreferenceToggle label="Repair status" checked={preferences.notifications.repairStatus} onChange={() => update('repairStatus')} />
-        <PreferenceToggle label="PM reminders" checked={preferences.notifications.pmReminders} onChange={() => update('pmReminders')} />
-      </div>
-    </div>
-  )
+  return <div className="space-y-3">
+    <h2 className="text-lg font-semibold">Notifications</h2>
+    <p className="text-sm text-gray-400">Email and text notification preferences cannot be changed here yet.</p>
+  </div>
 }
 
 // ============ LAYOUT ============
@@ -916,13 +869,17 @@ const SECTION_GROUPS = [
 const SECTIONS = SECTION_GROUPS.flatMap(group => [...group.sections])
 
 export default function ProfileSettingsPage() {
-  const { user } = useAuthStore()
+  const navigate = useNavigate()
+  const { user, logout } = useAuthStore()
+  const [contactDirty, setContactDirty] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab') as SettingsSection | null
   const activeSection = requestedTab && SECTIONS.some(section => section.id === requestedTab) ? requestedTab : 'profile'
   const [mobileSectionOpen, setMobileSectionOpen] = useState(Boolean(requestedTab && SECTIONS.some(section => section.id === requestedTab)))
 
   const selectSection = (section: SettingsSection) => {
+    if (section === activeSection) { setMobileSectionOpen(true); return }
+    if (contactDirty && !window.confirm('Discard unsaved contact changes?')) return
     setMobileSectionOpen(true)
     const next = new URLSearchParams(searchParams)
     if (section === 'profile') next.delete('tab')
@@ -951,25 +908,29 @@ export default function ProfileSettingsPage() {
               {section.label}<span aria-hidden="true" className="md:hidden">›</span>
             </ControlButton>)}</div>
           </div>)}
+          <div className="border-t border-[#272d3d] pt-3">
+            <ControlButton type="button" onClick={() => { if (contactDirty && !window.confirm('Discard unsaved contact changes and sign out?')) return; logout(); navigate('/login') }} className="w-full justify-start text-[#c9cdd8] hover:bg-white/5"><LogOut className="h-4 w-4" aria-hidden="true" />Sign out</ControlButton>
+          </div>
         </nav>
         <div className={[(mobileSectionOpen ? '' : 'hidden md:block'), 'min-w-0'].join(' ')}>
           <ControlButton type="button" onClick={() => {
             setMobileSectionOpen(false)
             requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('nav[aria-label="Account sections"] button[aria-current="page"]')?.focus())
           }} className="mb-4 text-[#c9bfff] md:hidden">← All settings</ControlButton>
-          <h2 id="account-section-heading" tabIndex={-1} className="sr-only">{SECTIONS.find(section => section.id === activeSection)?.label}</h2>
-          {activeSection === 'profile' ? (
-            <ContactDetailsSection />
-          ) : (
-            <div className="rounded-2xl border border-[#232939] bg-[#161a26] p-4 sm:p-6">
-              {activeSection === 'security' && <><SecuritySection /><CookiePrivacySettings /></>}
-              {activeSection === 'appearance' && <AppearanceSection />}
-              {activeSection === 'payments' && <PaymentsSection />}
-              {activeSection === 'vehicles' && <VehiclesSection />}
-              {activeSection === 'shops' && <ShopsSection />}
-              {activeSection === 'notifications' && <NotificationsSection />}
-            </div>
-          )}
+          <div id="account-section-heading" role="region" aria-label={SECTIONS.find(section => section.id === activeSection)?.label} tabIndex={-1} className="rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-300">
+            {activeSection === 'profile' ? (
+              <ContactDetailsSection onDirtyChange={setContactDirty} />
+            ) : (
+              <div className="rounded-2xl border border-[#232939] bg-[#161a26] p-4 sm:p-6">
+                {activeSection === 'security' && <><SecuritySection /><div className="[&_.cookie-privacy-settings]:border-[#272d3d] [&_.cookie-privacy-settings_p]:text-gray-400"><CookiePrivacySettings /></div></>}
+                {activeSection === 'appearance' && <AppearanceSection />}
+                {activeSection === 'payments' && <PaymentsSection />}
+                {activeSection === 'vehicles' && <VehiclesSection />}
+                {activeSection === 'shops' && <ShopsSection />}
+                {activeSection === 'notifications' && <NotificationsSection />}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
