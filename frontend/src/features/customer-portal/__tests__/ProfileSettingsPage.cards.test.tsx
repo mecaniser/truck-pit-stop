@@ -21,7 +21,7 @@ it('contact summary reports list failure rather than no card and shares session/
     throw new Error('offline')
   })
   const client=mount()
-  expect(await screen.findByText('Saved cards unavailable. Open Payments to retry.')).toBeInTheDocument()
+  expect(await screen.findByText('Saved cards unavailable. Open Payment methods to retry.')).toBeInTheDocument()
   expect(screen.queryByText('No card on file')).not.toBeInTheDocument()
   expect(client.getQueryState(['payment-methods',JSON.stringify([1,'legacy','u1','t1','customer','c1']),'context-one'])?.status).toBe('error')
 })
@@ -37,12 +37,12 @@ it('contact summary shows no card only for successful empty list',async()=>{
 })
 it('contact summary shows unavailable when no processor capability is active',async()=>{
   m.get.mockImplementation(async(path:string)=>({data:path.startsWith('/customers/')?customer:{...config,available:false}}))
-  mount();expect(await screen.findByText('Saved cards unavailable. Open Payments to retry.')).toBeInTheDocument()
+  mount();expect(await screen.findByText('Saved cards unavailable. Open Payment methods to retry.')).toBeInTheDocument()
   expect(m.get.mock.calls.some(([path]) => path === '/payments/cards')).toBe(false)
   expect(screen.queryByText('No card on file')).not.toBeInTheDocument()
 })
 it('contact summary preserves an unconfirmed save instead of showing an empty wallet',async()=>{
   m.get.mockImplementation(async(path:string)=>({data:path.startsWith('/customers/')?customer:path.endsWith('/config')?{...config,save_pending:true}:[]}))
-  mount();expect(await screen.findByText('Card save unconfirmed. Open Payments for details.')).toBeInTheDocument()
+  mount();expect(await screen.findByText('Card save unconfirmed. Open Payment methods for details.')).toBeInTheDocument()
   expect(screen.queryByText('No card on file')).not.toBeInTheDocument()
 })

@@ -521,15 +521,7 @@ function AppearanceSection() {
 }
 
 function PaymentsSection() {
-  return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-white mb-2">Payment Methods</h3>
-        <p className="text-sm text-gray-400">Manage your saved payment methods.</p>
-      </div>
-      <PaymentMethodsCard />
-    </div>
-  )
+  return <PaymentMethodsCard />
 }
 
 function VehiclesSection() {
@@ -853,8 +845,8 @@ function ContactDetailsSection() {
           </div>
           <p className="mt-3 text-[11px] text-[#8b92a5]">Zelle has no processing fee.</p>
           <p className="mt-1 text-[11px] text-[#8b92a5]">
-            {cardConfig.data?.save_pending ? 'Card save unconfirmed. Open Payments for details.'
-              : cardsError ? 'Saved cards unavailable. Open Payments to retry.'
+            {cardConfig.data?.save_pending ? 'Card save unconfirmed. Open Payment methods for details.'
+              : cardsError ? 'Saved cards unavailable. Open Payment methods to retry.'
               : cardsLoading ? 'Loading saved cards…'
                 : defaultCard ? `Card on file: ${defaultCard.brand} ···${defaultCard.last4}` : 'No card on file'}
           </p>
@@ -916,26 +908,22 @@ function NotificationsSection() {
 
 // ============ LAYOUT ============
 
-const SECTIONS = [
-  { id: 'profile' as const, label: 'Profile' },
-  { id: 'security' as const, label: 'Security' },
-  { id: 'appearance' as const, label: 'Appearance' },
-  { id: 'payments' as const, label: 'Payments' },
-  { id: 'vehicles' as const, label: 'Vehicles' },
-  { id: 'shops' as const, label: 'Shops' },
-  { id: 'notifications' as const, label: 'Notifications' },
-]
+const SECTION_GROUPS = [
+  { label: 'Account', sections: [{ id: 'profile', label: 'Profile' }, { id: 'security', label: 'Security' }] },
+  { label: 'Preferences', sections: [{ id: 'notifications', label: 'Notifications' }, { id: 'appearance', label: 'Appearance' }] },
+  { label: 'Business', sections: [{ id: 'payments', label: 'Payment methods' }, { id: 'vehicles', label: 'Vehicles' }, { id: 'shops', label: 'Shops' }] },
+] as const
+const SECTIONS = SECTION_GROUPS.flatMap(group => [...group.sections])
 
 export default function ProfileSettingsPage() {
   const { user } = useAuthStore()
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab') as SettingsSection | null
-  const [activeSection, setActiveSection] = useState<SettingsSection>(
-    requestedTab && SECTIONS.some(section => section.id === requestedTab) ? requestedTab : 'profile',
-  )
+  const activeSection = requestedTab && SECTIONS.some(section => section.id === requestedTab) ? requestedTab : 'profile'
+  const [mobileSectionOpen, setMobileSectionOpen] = useState(Boolean(requestedTab && SECTIONS.some(section => section.id === requestedTab)))
 
   const selectSection = (section: SettingsSection) => {
-    setActiveSection(section)
+    setMobileSectionOpen(true)
     const next = new URLSearchParams(searchParams)
     if (section === 'profile') next.delete('tab')
     else next.set('tab', section)
@@ -945,42 +933,45 @@ export default function ProfileSettingsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-extrabold tracking-[-0.01em]">Account</h1>
+        <h1 className="text-2xl font-extrabold tracking-[-0.01em]">Account settings</h1>
         <p className="mt-1 text-[13px] text-[#8b92a5]">
           {[user?.first_name, user?.last_name].filter(Boolean).join(' ') || 'Customer'} · {user?.email}
         </p>
       </div>
 
-      <div className="-mx-4 overflow-x-auto border-b border-[#1e2432] px-4 sm:mx-0 sm:px-0">
-        <nav className="flex min-w-max gap-5" aria-label="Account sections">
-          {SECTIONS.map(section => (
-            <ControlButton
-              key={section.id}
-              type="button"
-              onClick={() => selectSection(section.id)}
-              className={`relative  text-xs font-bold ${
-                activeSection === section.id ? 'text-[#c9bfff]' : 'text-[#8b92a5] hover:text-[#c9cdd8]'
-              }`}
-            >
-              {section.label}
-              {activeSection === section.id && <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-[#8b7cf7]" />}
-            </ControlButton>
-          ))}
+      <div className="grid items-start gap-6 md:grid-cols-[200px_minmax(0,1fr)] md:gap-8">
+        <nav className={[(mobileSectionOpen ? 'hidden md:block' : ''), 'space-y-6'].join(' ')} aria-label="Account sections">
+          {SECTION_GROUPS.map(group => <div key={group.label}>
+            <h2 className="mb-2 px-3 text-sm font-semibold text-[#a5adbf]">{group.label}</h2>
+            <div className="space-y-1">{group.sections.map(section => <ControlButton
+              key={section.id} type="button" controlKind="content"
+              aria-current={activeSection === section.id ? 'page' : undefined}
+              onClick={() => { selectSection(section.id); requestAnimationFrame(() => document.getElementById('account-section-heading')?.focus()) }}
+              className={['flex min-h-11 w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-300', activeSection === section.id ? 'bg-violet-400/10 text-[#d4ccff]' : 'text-[#b5bdcf] hover:bg-white/5 hover:text-white'].join(' ')}>
+              {section.label}<span aria-hidden="true" className="md:hidden">›</span>
+            </ControlButton>)}</div>
+          </div>)}
         </nav>
-      </div>
-
-      {activeSection === 'profile' ? (
-        <ContactDetailsSection />
-      ) : (
-        <div className="min-h-[420px] rounded-2xl border border-[#232939] bg-[#161a26] p-4 sm:p-6">
-          {activeSection === 'security' && <><SecuritySection /><CookiePrivacySettings /></>}
-          {activeSection === 'appearance' && <AppearanceSection />}
-          {activeSection === 'payments' && <PaymentsSection />}
-          {activeSection === 'vehicles' && <VehiclesSection />}
-          {activeSection === 'shops' && <ShopsSection />}
-          {activeSection === 'notifications' && <NotificationsSection />}
+        <div className={[(mobileSectionOpen ? '' : 'hidden md:block'), 'min-w-0'].join(' ')}>
+          <ControlButton type="button" onClick={() => {
+            setMobileSectionOpen(false)
+            requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('nav[aria-label="Account sections"] button[aria-current="page"]')?.focus())
+          }} className="mb-4 text-[#c9bfff] md:hidden">← All settings</ControlButton>
+          <h2 id="account-section-heading" tabIndex={-1} className="sr-only">{SECTIONS.find(section => section.id === activeSection)?.label}</h2>
+          {activeSection === 'profile' ? (
+            <ContactDetailsSection />
+          ) : (
+            <div className="rounded-2xl border border-[#232939] bg-[#161a26] p-4 sm:p-6">
+              {activeSection === 'security' && <><SecuritySection /><CookiePrivacySettings /></>}
+              {activeSection === 'appearance' && <AppearanceSection />}
+              {activeSection === 'payments' && <PaymentsSection />}
+              {activeSection === 'vehicles' && <VehiclesSection />}
+              {activeSection === 'shops' && <ShopsSection />}
+              {activeSection === 'notifications' && <NotificationsSection />}
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }
