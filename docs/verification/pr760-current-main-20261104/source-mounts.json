@@ -1,0 +1,1 @@
+[{"Type":"bind","Source":"/tmp/dbn-pr760-fleet-current-main-20261104/backend","Destination":"/app","Mode":"ro","RW":false,"Propagation":"rprivate"},{"Type":"bind","Source":"/tmp/pr760-current-runtime","Destination":"/qa","Mode":"ro","RW":false,"Propagation":"rprivate"}]

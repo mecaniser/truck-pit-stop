@@ -168,7 +168,28 @@ async function modernFixture(options={}){
   const ordinal=contexts.length,context=await raw.newContext(config);contexts.push(context);events.push(['create',ordinal]);
   const close=context.close.bind(context);context.close=async()=>{events.push(['close',ordinal]);if(ordinal===1&&options.secondClose)await options.secondClose();await close();events.push(['closed',ordinal]);};
   await context.exposeBinding('fixtureInput',(_source,name)=>inputEvents.push(name));
-  await context.addInitScript(()=>document.addEventListener('input',event=>window.fixtureInput(event.target.name)));
+  await context.addInitScript(mode=>document.addEventListener('input',event=>{
+   window.fixtureInput(event.target.name);
+   if(event.target.name==='user_profile[password]'&&mode){
+    if(mode==='replace')event.target.form.outerHTML=event.target.form.outerHTML;
+    if(mode==='remove')event.target.form.remove();
+    if(mode==='duplicate')event.target.form.insertAdjacentHTML('beforeend','<input type="password" name="user_profile[password]">');
+    if(mode==='account')event.target.form.querySelector('input[type="hidden"]').value='other@example.invalid';
+   }
+  }),options.postFill);
+  await context.addInitScript(({lookup,password})=>document.addEventListener('input',event=>{
+   const markup=event.target.name==='email'?lookup:event.target.name==='user_profile[password]'?password:'';
+   if(markup)document.body.insertAdjacentHTML('beforeend',markup);
+  }),{lookup:options.dynamicLookupExtra||'',password:options.dynamicPasswordExtra||''});
+  if(options.nestedFormAction)await context.addInitScript(({stage,action})=>{
+   let inserted=false;new MutationObserver(()=>{
+    const input=document.querySelector(stage==='lookup'?'input[name="email"]':'input[name="user_profile[password]"]');
+    if(!input||inserted)return;
+    const outer=input.closest('form'),button=outer?.querySelector('button');if(!outer||!button)return;
+    inserted=true;const nested=document.createElement('form');nested.action=action;nested.method='post';
+    const metadata=document.createElement('input');metadata.type='hidden';metadata.name='fixture_metadata';nested.append(metadata,button);outer.append(nested);
+   }).observe(document,{subtree:true,childList:true});
+  },{stage:options.nestedFormStage,action:options.nestedFormAction});
   await context.route('**/*',async route=>{
    const request=route.request(),url=new URL(request.url());requests.push({url:request.url(),method:request.method(),body:request.postData()});
    if(!['https://app.gomotive.com','https://auth.gomotive.com','https://evil.invalid'].includes(url.origin))return route.abort();
@@ -192,7 +213,9 @@ async function modernFixture(options={}){
     }
     if(options.foreignLookup)return html("<script>location.replace('https://evil.invalid/login/authenticate')</script>");
     const hidden=options.hiddenEmail===false?'':`<input type="${options.hiddenType||'hidden'}" name="user_profile[email]" ${options.hiddenAttributes||''} value="${options.hiddenEmail||lookupCredentials.lookupEmail}">`;
-    return html(`${options.passwordHead||''}<form ${options.passwordAttributes||'action="/login/authenticate" method="post"'}>${hidden}<input ${options.passwordInput||'type="password"'} name="user_profile[password]"><button ${options.passwordButton||'type="submit"'}>Log in</button>${options.passwordFormExtra||''}</form>${options.duplicatePassword?'<input type="password" name="user_profile[password]">':''}${options.passwordExtra||''}`);
+    const passwordBody=`${options.passwordHead||''}<form ${options.passwordAttributes||'action="/login/authenticate" method="post"'}>${hidden}<input ${options.passwordInput||'type="password"'} name="user_profile[password]"><button ${options.passwordButton||'type="submit"'}>Log in</button>${options.passwordFormExtra||''}</form>${options.duplicatePassword?'<input type="password" name="user_profile[password]">':''}${options.passwordExtra||''}`;
+    if(options.passwordDelay||options.passwordNever)return html(`<main>${options.passwordStartup||''}</main>${options.passwordNever?'':`<script>setTimeout(()=>document.querySelector('main').innerHTML=${JSON.stringify(passwordBody)},${options.passwordDelay})</script>`}`);
+    return html(passwordBody);
    }
    return html('<h1>Unexpected request</h1>');
   });return context;
@@ -332,4 +355,181 @@ test('hung second anonymous disposal consumes modern deadline without third cont
   assert.equal(f.contexts.length,2);assert.equal(posts(f).length,0);assert.equal(f.inputEvents.length,0);
   release.resolve();await new Promise(resolve=>setTimeout(resolve,30));assert.equal(f.contexts.length,2);
  }finally{release.resolve();await f.browser.close();}
+});
+test('real Chromium truly empty password startup waits before exactly one password fill and POST',async()=>{
+ const f=await modernFixture({passwordDelay:100}),phases=[];
+ try{
+  const result=await lookupPasswordLogin(f.browser,{...lookupCredentials,fallbackTimeout:5000,phase:p=>phases.push(p),diagnostic(){}});
+  assert.equal(result.authenticated,true);assert.equal(f.contexts.length,1);assert.equal(posts(f).length,2);assert.equal(f.inputEvents.filter(n=>n==='user_profile[password]').length,1);
+  assert.ok(phases.indexOf('login_password_form_ready')<phases.indexOf('login_password'));assert.ok(phases.indexOf('login_password')<phases.indexOf('login_password_revalidate'));assert.ok(phases.indexOf('login_password_revalidate')<phases.indexOf('login_submit'));
+ }finally{await f.browser.close();}
+});
+test('never-ready empty password startup consumes existing deadline without password fill or retry',async()=>{
+ const f=await modernFixture({passwordNever:true}),phases=[];
+ try{
+  await assert.rejects(lookupPasswordLogin(f.browser,{...lookupCredentials,fallbackTimeout:5000,phase:p=>phases.push(p),diagnostic(){}}),e=>e.message==='login_form_timeout'&&e.loginGuard==='empty_startup_deadline');
+  assert.equal(f.contexts.length,1);assert.equal(posts(f).length,1);assert.equal(f.inputEvents.filter(n=>n==='user_profile[password]').length,0);assert.equal(phases.at(-1),'login_password_form_ready');
+ }finally{await f.browser.close();}
+});
+for(const [name,markup] of [
+ ['hidden input','<input type="hidden" name="unreviewed">'],
+ ['empty form','<form></form>'],
+ ['editable control','<div contenteditable="true"></div>'],
+ ['iframe','<iframe style="display:none" src="about:blank"></iframe>'],
+ ['OTP','<input name="otp" autocomplete="one-time-code">'],
+ ['SSO text','<a href="#">Continue with SSO</a>'],
+ ['rendered challenge','<div style="width:20px;height:20px;background:black"></div>'],
+])test(`password startup containing ${name} is not treated as blank or retried`,async()=>{
+ const f=await modernFixture({passwordDelay:250,passwordStartup:markup});
+ try{
+  await assert.rejects(lookupPasswordLogin(f.browser,{...lookupCredentials,fallbackTimeout:5000,diagnostic(){}}),e=>e.message==='login_form_ambiguous'&&e.loginGuard==='credential_missing');assert.equal(f.contexts.length,1);assert.equal(posts(f).length,1);assert.equal(f.inputEvents.filter(n=>n==='user_profile[password]').length,0);
+ }finally{await f.browser.close();}
+});
+for(const [name,options,error,guard] of [
+ ['duplicate',{duplicatePassword:true},'login_form_ambiguous','credential_ambiguous'],
+ ['wrong account',{hiddenEmail:'other@example.invalid'},'login_account_mismatch','account_mismatch'],
+ ['unsafe action',{passwordAttributes:'action="https://evil.invalid/login/authenticate" method="post"'},'login_form_target','form_action'],
+ ['challenge',{passwordFormExtra:'<iframe src="about:blank"></iframe>'},'login_form_ambiguous','challenge_control'],
+])test(`empty startup followed by ${name} stays fatal before password fill`,async()=>{
+ const f=await modernFixture({passwordDelay:50,...options});
+ try{
+  await assert.rejects(lookupPasswordLogin(f.browser,{...lookupCredentials,fallbackTimeout:5000,diagnostic(){}}),e=>e.message===error&&e.loginGuard===guard);assert.equal(f.contexts.length,1);assert.equal(posts(f).length,1);assert.equal(f.inputEvents.filter(n=>n==='user_profile[password]').length,0);
+ }finally{await f.browser.close();}
+});
+for(const [name,postFill,error,guard] of [
+ ['removed form','remove','login_form_ambiguous','credential_missing'],
+ ['duplicate password','duplicate','login_form_ambiguous','credential_ambiguous'],
+ ['changed account','account','login_account_mismatch','account_mismatch'],
+ ['valid-looking empty replacement','replace','login_form_target','credential_value_changed'],
+])test(`post-fill ${name} fails strict revalidation without refilling or submitting`,async()=>{
+ const f=await modernFixture({postFill}),phases=[];
+ try{
+  await assert.rejects(lookupPasswordLogin(f.browser,{...lookupCredentials,fallbackTimeout:5000,phase:p=>phases.push(p),diagnostic(){}}),e=>e.message===error&&e.loginGuard===guard);assert.equal(f.contexts.length,1);assert.equal(posts(f).length,1);assert.equal(f.inputEvents.filter(n=>n==='user_profile[password]').length,1);assert.equal(phases.at(-1),'login_password_revalidate');assert.equal(phases.includes('login_submit'),false);
+ }finally{await f.browser.close();}
+});
+function hiddenAuxiliaryForms(count=2,{formAttributes='',inputAttributes='',extra=''}={}){
+ return Array.from({length:count},()=>`<form style="display:none" ${formAttributes}><input type="text" name="firstName"><input type="text" name="lastName"><input type="email" name="email" ${inputAttributes}><textarea name="address"></textarea><textarea name="comments"></textarea><button></button><button></button>${extra}</form>`).join('');
+}
+function unselectedSso({formAttributes='action="/login/sso" method="post"',inputAttributes='',buttonAttributes='type="submit"',extra='',buttonTag='button'}={}){
+ return `<form ${formAttributes}><input name="email" type="hidden" ${inputAttributes}><input name="ordinaryA" type="hidden"><input name="ordinaryB" type="hidden"><input name="ordinaryC" type="hidden"><${buttonTag} ${buttonAttributes}>Log in with SSO</${buttonTag}>${extra}</form>`;
+}
+async function assertNativeLoginReject(options,{error='login_form_ambiguous',guard,postsExpected=1,passwordFills=0}={}){
+ const f=await modernFixture(options);
+ try{
+  await assert.rejects(lookupPasswordLogin(f.browser,{...lookupCredentials,fallbackTimeout:5000,diagnostic(){}}),e=>e.message===error&&(!guard||e.loginGuard===guard));assert.equal(f.contexts.length,1);assert.equal(posts(f).length,postsExpected);assert.equal(f.inputEvents.filter(name=>name==='user_profile[password]').length,passwordFills);
+  assert.ok(f.requests.every(r=>r.method!=='POST'||new URL(r.url).pathname==='/login/authenticate'));assert.ok(f.requests.every(r=>new URL(r.url).search===''));
+ }finally{await f.browser.close();}
+}
+test('official lookup auxiliaries and password auxiliaries plus optional SSO preserve native-only POST fields',async()=>{
+ const f=await modernFixture({lookupExtra:hiddenAuxiliaryForms(),passwordExtra:hiddenAuxiliaryForms()+unselectedSso()});
+ try{
+  const result=await lookupPasswordLogin(f.browser,{...lookupCredentials,fallbackTimeout:5000,diagnostic(){}});assert.equal(result.authenticated,true);assert.equal(f.contexts.length,1);assert.equal(posts(f).length,2);
+  assert.deepEqual([...new URLSearchParams(posts(f)[0].body)],[['email',lookupCredentials.lookupEmail]]);assert.deepEqual([...new URLSearchParams(posts(f)[1].body)],[['user_profile[email]',lookupCredentials.lookupEmail],['user_profile[password]',lookupCredentials.lookupPassword]]);assert.ok(posts(f).every(r=>new URL(r.url).pathname==='/login/authenticate'));
+ }finally{await f.browser.close();}
+});
+for(const [name,markup] of [
+ ['third auxiliary',hiddenAuxiliaryForms(3)],
+ ['auxiliary explicit GET method',hiddenAuxiliaryForms(1,{formAttributes:'method="get"'})],
+ ['auxiliary explicit action',hiddenAuxiliaryForms(1,{formAttributes:'action="/login/lookup"'})],
+ ['auxiliary foreign action',hiddenAuxiliaryForms(1,{formAttributes:'action="https://evil.invalid/login"'})],
+ ['auxiliary target',hiddenAuxiliaryForms(1,{formAttributes:'target="_blank"'})],
+ ['auxiliary empty input form override',hiddenAuxiliaryForms(1,{inputAttributes:'form=""'})],
+ ['auxiliary extra hidden credential',hiddenAuxiliaryForms(1,{extra:'<input type="hidden" name="user_profile[password]">'})],
+ ['auxiliary extra hidden control',hiddenAuxiliaryForms(1,{extra:'<input type="hidden" name="extra">'})],
+ ['auxiliary challenge',hiddenAuxiliaryForms(1,{extra:'<iframe src="about:blank"></iframe>'})],
+ ['two emails same auxiliary form','<form style="display:none"><input type="email" name="email"><input type="email" name="email"></form>'],
+ ['unowned hidden email','<input type="email" name="email" style="display:none">'],
+ ['hidden type outside auxiliary','<form style="display:none"><input type="hidden" name="email"></form>'],
+ ['SSO on lookup',unselectedSso()],
+])test(`${name} stays fatal without submitting credentials`,async()=>{await assertNativeLoginReject({lookupExtra:markup},{postsExpected:0});});
+for(const [name,options] of [
+ ['foreign action',{formAttributes:'action="https://evil.invalid/login/sso" method="post"'}],
+ ['wrong path',{formAttributes:'action="/login/other" method="post"'}],
+ ['GET method',{formAttributes:'action="/login/sso" method="get"'}],
+ ['query',{formAttributes:'action="/login/sso?x=1" method="post"'}],
+ ['hash',{formAttributes:'action="/login/sso#x" method="post"'}],
+ ['target',{formAttributes:'action="/login/sso" method="post" target="_blank"'}],
+ ['input form override',{inputAttributes:'form=""'}],
+ ['button formaction',{buttonAttributes:'type="submit" formaction="/login/sso"'}],
+ ['button empty formmethod',{buttonAttributes:'type="submit" formmethod=""'}],
+ ['button empty formtarget',{buttonAttributes:'type="submit" formtarget=""'}],
+ ['button form association',{buttonAttributes:'type="submit" form=""'}],
+ ['non-submit button',{buttonAttributes:'type="button"'}],
+ ['aria button masquerade',{buttonTag:'div',buttonAttributes:'role="button"'}],
+ ['extra editable',{extra:'<input name="extra">'}],
+ ['extra hidden credential',{extra:'<input name="user_profile[password]" type="hidden">'}],
+])test(`unselected SSO ${name} stays fatal before password fill`,async()=>{await assertNativeLoginReject({passwordExtra:unselectedSso(options)});});
+test('two optional SSO forms are ambiguous',async()=>{await assertNativeLoginReject({passwordExtra:unselectedSso()+unselectedSso()});});
+test('visible SSO without its required hidden generic email remains unclassified',async()=>{await assertNativeLoginReject({passwordExtra:'<form action="/login/sso" method="post"><button type="submit">Log in with SSO</button></form>'});});
+test('off-form native associated duplicate email cannot evade active form counts',async()=>{
+ await assertNativeLoginReject({lookupAttributes:'id="native" action="/login/authenticate" method="post"',lookupExtra:'<input name="email" type="hidden" form="native">'},{postsExpected:0});
+});
+test('off-form native associated password cannot evade active form counts',async()=>{
+ await assertNativeLoginReject({passwordAttributes:'id="native" action="/login/authenticate" method="post"',passwordExtra:'<input name="user_profile[password]" type="hidden" form="native">'});
+});
+test('primary aria div cannot masquerade as native submit button',async()=>{
+ const f=await modernFixture();
+ const create=f.browser.newContext.bind(f.browser);f.browser.newContext=async options=>{const context=await create(options);await context.addInitScript(()=>new MutationObserver(()=>{const button=document.querySelector('button');if(button&&button.textContent==='Continue'){button.outerHTML='<div role="button">Continue</div>';}}).observe(document,{subtree:true,childList:true}));return context;};
+ try{await assert.rejects(lookupPasswordLogin(f.browser,{...lookupCredentials,fallbackTimeout:5000,diagnostic(){}}),e=>e.message==='login_form_target'&&e.loginGuard==='form_target');assert.equal(posts(f).length,0);}finally{await f.browser.close();}
+});
+test('auxiliary and unselected SSO forms appearing after fill are reclassified without altering native POST',async()=>{
+ const f=await modernFixture({dynamicLookupExtra:hiddenAuxiliaryForms(),dynamicPasswordExtra:hiddenAuxiliaryForms()+unselectedSso()});
+ try{
+  const result=await lookupPasswordLogin(f.browser,{...lookupCredentials,fallbackTimeout:5000,diagnostic(){}});assert.equal(result.authenticated,true);assert.equal(posts(f).length,2);assert.equal(f.inputEvents.filter(n=>n==='email').length,1);assert.equal(f.inputEvents.filter(n=>n==='user_profile[password]').length,1);assert.deepEqual([...new URLSearchParams(posts(f)[1].body)],[['user_profile[email]',lookupCredentials.lookupEmail],['user_profile[password]',lookupCredentials.lookupPassword]]);assert.ok(posts(f).every(r=>new URL(r.url).pathname==='/login/authenticate'));
+ }finally{await f.browser.close();}
+});
+test('one exact hidden auxiliary per stage is accepted without optional SSO',async()=>{
+ const f=await modernFixture({lookupExtra:hiddenAuxiliaryForms(1),passwordExtra:hiddenAuxiliaryForms(1)});
+ try{const result=await lookupPasswordLogin(f.browser,{...lookupCredentials,fallbackTimeout:5000,diagnostic(){}});assert.equal(result.authenticated,true);assert.equal(posts(f).length,2);}finally{await f.browser.close();}
+});
+for(const [name,markup] of [
+ ['present-empty action',hiddenAuxiliaryForms(1,{formAttributes:'action=""'})],
+ ['present-empty method',hiddenAuxiliaryForms(1,{formAttributes:'method=""'})],
+ ['present-empty target',hiddenAuxiliaryForms(1,{formAttributes:'target=""'})],
+ ['explicit self target',hiddenAuxiliaryForms(1,{formAttributes:'target="_self"'})],
+ ['present-empty autocomplete',hiddenAuxiliaryForms(1,{inputAttributes:'autocomplete=""'})],
+ ['other field autocomplete',hiddenAuxiliaryForms(1).replace('name="firstName"','name="firstName" autocomplete=""')],
+ ['hidden submit override',hiddenAuxiliaryForms(1).replace('<button>','<button formmethod="">')],
+ ['missing control',hiddenAuxiliaryForms(1).replace('<button></button>','')],
+ ['wrong exact field name',hiddenAuxiliaryForms(1).replace('name="address"','name="other"')],
+ ['wrong text input type',hiddenAuxiliaryForms(1).replace('type="text" name="firstName"','type="hidden" name="firstName"')],
+ ['reassigned descendant',hiddenAuxiliaryForms(1).replace('name="firstName"','name="firstName" form=""')],
+ ['added control associated to primary',hiddenAuxiliaryForms(1,{extra:'<input type="hidden" name="other" form="native">'})],
+])test(`auxiliary ${name} is outside exact observed profile`,async()=>{
+ await assertNativeLoginReject({lookupAttributes:'id="native" action="/login/authenticate" method="post"',lookupExtra:markup},{postsExpected:0});
+});
+for(const [name,markup] of [
+ ['missing ordinary hidden field',unselectedSso().replace('<input name="ordinaryA" type="hidden">','')],
+ ['fourth ordinary hidden field',unselectedSso({extra:'<input name="ordinaryD" type="hidden">'})],
+ ['reserved OTP field',unselectedSso().replace('name="ordinaryA"','name="otp"')],
+ ['reserved TOTP field',unselectedSso().replace('name="ordinaryA"','name="totp"')],
+ ['reserved verification field',unselectedSso().replace('name="ordinaryA"','name="verification_code"')],
+ ['one-time autocomplete',unselectedSso().replace('name="ordinaryA"','name="ordinaryA" autocomplete="one-time-code"')],
+ ['ordinary field form override',unselectedSso().replace('name="ordinaryA"','name="ordinaryA" form=""')],
+ ['ordinary field submit override',unselectedSso().replace('name="ordinaryA"','name="ordinaryA" formaction=""')],
+ ['ordinary field editable type',unselectedSso().replace('name="ordinaryA" type="hidden"','name="ordinaryA" type="text"')],
+ ['added reassigned descendant',unselectedSso({extra:'<input name="other" type="hidden" form="native">'})],
+])test(`unselected SSO ${name} is fatal without password submission`,async()=>{
+ await assertNativeLoginReject({passwordAttributes:'id="native" action="/login/authenticate" method="post"',passwordExtra:markup});
+});
+for(const stage of ['lookup','password'])for(const [kind,action] of [['foreign','https://evil.invalid/login/fixture'],['other auth route','https://auth.gomotive.com/login/sso']])test(`${stage} nested ${kind} form cannot own the selected submitter`,async()=>{
+ await assertNativeLoginReject({nestedFormStage:stage,nestedFormAction:action},{error:'login_form_target',guard:'form_target',postsExpected:stage==='lookup'?0:1,passwordFills:0});
+});
+const hiddenNamedControl=(tag,name)=>tag==='select'?`<select name="${name}" style="display:none"><option value="fixture-other">Other</option></select>`:tag==='textarea'?`<textarea name="${name}" style="display:none">fixture-other</textarea>`:tag==='button'?`<button type="button" name="${name}" style="display:none">Other</button>`:`<${tag} name="${name}" style="display:none"></${tag}>`;
+for(const tag of ['select','textarea','button','fieldset','object','output'])test(`lookup native-owned hidden ${tag} duplicate email is rejected before fill`,async()=>{
+ await assertNativeLoginReject({lookupFormExtra:hiddenNamedControl(tag,'email')},{postsExpected:0});
+});
+for(const tag of ['select','textarea','button'])for(const name of ['user_profile[email]','user_profile[password]'])test(`password native-owned hidden ${tag} duplicate ${name} is rejected before fill`,async()=>{
+ await assertNativeLoginReject({passwordFormExtra:hiddenNamedControl(tag,name)});
+});
+for(const stage of ['lookup','password'])for(const tag of ['select','textarea','button'])test(`${stage} off-form associated hidden ${tag} credential duplicate is counted`,async()=>{
+ const name=stage==='lookup'?'email':'user_profile[email]';
+ const markup=hiddenNamedControl(tag,name).replace(`name="${name}"`,`name="${name}" form="native"`);
+ await assertNativeLoginReject(stage==='lookup'?{lookupAttributes:'id="native" action="/login/authenticate" method="post"',lookupExtra:markup}:{passwordAttributes:'id="native" action="/login/authenticate" method="post"',passwordExtra:markup},{postsExpected:stage==='lookup'?0:1});
+});
+for(const stage of ['lookup','password'])test(`${stage} native submitter with credential name is rejected`,async()=>{
+ await assertNativeLoginReject(stage==='lookup'?{lookupButton:'type="submit" name="email"'}:{passwordButton:'type="submit" name="user_profile[email]"'},{postsExpected:stage==='lookup'?0:1});
+});
+for(const tag of ['select','textarea','button'])test(`outsider hidden ${tag} credential cannot qualify as auxiliary email INPUT`,async()=>{
+ await assertNativeLoginReject({lookupExtra:`<form style="display:none">${hiddenNamedControl(tag,'email')}</form>`},{postsExpected:0});
 });
