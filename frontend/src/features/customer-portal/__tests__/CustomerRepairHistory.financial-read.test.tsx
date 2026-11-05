@@ -35,7 +35,7 @@ describe('repair history financial read failures', () => {
     mocks.post.mockReset()
     mocks.get.mockImplementation(async (url: string) => {
       if (url === '/vehicles') return { data: [{ id: 'vehicle-a', make: 'Freightliner', model: 'Cascadia', unit_number: '12' }, { id: 'vehicle-b', make: 'Volvo', model: 'VNR', unit_number: '13' }] }
-      if (url === '/repair-orders') return { data: [{ id: 'order-a', vehicle_id: 'vehicle-a', order_number: 'RO-A', description: 'Historical service', status: 'paid', total_cost: '999.99', updated_at: '2026-10-20T12:00:00Z' }] }
+      if (url === '/repair-orders') return { data: [{ id: 'order-a', vehicle_id: 'vehicle-a', order_number: 'RO-A', description: 'Historical service', status: 'paid', created_at: '2026-10-20T12:00:00Z', total_cost: '999.99', updated_at: '2026-10-20T12:00:00Z' }] }
       if (url === '/invoices') {
         if (invoicesFail) throw new Error('Invoice read unavailable')
         return { data: [{ id: 'invoice-a', repair_order_id: 'order-a', total_amount: '123.45', status: 'paid' }] }
@@ -107,6 +107,15 @@ describe('repair history financial read failures', () => {
     expect(screen.getByRole('heading', { name: 'Page not found' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Back to Home' })).toHaveAttribute('href', '/portal?vehicle_id=vehicle-a')
     expect(mocks.post).not.toHaveBeenCalled()
+  })
+
+  it('exits the selected repair when switching between history and current repairs', async () => {
+    renderHistory()
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'View repair RO-A' }))
+    expect(screen.getByRole('heading', { name: 'RO-A', exact: true })).toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('link', { name: 'Current repairs', exact: true }))
+    expect(await screen.findByRole('heading', { name: 'Active repairs', exact: true })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'RO-A', exact: true })).not.toBeInTheDocument()
   })
 
 })

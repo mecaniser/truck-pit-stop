@@ -25,9 +25,13 @@ API and frontend-proxied `/health/ready` return ready with database/Redis health
 
 ## Verification
 
--60 focused tests across five files passed: selected navigation independently of query order and detail parameters, separate PDF/details controls, history filters, vehicle-scope clearing preserving the current view, grouped invoice actions including pending/unknown/zero balances, reservation return link, unavailable reads and unknown-route recovery.
+-61 focused tests across five files passed: selected navigation independently of query order and detail parameters, separate PDF/details controls, history filters, vehicle-scope clearing preserving the current view, grouped invoice actions including pending/unknown/zero balances, reservation return link, unavailable reads and unknown-route recovery.
 -Production build, TypeScript and shared-control checks passed. Explicit ESLint on every changed TypeScript file reports0 errors and9 existing mixed-export Fast Refresh warnings in portal-ui.tsx; export structure was not changed. The lint:changed helper saw no committed changes before commit and is not counted as source lint evidence.
 -Real signed-in synthetic browser at1380/390/320px: history and appointments main scroll width equals client width, booking action at16px on both compact widths, history filters fit their container, no nested button/link actions. Screenshots inspected in a bounded initial pass, one batch correction and final confirmation. Browser measurements/screenshots remain private outside Git.
 -Reviewed catalog common needs, Choose entry into the actual booking flow, existing unavailable-reservations/request distinction, invoice return to Invoices, and Account section navigation without submission. Focused HTTP mocks cover unavailable invoice reads; no production mutation or new backend test is necessary for this presentation-only change.
 
 Protected PR CI, merge and release remain pending. DB161 is Review, not Done. PR805 payment-request internals are separately owned and untouched.
+
+## Detail-navigation regression
+
+Final runtime acceptance reproduced an additional existing bug: after opening a repair detail, Current repairs updated the URL and selected navigation while retaining the previous detail. A new regression first failed (1 failed/5 passed). The selected-detail cleanup now includes the active/history view, so changing sections returns to the requested list. The regression passes, and the same signed-in synthetic browser journey confirms the fix. This changes only local presentation state; authorization checks, requests and mutation handlers are unchanged. Focused total is61 passing tests.

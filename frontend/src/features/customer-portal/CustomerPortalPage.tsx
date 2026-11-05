@@ -744,7 +744,7 @@ function CustomerRepairs() {
     setStripeInstance(null)
     setShowQuickBooksPayment(false)
     setShowZelleDetails(false)
-  }, [tenant, customer, requestedVehicle])
+  }, [tenant, customer, requestedVehicle, isActiveRepairsView])
 
   const { data: allInvoices = [], isError: invoicesFailed, refetch: retryInvoices } = useQuery<Invoice[]>({
     queryKey: ['customer-history-invoices', tenant, customer],
