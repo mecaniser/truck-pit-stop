@@ -7,9 +7,9 @@ import AppointmentsPage from '../AppointmentsPage'
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
 vi.mock('@/lib/api', () => ({ default: { get: mocks.get, post: mocks.post } }))
 const base = { customer_id: 'customer-a', vehicle_id: 'truck-a', service_id: 'oil', service_name: 'Oil service', scheduled_at: '2099-11-04T14:00:00Z', duration_minutes: 60, status: 'pending', price: '123.45', confirmation_number: 'REFERENCE', created_at: '2026-11-03T12:00:00Z' }
-function mount() {
+function mount(path = '/portal/appointments?vehicle_id=truck-a') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/portal/appointments?vehicle_id=truck-a']}><AppointmentsPage /></MemoryRouter></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><AppointmentsPage /></MemoryRouter></QueryClientProvider>)
   return client
 }
 beforeEach(() => {
@@ -23,6 +23,23 @@ beforeEach(() => {
   })
 })
 describe('portal reservations and unpaid requests', () => {
+  it.each(['request-b', 'foreign-request'])('opens only the exact authorized request %s', async id => {
+    const original = mocks.get.getMockImplementation()!
+    mocks.get.mockImplementation(async (url: string) => url === '/appointments/visit-requests' ? { data: [
+      { id: 'request-a', request_reference: 'VR-A', status: 'requested', service_name: 'Other inspection', vehicle_id: 'truck-a' },
+      { id: 'request-b', request_reference: 'VR-B', status: 'requested', service_name: 'Selected inspection', vehicle_id: 'truck-a' },
+    ] } : original(url))
+    mount(`/portal/appointments?request_id=${id}&vehicle_id=truck-a`)
+    await screen.findByRole('heading', { name: 'Your visit request' })
+    if (id === 'request-b') expect(await screen.findByText('Selected inspection')).toBeInTheDocument()
+    else expect(await screen.findByRole('alert')).toHaveTextContent('This visit request is unavailable')
+    expect(screen.queryByText('Other inspection')).not.toBeInTheDocument()
+    expect(screen.queryByText('No upcoming visits')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Upcoming' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'All visits' })).toHaveAttribute('href', '/portal/appointments?vehicle_id=truck-a')
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+
   it('loads every scoped request page and presents no invented price, exact time or payment action', async () => {
     const original = mocks.get.getMockImplementation()!
     mocks.get.mockImplementation(async (url: string, config: { params?: { skip?: number }; signal?: AbortSignal }) => {

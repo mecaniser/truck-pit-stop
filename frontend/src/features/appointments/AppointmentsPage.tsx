@@ -31,6 +31,7 @@ export default function AppointmentsPage() {
   const [params,setParams] = useSearchParams()
   const requestedVehicle=params.get('vehicle_id')
   const requestedAppointment=params.get('appointment_id')
+  const requestedRequest=params.get('request_id')
   const [filter, setFilter] = useState<'upcoming' | 'past' | 'all'>('upcoming')
 
   const { data: appointments = [], isLoading, isError, refetch } = useQuery<Appointment[]>({
@@ -41,7 +42,7 @@ export default function AppointmentsPage() {
   const requestsQuery = useQuery({ queryKey: ['visit-requests', user?.tenant_id, user?.customer_id], queryFn: ({ signal }) => getPortalItems<VisitRequestResult>('/appointments/visit-requests', {}, signal) })
   const vehicles=vehiclesQuery.data || []
   const scope=resolveVehicleScope(vehicles,requestedVehicle)
-  const requests = requestsQuery.isError ? [] : (requestsQuery.data || []).filter(request => (!scope.vehicleId || !request.vehicle_id || request.vehicle_id === scope.vehicleId))
+  const requests = requestsQuery.isError ? [] : (requestsQuery.data || []).filter(request => (!scope.vehicleId || !request.vehicle_id || request.vehicle_id === scope.vehicleId) && (!requestedRequest || request.id === requestedRequest))
 
   const cancelMutation = useMutation({
     mutationFn: async (appointmentId: string) => api.post(`/appointments/${appointmentId}/cancel`),
@@ -73,21 +74,21 @@ export default function AppointmentsPage() {
             {scope.vehicle ? `Visits for ${vehicleIdentity(scope.vehicle)} and your account` : 'Your reservations and visit requests'}
           </p>
         </div>
-        <div className="flex gap-2 overflow-x-auto">
+        <div className="flex gap-2 overflow-x-auto">{requestedRequest ? <Link className="cp-secondary" data-db-control="action" to={scopedPortalPath('/portal/appointments', scope.vehicleId)}>All visits</Link> : <>
           {(['upcoming', 'past', 'all'] as const).map(value => (
             <Pill key={value} active={filter === value} onClick={() => setFilter(value)}>
               {value.charAt(0).toUpperCase() + value.slice(1)}
             </Pill>
-          ))}
+          ))}</>}
         </div>
       </header>
 
       <section aria-label="Visit requests" className="space-y-3">
-        <h2 className="text-base font-bold">Visit requests</h2>
-        {requestsQuery.isLoading ? <p role="status">Loading visit requests…</p> : requestsQuery.isError ? <div role="alert"><p>Visit requests couldn’t load.</p><ControlButton className="cp-secondary" onClick={() => { void requestsQuery.refetch() }}>Try requests again</ControlButton></div> : requests.length ? requests.map(request => <CustomerVisitRequestCard key={`${request.id}:${request.version}`} request={request} vehicleLabel={vehicles.some(vehicle => vehicle.id === request.vehicle_id) ? vehicleIdentity(vehicles.find(vehicle => vehicle.id === request.vehicle_id)!) : 'Vehicle not specified'}/>) : <p className="text-sm text-[#a2a9bb]">No visit requests to show.</p>}
+        <h2 className="text-base font-bold">{requestedRequest ? 'Your visit request' : 'Visit requests'}</h2>
+        {requestsQuery.isLoading ? <p role="status">Loading visit requests…</p> : requestsQuery.isError ? <div role="alert"><p>Visit requests couldn’t load.</p><ControlButton className="cp-secondary" onClick={() => { void requestsQuery.refetch() }}>Try requests again</ControlButton></div> : requests.length ? requests.map(request => <CustomerVisitRequestCard key={`${request.id}:${request.version}`} request={request} vehicleLabel={vehicles.some(vehicle => vehicle.id === request.vehicle_id) ? vehicleIdentity(vehicles.find(vehicle => vehicle.id === request.vehicle_id)!) : 'Vehicle not specified'}/>) : <p role={requestedRequest ? 'alert' : undefined} className="text-sm text-[#a2a9bb]">{requestedRequest ? 'This visit request is unavailable. Check All visits or contact the shop.' : 'No visit requests to show.'}</p>}
       </section>
 
-      {filtered.length === 0 ? (
+      {!requestedRequest && (filtered.length === 0 ? (
         <section className="rounded-2xl border border-[#232939] bg-[#161a26] px-5 py-9 text-center sm:px-6">
           <div className="mx-auto flex h-[46px] w-[46px] items-center justify-center rounded-xl border border-[#272d3d] bg-[#12161f] text-[#5c6375]">
             <CalendarDays className="h-5 w-5" />
@@ -140,9 +141,9 @@ export default function AppointmentsPage() {
             )
           })}
         </div>
-      )}
+      ))}
 
-      <Link data-db-control="action" to={scopedPortalPath('/portal/services',scope.vehicleId)} className="cp-secondary">Book a service</Link>
+      {!requestedRequest && <Link data-db-control="action" to={scopedPortalPath('/portal/services',scope.vehicleId)} className="cp-secondary">Book a service</Link>}
     </div>
   )
 }
