@@ -28,3 +28,9 @@ Result:97 passed (21 new access cases +76 existing Zelle/EFS cases); the final r
 Product delta is only `backend/app/api/v1/endpoints/payments.py:get_zelle_info`; no migration, configuration, frontend, submission, mutation permission, or provider contract changes. Existing application imports were exercised through the ASGI suite. `git diff --check` passed. No existing runtime/database or production state was touched by this implementation.
 
 Independent QA/security, protected CI, commit/PR, release, and live customer/guest acceptance remain parent-owned. No claim of deployment or browser-visible local serving is made.
+
+## Independent gate and release candidate
+
+Independent QA/Security returned GO on the frozen three-file digest `ffdcb42cbf9a07eed65ced2a242a4ec97820c47f984502666416e5cc62d748e7`. The reviewer independently ran97/97 tests in a new network-disabled Docker container with this checkout mounted read-only and a disposable in-memory database. No findings or production actions. Product source remains unchanged from that reviewed freeze.
+
+[PR790](https://github.com/mecaniser/truck-pit-stop/pull/790) is the focused release remediation; protected exact-head CI and deployment/live acceptance remain required.
