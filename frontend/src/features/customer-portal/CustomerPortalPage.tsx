@@ -4,7 +4,7 @@ import { ControlButton } from '@/components/ui/Controls'
 import CashReceiptBreakdown from './CashReceiptBreakdown'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { Spinner } from '@/components/ui'
-import { Routes, Route, Link, useLocation } from 'react-router-dom'
+import { Routes, Route, Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
@@ -18,6 +18,8 @@ import CustomerInvoicePage from './CustomerInvoicePage'
 import PortalDashboardPage, { PortalInvoicesPage } from './PortalDashboardPage'
 import { getPortalItems, resolveVehicleScope, scopedPortalPath } from './portal-context'
 import PortalVehiclesPage from './PortalVehiclesPage'
+import PortalVehicleScope from './PortalVehicleScope'
+import PortalRepairNavigation from './PortalRepairNavigation'
 import MotivePortalPage, { MotivePortalEntry } from './MotivePortalPage'
 import { Camera, CheckCircle, ChevronDown, ChevronUp, ClipboardList, Truck, Wrench, CreditCard, FileText, ArrowLeft, Calendar, Download, Home, User } from 'lucide-react'
 import type { Stripe } from '@stripe/stripe-js'
@@ -701,6 +703,7 @@ function PaymentForm({
 }
 
 function CustomerRepairs() {
+  const [, setSearchParams] = useSearchParams()
   const { user } = useAuthStore()
   const queryClient = useQueryClient()
   const location = useLocation()
@@ -1009,6 +1012,11 @@ function CustomerRepairs() {
   if (scope.invalid) {
     return <div className="cp-root cp-panel cp-error" role="alert"><div><h1>Vehicle unavailable</h1><p>This vehicle is not available in your account. Choose one of your vehicles to view repairs.</p><Link className="cp-secondary" to={isActiveRepairsView ? '/portal/repairs?view=active' : '/portal/repairs'}>View all vehicles</Link></div></div>
   }
+
+  const repairActions = <div className="cp-title-actions cp-page-actions">
+    <PortalVehicleScope vehicles={vehiclesQuery.data || []} requested={requestedVehicle} onChange={id => setSearchParams({ ...(isActiveRepairsView ? { view: 'active' } : {}), ...(id ? { vehicle_id: id } : {}) })}/>
+    <Link data-db-control="action" className="cp-primary" to={scopedPortalPath('/portal/services', scope.vehicleId)}><Calendar size={17} aria-hidden="true"/>Book a service</Link>
+  </div>
 
   // Detail view for selected order
   if (selectedOrder && selectedOrderAuthorized) {
@@ -1396,12 +1404,7 @@ function CustomerRepairs() {
               {attentionCount > 0 ? ` · ${attentionCount} need${attentionCount === 1 ? 's' : ''} your attention` : ' · Everything is moving'}
             </p>
           </div>
-          <Link data-db-control="action"
-            to={scopedPortalPath('/portal/repairs', requestedVehicle)}
-            className="inline-flex min-h-[44px] items-center justify-center rounded-[10px] border border-[#272d3d] bg-[#191d2a] px-4 text-xs font-bold text-[#c9cdd8] hover:border-[#343b52]"
-          >
-            View repair history
-          </Link>
+          {repairActions}
         </div>
 
         {activeOrders.length > 0 ? (
@@ -1460,12 +1463,6 @@ function CustomerRepairs() {
             <CheckCircle className="mx-auto h-9 w-9 text-[#3ecf6f]" />
             <h2 className="mt-3 font-extrabold">No active repairs</h2>
             <p className="mt-1 text-sm text-[#8b92a5]">New repair work will appear here as soon as it is checked in.</p>
-            <Link data-db-control="action"
-              to="/portal/services"
-              className="mt-5 inline-flex min-h-[44px] items-center justify-center rounded-[10px] bg-[#8b7cf7] px-4 text-xs font-extrabold text-[#0e1118]"
-            >
-              Book a service
-            </Link>
           </div>
         )}
       </div>
@@ -1517,18 +1514,18 @@ function CustomerRepairs() {
         <div>
           <h1 className="text-2xl font-extrabold tracking-[-0.01em]">Repair history</h1>
           <p className="mt-1 text-[13px] text-[#8b92a5]">
-            {historyOrders.length} past repairs
+            {historyOrders.length} past repair{historyOrders.length === 1 ? '' : 's'}
           </p>
         </div>
-        {historyOrders.length > 12 && (
+        <div className="cp-title-actions">{repairActions}{historyOrders.length > 12 && (
           <ControlButton type="button" onClick={downloadHistoryCsv} className=" rounded-[10px] border border-[#272d3d] bg-[#191d2a] px-4 text-xs font-bold text-[#c9cdd8]">
             Download all (CSV)
           </ControlButton>
-        )}
+        )}</div>
       </div>
 
-      <div className="-mx-4 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
-        <div className="flex min-w-max gap-2">
+      <div role="group" aria-label="Filter repair history">
+        <div className="cp-filter-group">
         {[
           { value: 'all', label: 'All' },
           { value: 'paid', label: 'Paid' },
@@ -1554,18 +1551,19 @@ function CustomerRepairs() {
               <section key={month}>
                 <div className="mb-2 flex items-center justify-between gap-4">
                   <h2 className="text-[11px] font-extrabold uppercase tracking-[0.1em]">{month}</h2>
-                  <span className="text-[11px] font-bold text-[#5c6375]">{monthOrders.length} orders</span>
+                  <span className="text-[11px] font-bold text-[#a2a9bb]">{monthOrders.length} {monthOrders.length === 1 ? 'repair' : 'repairs'}</span>
                 </div>
                 <div className="space-y-2">
                   {monthOrders.map(order => {
                     const invoiceForOrder = invoiceByOrder.get(order.id)
                     const amount = invoiceForOrder ? invoiceForOrder.total_amount : null
                     return (
-                <ControlButton controlKind="content"
-                  key={order.id}
-                  onClick={() => setSelectedOrder(order)}
-                        className="grid w-full grid-cols-[52px_1fr_auto] items-center gap-3 rounded-xl border border-[#232939] bg-[#161a26] p-3 text-left hover:border-[#343b52] hover:bg-[#161b26] sm:grid-cols-[52px_1fr_auto_84px_auto] sm:gap-4 sm:px-4"
-                >
+                <article key={order.id} className="cp-history-record">
+                  <ControlButton controlKind="content" type="button"
+                    aria-label={`View repair ${order.order_number}`}
+                    onClick={() => setSelectedOrder(order)}
+                    className="cp-history-details"
+                  >
                         <DateBlock value={order.updated_at} />
                         <div className="min-w-0">
                           <h3 className="truncate text-[13px] font-bold">{order.description || 'Repair service'}</h3>
@@ -1581,17 +1579,20 @@ function CustomerRepairs() {
                           }`}>{order.status}</span>
                         )}
                         <Money className="col-start-2 text-sm font-extrabold sm:col-start-auto sm:text-right">{amount===null?'Amount unavailable':formatMoney(amount)}</Money>
+                        <span className="cp-history-open">View details<ChevronDown size={15} aria-hidden="true"/></span>
+                  </ControlButton>
                         {invoiceForOrder && (
                           <a
                             href={`/api/v1/invoices/${invoiceForOrder.id}/pdf`}
                             download
-                            onClick={event => event.stopPropagation()}
-                            className="col-start-3 inline-flex min-h-[44px] min-w-[44px] items-center justify-end text-right text-xs font-bold text-[#a78bfa] hover:text-[#c4b1ff] sm:col-start-auto"
+                            aria-label={`Download invoice for ${order.order_number}`}
+                            data-db-control="action"
+                            className="cp-history-download"
                           >
-                            Invoice ↓
+                            <Download size={16} aria-hidden="true"/>Invoice PDF
                           </a>
                         )}
-                </ControlButton>
+                </article>
                     )
                   })}
                 </div>
@@ -1610,11 +1611,6 @@ function CustomerRepairs() {
       )}
     </div>
   )
-}
-
-function PortalRepairNavigation({vehicleId}:{vehicleId:string|null}) {
-  const location=useLocation()
-  return <nav aria-label="Repair sections" className="mb-5 flex flex-wrap gap-2">{[['Current','/portal/repairs?view=active'],['Appointments','/portal/appointments'],['History','/portal/repairs']].map(([label,path])=><Link key={path} data-db-control="action" className={`cp-secondary ${location.pathname+location.search===scopedPortalPath(path,vehicleId)?'bg-[#312a54]':''}`} to={scopedPortalPath(path,vehicleId)}>{label}</Link>)}</nav>
 }
 
 export default function CustomerPortalPage() {
@@ -1745,6 +1741,7 @@ export default function CustomerPortalPage() {
           <Route path="invoices/:invoiceId" element={<CustomerInvoicePage />} />
           <Route path="settings" element={<ProfileSettingsPage />} />
           <Route path="integrations" element={<MotivePortalPage />} />
+          <Route path="*" element={<div className="cp-root cp-panel cp-empty"><h1>Page not found</h1><p>Choose a section in the navigation or return to your overview.</p><Link data-db-control="action" className="cp-primary" to={scopedPortalPath('/portal', requestedVehicle)}>Back to Home</Link></div>} />
         </Routes>
       </main>
 

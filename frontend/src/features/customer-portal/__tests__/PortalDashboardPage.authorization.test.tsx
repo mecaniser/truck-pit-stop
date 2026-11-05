@@ -169,3 +169,18 @@ describe('overview vehicle directory', () => {
     expect(within(directory).getByRole('link',{name:'Manage vehicles'})).toHaveAttribute('href','/portal/vehicles')
   })
 })
+
+
+describe('invoice overview grouping', () => {
+  it('separates zero balances without changing pending, unknown or payable actions', async () => {
+    show({page:'invoices', invoices:[invoice(),invoice({id:'settled',invoice_number:'PAID',payment_summary:{state:'paid',applied_amount:'100.00',balance_due:'0.00',pending_amount:'0.00',basis:'settlement',note:null}}),invoice({id:'unknown',invoice_number:'UNKNOWN',payment_summary:undefined}),invoice({id:'pending',invoice_number:'PENDING',payment_summary:{state:'payment_pending',applied_amount:'0.00',balance_due:'100.00',pending_amount:'100.00',basis:'settlement',note:null}})]})
+    const outstanding = await screen.findByRole('region',{name:'Invoices to review'})
+    const history = screen.getByRole('region',{name:'Invoice history'})
+    expect(within(outstanding).getAllByRole('article')).toHaveLength(3)
+    expect(within(outstanding).getByRole('link',{name:'Pay invoice'})).toHaveAttribute('href','/portal/invoices/inv')
+    expect(within(outstanding).getAllByRole('link',{name:'View invoice'})).toHaveLength(2)
+    expect(within(history).getByRole('heading',{name:'Invoice PAID'})).toBeInTheDocument()
+    expect(within(history).queryByRole('link',{name:'Pay invoice'})).not.toBeInTheDocument()
+    expect(within(history).getByText('$0.00')).toBeInTheDocument()
+  })
+})
