@@ -32,3 +32,5 @@ Authenticated acceptance, protected CI, merge/deploy pending. Not Done.
 Baseline TypeScript comparison: clean detached base82c95576 with the same installed dependencies reproduces the identical LoginPage.tsx:118 resolver error. No TypeScript errors in changed files.
 
 Final validation: Vite production bundle passes; repository changed-source lint passes across all5 changed frontend files using ESLINT_USE_FLAT_CONFIG=true (installed ESLint8 requires flat-config mode). The plain legacy-mode invocation could not load the flat config; rerun in the correct mode passed.
+
+Draft PR: https://github.com/mecaniser/truck-pit-stop/pull/798. Application implementation commit07b73e0a. Not merged/deployed; protected CI and signed-in acceptance pending.
