@@ -5,7 +5,6 @@ import { Wrench, Gauge, ClipboardList, User, Search, ChevronDown, ChevronRight, 
 import type { BoardTruck, FleetBoard as FleetBoardData, TruckStatus } from './types'
 import { STATUS_META, VISIT_STALE_AFTER_DAYS, fleetIdentity, fleetUnitLabel, fmt, pmState, pmUrgency, rank, visitAge, visitIsStale } from './helpers'
 import FleetActivity from './FleetActivity'
-import UnitLocationPopover from './UnitLocationPopover'
 import { truckMotion, useTelemetryClock } from './telemetry'
 import ClosedRepairOrders from './ClosedRepairOrders'
 import CurrentDriver from './CurrentDriver'
@@ -119,7 +118,7 @@ function TruckCard({ t, onOpen, onOpenRepairOrder }: { t: BoardTruck; onOpen: (t
           <span className="tcard-mm">{`${t.year || ''} ${t.make} ${t.model}`.trim()}</span>
         </div>
         <div className="tcard-mark">
-          <div className="tcard-status-tools"><span className="tcard-badge"><i className={'tcard-bdot' + (truckMotion(t, now) === 'moving' ? ' is-moving' : '')} />{meta.short}</span><UnitLocationPopover truck={t} /></div>
+          <span className="tcard-badge"><i className={'tcard-bdot' + (truckMotion(t, now) === 'moving' ? ' is-moving' : '')} />{meta.short}</span>
           <span className="tcard-unit" data-testid="tcard-unit-mark">{identity.unit}</span>
         </div>
       </div>
