@@ -26,3 +26,7 @@ Draft implementation PR: https://github.com/mecaniser/truck-pit-stop/pull/801.
 ## Authorized landing reconciliation — November 5
 
 User explicitly authorizes conflict repair and deployment before DB160. Reconciled main88d9c98d, then86fe9cc7 andea41a9fd without changing the Add vehicle implementation. Board-only conflicts preserve both delivery histories; DB159/160 entries moved away from the shared append point. Current checked candidate549f217a includes the latest main phone-formatting follow-up. Earlier0f9ca32d passed all seven checks but became stale before merge. Candidatecc15cb30 failed one unchanged Motive deadline fixture (late-page disposal counter0 vs1); the rerun was superseded when current main advanced. This is recorded as an unresolved timing-sensitive unrelated test outcome, not concealed as a pass. Final current-head protected gates remain required.
+
+## Production release
+
+PR801 passed all seven exact-head checks on4b7f2060 (run42110363948), including unchanged application bytes after the final documentation reconciliation. Squash mergebf9076c1633d6fd07a2385be8c2f450939dc1b1e deployed automatically as1bdf8acb-cc21-4532-8513-08bb4dcb122f, SUCCESS on that SHA. Public build stamp and database/Redis readiness match. Real signed-in customer desktop/mobile390 acceptance confirms one header Add vehicle link, its existing Account Vehicles destination, clear separation from rows and viewport containment. No form submitted or customer/provider data changed. Temporary viewport reset. DB159 Done; DB160 editing release tracked separately.
