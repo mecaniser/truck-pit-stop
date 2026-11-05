@@ -12,12 +12,13 @@ import {
 import api from '../../lib/api'
 import { isCurrentAuthEpoch, useAuthStore } from '../../stores/authStore'
 import { getPasswordValidationError } from '../../lib/passwordPolicy'
-import type { BoardTruck, FleetBoard as FleetBoardData } from './types'
+import type { BoardTruck, EquipmentType, FleetBoard as FleetBoardData } from './types'
 import { STATUS_META, fleetUnitLabel, fmt, pmState, initials } from './helpers'
 import { formatUSPhone } from '@/utils/phone'
 import { duplicateVinConflict, duplicateVinTruckLabel, type DuplicateVinConflict } from './duplicateVin'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import FleetBoard from './FleetBoard'
+import PlatformSelect from '@/components/PlatformSelect'
 import CurrentDriver from './CurrentDriver'
 import { currentDriverName } from './driverIdentity'
 import MotiveIntegrationPanel from './MotiveIntegrationPanel'
@@ -281,7 +282,7 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
             </div>
             {view !== 'detail' && (
               <div className="topbar-r">
-                <ControlButton className="dbtn dbtn-yellow" onClick={() => setAdding(true)} title="Add truck"><Plus size={15} /> <span className="dbtn-label">Add truck</span></ControlButton>
+                <ControlButton className="dbtn dbtn-yellow" onClick={() => setAdding(true)} title="Add equipment"><Plus size={15} /> <span className="dbtn-label">Add equipment</span></ControlButton>
                 <div className="topbar-utilities">
                   <ControlButton className="topbar-icbtn" title="Notifications" aria-label="Notifications"><Bell size={17} />{!!data?.stats.incidents_total && <span className="dot" />}</ControlButton>
                 </div>
@@ -316,7 +317,7 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
         </div>
       </div>
 
-      {adding && <AddTruckModal onClose={() => setAdding(false)} />}
+      {adding && <AddTruckModal trucks={trucks} onClose={() => setAdding(false)} />}
       {integrationsOpen && canReturnToDashboard && <MotiveIntegrationPanel
         trucks={trucks}
         initialCompanyId={new URLSearchParams(location.search).get('company') || ''}
@@ -604,13 +605,15 @@ function AuthorityPicker({ companies, value, onChange, defaultAuthorityId }: {
   )
 }
 
-function AddTruckModal({ onClose }: { onClose: () => void }) {
+function AddTruckModal({ onClose, trucks }: { onClose: () => void; trucks: BoardTruck[] }) {
   const qc = useQueryClient()
   const [mode, setMode] = useState<'new' | 'existing'>('new')
   const [customerId, setCustomerId] = useState('')
   const [vehicleSearch, setVehicleSearch] = useState('')
   const debouncedVehicleSearch = useDebouncedValue(vehicleSearch, 250)
   const [existingVehicleId, setExistingVehicleId] = useState('')
+  const [equipmentType, setEquipmentType] = useState<EquipmentType>('tractor')
+  const [tractorId, setTractorId] = useState('')
   const [vinConflict, setVinConflict] = useState<DuplicateVinConflict | null>(null)
   const [form, setForm] = useState({ make: '', model: '', year: '', unit_number: '', vin: '', license_plate: '', mileage: '', driver_name: '', driver_phone: '' })
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }))
@@ -654,23 +657,31 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
       setCustomerId(fleetSettings.default_fleet_authority_customer_id)
     }
   }, [customerId, fleetSettings?.default_fleet_authority_customer_id])
-  const { data: vehicleCandidates = [] } = useQuery<Array<{ id: string; make: string; model: string; year?: number | null; unit_number?: string | null; vin?: string | null }>>({
+  const { data: vehicleCandidates = [] } = useQuery<Array<{ id: string; make: string; model: string; year?: number | null; unit_number?: string | null; vin?: string | null; equipment_type?: EquipmentType }>>({
     queryKey: ['fleet-vehicle-candidates', debouncedVehicleSearch],
     queryFn: async () => (await api.get('/fleet/vehicle-candidates', { params: { q: debouncedVehicleSearch || undefined, limit: 50 } })).data,
     enabled: mode === 'existing' && !!debouncedVehicleSearch.trim(),
   })
+  const selectedType = mode === 'new' ? equipmentType : vehicleCandidates.find(vehicle => vehicle.id === existingVehicleId)?.equipment_type || trucks.find(vehicle => vehicle.id === existingVehicleId)?.equipment_type
+  const currentTractor = mode === 'existing' ? trucks.find(vehicle => vehicle.id === existingVehicleId)?.attached_asset : null
+  const requiresTractor = selectedType === 'trailer' && currentTractor?.equipment_type !== 'tractor'
+  const availableTractors = trucks.filter(vehicle => vehicle.equipment_type === 'tractor' && !vehicle.attached_asset)
   const create = useMutation({
     mutationFn: async () => {
+      if (mode === 'existing' && !selectedType) throw new Error('Wait for the equipment details to load')
+      if (requiresTractor && !tractorId) throw new Error('Choose the tractor assigned to this trailer')
       if (!customerId) throw new Error('Select the company that operates this truck')
       if (mode === 'existing') {
         if (!existingVehicleId) throw new Error('Select an existing truck')
         return (await api.post('/fleet/memberships', {
           vehicle_id: existingVehicleId,
           fleet_customer_id: customerId,
+          tractor_id: requiresTractor ? tractorId : undefined,
         })).data
       }
       return (await api.post('/fleet/trucks', {
           customer_id: customerId,
+          equipment_type: equipmentType, tractor_id: equipmentType === 'trailer' ? tractorId : undefined,
           make: form.make.trim(), model: form.model.trim(),
           year: form.year ? parseInt(form.year, 10) : undefined,
           unit_number: form.unit_number.trim() || undefined,
@@ -682,7 +693,7 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
         })).data
     },
     onSuccess: () => {
-      toast.success(mode === 'existing' ? 'Existing truck linked to fleet' : 'Truck added to fleet')
+      toast.success(mode === 'existing' ? 'Existing equipment linked to fleet' : 'Equipment added to fleet')
       qc.invalidateQueries({ queryKey: ['fleet-board'] })
       qc.invalidateQueries({ queryKey: ['fleet-companies'] })
       onClose()
@@ -700,16 +711,16 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
   const inp = 'w-full'
   return (
     <SidekickPanel
-      title="Add or link truck"
-      subtitle="Choose how this truck joins the Fleet Board"
+      title="Add or link equipment"
+      subtitle="Equipment details and fleet assignment"
       icon={<Truck size={18} className="text-[var(--yellow)]" />}
       onClose={onClose}
       width="max-w-[540px]"
     >
       <div className="add-truck-modal">
         <div className="add-truck-mode" style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
-          <ControlButton type="button" className={`dbtn ${mode === 'new' ? 'dbtn-yellow' : 'dbtn-ghost'}`} onClick={() => { setMode('new'); setVinConflict(null) }}>New truck</ControlButton>
-          <ControlButton type="button" className={`dbtn ${mode === 'existing' ? 'dbtn-yellow' : 'dbtn-ghost'}`} onClick={() => setMode('existing')}>Link existing truck</ControlButton>
+          <ControlButton type="button" className={`dbtn ${mode === 'new' ? 'dbtn-yellow' : 'dbtn-ghost'}`} onClick={() => { setMode('new'); setTractorId(''); setVinConflict(null) }}>New equipment</ControlButton>
+          <ControlButton type="button" className={`dbtn ${mode === 'existing' ? 'dbtn-yellow' : 'dbtn-ghost'}`} onClick={() => { setMode('existing'); setTractorId('') }}>Link existing equipment</ControlButton>
         </div>
         <Field label="Operating authority *">
           <AuthorityPicker
@@ -722,7 +733,7 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
         {mode === 'existing' ? (
           <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
             <Field label="Find truck by VIN, unit, plate, make, or model">
-              <ControlInput className="w-full" value={vehicleSearch} onChange={(e) => { setVehicleSearch(e.target.value); setExistingVehicleId('') }} placeholder="Search existing trucks…" />
+              <ControlInput className="w-full" value={vehicleSearch} onChange={(e) => { setVehicleSearch(e.target.value); setExistingVehicleId(''); setTractorId('') }} placeholder="Search existing trucks…" />
             </Field>
             <div className="vehicle-candidate-picker" aria-label="Existing truck">
               <span className="id-k" style={{ display: 'block', marginBottom: 5 }}>Existing truck *</span>
@@ -739,7 +750,7 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
                         role="option"
                         aria-selected={selected}
                         className={'vehicle-candidate' + (selected ? ' is-selected' : '')}
-                        onClick={() => setExistingVehicleId(vehicle.id)}
+                        onClick={() => { setExistingVehicleId(vehicle.id); setTractorId('') }}
                       >
                         <span className="vehicle-candidate-copy">
                           <strong>{[vehicle.unit_number ? `Unit ${vehicle.unit_number}` : null, vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' · ')}</strong>
@@ -790,6 +801,13 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
           <Field label="Driver phone"><ControlInput className={inp} value={form.driver_phone} onChange={(e) => setForm((f) => ({ ...f, driver_phone: formatUSPhone(e.target.value) }))} placeholder="(704) 555-0123" /></Field>
         </div>
         )}
+        {mode === 'new' && <Field label="Equipment type"><PlatformSelect aria-label="Equipment type" value={equipmentType} onChange={event => { setEquipmentType(event.target.value as EquipmentType); setTractorId('') }}>
+          <option value="tractor">Tractor</option><option value="trailer">Trailer</option><option value="other">Other equipment</option>
+        </PlatformSelect></Field>}
+        {requiresTractor && <Field label="Assigned tractor *"><PlatformSelect aria-label="Assigned tractor" value={tractorId} onChange={event => setTractorId(event.target.value)}>
+          <option value="">Select tractor…</option>
+          {availableTractors.map(vehicle => <option key={vehicle.id} value={vehicle.id}>{vehicle.unit_number || 'Unit not recorded'} · {vehicle.owner_company_name || vehicle.fleet_company_name || vehicle.make}</option>)}
+        </PlatformSelect><p className="asset-attachment-muted">A trailer joins the fleet with its assigned tractor.</p></Field>}
         {mode === 'new' && vinConflict?.vehicle && (
           <div style={{ marginTop: 14, border: '1px solid rgba(239, 68, 68, .55)', borderRadius: 8, padding: '10px 11px', background: 'rgba(127, 29, 29, .18)', display: 'grid', gap: 5 }}>
             <strong style={{ color: '#fecaca', fontSize: 13 }}>VIN already assigned to {duplicateVinTruckLabel(vinConflict.vehicle)}</strong>
@@ -806,8 +824,8 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
           </div>
         )}
         <ControlButton className="dbtn dbtn-yellow" style={{ marginTop: 16, width: '100%', justifyContent: 'center' }}
-          disabled={!customerId || (mode === 'new' ? (!form.make.trim() || !form.model.trim()) : !existingVehicleId) || create.isPending} onClick={() => create.mutate()}>
-          {create.isPending ? <Spinner size="sm" /> : <Plus size={15} />} {mode === 'existing' ? 'Link truck' : 'Add truck'}
+          disabled={!customerId || (mode === 'existing' && !selectedType) || (requiresTractor && !tractorId) || (mode === 'new' ? (!form.make.trim() || !form.model.trim()) : !existingVehicleId) || create.isPending} onClick={() => create.mutate()}>
+          {create.isPending ? <Spinner size="sm" /> : <Plus size={15} />} {mode === 'existing' ? 'Link equipment' : 'Add equipment'}
         </ControlButton>
       </div>
     </SidekickPanel>

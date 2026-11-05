@@ -68,6 +68,7 @@ from app.schemas.fleet import (
     FleetSummaryResponse,
     BoardTruck,
     FleetAttachmentUpdate,
+    FleetAssetSettingsUpdate,
     BoardWorkOrder,
     FleetStats,
     FleetBoardResponse,
@@ -414,6 +415,7 @@ async def list_fleet_vehicle_candidates(
     )).scalars().all())
     return [
         VehicleTypeaheadResponse(
+            equipment_type=vehicle.equipment_type,
             id=vehicle.id,
             customer_id=vehicle.customer_id,
             make=vehicle.make,
@@ -433,6 +435,8 @@ async def add_fleet_membership(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_fleet_access),
 ):
+    from app.services import fleet_assets
+    await fleet_assets.lock_tenant(db, current_user.tenant_id)
     vehicle = (await db.execute(select(Vehicle).where(
         Vehicle.id == body.vehicle_id,
         Vehicle.tenant_id == current_user.tenant_id,
@@ -446,12 +450,14 @@ async def add_fleet_membership(
     if not vehicle or not customer:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Truck or fleet company not found")
     customer.fleet_enabled = True
-    membership = await ensure_fleet_membership(
-        db,
-        tenant_id=current_user.tenant_id,
-        vehicle_id=vehicle.id,
-        fleet_customer_id=customer.id,
-    )
+    if vehicle.equipment_type == "trailer" and body.tractor_id:
+        membership = await fleet_assets.enroll_trailer(db, current_user, vehicle.id, customer.id, body.tractor_id)
+    else:
+        if body.tractor_id:
+            raise HTTPException(status_code=409, detail="Only trailer equipment can select a tractor")
+        membership = await ensure_fleet_membership(
+            db, tenant_id=current_user.tenant_id, vehicle_id=vehicle.id, fleet_customer_id=customer.id,
+        )
     await db.commit()
     return {"id": str(membership.id), "vehicle_id": str(vehicle.id), "fleet_customer_id": str(customer.id)}
 
@@ -494,6 +500,8 @@ async def create_fleet_truck(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_fleet_access),
 ):
+    from app.services import fleet_assets
+    await fleet_assets.lock_tenant(db, current_user.tenant_id)
     customer = (await db.execute(select(Customer).where(
         Customer.id == body.customer_id,
         Customer.tenant_id == current_user.tenant_id,
@@ -508,7 +516,7 @@ async def create_fleet_truck(
             status_code=status.HTTP_409_CONFLICT,
             detail=await duplicate_vin_detail(db, duplicate),
         )
-    payload = body.model_dump(exclude={"customer_id"})
+    payload = body.model_dump(exclude={"customer_id", "tractor_id"})
     payload["vin"] = normalized_vin
     payload["driver_phone"] = normalize_phone(payload.get("driver_phone"))
     vehicle = Vehicle(
@@ -521,12 +529,14 @@ async def create_fleet_truck(
     await sync_vehicle_nhtsa_snapshot(vehicle)
     await seed_vehicle_account_relationships(db, vehicle, customer)
     customer.fleet_enabled = True
-    await ensure_fleet_membership(
-        db,
-        tenant_id=current_user.tenant_id,
-        vehicle_id=vehicle.id,
-        fleet_customer_id=customer.id,
-    )
+    if vehicle.equipment_type == "trailer" and body.tractor_id:
+        await fleet_assets.enroll_trailer(db, current_user, vehicle.id, customer.id, body.tractor_id)
+    else:
+        if body.tractor_id:
+            raise HTTPException(status_code=409, detail="Only trailer equipment can select a tractor")
+        await ensure_fleet_membership(
+            db, tenant_id=current_user.tenant_id, vehicle_id=vehicle.id, fleet_customer_id=customer.id,
+        )
     await db.commit()
     await db.refresh(vehicle)
     return VehicleResponse.model_validate(vehicle)
@@ -2766,6 +2776,33 @@ async def update_truck(
     return card
 
 
+@router.put("/trucks/{vehicle_id}/asset-settings", response_model=BoardTruck)
+async def update_asset_settings(
+    vehicle_id: UUID,
+    body: FleetAssetSettingsUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    from app.services import fleet_assets
+    await fleet_assets.save_settings(
+        db, current_user, vehicle_id, body.equipment_type, body.attached_vehicle_id,
+        body.expected_equipment_type, body.expected_attached_vehicle_id,
+    )
+    await db.commit()
+    return await _asset_settings_card(db, current_user, vehicle_id)
+
+
+async def _asset_settings_card(db, current_user, vehicle_id):
+    from app.services import fleet_assets
+    vehicle = await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
+    open_list = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id, [])
+    counts = await _open_incident_counts(db, [vehicle.id])
+    card = _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list), pm_ro=_open_pm_ro(open_list))
+    await _attach_account_context(db, [card], current_user.tenant_id)
+    await fleet_assets.attach(db, [card], current_user.tenant_id)
+    return card
+
+
 @router.put("/trucks/{vehicle_id}/attachment", response_model=BoardTruck)
 async def update_asset_attachment(
     vehicle_id: UUID,
@@ -2778,13 +2815,7 @@ async def update_asset_attachment(
         db, current_user, vehicle_id, body.attached_vehicle_id, body.expected_attached_vehicle_id,
     )
     await db.commit()
-    vehicle = await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
-    open_list = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id, [])
-    counts = await _open_incident_counts(db, [vehicle.id])
-    card = _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list), pm_ro=_open_pm_ro(open_list))
-    await _attach_account_context(db, [card], current_user.tenant_id)
-    await fleet_assets.attach(db, [card], current_user.tenant_id)
-    return card
+    return await _asset_settings_card(db, current_user, vehicle_id)
 
 
 async def _load_fleet_ro_or_404(
