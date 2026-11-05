@@ -225,3 +225,42 @@ named group and its combobox; restricting the label query to the actual button
 resolved that test-only ambiguity before freezing the candidate. No application
 semantics changed. Fresh independent Security review and all seven exact-head
 CI checks are required before release.
+
+
+## Released November 5, 2026
+
+PR [791](https://github.com/mecaniser/truck-pit-stop/pull/791) merged as
+`beae00f8a76054ee0111acff46228181ec5ba8b9` after all seven checks in
+[run 41974304304](https://github.com/mecaniser/truck-pit-stop/actions/runs/41974304304)
+passed on `3fd8706d`. The checked and merged trees are identical. The two CI
+returns were test-fixture issues, corrected and independently reviewed with
+assertions and deadlines preserved; no product weakening was introduced.
+
+API deployment `69f9f8e2-66b9-4b21-95cc-0b7c56223dcb` succeeded. The public build
+stamp matches the merge, built 05:40:12.971 UTC; database and Redis readiness
+pass. Read-only production checks verify the seven reviewed backend/migration
+module hashes, existing migration 203, 25 active assets, 23 tractors, two trailers,
+zero unknown types, 21 assets with both available Motive readings, and all four
+reciprocal Elis attachment projections. Six protected identity/membership groups
+and six Elis service-history groups remain byte-identical to pre-deploy.
+
+Independent signed-in runtime QA is GO. Actual desktop and 375px Chrome checks
+verify settings only inside Truck details, required tractor/no standalone Detach,
+609→24 and 603→42 navigation, current own health readings, and trailer engine
+hours Not applicable. Browser acceptance read 609 at 673,150.66 mi / 8,305 h and 603
+at 693,831.25 mi / 23,560 h after the next hourly health collection; these exceed the
+prior readback and confirm continuing automatic updates.
+
+Cards and headers show only a 44px map-pin until opened. The actual 320px popover
+contains the long address within 375px, preserves real-zero/stale semantics and
+its own speed observation time, consumes outside dismissal, and supports Enter,
+Escape and focus return. The settled phone details dialog occupies exactly
+x0..375 with document width 375; equipment controls remain 44px and in bounds.
+Settled trailer 42 selectors visibly show Trailer and assigned tractor 603. Two
+initial screenshots were captured before paint/entry completion; settled visual
+and geometry evidence closed both capture issues without a product change.
+Default viewport was restored. No production Save/create/remove action was used
+for acceptance. Private DOM, images, IDs and fingerprints remain outside Git.
+
+The follow-up is Done. The independent location/speed worker authentication
+repair is recorded under DB-036 and is not included in this runtime approval.
