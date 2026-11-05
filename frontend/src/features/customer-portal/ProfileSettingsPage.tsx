@@ -82,7 +82,7 @@ function ProfileSection() {
         first_name: customer.first_name,
         last_name: customer.last_name,
         email: customer.email,
-        phone: customer.phone || '',
+        phone: formatUSPhone(customer.phone || ''),
         password: '',
       })
       setOriginalEmail(customer.email)
@@ -687,7 +687,7 @@ function ContactDetailsSection({ onDirtyChange, onManagePayments }: { onDirtyCha
       first_name: customer.first_name,
       last_name: customer.last_name,
       email: customer.email,
-      phone: customer.phone || '',
+      phone: formatUSPhone(customer.phone || ''),
       password: '',
     }, { keepDirtyValues: true })
   }, [customer, reset])
@@ -699,7 +699,7 @@ function ContactDetailsSection({ onDirtyChange, onManagePayments }: { onDirtyCha
       setUser(data.user || data, authSessionEpoch)
       queryClient.invalidateQueries({ queryKey: ['customer'] })
       toast.success(data.email_verification_pending ? 'Check your new email to verify the change.' : 'Contact details saved')
-      reset({ ...submitted, password: '' })
+      reset({ ...submitted, phone: formatUSPhone(submitted.phone || ''), password: '' })
     },
     onError: (error: { response?: { data?: { detail?: string } } }) => {
       if (!isCurrentAuthEpoch(authSessionEpoch)) return
@@ -796,7 +796,7 @@ function ContactDetailsSection({ onDirtyChange, onManagePayments }: { onDirtyCha
           >
             {updateMutation.isPending ? 'Saving…' : 'Save changes'}
           </ControlButton>
-          {isDirty && <ControlButton type="button" disabled={updateMutation.isPending} onClick={() => reset({ first_name: customer.first_name, last_name: customer.last_name, email: customer.email, phone: customer.phone || '', password: '' })} className="text-gray-300">Cancel</ControlButton>}
+          {isDirty && <ControlButton type="button" disabled={updateMutation.isPending} onClick={() => reset({ first_name: customer.first_name, last_name: customer.last_name, email: customer.email, phone: formatUSPhone(customer.phone || ''), password: '' })} className="text-gray-300">Cancel</ControlButton>}
           <span role="status" className="text-xs text-gray-400">{isDirty ? 'Unsaved changes' : ''}</span></div>
           <span className="text-xs text-[#a5adbf]">Last updated {format(new Date(customer.updated_at), 'MMM d, yyyy')}</span>
         </div>
