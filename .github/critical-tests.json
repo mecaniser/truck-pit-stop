@@ -36,7 +36,9 @@
     "src/features/payments/__tests__/allocation-resolution-api.test.ts",
     "src/features/payments/__tests__/efs-payments.test.tsx",
     "src/features/customer-portal/__tests__/PaymentMethodsCard.test.tsx",
-    "src/features/customer-portal/__tests__/ProfileSettingsPage.cards.test.tsx"
+    "src/features/customer-portal/__tests__/ProfileSettingsPage.cards.test.tsx",
+    "src/features/customer-portal/__tests__/CustomerVehicleEditor.test.tsx",
+    "src/features/customer-portal/__tests__/VehiclesCard.identity.test.tsx"
   ],
   "backend": [
     "tests/test_schema_preflight.py",
@@ -73,6 +75,7 @@
     "tests/test_db048_fleet_payment*.py",
     "tests/test_customer_card*.py",
     "tests/test_quickbooks_vault_client.py",
-    "tests/test_saved_card_accounts.py"
+    "tests/test_saved_card_accounts.py",
+    "tests/test_customer_vehicle_edit_policy.py"
   ]
 }

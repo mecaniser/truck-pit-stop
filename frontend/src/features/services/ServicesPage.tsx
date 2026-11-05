@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Search, Wrench, ClipboardCheck, Truck, AlertCircle, ChevronRight, Clock3 } from 'lucide-react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Search, Wrench, ClipboardCheck, Truck, AlertCircle, ChevronRight, Clock3, ArrowLeft } from 'lucide-react'
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PortalVehicleScope from '@/features/customer-portal/PortalVehicleScope'
 import { Spinner } from '@/components/ui'
@@ -43,6 +43,7 @@ export default function ServicesPage() {
   if (servicesQuery.isLoading || categoriesQuery.isLoading || vehiclesQuery.isLoading) return <div className="cp-root"><Spinner size="xl" /></div>
   if (readError) return <div className="cp-root" role="alert"><h1>Services unavailable</h1><p>We couldn’t load the service catalog and your vehicles.</p><ControlButton className="cp-secondary" onClick={() => { void servicesQuery.refetch(); void categoriesQuery.refetch(); void vehiclesQuery.refetch() }}>Try again</ControlButton></div>
   return <div className="cp-root">
+    <Link data-db-control="action" className="cp-text cp-return-link" to={scopedPortalPath('/portal/appointments', scope.invalid ? null : scope.vehicleId)}><ArrowLeft size={16} aria-hidden="true"/>Back to appointments</Link>
     <div className="cp-title"><div><h1>Book a service</h1><p>What does your truck need?</p></div></div>
     <div className="cp-book-context"><div><strong>Vehicle</strong><PortalVehicleScope vehicles={vehicles} requested={requestedVehicle} onChange={id => setParams(id ? { vehicle_id: id } : {})} />{scope.invalid && <p role="alert">This vehicle is unavailable. Choose one of your vehicles to continue.</p>}{scope.ambiguous && <p role="alert">Vehicle details need review. Contact the shop before booking.</p>}{!scope.vehicle && !scope.invalid && !scope.ambiguous && <p>{vehicles.length ? 'Choose your vehicle during scheduling.' : 'No vehicles registered. Services without a vehicle are still available.'}</p>}</div></div>
     <label className="cp-search"><Search size={20} /><ControlInput aria-label="Search services or describe a concern" placeholder="Search services or describe a concern" value={search} onChange={event => setSearch(event.target.value)} /></label>

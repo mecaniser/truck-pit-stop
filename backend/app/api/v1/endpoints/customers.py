@@ -40,7 +40,8 @@ from app.schemas.customer import (
     CustomerMergeResult,
 )
 from app.schemas.typeahead import CustomerTypeaheadResponse
-from app.schemas.vehicle import VehicleBase, VehicleUpdate, VehicleResponse
+from app.schemas.vehicle import VehicleBase, VehicleUpdate, VehicleAccountUpdate, VehicleResponse
+from app.services.customer_vehicle_edit import editable_vehicle, customer_label_updates
 from app.schemas.contact import ContactCreate, ContactUpdate, ContactResponse
 from app.services.vehicle_nhtsa_service import sync_vehicle_nhtsa_snapshot
 from app.services.vehicle_identity import (
@@ -1219,40 +1220,20 @@ async def get_customer_vehicle(
 async def update_customer_vehicle(
     customer_id: UUID,
     vehicle_id: UUID,
-    vehicle_data: VehicleUpdate,
+    vehicle_data: VehicleAccountUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Update a specific vehicle for a customer"""
-    result = await db.execute(
-        select(Vehicle).where(
-            and_(
-                Vehicle.id == vehicle_id,
-                _vehicle_linked_to_customer(customer_id),
-            )
-        )
-    )
-    vehicle = result.scalar_one_or_none()
-    
-    if not vehicle:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Vehicle not found",
-        )
-    
-    # Check access
+    vehicle = await editable_vehicle(db, current_user, vehicle_id, customer_id=customer_id, allow_linked=True)
     if current_user.role == UserRole.CUSTOMER:
-        if current_user.customer_id != customer_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied",
-            )
-    elif current_user.tenant_id != vehicle.tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied",
-        )
-    
+        updates = customer_label_updates(vehicle_data.model_dump(exclude_unset=True))
+        for field, value in updates.items():
+            setattr(vehicle, field, value)
+        await db.commit()
+        await db.refresh(vehicle)
+        return VehicleResponse.model_validate(vehicle)
+
     # Update fields
     update_data = vehicle_data.model_dump(exclude_unset=True)
     if "equipment_type" in update_data:

@@ -121,6 +121,7 @@ export function Pill({
     <ControlButton controlKind="content"
       type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={`min-h-[44px] min-w-[44px] shrink-0 rounded-full border px-3.5 text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8b7cf7] ${
         active
           ? 'border-[#8b7cf7] bg-[#8b7cf7]/10 text-[#c9bfff]'
@@ -137,7 +138,7 @@ export function DateBlock({ value }: { value: string | Date }) {
   return (
     <div className="flex h-[52px] w-[52px] shrink-0 flex-col items-center justify-center rounded-[11px] border border-[#272d3d] bg-[#12161f]">
       <span className="text-base font-extrabold leading-none tabular-nums text-[#eceef4]">{format(date, 'd')}</span>
-      <span className="mt-1 text-[10px] font-bold uppercase text-[#5c6375]">{format(date, 'MMM')}</span>
+      <span className="mt-1 text-[10px] font-bold uppercase text-[#a2a9bb]">{format(date, 'MMM')}</span>
     </div>
   )
 }

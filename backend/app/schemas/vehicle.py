@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Dict, List, Literal, Optional
 from datetime import datetime
 from decimal import Decimal
@@ -42,9 +42,18 @@ class VehicleUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class VehicleAccountUpdate(VehicleUpdate):
+    """Reject unknown keys on the role-aware nested account update route."""
+    model_config = ConfigDict(extra="forbid")
+
+
 class VehicleCustomerUpdate(BaseModel):
-    """Limited update schema for customers - only license plate"""
-    license_plate: Optional[str] = None
+    """Customer-maintained labels; physical identity and operations stay protected."""
+    model_config = ConfigDict(extra="forbid")
+    unit_number: Optional[str] = Field(default=None, max_length=50)
+    license_plate: Optional[str] = Field(default=None, max_length=20)
+    color: Optional[str] = Field(default=None, max_length=50)
+    notes: Optional[str] = None
 
 
 class VehicleResponse(VehicleBase):
