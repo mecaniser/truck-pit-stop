@@ -160,3 +160,52 @@ TypeScript production build and baseline-aware changed-source lint passed
 production for acceptance; actual current assignments must be selected by an
 operator. PR checks, migration/deployment and authenticated production read-only
 acceptance remain pending at source handoff.
+
+## Production release complete
+
+PR [788](https://github.com/mecaniser/truck-pit-stop/pull/788) merged as
+`29a47bf2bc2512fe1278dbb8fcf93d5c9892e179` after all seven checks on combined
+head `5b60eda2149d3f9d5fac735c5e6c4ac5c8100b0d` passed in run
+`41963626631`. Checked and merged trees are identical. The earlier clean
+candidate also passed all seven checks; a subsequently merged payment PR caused
+only a project-board conflict. Both delivery records were preserved and the
+combined head was checked again. The reviewed fleet service and migration hashes
+remained unchanged throughout integration.
+
+Production deployment `40aeb0b3-85c7-4ae3-93a7-c0d050ea232d` is SUCCESS.
+The public build stamp reports the merged SHA, built at
+`2026-11-05T03:57:16.432Z`; production readiness reports database and Redis OK.
+Read-only production acceptance confirms migration
+`202_fleet_asset_attachments`, all 25 board records, the two preexisting trailer
+classifications and the two preexisting Elis tractor classifications. All 21
+assets with available Motive vitals still project both mileage and engine hours.
+Deployed service and migration SHA256 values match the independent approvals.
+
+After deployment, the user explicitly supplied the physical assignments:
+tractor609 pulls trailer24 and tractor603 pulls trailer42. Exactly these two
+pairings were saved via the existing authenticated staff session, using the new
+attachment controls. The database contains two current dated rows with valid
+actor tenant scope, and board/detail projections agree on all four reciprocal
+links. No prior pairing or vehicle classification was overwritten.
+
+Actual production browser acceptance verified the trailer filter contains only
+Elis24/42, both trailer health panels show engine hours Not applicable, and both
+tractor panels retain their own actual mileage and engine hours. Reciprocal
+links navigate the appropriate assets. Trailer42's picker excluded the already
+occupied tractor609. The trailer filter survives returning from detail. A375px
+production viewport has375px document width and retains the trailer health
+behavior; the viewport override was reset afterwards. Screenshots remain private
+local artifacts, not repository attachments.
+
+Before/after read-only fingerprints match for all six identity/membership/account
+relationship scopes, including all25 current fleet vehicles. The six separate
+Elis service-history scopes also match:57 repair orders,8 inspections,9 incidents,
+1 saved PM package,2 maintenance programs and0 maintenance readings. Attachment
+writes did not alter any of those rows, service odometers, VINs or ownership.
+The21 other assets without a saved canonical equipment type intentionally remain
+Unclassified and can be edited independently through Change type.
+
+Independent runtime QA GO is recorded in [DB157_QA](DB157_QA.md). Required source,
+security, automated, migration, deployed-source and authenticated runtime evidence
+is complete. The isolated synthetic PostgreSQL container and browser harness
+were stopped; existing product services and user data remain preserved.
