@@ -176,7 +176,7 @@ function ResolutionControls({ access, summary, allocation, audience, tone = 'dar
   }
 
   return <div className={`db-attempt-resolution ${tone === 'dark' ? 'db-attempt-resolution--dark' : ''}`}>
-    {projection.resolution_notice && <p ref={feedback} tabIndex={-1} role="status" className={`mt-2 text-sm ${quiet}`}>{projection.resolution_notice.message}</p>}
+    {projection.resolution_notice && <p ref={feedback} tabIndex={-1} role="status" className={`mt-2 text-sm ${quiet}`}>{!staff && !projection.block_reason && projection.resolution_notice.kind === 'request_cancelled' ? 'Canceled. No payment recorded.' : projection.resolution_notice.message}</p>}
     {!panel && <div className="mt-2 flex flex-wrap items-center gap-2">
       {actions.cancel_unsent && (!efs || allocation.efs?.can_cancel) && !(staff && efs) && <ControlButton type="button" ref={cancelTrigger} disabled={locked} onClick={() => { setNotSent(false); setError(''); setPanel('cancel') }} className="db-attempt-secondary">{zelle ? 'Payment not sent?' : efs ? 'Cancel EFS request' : 'Cancel checkout'}</ControlButton>}
       {actions.check_provider_status && <ControlButton type="button" disabled={locked} onClick={() => { void run('check_provider_status') }} className="db-attempt-secondary">Check card status</ControlButton>}
@@ -185,16 +185,16 @@ function ResolutionControls({ access, summary, allocation, audience, tone = 'dar
       {staff && actions.record_late_receipt && <ControlButton type="button" ref={cancelTrigger} disabled={locked} onClick={() => setPanel('late')} className="db-attempt-secondary">Record late receipt</ControlButton>}
       {canRetry && <ControlButton type="button" disabled={locked} onClick={() => focusPaymentOptions(summary.invoice_id)} className="db-attempt-primary">Pay remaining</ControlButton>}
     </div>}
-    {!panel && !message && !projection.resolution_notice && projection.review_status === 'requested' && <p className={`mt-2 text-xs ${quiet}`}>Shop review requested.</p>}
-    {!panel && projection.block_reason && !projection.resolution_notice && <p className={`mt-2 text-xs ${quiet}`}>{staff ? projection.block_reason.message : projection.checkout_status === 'review_required' ? 'The shop must check this request before you try again.' : projection.block_reason.message}</p>}
+    {staff && !panel && !message && !projection.resolution_notice && projection.review_status === 'requested' && <p className={`mt-2 text-xs ${quiet}`}>Shop review requested.</p>}
+    {!panel && !message && projection.block_reason && !projection.resolution_notice && <p className={`mt-2 text-xs ${quiet}`}>{staff ? projection.block_reason.message : projection.checkout_status === 'review_required' ? 'The shop needs to check this payment before you try again.' : projection.block_reason.message}</p>}
 
     {panel === 'cancel' && <div className="db-attempt-form" role="group" aria-labelledby={`cancel-request-${allocation.attempt_id}`}>
-      <h3 ref={heading} tabIndex={-1} id={`cancel-request-${allocation.attempt_id}`} className="font-bold">Cancel {zelle ? 'Zelle request' : efs ? 'EFS request' : 'card checkout'} for {formatMoney(projection.requested_principal)}?</h3>
-      <p className={`mt-2 text-sm ${quiet}`}>{zelle ? 'This cancels the request here. It does not cancel a bank transfer.' : efs ? 'This cancels the request here, not the EFS code. Use a different code for a new request, or contact the shop.' : 'We’ll verify this checkout can no longer complete before releasing its amount.'}</p>
+      <h3 ref={heading} tabIndex={-1} id={`cancel-request-${allocation.attempt_id}`} className="font-bold">{zelle ? 'Cancel Zelle request?' : efs ? 'Cancel EFS request?' : 'Cancel this checkout?'}</h3>
+      <p className={`mt-2 text-sm ${quiet}`}>{zelle ? 'This cancels the request here. It does not cancel a bank transfer.' : efs ? 'This cancels the request here, not the EFS code. Use a different code for a new request, or contact the shop.' : 'You can try another payment once cancellation is confirmed.'}</p>
       <fieldset disabled={locked} className="mt-3 min-w-0 space-y-3 border-0 p-0">
         {zelle && <label className="db-attempt-check"><input type="checkbox" checked={notSent} onChange={event => setNotSent(event.target.checked)} /><span>{staff ? 'The customer confirmed this transfer was not sent.' : 'I have not sent this transfer.'}</span></label>}
         {staff && <label className="block text-sm font-semibold">Reason<ControlInput className={`mt-1 w-full ${fieldClass}`} maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} /></label>}
-        <div className="flex flex-wrap justify-end gap-2"><ControlButton type="button" className="db-attempt-secondary" onClick={close}>Keep request</ControlButton><ControlButton type="button" className="db-attempt-primary" disabled={(zelle && !notSent) || (staff && !reason.trim())} onClick={() => { void run('cancel_unsent') }}>Cancel request</ControlButton></div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end"><ControlButton type="button" className="db-attempt-secondary w-full sm:w-auto" onClick={close}>{staff ? 'Keep request' : 'Go back'}</ControlButton><ControlButton type="button" className="db-attempt-primary w-full sm:w-auto" disabled={(zelle && !notSent) || (staff && !reason.trim())} onClick={() => { void run('cancel_unsent') }}>{!staff && !zelle && !efs ? 'Cancel checkout' : 'Cancel request'}</ControlButton></div>
       </fieldset>
     </div>}
 

@@ -1,0 +1,13 @@
+# DB-149CLR — Customer payment request clarity
+
+Owner: Frontend & UX. Fast UI refinement; existing API, tenant access, financial calculations and resolution commands remain unchanged. Preview review required before merge/deploy.
+
+Acceptance: show active requests and one relevant action; hide canceled/completed attempts under collapsed Payment history; preserve exact history deep links, keyboard focus, cancellation confirmation, Zelle unsent assertion, unknown-card review restrictions, retry/idempotency/version safeguards and recorded-payment protection. Customer/guest shared component; staff history layout preserved. No production or local financial-record mutations.
+
+Implementation: concise customer cancellation copy with Go back / Cancel checkout; no ambiguous actor or “releasing amount” text. Remove duplicate shop-review lines and customer actor/timestamp noise on active rows. Keep history timestamps, EFS last-four and references. A fully reserved balance is not repeated beside zero available. Pending warning remains concise. Newly closed attempts announce their result and focus the history disclosure; historical legacy-review warnings remain intact.
+
+Runtime receipt, 2026-11-05: intended `/tmp/tps-payment-mobile-refinement`, branch `codex/payment-request-clarity`, base `origin/main`; frontend5177 PID89299, exact checkout/frontend cwd. Explicit preserved split to readonly-mounted `/tmp/customer-efs-payments/backend` through test gateway8019; test database `customer_efs_qa`, QuickBooks sandbox, database/Redis readiness pass. No migration, reseed, live provider enablement or production target change. Frontend proxy is explicitly8019. Served-source and authenticated eee85 customer route show new Payment requests layout with existing100 pending and168.44 available.
+
+Desktop1280x720 and mobile390x720 presentation fixture uses the actual shared component and a fictional three-attempt scenario matching the reported shape. The development-only preview rejects all API requests and writes no records. Confirmed canceled history hidden initially, disclosure accessible, cancellation/back focus,44px controls, mobile confirmation buttons332x44 on separate rows and390px document width. No final cancellation/submission was clicked. Temporary viewport override cleared. Preview: `/tests/payment-requests-preview.html`; screenshots in local `payment-request-clarity` visualization directory. Production has not been changed.
+
+Validation:94 focused tests across attempt resolution, explicit Zelle confirmation, settlement UI and staff payment choice pass. Changed-source ESLint, shared-controls lint, TypeScript and Vite production build pass; diff check clean. No backend, migration, provider or command payload edits.
