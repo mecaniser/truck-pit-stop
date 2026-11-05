@@ -89,3 +89,6 @@ api_router.include_router(source_debt_handoffs.router, prefix="/source-debt-hand
 
 from app.api.v1.endpoints import visit_requests
 api_router.include_router(visit_requests.router, prefix='/visit-requests', tags=['visit requests'])
+
+from app.api.v1.endpoints import customer_notification_preferences
+api_router.include_router(customer_notification_preferences.router, prefix="/auth/me/notification-preferences", tags=["customer-notification-preferences"])

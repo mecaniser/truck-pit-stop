@@ -56,6 +56,7 @@ class EmailDelivery:
     recipient: str
     subject: str
     body: str
+    blocked_reason: Optional[str] = None
 
 
 def _now() -> datetime:
@@ -95,6 +96,7 @@ async def enqueue_email_notification(
     body: str,
     template_name: Optional[str],
     sender_name: Optional[str],
+    customer_id=None,
 ) -> ProviderOutboxEvent:
     """Add the email history record and its durable delivery event to ``db``.
 
@@ -120,7 +122,7 @@ async def enqueue_email_notification(
         aggregate_id=aggregate_id,
         # The payload intentionally references persisted data instead of
         # duplicating recipient/content in the outbox table.
-        payload={"notification_id": str(notification.id), "sender_name": sender_name},
+        payload={"notification_id": str(notification.id), "sender_name": sender_name, **({"customer_id": str(customer_id)} if customer_id else {})},
         idempotency_key=idempotency_key,
         status=ProviderOutboxStatus.PENDING.value,
         available_at=_now(),
@@ -182,10 +184,26 @@ async def _load_email_delivery(
     if not notification_id:
         return None
     notification = await db.get(Notification, UUID(str(notification_id)))
-    if not notification or notification.type != NotificationType.EMAIL:
+    if not notification or notification.tenant_id != event.tenant_id or notification.type != NotificationType.EMAIL:
         return None
     if not notification.recipient_email or not notification.subject:
         return None
+
+    from app.services.customer_notification_preferences import delivery_reason, invoice_customer_scope
+    customer_id = (event.payload or {}).get("customer_id")
+    # Old invoice events have a stable invoice/repair-order binding even though
+    # their payload predates preferences. Never infer an account from an email.
+    if not customer_id and event.aggregate_type == "invoice" and notification.template_name == "invoice_created":
+        from app.db.models.invoice import Invoice
+        from app.db.models.repair_order import RepairOrder
+        from app.services.source_debt_handoff import effective_billing_customer
+        invoice = await db.scalar(select(Invoice).where(Invoice.id == event.aggregate_id, Invoice.tenant_id == event.tenant_id))
+        if invoice:
+            order = await db.scalar(select(RepairOrder).where(RepairOrder.id == invoice.repair_order_id, RepairOrder.tenant_id == event.tenant_id))
+            if order:
+                customer = await effective_billing_customer(db, invoice, order)
+                customer_id = invoice_customer_scope(invoice, customer)
+    reason = await delivery_reason(db, tenant_id=event.tenant_id, customer_id=customer_id, channel="email", template_name=notification.template_name, recipient=notification.recipient_email)
 
     return EmailDelivery(
         event_id=event.id,
@@ -196,6 +214,7 @@ async def _load_email_delivery(
         recipient=notification.recipient_email,
         subject=notification.subject,
         body=notification.body,
+        blocked_reason=reason,
     )
 
 
@@ -249,6 +268,7 @@ async def _mark_succeeded(
         or event.status != ProviderOutboxStatus.PROCESSING.value
         or event.lock_token != delivery.lock_token
         or not notification
+        or notification.tenant_id != event.tenant_id
     ):
         return False
 
@@ -294,7 +314,7 @@ async def _mark_failed(
         notification_id = (event.payload or {}).get("notification_id")
         if notification_id:
             notification = await db.get(Notification, UUID(str(notification_id)))
-            if notification:
+            if notification and notification.tenant_id == event.tenant_id:
                 notification.status = NotificationStatus.FAILED
                 notification.error_message = event.last_error
     await db.commit()
@@ -330,6 +350,12 @@ async def process_due_provider_outbox_events(
                     retryable=False,
                 )
             results["retried" if retried else "invalid"] += 1
+            continue
+
+        if delivery.blocked_reason:
+            async with session_factory() as db:
+                await _mark_failed(db, claim, ProviderDeliveryError(delivery.blocked_reason, retryable=False), retryable=False)
+            results["dead"] += 1
             continue
 
         try:

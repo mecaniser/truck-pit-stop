@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import ProfileSettingsPage from '../ProfileSettingsPage'
 
 vi.mock('@/stores/authStore', () => ({ getAuthenticatedSessionIdentity: () => '', useAuthStore: () => ({ user: { first_name: 'Test', last_name: 'Customer', email: 'test@example.com' } }) }))
+vi.mock('../NotificationPreferencesSection', () => ({ default: () => <h2>Notifications</h2> }))
 vi.mock('../PaymentMethodsCard', () => ({ default: () => <h2>Saved card fixture</h2> }))
 function LocationProbe() {
   const location = useLocation()

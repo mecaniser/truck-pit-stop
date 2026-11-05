@@ -2581,6 +2581,7 @@ async def start_work(
                 subject=f"Work Started on {order.order_number} - {shop_name}",
                 body=html_body,
                 template_name="work_started",
+                customer_id=customer.id,
                 sender_name=shop_name,
             )
         
