@@ -136,6 +136,7 @@ function InvoicePaymentPanel({
   // not to a particular quote or invoice-charge version.
   const [amount, setAmount] = useState<string | null>(null)
   const [editingAmount, setEditingAmount] = useState(false)
+  const amountInput = useRef<HTMLInputElement>(null)
   const [expandedTenders, setExpandedTenders] = useState(false)
   const [otherMethodsOpen, setOtherMethodsOpen] = useState(false)
   const [efsBusy, setEfsBusy] = useState(false)
@@ -173,6 +174,10 @@ function InvoicePaymentPanel({
   const panel = dark ? 'border-[#2a3245] bg-[#111722] text-[#edf0f6]' : 'border-slate-200 bg-white text-slate-950'
   const input = dark ? 'border-[#3a465e] bg-[#182234] text-white placeholder:text-[#738097]' : 'border-slate-300 bg-white text-slate-950 placeholder:text-slate-400'
   const quiet = dark ? 'text-[#99a4b7]' : 'text-slate-500'
+  const selectedFeeNote = rail === 'fleet_payment' ? 'No card fee. EFS account fees may apply.'
+    : rail === 'zelle' ? 'No card processing fee.' : 'Any processing fee is shown before payment.'
+
+
   const cash = audience === 'staff' && access.kind === 'authenticated' ? cashTender : undefined
   const cashSelected = cash?.selected === true
   const genericAvailable = (summary.allowed_actions?.rails?.length ?? 0) > 0 && summary.allowed_actions?.create_attempt !== false
@@ -548,9 +553,9 @@ function InvoicePaymentPanel({
       <p className={`mt-4 text-xs ${quiet}`}>Report only after sending. The shop will verify receipt before marking the invoice paid.</p>
       {!unchanged && <p role="alert" className="mt-3 text-sm">The invoice or payment details changed. Return to the invoice to review them.</p>}
       {createMutation.isError && <div className="mt-3 space-y-3"><p role="alert" className="text-sm">{knownRejection ? 'Your transfer report wasn’t saved. Review the details and try again.' : 'We couldn’t confirm your report was saved. Check the status or retry this report.'}</p><PaymentStatusRefresh access={access} summary={summary} tone={tone} onUpdated={onUpdated} /></div>}
-      <div className="mt-4 flex flex-wrap justify-end gap-3">
-        <ControlButton type="button" disabled={createMutation.isPending || (reportStarted && unchanged)} onClick={() => { setZelleDraft(null); reportRequest.current = null; setReportStarted(false); createMutation.reset() }} className={`rounded-xl border px-3 text-sm font-semibold ${dark ? 'border-[#3a465e]' : 'border-slate-300'}`}>Back to invoice</ControlButton>
-        <ControlButton type="button" disabled={!unchanged || !canSubmit || createMutation.isPending} onClick={() => createMutation.mutate()} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[color-mix(in_srgb,var(--accent-600,#b9472f)_75%,#000)] px-4 text-sm font-extrabold text-white disabled:opacity-50">
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:flex sm:flex-nowrap sm:justify-end">
+        <ControlButton type="button" disabled={createMutation.isPending || (reportStarted && unchanged)} onClick={() => { setZelleDraft(null); reportRequest.current = null; setReportStarted(false); createMutation.reset() }} className={`min-h-11 w-full whitespace-nowrap rounded-xl border px-3 text-sm font-semibold sm:w-auto ${dark ? 'border-[#3a465e]' : 'border-slate-300'}`}>Back to invoice</ControlButton>
+        <ControlButton type="button" disabled={!unchanged || !canSubmit || createMutation.isPending} onClick={() => createMutation.mutate()} className="inline-flex min-h-11 w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-[color-mix(in_srgb,var(--accent-600,#b9472f)_75%,#000)] px-4 text-sm font-extrabold text-white disabled:opacity-50 sm:w-auto">
           {createMutation.isPending && <Spinner size="sm" />}{createMutation.isPending ? 'Reporting…' : createMutation.isError ? 'Retry report' : "I’ve sent the payment"}
         </ControlButton>
       </div>
@@ -589,7 +594,6 @@ function InvoicePaymentPanel({
         <div>
           <h2 id={`settlement-payment-${summary.invoice_id}`} tabIndex={-1} className="font-extrabold">Payment method</h2>
         </div>
-        {audience !== 'staff' && <p className={`text-xs ${quiet}`}>Up to {formatMoney(summary.allocatable_balance)}</p>}
       </div>
 
       <div id={`payment-tenders-${summary.invoice_id}`} className="mt-3" role="radiogroup" aria-label="Payment tender">
@@ -632,26 +636,33 @@ function InvoicePaymentPanel({
           {editingAmount ? 'Pay full balance' : 'Pay partial amount'}
         </ControlButton>}
       </div>}
-      {audience !== 'staff' && noncashAvailable && !allowedRails.includes('ach') && <div className="mt-2">
-        <ControlButton type="button" aria-expanded={otherMethodsOpen} aria-controls={`other-payment-methods-${summary.invoice_id}`} onClick={() => setOtherMethodsOpen(value => !value)} className={`flex min-h-11 items-center gap-2 rounded-lg px-1 text-xs font-semibold ${quiet}`}>
-          Other payment methods<ChevronDown aria-hidden="true" className={`h-4 w-4 ${otherMethodsOpen ? 'rotate-180' : ''}`} />
-        </ControlButton>
-        {otherMethodsOpen && <p id={`other-payment-methods-${summary.invoice_id}`} className={`mt-1 text-sm ${quiet}`}>Contact the shop about bank transfers or other fleet checks/codes.</p>}
-      </div>}
-      {audience !== 'staff' && !cashSelected && noncashAvailable && <div className="mt-4 grid grid-cols-2 gap-2" role="group" aria-label="Payment amount choice">
-        <ControlButton type="button" disabled={efsBusy} aria-pressed={!editingAmount} onClick={() => { setAmount(null); setEditingAmount(false) }} className={`whitespace-nowrap rounded-xl border px-3 text-sm font-bold ${!editingAmount ? dark ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-emerald-700 bg-emerald-50' : input}`}>Pay in full</ControlButton>
-        <ControlButton type="button" disabled={efsBusy} aria-pressed={editingAmount} onClick={() => { setEditingAmount(true); setAmount('') }} className={`whitespace-nowrap rounded-xl border px-3 text-sm font-bold ${editingAmount ? dark ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-emerald-700 bg-emerald-50' : input}`}>Pay part</ControlButton>
-      </div>}
-      {!cashSelected && noncashAvailable && (audience !== 'staff' || editingAmount) && <label className="mt-3 block">
-        <span className={`mb-1.5 block text-xs font-bold ${quiet}`}>{audience === 'staff' ? 'Amount applied to invoice' : 'Payment amount'}</span>
+
+      {!cashSelected && noncashAvailable && (audience !== 'staff' || editingAmount) && <div className="mt-3">
+        <div className="mb-1.5 flex items-center justify-between gap-3">
+          <label htmlFor={`settlement-amount-${summary.invoice_id}`} className={`text-xs font-bold ${quiet}`}>{audience === 'staff' ? 'Amount applied to invoice' : 'Payment amount'}</label>
+          {audience !== 'staff' && <ControlButton type="button" disabled={efsBusy} onClick={() => {
+            if (editingAmount) { setAmount(null); setEditingAmount(false) }
+            else { setEditingAmount(true); setAmount('') }
+            amountInput.current?.focus()
+          }} className={`min-h-11 whitespace-nowrap px-1 text-sm font-semibold underline underline-offset-4 ${quiet}`}>
+            {editingAmount ? isPositiveMoney(summary.active_pending_principal) ? 'Use available' : 'Pay full balance' : 'Partial payment'}
+          </ControlButton>}
+        </div>
         <div className="relative">
           <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-bold ${quiet}`}>$</span>
           <ControlInput
+            ref={amountInput}
+            id={`settlement-amount-${summary.invoice_id}`}
             type="text"
             inputMode="decimal"
             autoComplete="off"
             value={currentAmount}
-            onChange={event => { setAmount(event.target.value); if (audience !== 'staff') setEditingAmount(true) }}
+            onChange={event => {
+              const next = event.target.value
+              if (audience !== 'staff' && !/^\d*(?:\.\d{0,2})?$/.test(next)) return
+              setAmount(next)
+              if (audience !== 'staff') setEditingAmount(true)
+            }}
             onBlur={() => { const normalized = normalizeMoney(currentAmount); if (normalized) setAmount(normalized) }}
             aria-invalid={currentAmount.length > 0 && !amountValid}
             disabled={efsBusy}
@@ -661,12 +672,13 @@ function InvoicePaymentPanel({
           />
         </div>
         <span id={`settlement-amount-help-${summary.invoice_id}`} className={`mt-1 block min-h-4 text-xs ${currentAmount.length > 0 && !amountValid ? 'text-red-500' : quiet}`}>
-          {currentAmount.length > 0 && !amountValid ? `Enter at least $0.01 and no more than ${formatMoney(summary.allocatable_balance)}, the amount available to pay.` : rail !== 'card' ? '' : audience === 'staff' ? 'Card fees are calculated only on the card-funded portion.' : 'Card fees apply to card payments.'}
+          {currentAmount.length > 0 && !amountValid ? `Enter at least $0.01 and no more than ${formatMoney(summary.allocatable_balance)}, the amount available to pay.` : audience === 'staff' ? rail === 'card' ? 'Card fees are calculated only on the card-funded portion.' : '' : selectedFeeNote}
         </span>
-      </label>}
+      </div>}
       {audience !== 'staff' && amountValid && (moneyToCents(currentAmount) ?? 0n) < (moneyToCents(summary.allocatable_balance) ?? 0n) && <p className={`mt-2 text-sm ${quiet}`} role="status">
         Remaining after confirmation: <strong className="tabular-nums">{formatMoney(centsToMoney((moneyToCents(summary.outstanding_balance) ?? 0n) - (moneyToCents(currentAmount) ?? 0n)))}</strong>
       </p>}
+
 
       {cash?.reason && !cash.allowed && <p id={`cash-reason-${summary.invoice_id}`} className={`mt-2 text-xs ${quiet}`}>{cash.reason}</p>}
       {!noncashAvailable && <p role="status" className={`mt-3 text-sm ${quiet}`}>{summary.allowed_actions?.payment_unavailable_reason ?? 'Other payment methods are unavailable.'}</p>}
@@ -750,6 +762,12 @@ function InvoicePaymentPanel({
       </ControlButton>}
       {audience === 'staff' && <p className={`mt-2 text-center text-[11px] ${quiet}`}>Applied after {rail === 'card' ? 'provider' : 'shop'} confirmation.</p>}
       </>}
+      {audience !== 'staff' && noncashAvailable && !allowedRails.includes('ach') && <div className="mt-2">
+        <ControlButton type="button" aria-expanded={otherMethodsOpen} aria-controls={`other-payment-methods-${summary.invoice_id}`} onClick={() => setOtherMethodsOpen(value => !value)} className={`flex min-h-11 items-center gap-2 rounded-lg px-1 text-xs font-semibold ${quiet}`}>
+          Other payment methods<ChevronDown aria-hidden="true" className={`h-4 w-4 ${otherMethodsOpen ? 'rotate-180' : ''}`} />
+        </ControlButton>
+        {otherMethodsOpen && <p id={`other-payment-methods-${summary.invoice_id}`} className={`mt-1 text-sm ${quiet}`}>Contact the shop about bank transfers or other fleet checks/codes.</p>}
+      </div>}
       </fieldset>
     </section>
   )
