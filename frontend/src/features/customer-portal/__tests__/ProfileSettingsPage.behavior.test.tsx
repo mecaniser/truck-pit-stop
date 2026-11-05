@@ -1,29 +1,32 @@
+import userEvent from '@testing-library/user-event'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
 import ProfileSettingsPage from '../ProfileSettingsPage'
 
-const m = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), logout: vi.fn() }))
+const m = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), logout: vi.fn(), epoch: 1 }))
 vi.mock('@/lib/api', () => ({ default: { get: m.get, put: m.put } }))
 vi.mock('@/stores/authStore', async original => ({
   ...await original<typeof import('@/stores/authStore')>(),
   isCurrentAuthEpoch: () => true,
   useAuthStore: () => ({
     user: { id:'u1',tenant_id:'t1',customer_id:'c1',role:'customer',is_active:true },
-    authSessionEpoch:1,authProvider:'legacy',isAuthenticated:true,logoutInProgress:false,setUser:vi.fn(),logout:m.logout,
+    authSessionEpoch:m.epoch,authProvider:'legacy',isAuthenticated:true,logoutInProgress:false,setUser:vi.fn(),logout:m.logout,
   }),
 }))
 const customer = {first_name:'Test',last_name:'Driver',email:'driver@example.com',updated_at:'2026-11-02T12:00:00Z',created_at:'2026-01-02T12:00:00Z'}
 const config = {provider:'quickbooks_payments',available:true,context_key:'context-one',save_pending:false}
 function mount(query = '') {
   const client = new QueryClient({defaultOptions:{queries:{retry:false}}})
-  render(<MemoryRouter initialEntries={['/portal/settings'+query]}><QueryClientProvider client={client}><ProfileSettingsPage /></QueryClientProvider></MemoryRouter>)
-  return client
+  const view = render(<MemoryRouter initialEntries={['/portal/settings'+query]}><QueryClientProvider client={client}><ProfileSettingsPage /></QueryClientProvider></MemoryRouter>)
+  return {client,...view}
 }
+const click = async (element: HTMLElement) => { await act(async () => { await userEvent.click(element) }) }
 beforeEach(()=>{
   vi.resetAllMocks()
   localStorage.clear()
+  m.epoch=1
   m.get.mockImplementation(async(path:string)=>({data:path.startsWith('/customers/')?customer:path.endsWith('/config')?config:[]}))
 })
 it('updates the checkout explanation without changing the separately labeled saved card', async()=>{
@@ -96,16 +99,43 @@ it.each(['shops','vehicles'])('distinguishes failed %s loading from an empty lis
   expect(screen.getByRole('button',{name:'Retry loading '+section})).toBeInTheDocument()
   expect(screen.queryByText(/No vehicles on file|No shops are linked/)).not.toBeInTheDocument()
 })
-it('keeps dirty contact details when section navigation is declined',async()=>{
-  const confirm=vi.spyOn(window,'confirm').mockReturnValue(false)
+it('keeps edits when the in-app discard dialog is cancelled and never calls native confirm',async()=>{
+  const native=vi.spyOn(window,'confirm').mockImplementation(()=>{throw new Error('Native confirmation must not be used')})
   mount();const name=await screen.findByLabelText('First name')
   fireEvent.change(name,{target:{value:'Changed'}})
   fireEvent.click(screen.getByRole('button',{name:'Security',exact:true}))
-  expect(confirm).toHaveBeenCalledWith('Discard unsaved contact changes?')
+  const dialog=await screen.findByRole('alertdialog',{name:'Discard unsaved changes?'})
+  expect(dialog).toHaveAttribute('aria-modal','true')
+  expect(name).toHaveValue('Changed')
+  fireEvent.click(within(dialog).getByRole('button',{name:'Keep editing'}))
+  await waitFor(()=>expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
   expect(name).toHaveValue('Changed')
   expect(screen.queryByRole('button',{name:'Change Password',exact:true})).not.toBeInTheDocument()
-  confirm.mockRestore()
+  expect(native).not.toHaveBeenCalled()
+  native.mockRestore()
 })
+it('navigates to the requested section only after confirming discard',async()=>{
+  mount();fireEvent.change(await screen.findByLabelText('First name'),{target:{value:'Changed'}})
+  await click(screen.getByRole('button',{name:'Security',exact:true}))
+  const dialog=await screen.findByRole('alertdialog')
+  await click(within(dialog).getByRole('button',{name:'Discard changes',exact:true}))
+  expect(await screen.findByRole('button',{name:'Change Password',exact:true})).toBeInTheDocument()
+  expect(screen.queryByLabelText('First name')).not.toBeInTheDocument()
+})
+
+it('uses the same discard modal for payment management and sign-out',async()=>{
+  mount();fireEvent.change(await screen.findByLabelText('First name'),{target:{value:'Changed'}})
+  fireEvent.click(screen.getByRole('button',{name:'Manage payment methods'}))
+  await click(within(await screen.findByRole('alertdialog')).getByRole('button',{name:'Keep editing'}))
+  await waitFor(()=>expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+  expect(m.logout).not.toHaveBeenCalled()
+  await click(screen.getByRole('button',{name:'Sign out',exact:true}))
+  const dialog=await screen.findByRole('alertdialog',{name:'Discard changes and sign out?'})
+  expect(m.logout).not.toHaveBeenCalled()
+  fireEvent.click(within(dialog).getByRole('button',{name:'Discard and sign out'}))
+  expect(m.logout).toHaveBeenCalledTimes(1)
+})
+
 it('reports profile load failure with a recovery action',async()=>{
   m.get.mockRejectedValue(new Error('offline'))
   mount()
@@ -114,7 +144,7 @@ it('reports profile load failure with a recovery action',async()=>{
 })
 
 it('preserves edited fields while refreshing untouched contact details',async()=>{
-  const client=mount()
+  const {client}=mount()
   const name=await screen.findByLabelText('First name')
   fireEvent.change(name,{target:{value:'Changed'}})
   act(()=>client.setQueryData(['customer','c1'],{...customer,last_name:'Refreshed'}))
@@ -130,4 +160,15 @@ it('does not claim a changed checkout preference when browser storage fails',asy
   fireEvent.click(screen.getByRole('button',{name:'card',exact:true}))
   expect(screen.getByRole('button',{name:'zelle',exact:true})).toHaveAttribute('aria-pressed','true')
   storage.mockRestore()
+})
+
+it('dismisses a pending sign-out when the authenticated session changes',async()=>{
+  const view=mount()
+  fireEvent.change(await screen.findByLabelText('First name'),{target:{value:'Changed'}})
+  await click(screen.getByRole('button',{name:'Sign out',exact:true}))
+  expect(await screen.findByRole('alertdialog')).toBeInTheDocument()
+  m.epoch=2
+  view.rerender(<MemoryRouter><QueryClientProvider client={view.client}><ProfileSettingsPage /></QueryClientProvider></MemoryRouter>)
+  await waitFor(()=>expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+  expect(m.logout).not.toHaveBeenCalled()
 })

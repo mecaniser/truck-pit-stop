@@ -1,3 +1,4 @@
+import AccountConfirmationDialog from './AccountConfirmationDialog'
 import { ControlButton } from '@/components/ui/Controls'
 import { useState, useEffect } from 'react'
 import { getAuthenticatedSessionIdentity, useAuthStore } from '@/stores/authStore'
@@ -114,6 +115,7 @@ function TokenCardForm({ config, onSuccess, onCancel, onRefresh }: {
 
 function PaymentMethodsList({ scope, shopName }: { scope: string; shopName?: string | null }) {
   const queryClient = useQueryClient()
+  const [cardToRemove, setCardToRemove] = useState<{ method: PaymentMethod; context: string | undefined } | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
   const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null)
   const [stripeReady, setStripeReady] = useState(false)
@@ -129,7 +131,7 @@ function PaymentMethodsList({ scope, shopName }: { scope: string; shopName?: str
   const accountId = config?.stripe_account_id
   const available = config?.available === true
   const methodsKey = ['payment-methods', scope, contextKey]
-  useEffect(() => { setShowAddForm(false) }, [contextKey, available, config?.save_pending])
+  useEffect(() => { setShowAddForm(false); setCardToRemove(null) }, [contextKey, available, config?.save_pending])
   useEffect(() => {
     let active = true
     setStripePromise(null)
@@ -194,7 +196,7 @@ function PaymentMethodsList({ scope, shopName }: { scope: string; shopName?: str
         </div>
         <div className="flex items-center gap-2">
           {!method.is_default && <ControlButton type="button" onClick={() => setDefault.mutate(method.id)} disabled={setDefault.isPending || remove.isPending} className="text-xs text-gray-400 hover:text-white">Make default</ControlButton>}
-          <ControlButton type="button" aria-label={'Remove ' + (CARD_BRANDS[method.brand] || 'card') + ' ending in ' + method.last4} disabled={remove.isPending || setDefault.isPending} onClick={() => { if (confirm('Remove this card?')) remove.mutate(method.id) }} className="text-gray-400 hover:text-red-400">
+          <ControlButton type="button" aria-label={'Remove ' + (CARD_BRANDS[method.brand] || 'card') + ' ending in ' + method.last4} disabled={remove.isPending || setDefault.isPending} onClick={() => setCardToRemove({ method, context: contextKey })} className="text-gray-400 hover:text-red-400">
             Remove
           </ControlButton>
         </div>
@@ -208,6 +210,20 @@ function PaymentMethodsList({ scope, shopName }: { scope: string; shopName?: str
       {provider === 'stripe_connect' && stripePromise ? <Elements stripe={stripePromise}><StripeCardForm config={config} onSuccess={saved} onCancel={() => setShowAddForm(false)} onRefresh={refresh} /></Elements>
         : provider === 'quickbooks_payments' ? <TokenCardForm config={config} onSuccess={saved} onCancel={() => setShowAddForm(false)} onRefresh={refresh} /> : null}
     </div> : null}
+    <AccountConfirmationDialog
+      open={cardToRemove !== null && cardToRemove.context === contextKey && available}
+      title="Remove saved card?"
+      description={cardToRemove ? 'Remove ' + (CARD_BRANDS[cardToRemove.method.brand] || 'card') + ' ending in ' + cardToRemove.method.last4 + ' from this shop’s saved cards?' : ''}
+      confirmLabel="Remove card"
+      cancelLabel="Keep card"
+      onCancel={() => setCardToRemove(null)}
+      onConfirm={() => {
+        if (cardToRemove && cardToRemove.context === contextKey && available) {
+          remove.mutate(cardToRemove.method.id)
+          setCardToRemove(null)
+        }
+      }}
+    />
   </div>
 }
 

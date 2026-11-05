@@ -56,3 +56,20 @@ Validation: 45/45 focused tests across six suites, including12 profile behavior 
 The preview adapter is synthetic and rejects account/payment writes. Browser evidence establishes presentation and local interaction behavior, not signed-in provider/auth acceptance. Merge/deploy remain unperformed. Notification delivery capability and aligned full-stack acceptance remain explicit limitations.
 
 Final reconciliation gates: production bundle passes. Changed-source lint passes against both the pre-reconciliation branch head (4 files) and current PR base21684af1 (whole PR). TypeScript reports only the previously confirmed baseline LoginPage.tsx:118 error. The first lint comparison used the older82c95576 base and also examined an unrelated appointment change already on main; the corrected comparisons exclude that upstream change. No unrelated appointment edits made.
+
+## In-app modal correction, 2026-11-05
+
+The user correctly identified native confirm dialogs in the previously added unsaved-edit protection. Replaced every confirm call in ProfileSettingsPage and PaymentMethodsCard with a shared AccountConfirmationDialog, using the already-installed Headless UI Dialog. No dependency added.
+
+- Centered themed modal, dimmed/inert background, linked title/description, alertdialog semantics and safe cancel initial focus.
+- Explicit Keep editing / Discard changes, Keep editing / Discard and sign out, and Keep card / Remove card actions.
+- One parent-controlled pending action covers section navigation, payment-management navigation and dirty sign-out. Destination focus moves only after confirmed navigation.
+- Cancel, Escape and backdrop dismissal preserve edits and restore trigger focus.
+- Pending account actions bind to the authenticated session; session change dismisses them. Pending card removal binds to provider context and is dismissed on context/session change. Existing backend/provider requests and their expected-context arguments are preserved.
+- Browser-owned beforeunload warning for closing/reloading an edited page remains necessary and cannot be replaced with a webpage modal. Internal settings actions no longer call native confirm.
+
+Validation: focused suites50/50 pass (15 profile behavior,18 saved-card safeguards plus the existing navigation/summary/preferences/vehicle cases). Tests cover no action before confirmation, cancellation, confirmed navigation/sign-out, context/session changes and zero native confirm calls. Headless UI asynchronous act warnings remain in jsdom; no corresponding app errors in browser.
+
+Actual browser checks at1366,390,320 pass for focus trap (Tab and Shift+Tab), Escape, backdrop cancellation, focus return, edit preservation, confirmed navigation and cancelled sign-out. Native dialog count0 in these internal flows. Modal panels fit the viewport. Screenshots visually inspected on desktop and phone: /tmp/account-discard-modal-1366.png and /tmp/account-discard-modal-320.png; card equivalents /tmp/account-remove-modal-1366.png and /tmp/account-remove-modal-320.png. Also verified Escape and trigger-focus restoration in the user's visible in-app browser. Layout detector and diff check pass. Only the previously confirmed baseline LoginPage.tsx:118 TypeScript mismatch remains.
+
+Synthetic preview only; real payment writes blocked. Authenticated full-stack acceptance, merge/deploy remain pending.

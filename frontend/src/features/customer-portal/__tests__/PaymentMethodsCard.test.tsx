@@ -170,11 +170,33 @@ describe('provider-neutral saved cards', () => {
   it('attaches the expected context to default and remove requests', async () => {
     m.get.mockImplementation(async path=>({data:path.endsWith('/config')?qbpConfig:[card]}))
     m.post.mockResolvedValue({data:{}});m.delete.mockResolvedValue({data:{}})
-    const confirm=vi.spyOn(window,'confirm').mockReturnValue(true)
     mount();fireEvent.click(await screen.findByRole('button',{name:'Make default'}))
     await waitFor(()=>expect(m.post).toHaveBeenCalledWith('/payments/cards/pm_1/default',{expected_context:'context-two'}))
     fireEvent.click(screen.getByRole('button',{name:'Remove Visa ending in 4242'}))
+    expect(m.delete).not.toHaveBeenCalled()
+    fireEvent.click(await screen.findByRole('button',{name:'Remove card',exact:true}))
     await waitFor(()=>expect(m.delete).toHaveBeenCalledWith('/payments/cards/pm_1',{params:{expected_context:'context-two'}}))
-    confirm.mockRestore()
   })
+  it('keeps the card when removal is cancelled',async()=>{
+    m.get.mockImplementation(async path=>({data:path.endsWith('/config')?qbpConfig:[card]}))
+    mount()
+    fireEvent.click(await screen.findByRole('button',{name:'Remove Visa ending in 4242'}))
+    expect(await screen.findByRole('alertdialog',{name:'Remove saved card?'})).toHaveAttribute('aria-modal','true')
+    fireEvent.click(screen.getByRole('button',{name:'Keep card'}))
+    await waitFor(()=>expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(m.delete).not.toHaveBeenCalled()
+    expect(screen.getByText(/4242/)).toBeInTheDocument()
+  })
+  it('dismisses a pending removal when the provider context changes',async()=>{
+    let config=qbpConfig
+    m.get.mockImplementation(async path=>({data:path.endsWith('/config')?config:[card]}))
+    const view=mount()
+    fireEvent.click(await screen.findByRole('button',{name:'Remove Visa ending in 4242'}))
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument()
+    config={...qbpConfig,context_key:'new-context'}
+    await act(async()=>{await view.client.invalidateQueries({queryKey:['payment-methods-config']})})
+    await waitFor(()=>expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(m.delete).not.toHaveBeenCalled()
+  })
+
 })

@@ -1,3 +1,4 @@
+import AccountConfirmationDialog from './AccountConfirmationDialog'
 import { CookiePrivacySettings } from '@/components/PrivacyControls'
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { useState, useEffect } from 'react'
@@ -640,8 +641,7 @@ interface SavedPaymentMethod {
   is_default: boolean
 }
 
-function ContactDetailsSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
-  const [, setSearchParams] = useSearchParams()
+function ContactDetailsSection({ onDirtyChange, onManagePayments }: { onDirtyChange: (dirty: boolean) => void; onManagePayments: () => void }) {
   const auth = useAuthStore()
   const { user, setUser, authSessionEpoch } = auth
   const queryClient = useQueryClient()
@@ -845,7 +845,7 @@ function ContactDetailsSection({ onDirtyChange }: { onDirtyChange: (dirty: boole
               : cardsLoading ? 'Loading saved cards…'
                 : defaultCard ? `Card on file: ${defaultCard.brand} ···${defaultCard.last4}` : 'No card on file'}
           </p>
-          <ControlButton type="button" onClick={() => { if (isDirty && !window.confirm('Discard unsaved contact changes?')) return; setSearchParams(current => { const next = new URLSearchParams(current); next.set('tab', 'payments'); return next }) }} className="mt-2 text-violet-300 underline">Manage payment methods</ControlButton>
+          <ControlButton type="button" onClick={onManagePayments} className="mt-2 text-violet-300 underline">Manage payment methods</ControlButton>
         </section>
       </aside>
     </div>
@@ -870,21 +870,37 @@ const SECTIONS = SECTION_GROUPS.flatMap(group => [...group.sections])
 
 export default function ProfileSettingsPage() {
   const navigate = useNavigate()
-  const { user, logout } = useAuthStore()
+  const auth = useAuthStore()
+  const { user, logout } = auth
+  const accountScope = getAuthenticatedSessionIdentity(auth)
   const [contactDirty, setContactDirty] = useState(false)
+  const [pendingAction, setPendingAction] = useState<({ type: 'section'; section: SettingsSection } | { type: 'signout' }) & { scope: string | null } | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab') as SettingsSection | null
   const activeSection = requestedTab && SECTIONS.some(section => section.id === requestedTab) ? requestedTab : 'profile'
   const [mobileSectionOpen, setMobileSectionOpen] = useState(Boolean(requestedTab && SECTIONS.some(section => section.id === requestedTab)))
 
+  useEffect(() => { setPendingAction(null) }, [accountScope])
+
   const selectSection = (section: SettingsSection) => {
-    if (section === activeSection) { setMobileSectionOpen(true); return }
-    if (contactDirty && !window.confirm('Discard unsaved contact changes?')) return
     setMobileSectionOpen(true)
     const next = new URLSearchParams(searchParams)
     if (section === 'profile') next.delete('tab')
     else next.set('tab', section)
     setSearchParams(next, { replace: true })
+    requestAnimationFrame(() => document.getElementById('account-section-heading')?.focus())
+  }
+  const requestSection = (section: SettingsSection) => {
+    if (section !== activeSection && contactDirty) setPendingAction({ type: 'section', section, scope: accountScope })
+    else selectSection(section)
+  }
+  const signOut = () => { logout(); navigate('/login') }
+  const confirmAction = () => {
+    const action = pendingAction
+    setPendingAction(null)
+    if (!action || action.scope !== accountScope) return
+    if (action.type === 'section') selectSection(action.section)
+    else if (action?.type === 'signout') signOut()
   }
 
   return (
@@ -903,13 +919,13 @@ export default function ProfileSettingsPage() {
             <div className="space-y-1">{group.sections.map(section => <ControlButton
               key={section.id} type="button" controlKind="content"
               aria-current={activeSection === section.id ? 'page' : undefined}
-              onClick={() => { selectSection(section.id); requestAnimationFrame(() => document.getElementById('account-section-heading')?.focus()) }}
+              onClick={() => requestSection(section.id)}
               className={['flex min-h-11 w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-300', activeSection === section.id ? 'bg-violet-400/10 text-[#d4ccff]' : 'text-[#b5bdcf] hover:bg-white/5 hover:text-white'].join(' ')}>
               {section.label}<span aria-hidden="true" className="md:hidden">›</span>
             </ControlButton>)}</div>
           </div>)}
           <div className="border-t border-[#272d3d] pt-3">
-            <ControlButton type="button" onClick={() => { if (contactDirty && !window.confirm('Discard unsaved contact changes and sign out?')) return; logout(); navigate('/login') }} className="w-full justify-start text-[#c9cdd8] hover:bg-white/5"><LogOut className="h-4 w-4" aria-hidden="true" />Sign out</ControlButton>
+            <ControlButton type="button" onClick={() => contactDirty ? setPendingAction({ type: 'signout', scope: accountScope }) : signOut()} className="w-full justify-start text-[#c9cdd8] hover:bg-white/5"><LogOut className="h-4 w-4" aria-hidden="true" />Sign out</ControlButton>
           </div>
         </nav>
         <div className={[(mobileSectionOpen ? '' : 'hidden md:block'), 'min-w-0'].join(' ')}>
@@ -919,7 +935,7 @@ export default function ProfileSettingsPage() {
           }} className="mb-4 text-[#c9bfff] md:hidden">← All settings</ControlButton>
           <div id="account-section-heading" role="region" aria-label={SECTIONS.find(section => section.id === activeSection)?.label} tabIndex={-1} className="rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-300">
             {activeSection === 'profile' ? (
-              <ContactDetailsSection onDirtyChange={setContactDirty} />
+              <ContactDetailsSection onDirtyChange={setContactDirty} onManagePayments={() => requestSection('payments')} />
             ) : (
               <div className="rounded-2xl border border-[#232939] bg-[#161a26] p-4 sm:p-6">
                 {activeSection === 'security' && <><SecuritySection /><div className="[&_.cookie-privacy-settings]:border-[#272d3d] [&_.cookie-privacy-settings_p]:text-gray-400"><CookiePrivacySettings /></div></>}
@@ -933,6 +949,15 @@ export default function ProfileSettingsPage() {
           </div>
         </div>
       </div>
+      <AccountConfirmationDialog
+        open={pendingAction !== null && pendingAction.scope === accountScope}
+        title={pendingAction?.type === 'signout' ? 'Discard changes and sign out?' : 'Discard unsaved changes?'}
+        description={pendingAction?.type === 'signout' ? 'Your contact details have not been saved. Signing out will discard these edits.' : 'Your contact details have not been saved. Leaving this section will discard these edits.'}
+        confirmLabel={pendingAction?.type === 'signout' ? 'Discard and sign out' : 'Discard changes'}
+        cancelLabel="Keep editing"
+        onCancel={() => setPendingAction(null)}
+        onConfirm={confirmAction}
+      />
     </div>
   )
 }
