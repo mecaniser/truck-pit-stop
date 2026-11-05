@@ -67,6 +67,7 @@ from app.schemas.fleet import (
     FleetVehicleResponse,
     FleetSummaryResponse,
     BoardTruck,
+    FleetAttachmentUpdate,
     BoardWorkOrder,
     FleetStats,
     FleetBoardResponse,
@@ -1579,6 +1580,7 @@ def _build_board_truck(
     pm_wo = _board_work_order(pm_ro) if pm_ro is not None else None
     moving = bool(v.last_speed_mph and v.last_speed_mph > 0)
     return BoardTruck(
+        equipment_type=getattr(v, "equipment_type", "unknown") or "unknown",
         id=v.id,
         unit_number=v.unit_number,
         year=v.year,
@@ -2141,6 +2143,8 @@ async def fleet_board(
             for v in missing_vehicles
         )
     await _attach_account_context(db, trucks, current_user.tenant_id)
+    from app.services import fleet_assets
+    await fleet_assets.attach(db, trucks, current_user.tenant_id)
     from app.services.fleet_telemetry import attach as attach_telemetry
     await attach_telemetry(db, trucks, current_user.tenant_id)
     await fleet_driver_records.attach(db, trucks, current_user.tenant_id)
@@ -2229,6 +2233,8 @@ async def truck_detail(
         board.board_membership_company_name = company or f"{first or ''} {last or ''}".strip() or None
     from app.services.fleet_telemetry import attach as attach_telemetry
     await attach_telemetry(db, [board], current_user.tenant_id)
+    from app.services import fleet_assets
+    await fleet_assets.attach(db, [board], current_user.tenant_id)
     await fleet_driver_records.attach(db, [board], current_user.tenant_id)
     from app.services.fleet_pm import apply_pm_mileage
     apply_pm_mileage(board)
@@ -2617,6 +2623,9 @@ async def update_truck(
     current_user: User = Depends(require_fleet_access),
 ):
     vehicle = await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
+    if "equipment_type" in body.model_fields_set:
+        from app.services import fleet_assets
+        await fleet_assets.change_equipment_type(db, vehicle, body.equipment_type)
     from app.services import maintenance
     pm_changed = any(getattr(body, key) is not None for key in ('pm_interval_miles', 'next_pm_miles', 'pm_interval_days', 'pm_due_date'))
     legacy = None
@@ -2751,7 +2760,31 @@ async def update_truck(
 
     open_list = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id, [])
     counts = await _open_incident_counts(db, [vehicle.id])
-    return _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list), pm_ro=_open_pm_ro(open_list))
+    card = _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list), pm_ro=_open_pm_ro(open_list))
+    from app.services import fleet_assets
+    await fleet_assets.attach(db, [card], current_user.tenant_id)
+    return card
+
+
+@router.put("/trucks/{vehicle_id}/attachment", response_model=BoardTruck)
+async def update_asset_attachment(
+    vehicle_id: UUID,
+    body: FleetAttachmentUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    from app.services import fleet_assets
+    await fleet_assets.change_attachment(
+        db, current_user, vehicle_id, body.attached_vehicle_id, body.expected_attached_vehicle_id,
+    )
+    await db.commit()
+    vehicle = await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
+    open_list = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id, [])
+    counts = await _open_incident_counts(db, [vehicle.id])
+    card = _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list), pm_ro=_open_pm_ro(open_list))
+    await _attach_account_context(db, [card], current_user.tenant_id)
+    await fleet_assets.attach(db, [card], current_user.tenant_id)
+    return card
 
 
 async def _load_fleet_ro_or_404(

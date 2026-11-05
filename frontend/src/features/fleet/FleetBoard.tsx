@@ -1,6 +1,6 @@
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
-import { useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Wrench, Gauge, ClipboardList, User, Search, ChevronDown, ChevronRight, Check, AlertTriangle, X } from 'lucide-react'
 import type { BoardTruck, FleetBoard as FleetBoardData, TruckStatus } from './types'
 import { STATUS_META, VISIT_STALE_AFTER_DAYS, fleetIdentity, fleetUnitLabel, fmt, pmState, pmUrgency, rank, visitAge, visitIsStale } from './helpers'
@@ -10,6 +10,8 @@ import { truckMotion, useTelemetryClock } from './telemetry'
 import ClosedRepairOrders from './ClosedRepairOrders'
 import CurrentDriver from './CurrentDriver'
 import { currentDriverName } from './driverIdentity'
+import './assetAttachment.css'
+import { assetTypeLabel, filterAssets, type AssetFilter } from './assetIdentity'
 
 type QueueFilter = 'pm_planning' | 'open_work_orders' | 'visits_to_close'
 type Filter = 'all' | TruckStatus | QueueFilter
@@ -43,23 +45,23 @@ function ActionQueue({ icon, value, label, detail, tone, active, onClick }: {
 
 const SORT_TITLE: Record<Sort, string> = {
   attention: 'Fleet overview',
-  unit: 'All trucks by unit',
-  pm: 'All trucks by PM urgency',
-  odo: 'All trucks by mileage',
+  unit: 'All equipment by unit',
+  pm: 'All equipment by PM urgency',
+  odo: 'All equipment by mileage',
 }
 
 const SORT_DETAIL: Record<Sort, string> = {
   attention: 'Units without an immediate action queue.',
-  unit: 'Every truck, ordered by unit number.',
+  unit: 'Every asset, ordered by unit number.',
   pm: 'Overdue first, then due today, then by how soon the PM falls.',
-  odo: 'Every truck, highest mileage first.',
+  odo: 'Every asset, highest mileage first.',
 }
 
 function SectionHeading({ title, count, detail }: { title: string; count?: number; detail: string }) {
   return (
     <div className="board-section-heading">
       <div>
-        <h2>{title}</h2>
+        <h2 tabIndex={-1}>{title}</h2>
         <p>{detail}</p>
       </div>
       {count != null && <span className="board-section-count">{count}</span>}
@@ -95,6 +97,7 @@ function TruckCard({ t, onOpen, onOpenRepairOrder }: { t: BoardTruck; onOpen: (t
   return (
     <article
       className="tcard"
+      data-asset-id={t.id}
       style={{ '--st': meta.dot } as CSSProperties}
       role="button"
       tabIndex={0}
@@ -105,7 +108,7 @@ function TruckCard({ t, onOpen, onOpenRepairOrder }: { t: BoardTruck; onOpen: (t
           onOpen(t)
         }
       }}
-      aria-label={`Open ${fleetUnitLabel(t)} truck details`}
+      aria-label={`Open ${fleetUnitLabel(t)} ${t.equipment_type === 'trailer' ? 'trailer' : 'truck'} details`}
     >
       <div className="tcard-top">
         <div className="tcard-id">
@@ -120,7 +123,8 @@ function TruckCard({ t, onOpen, onOpenRepairOrder }: { t: BoardTruck; onOpen: (t
           <span className="tcard-unit" data-testid="tcard-unit-mark">{identity.unit}</span>
         </div>
       </div>
-      {t.body_type && <div className="tcard-type">{t.body_type}</div>}
+      <div className="tcard-type">{assetTypeLabel(t.equipment_type)}{t.body_type ? ` · ${t.body_type}` : ''}</div>
+      {t.attached_asset && <div className="tcard-type">Attached {t.attached_asset.equipment_type} · {t.attached_asset.unit_number || 'Unit not recorded'}</div>}
       {reasons.length > 0 && (
         <div className="tcard-reasons">
           {reasons.map((reason) => <span key={reason} className="tcard-reason">{reason}</span>)}
@@ -178,15 +182,28 @@ function TruckCard({ t, onOpen, onOpenRepairOrder }: { t: BoardTruck; onOpen: (t
 }
 
 export default function FleetBoard({
-  data, onOpen, onOpenRepairOrder, filter, setFilter, query, setQuery, sort, setSort,
+  data, onOpen, onOpenRepairOrder, filter, setFilter, query, setQuery, sort, setSort, assetFilter: controlledAssetFilter, onAssetFilter, focusAssetId,
 }: {
+  focusAssetId?: string | null
+  assetFilter?: AssetFilter; onAssetFilter?: (filter: AssetFilter) => void
   data: FleetBoardData; onOpen: (t: BoardTruck) => void
   onOpenRepairOrder: (repairOrderId: string) => void
   filter: Filter; setFilter: (f: Filter) => void
   query: string; setQuery: (q: string) => void
   sort: Sort; setSort: (s: Sort) => void
 }) {
-  const { trucks, stats } = data
+  const board = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!focusAssetId) return
+    const card = Array.from(board.current?.querySelectorAll<HTMLElement>('[data-asset-id]') || []).find(element => element.dataset.assetId === focusAssetId)
+    const target = card ?? board.current?.querySelector<HTMLElement>('h2')
+    target?.focus({ preventScroll: true })
+  }, [focusAssetId])
+  const [localAssetFilter, setLocalAssetFilter] = useState<AssetFilter>('all')
+  const assetFilter = controlledAssetFilter ?? localAssetFilter
+  const setAssetFilter = onAssetFilter ?? setLocalAssetFilter
+  const trucks = filterAssets(data.trucks, assetFilter)
+  const stats = { ...data.stats, shop: trucks.filter(t => t.status === 'shop').length, open_wo: trucks.filter(t => t.work_order).length }
   // The board answers "what is happening now"; the activity tab answers "what
   // happened". Board-local state: it is a way of reading this screen, not a
   // separate destination, so it stays out of the rail and out of the URL.
@@ -253,13 +270,13 @@ export default function FleetBoard({
   const activeFilter = filter === 'all' ? null : FILTER_COPY[filter] || { title: STATUS_META[filter as TruckStatus]?.label || 'Filtered trucks', detail: 'Filtered fleet results.' }
 
   return (
-    <div className="fleet-board">
+    <div ref={board} className="fleet-board">
       {showActionLane && (
         <section className="action-lane" aria-label="Action queues">
           <SectionHeading title="Action now" detail="Work that needs a decision or follow-through." />
           <div className="action-queues">
             <ActionQueue icon={<Wrench size={20} />} value={stats.shop} label="In the shop" detail="Units at the service bay" tone="var(--st-shop)" active={false} onClick={() => setFilter('shop')} />
-            <ActionQueue icon={<ClipboardList size={20} />} value={stats.open_wo} label="Repair orders" detail={`${stats.open_wo} open${staleVisits ? ` · ${staleVisits} trucks with work open ${VISIT_STALE_AFTER_DAYS}+ days` : ' · View closed history'}`} tone="var(--st-parts)" active={false} onClick={() => { setFilter('open_work_orders'); setSort('attention'); setTab('trucks'); setOrderView('open') }} />
+            <ActionQueue icon={<ClipboardList size={20} />} value={stats.open_wo} label="Repair orders" detail={`${stats.open_wo} open${staleVisits ? ` · ${staleVisits} assets with work open ${VISIT_STALE_AFTER_DAYS}+ days` : ' · View closed history'}`} tone="var(--st-parts)" active={false} onClick={() => { setFilter('open_work_orders'); setSort('attention'); setTab('trucks'); setOrderView('open') }} />
             <ActionQueue icon={<Gauge size={20} />} value={pmPlanning} label="PM to plan" detail="Due soon or not scheduled" tone="var(--yellow)" active={false} onClick={() => setFilter('pm_planning')} />
           </div>
         </section>
@@ -277,12 +294,19 @@ export default function FleetBoard({
                   className={'board-tab' + (tab === value ? ' is-on' : '')}
                   onClick={() => setTab(value)}
                 >
-                  {value === 'trucks' ? 'Trucks' : 'Activity'}
+                  {value === 'trucks' ? 'Equipment' : 'Activity'}
                 </ControlButton>
               ))}
             </div>
             {tab === 'trucks' && (
             <>
+            <div className="board-tabs" role="group" aria-label="Equipment type filter">
+              {(['all', 'tractor', 'trailer', 'unknown', 'other'] as const).map(value => (
+                <ControlButton key={value} type="button" controlKind="content" className={'board-tab' + (assetFilter === value ? ' is-on' : '')} aria-pressed={assetFilter === value} onClick={() => setAssetFilter(value)}>
+                  {{ all: 'All equipment', tractor: 'Tractors', trailer: 'Trailers', unknown: 'Unclassified', other: 'Other' }[value]} · {filterAssets(data.trucks, value).length}
+                </ControlButton>
+              ))}
+            </div>
             {!(ordersActive && orderView === 'closed') && <div data-db-control-shell="field" className="fld-search">
               <Search size={16} />
               <ControlInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search unit, VIN, plate, driver, make…" />
@@ -320,7 +344,7 @@ export default function FleetBoard({
             <div className="board-tabs" role="tablist" aria-label="Repair order state">
               {(['open', 'closed'] as const).map((view) => <ControlButton controlKind="content" key={view} type="button" role="tab" aria-selected={orderView === view} className={'board-tab' + (orderView === view ? ' is-on' : '')} onClick={() => setOrderView(view)}>{view === 'open' ? 'Open' : 'Closed'}</ControlButton>)}
             </div>
-            {orderView === 'open' && <ControlButton controlKind="action" type="button" className="active-filter" aria-pressed={filter === 'visits_to_close'} onClick={() => setFilter(filter === 'visits_to_close' ? 'open_work_orders' : 'visits_to_close')}>Open {VISIT_STALE_AFTER_DAYS}+ days · {staleVisits} trucks</ControlButton>}
+            {orderView === 'open' && <ControlButton controlKind="action" type="button" className="active-filter" aria-pressed={filter === 'visits_to_close'} onClick={() => setFilter(filter === 'visits_to_close' ? 'open_work_orders' : 'visits_to_close')}>Open {VISIT_STALE_AFTER_DAYS}+ days · {staleVisits} assets</ControlButton>}
           </div>
           {orderView === 'closed' && <ClosedRepairOrders trucks={trucks} onOpenRepairOrder={onOpenRepairOrder} />}
         </section>
@@ -347,7 +371,7 @@ export default function FleetBoard({
         />
         <div className="tgrid">
           {(showActionLane && sectioned ? remaining : list).map((t) => <TruckCard key={t.id} t={t} onOpen={onOpen} onOpenRepairOrder={onOpenRepairOrder} />)}
-          {list.length === 0 && <div className="tgrid-empty">No trucks match.</div>}
+          {list.length === 0 && <div className="tgrid-empty">No equipment matches.</div>}
         </div>
       </section>
       )}
