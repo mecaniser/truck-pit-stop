@@ -148,3 +148,85 @@ using two isolated workers, matching CI concurrency. Final test candidate SHA256
 `46886f2d7b48d003659ee5210cfb46e496eb109ff16aa911ed00a429fb7d275a`.
 Fresh independent review of this QA-owned test correction and protected CI are
 pending; prior source/runtime outcomes remain separately recorded.
+
+
+## Deployed follow-up runtime review — release evidence verified
+
+Independent runtime review is read-only and does not rerun provider jobs or
+create/save/remove equipment. Reviewer refreshed public readiness/build identity,
+GitHub PR/check state, compared source trees and reviewed the retained actual
+signed-in browser evidence.
+
+- [PR791](https://github.com/mecaniser/truck-pit-stop/pull/791) merged as
+  `beae00f8a76054ee0111acff46228181ec5ba8b9`, with an identical tree to checked
+  head `3fd8706d05c7ce067e85af0af34da47179dc556f`. All seven checks in
+  [CI41974304304](https://github.com/mecaniser/truck-pit-stop/actions/runs/41974304304)
+  passed. Fresh Security GO artifacts cover the QA-authored clock teardown and
+  admission-fixture corrections; their earlier pending-review statuses are
+  superseded without erasing the returned CI history.
+- API image69f9f8e2 succeeded. The deployment receipt and independent fresh public
+  build read show the merged SHA, built2026-11-05 05:40:12 UTC. Fresh readiness
+  reports production ready with database and Redis OK.
+- Post-deploy readback passes all25 assets,23 tractors,2 trailers,0 unknown,
+  21 assets with both available Motive readings and all four reciprocal Elis
+  board/detail links. Current schema head is203_customer_efs_submissions; DB-157
+  adds no further migration. Reviewer recomputed all seven deployed-module hashes
+  against the reviewed source and they match.
+- Six protected identity/membership/relationship fingerprint groups are byte
+  identical pre/post deployment (combined SHA256
+  `9465ac904fb17f5e2b544d5e9b392fad990910f6df687a0a3a13eac194edaf36`).
+  Six service-history fingerprint groups are byte identical (combined SHA256
+  `72fbe4874228dc3ba7c36ad3d7861bc26e3cebfd666fff873fe197afc83716a0`).
+  No production Save, create, removal or reassignment was performed for this
+  release acceptance.
+- Actual desktop DOM/screenshots show settings only inside Truck details, no
+  standalone Detach, required tractor guidance,609↔24 and603↔42 links, and focus
+  on the new details trigger after counterpart navigation. Trailer24 health
+  shows Engine hours Not applicable. Tractor health captures show609:
+  673,150.66mi /8,305h and603:693,831.25mi /23,560h, on their independent records.
+- Actual desktop and375px phone card/header markers keep address/speed hidden
+  until opened. Phone marker is44px; popup width320px and document width375px.
+  The popup shows retained old address and honestly Unavailable speed with its
+  last-observed time. Outside dismissal retains the board and marker focus;
+  keyboard Enter opens the header popup and Escape returns marker focus.
+- Root restored the default3130px viewport. A card-center click briefly opened
+  its existing nested driver-record action; dismissal and Enter then opened the
+  intended truck. This does not establish a product navigation failure.
+
+Reviewer returned two screenshot-evidence issues before final mobile visual GO:
+the initial phone-details capture appears left-clipped, and trailer42's desktop
+selector capture appears blank/light although the same-step DOM names both
+correct values. Root is repeating settled geometry/screenshots to distinguish
+animation/prepaint capture from persistent layout. Other release checks above
+pass; final runtime GO is pending these settled visual captures. Private DOM,
+VINs, addresses and screenshots remain outside the repository. Location-worker
+PR793 is a separate outcome and is not approved by this DB-157 runtime review.
+
+
+## Settled visual review — final DB-157 runtime QA GO
+
+Reviewer directly inspected the three replacement screenshots and their actual
+geometry/computed-style records. Both returned screenshot-evidence issues are
+closed without product changes:
+
+- Settled phone details fills exactly x0–375 and y0–812, with transform none and
+  document width375. The actual panel scroll container is contained, not clipped.
+  After genuine keyboard scrolling, Equipment lies within x17–348 and y227–579;
+  all four controls are44px tall. Tractor classification and Trailer24 selection
+  are visibly readable inside Truck details.
+- Settled trailer42 desktop details is the actual560px drawer at x2570–3130.
+  Equipment type visibly reads Trailer and Assigned tractor visibly reads603.
+  Both selectors have44px geometry and the expected light text on the dark
+  translucent surface. The earlier blank/light capture and apparent phone
+  clipping were entry/prepaint captures, not persistent layout defects.
+- The default3130px viewport is restored. No Save, create, removal or provider
+  action was performed to obtain the corrected evidence.
+
+Final independent runtime QA GO for DB-157 settings, classification, required
+tractor assignment and compact location/speed presentation on the reviewed
+beae00f8 deployment. The earlier pending visual status is superseded. No
+unresolved functional acceptance finding remains in this scope. Source tests,
+fresh independent reviews, all seven exact-head CI checks, production identity,
+reciprocal records, protected/history preservation and signed-in desktop/phone
+acceptance are recorded above. Location-worker PR793 and its dedicated runtime
+execution remain separate and are not included in this GO.
