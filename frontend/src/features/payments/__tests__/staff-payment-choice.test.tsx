@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DB048_SETTLEMENT_FIXTURES } from '@/test-fixtures/db048/settlements'
@@ -239,6 +239,18 @@ describe('Staff payment choice remains independent of historical export status',
     await userEvent.click(screen.getByRole('button', { name: /Confirm .* cash received/ }))
     expect(paymentApi.confirmFullCashPayment.mock.calls[1][2]).toBe(firstKey)
     expect(screen.getByLabelText('Receipt note (optional)')).toBeDisabled()
+  })
+  it('keeps review focus when queue refresh replaces its close callback', () => {
+    const client = new QueryClient()
+    const firstClose = vi.fn(), nextClose = vi.fn()
+    const view = render(<QueryClientProvider client={client}><StaffSettlementDialog invoiceId="invoice-834" invoiceNumber="Invoice" open onClose={firstClose} /></QueryClientProvider>)
+    const tender = screen.getByRole('radio', { name: /^QBO Payments/ })
+    tender.focus()
+    view.rerender(<QueryClientProvider client={client}><StaffSettlementDialog invoiceId="invoice-834" invoiceNumber="Invoice" open onClose={nextClose} /></QueryClientProvider>)
+    expect(tender).toHaveFocus()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(nextClose).toHaveBeenCalledTimes(1)
+    expect(firstClose).not.toHaveBeenCalled()
   })
   it('does not regress to a delayed older settlement query', () => {
     const client = new QueryClient()

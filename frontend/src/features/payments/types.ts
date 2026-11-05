@@ -1,3 +1,5 @@
+import type { ResolutionProjection } from './attemptResolutionTypes'
+
 export type SettlementState =
   | 'unpaid'
   | 'payment_pending'
@@ -136,6 +138,7 @@ export interface PaymentAttemptResponse {
 }
 
 export interface PaymentAllocation {
+  resolution?: ResolutionProjection | null
   fleet_provider?: FleetProvider | null
   fleet_provider_name?: string | null
   authorization_number?: string | null

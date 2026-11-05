@@ -151,6 +151,8 @@ function normalizeAllocationPage(data: PaymentAllocationPage | { items?: Array<R
         id: String(raw.id ?? attemptId),
         attempt_id: attemptId,
         attempt_version: typeof raw.attempt_version === 'number' ? raw.attempt_version : undefined,
+        resolution: raw.resolution && typeof raw.resolution === 'object'
+          ? raw.resolution as PaymentAllocationPage['items'][number]['resolution'] : null,
         rail: raw.rail as PaymentAllocationPage['items'][number]['rail'],
         provider: raw.provider as PaymentAllocationPage['items'][number]['provider'],
         principal_amount: String(raw.principal_amount ?? '0.00'),

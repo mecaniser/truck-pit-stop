@@ -53,14 +53,15 @@ export function projectShopWorkReviews(base: ShopWorkOverviewData | undefined, b
     })
   }
   if (payments.allowed && !payments.failed && !payments.loading) for (const row of payments.rows) {
-    const canonical = row.kind === 'canonical_zelle_attempt' && row.review_mode === 'canonical_attempt' && !!row.attempt_id
-    const legacy = row.kind === 'legacy_zelle_submission' && row.review_mode === 'legacy_invoice' && !!row.repair_order_id
+    const bound = !!row.resolution && row.resolution.attempt_id === row.attempt_id && row.resolution.invoice_id === row.invoice_id && row.resolution.rail === row.rail
+    const canonical = ((row.kind === 'canonical_zelle_attempt' && row.rail === 'zelle') || (row.kind === 'canonical_card_attempt' && row.rail === 'card')) && row.review_mode === 'canonical_attempt' && !!row.attempt_id && bound
+    const legacy = row.kind === 'legacy_zelle_submission' && row.rail === 'zelle' && row.review_mode === 'legacy_invoice' && !!row.repair_order_id
     const cents = moneyToCents(row.principal_amount)
-    const actionable = row.can_confirm && (canonical ? cents !== null && cents > 0n : legacy)
-    const provenance = row.report_status === 'explicit_report' ? 'Customer reported transfer sent' : row.report_status === 'legacy_report' ? 'Reported transfer' : 'Request awaiting verification'
+    const actionable = canonical ? (row.rail === 'card' || row.can_confirm) && cents !== null && cents > 0n : row.can_confirm && legacy
+    const provenance = row.rail === 'card' ? !bound ? 'Payment details unavailable' : row.resolution!.checkout_status === 'checkout_started' ? 'Card checkout started' : row.resolution!.checkout_status === 'verification_pending' ? 'Card verification pending' : 'Card payment needs review' : row.report_status === 'explicit_report' ? 'Customer reported transfer sent' : row.report_status === 'legacy_report' ? 'Reported transfer' : 'Request awaiting verification'
     added.push({ ...baseItem(`payment:${row.attempt_id || row.invoice_id}`, 'payments'),
       destination: legacy ? { kind: 'repair_order', id: row.repair_order_id!, view: 'needs_action' } : { kind: 'payment_review', id: row.attempt_id || row.invoice_id, view: null },
-      title: row.customer_display_name, action_label: 'Review Zelle payment', actionable,
+      title: row.customer_display_name, action_label: row.rail === 'card' ? 'Review card payment' : 'Review Zelle payment', actionable,
       reason: `Invoice ${row.display_invoice_number} · ${cents !== null && cents > 0n ? formatMoney(row.principal_amount) : 'Amount unavailable'} · ${provenance}`,
       status: row.report_status, created_at: row.reported_at || row.created_at,
     })

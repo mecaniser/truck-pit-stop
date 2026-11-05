@@ -17,7 +17,8 @@ from app.schemas.invoice_settlement import InvoiceChargeAdjustmentCreate
 from app.services import invoice_charge_adjustments as charges
 from app.services import invoice_cash_service as cash
 from app.services.historical_export_hold import digest
-from app.services.invoice_settlement_service import create_attempt, fail_attempt, get_or_create_settlement
+from app.services.invoice_settlement_service import get_or_create_settlement
+from tests.test_db048_reviewed_test_cash import historical_failed_card_snapshot
 from scripts.review_owner_attested_cash import apply_review, prepare
 from tests.test_db048_cash import context, pay
 
@@ -51,16 +52,9 @@ async def reviewed_owner_cash(db, monkeypatch):
     parent.repair_order = parent_order
     parent_order.customer = customer
     parent_settlement = await get_or_create_settlement(db, invoice=parent, tenant=tenant, customer_id=customer.id)
-    creation = await create_attempt(
-        db, invoice=parent, tenant=tenant, customer_id=customer.id, actor=owner,
-        amount=Decimal("100.00"), rail="card", expected_settlement_version=parent_settlement.version,
-        idempotency_key="historical-card-attempt", source="staff", subject_type="staff", subject_id=owner.id,
-    )
-    await fail_attempt(
-        db, attempt_id=creation.attempt.id, tenant_id=tenant.id, actor=owner,
-        expected_attempt_version=creation.attempt.version,
-        failure_code="owner_attested_no_card_payment", idempotency_key="owner-attested-retirement",
-    )
+    attempt,_=await historical_failed_card_snapshot(db,tenant=tenant,owner=owner,customer=customer,
+        invoice=parent,settlement=parent_settlement,source='staff',subject_type='staff',
+        subject_id=owner.id,failure_code='owner_attested_no_card_payment')
     parent.accounting_policy = "historical_export_hold"
     parent.status = InvoiceStatus.CANCELLED
     parent.voided_at = datetime.now(timezone.utc)
@@ -84,7 +78,7 @@ async def reviewed_owner_cash(db, monkeypatch):
     await apply_review(db, manifest, digest(manifest))
     await db.refresh(invoice, attribute_names=["repair_order"])
     await db.refresh(invoice.repair_order, attribute_names=["customer"])
-    return ctx, parent, creation.attempt, current_event, manifest
+    return ctx, parent, attempt, current_event, manifest
 
 
 async def legacy_adjusted_owner_cash(db, monkeypatch):

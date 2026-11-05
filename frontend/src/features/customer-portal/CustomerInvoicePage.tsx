@@ -447,6 +447,10 @@ export default function CustomerInvoicePage() {
               tone="dark"
               audience="customer"
               streamlined
+              resolutionControls={{ access: settlementAccess, audience: 'customer', onUpdated: next => {
+                queryClient.setQueryData(['invoice-settlement', 'authenticated', invoice.id], next)
+                queryClient.invalidateQueries({ queryKey: ['invoice-detail', invoiceId] })
+              } }}
             />
             <SettlementResolutionPanel
               access={settlementAccess}
@@ -471,6 +475,7 @@ export default function CustomerInvoicePage() {
             <SettlementPaymentPanel
               access={settlementAccess}
               summary={splitSettlement}
+              allocations={allocationQuery.data?.items ?? []}
               audience="customer"
               tone="dark"
               senderDefaults={{

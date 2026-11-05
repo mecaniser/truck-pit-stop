@@ -33,7 +33,7 @@ def _queue_cursor(tenant_id,row):
     return base64.urlsafe_b64encode(json.dumps([str(tenant_id),row.created_at.isoformat(),row.kind,str(row.row_id)],separators=(',',':')).encode()).decode().rstrip('=')
 
 
-def _parse_cursor(raw,tenant_id):
+def _parse_cursor(raw,tenant_id,include_cards=False):
     import base64,json
     from datetime import datetime
     from uuid import UUID
@@ -41,17 +41,17 @@ def _parse_cursor(raw,tenant_id):
     try:
         if not raw or len(raw)>1024:raise ValueError()
         scope,stamp,kind,identity=json.loads(base64.urlsafe_b64decode(raw+'='*(-len(raw)%4)))
-        if scope!=str(tenant_id) or kind not in {'canonical_zelle_attempt','legacy_zelle_submission'}:raise ValueError()
+        if scope!=str(tenant_id) or kind not in ({'canonical_card_attempt','canonical_zelle_attempt','legacy_zelle_submission'} if include_cards else {'canonical_zelle_attempt','legacy_zelle_submission'}):raise ValueError()
         return datetime.fromisoformat(stamp),kind,UUID(identity)
     except (ValueError,TypeError,UnicodeError,base64.binascii.Error):
         raise SettlementDomainError('invalid_cursor','The payment review cursor is invalid.',status_code=422) from None
 
 
-async def review_queue(db,actor,*,cursor=None,limit=50):
+async def review_queue(db,actor,*,cursor=None,limit=50,include_cards=False):
     """Read existing requests, including unverified history; never backfill."""
     from contextlib import nullcontext
     from datetime import datetime,timezone
-    from sqlalchemy import and_,or_,literal,union_all
+    from sqlalchemy import and_,or_,literal,union_all,case
     from app.db.models.invoice import Invoice,InvoiceStatus
     from app.db.models.invoice_settlement import InvoicePaymentAttempt,InvoiceSettlement
     from app.services.invoice_settlement_service import SettlementDomainError,current_zelle_attempt_matches
@@ -61,16 +61,16 @@ async def review_queue(db,actor,*,cursor=None,limit=50):
     tenant_id=actor.tenant_id
     with getattr(db,'no_autoflush',nullcontext()):
         invoice_scope=[Invoice.tenant_id==tenant_id,Invoice.deleted_at.is_(None),Invoice.voided_at.is_(None),Invoice.status.not_in([InvoiceStatus.PAID,InvoiceStatus.CANCELLED])]
-        canonical=select(literal('canonical_zelle_attempt').label('kind'),InvoicePaymentAttempt.id.label('row_id'),InvoicePaymentAttempt.created_at.label('created_at'),Invoice.id.label('invoice_id')).join(Invoice,and_(Invoice.id==InvoicePaymentAttempt.invoice_id,Invoice.tenant_id==InvoicePaymentAttempt.tenant_id)).where(*invoice_scope,InvoicePaymentAttempt.tenant_id==tenant_id,InvoicePaymentAttempt.rail=='zelle',InvoicePaymentAttempt.state=='pending',InvoicePaymentAttempt.deleted_at.is_(None))
+        canonical=select(case((InvoicePaymentAttempt.rail=='card',literal('canonical_card_attempt')),else_=literal('canonical_zelle_attempt')).label('kind'),InvoicePaymentAttempt.id.label('row_id'),InvoicePaymentAttempt.created_at.label('created_at'),Invoice.id.label('invoice_id')).join(Invoice,and_(Invoice.id==InvoicePaymentAttempt.invoice_id,Invoice.tenant_id==InvoicePaymentAttempt.tenant_id)).where(*invoice_scope,InvoicePaymentAttempt.tenant_id==tenant_id,InvoicePaymentAttempt.rail.in_(['zelle','card'] if include_cards else ['zelle']),InvoicePaymentAttempt.state=='pending',InvoicePaymentAttempt.deleted_at.is_(None))
         legacy=select(literal('legacy_zelle_submission').label('kind'),Invoice.id.label('row_id'),Invoice.zelle_pending_submitted_at.label('created_at'),Invoice.id.label('invoice_id')).where(*invoice_scope,Invoice.zelle_pending_submitted_at.is_not(None))
         cohort=union_all(canonical,legacy).subquery()
         query=select(cohort)
         if cursor:
-            stamp,kind,identity=_parse_cursor(cursor,tenant_id)
+            stamp,kind,identity=_parse_cursor(cursor,tenant_id,include_cards)
             query=query.where(or_(cohort.c.created_at<stamp,and_(cohort.c.created_at==stamp,cohort.c.kind<kind),and_(cohort.c.created_at==stamp,cohort.c.kind==kind,cohort.c.row_id<identity)))
         raw=(await db.execute(query.order_by(cohort.c.created_at.desc(),cohort.c.kind.desc(),cohort.c.row_id.desc()).limit(limit+1))).all()
         more=len(raw)>limit;selected=raw[:limit];rows=[];contexts={}
-        identities=[item.row_id for item in selected if item.kind=='canonical_zelle_attempt']
+        identities=[item.row_id for item in selected if item.kind in {'canonical_card_attempt','canonical_zelle_attempt'}]
         attempts={item.id:item for item in (await db.scalars(select(InvoicePaymentAttempt).where(InvoicePaymentAttempt.tenant_id==tenant_id,InvoicePaymentAttempt.id.in_(identities)))).all()} if identities else {}
         for item in selected:
             if item.invoice_id not in contexts:
@@ -90,7 +90,7 @@ async def review_queue(db,actor,*,cursor=None,limit=50):
             if context is None:continue
             invoice,tenant,customer_id,customer,settlement,confirmable=context
             if not customer:continue
-            attempt=attempts.get(item.row_id) if item.kind=='canonical_zelle_attempt' else None
+            attempt=attempts.get(item.row_id) if item.kind in {'canonical_card_attempt','canonical_zelle_attempt'} else None
             report_status='legacy_report';reported_at=invoice.zelle_pending_submitted_at
             if attempt:
                 if not settlement or attempt.settlement_id!=settlement.id or attempt.customer_id!=customer_id:continue
@@ -117,11 +117,20 @@ async def review_queue(db,actor,*,cursor=None,limit=50):
                         if same_time and candidate.settlement_id==settlement.id and candidate.customer_id==customer_id:matched=candidate;break
                 if matched and matched.state=='pending':continue
                 if matched:
-                    attempt=matched;confirmable=False;reported_at=invoice.zelle_pending_submitted_at
+                    attempt=matched;attempts[matched.id]=matched;confirmable=False;reported_at=invoice.zelle_pending_submitted_at
                 principal=attempt.principal_amount if attempt else invoice.total_amount-(invoice.service_fee_amount or Decimal('0'))
             display=await load_invoice_display_number(db,invoice,tenant)
             name=customer.company_name or ' '.join(filter(None,[customer.first_name,customer.last_name]))
             rows.append({'kind':'canonical_zelle_attempt' if attempt else item.kind,'invoice_id':str(invoice.id),'repair_order_id':str(invoice.repair_order_id),'display_invoice_number':display,'customer_id':str(customer_id),'customer_display_name':name,'principal_amount':f'{Decimal(principal):.2f}','attempt_id':str(attempt.id) if attempt else None,'settlement_id':str(settlement.id) if settlement else None,'settlement_version':settlement.version if settlement else None,'created_at':item.created_at,'reported_at':reported_at,'report_status':report_status,'review_mode':'canonical_attempt' if attempt else 'legacy_invoice','can_confirm':confirmable})
+        if include_cards:
+            from app.services.payment_attempt_resolution import project_many
+            projected=await project_many(db,list(attempts.values()),actor=actor,audience='staff')
+            for row in rows:
+                attempt=attempts.get(__import__('uuid').UUID(row['attempt_id'])) if row['attempt_id'] else None
+                row['rail']=attempt.rail if attempt else 'zelle'
+                row['kind']='canonical_card_attempt' if attempt and attempt.rail=='card' else row['kind']
+                row['resolution']=projected.get(attempt.id) if attempt else None
+                if attempt and attempt.rail=='card':row['can_confirm']=False
         return {'rows':rows,'next_cursor':_queue_cursor(tenant_id,selected[-1]) if more and selected else None}
 
 
