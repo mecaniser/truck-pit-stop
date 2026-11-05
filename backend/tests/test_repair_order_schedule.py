@@ -140,7 +140,8 @@ async def test_save_clear_noop_audit_broadcast_and_no_execution_side_effect(db_s
 
 
 @pytest.mark.asyncio
-async def test_monotonic_precise_versions_and_stale_uncertain_retry(db_session):
+async def test_monotonic_precise_versions_and_stale_uncertain_retry(db_session, monkeypatch):
+    monkeypatch.setattr(schedules, "now_utc", lambda: NOW)
     a = await seed(db_session)
     a.order.updated_at = NOW + timedelta(days=20, microseconds=123456)
     await db_session.commit()

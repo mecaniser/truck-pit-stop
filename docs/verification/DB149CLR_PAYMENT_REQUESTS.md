@@ -37,3 +37,5 @@ The development-only fixture now exposes eight scenarios, all executed on deskto
 Confirmation label correction: customer/guest card checkout dismissal is Keep checkout; Zelle/EFS request dismissal is Keep request. This closes the confirmation without navigation or mutation. Staff labels and all handlers remain unchanged.
 
 Release authorized November5 after Keep checkout review. Incorporated current main vehicle/editor/navigation releases without changing approved invoice product files. Exact-head protected CI, merge/deployment identity and live read-only acceptance will be recorded separately. No financial action is part of release verification.
+
+Initial release CI42122641566 passed six checks but required full backend suite failed one scheduling test after4492 passes. The monotonic-version fixture used an unmocked real clock against fixed NOW+20days, which became past on Nov5 at22UTC. Production max(now, prior+1us) was correct. Scoped repair pins schedules.now_utc to NOW for that test, matching adjacent tests; no assertion or production/financial behavior changed. Fresh exact-head CI required.
