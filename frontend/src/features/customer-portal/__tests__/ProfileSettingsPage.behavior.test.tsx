@@ -172,3 +172,28 @@ it('dismisses a pending sign-out when the authenticated session changes',async()
   await waitFor(()=>expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
   expect(m.logout).not.toHaveBeenCalled()
 })
+
+it.each([
+  ['2025550123','(202) 555-0123'],
+  ['12025550123','(202) 555-0123'],
+  ['(202) 555-0123','(202) 555-0123'],
+  [null,''],
+])('formats the saved phone %s without making the profile dirty',async(phone,expected)=>{
+  m.get.mockImplementation(async(path:string)=>({data:path.startsWith('/customers/')?{...customer,phone}:path.endsWith('/config')?config:[]}))
+  mount()
+  await waitFor(()=>expect(screen.getByLabelText('Phone')).toHaveValue(expected))
+  expect(screen.getByRole('button',{name:'Save changes'})).toBeDisabled()
+  expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument()
+  expect(m.put).not.toHaveBeenCalled()
+})
+it('restores the formatted saved phone on Cancel',async()=>{
+  m.get.mockImplementation(async(path:string)=>({data:path.startsWith('/customers/')?{...customer,phone:'2025550123'}:path.endsWith('/config')?config:[]}))
+  mount()
+  const phone=await screen.findByLabelText('Phone')
+  fireEvent.change(phone,{target:{value:'2025550199'}})
+  expect(phone).toHaveValue('(202) 555-0199')
+  fireEvent.click(screen.getByRole('button',{name:'Cancel',exact:true}))
+  expect(phone).toHaveValue('(202) 555-0123')
+  expect(screen.getByRole('button',{name:'Save changes'})).toBeDisabled()
+  expect(m.put).not.toHaveBeenCalled()
+})
