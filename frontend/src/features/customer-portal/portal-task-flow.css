@@ -795,3 +795,40 @@
 
 /* Keep recovered checkout readable on wide screens. */
 .cp-root.cp-book-checkout { max-width: 640px; margin-inline: auto; }
+
+/* Overview: actions first, quiet summaries, then completed-service history. */
+.cp-overview .cp-attention { padding:24px; border:1px solid var(--portal-border); border-radius:14px; background:var(--portal-card); }
+.cp-overview .cp-attention-required { border-color:#665333; background:#191a20; }
+.cp-overview .cp-attention > .cp-list-heading { margin-bottom:6px; }
+.cp-overview .cp-attention > .cp-list-heading h2 { font-size:20px; }
+.cp-overview .cp-attention .cp-count { background:#3c3221; color:#f0ca82; }
+.cp-overview .cp-section-description { font-size:13px; margin-bottom:20px; }
+.cp-overview .cp-attention > .cp-task-list { background:transparent; border:0; border-radius:0; }
+.cp-overview .cp-attention .cp-task { padding:20px 0; }
+.cp-overview .cp-attention .cp-task:last-child { padding-bottom:0; }
+.cp-overview .cp-attention .cp-task-list + .cp-task-list { margin-top:20px; border-top:1px solid var(--portal-border); }
+.cp-overview .cp-attention > .cp-empty { background:transparent; border:0; }
+.cp-overview .cp-attention .cp-task-copy h3 { font-size:17px; }
+.cp-overview .cp-context .cp-panel { background:transparent; }
+.cp-overview .cp-balance-total { font-size:26px; }
+.cp-overview .cp-balance-caption { color:var(--portal-text); }
+.cp-overview .cp-balance dl div:last-child { font-size:14px; padding-top:12px; border-top:1px solid var(--portal-border); }
+.cp-overview .cp-balance dl div:last-child dt { color:var(--portal-text); }
+.cp-overview .cp-vehicle-overview > strong { font-size:24px; margin-top:14px; }
+.cp-overview .cp-history { margin-top:32px; }
+.cp-overview .cp-history > .cp-list-heading { margin-bottom:4px; }
+.cp-overview .cp-history .cp-section-description { margin-bottom:16px; }
+.cp-overview .cp-activity { display:grid; grid-template-columns:30px minmax(0,1fr) auto; align-items:start; gap:14px; }
+.cp-overview .cp-activity > div { min-width:0; overflow-wrap:anywhere; }
+.cp-overview .cp-activity > .cp-text { align-self:center; }
+.cp-overview .cp-activity .cp-unit { color:var(--portal-muted); }
+.cp-overview .cp-activity h3 { font-weight:500; }
+.cp-overview .cp-task-copy { min-width:0; overflow-wrap:anywhere; }
+@media (max-width:760px) {
+  .cp-overview .cp-attention { padding:20px 16px; }
+  .cp-overview .cp-attention > .cp-list-heading h2 { font-size:18px; }
+  .cp-overview .cp-task-end { flex-wrap:wrap; gap:6px 12px; }
+  .cp-overview .cp-history { margin-top:28px; }
+  .cp-overview .cp-activity { grid-template-columns:30px minmax(0,1fr); gap:6px 12px; }
+  .cp-overview .cp-activity > .cp-text { grid-column:2; justify-self:start; margin-left:0; }
+}
