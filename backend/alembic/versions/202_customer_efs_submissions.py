@@ -2,8 +2,8 @@
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
-revision='201_customer_efs_submissions'
-down_revision='200'
+revision='202_customer_efs_submissions'
+down_revision='201_customer_payment_profiles'
 branch_labels=None
 depends_on=None
 

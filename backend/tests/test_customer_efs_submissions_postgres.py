@@ -19,8 +19,8 @@ from app.db.models.efs_instrument import EfsInstrumentSubmission as Claim
 @pytest_asyncio.fixture
 async def pg_efs(pg_readiness):
     db=pg_readiness;assert db.bind.dialect.name=='postgresql'
-    migration_path=Path(__file__).parents[1]/'alembic/versions/201_customer_efs_submissions.py'
-    spec=importlib.util.spec_from_file_location('efs_migration201',migration_path);migration=importlib.util.module_from_spec(spec);spec.loader.exec_module(migration)
+    migration_path=Path(__file__).parents[1]/'alembic/versions/202_customer_efs_submissions.py'
+    spec=importlib.util.spec_from_file_location('efs_migration202',migration_path);migration=importlib.util.module_from_spec(spec);spec.loader.exec_module(migration)
     async with db.bind.begin() as connection:
         def install(sync):
             # Reproduce the real pre-existing146 database enforcement. ORM
