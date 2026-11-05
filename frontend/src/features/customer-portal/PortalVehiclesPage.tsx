@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ChevronRight, Plus, Truck } from 'lucide-react'
@@ -8,9 +9,13 @@ import { useAuthStore } from '@/stores/authStore'
 import type { RepairOrder, Vehicle } from '@/types'
 import { getPortalItems, resolveVehicleScope, scopedPortalPath, vehicleIdentity, vehicleIdentityCollisions } from './portal-context'
 import PortalVehicleScope from './PortalVehicleScope'
+import CustomerVehicleEditor from './CustomerVehicleEditor'
 export default function PortalVehiclesPage() {
   const user=useAuthStore(state=>state.user)
   const [params,setParams]=useSearchParams()
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const scopeKey = params.toString()
+  useEffect(() => { setEditingId(null) }, [scopeKey, user?.id, user?.tenant_id, user?.customer_id])
   const key=[user?.tenant_id,user?.customer_id]
   const vehicleQuery=useQuery({queryKey:['vehicles',...key],queryFn: ({ signal }) => getPortalItems<Vehicle>('/vehicles', {}, signal)})
   const orderQuery=useQuery({queryKey:['repair-orders',...key],queryFn: ({ signal }) => getPortalItems<RepairOrder>('/repair-orders', {}, signal)})
@@ -21,8 +26,9 @@ export default function PortalVehiclesPage() {
   const collisions=vehicleIdentityCollisions(vehicles)
   const visible=scope.vehicle?[scope.vehicle]:vehicles
   return <div className="cp-root cp-vehicles-page"><header className="cp-title"><div><h1>Your vehicles</h1>{!collisions.size&&<p>{vehicles.length} {vehicles.length===1?'vehicle':'vehicles'}</p>}</div><div className="cp-title-actions"><PortalVehicleScope vehicles={vehicles} requested={params.get('vehicle_id')} onChange={id=>setParams(id?{vehicle_id:id}:{})}/>{!scope.invalid&&<Link data-db-control="action" className="cp-primary" to="/portal/settings?tab=vehicles"><Plus size={17}/>Add vehicle</Link>}</div></header>{scope.invalid?<div className="cp-panel cp-empty" role="alert"><h2>Vehicle unavailable</h2><p>Choose one of your vehicles to continue.</p></div>:<><div className="cp-vehicle-list">{visible.map(vehicle=>{
+    if (editingId === vehicle.id) return <article className="cp-panel cp-vehicle-editing" key={vehicle.id}><CustomerVehicleEditor key={`${user?.id}:${user?.tenant_id}:${user?.customer_id}:${vehicle.id}`} vehicle={vehicle} onClose={() => { setEditingId(null); requestAnimationFrame(() => document.getElementById(`edit-vehicle-${vehicle.id}`)?.focus()) }}/></article>
     const orders=(orderQuery.data || []).filter(order=>order.vehicle_id===vehicle.id).sort((a,b)=>b.updated_at.localeCompare(a.updated_at))
     const latest=orders[0]
-    return <article className="cp-panel" key={vehicle.id}><Truck/><div><h2>{vehicle.unit_number?`Unit #${vehicle.unit_number}`:'Vehicle'}</h2><p>{vehicleIdentity(vehicle)}</p><p>{vehicle.mileage!=null?`${vehicle.mileage.toLocaleString()} mi`:'Mileage not provided'} · {orders.length} service {orders.length===1?'entry':'entries'}</p>{latest&&isValid(new Date(latest.updated_at))&&<p>Latest activity {format(new Date(latest.updated_at),'MMM d, yyyy')}</p>}{collisions.has(vehicle.id)&&<p role="status">Vehicle details need review. Contact the shop before booking.</p>}</div><div className="cp-vehicle-actions">{!collisions.has(vehicle.id)&&<Link data-db-control="action" className="cp-secondary" to={scopedPortalPath('/portal/services',vehicle.id)}>Book service</Link>}<Link data-db-control="action" className="cp-text" to={scopedPortalPath('/portal/repairs',vehicle.id)}>View history<ChevronRight size={15}/></Link></div></article>
+    return <article className="cp-panel" key={vehicle.id}><Truck/><div><h2>{vehicle.unit_number?`Unit #${vehicle.unit_number}`:'Vehicle'}</h2><p>{vehicleIdentity(vehicle)}</p><p>{vehicle.mileage!=null?`${vehicle.mileage.toLocaleString()} mi`:'Mileage not provided'} · {orders.length} service {orders.length===1?'entry':'entries'}</p>{latest&&isValid(new Date(latest.updated_at))&&<p>Latest activity {format(new Date(latest.updated_at),'MMM d, yyyy')}</p>}{collisions.has(vehicle.id)&&<p role="status">Vehicle details need review. Contact the shop before booking.</p>}</div><div className="cp-vehicle-actions"><ControlButton id={`edit-vehicle-${vehicle.id}`} controlKind="content" className="cp-text" aria-label={`Edit vehicle ${vehicleIdentity(vehicle)}`} onClick={() => setEditingId(vehicle.id)}>Edit vehicle</ControlButton>{!collisions.has(vehicle.id)&&<Link data-db-control="action" className="cp-secondary" to={scopedPortalPath('/portal/services',vehicle.id)}>Book service</Link>}<Link data-db-control="action" className="cp-text" to={scopedPortalPath('/portal/repairs',vehicle.id)}>View history<ChevronRight size={15}/></Link></div></article>
   })}</div>{vehicles.length===0&&<div className="cp-panel cp-empty"><Truck/><h2>No vehicles yet</h2><p>Add your vehicle to start booking service.</p></div>}</>}</div>
 }

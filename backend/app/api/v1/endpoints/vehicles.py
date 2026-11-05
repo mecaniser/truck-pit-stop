@@ -28,6 +28,7 @@ from app.schemas.vehicle import (
 )
 from app.schemas.typeahead import VehicleTypeaheadResponse
 from app.services.vehicle_nhtsa_service import sync_vehicle_nhtsa_snapshot
+from app.services.customer_vehicle_edit import editable_vehicle
 from app.services.vehicle_identity import (
     duplicate_vin_detail,
     end_fleet_membership,
@@ -920,29 +921,9 @@ async def customer_update_vehicle(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Customer update endpoint - limited fields only (license plate, color, mileage, notes)"""
-    result = await db.execute(select(Vehicle).where(Vehicle.id == vehicle_id))
-    vehicle = result.scalar_one_or_none()
-    
-    if not vehicle:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Vehicle not found",
-        )
-    
-    # Customers can only update their own vehicles
-    if current_user.role == UserRole.CUSTOMER:
-        if not current_user.customer_id or current_user.customer_id != vehicle.customer_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied",
-            )
-    elif current_user.tenant_id != vehicle.tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied",
-        )
-    
+    """Update customer labels with the same field policy as the account route."""
+    vehicle = await editable_vehicle(db, current_user, vehicle_id)
+
     # Update only allowed fields
     update_data = vehicle_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():

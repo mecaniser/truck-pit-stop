@@ -10,10 +10,8 @@ import api from '../../lib/api'
 import { Vehicle, VINDecodeResult } from '../../types'
 import { Truck } from 'lucide-react'
 import toast from 'react-hot-toast'
-
-const editVehicleSchema = z.object({
-  license_plate: z.string().optional(),
-})
+import { isAxiosError } from 'axios'
+import CustomerVehicleEditor from './CustomerVehicleEditor'
 
 const addVehicleSchema = z.object({
   make: z.string().min(1, 'Make is required'),
@@ -26,73 +24,7 @@ const addVehicleSchema = z.object({
   notes: z.string().optional(),
 })
 
-type EditVehicleData = z.infer<typeof editVehicleSchema>
 type AddVehicleData = z.infer<typeof addVehicleSchema>
-
-function EditVehicleForm({ vehicle, onClose }: { vehicle: Vehicle; onClose: () => void }) {
-  const { user } = useAuthStore()
-  const queryClient = useQueryClient()
-  
-  const { register, handleSubmit, formState: { isDirty } } = useForm<EditVehicleData>({
-    resolver: zodResolver(editVehicleSchema),
-    defaultValues: {
-      license_plate: vehicle.license_plate || '',
-    },
-  })
-
-  const mutation = useMutation({
-    mutationFn: async (data: EditVehicleData) => {
-      // Use nested endpoint under customer
-      const response = await api.put(`/customers/${user?.customer_id}/vehicles/${vehicle.id}`, data)
-      return response.data
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['customerVehicles', user?.customer_id] })
-      onClose()
-    },
-  })
-
-  const inputClasses = "w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 text-base"
-
-  return (
-    <form onSubmit={handleSubmit((data) => mutation.mutate(data))} className="space-y-4">
-      <div className="bg-white/5 p-3 rounded-lg mb-4">
-        <p className="text-white font-medium">{vehicle.year} {vehicle.make} {vehicle.model}</p>
-        <div className="flex flex-wrap gap-x-4 text-xs text-gray-500 mt-1">
-          {vehicle.vin && <span>VIN: {vehicle.vin}</span>}
-          {vehicle.color && <span>Color: {vehicle.color}</span>}
-          {vehicle.mileage && <span>{vehicle.mileage.toLocaleString()} mi</span>}
-        </div>
-      </div>
-
-      <div>
-        <label htmlFor="vehicle-license_plate" className="block text-xs font-medium text-gray-400 mb-1">Tag / License Plate</label>
-        <ControlInput {...register('license_plate')} id="vehicle-license_plate" className={inputClasses} placeholder="ABC-1234" />
-      </div>
-
-      {mutation.isError && (
-        <p className="text-sm text-red-400">Failed to update vehicle</p>
-      )}
-
-      <div className="flex gap-2">
-        <ControlButton
-          type="submit"
-          disabled={!isDirty || mutation.isPending}
-          className="flex-1 px-4  bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors"
-        >
-          {mutation.isPending ? 'Saving...' : 'Save Changes'}
-        </ControlButton>
-        <ControlButton
-          type="button"
-          onClick={onClose}
-          className="px-4  bg-white/10 hover:bg-white/20 text-white text-sm font-medium rounded-lg transition-colors"
-        >
-          Cancel
-        </ControlButton>
-      </div>
-    </form>
-  )
-}
 
 function AddVehicleForm({ onClose }: { onClose: () => void }) {
   const { user } = useAuthStore()
@@ -124,8 +56,8 @@ function AddVehicleForm({ onClose }: { onClose: () => void }) {
       lastDecodedVin.current = vin
       const decodedLabel = [result.year, result.make, result.model].filter(Boolean).join(' ')
       toast.success(decodedLabel ? `VIN decoded: ${decodedLabel}` : 'VIN decoded')
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Failed to decode VIN')
+    } catch (error: unknown) {
+      toast.error(isAxiosError(error) ? error.response?.data?.detail || 'Failed to decode VIN' : 'Failed to decode VIN')
     } finally {
       setIsDecodingVin(false)
     }
@@ -146,7 +78,7 @@ function AddVehicleForm({ onClose }: { onClose: () => void }) {
       return response.data
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['customerVehicles', user?.customer_id] })
+      queryClient.invalidateQueries({ queryKey: ['customerVehicles', user?.customer_id, user?.tenant_id, user?.id] })
       onClose()
     },
   })
@@ -237,12 +169,17 @@ function AddVehicleForm({ onClose }: { onClose: () => void }) {
 }
 
 export default function VehiclesCard({ embedded = false }: { embedded?: boolean }) {
+  const { user, authSessionEpoch } = useAuthStore()
+  return <VehiclesCardContent embedded={embedded} key={`${user?.id}:${user?.tenant_id}:${user?.customer_id}:${authSessionEpoch}`}/>
+}
+
+function VehiclesCardContent({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuthStore()
-  const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
+  const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
 
   const { data: vehicles, isLoading, isError, refetch, isFetching } = useQuery<Vehicle[]>({
-    queryKey: ['customerVehicles', user?.customer_id],
+    queryKey: ['customerVehicles', user?.customer_id, user?.tenant_id, user?.id],
     queryFn: async () => {
       if (!user?.customer_id) return []
       // Use nested endpoint under customer
@@ -251,6 +188,8 @@ export default function VehiclesCard({ embedded = false }: { embedded?: boolean 
     },
     enabled: !!user?.customer_id,
   })
+
+  const editingVehicle = isError ? undefined : vehicles?.find(vehicle => vehicle.id === editingVehicleId)
 
   return (
     <div className={embedded ? 'space-y-4' : 'bg-white/5 rounded-xl p-6 border border-white/10 h-fit'}>
@@ -261,7 +200,7 @@ export default function VehiclesCard({ embedded = false }: { embedded?: boolean 
         <h2 className="text-lg font-semibold text-white">Vehicles</h2>
       </div>
       <p className="text-gray-400 text-sm mb-4">
-        Vehicles on file for service. You can update a vehicle’s license plate.
+        Vehicles on file for service. You can update unit numbers, license plates, colors, and notes. VIN changes require the shop.
       </p>
 
       {isLoading ? (
@@ -271,7 +210,7 @@ export default function VehiclesCard({ embedded = false }: { embedded?: boolean 
       ) : isError ? (
         <div role="alert" className="space-y-3 text-sm text-red-300"><p>Unable to load your vehicles.</p><ControlButton type="button" disabled={isFetching} onClick={() => void refetch()} className="underline">Retry loading vehicles</ControlButton></div>
       ) : editingVehicle ? (
-        <EditVehicleForm vehicle={editingVehicle} onClose={() => setEditingVehicle(null)} />
+        <CustomerVehicleEditor key={`${user?.id}:${user?.tenant_id}:${user?.customer_id}:${editingVehicle.id}`} vehicle={editingVehicle} onClose={() => setEditingVehicleId(null)} />
       ) : showAddForm ? (
         <AddVehicleForm onClose={() => setShowAddForm(false)} />
       ) : (
@@ -297,7 +236,7 @@ export default function VehiclesCard({ embedded = false }: { embedded?: boolean 
                   </div>
                 </div>
                 <ControlButton controlKind="icon"
-                  onClick={() => setEditingVehicle(vehicle)}
+                  onClick={() => setEditingVehicleId(vehicle.id)}
                   className="p-2 text-gray-400 hover:text-amber-400 transition-colors shrink-0"
                   title="Edit vehicle"
                 >
