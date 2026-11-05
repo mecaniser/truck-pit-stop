@@ -56,7 +56,7 @@ describe('Customer payment choices', () => {
     expect(screen.queryByText(/Contact the shop about bank transfers/)).not.toBeInTheDocument()
     await userEvent.click(other)
     expect(other).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByText(/bank transfers or fleet checks\/codes \(EFS, Comchek, T-Chek\)/)).toBeInTheDocument()
+    expect(screen.getByText(/bank transfers or other fleet checks\/codes/)).toBeInTheDocument()
     expect(screen.queryByRole('radio', { name: /ACH|EFS|Fleet/ })).not.toBeInTheDocument()
     expect(api.createPaymentAttempt).not.toHaveBeenCalled()
     await userEvent.keyboard('{Tab}')

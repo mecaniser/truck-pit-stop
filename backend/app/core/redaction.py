@@ -17,6 +17,9 @@ from typing import Any
 REDACTED = "[REDACTED]"
 
 _SENSITIVE_KEY_PARTS = (
+    "money_code",
+    "efs_code",
+    "secret_ciphertext",
     "access_token",
     "refresh_token",
     "authorization",

@@ -41,7 +41,7 @@ def _parse_cursor(raw,tenant_id,include_cards=False):
     try:
         if not raw or len(raw)>1024:raise ValueError()
         scope,stamp,kind,identity=json.loads(base64.urlsafe_b64decode(raw+'='*(-len(raw)%4)))
-        if scope!=str(tenant_id) or kind not in ({'canonical_card_attempt','canonical_zelle_attempt','legacy_zelle_submission'} if include_cards else {'canonical_zelle_attempt','legacy_zelle_submission'}):raise ValueError()
+        if scope!=str(tenant_id) or kind not in ({'canonical_card_attempt','canonical_efs_attempt','canonical_zelle_attempt','legacy_zelle_submission'} if include_cards else {'canonical_zelle_attempt','legacy_zelle_submission'}):raise ValueError()
         return datetime.fromisoformat(stamp),kind,UUID(identity)
     except (ValueError,TypeError,UnicodeError,base64.binascii.Error):
         raise SettlementDomainError('invalid_cursor','The payment review cursor is invalid.',status_code=422) from None
@@ -61,7 +61,7 @@ async def review_queue(db,actor,*,cursor=None,limit=50,include_cards=False):
     tenant_id=actor.tenant_id
     with getattr(db,'no_autoflush',nullcontext()):
         invoice_scope=[Invoice.tenant_id==tenant_id,Invoice.deleted_at.is_(None),Invoice.voided_at.is_(None),Invoice.status.not_in([InvoiceStatus.PAID,InvoiceStatus.CANCELLED])]
-        canonical=select(case((InvoicePaymentAttempt.rail=='card',literal('canonical_card_attempt')),else_=literal('canonical_zelle_attempt')).label('kind'),InvoicePaymentAttempt.id.label('row_id'),InvoicePaymentAttempt.created_at.label('created_at'),Invoice.id.label('invoice_id')).join(Invoice,and_(Invoice.id==InvoicePaymentAttempt.invoice_id,Invoice.tenant_id==InvoicePaymentAttempt.tenant_id)).where(*invoice_scope,InvoicePaymentAttempt.tenant_id==tenant_id,InvoicePaymentAttempt.rail.in_(['zelle','card'] if include_cards else ['zelle']),InvoicePaymentAttempt.state=='pending',InvoicePaymentAttempt.deleted_at.is_(None))
+        canonical=select(case((InvoicePaymentAttempt.rail=='card',literal('canonical_card_attempt')),(InvoicePaymentAttempt.source=='customer_efs_v1',literal('canonical_efs_attempt')),else_=literal('canonical_zelle_attempt')).label('kind'),InvoicePaymentAttempt.id.label('row_id'),InvoicePaymentAttempt.created_at.label('created_at'),Invoice.id.label('invoice_id')).join(Invoice,and_(Invoice.id==InvoicePaymentAttempt.invoice_id,Invoice.tenant_id==InvoicePaymentAttempt.tenant_id)).where(*invoice_scope,InvoicePaymentAttempt.tenant_id==tenant_id,(or_(InvoicePaymentAttempt.rail.in_(['zelle','card']),and_(InvoicePaymentAttempt.rail=='fleet_payment',InvoicePaymentAttempt.source=='customer_efs_v1')) if include_cards else InvoicePaymentAttempt.rail=='zelle'),InvoicePaymentAttempt.state=='pending',InvoicePaymentAttempt.deleted_at.is_(None))
         legacy=select(literal('legacy_zelle_submission').label('kind'),Invoice.id.label('row_id'),Invoice.zelle_pending_submitted_at.label('created_at'),Invoice.id.label('invoice_id')).where(*invoice_scope,Invoice.zelle_pending_submitted_at.is_not(None))
         cohort=union_all(canonical,legacy).subquery()
         query=select(cohort)
@@ -70,7 +70,7 @@ async def review_queue(db,actor,*,cursor=None,limit=50,include_cards=False):
             query=query.where(or_(cohort.c.created_at<stamp,and_(cohort.c.created_at==stamp,cohort.c.kind<kind),and_(cohort.c.created_at==stamp,cohort.c.kind==kind,cohort.c.row_id<identity)))
         raw=(await db.execute(query.order_by(cohort.c.created_at.desc(),cohort.c.kind.desc(),cohort.c.row_id.desc()).limit(limit+1))).all()
         more=len(raw)>limit;selected=raw[:limit];rows=[];contexts={}
-        identities=[item.row_id for item in selected if item.kind in {'canonical_card_attempt','canonical_zelle_attempt'}]
+        identities=[item.row_id for item in selected if item.kind in {'canonical_card_attempt','canonical_zelle_attempt','canonical_efs_attempt'}]
         attempts={item.id:item for item in (await db.scalars(select(InvoicePaymentAttempt).where(InvoicePaymentAttempt.tenant_id==tenant_id,InvoicePaymentAttempt.id.in_(identities)))).all()} if identities else {}
         for item in selected:
             if item.invoice_id not in contexts:
@@ -90,7 +90,7 @@ async def review_queue(db,actor,*,cursor=None,limit=50,include_cards=False):
             if context is None:continue
             invoice,tenant,customer_id,customer,settlement,confirmable=context
             if not customer:continue
-            attempt=attempts.get(item.row_id) if item.kind in {'canonical_card_attempt','canonical_zelle_attempt'} else None
+            attempt=attempts.get(item.row_id) if item.kind in {'canonical_card_attempt','canonical_zelle_attempt','canonical_efs_attempt'} else None
             report_status='legacy_report';reported_at=invoice.zelle_pending_submitted_at
             if attempt:
                 if not settlement or attempt.settlement_id!=settlement.id or attempt.customer_id!=customer_id:continue
@@ -125,11 +125,15 @@ async def review_queue(db,actor,*,cursor=None,limit=50,include_cards=False):
         if include_cards:
             from app.services.payment_attempt_resolution import project_many
             projected=await project_many(db,list(attempts.values()),actor=actor,audience='staff')
+            from app.services.customer_efs import summaries
+            efss=await summaries(db,list(attempts.values()),actor=actor,audience='staff')
             for row in rows:
                 attempt=attempts.get(__import__('uuid').UUID(row['attempt_id'])) if row['attempt_id'] else None
                 row['rail']=attempt.rail if attempt else 'zelle'
                 row['kind']='canonical_card_attempt' if attempt and attempt.rail=='card' else row['kind']
                 row['resolution']=projected.get(attempt.id) if attempt else None
+                row['efs']=efss.get(attempt.id) if attempt else None
+                if attempt and attempt.source=='customer_efs_v1':row['kind']='canonical_efs_attempt';row['provider_label']='EFS';row['can_confirm']=False
                 if attempt and attempt.rail=='card':row['can_confirm']=False
         return {'rows':rows,'next_cursor':_queue_cursor(tenant_id,selected[-1]) if more and selected else None}
 

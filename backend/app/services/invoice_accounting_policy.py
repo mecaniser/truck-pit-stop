@@ -109,9 +109,17 @@ async def require_exportable_invoice(invoice):
         raise QuickBooksAccountingError("Invoice export awaits a confirmed noncash payment")
 
 
-async def require_standard_payment(db, invoice, *, verified_provider_fact=False, new_entry=False, attempt=None):
+async def require_standard_payment(db, invoice, *, verified_provider_fact=False, new_entry=False, attempt=None, efs_proof=None):
     from app.services.invoice_settlement_service import SettlementDomainError
     policy = await locked_policy(db, invoice)
+    if not verified_provider_fact:
+        from app.services.customer_efs import has_review,unapplied_review
+        from app.services.customer_efs import review_admission
+        new_collection = new_entry or (attempt is not None and attempt.state == "pending" and attempt.rail == "card" and not attempt.provider_charge_id)
+        if new_collection and await unapplied_review(db,invoice.tenant_id,invoice.id):
+            raise SettlementDomainError('efs_unapplied_funds_review','Unapplied EFS funds need shop review before another payment.')
+        if await has_review(db,invoice.tenant_id,invoice.id) and not (attempt is not None and await review_admission(db,invoice,attempt,efs_proof)):
+            raise SettlementDomainError('efs_received_amount_requires_review','The shop must verify the received amount before another payment.')
     if new_entry and not verified_provider_fact:
         from app.services.booking_invoice_guard import require_booking_prepayment_resolved
         await require_booking_prepayment_resolved(db, invoice.tenant_id, invoice.repair_order_id)
@@ -140,4 +148,6 @@ async def require_standard_payment(db, invoice, *, verified_provider_fact=False,
         raise SettlementDomainError("local_cash_only", "This invoice is cash-only and cannot use this payment action.")
     if not verified_provider_fact:
         from app.services.quickbooks_shop_activation import require_shop_invoice_admission
-        await require_shop_invoice_admission(db, invoice, payment=True)
+        from app.services.customer_efs import manual_payment_lane
+        manual_options={"payment_provider":"manual"} if manual_payment_lane(efs_proof,invoice,attempt) else {}
+        await require_shop_invoice_admission(db, invoice, payment=True, **manual_options)

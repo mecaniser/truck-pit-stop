@@ -117,11 +117,16 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if response.headers.get("Referrer-Policy", "").lower() != "no-referrer":
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     private_attachment = re.fullmatch(
         r'/api/v1/communications/conversations/[^/]+/messages/[^/]+/attachments(?:/[^/]+)?/?',
         request.url.path) is not None
-    if is_receipt_path(request.url.path) or private_attachment:
+    private_efs = request.url.path.startswith(("/api/v1/payments/", "/api/v1/invoice-access/")) and (
+        request.url.path.endswith(("/efs-submissions", "/efs-verification"))
+        or "/efs-code/" in request.url.path
+    )
+    if is_receipt_path(request.url.path) or private_attachment or private_efs:
         # Also covers early middleware errors, before the private route runs.
         response.headers["Cache-Control"] = "private, no-store, max-age=0"
         response.headers["Pragma"] = "no-cache"

@@ -1,3 +1,4 @@
+import type { EfsSubmissionSummary } from './efsApi'
 import type { ResolutionProjection } from './attemptResolutionTypes'
 
 export type SettlementState =
@@ -25,6 +26,8 @@ export type AccountingSyncStatus = 'not_started' | 'not_required' | 'not_applica
 export type PaymentAttemptState = 'pending' | 'confirmed' | 'failed' | 'expired' | 'refunded' | 'reversed'
 
 export interface SettlementAllowedActions {
+  submit_efs?: boolean
+  efs_unavailable_reason?: string | null
   create_attempt?: boolean
   rails?: PaymentRail[]
   confirm_manual?: boolean
@@ -138,6 +141,7 @@ export interface PaymentAttemptResponse {
 }
 
 export interface PaymentAllocation {
+  efs?: EfsSubmissionSummary | null
   resolution?: ResolutionProjection | null
   fleet_provider?: FleetProvider | null
   fleet_provider_name?: string | null

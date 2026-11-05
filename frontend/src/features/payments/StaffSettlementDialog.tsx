@@ -169,6 +169,7 @@ function OpenStaffSettlementDialog({
               >
               {cash => {
                 const paymentPanel = (chargeControls?: InlineInvoiceChargeControls) => <SettlementPaymentPanel
+                hideVerificationNotice
                 access={{ kind: 'authenticated', invoiceId }}
                 summary={current}
                 audience="staff"

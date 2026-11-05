@@ -202,6 +202,11 @@ class Settings(BaseSettings):
     QUICKBOOKS_CLIENT_ID: str = ""
     QUICKBOOKS_CLIENT_SECRET: str = ""
     QUICKBOOKS_REDIRECT_URI: str = ""
+    EFS_CUSTOMER_ENABLED_TENANT_IDS: str = ""
+    EFS_INSTRUMENT_ENCRYPTION_KEYS: str = "{}"
+    EFS_INSTRUMENT_ENCRYPTION_ACTIVE_KEY: str = ""
+    EFS_INSTRUMENT_FINGERPRINT_KEY: str = ""
+
     QUICKBOOKS_TOKEN_ENCRYPTION_KEY: str = ""
     QUICKBOOKS_WEBHOOK_VERIFIER_TOKEN: str = ""
     # Accounting and Payments can be promoted independently after their
