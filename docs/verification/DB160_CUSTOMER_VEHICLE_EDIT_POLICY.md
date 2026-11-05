@@ -32,3 +32,5 @@ Independent QA functional checks passed against real local PostgreSQL: all four 
 ## Final pre-release gates
 
 Independent Security and QA both GO on `64becfeaf97673bb658f141adddfc96dad31a966`. Security matched seven reviewed source hashes; QA matched eight DB160 implementation hashes to its tested version. The current-main phone-formatting merge changes no DB160 implementation bytes. Root focused frontend checks now72/72 across six files, including that main integration; changed-source lint passed. Root policy HTTP54/54 plus existing identity/NHTSA17/17 pass. Final visual gate confirms full-width inputs align with labels at1380/390/320px. All synthetic values restored; no production mutations. Protected CI and release remain required.
+
+The new54-case backend field-policy HTTP test and both frontend editor/identity test files are added to the existing critical-test manifest, retaining every prior entry. These regressions therefore execute in protected critical gates, alongside the full-suite complement.

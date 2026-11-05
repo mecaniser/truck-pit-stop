@@ -22,3 +22,7 @@ DB-160 records the user's editing-permissions question. Customer Account→Vehic
 Local implementation verified; protected PR CI, merge and production deployment remain pending.
 
 Draft implementation PR: https://github.com/mecaniser/truck-pit-stop/pull/801.
+
+## Authorized landing reconciliation — November 5
+
+User explicitly authorizes conflict repair and deployment before DB160. Reconciled main88d9c98d, then86fe9cc7 andea41a9fd without changing the Add vehicle implementation. Board-only conflicts preserve both delivery histories; DB159/160 entries moved away from the shared append point. Current checked candidate549f217a includes the latest main phone-formatting follow-up. Earlier0f9ca32d passed all seven checks but became stale before merge. Candidatecc15cb30 failed one unchanged Motive deadline fixture (late-page disposal counter0 vs1); the rerun was superseded when current main advanced. This is recorded as an unresolved timing-sensitive unrelated test outcome, not concealed as a pass. Final current-head protected gates remain required.
