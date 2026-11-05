@@ -48,3 +48,11 @@ The final runtime receipt verifies all six prior databases, three prior applicat
 Local evidence: `/tmp/customer-efs-qa/final-runtime-preservation-receipt-private.json`, `/tmp/customer-efs-qa/efs-api-acceptance-receipt-private.json`, `/tmp/customer-efs-qa/backend-freeze-final.json`; independent migration, lifecycle and preservation receipts use `/tmp/customer-efs-independent-*-receipt.json`. Private credentials, codes, keys and full private receipts are not committed.
 
 This item is not released or Done. Deployment requires approval, the PR778 dependency, protected exact-head release checks, migration201 and configured dedicated encryption/fingerprint keys. Production TPS acceptance must be separately enabled in the exact tenant allowlist; other tenants remain disabled. Rollback disables new EFS intake while retaining old decrypt keys, immutable claims and access to received-money resolution. Never downgrade/remove retained claims or rewrite existing financial records.
+
+## Centered payment methods — November 4 preview refinement
+
+Frontend & UX owns this Fast UI follow-up in draft PR784. The only product diff changes customer/guest tender alignment classes to center each icon-and-label group. Staff alignment, handlers, selection logic, request bodies, amount handling and all backend files remain unchanged.
+
+Runtime revalidated at branch `codex/customer-efs-payments`, starting HEAD `be4236a9` plus this class-only edit: Vite PID92596/source `/private/tmp/customer-efs-payments/frontend`, customer preview `http://efs-customer.localhost:5176/portal/invoices/0e189bd2-f62e-4ed1-8b1c-1d58dc2ff2c7`, effective API origin8019, mounted backend `/tmp/customer-efs-payments/backend`, isolated `customer_efs_qa` test DB. Readiness confirms database/Redis ready. Aligned and browser-verified; no restart, migration or reseeding.
+
+37 existing EFS/Zelle component tests and changed-source ESLint passed. Signed-in desktop1440px and mobile390/320px show all three icon-label groups centered to within0.01px, each44px high, with no horizontal overflow. Arrow-key selection Card→Zelle→EFS remains functional. Only local method selection was exercised: no payment submitted or financial record changed. New review captures are `customer-efs/centered-methods-desktop.png` and `customer-efs/centered-methods-mobile.png`. No merge or deployment.

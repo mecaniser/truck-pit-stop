@@ -618,7 +618,7 @@ function InvoicePaymentPanel({
                     break
                   }
                 }}
-                className={`flex min-h-11 min-w-0 items-center ${audience !== 'staff' && tenders.length === 3 ? 'gap-1.5 px-2' : 'gap-2 px-3'} rounded-xl border py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-500,#d25d43)] disabled:cursor-not-allowed disabled:opacity-50 ${selected ? dark ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-emerald-700 bg-emerald-50' : input}`}>
+                className={`flex min-h-11 min-w-0 items-center ${audience === 'staff' ? 'text-left' : 'justify-center text-center'} ${audience !== 'staff' && tenders.length === 3 ? 'gap-1.5 px-2' : 'gap-2 px-3'} rounded-xl border py-2 outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-500,#d25d43)] disabled:cursor-not-allowed disabled:opacity-50 ${selected ? dark ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-emerald-700 bg-emerald-50' : input}`}>
                 <Icon className="h-4 w-4 shrink-0" />
                 <span className="min-w-0"><span className="block text-sm font-extrabold">{item === 'card' ? providerLabel : item === 'fleet_payment' ? audience === 'staff' ? 'EFS codes' : 'EFS' : meta.label}</span>{audience !== 'staff' && tenders.length !== 3 && <span className={`block text-[11px] ${quiet}`}>{item === 'card' ? 'Credit or debit' : item === 'zelle' ? 'No card fee' : item === 'fleet_payment' ? '10-digit code' : meta.detail}</span>}</span>
               </ControlButton>
