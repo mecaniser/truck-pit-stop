@@ -8,7 +8,11 @@ import type { ZelleReviewRow } from '../useZelleReviewQueue'
 const source = <T,>(rows: T[] = [], overrides: Partial<ReviewSource<T>> = {}): ReviewSource<T> => ({ rows, allowed: true, loading: false, failed: false, ...overrides })
 const base: ShopWorkOverviewData = { as_of: '2026-11-04T16:00:00Z', timezone: 'America/New_York', scope: 'shop', active_jobs: 0, sources: [], actions: [], upcoming: [], actions_total: 0, upcoming_total: 0, has_more_actions: false, has_more_upcoming: false }
 const visit = (overrides: Partial<StaffVisitRequest> = {}): StaffVisitRequest => ({ id: 'visit-a', request_reference: 'VR-A', version: 1, status: 'requested', customer: { id: 'customer-a', company_name: 'North Fleet', display_name: 'Alex Driver', email: null, phone: null }, service: { id: 'service-a', name: 'Inspection' }, vehicle: { id: 'vehicle-a', unit_number: '12', year: 2020, make: 'Volvo', model: 'VNR', license_plate: null }, preferred_date: '2026-11-05', accepted_arrival_date: null, customer_notes: null, internal_review_note: null, created_at: '2026-11-04T12:00:00Z', reviewed_at: null, can_review: true, ...overrides })
-const payment = (overrides: Partial<ZelleReviewRow> = {}): ZelleReviewRow => ({ kind: 'canonical_zelle_attempt', invoice_id: 'invoice-a', repair_order_id: 'source-order', display_invoice_number: 'INV-7', customer_id: 'customer-b', customer_display_name: 'West Fleet', principal_amount: '168.44', attempt_id: 'attempt-a', settlement_id: 'settlement-a', settlement_version: 3, created_at: '2026-11-04T11:00:00Z', reported_at: null, report_status: 'unverified_request', review_mode: 'canonical_attempt', can_confirm: true, ...overrides })
+const payment = (overrides: Partial<ZelleReviewRow> = {}): ZelleReviewRow => {
+ const row: ZelleReviewRow = { kind: 'canonical_zelle_attempt', rail: 'zelle', resolution: null, invoice_id: 'invoice-a', repair_order_id: 'source-order', display_invoice_number: 'INV-7', customer_id: 'customer-b', customer_display_name: 'West Fleet', principal_amount: '168.44', attempt_id: 'attempt-a', settlement_id: 'settlement-a', settlement_version: 3, created_at: '2026-11-04T11:00:00Z', reported_at: null, report_status: 'unverified_request', review_mode: 'canonical_attempt', can_confirm: true, ...overrides }
+ if (row.kind !== 'legacy_zelle_submission' && overrides.resolution === undefined) row.resolution = { attempt_id: row.attempt_id!, invoice_id: row.invoice_id, attempt_version: 2, settlement_version: 3, rail: row.rail, requested_principal: row.principal_amount, currency: 'USD', attempt_state: 'pending', checkout_status: row.rail === 'card' ? 'review_required' : 'transfer_reported', reservation_amount: row.principal_amount, can_retry: false, actions: { cancel_unsent: false, check_provider_status: false, request_review: false, release_with_terminal_evidence: false, record_late_receipt: false }, block_reason: null, resolution_notice: null, review_status: 'none' }
+ return row
+}
 const project = (visits = source<StaffVisitRequest>(), payments = source<ZelleReviewRow>(), reservations = source<StaffBooking>()) => projectShopWorkReviews(base, false, visits, reservations, payments)
 describe('Shop Work review composition', () => {
   it('retains visit and exact invoice review tasks with zero active jobs', () => {
@@ -69,4 +73,41 @@ describe('Shop Work review composition', () => {
     }
     expect(shopWorkDestinationUrl({ kind: 'payment_review', id: 'attempt-a', view: null }, 'attention:payment:attempt-a')).toBe('/dashboard?task=attention%3Apayment%3Aattempt-a&work_view=overview&payment_review=attempt-a')
   })
+})
+
+describe('combined payment review board integration', () => {
+ it('makes a bound card review actionable without manual confirmation authority', () => {
+  const result = project(source(), source([payment({ kind: 'canonical_card_attempt', rail: 'card', can_confirm: false })]))
+  expect(result.actions[0]).toMatchObject({ actionable: true, action_label: 'Review card payment', destination: { kind: 'payment_review', id: 'attempt-a' } })
+  expect(result.actions[0].reason).toContain('Card payment needs review')
+ })
+ it.each(['missing', 'wrong invoice', 'wrong attempt', 'wrong rail'] as const)('does not authorize card review from %s projection', invalid => {
+  const row = payment({ kind: 'canonical_card_attempt', rail: 'card', can_confirm: false })
+  if (invalid === 'missing') row.resolution = null
+  else if (row.resolution) row.resolution = { ...row.resolution, ...(invalid === 'wrong invoice' ? { invoice_id: 'foreign' } : invalid === 'wrong attempt' ? { attempt_id: 'other' } : { rail: 'zelle' }) }
+  expect(project(source(), source([row])).actions[0].actionable).toBe(false)
+ })
+})
+
+
+describe('EFS payment review integration', () => {
+ const efs = (): NonNullable<ZelleReviewRow['efs']> => ({ provider: 'EFS', code_last4: '5678', status: 'awaiting_verification', can_cancel: false, can_reveal: true, can_verify: true, can_reject: true, can_resolve_received_difference: false, difference_review: null })
+ const efsPayment = () => payment({ kind: 'canonical_efs_attempt', rail: 'fleet_payment', can_confirm: false, efs: efs() })
+ it('exposes the exact bound EFS request without generic confirmation', () => {
+  const result = project(source(), source([efsPayment()]))
+  expect(result.actions[0]).toMatchObject({ actionable: true, action_label: 'Review EFS payment', destination: { kind: 'payment_review', id: 'attempt-a' } })
+  expect(result.actions[0].reason).toContain('EFS code awaiting verification')
+ })
+ it('keeps received-difference review reachable', () => {
+  const row = efsPayment(); row.efs = { ...efs(), status: 'review_required', can_reveal: false, can_verify: false, can_reject: false, can_resolve_received_difference: true }
+  expect(project(source(), source([row])).actions[0].actionable).toBe(true)
+ })
+ it.each(['missing resolution', 'wrong invoice', 'wrong attempt', 'wrong rail', 'missing metadata', 'no EFS authority'] as const)('denies %s without generic fallback', invalid => {
+  const row = efsPayment(); row.can_confirm = true
+  if (invalid === 'missing resolution') row.resolution = null
+  else if (invalid === 'missing metadata') row.efs = null
+  else if (invalid === 'no EFS authority') row.efs = { ...efs(), can_reveal: false, can_verify: false, can_reject: false }
+  else if (row.resolution) row.resolution = { ...row.resolution, ...(invalid === 'wrong invoice' ? { invoice_id: 'foreign' } : invalid === 'wrong attempt' ? { attempt_id: 'other' } : { rail: 'zelle' }) }
+  expect(project(source(), source([row])).actions[0].actionable).toBe(false)
+ })
 })

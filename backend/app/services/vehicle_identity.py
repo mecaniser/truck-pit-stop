@@ -202,6 +202,8 @@ async def ensure_fleet_membership(
     vehicle_id: UUID,
     fleet_customer_id: UUID,
 ) -> FleetMembership:
+    from app.services.fleet_assets import guard_membership_entry
+    await guard_membership_entry(db, tenant_id, vehicle_id)
     active_memberships = list((await db.execute(
         select(FleetMembership).where(
             FleetMembership.tenant_id == tenant_id,
@@ -311,6 +313,8 @@ async def end_fleet_membership(
     reason: Optional[str] = None,
     ended_by_user_id: Optional[UUID] = None,
 ) -> bool:
+    from app.services.fleet_assets import lock_tenant, prepare_membership_exit
+    await lock_tenant(db, tenant_id)
     membership = (await db.execute(
         select(FleetMembership).where(
             FleetMembership.tenant_id == tenant_id,
@@ -322,6 +326,7 @@ async def end_fleet_membership(
     )).scalars().first()
     if not membership:
         return False
+    await prepare_membership_exit(db, tenant_id, membership, ended_by_user_id)
     membership.effective_to = datetime.now(timezone.utc)
     # The reason is why the truck left, and the fleet activity feed reads it
     # back as that event's summary. Callers that do not collect one (the
@@ -338,6 +343,8 @@ async def sync_customer_fleet_memberships(
     db: AsyncSession, customer: Customer, *, enabled: bool
 ) -> None:
     """Enroll/end the customer's compatibility vehicles as one atomic fleet."""
+    from app.services import fleet_assets
+    await fleet_assets.lock_tenant(db, customer.tenant_id)
     if enabled:
         active_operator_for_customer = exists(select(VehicleCustomerRelationship.id).where(
             VehicleCustomerRelationship.vehicle_id == Vehicle.id,
@@ -380,6 +387,11 @@ async def sync_customer_fleet_memberships(
             )
         )).scalars().all())
         for vehicle_id in vehicle_ids:
+            vehicle = await db.get(Vehicle, vehicle_id)
+            if vehicle.equipment_type == "trailer" and not await fleet_assets.has_valid_tractor(db, customer.tenant_id, vehicle_id):
+                # Company equipment remains registered independently. A bulk
+                # company toggle cannot invent the trailer's physical tractor.
+                continue
             await ensure_fleet_membership(
                 db,
                 tenant_id=customer.tenant_id,
@@ -388,7 +400,6 @@ async def sync_customer_fleet_memberships(
             )
         return
 
-    now = datetime.now(timezone.utc)
     memberships = list((await db.execute(
         select(FleetMembership).where(
             FleetMembership.tenant_id == customer.tenant_id,
@@ -397,5 +408,13 @@ async def sync_customer_fleet_memberships(
             FleetMembership.deleted_at.is_(None),
         )
     )).scalars().all())
+    asset_ids = [row.vehicle_id for row in memberships]
+    trailer_ids = set((await db.execute(select(Vehicle.id).where(
+        Vehicle.tenant_id == customer.tenant_id, Vehicle.id.in_(asset_ids), Vehicle.equipment_type == "trailer",
+    ))).scalars().all())
+    # A bulk removal can remove its trailers and then their tractors in the
+    # same transaction. A tractor whose trailer belongs elsewhere still blocks.
+    memberships.sort(key=lambda row: row.vehicle_id not in trailer_ids)
     for membership in memberships:
-        membership.effective_to = now
+        await end_fleet_membership(db, tenant_id=customer.tenant_id, vehicle_id=membership.vehicle_id,
+                                   fleet_customer_id=customer.id)

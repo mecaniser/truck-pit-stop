@@ -22,7 +22,7 @@ from app.db.models.appointment import Appointment
 from app.db.models.booking_application import BookingReceiptApplication
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
-from app.db.models.invoice_settlement import InvoiceSettlement
+from app.db.models.invoice_settlement import InvoiceSettlement, InvoicePaymentAttempt, InvoicePaymentLedgerEvent
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
 from app.db.models.quickbooks_shop_activation import QuickBooksShopActivation
@@ -63,10 +63,15 @@ class _FakePaymentsSession:
     async def scalars(self, statement):
         entity = statement.column_descriptions[0].get("entity")
         self.queried_entities.append(entity)
-        assert entity in {Appointment,BookingReceiptApplication}, f"Unexpected scalar-list query entity: {entity}"
+        assert entity in {Appointment,BookingReceiptApplication,InvoicePaymentLedgerEvent}, f"Unexpected scalar-list query entity: {entity}"
         if entity is Appointment:
             assert statement.column_descriptions[0].get("name") == "id"
             assert {self.invoice.tenant_id,self.invoice.repair_order_id}.issubset(set(statement.compile().params.values()))
+        elif entity is InvoicePaymentLedgerEvent:
+            params = statement.compile().params
+            assert self.invoice.tenant_id in params.values() and self.invoice.id in params.values()
+            assert any(set(value) == {'efs_received_difference','efs_difference_resolved'}
+                       for value in params.values() if isinstance(value, list))
         else:
             assert {self.invoice.tenant_id,self.invoice.id}.issubset(set(statement.compile().params.values()))
         # These legacy-invoice fixtures have no linked booking prepayment.
@@ -80,6 +85,13 @@ class _FakePaymentsSession:
         entity = statement.column_descriptions[0].get("entity")
         self.queried_entities.append(entity)
         selected = statement.column_descriptions[0].get("name")
+        if entity is InvoicePaymentAttempt:
+            params = statement.compile().params
+            assert selected == 'id'
+            assert {self.invoice.tenant_id,self.invoice.id,'customer_efs_v1'}.issubset(set(params.values()))
+            # This clean legacy fixture has no protected EFS excess liability;
+            # keep the real exact-tenant/invoice admission lookup active.
+            return None
         if entity is QuickBooksShopActivation:
             assert self.invoice.tenant_id in statement.compile().params.values()
             return None

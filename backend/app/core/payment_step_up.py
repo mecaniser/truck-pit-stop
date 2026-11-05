@@ -28,6 +28,8 @@ STEP_UP_HEADER = "X-Step-Up-Authorization"
 
 
 class PaymentStepUpScope(str, Enum):
+    EFS_RECEIVED_DIFFERENCE = "payments.efs.resolve_received_difference"
+    ATTEMPTS_RESOLVE = "payments.attempts.resolve"
     MANAGE = "payment_sources.manage"
     ZELLE_DISABLE = "payment_sources.zelle.disable"
     ZELLE_QR_REMOVE = "payment_sources.zelle.qr.remove"
@@ -42,6 +44,8 @@ class PaymentStepUpScope(str, Enum):
 
 
 DESTRUCTIVE_SCOPES = {
+    PaymentStepUpScope.EFS_RECEIVED_DIFFERENCE,
+    PaymentStepUpScope.ATTEMPTS_RESOLVE,
     PaymentStepUpScope.REPAIR_ORDER_FORCE_VOID,
     PaymentStepUpScope.ZELLE_DISABLE,
     PaymentStepUpScope.ZELLE_QR_REMOVE,
@@ -218,6 +222,10 @@ def validate_scope_authority(
     scope: PaymentStepUpScope,
     target_tenant_id: Optional[UUID],
 ) -> None:
+    if scope in {PaymentStepUpScope.ATTEMPTS_RESOLVE,PaymentStepUpScope.EFS_RECEIVED_DIFFERENCE}:
+        if current_user.role not in {UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN} or not user_has_permission(current_user, "payments") or current_user.tenant_id is None or target_tenant_id is not None:
+            raise HTTPException(status_code=403, detail="Payment resolution authority is required")
+        return
     if scope in PLATFORM_SCOPES:
         if current_user.role != UserRole.SUPER_ADMIN:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Super admin access required")

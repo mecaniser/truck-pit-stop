@@ -43,6 +43,7 @@ function PendingManualPaymentItem({
   const input = dark ? 'border-[#3a465e] bg-[#182234] text-white' : 'border-slate-300 bg-white text-slate-950'
   const quiet = dark ? 'text-[#99a4b7]' : 'text-slate-500'
   const label = RAIL_LABEL[allocation.rail as keyof typeof RAIL_LABEL]
+  const late = allocation.state !== 'pending'
 
   const confirm = useMutation({
     mutationFn: async () => {
@@ -75,10 +76,10 @@ function PendingManualPaymentItem({
       <fieldset disabled={confirm.isPending} className="m-0 min-w-0 border-0 p-0">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-extrabold">Confirm pending {label}</p>
-          <p className={`mt-0.5 text-xs ${quiet}`}>{formatMoney(allocation.principal_amount)} is reserved until confirmation or expiry.</p>
+          <p className="text-sm font-extrabold">{late ? `Record late ${label} receipt` : `Confirm pending ${label}`}</p>
+          <p className={`mt-0.5 text-xs ${quiet}`}>{late ? 'Verify the bank deposit before recording it. Any excess will need review.' : `${formatMoney(allocation.principal_amount)} is reserved until confirmation or expiry.`}</p>
         </div>
-        {allocation.expires_at && <p className={`text-xs ${quiet}`}>Expires {new Date(allocation.expires_at).toLocaleString()}</p>}
+        {!late && allocation.expires_at && <p className={`text-xs ${quiet}`}>Expires {new Date(allocation.expires_at).toLocaleString()}</p>}
       </div>
       {sender && <p className={`mt-2 break-words text-xs ${quiet}`}>Submitted sender: {sender}</p>}
       {allocation.fleet_provider && <p className={`mt-2 break-words text-xs ${quiet}`}>Provider: {allocation.fleet_provider === 'Other' ? allocation.fleet_provider_name : allocation.fleet_provider}{allocation.authorization_number ? ` · Approval: ${allocation.authorization_number}` : ''}</p>}
@@ -114,7 +115,7 @@ function PendingManualPaymentItem({
         onClick={() => confirm.mutate()}
         className="mt-3  rounded-xl bg-amber-900 px-3 text-xs font-extrabold text-white disabled:opacity-50"
       >
-        {confirm.isPending ? 'Confirming…' : `Confirm ${label} received`}
+        {confirm.isPending ? 'Confirming…' : late ? `Record ${label} receipt` : `Confirm ${label} received`}
       </ControlButton>
       </fieldset>
     </li>
@@ -127,21 +128,23 @@ export default function PendingManualPaymentPanel({
   allocations,
   tone = 'light',
   onUpdated,
+  includeLate = false,
 }: {
   invoiceId: string
   summary: InvoiceSettlementSummary
   allocations: PaymentAllocation[]
   tone?: 'dark' | 'light'
   onUpdated: (next: InvoiceSettlementSummary) => void
+  includeLate?: boolean
 }) {
-  if (summary.allowed_actions?.confirm_manual !== true) return null
-  const pending = allocations.filter(allocation => allocation.state === 'pending' && allocation.rail !== 'card')
+  const pending = allocations.filter(allocation => (allocation.state === 'pending' && allocation.rail !== 'card' && !allocation.efs && summary.allowed_actions?.confirm_manual === true)
+    || (includeLate && allocation.rail === 'zelle' && allocation.resolution?.actions.record_late_receipt === true))
   if (pending.length === 0) return null
   return (
     <section aria-labelledby={`pending-manual-${invoiceId}`}>
       <div className="mb-2 flex items-center gap-2">
         <Clock3 className="h-4 w-4 text-amber-500" />
-        <h3 id={`pending-manual-${invoiceId}`} className="text-sm font-extrabold">Payments awaiting shop confirmation</h3>
+        <h3 id={`pending-manual-${invoiceId}`} className="text-sm font-extrabold">{includeLate ? 'Receipt details' : 'Payments awaiting shop confirmation'}</h3>
       </div>
       <ol className="space-y-3">
         {pending.map(allocation => (

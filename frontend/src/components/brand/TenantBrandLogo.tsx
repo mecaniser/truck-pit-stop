@@ -9,6 +9,7 @@ type TenantBrandLogoProps = {
   className?: string
   fallbackVariant?: BrandLogoVariant
   tenantOnly?: boolean
+  hideTextFallback?: boolean
   forcePlatform?: boolean
   tenantWrapperClassName?: string
 }
@@ -21,6 +22,7 @@ export default function TenantBrandLogo({
   fallbackVariant = 'admin',
   forcePlatform = false,
   tenantOnly = false,
+  hideTextFallback = false,
   tenantWrapperClassName,
 }: TenantBrandLogoProps) {
   const [hasLoadError, setHasLoadError] = useState(false)
@@ -30,6 +32,7 @@ export default function TenantBrandLogo({
   }, [tenantLogoUrl])
 
   if (tenantOnly && (!tenantLogoUrl || hasLoadError)) {
+    if (hideTextFallback) return null
     return <span role="img" aria-label={alt || tenantName || 'Shop'} className={className}>{tenantName || 'Shop'}</span>
   }
 

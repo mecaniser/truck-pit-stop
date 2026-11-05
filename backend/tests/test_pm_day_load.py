@@ -145,11 +145,13 @@ async def test_ignores_deleted_trucks(db_session):
 
     tenant, fc, user = await _seed(db_session)
     live = _vehicle(tenant.id, fc.id, unit_number="LIVE", pm_due_date=DAY)
-    gone = _vehicle(tenant.id, fc.id, unit_number="GONE", pm_due_date=DAY,
-                    deleted_at=datetime.now(timezone.utc))
+    gone = _vehicle(tenant.id, fc.id, unit_number="GONE", pm_due_date=DAY)
     db_session.add_all([live, gone])
     await db_session.commit()
     await _join_fleet(db_session, tenant.id, fc.id, live, gone)
+    # Retire an enrolled truck; archived equipment cannot newly join the fleet.
+    gone.deleted_at = datetime.now(timezone.utc)
+    await db_session.commit()
 
     out = await fleet.pm_day_load(start=DAY, end=DAY, db=db_session, current_user=user)
 

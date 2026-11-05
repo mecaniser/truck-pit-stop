@@ -274,6 +274,7 @@ export default function InvoiceAccessPage() {
   const [stripeInstance, setStripeInstance] = useState<Stripe | null>(null)
   const [showPayment, setShowPayment] = useState(false)
   const [showQrCode, setShowQrCode] = useState(false)
+  const [invoiceDetailsOpen, setInvoiceDetailsOpen] = useState(false)
   const [showZelle, setShowZelle] = useState(false)
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [paymentResult, setPaymentResult] = useState<{
@@ -590,80 +591,14 @@ export default function InvoiceAccessPage() {
     </div>
   )
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-amber-50 to-yellow-100 py-8 px-4">
-      <div className="max-w-3xl mx-auto space-y-6">
-        <div className="text-center">
-          <div className="mb-4 flex justify-center">
-            <TenantBrandLogo
-              tenantLogoUrl={pageBrandLogoUrl}
-              tenantName={pageBrandName}
-              fallbackVariant="admin"
-              tenantOnly
-              className="h-12 sm:h-14 w-auto object-contain drop-shadow-[0_1px_2px_rgba(15,23,42,0.35)]"
-            />
-          </div>
-          <h1 className="text-3xl font-bold text-gray-900">{customerInvoiceLabel(invoice)}</h1>
-          <p className="text-gray-600 mt-1">
-            {!(invoice.source_collection && !invoice.source_collection.is_source_history) && <>Order {invoice.order_number}</>}
-            {invoice.due_date ? ` • Due ${formatCalendarDate(invoice.due_date)}` : ''}
-          </p>
-          <div className="flex gap-2 mt-3 print:hidden">
-            <a data-db-control="action"
-              href={`/api/v1/invoice-access/pdf/${token}`}
-              download
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100"
-            >
-              <Download className="w-4 h-4" />
-              Download PDF
-            </a>
-            <a data-db-control="action"
-              href={`/api/v1/invoice-access/pdf/${token}?print_view=true`}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Open invoice PDF for printing"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100"
-            >
-              <Printer className="w-4 h-4" />
-              Print
-            </a>
-            <ControlButton
-              onClick={() => {
-                const url = window.location.href
-                if (navigator.share) {
-                  navigator.share({ title: customerInvoiceLabel(invoice), url }).catch(() => {})
-                } else {
-                  navigator.clipboard.writeText(url).then(() => toast.success('Link copied!'))
-                }
-              }}
-              className="inline-flex items-center gap-1.5 px-3  text-sm font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100"
-            >
-              <Share2 className="w-4 h-4" />
-              Share
-            </ControlButton>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-xl border border-amber-100 p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <FileText className="w-6 h-6 text-amber-600" />
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900">{invoice.customer_name}</h2>
-              <p className="text-sm text-gray-600">{invoice.vehicle_info}</p>
-            </div>
-          </div>
-
-          <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 mb-6">
-            <div className="flex items-center justify-between">
-              <span className="text-gray-700 font-medium">{invoice.source_collection?.is_source_history ? 'Original invoice total' : paymentSummary?.state === 'cancelled' ? 'Invoice status' : 'Balance due'}</span>
-              <span className="text-3xl font-bold text-gray-900">{invoice.source_collection?.is_source_history ? formatMoney(invoice.source_collection.original_issued_total) : paymentSummary?.state === 'cancelled' ? 'Cancelled' : paymentSummary?.balance_due === null ? 'Unavailable' : formatMoney(isPaid ? '0' : splitSettlement?.outstanding_balance ?? paymentSummary?.balance_due ?? invoice.amount_due)}</span>
-            </div>
-            {!(splitSettlement && isPositiveMoney(splitSettlement.active_pending_principal)) && <p className="text-xs text-gray-500 mt-2">{invoice.source_collection?.is_source_history ? 'Historical record' : `Status: ${paymentSummary ? invoicePaymentLabels[paymentSummary.state] : invoice.status.replace('_', ' ')}`}</p>}
-          </div>
-
-          {!invoice.source_collection?.is_source_history && !splitSettlement && <InvoicePaymentSummary summary={paymentSummary} />}
-          {!invoice.source_collection?.is_source_history && isPaid && splitSettlement && (isPositiveMoney(splitSettlement.refund_pending) || isPositiveMoney(splitSettlement.unapplied_credit)) && <SettlementSummaryCard audience="customer" streamlined resolutionOnly summary={splitSettlement} tone="light" />}
-          {invoice.source_collection && !invoice.source_collection.is_source_history && <div className="mb-6 rounded-xl border border-gray-200 p-4 text-sm" aria-label="Invoice amounts">
+  const paymentPrimary = !isPaid && !settlementFailure && !invoice.source_collection?.is_source_history
+    && !splitSettlement?.payment_verification_required && Boolean(splitSettlement && isPositiveMoney(splitSettlement.allocatable_balance)
+      && (splitSettlement.allowed_actions?.submit_efs === true || (splitSettlement.allowed_actions?.create_attempt !== false
+        && splitSettlement.allowed_actions?.rails?.some(rail => rail === 'card' || rail === 'zelle'))))
+    && (!invoice.source_collection || (invoice.source_collection.collection_enabled !== false
+      && invoice.source_collection.state === 'active' && !['source_conflict', 'source_unavailable'].includes(invoice.source_collection.source_sync_state)))
+  const invoiceDetails = <>
+          {invoice.source_collection && !invoice.source_collection.is_source_history && (!splitSettlement || formatMoney(invoice.source_collection.original_issued_total) !== formatMoney(splitSettlement.outstanding_balance) || isPositiveMoney(collectionApplied)) && <div className="mb-6 rounded-xl border border-gray-200 p-4 text-sm" aria-label="Invoice amounts">
             <div className="flex justify-between gap-4"><span>Invoice total</span><span>{formatMoney(invoice.source_collection.original_issued_total)}</span></div>
             {isPositiveMoney(collectionApplied) && <div className="mt-2 flex justify-between gap-4"><span>Payments / credits applied</span><span>{formatMoney(`-${collectionApplied}`)}</span></div>}
           </div>}
@@ -693,16 +628,99 @@ export default function InvoiceAccessPage() {
                   <span>-{formatMoney(cashReceipt?.discount_amount ?? invoice.discount_amount)}</span>
                 </div>
               )}
-              <div className="pt-2 border-t border-gray-200 flex items-center justify-between text-gray-900 font-semibold">
+              {(cashReceipt || !splitSettlement || formatMoney(invoice.total_amount) !== formatMoney(splitSettlement.outstanding_balance)) && <div className="pt-2 border-t border-gray-200 flex items-center justify-between text-gray-900 font-semibold">
                 <span>{cashReceipt ? 'Total paid in cash' : 'Invoice total'}</span>
                 <span>{formatMoney(cashReceipt?.amount ?? invoice.total_amount)}</span>
-              </div>
+              </div>}
               {splitSettlement && !cashReceipt && paymentSummary?.applied_amount != null && isPositiveMoney(paymentSummary.prepayment_applied_amount) && <div className="flex items-center justify-between text-gray-700">
                 <span>{invoiceAppliedPaymentLabel(paymentSummary)}</span>
                 <span>{formatMoney(`-${paymentSummary.applied_amount}`)}</span>
               </div>}
             </div>
           </div>}
+  </>
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-amber-50 to-yellow-100 py-4 px-4 sm:py-8">
+      <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 sm:block sm:text-center">
+          <div className="flex min-w-0 items-center gap-2 sm:mb-3 sm:justify-center">
+            <TenantBrandLogo
+              tenantLogoUrl={pageBrandLogoUrl}
+              tenantName={pageBrandName}
+              fallbackVariant="admin"
+              tenantOnly
+              hideTextFallback
+              className="h-8 sm:h-10 max-w-[64px] sm:max-w-[120px] w-auto shrink-0 object-contain drop-shadow-[0_1px_2px_rgba(15,23,42,0.35)]"
+            />
+            <span className="min-w-0 truncate text-sm font-semibold text-gray-900 sm:text-base" title={pageBrandName}>{pageBrandName}</span>
+          </div>
+          <h1 className="col-span-2 row-start-2 text-xl font-bold text-gray-900 sm:text-3xl">{customerInvoiceLabel(invoice)}</h1>
+          {(!(invoice.source_collection && !invoice.source_collection.is_source_history) || invoice.due_date) && <p className="col-span-2 row-start-3 text-sm text-gray-600 sm:mt-1">
+            {!(invoice.source_collection && !invoice.source_collection.is_source_history) && <>Order {invoice.order_number}</>}
+            {invoice.due_date ? ` • Due ${formatCalendarDate(invoice.due_date)}` : ''}
+          </p>}
+          <div className="col-start-2 row-start-1 flex gap-1 sm:mt-3 sm:justify-center sm:gap-2 print:hidden">
+            <a data-db-control="action"
+              href={`/api/v1/invoice-access/pdf/${token}`}
+              download
+              aria-label="Download PDF"
+              title="Download PDF"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 px-3 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100"
+            >
+              <Download className="w-4 h-4" />
+              <span className="hidden sm:inline">Download PDF</span>
+            </a>
+            <a data-db-control="action"
+              href={`/api/v1/invoice-access/pdf/${token}?print_view=true`}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Print"
+              title="Open invoice PDF for printing"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 px-3 text-sm font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100"
+            >
+              <Printer className="w-4 h-4" />
+              <span className="hidden sm:inline">Print</span>
+            </a>
+            <ControlButton
+              aria-label="Share"
+              title="Share invoice"
+              onClick={() => {
+                const url = window.location.href
+                if (navigator.share) {
+                  navigator.share({ title: customerInvoiceLabel(invoice), url }).catch(() => {})
+                } else {
+                  navigator.clipboard.writeText(url).then(() => toast.success('Link copied!'))
+                }
+              }}
+              className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 px-3 text-sm font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100"
+            >
+              <Share2 className="w-4 h-4" />
+              <span className="hidden sm:inline">Share</span>
+            </ControlButton>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl shadow-xl border border-amber-100 p-4 sm:p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <FileText className="w-6 h-6 text-amber-600" />
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">{invoice.customer_name}</h2>
+              <p className="text-sm text-gray-600">{invoice.vehicle_info}</p>
+            </div>
+          </div>
+
+          <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 mb-6">
+            <div className="flex items-center justify-between">
+              <span className="text-gray-700 font-medium">{invoice.source_collection?.is_source_history ? 'Original invoice total' : paymentSummary?.state === 'cancelled' ? 'Invoice status' : 'Balance due'}</span>
+              <span className="text-3xl font-bold text-gray-900">{invoice.source_collection?.is_source_history ? formatMoney(invoice.source_collection.original_issued_total) : paymentSummary?.state === 'cancelled' ? 'Cancelled' : paymentSummary?.balance_due === null ? 'Unavailable' : formatMoney(isPaid ? '0' : splitSettlement?.outstanding_balance ?? paymentSummary?.balance_due ?? invoice.amount_due)}</span>
+            </div>
+            {!(splitSettlement && isPositiveMoney(splitSettlement.active_pending_principal)) && (invoice.source_collection?.is_source_history || (paymentSummary ? paymentSummary.state !== 'unpaid' : !['sent', 'unpaid', 'invoiced'].includes(invoice.status))) && <p className="text-xs text-gray-500 mt-2">{invoice.source_collection?.is_source_history ? 'Historical record' : `Status: ${paymentSummary ? invoicePaymentLabels[paymentSummary.state] : invoice.status.replace('_', ' ')}`}</p>}
+          </div>
+
+          {!invoice.source_collection?.is_source_history && !splitSettlement && <InvoicePaymentSummary summary={paymentSummary} />}
+          {!invoice.source_collection?.is_source_history && isPaid && splitSettlement && (isPositiveMoney(splitSettlement.refund_pending) || isPositiveMoney(splitSettlement.unapplied_credit)) && <SettlementSummaryCard audience="customer" streamlined resolutionOnly summary={splitSettlement} tone="light" />}
+          {!paymentPrimary && invoiceDetails}
 
           {invoice.source_collection?.is_source_history ? <div className="my-4 text-center text-sm"><p>This invoice is for your records.</p>
             {invoice.source_collection.native_invoice_id && <a className="mt-2 inline-flex min-h-11 items-center font-semibold text-orange-700" href={`/portal/invoices/${invoice.source_collection.native_invoice_id}`}>View current invoice in portal</a>}</div>
@@ -741,8 +759,13 @@ export default function InvoiceAccessPage() {
                 streamlined
                 summary={splitSettlement}
                 hideConfirmed={Boolean(invoice.source_collection)}
+                hideAvailable={!splitSettlement.payment_verification_required && isPositiveMoney(splitSettlement.allocatable_balance) && (splitSettlement.allowed_actions?.submit_efs === true || (splitSettlement.allowed_actions?.create_attempt !== false && splitSettlement.allowed_actions?.rails?.some(rail => rail === 'card' || rail === 'zelle')))}
                 allocations={allocationQuery.data?.items ?? []}
                 tone="light"
+                resolutionControls={{ access: settlementAccess, audience: 'guest', onUpdated: next => {
+                  queryClient.setQueryData(['invoice-settlement', 'guest', token], next)
+                  queryClient.invalidateQueries({ queryKey: ['invoice-access', token] })
+                } }}
               />
               <SettlementResolutionPanel
                 access={settlementAccess}
@@ -756,8 +779,10 @@ export default function InvoiceAccessPage() {
                 }}
               />
               <SettlementPaymentPanel
+                hideVerificationNotice
                 access={settlementAccess}
                 summary={splitSettlement}
+                allocations={allocationQuery.data?.items ?? []}
                 audience="guest"
                 tone="light"
                 zelleRecipient={(invoice.zelle_phone || invoice.zelle_email)
@@ -893,6 +918,12 @@ export default function InvoiceAccessPage() {
               )}
             </div>
           )}
+          {paymentPrimary && <section className="mt-4 border-t border-gray-200 pt-2" aria-label="Invoice details">
+            <ControlButton type="button" aria-expanded={invoiceDetailsOpen} aria-controls="guest-invoice-details" onClick={() => setInvoiceDetailsOpen(open => !open)} className="flex w-full items-center justify-between gap-3 text-sm font-semibold text-gray-700">
+              Invoice details<ChevronDown aria-hidden="true" className={`h-4 w-4 ${invoiceDetailsOpen ? 'rotate-180' : ''}`} />
+            </ControlButton>
+            {invoiceDetailsOpen && <div id="guest-invoice-details" className="mt-2">{invoiceDetails}</div>}
+          </section>}
         </div>
 
         <div className="text-center text-sm text-gray-600 space-y-1">

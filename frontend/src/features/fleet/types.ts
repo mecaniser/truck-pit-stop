@@ -113,7 +113,17 @@ export interface CatalogService {
   category?: { id: string; name: string } | null
 }
 
+export type EquipmentType = 'unknown' | 'tractor' | 'trailer' | 'other'
+export interface AttachedAsset {
+  id: string
+  unit_number: string | null
+  equipment_type: 'tractor' | 'trailer'
+  attached_at: string
+}
+
 export interface BoardTruck {
+  equipment_type?: EquipmentType
+  attached_asset?: AttachedAsset | null
   telemetry?: FleetTelemetry | null
   id: string
   unit_number?: string | null

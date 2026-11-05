@@ -1,9 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 import api from '@/lib/api'
+import type { EfsSubmissionSummary } from '@/features/payments/efsApi'
+import type { ResolutionProjection } from '@/features/payments/attemptResolutionTypes'
 import { getAuthenticatedSessionIdentity, useAuthStore } from '@/stores/authStore'
 
 export interface ZelleReviewRow {
-  kind: 'canonical_zelle_attempt' | 'legacy_zelle_submission'
+  kind: 'canonical_card_attempt' | 'canonical_zelle_attempt' | 'canonical_efs_attempt' | 'legacy_zelle_submission'
+  rail: 'card' | 'zelle' | 'fleet_payment'
+  efs?: EfsSubmissionSummary | null
+  provider_label?: string | null
+  resolution: ResolutionProjection | null
   invoice_id: string
   repair_order_id: string | null
   display_invoice_number: string
@@ -26,14 +32,14 @@ export function useZelleReviewQueue() {
   const user = useAuthStore(state => state.user)
   const allowed = !!identity && (user?.role === 'garage_owner' || (user?.role === 'garage_admin' && user.permissions?.payments === true))
   const query = useQuery({
-    queryKey: ['zelle-review-queue', identity, allowed], enabled: allowed, retry: false, refetchInterval: 60000,
+    queryKey: ['zelle-review-queue', 'combined-attempts', identity, allowed], enabled: allowed, retry: false, refetchInterval: 60000,
     queryFn: async ({ signal }) => {
       const rows: ZelleReviewRow[] = []
       const seen = new Set<string>()
       let cursor: string | null = null
       for (let page = 0; page < 50; page++) {
         signal.throwIfAborted()
-        const result: QueuePage = (await api.get<QueuePage>('/payments/zelle-review-queue', { params: { limit: 100, ...(cursor ? { cursor } : {}) }, signal })).data
+        const result: QueuePage = (await api.get<QueuePage>('/payments/attempt-review-queue', { params: { limit: 100, ...(cursor ? { cursor } : {}) }, signal })).data
         signal.throwIfAborted()
         if (!Array.isArray(result.rows)) throw new Error('Payment review unavailable')
         rows.push(...result.rows)

@@ -211,10 +211,12 @@ async def create_vehicle(
     )
     await sync_vehicle_nhtsa_snapshot(vehicle)
     
+    from app.services.fleet_assets import lock_tenant
+    await lock_tenant(db, customer.tenant_id)
     db.add(vehicle)
     await db.flush()
     await seed_vehicle_account_relationships(db, vehicle, customer)
-    if customer.fleet_enabled:
+    if customer.fleet_enabled and vehicle.equipment_type != "trailer":
         await ensure_fleet_membership(
             db,
             tenant_id=customer.tenant_id,
@@ -302,12 +304,15 @@ async def create_vehicle_relationship(
     ))).scalar_one_or_none()
     if not vehicle or not customer:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Truck or company not found")
+
     if current_user.role == UserRole.FLEET_MANAGER and body.relationship_type == "owner":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only shop administrators can record an ownership transfer",
         )
 
+    from app.services.fleet_assets import lock_tenant
+    await lock_tenant(db, current_user.tenant_id)
     if body.replace_primary:
         now = datetime.now(timezone.utc)
         current_rows = list((await db.execute(select(VehicleCustomerRelationship).where(
@@ -381,6 +386,9 @@ async def sync_vehicle_relationships(
     ))).scalar_one_or_none()
     if not vehicle or not customer:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Truck or company not found")
+
+    from app.services.fleet_assets import guard_lifecycle_change
+    await guard_lifecycle_change(db, current_user.tenant_id, [vehicle.id])
 
     operating_authority = None
     if body.operating_authority_customer_id:
@@ -878,6 +886,9 @@ async def update_vehicle(
     
     # Update fields
     update_data = vehicle_data.model_dump(exclude_unset=True)
+    if "equipment_type" in update_data:
+        from app.services import fleet_assets
+        await fleet_assets.change_equipment_type(db, vehicle, update_data["equipment_type"])
     if "vin" in update_data:
         update_data["vin"] = normalize_vin(update_data["vin"])
         duplicate = await find_vehicle_by_vin(

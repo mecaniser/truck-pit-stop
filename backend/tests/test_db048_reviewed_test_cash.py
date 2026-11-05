@@ -18,8 +18,6 @@ from app.db.models.user import UserRole
 from app.services import invoice_cash_service as cash
 from app.services.invoice_settlement_service import (
     append_ledger_event,
-    create_attempt,
-    fail_attempt,
     get_or_create_settlement,
     load_active_configuration,
 )
@@ -39,6 +37,60 @@ MARKER = {
 }
 
 
+async def historical_failed_card_snapshot(db, *, tenant, owner, customer, invoice, settlement,
+        source, subject_type, subject_id, failure_code, terminal_evidence=None, reconciliation=False):
+    """Insert fictional pre-resolution history, not today's card dispatch protocol.
+
+    These ancestry fixtures deliberately represent the old audited ledger shape;
+    current create/fail APIs must never be used to fabricate historical proof.
+    """
+    config=await load_active_configuration(db,tenant.id)
+    settlement.qbo_realm_snapshot=config.qbo_realm_snapshot
+    settlement.initial_provider_configuration_version=config.version
+    await db.flush([settlement])
+    principal=Decimal('100.00')
+    fee=(Decimal(settlement.max_card_fee)*principal/Decimal(settlement.principal_total)).quantize(Decimal('.01'))
+    fee_tax=(Decimal(settlement.max_card_fee_tax)*principal/Decimal(settlement.principal_total)).quantize(Decimal('.01'))
+    now=datetime.now(UTC)
+    attempt=InvoicePaymentAttempt(id=uuid4(),tenant_id=tenant.id,invoice_id=invoice.id,
+        settlement_id=settlement.id,customer_id=customer.id,source=source,rail='card',
+        provider=config.selected_provider,state='failed',principal_amount=principal,
+        card_fee_amount=fee,card_fee_tax_amount=fee_tax,provider_charge_amount=principal+fee+fee_tax,
+        currency='USD',provider_configuration_version=config.version,provider_account_id=config.provider_account_snapshot,
+        manual_evidence={},actor_user_id=owner.id,actor_name_snapshot=f'{owner.first_name} {owner.last_name}',
+        actor_role_snapshot=owner.role.value,subject_type=subject_type,subject_id=subject_id,
+        idempotency_key='historical-'+uuid4().hex,request_hash='a'*64,version=2,
+        created_at=now,failed_at=now,expires_at=now+timedelta(minutes=30),failure_code=failure_code)
+    db.add(attempt)
+    await db.flush()
+    specs=[('attempt_created','unpaid','payment_pending',principal,
+            {'source':source,'rail':'card','provider':config.selected_provider},owner)]
+    if reconciliation:
+        specs.append(('provider_reconciliation_failed','payment_pending','payment_pending',Decimal(0),
+            {'failure_code':'quickbooks_payment_outcome_unknown','provider':'quickbooks_payments',
+             'provider_account':attempt.provider_account_id,'provider_intent_id':None},None))
+    specs.append(('payment_failed','payment_pending','unpaid',-principal,
+        dict(terminal_evidence or {'failure_code':failure_code}),owner))
+    pending=Decimal(0);terminal=None
+    for event_type,prior,new,delta,evidence,actor in specs:
+        pending+=delta;settlement.last_event_sequence+=1
+        terminal=InvoicePaymentLedgerEvent(id=uuid4(),tenant_id=tenant.id,invoice_id=invoice.id,
+            settlement_id=settlement.id,attempt_id=attempt.id,customer_id=customer.id,
+            actor_user_id=actor.id if actor else None,actor_name_snapshot='System' if actor is None else f'{owner.first_name} {owner.last_name}',
+            actor_role_snapshot=actor.role.value if actor else None,sequence=settlement.last_event_sequence,
+            correlation_id=uuid4(),idempotency_key='historical-ledger-'+uuid4().hex,occurred_at=now,
+            event_type=event_type,prior_state=prior,new_state=new,pending_delta=delta,
+            principal_delta=0,unapplied_delta=0,refund_pending_delta=0,
+            money_snapshot={'principal_total':f'{settlement.principal_total:.2f}','confirmed_principal':'0.00',
+                'active_pending_principal':f'{pending:.2f}','unapplied_credit':'0.00','refund_pending':'0.00'},
+            evidence_snapshot=evidence)
+        db.add(terminal)
+    settlement.version+=2
+    settlement.state='unpaid';settlement.active_pending_principal=Decimal(0)
+    await db.flush()
+    return attempt,terminal
+
+
 async def reviewed(db, monkeypatch):
     tenant, owner, customer, parent = await _financial_context(db, monkeypatch)
     monkeypatch.setattr(settings, 'QUICKBOOKS_PAYMENTS_INVOICE_PAYMENTS_APPROVED', True)
@@ -54,19 +106,9 @@ async def reviewed(db, monkeypatch):
     db.add(TenantPaymentProviderConfiguration(**values))
     await db.flush()
     old_settlement = await get_or_create_settlement(db, invoice=parent, tenant=tenant, customer_id=customer.id)
-    creation = await create_attempt(db, invoice=parent, tenant=tenant, customer_id=customer.id, actor=owner,
-        amount=Decimal(100), rail='card', expected_settlement_version=old_settlement.version,
-        idempotency_key='test-parent-attempt', source='customer_portal', subject_type='customer', subject_id=customer.id)
-    attempt = creation.attempt
-    await append_ledger_event(db, settlement=old_settlement, attempt=attempt,
-        event_type='provider_reconciliation_failed', idempotency_key='test-maintenance', actor=None,
-        prior_state=old_settlement.state, new_state=old_settlement.state,
-        evidence={'failure_code': 'quickbooks_payment_outcome_unknown', 'provider': 'quickbooks_payments',
-                  'provider_account': attempt.provider_account_id, 'provider_intent_id': None})
-    await fail_attempt(db, attempt_id=attempt.id, tenant_id=tenant.id, actor=owner,
-        expected_attempt_version=attempt.version, failure_code='owner_attested_test_attempt', idempotency_key='test-release')
-    terminal = next(row for row in db.new if isinstance(row, InvoicePaymentLedgerEvent))
-    terminal.evidence_snapshot = dict(MARKER)
+    attempt,terminal=await historical_failed_card_snapshot(db,tenant=tenant,owner=owner,customer=customer,
+        invoice=parent,settlement=old_settlement,source='customer_portal',subject_type='customer',
+        subject_id=customer.id,failure_code='owner_attested_test_attempt',terminal_evidence=MARKER,reconciliation=True)
     parent.status = InvoiceStatus.CANCELLED
     parent.voided_at = datetime.now(UTC)
     await db.flush()
@@ -80,6 +122,9 @@ async def reviewed(db, monkeypatch):
     await db.flush()
     settlement = await get_or_create_settlement(db, invoice=invoice, tenant=tenant, customer_id=customer.id)
     await db.flush()
+    # Compare persisted historical encodings, including Numeric scale, rather
+    # than transient Python zero defaults before the first database reload.
+    await db.refresh(parent, attribute_names=[column.name for column in parent.__table__.columns])
     return (tenant, owner, customer, invoice, settlement), parent, attempt, old_settlement, terminal
 
 

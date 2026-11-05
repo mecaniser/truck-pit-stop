@@ -27,10 +27,10 @@ from app.services.messaging_service import _normalize_for_twilio, _get_or_create
 from app.services import tenant_sms_routing as routing
 
 CUSTOMER_TEMPLATES = {'work_started_sms', 'work_complete_sms', 'ready_pickup_sms', 'quote_sent_sms', 'invoice_reminder_sms'}
-STAFF_TEMPLATES = {'job_assigned_sms', 'quote_declined_shop', 'mechanic_idle_alert_sms', 'pending_zelle_staff_submit_sms', 'pending_zelle_staff_reminder_sms'}
+STAFF_TEMPLATES = {'job_assigned_sms', 'quote_declined_shop', 'mechanic_idle_alert_sms', 'pending_zelle_staff_submit_sms', 'pending_efs_staff_submit_sms', 'pending_zelle_staff_reminder_sms'}
 STAFF_ROLES = {UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST, UserRole.MECHANIC}
 DISPATCH_TIMEOUT = timedelta(minutes=5)
-FINANCIAL_TEMPLATES = {'invoice_reminder_sms', 'pending_zelle_staff_submit_sms', 'pending_zelle_staff_reminder_sms'}
+FINANCIAL_TEMPLATES = {'pending_efs_staff_submit_sms', 'invoice_reminder_sms', 'pending_zelle_staff_submit_sms', 'pending_zelle_staff_reminder_sms'}
 
 
 def digest(values):
@@ -163,10 +163,11 @@ async def domain_eligibility(db, op, tenant):
             if not invoice or invoice.deleted_at or invoice.voided_at or invoice.status in {InvoiceStatus.PAID, InvoiceStatus.CANCELLED}:
                 return 'domain_event_obsolete'
             order = await db.scalar(select(RepairOrder).where(RepairOrder.id == invoice.repair_order_id, RepairOrder.tenant_id == op.tenant_id).execution_options(populate_existing=True))
+            canonical_efs = op.template_name == 'pending_efs_staff_submit_sms' and event.startswith('efs-submission:')
             canonical_zelle = op.template_name == 'pending_zelle_staff_submit_sms' and event.startswith('zelle-attempt-report:')
-            if not order or order.status == RepairOrderStatus.CANCELLED or (order.deleted_at and not (canonical_zelle and invoice.accounting_policy == 'source_collection_hold')):
+            if not order or order.status == RepairOrderStatus.CANCELLED or (order.deleted_at and not ((canonical_zelle or canonical_efs) and invoice.accounting_policy == 'source_collection_hold')):
                 return 'domain_event_obsolete'
-            if canonical_zelle and invoice.accounting_policy == 'source_collection_hold':
+            if (canonical_zelle or canonical_efs) and invoice.accounting_policy == 'source_collection_hold':
                 from app.services.source_debt_handoff import invoice_handoff
                 try:
                     await invoice_handoff(db,invoice,require_active=True)
@@ -186,6 +187,12 @@ async def domain_eligibility(db, op, tenant):
                 ordinal = int(event.removeprefix('reminder:'))
                 if invoice.status not in {InvoiceStatus.SENT, InvoiceStatus.OVERDUE} or ordinal < 1 or invoice.reminder_count < ordinal or invoice.zelle_pending_submitted_at or not tenant.invoice_reminders_enabled or order.customer_id != op.recipient_id or invoice.is_internal:
                     return 'domain_event_obsolete'
+            elif canonical_efs:
+                from app.db.models.invoice_settlement import InvoicePaymentAttempt
+                from app.db.models.efs_instrument import EfsInstrumentSubmission
+                identity=UUID(event.removeprefix('efs-submission:'))
+                claim=await db.scalar(select(EfsInstrumentSubmission).join(InvoicePaymentAttempt,InvoicePaymentAttempt.id==EfsInstrumentSubmission.attempt_id).where(EfsInstrumentSubmission.tenant_id==op.tenant_id,EfsInstrumentSubmission.invoice_id==invoice.id,InvoicePaymentAttempt.tenant_id==op.tenant_id,InvoicePaymentAttempt.id==identity,InvoicePaymentAttempt.source=='customer_efs_v1',InvoicePaymentAttempt.state=='pending'))
+                if not claim:return 'domain_event_obsolete'
             elif canonical_zelle:
                 from app.db.models.invoice_settlement import InvoicePaymentAttempt
                 attempt_id=UUID(event.removeprefix('zelle-attempt-report:'))
@@ -272,7 +279,7 @@ async def eligibility(db, op, sender):
         user = await db.scalar(select(User).where(User.id == op.recipient_id, User.tenant_id == op.tenant_id).execution_options(populate_existing=True))
         if not user or not user.is_active or user.deleted_at or user.role not in STAFF_ROLES or _normalize_for_twilio(user.phone or '') != op.to_number:
             return 'recipient_unavailable'
-        if op.template_name == 'pending_zelle_staff_submit_sms' and user.role not in {
+        if op.template_name in {'pending_zelle_staff_submit_sms','pending_efs_staff_submit_sms'} and user.role not in {
             UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST,
         }:
             return 'recipient_unavailable'

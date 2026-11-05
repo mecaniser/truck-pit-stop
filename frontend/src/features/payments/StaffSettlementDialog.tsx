@@ -29,14 +29,18 @@ function OpenStaffSettlementDialog({
   open,
   onClose,
   onUpdated,
+  reviewAttemptId,
 }: {
   invoiceId: string
   invoiceNumber: string
   open: boolean
   onClose: () => void
   onUpdated?: () => void
+  reviewAttemptId?: string
 }) {
   const queryClient = useQueryClient()
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
   const onUpdatedRef = useRef(onUpdated)
   onUpdatedRef.current = onUpdated
   const access = open ? { kind: 'authenticated' as const, invoiceId } : null
@@ -69,7 +73,7 @@ function OpenStaffSettlementDialog({
     closeRef.current?.focus()
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        onClose()
+        onCloseRef.current()
         return
       }
       if (event.key !== 'Tab') return
@@ -96,7 +100,7 @@ function OpenStaffSettlementDialog({
       document.removeEventListener('keydown', onKeyDown)
       previous?.focus?.()
     }
-  }, [onClose, open])
+  }, [open])
 
   if (!open) return null
 
@@ -126,7 +130,7 @@ function OpenStaffSettlementDialog({
             </div>
           ) : (
             <>
-              <SettlementSummaryCard summary={current} allocations={allocationsQuery.data?.items ?? []} tone="light" streamlined>
+              <SettlementSummaryCard summary={current} allocations={allocationsQuery.data?.items ?? []} tone="light" streamlined reviewAttemptId={reviewAttemptId} resolutionControls={{ access: { kind: 'authenticated', invoiceId }, audience: 'staff', onUpdated: handleUpdated }}>
                 <InvoiceDetailsDisclosure key={invoiceId} summary={current} />
               </SettlementSummaryCard>
               <fieldset disabled={editingExemption} className="min-w-0 space-y-4 border-0 p-0">
@@ -165,12 +169,14 @@ function OpenStaffSettlementDialog({
               >
               {cash => {
                 const paymentPanel = (chargeControls?: InlineInvoiceChargeControls) => <SettlementPaymentPanel
+                hideVerificationNotice
                 access={{ kind: 'authenticated', invoiceId }}
                 summary={current}
                 audience="staff"
                 tone="light"
                 onUpdated={handleUpdated}
                 cashTender={cash}
+                allocations={allocationsQuery.data?.items ?? []}
                 submissionBlockedReason={editingExemption ? 'Finish saving invoice changes before recording payment.' : undefined}
                 chargeControls={chargeControls}
                 taxExemptionControl={!current.charge_controls && <InvoiceTaxExemptionControl embedded key={invoiceId} invoiceId={invoiceId} summary={current} onUpdated={handleUpdated} onEditingChange={setEditingExemption} />}

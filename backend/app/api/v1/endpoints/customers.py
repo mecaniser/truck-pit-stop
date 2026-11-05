@@ -582,6 +582,11 @@ async def update_customer(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    # Membership changes share the attachment serialization point. Take it
+    # before Customer FOR UPDATE, matching financial tenant -> customer order.
+    if "fleet_enabled" in customer_data.model_fields_set:
+        from app.services.fleet_assets import lock_tenant
+        await lock_tenant(db, current_user.tenant_id)
     result = await db.execute(select(Customer).where(Customer.id == customer_id).with_for_update())
     customer = result.scalar_one_or_none()
     
@@ -646,6 +651,8 @@ async def delete_customer(
         UserRole.RECEPTIONIST,
     )),
 ):
+    from app.services.fleet_assets import lock_tenant
+    await lock_tenant(db, current_user.tenant_id)
     result = await db.execute(select(Customer).where(Customer.id == customer_id).with_for_update())
     customer = result.scalar_one_or_none()
 
@@ -721,6 +728,8 @@ async def delete_customer(
         )
     )
     vehicles = vehicles_result.scalars().all()
+    from app.services.fleet_assets import guard_lifecycle_change
+    await guard_lifecycle_change(db, customer.tenant_id, [vehicle.id for vehicle in vehicles])
     for vehicle in vehicles:
         await db.delete(vehicle)
 
@@ -1148,10 +1157,12 @@ async def create_customer_vehicle(
     )
     await sync_vehicle_nhtsa_snapshot(vehicle)
     
+    from app.services.fleet_assets import lock_tenant
+    await lock_tenant(db, customer.tenant_id)
     db.add(vehicle)
     await db.flush()
     await seed_vehicle_account_relationships(db, vehicle, customer)
-    if customer.fleet_enabled:
+    if customer.fleet_enabled and vehicle.equipment_type != "trailer":
         await ensure_fleet_membership(
             db,
             tenant_id=customer.tenant_id,
@@ -1244,6 +1255,9 @@ async def update_customer_vehicle(
     
     # Update fields
     update_data = vehicle_data.model_dump(exclude_unset=True)
+    if "equipment_type" in update_data:
+        from app.services import fleet_assets
+        await fleet_assets.change_equipment_type(db, vehicle, update_data["equipment_type"])
     if "vin" in update_data:
         update_data["vin"] = normalize_vin(update_data["vin"])
         duplicate = await find_vehicle_by_vin(
@@ -1336,6 +1350,8 @@ async def delete_customer_vehicle(
     # foreign keys and loses the history that should remain with the physical
     # truck. Archive the duplicate instead, and close its active assignments so
     # it immediately disappears from both customer and Fleet Board lists.
+    from app.services.fleet_assets import guard_lifecycle_change
+    await guard_lifecycle_change(db, vehicle.tenant_id, [vehicle.id])
     archived_at = datetime.now(timezone.utc)
     vehicle.deleted_at = archived_at
     active_relationships = (await db.execute(

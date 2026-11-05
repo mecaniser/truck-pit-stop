@@ -254,7 +254,7 @@ def _sqlite_schema_template(tmp_path_factory):
                     return value
                 return _uuid.UUID(str(value))
             return process
-        return _orig_rp(self, dialect)
+        return _orig_rp(self, dialect, coltype)
 
     PG_UUID.result_processor = _patched_result_processor
 

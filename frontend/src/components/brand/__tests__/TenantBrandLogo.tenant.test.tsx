@@ -11,3 +11,15 @@ it('keeps tenant branding if its logo fails to load',()=>{
  fireEvent.error(screen.getByRole('img'))
  expect(screen.getByRole('img',{name:'Another Shop'})).toHaveTextContent('Another Shop')
 })
+
+it('can leave a separate tenant name visible when a compact header logo is missing or fails', () => {
+ const {rerender}=render(<><TenantBrandLogo tenantOnly hideTextFallback tenantName="Another Shop" /><span>Another Shop</span></>)
+ expect(screen.getAllByText('Another Shop')).toHaveLength(1)
+ expect(screen.queryByRole('img')).not.toBeInTheDocument()
+ rerender(<><TenantBrandLogo tenantOnly hideTextFallback tenantName="Another Shop" tenantLogoUrl="https://example.test/shop.png" /><span>Another Shop</span></>)
+ expect(screen.getByRole('img',{name:'Another Shop logo'})).toHaveAttribute('src','https://example.test/shop.png')
+ expect(screen.getAllByText('Another Shop')).toHaveLength(1)
+ fireEvent.error(screen.getByRole('img'))
+ expect(screen.getAllByText('Another Shop')).toHaveLength(1)
+ expect(screen.queryByRole('img')).not.toBeInTheDocument()
+})

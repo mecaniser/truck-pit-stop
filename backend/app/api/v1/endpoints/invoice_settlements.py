@@ -15,7 +15,7 @@ from uuid import UUID
 
 import stripe
 from app.services.invoice_snapshot_totals import invoice_snapshot_totals
-from fastapi import APIRouter, Depends, Header, Query, Response
+from fastapi import APIRouter, Depends, Header, Query, Response, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -77,7 +77,8 @@ from app.services.quickbooks_payments_service import (
 from app.api.v1.endpoints.quickbooks import _refresh_connection_if_needed
 
 
-router = APIRouter()
+from app.core.payment_privacy import SensitivePaymentRoute
+router = APIRouter(route_class=SensitivePaymentRoute)
 stripe.api_key = settings.STRIPE_SECRET_KEY
 STAFF_ROLES = {UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST}
 
@@ -180,7 +181,7 @@ def _allowed_actions(
     return SettlementAllowedActions(
         create_attempt=can_create,
         rails=rails if can_create else [],
-        confirm_manual=is_staff and ready,
+        confirm_manual=manager and ready,
         resolve_overpayment=manager,
         apply_customer_credit=ready and (manager or is_customer),
         authorize_early_release=(
@@ -246,10 +247,21 @@ async def settlement_summary(
     charge_controls = await charge_summary(db, invoice, settlement, tenant, current_user, audience=audience)
     from app.services.booking_application_proof import booking_invoice_application_proof
     booking_applied,booking_review=await booking_invoice_application_proof(db,invoice,settlement)
+    from app.services.customer_efs import has_review
+    booking_review = booking_review or await has_review(db,invoice.tenant_id,invoice.id)
     if booking_review:
         actions.create_attempt=actions.confirm_manual=actions.confirm_cash=actions.apply_customer_credit=False
         actions.rails=[]
         actions.payment_unavailable_reason='Current balance needs shop verification. Contact the shop before paying.'
+    from app.services.customer_efs import submit_capability,unapplied_review
+    if await unapplied_review(db,invoice.tenant_id,invoice.id):
+        actions.create_attempt=actions.confirm_manual=actions.confirm_cash=actions.apply_customer_credit=False
+        actions.rails=[]
+        actions.payment_unavailable_reason='Unapplied EFS funds need shop review before another payment.'
+    actions.submit_efs,actions.efs_unavailable_reason=await submit_capability(db,invoice,settlement,tenant,actor=current_user,audience=audience)
+    if booking_review:
+        actions.submit_efs=False
+        actions.efs_unavailable_reason='The shop must verify the received amount before another payment.'
     return InvoiceSettlementSummary(
         prepayment_applied_amount=booking_applied,
         payment_verification_required=booking_review,
@@ -293,7 +305,13 @@ async def attempt_response(
     audience: str,
     current_user: Optional[CurrentUser] = None,
 ) -> PaymentAttemptResponse:
+    from app.services.payment_attempt_resolution import project_many
+    resolution = (await project_many(db,[attempt],actor=current_user,audience=audience,customer_id=attempt.customer_id if audience=="guest" else None))[attempt.id]
+    from app.services.customer_efs import summaries
+    efs=(await summaries(db,[attempt],actor=current_user,audience=audience,customer_id=attempt.customer_id if audience=="guest" else None)).get(attempt.id)
     return PaymentAttemptResponse(
+        efs=efs,
+        resolution=resolution,
         attempt_id=attempt.id, invoice_id=attempt.invoice_id,
         principal_amount=money(attempt.principal_amount),
         card_fee_amount=money(attempt.card_fee_amount),
@@ -419,7 +437,7 @@ async def list_invoice_allocations(
         )
         audience = "customer" if current_user.role == UserRole.CUSTOMER else "staff"
         return await allocation_page(
-            db, invoice=invoice, cursor=cursor, limit=limit, audience=audience,
+            db, invoice=invoice, cursor=cursor, limit=limit, audience=audience, current_user=current_user, customer_id=customer_id,
         )
 
 
@@ -469,6 +487,8 @@ async def allocation_page(
     cursor: Optional[str],
     limit: int,
     audience: str,
+    current_user=None,
+    customer_id=None,
 ) -> PaymentAllocationPage:
     with getattr(db, 'no_autoflush', nullcontext()):
         query = select(InvoicePaymentAttempt).where(
@@ -512,8 +532,14 @@ async def allocation_page(
             ).scalars().all()
         } if overpayment_ids else {}
         staff_evidence = audience == "staff"
+        from app.services.payment_attempt_resolution import project_many
+        resolutions=await project_many(db,rows,actor=current_user,audience=audience,customer_id=customer_id)
+        from app.services.customer_efs import summaries
+        efs_summaries=await summaries(db,rows,actor=current_user,audience=audience,customer_id=customer_id)
         return PaymentAllocationPage(
             items=[PaymentAllocationItem(
+                efs=efs_summaries.get(row.id),
+                resolution=resolutions[row.id],
                 sender_evidence={
                     key: value for key, value in (row.manual_evidence or {}).items()
                     if key in {"sender_name", "sender_email", "sender_phone", "reference", "reference_number", "note"}
@@ -653,13 +679,15 @@ async def _persist_and_bind_stripe_intent(
     ).scalar_one()
     if persisted.state != "pending":
         raise SettlementDomainError(
-            "card_provider_error",
-            "The card provider could not create this payment.",
-            status_code=502,
-            retryable=True,
+            "attempt_transition_conflict",
+            "This payment request is no longer payable. Refresh its status.",
+            status_code=409,
         )
     if not persisted.provider_intent_id:
         await require_standard_payment(db, invoice, attempt=persisted)
+    if not persisted.provider_intent_id:
+        from app.services.payment_attempt_resolution import mark_submission_started
+        await mark_submission_started(db,persisted,actor)
     try:
         if persisted.provider_intent_id:
             intent = stripe.PaymentIntent.retrieve(
@@ -706,24 +734,15 @@ async def _persist_and_bind_stripe_intent(
             )
         ).scalar_one()
         if current.state == "pending":
-            await fail_attempt(
-                db,
-                attempt_id=attempt_id,
-                tenant_id=tenant_id,
-                # The attempt already holds the immutable creator snapshot;
-                # failure reconciliation is a system/provider transition and
-                # must not dereference an expired ORM user after rollback.
-                actor=None,
-                expected_attempt_version=current.version,
-                failure_code=type(exc).__name__,
-                idempotency_key=f"{idempotency_key}:provider-create-failed",
-            )
+            # An ambiguous create response never proves that Stripe did not accept it.
+            current.failure_code = "stripe_payment_outcome_unknown"
+            await append_ledger_event(db,settlement=await db.get(InvoiceSettlement,current.settlement_id),attempt=current,event_type="provider_outcome_unknown",idempotency_key=f"stripe:{current.id}:create-unknown",actor=None,evidence={"provider":"stripe_connect"})
             await db.commit()
         raise SettlementDomainError(
-            "card_provider_error",
-            "The card provider could not create this payment.",
+            "card_provider_outcome_unknown",
+            "The card provider outcome is unknown. Ask the shop to review this request before paying again.",
             status_code=502,
-            retryable=True,
+            retryable=False,
         ) from exc
 
 
@@ -863,6 +882,9 @@ async def charge_quickbooks_settlement_attempt(
         await require_shop_invoice_admission(
             db, invoice, payment=True, payment_provider=attempt.provider,
         )
+    if not attempt.provider_charge_id:
+        from app.services.payment_attempt_resolution import mark_submission_started
+        await mark_submission_started(db,attempt,actor)
     try:
         if attempt.provider_charge_id:
             charge = await get_quickbooks_charge(
@@ -900,11 +922,12 @@ async def charge_quickbooks_settlement_attempt(
             await db.commit()
             raise SettlementDomainError(
                 "card_provider_outcome_unknown",
-                "QuickBooks has not confirmed whether this payment completed. Retry safely; do not create another payment.",
+                "QuickBooks has not confirmed whether this payment completed. Ask the shop to review this exact request; do not submit another charge.",
                 status_code=503,
-                retryable=True,
+                retryable=False,
                 current_version=attempt.version,
             ) from exc
+        from app.services.payment_attempt_resolution import TerminalNoChargeProof
         await fail_attempt(
             db,
             attempt_id=attempt.id,
@@ -913,6 +936,7 @@ async def charge_quickbooks_settlement_attempt(
             expected_attempt_version=attempt.version,
             failure_code="quickbooks_payment_rejected",
             idempotency_key=f"{idempotency_key}:provider-failed",
+            terminal_proof=TerminalNoChargeProof(attempt.tenant_id,attempt.id,attempt.provider,f"db048-attempt-{attempt.id}","provider_definitive_rejection"),
         )
         await db.commit()
         raise SettlementDomainError(
@@ -1112,7 +1136,7 @@ async def confirm_invoice_payment_attempt(
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_active_user),
 ):
-    if not _is_staff(current_user):
+    if not _can_manage_money(current_user):
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
     tenant = (await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))).scalar_one()
     attempt = (await db.execute(select(InvoicePaymentAttempt).where(
@@ -1145,8 +1169,11 @@ async def fail_invoice_payment_attempt(
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_active_user),
 ):
-    if not _is_staff(current_user):
+    if not _can_manage_money(current_user):
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    target=await db.scalar(select(InvoicePaymentAttempt).where(InvoicePaymentAttempt.id==attempt_id,InvoicePaymentAttempt.tenant_id==current_user.tenant_id))
+    if target and target.rail in {"card","zelle"}:
+        raise SettlementDomainError("attempt_resolution_required", "Use the exact payment request resolution action.")
     attempt, settlement = await fail_attempt(
         db, attempt_id=attempt_id, tenant_id=current_user.tenant_id,
         actor=current_user, expected_attempt_version=body.expected_attempt_version,
@@ -2155,3 +2182,42 @@ async def retry_accounting_operation(
 async def zelle_review_queue(cursor:Optional[str]=None,limit:int=Query(default=50,ge=1,le=100),db:AsyncSession=Depends(get_db),current_user:CurrentUser=Depends(get_current_active_user)):
     from app.services.zelle_transfer_reports import review_queue
     return await review_queue(db,current_user,cursor=cursor,limit=limit)
+
+
+from app.schemas.invoice_settlement import AttemptResolutionCommand
+
+@router.post('/attempts/{attempt_id}/resolution',response_model=PaymentAttemptResponse)
+async def resolve_invoice_payment_attempt(attempt_id:UUID,body:AttemptResolutionCommand,request:Request,
+    idempotency_header:Optional[str]=Header(default=None,alias='Idempotency-Key'),db:AsyncSession=Depends(get_db),current_user:CurrentUser=Depends(get_current_active_user)):
+    from app.services.payment_attempt_resolution import execute
+    context=None
+    if body.action=='release_with_terminal_evidence':
+        from app.core.dependencies import get_token_from_request
+        from fastapi.security import HTTPAuthorizationCredentials
+        scheme, _, bearer = request.headers.get("Authorization", "").partition(" ")
+        credentials = HTTPAuthorizationCredentials(scheme="Bearer",credentials=bearer) if scheme.lower()=="bearer" and bearer else None
+        primary=await get_token_from_request(request,credentials=credentials,access_token=request.cookies.get("access_token"))
+        context=await get_payment_step_up_context(request,raw_grant=request.headers.get('X-Step-Up-Authorization'),primary_token=primary,current_user=current_user)
+    attempt,settlement=await execute(db,attempt_id,body,idempotency_header,actor=current_user,step_up_context=context)
+    tenant=await db.get(Tenant,attempt.tenant_id)
+    await db.commit()
+    return await attempt_response(db,attempt,settlement,tenant,audience='staff' if _can_manage_money(current_user) else 'customer',current_user=current_user)
+
+@router.get('/attempts/{attempt_id}/resolution/read')
+async def read_attempt_resolution_detail(attempt_id:UUID,db:AsyncSession=Depends(get_db),current_user:CurrentUser=Depends(get_current_active_user)):
+    from app.services.payment_attempt_resolution import staff_detail
+    if not _can_manage_money(current_user):raise SettlementDomainError('invoice_not_found','Invoice not found.',status_code=404)
+    with db.no_autoflush:
+        attempt=await db.scalar(select(InvoicePaymentAttempt).where(InvoicePaymentAttempt.id==attempt_id,InvoicePaymentAttempt.tenant_id==current_user.tenant_id,InvoicePaymentAttempt.deleted_at.is_(None)))
+        if not attempt:raise SettlementDomainError('invoice_not_found','Invoice not found.',status_code=404)
+        invoice,_,customer_id=await invoice_for_principal(db,attempt.invoice_id,current_user)
+        if attempt.customer_id!=customer_id:raise SettlementDomainError('invoice_not_found','Invoice not found.',status_code=404)
+        return await staff_detail(db,attempt,actor=current_user)
+
+@router.get('/attempt-review-queue')
+async def read_attempt_review_queue(cursor:Optional[str]=None,limit:int=Query(default=50,ge=1,le=100),db:AsyncSession=Depends(get_db),current_user:CurrentUser=Depends(get_current_active_user)):
+    from app.services.zelle_transfer_reports import review_queue
+    return await review_queue(db,current_user,cursor=cursor,limit=limit,include_cards=True)
+
+from app.api.v1.endpoints.customer_efs import payments_router as customer_efs_router
+router.include_router(customer_efs_router)

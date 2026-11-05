@@ -11,6 +11,7 @@ import toast from 'react-hot-toast'
 import { Spinner } from '@/components/ui'
 import QuickBooksPaymentPanel from '@/features/customer-portal/QuickBooksPaymentPanel'
 import PaymentStatusRefresh from './PaymentStatusRefresh'
+import EfsSubmissionForm from './EfsSubmissionForm'
 import { getStripeForAccount } from '@/lib/stripe'
 
 import { chargeQuickBooksPaymentAttempt, confirmPaymentAttempt, createIdempotencyKey, createPaymentAttempt, fetchPaymentQuote, paymentApiError } from './api'
@@ -23,6 +24,7 @@ import type {
   PaymentAttemptCreate,
   PaymentRail,
   FleetProvider,
+  PaymentAllocation,
   SettlementAccess,
 } from './types'
 
@@ -102,6 +104,8 @@ function InvoicePaymentPanel({
   submissionBlockedReason,
   taxExemptionControl,
   chargeControls,
+  allocations = [],
+  hideVerificationNotice = false,
 }: {
   access: SettlementAccess
   summary: InvoiceSettlementSummary
@@ -114,6 +118,8 @@ function InvoicePaymentPanel({
   submissionBlockedReason?: string
   taxExemptionControl?: ReactNode
   chargeControls?: InlineInvoiceChargeControls
+  allocations?: PaymentAllocation[]
+  hideVerificationNotice?: boolean
 }) {
   const queryClient = useQueryClient()
   const latestSummary = useRef(summary)
@@ -124,13 +130,16 @@ function InvoicePaymentPanel({
     mounted.current = true
     return () => { mounted.current = false }
   }, [])
-  const allowedRails = useMemo(() => summary.allowed_actions?.rails ?? [], [summary.allowed_actions?.rails])
+  const allowedRails = useMemo(() => [...(summary.allowed_actions?.rails ?? []).filter(item => audience === 'staff' || item === 'card' || item === 'zelle'), ...(audience !== 'staff' && summary.allowed_actions?.submit_efs === true ? ['fleet_payment' as const] : [])], [summary.allowed_actions?.rails, summary.allowed_actions?.submit_efs, audience])
   const [rail, setRail] = useState<PaymentRail | null>(allowedRails[0] ?? null)
   // Null follows the full balance. An explicit draft belongs to the operator,
   // not to a particular quote or invoice-charge version.
   const [amount, setAmount] = useState<string | null>(null)
   const [editingAmount, setEditingAmount] = useState(false)
+  const amountInput = useRef<HTMLInputElement>(null)
   const [expandedTenders, setExpandedTenders] = useState(false)
+  const [otherMethodsOpen, setOtherMethodsOpen] = useState(false)
+  const [efsBusy, setEfsBusy] = useState(false)
   const [showTransferDetails, setShowTransferDetails] = useState(false)
   const [reference, setReference] = useState('')
   const [note, setNote] = useState('')
@@ -155,19 +164,30 @@ function InvoicePaymentPanel({
   const [stripe, setStripe] = useState<Stripe | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const [providerSubmitted, setProviderSubmitted] = useState(false)
+  useEffect(() => {
+    if (!attempt) return
+    const current = allocations.find(row => row.attempt_id === attempt.attempt_id)
+    if (current && current.state !== 'pending') { setAttempt(null); setStripe(null); setProviderSubmitted(false) }
+  }, [allocations, attempt])
   const railRefs = useRef<Array<HTMLButtonElement | null>>([])
   const dark = tone === 'dark'
   const panel = dark ? 'border-[#2a3245] bg-[#111722] text-[#edf0f6]' : 'border-slate-200 bg-white text-slate-950'
   const input = dark ? 'border-[#3a465e] bg-[#182234] text-white placeholder:text-[#738097]' : 'border-slate-300 bg-white text-slate-950 placeholder:text-slate-400'
   const quiet = dark ? 'text-[#99a4b7]' : 'text-slate-500'
+  const selectedFeeNote = rail === 'fleet_payment' ? 'No card fee. EFS account fees may apply.'
+    : rail === 'zelle' ? 'No card processing fee.' : 'Any processing fee is shown before payment.'
+
+
   const cash = audience === 'staff' && access.kind === 'authenticated' ? cashTender : undefined
   const cashSelected = cash?.selected === true
-  const noncashAvailable = allowedRails.length > 0 && summary.allowed_actions?.create_attempt !== false
+  const genericAvailable = (summary.allowed_actions?.rails?.length ?? 0) > 0 && summary.allowed_actions?.create_attempt !== false
+  const efsAvailable = audience !== 'staff' && summary.allowed_actions?.submit_efs === true
+  const noncashAvailable = genericAvailable || efsAvailable
   const secondarySelected = !cashSelected && (rail === 'check' || rail === 'ach' || rail === 'fleet_payment')
   const tenders: Array<PaymentRail | 'cash'> = audience === 'staff'
     ? ['card', 'zelle', ...(cash ? ['cash' as const] : []), ...(expandedTenders ? ['check' as const, 'ach' as const, 'fleet_payment' as const] : [])]
     : allowedRails
-  const tenderDisabled = (item: PaymentRail | 'cash') => Boolean(createMutation.isPending || cash?.pending || (item === 'cash' ? !cash?.allowed : !noncashAvailable || !allowedRails.includes(item)))
+  const tenderDisabled = (item: PaymentRail | 'cash') => Boolean(efsBusy || createMutation.isPending || cash?.pending || (item === 'cash' ? !cash?.allowed : !(item === 'fleet_payment' && audience !== 'staff' ? efsAvailable : genericAvailable) || !allowedRails.includes(item)))
   const selectTender = (item: PaymentRail | 'cash') => {
     if (tenderDisabled(item)) return
     if (item !== (cashSelected ? 'cash' : rail)) {
@@ -225,6 +245,7 @@ function InvoicePaymentPanel({
   const referenceRequired = audience === 'staff' && rail !== 'card'
   const canSubmit = Boolean(
     rail
+    && !(audience !== 'staff' && rail === 'fleet_payment')
     && !summary.payment_verification_required
     && amountValid
     && allowedRails.includes(rail)
@@ -233,10 +254,10 @@ function InvoicePaymentPanel({
     && summary.allowed_actions?.create_attempt !== false
     && (!referenceRequired || reference.trim()),
   )
-  const providerLabel = summary.card_provider === 'stripe_connect'
+  const providerLabel = audience !== 'staff' ? 'Card' : summary.card_provider === 'stripe_connect'
     ? 'Stripe Connect'
     : summary.card_provider === 'quickbooks_payments'
-      ? audience === 'staff' ? 'QBO Payments' : 'QuickBooks Payments'
+      ? 'QBO Payments'
       : 'Card'
 
   const createMutation = useMutation({
@@ -380,7 +401,8 @@ function InvoicePaymentPanel({
     },
   }) : null, [attempt?.provider_client_secret, dark])
 
-  if (summary.payment_verification_required) return (
+  // Composed invoice screens give the shared summary ownership of this notice.
+  if (summary.payment_verification_required) return hideVerificationNotice ? null : (
     <div className={`rounded-2xl border p-4 text-sm ${panel}`} role="status">
       <p className="font-bold">Payment status needs review</p>
       <p className={`mt-1 ${quiet}`}>Contact the shop before making another payment.</p>
@@ -413,7 +435,7 @@ function InvoicePaymentPanel({
       <section className={`rounded-2xl border p-4 ${panel}`}>
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <p className={`text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>QuickBooks Payments</p>
+            {audience === 'staff' && <p className={`text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>QuickBooks Payments</p>}
             <h2 className="mt-1 font-extrabold">Complete secure card payment</h2>
           </div>
           <ControlButton type="button" onClick={() => setAttempt(null)} className={` px-2 text-sm font-bold ${quiet}`}>Back</ControlButton>
@@ -438,7 +460,7 @@ function InvoicePaymentPanel({
       <section className={`rounded-2xl border p-4 ${panel}`}>
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <p className={`text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>{providerLabel}</p>
+            {audience === 'staff' && <p className={`text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>{providerLabel}</p>}
             <h2 className="mt-1 font-extrabold">Complete secure card payment</h2>
           </div>
           <ControlButton type="button" onClick={() => { setAttempt(null); setStripe(null) }} className={` px-2 text-sm font-bold ${quiet}`}>Back</ControlButton>
@@ -531,9 +553,9 @@ function InvoicePaymentPanel({
       <p className={`mt-4 text-xs ${quiet}`}>Report only after sending. The shop will verify receipt before marking the invoice paid.</p>
       {!unchanged && <p role="alert" className="mt-3 text-sm">The invoice or payment details changed. Return to the invoice to review them.</p>}
       {createMutation.isError && <div className="mt-3 space-y-3"><p role="alert" className="text-sm">{knownRejection ? 'Your transfer report wasn’t saved. Review the details and try again.' : 'We couldn’t confirm your report was saved. Check the status or retry this report.'}</p><PaymentStatusRefresh access={access} summary={summary} tone={tone} onUpdated={onUpdated} /></div>}
-      <div className="mt-4 flex flex-wrap justify-end gap-3">
-        <ControlButton type="button" disabled={createMutation.isPending || (reportStarted && unchanged)} onClick={() => { setZelleDraft(null); reportRequest.current = null; setReportStarted(false); createMutation.reset() }} className={`rounded-xl border px-3 text-sm font-semibold ${dark ? 'border-[#3a465e]' : 'border-slate-300'}`}>Back to invoice</ControlButton>
-        <ControlButton type="button" disabled={!unchanged || !canSubmit || createMutation.isPending} onClick={() => createMutation.mutate()} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[color-mix(in_srgb,var(--accent-600,#b9472f)_75%,#000)] px-4 text-sm font-extrabold text-white disabled:opacity-50">
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:flex sm:flex-nowrap sm:justify-end">
+        <ControlButton type="button" disabled={createMutation.isPending || (reportStarted && unchanged)} onClick={() => { setZelleDraft(null); reportRequest.current = null; setReportStarted(false); createMutation.reset() }} className={`min-h-11 w-full whitespace-nowrap rounded-xl border px-3 text-sm font-semibold sm:w-auto ${dark ? 'border-[#3a465e]' : 'border-slate-300'}`}>Back to invoice</ControlButton>
+        <ControlButton type="button" disabled={!unchanged || !canSubmit || createMutation.isPending} onClick={() => createMutation.mutate()} className="inline-flex min-h-11 w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-[color-mix(in_srgb,var(--accent-600,#b9472f)_75%,#000)] px-4 text-sm font-extrabold text-white disabled:opacity-50 sm:w-auto">
           {createMutation.isPending && <Spinner size="sm" />}{createMutation.isPending ? 'Reporting…' : createMutation.isError ? 'Retry report' : "I’ve sent the payment"}
         </ControlButton>
       </div>
@@ -570,13 +592,12 @@ function InvoicePaymentPanel({
       <fieldset disabled={createMutation.isPending || cash?.pending} className="m-0 min-w-0 border-0 p-0">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 id={`settlement-payment-${summary.invoice_id}`} className="font-extrabold">Payment method</h2>
+          <h2 id={`settlement-payment-${summary.invoice_id}`} tabIndex={-1} className="font-extrabold">Payment method</h2>
         </div>
-        {audience !== 'staff' && <p className={`text-xs ${quiet}`}>Up to {formatMoney(summary.allocatable_balance)}</p>}
       </div>
 
       <div id={`payment-tenders-${summary.invoice_id}`} className="mt-3" role="radiogroup" aria-label="Payment tender">
-        <div className={`grid gap-2 ${audience === 'staff' ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+        <div className={`grid gap-2 ${audience === 'staff' ? 'sm:grid-cols-3' : tenders.length === 3 ? 'grid-cols-3' : tenders.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
           {tenders.map((item, index) => {
             const meta = item === 'cash' ? { label: 'Cash', detail: 'Full payment only', icon: Banknote } : RAIL_META[item]
             const Icon = meta.icon
@@ -601,9 +622,9 @@ function InvoicePaymentPanel({
                     break
                   }
                 }}
-                className={`flex min-h-11 items-center gap-2 rounded-xl border px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-500,#d25d43)] disabled:cursor-not-allowed disabled:opacity-50 ${selected ? dark ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-emerald-700 bg-emerald-50' : input}`}>
+                className={`flex min-h-11 min-w-0 items-center ${audience === 'staff' ? 'text-left' : 'justify-center text-center'} ${audience !== 'staff' && tenders.length === 3 ? 'gap-1.5 px-2' : 'gap-2 px-3'} rounded-xl border py-2 outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-500,#d25d43)] disabled:cursor-not-allowed disabled:opacity-50 ${selected ? dark ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-emerald-700 bg-emerald-50' : input}`}>
                 <Icon className="h-4 w-4 shrink-0" />
-                <span className="min-w-0"><span className="block text-sm font-extrabold">{item === 'card' ? providerLabel : audience === 'staff' && item === 'fleet_payment' ? 'EFS codes' : meta.label}</span>{audience !== 'staff' && <span className={`block text-[11px] ${quiet}`}>{meta.detail}</span>}</span>
+                <span className="min-w-0"><span className="block text-sm font-extrabold">{item === 'card' ? providerLabel : item === 'fleet_payment' ? audience === 'staff' ? 'EFS codes' : 'EFS' : meta.label}</span>{audience !== 'staff' && tenders.length !== 3 && <span className={`block text-[11px] ${quiet}`}>{item === 'card' ? 'Credit or debit' : item === 'zelle' ? 'No card fee' : item === 'fleet_payment' ? '10-digit code' : meta.detail}</span>}</span>
               </ControlButton>
             )
           })}
@@ -615,34 +636,49 @@ function InvoicePaymentPanel({
           {editingAmount ? 'Pay full balance' : 'Pay partial amount'}
         </ControlButton>}
       </div>}
-      {audience !== 'staff' && !cashSelected && noncashAvailable && <div className="mt-4 grid grid-cols-2 gap-2" role="group" aria-label="Payment amount choice">
-        <ControlButton type="button" aria-pressed={!editingAmount} onClick={() => { setAmount(null); setEditingAmount(false) }} className={`whitespace-nowrap rounded-xl border px-3 text-sm font-bold ${!editingAmount ? dark ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-emerald-700 bg-emerald-50' : input}`}>Pay in full</ControlButton>
-        <ControlButton type="button" aria-pressed={editingAmount} onClick={() => { setEditingAmount(true); setAmount('') }} className={`whitespace-nowrap rounded-xl border px-3 text-sm font-bold ${editingAmount ? dark ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-emerald-700 bg-emerald-50' : input}`}>Pay part</ControlButton>
-      </div>}
-      {!cashSelected && noncashAvailable && (audience !== 'staff' || editingAmount) && <label className="mt-3 block">
-        <span className={`mb-1.5 block text-xs font-bold ${quiet}`}>{audience === 'staff' ? 'Amount applied to invoice' : 'Payment amount'}</span>
+
+      {!cashSelected && noncashAvailable && (audience !== 'staff' || editingAmount) && <div className="mt-3">
+        <div className="mb-1.5 flex items-center justify-between gap-3">
+          <label htmlFor={`settlement-amount-${summary.invoice_id}`} className={`text-xs font-bold ${quiet}`}>{audience === 'staff' ? 'Amount applied to invoice' : 'Payment amount'}</label>
+          {audience !== 'staff' && <ControlButton type="button" disabled={efsBusy} onClick={() => {
+            if (editingAmount) { setAmount(null); setEditingAmount(false) }
+            else { setEditingAmount(true); setAmount('') }
+            amountInput.current?.focus()
+          }} className={`min-h-11 whitespace-nowrap px-1 text-sm font-semibold underline underline-offset-4 ${quiet}`}>
+            {editingAmount ? isPositiveMoney(summary.active_pending_principal) ? 'Use available' : 'Pay full balance' : 'Partial payment'}
+          </ControlButton>}
+        </div>
         <div className="relative">
           <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-bold ${quiet}`}>$</span>
           <ControlInput
+            ref={amountInput}
+            id={`settlement-amount-${summary.invoice_id}`}
             type="text"
             inputMode="decimal"
             autoComplete="off"
             value={currentAmount}
-            onChange={event => { setAmount(event.target.value); if (audience !== 'staff') setEditingAmount(true) }}
+            onChange={event => {
+              const next = event.target.value
+              if (audience !== 'staff' && !/^\d*(?:\.\d{0,2})?$/.test(next)) return
+              setAmount(next)
+              if (audience !== 'staff') setEditingAmount(true)
+            }}
             onBlur={() => { const normalized = normalizeMoney(currentAmount); if (normalized) setAmount(normalized) }}
             aria-invalid={currentAmount.length > 0 && !amountValid}
+            disabled={efsBusy}
             aria-label={audience === 'staff' ? 'Amount applied to invoice' : 'Payment amount'}
             aria-describedby={`settlement-amount-help-${summary.invoice_id}`}
             className={` w-full rounded-xl border pl-8 pr-3 text-lg font-extrabold tabular-nums outline-none focus:ring-2 focus:ring-[var(--accent-500,#d25d43)] ${input}`}
           />
         </div>
         <span id={`settlement-amount-help-${summary.invoice_id}`} className={`mt-1 block min-h-4 text-xs ${currentAmount.length > 0 && !amountValid ? 'text-red-500' : quiet}`}>
-          {currentAmount.length > 0 && !amountValid ? `Enter at least $0.01 and no more than ${formatMoney(summary.allocatable_balance)}, the amount available to pay.` : rail !== 'card' ? '' : audience === 'staff' ? 'Card fees are calculated only on the card-funded portion.' : 'Card fees apply to card payments.'}
+          {currentAmount.length > 0 && !amountValid ? `Enter at least $0.01 and no more than ${formatMoney(summary.allocatable_balance)}, the amount available to pay.` : audience === 'staff' ? rail === 'card' ? 'Card fees are calculated only on the card-funded portion.' : '' : selectedFeeNote}
         </span>
-      </label>}
+      </div>}
       {audience !== 'staff' && amountValid && (moneyToCents(currentAmount) ?? 0n) < (moneyToCents(summary.allocatable_balance) ?? 0n) && <p className={`mt-2 text-sm ${quiet}`} role="status">
         Remaining after confirmation: <strong className="tabular-nums">{formatMoney(centsToMoney((moneyToCents(summary.outstanding_balance) ?? 0n) - (moneyToCents(currentAmount) ?? 0n)))}</strong>
       </p>}
+
 
       {cash?.reason && !cash.allowed && <p id={`cash-reason-${summary.invoice_id}`} className={`mt-2 text-xs ${quiet}`}>{cash.reason}</p>}
       {!noncashAvailable && <p role="status" className={`mt-3 text-sm ${quiet}`}>{summary.allowed_actions?.payment_unavailable_reason ?? 'Other payment methods are unavailable.'}</p>}
@@ -711,7 +747,7 @@ function InvoicePaymentPanel({
       {cashSelected && <fieldset disabled={submissionBlocked} className="min-w-0 border-0 p-0">{cash?.confirmation}</fieldset>}
 
       {!cashSelected && rail === 'zelle' && audience !== 'staff' && !zelleRecipient?.display && <p role="status" className={`mt-3 text-sm ${quiet}`}>Zelle instructions are unavailable. Contact the shop.</p>}
-      {!cashSelected && noncashAvailable && <><ControlButton ref={instructionTrigger} type="button" onClick={() => {
+      {!cashSelected && noncashAvailable && <>{audience !== 'staff' && rail === 'fleet_payment' ? <EfsSubmissionForm access={access} summary={summary} amount={currentAmount} tone={tone} onUpdated={onUpdated} onBusyChange={setEfsBusy} /> : <ControlButton ref={instructionTrigger} type="button" onClick={() => {
         if (rail === 'zelle' && audience !== 'staff') {
           const normalized = normalizeMoney(currentAmount)
           if (!normalized || !canSubmit || !zelleRecipient?.display) return
@@ -722,10 +758,16 @@ function InvoicePaymentPanel({
         createMutation.mutate()
       }} disabled={!canSubmit || createMutation.isPending || (rail === 'zelle' && audience !== 'staff' && !zelleRecipient?.display)} className="mt-4 flex  w-full items-center justify-center gap-2 rounded-xl bg-[color-mix(in_srgb,var(--accent-600,#b9472f)_75%,#000)] px-4 text-sm font-extrabold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
         {createMutation.isPending && <Spinner size="sm" />}
-        {createMutation.isPending ? 'Preparing…' : rail === 'card' ? `Continue to ${providerLabel}` : audience === 'staff' ? `Record ${rail ? RAIL_META[rail].label : 'payment'}` : 'View Zelle instructions'}
-      </ControlButton>
+        {createMutation.isPending ? 'Preparing…' : rail === 'card' ? audience === 'staff' ? `Continue to ${providerLabel}` : 'Continue with card' : audience === 'staff' ? `Record ${rail ? RAIL_META[rail].label : 'payment'}` : 'View Zelle instructions'}
+      </ControlButton>}
       {audience === 'staff' && <p className={`mt-2 text-center text-[11px] ${quiet}`}>Applied after {rail === 'card' ? 'provider' : 'shop'} confirmation.</p>}
       </>}
+      {audience !== 'staff' && noncashAvailable && !allowedRails.includes('ach') && <div className="mt-2">
+        <ControlButton type="button" aria-expanded={otherMethodsOpen} aria-controls={`other-payment-methods-${summary.invoice_id}`} onClick={() => setOtherMethodsOpen(value => !value)} className={`flex min-h-11 items-center gap-2 rounded-lg px-1 text-xs font-semibold ${quiet}`}>
+          Other payment methods<ChevronDown aria-hidden="true" className={`h-4 w-4 ${otherMethodsOpen ? 'rotate-180' : ''}`} />
+        </ControlButton>
+        {otherMethodsOpen && <p id={`other-payment-methods-${summary.invoice_id}`} className={`mt-1 text-sm ${quiet}`}>Contact the shop about bank transfers or other fleet checks/codes.</p>}
+      </div>}
       </fieldset>
     </section>
   )

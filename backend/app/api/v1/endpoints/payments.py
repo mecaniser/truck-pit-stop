@@ -1171,23 +1171,36 @@ async def get_zelle_info(
     current_user: User = Depends(get_current_active_user),
 ):
     """Get Zelle payment info for an invoice's garage"""
-    # Get invoice to find tenant
-    result = await db.execute(
-        select(Invoice)
-        .options(selectinload(Invoice.repair_order))
-        .where(Invoice.id == invoice_id)
+    from app.services.source_debt_handoff import (
+        invoice_customer_access_clause, invoice_handoff, is_collection,
     )
-    invoice = result.scalar_one_or_none()
-    
+    from app.services.invoice_settlement_service import SettlementDomainError
+
+    query = (
+        select(Invoice)
+        .join(RepairOrder, and_(
+            RepairOrder.id == Invoice.repair_order_id,
+            RepairOrder.tenant_id == Invoice.tenant_id,
+        ))
+        .options(selectinload(Invoice.repair_order))
+        .where(Invoice.id == invoice_id, Invoice.tenant_id == current_user.tenant_id)
+    )
+    if current_user.role == UserRole.CUSTOMER:
+        query = query.where(invoice_customer_access_clause(current_user.customer_id))
+    invoice = (await db.execute(query)).scalar_one_or_none()
     if not invoice:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
-    
-    # Verify access - customer must own invoice or be staff
-    if current_user.role == UserRole.CUSTOMER:
-        if invoice.repair_order.customer_id != current_user.customer_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    elif current_user.tenant_id != invoice.tenant_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    if is_collection(invoice):
+        try:
+            handoff = await invoice_handoff(db, invoice, require_active=True, check_source=False)
+        except SettlementDomainError:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found") from None
+        if current_user.role == UserRole.CUSTOMER and (
+            handoff.customer_id != current_user.customer_id
+            or invoice.billed_customer_id != current_user.customer_id
+        ):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
     
     # Get tenant Zelle info
     result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))

@@ -88,7 +88,8 @@ from app.api.v1.endpoints.invoice_settlements import (
     _settlement_for_read,
 )
 
-router = APIRouter()
+from app.core.payment_privacy import SensitivePaymentRoute
+router = APIRouter(route_class=SensitivePaymentRoute)
 logger = get_logger(__name__)
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
@@ -523,7 +524,7 @@ async def read_guest_invoice_allocations(
         )
         return await allocation_page(
             db, invoice=invoice, cursor=body.cursor, limit=body.limit,
-            audience="guest",
+            audience="guest", customer_id=customer.id,
         )
 
 
@@ -1268,3 +1269,27 @@ async def download_invoice_pdf_by_token(
             "Referrer-Policy": "no-referrer",
         },
     )
+
+
+from app.schemas.invoice_settlement import GuestAttemptResolutionCommand,GuestResolutionRead
+
+@router.post('/attempts/{attempt_id}/resolution',response_model=PaymentAttemptResponse)
+@limiter.limit('10/minute')
+async def resolve_guest_payment_attempt(request:Request,attempt_id:UUID,body:GuestAttemptResolutionCommand,idempotency_header:Optional[str]=Header(default=None,alias='Idempotency-Key'),db:AsyncSession=Depends(get_db)):
+    from app.services.payment_attempt_resolution import execute
+    invoice,_,customer,tenant=await _load_db048_guest_context(db,body.token)
+    attempt,settlement=await execute(db,attempt_id,body,idempotency_header,guest_invoice=invoice,guest_customer_id=customer.id)
+    await db.commit()
+    return await attempt_response(db,attempt,settlement,tenant,audience='guest')
+
+@router.post('/attempts/{attempt_id}/resolution/read')
+async def read_guest_attempt_resolution(attempt_id:UUID,body:GuestResolutionRead,db:AsyncSession=Depends(get_db)):
+    from app.services.payment_attempt_resolution import project_many
+    with db.no_autoflush:
+        invoice,_,customer,_=await _load_db048_guest_context(db,body.token)
+        attempt=await db.scalar(select(InvoicePaymentAttempt).where(InvoicePaymentAttempt.id==attempt_id,InvoicePaymentAttempt.tenant_id==invoice.tenant_id,InvoicePaymentAttempt.invoice_id==invoice.id,InvoicePaymentAttempt.customer_id==customer.id,InvoicePaymentAttempt.subject_type=='guest',InvoicePaymentAttempt.deleted_at.is_(None)))
+        if not attempt:raise SettlementDomainError('invoice_not_found','Invoice not found.',status_code=404)
+        return {'resolution':(await project_many(db,[attempt],audience='guest',customer_id=customer.id))[attempt.id]}
+
+from app.api.v1.endpoints.customer_efs import guest_router as customer_efs_router
+router.include_router(customer_efs_router)

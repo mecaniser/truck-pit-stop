@@ -1,0 +1,15 @@
+.db-attempt-resolution { min-width: 0; --attempt-border: #cbd5e1; --attempt-muted: #475569; }
+.db-attempt-resolution--dark { --attempt-border: #3a465e; --attempt-muted: #a5afc2; }
+.db-attempt-form { margin-block-start: 12px; padding-block: 12px; border-block-start: 1px solid var(--attempt-border); }
+.db-attempt-secondary, .db-attempt-primary { min-height: 44px; padding-inline: 12px; border-radius: 10px; font-size: 14px; font-weight: 700; white-space: nowrap; }
+.db-attempt-secondary { border: 1px solid var(--attempt-border); color: inherit; background: transparent; }
+.db-attempt-secondary[aria-pressed="true"] { outline: 2px solid currentColor; outline-offset: 2px; }
+.db-attempt-primary { color: #fff; background: color-mix(in srgb, var(--accent-600, #b9472f) 75%, #000); }
+.db-attempt-secondary:disabled, .db-attempt-primary:disabled { opacity: .5; cursor: not-allowed; }
+.db-attempt-secondary:focus-visible, .db-attempt-primary:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.db-attempt-check { display: flex; gap: 10px; align-items: center; min-height: 44px; font-size: 14px; }
+.db-attempt-check input { width: 20px; height: 20px; flex-shrink: 0; accent-color: var(--accent-600, #b9472f); }
+@media (forced-colors: active) {
+  .db-attempt-resolution { --attempt-border: CanvasText; }
+  .db-attempt-primary { background: ButtonFace; color: ButtonText; border: 1px solid ButtonText; }
+}

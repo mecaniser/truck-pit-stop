@@ -1039,6 +1039,7 @@ async def create_attempt(
     subject_id: Optional[UUID],
     sender_evidence: Optional[dict[str, Any]] = None,
     transfer_sent_confirmed: bool = False,
+    efs_admission=None,
 ) -> AttemptCreation:
     customer_report = rail == "zelle" and subject_type in {"customer", "guest"}
     if customer_report and transfer_sent_confirmed is not True:
@@ -1088,20 +1089,27 @@ async def create_attempt(
     if active_customer_id is None:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
 
-    readiness = await require_feature_ready(db, tenant, invoice_id=invoice.id, lock_ancestry=True)
+    from app.services.customer_efs import valid_admission,require_efs_feature_ready
+    public_efs = rail == "fleet_payment" and valid_admission(efs_admission,tenant,invoice,customer_id,source)
+    readiness = (await require_efs_feature_ready(db,tenant,invoice.id,lock=True) if public_efs else
+                 await require_feature_ready(db, tenant, invoice_id=invoice.id, lock_ancestry=True))
     if rail not in {"card", "zelle", "check", "ach", "fleet_payment"}:
         raise SettlementDomainError("payment_rail_disabled", "This payment rail is not available.")
-    if subject_type in {"customer", "guest"} and rail not in {"card", "zelle"}:
+    from app.services.customer_efs import valid_admission,guard_legacy
+    public_efs = rail == "fleet_payment" and valid_admission(efs_admission,tenant,invoice,customer_id,source)
+    if subject_type in {"customer", "guest"} and rail not in {"card", "zelle"} and not public_efs:
         raise SettlementDomainError("payment_rail_disabled", "This payment rail is not available.")
     if rail == "fleet_payment":
-        _require_fleet_staff(actor, tenant.id)
-        if subject_type != "staff":
-            raise SettlementDomainError("payment_rail_disabled", "Fleet instruments require staff verification.")
-        from app.services.fleet_payment_evidence import normalize_fleet_evidence
-        try:
-            sender_evidence = normalize_fleet_evidence(sender_evidence)
-        except ValueError as exc:
-            raise SettlementDomainError("fleet_payment_evidence_invalid", str(exc), status_code=422) from exc
+        if not public_efs:
+            _require_fleet_staff(actor, tenant.id)
+            if subject_type != "staff":
+                raise SettlementDomainError("payment_rail_disabled", "Fleet instruments require staff verification.")
+            from app.services.fleet_payment_evidence import normalize_fleet_evidence
+            try:
+                sender_evidence = normalize_fleet_evidence(sender_evidence)
+            except ValueError as exc:
+                raise SettlementDomainError("fleet_payment_evidence_invalid", str(exc), status_code=422) from exc
+            await guard_legacy(db,tenant.id,sender_evidence)
         if not readiness.configuration.check_deposit_account:
             raise SettlementDomainError("fleet_account_mapping_missing", "Configure the check deposit account before recording a Fleet instrument.")
 
@@ -1154,7 +1162,7 @@ async def create_attempt(
             current_version=settlement.version,
         )
     from app.services.invoice_accounting_policy import require_standard_payment
-    await require_standard_payment(db, invoice, new_entry=True)
+    await require_standard_payment(db, invoice, new_entry=True, **({"efs_proof":efs_admission} if public_efs else {}))
     available = allocatable_balance(settlement)
     if amount > available:
         raise SettlementDomainError(
@@ -1240,6 +1248,9 @@ async def create_attempt(
         pending_delta=amount,
         evidence={"source": source, "rail": rail, "provider": provider, **({"source_collection_admission":collection_admission} if collection_admission else {})},
     )
+    if rail == "card":
+        from app.services.payment_attempt_resolution import append_protocol
+        await append_protocol(db, attempt, settlement, actor)
     if rail != "card" and sender_evidence:
         await append_ledger_event(
             db,
@@ -1255,6 +1266,7 @@ async def create_attempt(
         await db.flush()
         await enqueue_report_notice(db, invoice=invoice, tenant=tenant,
                                     customer_id=customer_id, attempt=attempt)
+    await db.flush()
     return AttemptCreation(attempt, settlement)
 
 
@@ -1437,6 +1449,7 @@ async def confirm_attempt(
     provider_event_id: Optional[str] = None,
     processor_fee: Decimal = ZERO,
     verified_provider_fact: bool = False,
+    efs_proof=None,
 ) -> AttemptConfirmation:
     from app.services.financial_transaction_lock import lock_tenant_financials
     await lock_tenant_financials(db, tenant.id)
@@ -1466,10 +1479,18 @@ async def confirm_attempt(
         )
     ).scalar_one()
 
+    if actor is not None and attempt.rail in {"zelle", "check", "ach"}:
+        from app.services.payment_attempt_resolution import money_staff
+        if not money_staff(actor) or actor.tenant_id != tenant.id:
+            raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
     # Enforce lifecycle before replay lookup, manual-reference normalization,
     # money projection, accounting enqueue, or paid/order state mutation.
     invoice = await locked_accessible_invoice_for_attempt(db, attempt)
-    if attempt.rail == "fleet_payment":
+    from app.services.customer_efs import protected,validate_receipt_proof,guard_legacy
+    public_efs = protected(attempt)
+    if public_efs:
+        await validate_receipt_proof(db,attempt,actor,efs_proof,received_principal,reference)
+    if attempt.rail == "fleet_payment" and not public_efs:
         _require_fleet_staff(actor, tenant.id)
         from app.services.fleet_payment_evidence import normalize_fleet_evidence
         try:
@@ -1481,11 +1502,13 @@ async def confirm_attempt(
         if received_principal is not None and (not Decimal(str(received_principal)).is_finite()
                 or Decimal(str(received_principal)) != money(attempt.principal_amount)):
             raise SettlementDomainError("fleet_amount_conflict", "Cancel and recreate the Fleet attempt if the verified amount differs.")
+    if attempt.rail == "fleet_payment" and not public_efs:
+        await guard_legacy(db,tenant.id,attempt.manual_evidence)
     from app.services.invoice_accounting_policy import require_standard_payment
     await require_standard_payment(db, invoice, attempt=attempt, verified_provider_fact=(
         verified_provider_fact and actor is None and attempt.rail == "card"
         and attempt.provider in {"stripe_connect", "quickbooks_payments"}
-        and bool(provider_charge_id or provider_event_id)))
+        and bool(provider_charge_id or provider_event_id)), **({"efs_proof":efs_proof} if public_efs else {}))
 
     if attempt.state == "confirmed":
         payment = await db.get(Payment, attempt.payment_id) if attempt.payment_id else None
@@ -1506,7 +1529,7 @@ async def confirm_attempt(
     ref = _manual_evidence_reference(attempt, reference)
     if attempt.rail in {"check", "ach", "zelle", "fleet_payment"} and not ref:
         raise SettlementDomainError("manual_payment_evidence_required", "A transaction reference is required.", status_code=422)
-    if attempt.rail == "fleet_payment":
+    if attempt.rail == "fleet_payment" and not public_efs:
         from app.services.fleet_payment_evidence import fleet_reference_fingerprint
         # Tenant serialization plus the partial unique index prevent the same
         # instrument being confirmed against two customers concurrently.
@@ -1657,11 +1680,11 @@ async def confirm_attempt(
         quickbooks_charge_id=attempt.provider_charge_id if attempt.provider == "quickbooks_payments" else None,
         quickbooks_charge_status="CAPTURED" if attempt.provider == "quickbooks_payments" else None,
         payment_provider=(
-            fleet_provider_label(attempt.manual_evidence)
+            "EFS" if public_efs else fleet_provider_label(attempt.manual_evidence)
             if attempt.rail == "fleet_payment" else attempt.provider
         ),
         reference_number=ref,
-        authorization_number=(attempt.manual_evidence.get("authorization_number") if attempt.rail == "fleet_payment" else None),
+        authorization_number=(ref if public_efs else attempt.manual_evidence.get("authorization_number") if attempt.rail == "fleet_payment" else None),
         recorded_by_user_id=(actor.id if attempt.rail == "fleet_payment" else attempt.actor_user_id),
         notes="DB-048 partial invoice allocation",
         invoice_payment_attempt_id=attempt.id,
@@ -1836,6 +1859,7 @@ async def fail_attempt(
     failure_code: str,
     idempotency_key: str,
     expired: bool = False,
+    terminal_proof=None,
 ) -> tuple[InvoicePaymentAttempt, InvoiceSettlement]:
     from app.services.financial_transaction_lock import lock_tenant_financials
     await lock_tenant_financials(db, tenant_id)
@@ -1843,20 +1867,39 @@ async def fail_attempt(
         await db.execute(
             select(InvoicePaymentAttempt)
             .where(InvoicePaymentAttempt.id == attempt_id, InvoicePaymentAttempt.tenant_id == tenant_id)
-            .with_for_update()
+            .with_for_update().execution_options(populate_existing=True)
         )
     ).scalar_one_or_none()
     if not attempt:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
     settlement = (
-        await db.execute(select(InvoiceSettlement).where(InvoiceSettlement.id == attempt.settlement_id).with_for_update())
+        await db.execute(select(InvoiceSettlement).where(InvoiceSettlement.id == attempt.settlement_id).with_for_update().execution_options(populate_existing=True))
     ).scalar_one()
-    if attempt.state in {"failed", "expired"}:
+    from app.services.customer_efs import protected
+    if protected(attempt):
+        raise SettlementDomainError("efs_verification_required", "Use the EFS review action for this request.")
+    from app.services.payment_attempt_resolution import authorize_failure, money_staff, digest
+    await locked_accessible_invoice_for_attempt(db, attempt)
+    if actor is not None and not money_staff(actor):
+        raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    await authorize_failure(db, attempt, terminal_proof)
+    failure_hash = digest(dict(attempt_id=str(attempt.id),failure_code=failure_code,expired=expired,expected_attempt_version=expected_attempt_version))
+    existing_failure = await db.scalar(select(InvoicePaymentLedgerEvent).where(
+        InvoicePaymentLedgerEvent.tenant_id == tenant_id,
+        InvoicePaymentLedgerEvent.idempotency_key == f"fail:{idempotency_key}",
+    ))
+    if existing_failure:
+        if existing_failure.attempt_id != attempt.id or existing_failure.evidence_snapshot.get("request_sha256") != failure_hash:
+            raise SettlementDomainError("idempotency_conflict", "This failure command conflicts with its original request.")
         return attempt, settlement
+    if attempt.state in {"failed", "expired"}:
+        raise SettlementDomainError("attempt_transition_conflict", "This request was already resolved.")
     if attempt.state != "pending" or attempt.version != expected_attempt_version:
         raise SettlementDomainError("attempt_transition_conflict", "This payment attempt cannot be changed.", current_version=attempt.version)
     prior_state = settlement.state
-    settlement.active_pending_principal = max(ZERO, money(settlement.active_pending_principal) - money(attempt.principal_amount))
+    if money(settlement.active_pending_principal) < money(attempt.principal_amount):
+        raise SettlementDomainError("provider_review_required", "The reserved amount requires reconciliation.")
+    settlement.active_pending_principal = money(settlement.active_pending_principal) - money(attempt.principal_amount)
     settlement.version += 1
     attempt.state = "expired" if expired else "failed"
     attempt.failure_code = failure_code[:100]
@@ -1873,8 +1916,11 @@ async def fail_attempt(
         prior_state=prior_state,
         new_state=settlement.state,
         pending_delta=-money(attempt.principal_amount),
-        evidence={"failure_code": failure_code[:100]},
+        evidence={"failure_code": failure_code[:100], "request_sha256": failure_hash},
     )
+    if terminal_proof is not None:
+        await append_ledger_event(db,settlement=settlement,attempt=attempt,event_type="terminal_no_charge_verified",idempotency_key=f"fail:{idempotency_key}:proof",actor=actor,evidence={"proof_kind":terminal_proof.proof_kind,"provider_reference":terminal_proof.reference})
+    await db.flush()
     return attempt, settlement
 
 
@@ -1892,6 +1938,8 @@ async def create_refund(
     await lock_tenant_financials(db, tenant_id)
     if attempt.tenant_id != tenant_id:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    from app.services.customer_efs import guard_disposition_text
+    await guard_disposition_text(db, attempt, reason, idempotency_key)
     collection_invoice = await db.scalar(select(Invoice).where(Invoice.id == attempt.invoice_id, Invoice.tenant_id == tenant_id))
     if collection_invoice and collection_invoice.accounting_policy == "source_collection_hold":
         raise SettlementDomainError("collection_refund_requires_review", "Source collection refunds require an explicit cross-system reconciliation workflow.")
@@ -2035,6 +2083,8 @@ async def confirm_manual_refund(
         await db.execute(select(InvoiceSettlement).where(InvoiceSettlement.invoice_id == refund.invoice_id).with_for_update())
     ).scalar_one()
     attempt = await db.get(InvoicePaymentAttempt, refund.source_attempt_id)
+    from app.services.customer_efs import guard_disposition_text
+    await guard_disposition_text(db, attempt, reference, idempotency_key)
     refund.state = "succeeded"
     refund.provider_reference = reference.strip()
     refund.completed_at = datetime.now(timezone.utc)
@@ -2163,6 +2213,9 @@ async def record_credit_consent(
     ).scalar_one_or_none()
     if not overpayment:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    from app.services.customer_efs import guard_disposition_text
+    source_attempt = await db.get(InvoicePaymentAttempt, overpayment.source_attempt_id)
+    await guard_disposition_text(db, source_attempt, note, idempotency_key)
     source_invoice = await db.scalar(select(Invoice).where(Invoice.id == overpayment.invoice_id, Invoice.tenant_id == tenant_id))
     if source_invoice and source_invoice.accounting_policy == "source_collection_hold":
         raise SettlementDomainError("collection_credit_requires_review", "Source collection overpayments require cross-system review.")
@@ -2540,6 +2593,10 @@ async def expire_due_attempts(db: AsyncSession, *, tenant_id: Optional[UUID] = N
         raise
     count = 0
     for attempt in attempts:
+        await db.refresh(attempt, with_for_update=True)
+        from app.services.customer_efs import protected
+        if protected(attempt):
+            continue
         invoice = await db.get(Invoice, attempt.invoice_id)
         try:
             await require_shop_invoice_admission(db, invoice)

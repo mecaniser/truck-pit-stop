@@ -1,6 +1,7 @@
 import { AxiosError, AxiosHeaders } from 'axios'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InvoiceSettlementSummary } from '@/features/payments/types'
@@ -44,14 +45,33 @@ function show(audience: 'guest' | 'portal', overrides: Partial<InvoiceSettlement
 }
 beforeEach(() => { mocks.get.mockReset(); mocks.post.mockReset(); mocks.settlement = null; mocks.settlementError = null; mocks.savedApplied = undefined })
 describe.each(['guest', 'portal'] as const)('%s actual invoice state presentation', audience => {
+  it.each(['0.00', '20.00'])('shows the original total only when prior credit %s changes the balance', async prior => {
+    show(audience, { allowed_actions: { create_attempt: true, rails: ['card', 'zelle'] }, state: 'payment_pending', active_pending_principal: '20.00', allocatable_balance: '80.00' }, prior)
+    await screen.findByText('Synthetic truck')
+    expect(screen.getByText('Pending confirmation')).toBeInTheDocument()
+    expect(screen.getByLabelText('Payment amount')).toHaveValue('80.00')
+    expect(screen.getByRole('button', { name: 'Partial payment' })).toBeInTheDocument()
+    expect(screen.queryByText('Available to pay')).not.toBeInTheDocument()
+    if (audience === 'guest') {
+      const details = screen.getByRole('button', { name: 'Invoice details', exact: true })
+      expect(details).toHaveAttribute('aria-expanded', 'false')
+      expect(screen.queryByText('Invoice total', { exact: true })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Continue with card' }).compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      await userEvent.click(details)
+      expect(details).toHaveAttribute('aria-expanded', 'true')
+    }
+    if (prior === '0.00') expect(screen.queryByText('Invoice total', { exact: true })).not.toBeInTheDocument()
+    else expect(screen.getByText('Invoice total', { exact: true }).parentElement).toHaveTextContent('$120.00')
+    expect(mocks.post.mock.calls.every(([url]) => url === '/invoice-access/resolve')).toBe(true)
+  })
   it.each([
     ['refund', { refund_pending: '20.00' }, /\$20.00 refund pending/],
-    ['credit', { unapplied_credit: '15.00' }, /\$15.00 exceeds the invoice balance/],
+    ['credit', { unapplied_credit: '15.00' }, /\$15.00 is unapplied/],
   ] as const)('retains the %s notice on a paid split invoice', async (_, extras, notice) => {
     show(audience, { state: 'paid', confirmed_principal: '100.00', outstanding_balance: '0.00', allocatable_balance: '0.00', ...extras })
     await screen.findByText('Synthetic truck')
     expect(await screen.findByText(notice)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Pay part' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Partial payment' })).not.toBeInTheDocument()
     expect(mocks.post.mock.calls.every(([url]) => url === '/invoice-access/resolve')).toBe(true)
   })
   it.each([
@@ -84,13 +104,13 @@ describe.each(['guest', 'portal'] as const)('%s actual invoice state presentatio
   it('shows both refund and credit when they coexist on a paid invoice', async () => {
     show(audience, { state: 'paid', confirmed_principal: '100.00', outstanding_balance: '0.00', allocatable_balance: '0.00', refund_pending: '20.00', unapplied_credit: '15.00' })
     expect(await screen.findByText(/\$20.00 refund pending/)).toBeInTheDocument()
-    expect(screen.getByText(/\$15.00 exceeds the invoice balance/)).toBeInTheDocument()
+    expect(screen.getByText(/\$15.00 is unapplied/)).toBeInTheDocument()
   })
   it('shows a failed fresh settlement read instead of enabling stale split controls', async () => {
     mocks.settlementError = new Error('Synthetic failed settlement read')
     show(audience, { state: 'partially_paid', confirmed_principal: '40.00', outstanding_balance: '60.00' })
     expect(await screen.findByRole('alert')).toHaveTextContent(/Payment details could not be loaded/)
-    expect(screen.queryByRole('button', { name: 'Pay part' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Partial payment' })).not.toBeInTheDocument()
     expect(mocks.post.mock.calls.every(([url]) => url === '/invoice-access/resolve')).toBe(true)
   })
   it.each([
@@ -115,6 +135,26 @@ describe.each(['guest', 'portal'] as const)('%s actual invoice state presentatio
   })
 })
 
+describe('guest payment details disclosure', () => {
+  it('keeps every native charge below the payment action and reveals it accessibly', async () => {
+    show('guest', { allowed_actions: { create_attempt: true, rails: ['card', 'zelle'] } })
+    await screen.findByText('Synthetic truck')
+    expect(screen.queryByText('Status: Unpaid')).not.toBeInTheDocument()
+    expect(screen.queryByText('Subtotal')).not.toBeInTheDocument()
+    const details = screen.getByRole('button', { name: 'Invoice details', exact: true })
+    const primary = screen.getByRole('button', { name: 'Continue with card' })
+    const otherMethods = screen.getByRole('button', { name: 'Other payment methods' })
+    expect(primary.compareDocumentPosition(otherMethods) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(otherMethods.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await userEvent.click(details)
+    for (const label of ['Subtotal', 'Shop Supplies', 'Card Processing Fee', 'Sales tax']) expect(screen.getByText(label, { exact: true })).toBeInTheDocument()
+    expect(details).toHaveFocus()
+    await userEvent.click(details)
+    expect(screen.queryByText('Subtotal')).not.toBeInTheDocument()
+    expect(mocks.post.mock.calls.every(([url]) => url === '/invoice-access/resolve')).toBe(true)
+  })
+})
+
 // Cached-read failures and unknown collection tender stay non-actionable.
 describe.each(['guest', 'portal'] as const)('%s adverse-state regressions', audience => {
   it('withholds collection tender when saved native breakdown is unknown', async () => {
@@ -128,15 +168,15 @@ describe.each(['guest', 'portal'] as const)('%s adverse-state regressions', audi
   it('removes previously actionable split controls on cached read failure and restores on recovery', async () => {
     const enabled = {state:'partially_paid' as const, confirmed_principal:'40.00', outstanding_balance:'60.00', allocatable_balance:'60.00', allowed_actions:{create_attempt:true,rails:['zelle' as const]}}
     const first=show(audience,enabled)
-    expect(await screen.findByRole('button',{name:'Pay part'})).toBeEnabled()
+    expect(await screen.findByRole('button',{name:'Partial payment'})).toBeEnabled()
     mocks.settlementError=new Error('Independent cached-read failure')
     first.rerender(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter initialEntries={[audience==='guest'?'/invoice/matrix-token':'/portal/invoices/matrix-invoice']}><Routes><Route path="/invoice/:token" element={<InvoiceAccessPage/>}/><Route path="/portal/invoices/:invoiceId" element={<CustomerInvoicePage/>}/></Routes></MemoryRouter></QueryClientProvider>)
     expect(await screen.findByRole('alert')).toHaveTextContent('Payment details could not be loaded')
-    expect(screen.queryByRole('button',{name:'Pay part'})).not.toBeInTheDocument()
+    expect(screen.queryByRole('button',{name:'Partial payment'})).not.toBeInTheDocument()
     first.unmount()
     mocks.settlementError=null
     show(audience,enabled)
-    expect(await screen.findByRole('button',{name:'Pay part'})).toBeEnabled()
+    expect(await screen.findByRole('button',{name:'Partial payment'})).toBeEnabled()
     expect(mocks.post.mock.calls.every(([url])=>url==='/invoice-access/resolve')).toBe(true)
   })
 })
@@ -153,23 +193,23 @@ const unavailableCodes = ['feature_disabled', 'invoice_split_payments_disabled',
 describe.each(['guest', 'portal'] as const)('%s unavailable settlement transitions', audience => {
   it.each(unavailableCodes)('blocks cached controls after %s and recovers on a successful read', async code => {
     const view = show(audience, { state: 'partially_paid', confirmed_principal: '40.00', outstanding_balance: '60.00', allocatable_balance: '60.00', allowed_actions: { create_attempt: true, rails: ['zelle'] } })
-    expect(await screen.findByRole('button', { name: 'Pay part' })).toBeEnabled()
+    expect(await screen.findByRole('button', { name: 'Partial payment' })).toBeEnabled()
     mocks.settlementError = unavailableResponse(code)
     view.rerenderCurrent()
     expect(await screen.findByRole('alert')).toHaveTextContent('Payment details could not be loaded')
-    expect(screen.queryByRole('button', { name: 'Pay part' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Partial payment' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Pay in full' })).not.toBeInTheDocument()
     if (audience === 'portal') expect(mocks.get.mock.calls.some(([url]) => url.includes('quickbooks/payments/availability'))).toBe(false)
     mocks.settlementError = null
     view.rerenderCurrent()
-    expect(await screen.findByRole('button', { name: 'Pay part' })).toBeEnabled()
+    expect(await screen.findByRole('button', { name: 'Partial payment' })).toBeEnabled()
     expect(mocks.post.mock.calls.every(([url]) => url === '/invoice-access/resolve')).toBe(true)
   })
   it.each(unavailableCodes)('preserves first-read legacy fallback for %s without cached split data', async code => {
     show(audience, { feature_enabled: false }, undefined, unavailableResponse(code))
     await screen.findByText('Synthetic truck')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Pay part' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Partial payment' })).not.toBeInTheDocument()
     if (audience === 'guest') expect(await screen.findByRole('button', { name: 'Open My Portal' })).toBeEnabled()
     expect(mocks.post.mock.calls.every(([url]) => url === '/invoice-access/resolve')).toBe(true)
   })
