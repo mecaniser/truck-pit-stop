@@ -204,3 +204,24 @@ Nov5 preflight repeated at branch `codex/fleet-asset-details`, HEAD `6dbcb38c`:
 read-only. Runtime controller refuses the dirty target. Existing services,
 configuration and volumes remain untouched; local product serving remains
 blocked/mismatched. PM tests use isolated in-memory fixtures, not product data.
+
+
+## PR791 CI return — trailer admission test setup
+
+Run [41973025675](https://github.com/mecaniser/truck-pit-stop/actions/runs/41973025675)
+returned one full-frontend failure: the newly added requires-tractor admission
+case exceeded its existing5000ms deadline;2348/2349 cases passed. Product source
+was unchanged from the preceding passing frontend gate. QA optimized only this
+new test: make/model are direct fixture change events, named controls are scoped
+to the identified panel, and portaled option text is scoped to option elements.
+The actual dropdown-selection clicks and disabled/no-POST→selected-tractor
+request assertions remain unchanged. No timeout increase, assertion removal,
+product edit or broader suite reduction.
+
+Focused case passes under the unchanged deadline. The final exact seven-suite
+acceptance set passes **59/59 in9.71 seconds** with the same two isolated workers
+used by the full frontend CI runner. A draft selector initially matched both the
+named group and its combobox; restricting the label query to the actual button
+resolved that test-only ambiguity before freezing the candidate. No application
+semantics changed. Fresh independent Security review and all seven exact-head
+CI checks are required before release.

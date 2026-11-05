@@ -130,3 +130,21 @@ Reviewed frontend/src/features/fleet/TruckDetail.tsx SHA256 `b677407fcf9e64ee978
 Reviewed frontend/src/features/fleet/AssetAttachment.tsx SHA256 `b84a5e8665b408350a3755a5fd9c6e80025113ba7b6f8172052cbd06fcea0be2`.
 
 Final test-teardown candidate frontend/src/features/fleet/__tests__/TruckDetailHarden.test.tsx SHA256 `583c6fe6dbbb4308bfbaf80911077f8d3fdeb3c33b663970a796f925e9bd8601`.
+
+
+## Subsequent CI return — trailer admission fixture optimization
+
+Full frontend CI41973025675 passed2348/2349 cases and returned only the new
+requires-tractor case for exceeding its unchanged5000ms deadline. QA owns the
+narrow test-only correction in FleetApp.return-context: direct make/model fixture
+change events instead of per-character typing, title/named-panel lookups, and
+label-scoped button queries. Real dropdown selection, disabled/no-POST before a
+tractor is chosen, and the original correct tractor/customer POST assertion are
+preserved. The test still exercises the actual creation guard; it does not mock
+away the invariant. Product source and API contracts are unchanged.
+
+Focused admission case passes; the exact seven-suite59 cases pass in9.71 seconds
+using two isolated workers, matching CI concurrency. Final test candidate SHA256
+`46886f2d7b48d003659ee5210cfb46e496eb109ff16aa911ed00a429fb7d275a`.
+Fresh independent review of this QA-owned test correction and protected CI are
+pending; prior source/runtime outcomes remain separately recorded.
