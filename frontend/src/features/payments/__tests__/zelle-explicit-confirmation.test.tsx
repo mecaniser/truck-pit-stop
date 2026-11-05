@@ -66,7 +66,7 @@ describe('Customer payment choices', () => {
 describe('Zelle transfer report boundary', () => {
   it('keeps next steps visible on a fully pending customer invoice after reload', () => {
     render(<SettlementSummaryCard summary={reported().settlement} audience="customer" streamlined />)
-    expect(screen.getByText(/Check this invoice for updates/)).toHaveTextContent('Don’t send the pending amount again.')
+    expect(screen.getByText('Don’t pay an amount in progress again.')).toBeInTheDocument()
   })
 
   it.each(['customer', 'guest'] as const)('shows instructions and returns without reserving money for %s', async audience => {
@@ -186,12 +186,12 @@ describe('Payment refresh feedback', () => {
   })
 })
 
-it('keeps one compact pending amount and shows requested amounts in disclosed activity', async () => {
+it('shows active amounts without repeating the fully reserved balance', async () => {
   const pending = reported().settlement
   render(<SettlementSummaryCard summary={pending} audience="customer" streamlined allocations={[{ ...DB048_SETTLEMENT_FIXTURES.pendingZelle500.allocations[0], principal_amount: '168.44', applied_principal_amount: '0.00' }]} />)
-  expect(screen.getAllByText('Pending confirmation')).toHaveLength(1)
-  expect(screen.queryByText('$168.44')).not.toBeInTheDocument()
-  await userEvent.click(screen.getByRole('button', { name: /Payment activity/ }))
+  expect(screen.queryByText('Pending confirmation')).not.toBeInTheDocument()
+  expect(screen.queryByText('$268.44')).not.toBeInTheDocument()
   expect(screen.getByText('$168.44')).toBeInTheDocument()
-  expect(screen.getByText('Requested')).toBeInTheDocument()
+  expect(screen.getByRole('list', { name: 'Active payment requests' })).toBeInTheDocument()
+  expect(screen.queryByText('Requested')).not.toBeInTheDocument()
 })

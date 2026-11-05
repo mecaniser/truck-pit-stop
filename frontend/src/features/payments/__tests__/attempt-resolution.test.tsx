@@ -8,10 +8,10 @@ import { DB048_SETTLEMENT_FIXTURES } from '@/test-fixtures/db048/settlements'
 import type { AttemptResolutionDetail, AttemptResolutionResponse, ResolutionProjection } from '../attemptResolutionTypes'
 import type { InvoiceSettlementSummary, PaymentAllocation, SettlementAccess } from '../types'
 
-const requests = vi.hoisted(() => ({ resolve: vi.fn(), detail: vi.fn(), grant: vi.fn(), confirm: vi.fn() }))
+const requests = vi.hoisted(() => ({ resolve: vi.fn(), detail: vi.fn(), grant: vi.fn(), confirm: vi.fn(), create: vi.fn() }))
 vi.mock('../attemptResolutionApi', async original => ({ ...await original<typeof import('../attemptResolutionApi')>(), resolvePaymentAttempt: requests.resolve, fetchAttemptResolutionDetail: requests.detail }))
 vi.mock('@/lib/paymentStepUp', async original => ({ ...await original<typeof import('@/lib/paymentStepUp')>(), createPaymentStepUpGrant: requests.grant }))
-vi.mock('../api', async original => ({ ...await original<typeof import('../api')>(), confirmPaymentAttempt: requests.confirm }))
+vi.mock('../api', async original => ({ ...await original<typeof import('../api')>(), confirmPaymentAttempt: requests.confirm, createPaymentAttempt: requests.create }))
 import Controls from '../PaymentAttemptResolutionControls'
 import SettlementSummaryCard from '../SettlementSummaryCard'
 
@@ -85,9 +85,10 @@ describe('Payment request resolution', () => {
     show()
     await assertUnsent()
     await userEvent.click(screen.getByRole('button', { name: 'Cancel request', exact: true }))
-    expect(await screen.findByRole('button', { name: 'Retry status update' })).toBeEnabled()
+    expect(await screen.findByRole('button', { name: 'Check again' })).toBeEnabled()
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
     expect(screen.getByRole('button', { name: 'Keep request' })).toBeDisabled()
-    await userEvent.click(screen.getByRole('button', { name: 'Retry status update' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Check again' }))
     expect(requests.resolve).toHaveBeenCalledTimes(2)
     expect(requests.resolve.mock.calls[0]).toEqual(requests.resolve.mock.calls[1])
   })
@@ -118,7 +119,7 @@ describe('Payment request resolution', () => {
     const { onUpdated } = show(allocation(card))
     await userEvent.click(screen.getByRole('button', { name: 'Cancel checkout' }))
     expect(requests.resolve).not.toHaveBeenCalled()
-    await userEvent.click(screen.getByRole('button', { name: 'Cancel request', exact: true }))
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel checkout', exact: true }))
     await waitFor(() => expect(onUpdated).toHaveBeenCalledWith(released))
     expect(requests.resolve.mock.calls[0][2]).not.toHaveProperty('transfer_not_sent_confirmed')
     expect(requests.confirm).not.toHaveBeenCalled()
@@ -193,14 +194,98 @@ describe('Payment request resolution', () => {
     expect(command.evidence).not.toHaveProperty('requested_principal')
     expect(requests.resolve.mock.calls[0][4]).toBe('fictional-one-time-grant')
   })
-  it('keeps resolution controls inside the single activity disclosure', async () => {
+  it('keeps active requests visible and canceled attempts under history', async () => {
     const client = new QueryClient()
-    render(<QueryClientProvider client={client}><SettlementSummaryCard streamlined audience="customer" summary={summary} allocations={[allocation()]} resolutionControls={{ access, audience: 'customer', onUpdated: vi.fn() }} /></QueryClientProvider>)
-    expect(screen.queryByRole('button', { name: 'Payment not sent?' })).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Review payment requests (1)' }))
+    const past = allocation(cancelled().resolution)
+    past.id = past.attempt_id = 'past-zelle'
+    past.resolution = { ...past.resolution!, attempt_id: past.attempt_id }
+    past.state = 'failed'
+    render(<QueryClientProvider client={client}><SettlementSummaryCard streamlined audience="customer" summary={summary} allocations={[allocation(), past]} resolutionControls={{ access, audience: 'customer', onUpdated: vi.fn() }} /></QueryClientProvider>)
     expect(screen.getByRole('button', { name: 'Payment not sent?' })).toBeInTheDocument()
-    expect(screen.getAllByText('Open payment requests')).toHaveLength(1)
-    expect(screen.queryByText('Payment received')).not.toBeInTheDocument()
+    expect(screen.queryByText('Request canceled')).not.toBeInTheDocument()
+    const history = screen.getByRole('button', { name: 'Payment history (1)' })
+    expect(history).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(history)
+    expect(screen.getByText('Request canceled')).toBeInTheDocument()
+    expect(screen.getByText('Canceled. No payment recorded.')).toBeInTheDocument()
+    expect(requests.resolve).not.toHaveBeenCalled()
+  })
+  it('reveals an exact canceled history link and focuses its row', async () => {
+    const past = allocation(cancelled().resolution)
+    render(<SettlementSummaryCard streamlined audience="customer" summary={released} allocations={[past]} reviewAttemptId={past.attempt_id} />)
+    await waitFor(() => expect(document.getElementById(`payment-request-${past.attempt_id}`)).toHaveFocus())
+    expect(screen.getByRole('button', { name: 'Payment history (1)' })).toHaveAttribute('aria-expanded', 'true')
+  })
+  it('keeps a received payment in history without cancellation controls', async () => {
+    const received = allocation(projection({ checkout_status: 'received', attempt_state: 'confirmed', actions: noActions }))
+    received.state = 'confirmed'
+    render(<QueryClientProvider client={new QueryClient()}><SettlementSummaryCard streamlined audience="customer" summary={released} allocations={[received]} resolutionControls={{ access, audience: 'customer', onUpdated: vi.fn() }} /></QueryClientProvider>)
+    expect(screen.queryByRole('list', { name: 'Active payment requests' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Payment history (1)' }))
+    expect(screen.getByText('Payment received')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument()
+  })
+  it('announces a newly closed request while moving it into history', async () => {
+    const props = { streamlined: true, audience: 'customer' as const, summary, allocations: [allocation()] }
+    const { rerender } = render(<SettlementSummaryCard {...props} />)
+    const closed = allocation(cancelled().resolution)
+    closed.state = 'failed'
+    rerender(<SettlementSummaryCard {...props} summary={released} allocations={[closed]} />)
+    expect(await screen.findByRole('status')).toHaveTextContent('Request canceled.')
+    expect(screen.getByRole('button', { name: 'Payment history (1)' })).toHaveFocus()
+    expect(screen.queryByText('Request canceled')).not.toBeInTheDocument()
+  })
+  it('explains the next step while all payment amounts are reserved', () => {
+    const card = allocation(projection({ rail: 'card', checkout_status: 'checkout_started' }))
+    render(<QueryClientProvider client={new QueryClient()}><SettlementSummaryCard streamlined audience="customer" summary={summary} allocations={[card]} resolutionControls={{ access, audience: 'customer', onUpdated: vi.fn() }} /></QueryClientProvider>)
+    expect(screen.getByRole('heading', { name: 'Payment options paused' })).toBeInTheDocument()
+    expect(screen.getByText('Cancel this checkout to choose a payment method.')).toBeInTheDocument()
+    expect(screen.queryByText('Don’t pay an amount in progress again.')).not.toBeInTheDocument()
+  })
+  it('makes waiting ownership clear without allowing another payment or cancellation', () => {
+    const row = allocation(projection({ rail: 'card', checkout_status: 'review_required', actions: noActions, review_status: 'requested', block_reason: { code: 'provider_review_required', message: 'Review required.' } }))
+    render(<QueryClientProvider client={new QueryClient()}><SettlementSummaryCard streamlined audience="customer" summary={summary} allocations={[row]} resolutionControls={{ access, audience: 'customer', onUpdated: vi.fn() }} /></QueryClientProvider>)
+    expect(screen.getByRole('heading', { name: 'Waiting for confirmation' })).toBeInTheDocument()
+    expect(screen.getByText('The shop will update this invoice. Don’t pay this amount again.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Choose payment method' })).not.toBeInTheDocument()
+  })
+  it('hands off to payment methods only after confirmed cancellation frees an amount', async () => {
+    const props = { streamlined: true, audience: 'customer' as const, summary, allocations: [allocation()] }
+    const { rerender } = render(<><SettlementSummaryCard {...props} /><h2 tabIndex={-1} id={`settlement-payment-${summary.invoice_id}`}>Payment method</h2></>)
+    const closed = allocation(cancelled().resolution); closed.state = 'failed'
+    rerender(<><SettlementSummaryCard {...props} summary={released} allocations={[closed]} /><h2 tabIndex={-1} id={`settlement-payment-${summary.invoice_id}`}>Payment method</h2></>)
+    await userEvent.click(await screen.findByRole('button', { name: 'Choose payment method' }))
+    expect(screen.getByRole('heading', { name: 'Payment method' })).toHaveFocus()
+    expect(requests.resolve).not.toHaveBeenCalled()
+    expect(requests.create).not.toHaveBeenCalled()
+  })
+  it('does not retain a cancellation success message after a newer payment update', async () => {
+    const props = { streamlined: true, audience: 'customer' as const, summary, allocations: [allocation()] }
+    const { rerender } = render(<SettlementSummaryCard {...props} />)
+    const closed = allocation(cancelled().resolution); closed.state = 'failed'
+    rerender(<SettlementSummaryCard {...props} summary={released} allocations={[closed]} />)
+    expect(await screen.findByRole('status')).toHaveTextContent('Request canceled.')
+    rerender(<SettlementSummaryCard {...props} summary={{ ...released, version: released.version + 1 }} allocations={[closed]} />)
+    expect(screen.queryByText('Request canceled.')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Choose payment method' })).not.toBeInTheDocument()
+  })
+  it('keeps a historical review warning visible while canceled history is collapsed', () => {
+    const terminal = allocation(cancelled().resolution)
+    terminal.state = 'failed'
+    terminal.resolution = { ...terminal.resolution!, can_retry: false, block_reason: { code: 'legacy_projection_review_required', message: 'Review this transfer.' } }
+    render(<SettlementSummaryCard streamlined audience="customer" summary={released} allocations={[terminal]} />)
+    expect(screen.getByRole('status')).toHaveTextContent('The shop needs to review an earlier payment before you try again.')
+    expect(screen.getByRole('button', { name: 'Payment history (1)' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('button', { name: 'Choose payment method' })).not.toBeInTheDocument()
+  })
+  it('preserves a canceled legacy request that still requires shop review', () => {
+    const terminal = cancelled().resolution
+    terminal.block_reason = { code: 'legacy_projection_review_required', message: 'The shop must review this transfer before another payment.' }
+    terminal.resolution_notice!.message = 'Payment request canceled. The shop must review this transfer before another payment.'
+    show(allocation(terminal))
+    expect(screen.getByRole('status')).toHaveTextContent('The shop must review this transfer')
+    expect(screen.queryByText('Canceled. No payment recorded.')).not.toBeInTheDocument()
   })
   it('opens payment choices after cancellation without creating a new payment', async () => {
     const terminal = allocation(cancelled().resolution)

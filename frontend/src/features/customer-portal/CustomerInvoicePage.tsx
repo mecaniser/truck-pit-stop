@@ -369,7 +369,7 @@ export default function CustomerInvoicePage() {
           <BackPill destination={backDestination} fallbackTo={scopedPortalPath(backDestination === 'History' ? '/portal/repairs' : backDestination === 'Invoices' ? '/portal/invoices' : '/portal', new URLSearchParams(location.search).get('vehicle_id'))} />
         </div>
 
-        <section className="py-2 text-center" aria-labelledby="payment-total">
+        <section className={`py-2 text-center ${splitSettlement && isPositiveMoney(splitSettlement.active_pending_principal) ? 'cp-invoice-balance-header' : ''}`} aria-labelledby="payment-total">
           {queueIndex >= 0 && invoiceQueue.length > 1 && (
             <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.1em] text-[#a78bfa]">
               Invoice {queueIndex + 1} of {invoiceQueue.length} · pay one at a time
