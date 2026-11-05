@@ -743,6 +743,10 @@ export default function InvoiceAccessPage() {
                 hideConfirmed={Boolean(invoice.source_collection)}
                 allocations={allocationQuery.data?.items ?? []}
                 tone="light"
+                resolutionControls={{ access: settlementAccess, audience: 'guest', onUpdated: next => {
+                  queryClient.setQueryData(['invoice-settlement', 'guest', token], next)
+                  queryClient.invalidateQueries({ queryKey: ['invoice-access', token] })
+                } }}
               />
               <SettlementResolutionPanel
                 access={settlementAccess}
@@ -758,6 +762,7 @@ export default function InvoiceAccessPage() {
               <SettlementPaymentPanel
                 access={settlementAccess}
                 summary={splitSettlement}
+                allocations={allocationQuery.data?.items ?? []}
                 audience="guest"
                 tone="light"
                 zelleRecipient={(invoice.zelle_phone || invoice.zelle_email)

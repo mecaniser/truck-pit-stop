@@ -862,12 +862,14 @@ async def test_db048_stripe_success_uses_historical_config_and_distinct_provider
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("provider_status", ["requires_payment_method", "canceled"])
 async def test_db048_failed_webhook_validates_envelope_and_lifecycle_before_release(
-    monkeypatch,
+    monkeypatch, provider_status,
 ):
     tenant, customer, _order, invoice = _entities()
     attempt, config = _db048_attempt_and_config(tenant, customer, invoice)
-    intent = _db048_intent(attempt, status="requires_payment_method")
+    intent = _db048_intent(attempt, status=provider_status)
+    intent["amount_capturable"] = 0
     intent["last_payment_error"] = {
         "code": "card_declined",
         "message": "The card was declined.",
@@ -906,12 +908,15 @@ async def test_db048_failed_webhook_validates_envelope_and_lifecycle_before_rele
         event={"id": "evt_db048_failed", "account": "acct_historical"},
     )
 
-    assert sequence == ["lifecycle", "fail", "error_log"]
-    assert failure_calls[0]["attempt_id"] == attempt.id
-    assert failure_calls[0]["tenant_id"] == attempt.tenant_id
-    assert failure_calls[0]["idempotency_key"].endswith(
-        ":evt_db048_failed:failed"
-    )
+    if provider_status == "canceled":
+        assert sequence == ["lifecycle", "fail", "error_log"]
+        assert failure_calls[0]["attempt_id"] == attempt.id
+        assert failure_calls[0]["tenant_id"] == attempt.tenant_id
+        assert failure_calls[0]["idempotency_key"].endswith(":evt_db048_failed:failed")
+        assert failure_calls[0]["terminal_proof"].reference == attempt.provider_intent_id
+    else:
+        assert sequence == ["lifecycle", "error_log"]
+        assert not failure_calls  # A live payable PI is never released on decline.
     assert fake_db.added == []
     assert fake_db.commits == 0
 

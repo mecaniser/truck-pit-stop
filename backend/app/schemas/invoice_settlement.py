@@ -171,9 +171,120 @@ class QuickBooksAttemptCharge(BaseModel):
     expected_attempt_version: int = Field(ge=1)
 
 
+def _safe_resolution_text(value: str, *, statement: bool = False) -> str:
+    from app.core.redaction import redact_text
+    import re
+    if redact_text(value) != value:
+        raise ValueError("Remove credentials and tokens from the review text")
+    if re.search(r"(?i)\b(?:bank\s+account|routing\s+(?:number|no)|cvv|cvc|card\s+(?:number|no)|pan)\s*[:=#]?\s*\d[\d -]{2,}", value):
+        raise ValueError("Remove card and bank details from the review text")
+    if statement:
+        for match in re.finditer(r"(?<![\w])(?:\d[ -]?){13,19}(?![\w])", value):
+            digits = [int(c) for c in match.group() if c.isdigit()]
+            if 13 <= len(digits) <= 19:
+                total = sum((digit * 2 - 9 if digit * 2 > 9 else digit * 2) if index % 2 else digit for index, digit in enumerate(reversed(digits)))
+                if total % 10 == 0:
+                    raise ValueError("Remove full payment card numbers from the review statement")
+    return value
+
+
+class ResolutionActions(BaseModel):
+    cancel_unsent: bool = False
+    check_provider_status: bool = False
+    request_review: bool = False
+    release_with_terminal_evidence: bool = False
+    record_late_receipt: bool = False
+
+
+class ResolutionProjection(BaseModel):
+    attempt_id: UUID
+    invoice_id: UUID
+    attempt_version: int
+    settlement_version: int
+    rail: str
+    requested_principal: str
+    currency: str
+    attempt_state: str
+    checkout_status: Literal["checkout_started", "transfer_reported", "verification_pending", "review_required", "received", "cancelled", "failed"]
+    reservation_amount: str
+    can_retry: bool
+    actions: ResolutionActions
+    block_reason: Optional[dict[str, str]] = None
+    resolution_notice: Optional[dict[str, Any]] = None
+    review_status: Literal["none", "requested", "evidence_required", "resolved"]
+
+
+class TerminalEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["provider_terminal_no_charge", "provider_cancelled"]
+    provider: str
+    provider_account_id: str
+    environment: Literal["sandbox", "production"]
+    configuration_version: int = Field(ge=1, strict=True)
+    provider_request_id: Optional[str] = None
+    provider_reference: Optional[str] = Field(default=None, max_length=255)
+    attempted_at: datetime
+    review_window_start: datetime
+    review_window_end: datetime
+    provider_case_reference: str = Field(min_length=3, max_length=255)
+    evidence_reference: str = Field(min_length=3, max_length=1000)
+    evidence_sha256: Optional[str] = None
+    evidence_context_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    terminal_outcome: Literal["no_charge", "cancelled"]
+    reviewer_statement: str = Field(min_length=30, max_length=2000)
+
+    @field_validator("provider_case_reference", "evidence_reference", "reviewer_statement", "provider_reference", mode="before")
+    @classmethod
+    def meaningful_evidence_text(cls, value, info):
+        if value is None and info.field_name == "provider_reference":
+            return None
+        if not isinstance(value, str):
+            raise ValueError("Evidence must be text")
+        value = _safe_resolution_text(value.strip(), statement=info.field_name == "reviewer_statement")
+        minimum = 30 if info.field_name == "reviewer_statement" else 3
+        if len(value) < minimum:
+            raise ValueError(f"Evidence requires at least {minimum} meaningful characters")
+        return value
+
+    @model_validator(mode="after")
+    def consistent_terminal_outcome(self):
+        if self.terminal_outcome != ("cancelled" if self.kind == "provider_cancelled" else "no_charge"):
+            raise ValueError("The terminal outcome must match the evidence kind")
+        return self
+
+
+class AttemptResolutionCommand(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: Literal["cancel_unsent", "check_provider_status", "request_review", "release_with_terminal_evidence"]
+    expected_attempt_version: int = Field(ge=1, strict=True)
+    expected_settlement_version: int = Field(ge=1, strict=True)
+    reason_code: str = Field(min_length=1, max_length=100)
+    reason: Optional[str] = Field(default=None, max_length=1000)
+    transfer_not_sent_confirmed: StrictBool = False
+    evidence: Optional[TerminalEvidence] = None
+
+    @field_validator("reason_code", "reason", mode="before")
+    @classmethod
+    def normalize_reason(cls, value, info):
+        if value is None and info.field_name == "reason":
+            return None
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("A meaningful reason is required")
+        return _safe_resolution_text(value.strip(), statement=True)
+
+
+class GuestAttemptResolutionCommand(AttemptResolutionCommand):
+    token: str = Field(min_length=8, max_length=2048)
+
+
+class GuestResolutionRead(BaseModel):
+    token: str = Field(min_length=8, max_length=2048)
+
+
 class PaymentAttemptResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    resolution: ResolutionProjection
     attempt_id: UUID
     invoice_id: UUID
     principal_amount: Money
@@ -203,6 +314,7 @@ class PaymentAttemptResponse(BaseModel):
 class PaymentAllocationItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    resolution: ResolutionProjection
     sender_evidence: Optional[SenderEvidence] = None
     id: UUID
     attempt_id: UUID

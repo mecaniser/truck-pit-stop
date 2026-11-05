@@ -1240,6 +1240,9 @@ async def create_attempt(
         pending_delta=amount,
         evidence={"source": source, "rail": rail, "provider": provider, **({"source_collection_admission":collection_admission} if collection_admission else {})},
     )
+    if rail == "card":
+        from app.services.payment_attempt_resolution import append_protocol
+        await append_protocol(db, attempt, settlement, actor)
     if rail != "card" and sender_evidence:
         await append_ledger_event(
             db,
@@ -1255,6 +1258,7 @@ async def create_attempt(
         await db.flush()
         await enqueue_report_notice(db, invoice=invoice, tenant=tenant,
                                     customer_id=customer_id, attempt=attempt)
+    await db.flush()
     return AttemptCreation(attempt, settlement)
 
 
@@ -1466,6 +1470,10 @@ async def confirm_attempt(
         )
     ).scalar_one()
 
+    if actor is not None and attempt.rail in {"zelle", "check", "ach"}:
+        from app.services.payment_attempt_resolution import money_staff
+        if not money_staff(actor) or actor.tenant_id != tenant.id:
+            raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
     # Enforce lifecycle before replay lookup, manual-reference normalization,
     # money projection, accounting enqueue, or paid/order state mutation.
     invoice = await locked_accessible_invoice_for_attempt(db, attempt)
@@ -1836,6 +1844,7 @@ async def fail_attempt(
     failure_code: str,
     idempotency_key: str,
     expired: bool = False,
+    terminal_proof=None,
 ) -> tuple[InvoicePaymentAttempt, InvoiceSettlement]:
     from app.services.financial_transaction_lock import lock_tenant_financials
     await lock_tenant_financials(db, tenant_id)
@@ -1843,20 +1852,36 @@ async def fail_attempt(
         await db.execute(
             select(InvoicePaymentAttempt)
             .where(InvoicePaymentAttempt.id == attempt_id, InvoicePaymentAttempt.tenant_id == tenant_id)
-            .with_for_update()
+            .with_for_update().execution_options(populate_existing=True)
         )
     ).scalar_one_or_none()
     if not attempt:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
     settlement = (
-        await db.execute(select(InvoiceSettlement).where(InvoiceSettlement.id == attempt.settlement_id).with_for_update())
+        await db.execute(select(InvoiceSettlement).where(InvoiceSettlement.id == attempt.settlement_id).with_for_update().execution_options(populate_existing=True))
     ).scalar_one()
-    if attempt.state in {"failed", "expired"}:
+    from app.services.payment_attempt_resolution import authorize_failure, money_staff, digest
+    await locked_accessible_invoice_for_attempt(db, attempt)
+    if actor is not None and not money_staff(actor):
+        raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    await authorize_failure(db, attempt, terminal_proof)
+    failure_hash = digest(dict(attempt_id=str(attempt.id),failure_code=failure_code,expired=expired,expected_attempt_version=expected_attempt_version))
+    existing_failure = await db.scalar(select(InvoicePaymentLedgerEvent).where(
+        InvoicePaymentLedgerEvent.tenant_id == tenant_id,
+        InvoicePaymentLedgerEvent.idempotency_key == f"fail:{idempotency_key}",
+    ))
+    if existing_failure:
+        if existing_failure.attempt_id != attempt.id or existing_failure.evidence_snapshot.get("request_sha256") != failure_hash:
+            raise SettlementDomainError("idempotency_conflict", "This failure command conflicts with its original request.")
         return attempt, settlement
+    if attempt.state in {"failed", "expired"}:
+        raise SettlementDomainError("attempt_transition_conflict", "This request was already resolved.")
     if attempt.state != "pending" or attempt.version != expected_attempt_version:
         raise SettlementDomainError("attempt_transition_conflict", "This payment attempt cannot be changed.", current_version=attempt.version)
     prior_state = settlement.state
-    settlement.active_pending_principal = max(ZERO, money(settlement.active_pending_principal) - money(attempt.principal_amount))
+    if money(settlement.active_pending_principal) < money(attempt.principal_amount):
+        raise SettlementDomainError("provider_review_required", "The reserved amount requires reconciliation.")
+    settlement.active_pending_principal = money(settlement.active_pending_principal) - money(attempt.principal_amount)
     settlement.version += 1
     attempt.state = "expired" if expired else "failed"
     attempt.failure_code = failure_code[:100]
@@ -1873,8 +1898,11 @@ async def fail_attempt(
         prior_state=prior_state,
         new_state=settlement.state,
         pending_delta=-money(attempt.principal_amount),
-        evidence={"failure_code": failure_code[:100]},
+        evidence={"failure_code": failure_code[:100], "request_sha256": failure_hash},
     )
+    if terminal_proof is not None:
+        await append_ledger_event(db,settlement=settlement,attempt=attempt,event_type="terminal_no_charge_verified",idempotency_key=f"fail:{idempotency_key}:proof",actor=actor,evidence={"proof_kind":terminal_proof.proof_kind,"provider_reference":terminal_proof.reference})
+    await db.flush()
     return attempt, settlement
 
 
@@ -2540,6 +2568,7 @@ async def expire_due_attempts(db: AsyncSession, *, tenant_id: Optional[UUID] = N
         raise
     count = 0
     for attempt in attempts:
+        await db.refresh(attempt, with_for_update=True)
         invoice = await db.get(Invoice, attempt.invoice_id)
         try:
             await require_shop_invoice_admission(db, invoice)

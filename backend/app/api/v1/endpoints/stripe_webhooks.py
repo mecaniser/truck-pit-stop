@@ -316,15 +316,27 @@ async def _handle_payment_failed(db: AsyncSession, payment_intent: dict, *, even
         # exact same tenant/customer/invoice/order lifecycle boundary here
         # before releasing the reservation.
         await locked_accessible_invoice_for_attempt(db, attempt)
-        await fail_attempt(
-            db,
-            attempt_id=attempt.id,
-            tenant_id=attempt.tenant_id,
-            actor=None,
-            expected_attempt_version=attempt.version,
-            failure_code=str(error_code or "stripe_payment_failed")[:100],
-            idempotency_key=f"stripe:{provider_account_id}:{provider_event_id}:failed",
+        terminal_no_charge = (
+            validated.status == "canceled"
+            and type(payment_intent.get("amount_received")) is int
+            and payment_intent.get("amount_received") == 0
+            and type(payment_intent.get("amount_capturable")) is int
+            and payment_intent.get("amount_capturable") == 0
         )
+        # A declined confirmation may still settle later. Preserve failure
+        # observability while retaining its exact reservation until terminal.
+        if terminal_no_charge:
+            from app.services.payment_attempt_resolution import TerminalNoChargeProof
+            await fail_attempt(
+                db,
+                terminal_proof=TerminalNoChargeProof(attempt.tenant_id,attempt.id,attempt.provider,str(payment_intent_id),"provider_cancelled"),
+                attempt_id=attempt.id,
+                tenant_id=attempt.tenant_id,
+                actor=None,
+                expected_attempt_version=attempt.version,
+                failure_code=str(error_code or "stripe_payment_failed")[:100],
+                idempotency_key=f"stripe:{provider_account_id}:{provider_event_id}:failed",
+            )
 
     logger.error(
         "payment_intent_failed",

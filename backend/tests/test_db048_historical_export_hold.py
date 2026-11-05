@@ -142,7 +142,8 @@ async def test_verified_late_stripe_success_preserved_locally_export_suppressed(
     attempt.provider_intent_id = "pi_late_held"
     await fail_attempt(db_session, attempt_id=attempt.id, tenant_id=tenant.id, actor=None,
         expected_attempt_version=attempt.version, failure_code="outcome_unknown",
-        idempotency_key="expired", expired=True)
+        idempotency_key="expired", expired=True,
+        terminal_proof=__import__("app.services.payment_attempt_resolution",fromlist=["TerminalNoChargeProof"]).TerminalNoChargeProof(tenant.id,attempt.id,attempt.provider,"pi_late_held","mocked_terminal_provider_proof"))
     reviewed = await manifest(db_session, ctx)
     await apply_manifest(db_session, reviewed, expected_sha256=digest(reviewed))
     metadata = {"tenant_id": str(tenant.id), "invoice_id": str(invoice.id), "customer_id": str(customer.id),

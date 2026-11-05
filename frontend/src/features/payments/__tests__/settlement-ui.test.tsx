@@ -339,7 +339,7 @@ describe('SettlementPaymentPanel', () => {
         onUpdated={vi.fn()}
       />,
     )
-    await user.click(screen.getByRole('button', { name: /continue to quickbooks payments/i }))
+    await user.click(screen.getByRole('button', { name: /continue with card/i }))
     expect(await screen.findByRole('heading', { name: /complete secure card payment/i })).toBeInTheDocument()
     expect(screen.getByLabelText(/name on card/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /pay \$859\.02 with card/i })).toBeInTheDocument()

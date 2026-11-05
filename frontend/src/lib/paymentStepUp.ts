@@ -1,6 +1,7 @@
 import api from './api'
 
 export type PaymentStepUpScope =
+  | 'payments.attempts.resolve'
   | 'payment_sources.manage'
   | 'payment_sources.zelle.disable'
   | 'payment_sources.zelle.qr.remove'
