@@ -877,3 +877,12 @@
 @media (hover:hover) and (pointer:fine) {
   .cp-overview .cp-directory-vehicle:hover { background:var(--portal-card); }
 }
+
+@layer db-controls {
+  @media (max-width:760px) {
+    .cp-vehicles-page .cp-title-actions > .cp-primary {
+      align-self:flex-start!important;
+      margin-inline:0!important;
+    }
+  }
+}
