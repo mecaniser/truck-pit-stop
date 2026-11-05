@@ -292,6 +292,15 @@ async def send_sms_with_tracking(
     source_enum = _coerce_source(source)
     if source_enum == SMSMessageSource.AUTOMATED and settings.SMS_AUTOMATION_OUTBOX_ENABLED:
         raise ValueError("Automated SMS requires transactional enqueue_automated_sms with a stable domain event")
+    if source_enum == SMSMessageSource.AUTOMATED and customer_id:
+        from app.services.customer_notification_preferences import delivery_reason
+        reason = await delivery_reason(db, tenant_id=tenant_uuid, customer_id=customer_id, channel="sms", template_name=template_name)
+        if reason:
+            notification = Notification(tenant_id=tenant_uuid, type=NotificationType.SMS, status=NotificationStatus.FAILED, recipient_phone=to, body=body, template_name=template_name, error_message=reason)
+            db.add(notification)
+            await db.commit()
+            await db.refresh(notification)
+            return notification, None, None
     context = None
     if not routing.enabled():
         await routing.require_legacy_tenant(db, tenant_uuid)

@@ -285,3 +285,5 @@ from app.db.models.booking_fulfillment import VisitRequestEvent, BookingRepairOr
 from app.db.models.booking_application import BookingReceiptApplication, BookingAccountingReviewTask, BookingAccountingReviewEvent
 
 from app.db.models.efs_instrument import EfsInstrumentSubmission
+
+from app.db.models.customer_notification_preferences import CustomerNotificationPreferences

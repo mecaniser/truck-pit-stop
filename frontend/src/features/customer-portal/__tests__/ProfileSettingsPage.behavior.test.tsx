@@ -77,12 +77,6 @@ it('clears dirty state after successful save and disables fields while pending',
   expect(name).toHaveValue('Changed')
   expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument()
 })
-it('does not present disconnected notification controls as working preferences',()=>{
-  mount('?tab=notifications')
-  expect(screen.getByText('Email and text notification preferences cannot be changed here yet.')).toBeInTheDocument()
-  expect(screen.queryByRole('switch')).not.toBeInTheDocument()
-  expect(screen.queryByRole('button',{name:'Invoice ready'})).not.toBeInTheDocument()
-})
 it('places sign out outside Security and associates password fields with their labels',()=>{
   mount('?tab=security')
   expect(within(screen.getByRole('navigation',{name:'Account sections'})).getByRole('button',{name:'Sign out'})).toBeInTheDocument()

@@ -46,6 +46,7 @@ async def send_email(
     template_name: Optional[str] = None,
     attachments: Optional[List[dict]] = None,
     sender_name: Optional[str] = None,
+    customer_id=None,
 ) -> Notification:
     """Send email via Resend and create notification record.
 
@@ -61,6 +62,16 @@ async def send_email(
         template_name=template_name,
     )
 
+    if customer_id:
+        from app.services.customer_notification_preferences import delivery_reason
+        reason = await delivery_reason(db, tenant_id=tenant_id, customer_id=customer_id, channel="email", template_name=template_name, recipient=to)
+        if reason:
+            notification.status = NotificationStatus.FAILED
+            notification.error_message = reason
+            db.add(notification)
+            await db.commit()
+            await db.refresh(notification)
+            return notification
     db.add(notification)
     await db.commit()
 
