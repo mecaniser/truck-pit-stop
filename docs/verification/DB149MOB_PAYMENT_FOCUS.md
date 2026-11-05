@@ -33,3 +33,5 @@ Guest desktop1440 and mobile390/320 have no horizontal overflow. Mobile utility 
 Initial browser wrapper/full-page captures could scale incorrectly despite correct DOM geometry. Final evidence uses CDP viewport capture after scrolling settles; malformed intermediary images were excluded. Final desktop/mobile screenshots are under the local `payment-mobile-focus` visualization directory (guest-desktop,guest-mobile,portal-desktop,portal-mobile,zelle-mobile).
 
 Status: preview ready for user review, not deployed. Payment behavior, amount calculations, server authorization and financial records remain unchanged.
+
+Draft [PR792](https://github.com/mecaniser/truck-pit-stop/pull/792) captures the reviewed product source `22a90a73`; subsequent documentation-only receipt changes do not change the served product. Protected PR CI remains a separate integration gate before merge/deployment.
