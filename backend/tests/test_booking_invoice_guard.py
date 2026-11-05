@@ -126,7 +126,7 @@ async def test_central_new_payment_entry_uses_guard(db_session,monkeypatch):
     monkeypatch.setattr(policy,'locked_policy',standard)
     with pytest.raises(SettlementDomainError) as e:
         await policy.require_standard_payment(db_session,
-            SimpleNamespace(tenant_id=t.id,repair_order_id=ro.id),new_entry=True)
+            SimpleNamespace(id=uuid4(),tenant_id=t.id,repair_order_id=ro.id),new_entry=True)
     assert e.value.code=='booking_prepayment_review_required'
 
 @pytest.mark.asyncio

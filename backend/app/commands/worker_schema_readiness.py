@@ -25,6 +25,12 @@ STATEMENT_TIMEOUT_MS = 2000
 LOCK_TIMEOUT_MS = 1000
 EXIT_UNAVAILABLE = 78
 REQUIRED_COLUMNS = {
+    "efs_instrument_submissions": {
+        "id", "created_at", "updated_at", "deleted_at", "tenant_id",
+        "invoice_id", "settlement_id", "attempt_id", "customer_id", "provider",
+        "secret_ciphertext", "key_version", "code_fingerprint",
+        "fingerprint_key_identity", "last4", "submission_request_sha256",
+    },
     "visit_requests": {"version","accepted_arrival_date","reviewed_by_user_id","reviewed_at","internal_review_note","fulfilled_repair_order_id"},
     "visit_request_events": {"tenant_id","request_id","request_version","request_sha256","reviewed_vehicle_id"},
     "booking_repair_order_links": {"tenant_id","appointment_id","repair_order_id","reviewed_vehicle_id"},
