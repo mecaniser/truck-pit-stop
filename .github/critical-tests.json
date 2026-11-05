@@ -33,7 +33,9 @@
     "src/features/dashboard/__tests__/ZelleReviewQueue.test.tsx",
     "src/features/dashboard/__tests__/zelleReviewProjection.test.ts",
     "src/features/payments/__tests__/attempt-resolution.test.tsx",
-    "src/features/payments/__tests__/allocation-resolution-api.test.ts"
+    "src/features/payments/__tests__/allocation-resolution-api.test.ts",
+    "src/features/customer-portal/__tests__/PaymentMethodsCard.test.tsx",
+    "src/features/customer-portal/__tests__/ProfileSettingsPage.cards.test.tsx"
   ],
   "backend": [
     "tests/test_schema_preflight.py",
@@ -65,6 +67,9 @@
     "tests/test_db048_payment_checkout.py",
     "tests/test_payment_attempt_resolution*.py",
     "tests/test_payment_source_step_up.py",
-    "tests/test_db048_accounting_reconciliation.py"
+    "tests/test_db048_accounting_reconciliation.py",
+    "tests/test_customer_card*.py",
+    "tests/test_quickbooks_vault_client.py",
+    "tests/test_saved_card_accounts.py"
   ]
 }

@@ -16,7 +16,6 @@ import TenantBrandLogo from '../brand/TenantBrandLogo'
 import DevRuntimeIdentity from '../dev/DevRuntimeIdentity'
 import useTenantBranding from '@/hooks/useTenantBranding'
 import { ShopSearchButton, ShopSearchProvider } from '@/features/global-search/ShopSearch'
-import VisitRequestsEntry from '@/features/appointments/VisitRequestsEntry'
 
 const STAFF_RAIL_STORAGE_KEY = 'db-staff-rail-expanded'
 const STAFF_NAV_CATEGORIES: Record<string, string> = {
@@ -581,7 +580,6 @@ export default function DashboardLayout() {
           }`}
         >
           <Suspense fallback={location.pathname === "/dashboard/messages" ? <InboxLoading /> : <div className="min-h-24" role="status" aria-live="polite">Loading workspace…</div>}>
-          {location.pathname === '/dashboard' && !new URLSearchParams(location.search).has('selected') && <VisitRequestsEntry/>}
           <Routes>
             {/* Platform Admin Routes (SUPER_ADMIN only) */}
             {user?.role === 'super_admin' ? (

@@ -12,6 +12,10 @@ from app.core.dependencies import get_current_active_user, get_db
 from app.db.models.customer import Customer
 from app.db.models.tenant import Tenant
 from app.db.models.user import UserRole
+from app.db.models.invoice_settlement import TenantPaymentProviderConfiguration
+from app.db.models.quickbooks_connection import QuickBooksConnection
+from app.db.models.quickbooks_shop_activation import QuickBooksShopActivation
+from app.services import customer_card_context
 
 
 class Database:
@@ -19,6 +23,14 @@ class Database:
         self.customer, self.tenant = customer, tenant
         self.commits = 0
         self.queries = []
+        self.config = NS(id=uuid4(), version=1, selected_provider='stripe_connect',
+                         provider_account_snapshot='acct_shop', qbo_realm_snapshot=None,
+                         deleted_at=None, writer_strategy='dieselbridge')
+        self.connection = None
+        self.activation = None
+
+    async def scalar(self, query):
+        return (await self.execute(query)).scalar_one_or_none()
 
     async def execute(self, query):
         self.queries.append(query)
@@ -32,6 +44,12 @@ class Database:
             value = self.customer if matches else None
         elif entity is Tenant:
             value = self.tenant if self.tenant.id in params.values() and self.tenant.is_active else None
+        elif entity is TenantPaymentProviderConfiguration:
+            value = self.config
+        elif entity is QuickBooksConnection:
+            value = self.connection
+        elif entity is QuickBooksShopActivation:
+            value = self.activation
         else:
             raise AssertionError(entity)
         return NS(scalar_one_or_none=lambda: value)
@@ -45,9 +63,10 @@ def context(monkeypatch):
     tenant_id, customer_id = uuid4(), uuid4()
     customer = NS(id=customer_id, tenant_id=tenant_id, stripe_customer_id='cus_existing',
                   deleted_at=None, email='driver@example.com', first_name='Test', last_name='Driver', company_name=None)
-    tenant = NS(id=tenant_id, is_active=True, stripe_account_id='acct_shop', stripe_onboarding_complete=True)
-    user = NS(role=UserRole.CUSTOMER, customer_id=customer_id, tenant_id=tenant_id)
+    tenant = NS(id=tenant_id, deleted_at=None, is_active=True, stripe_account_id='acct_shop', stripe_onboarding_complete=True)
+    user = NS(id=uuid4(), role=UserRole.CUSTOMER, customer_id=customer_id, tenant_id=tenant_id)
     db = Database(customer, tenant)
+    monkeypatch.setattr(payments.settings, 'STRIPE_SECRET_KEY', 'sk_test_synthetic')
     app = FastAPI()
     app.include_router(payments.router, prefix='/payments')
     app.dependency_overrides[get_current_active_user] = lambda: user
@@ -198,3 +217,40 @@ async def test_card_mutations_require_ownership_and_use_connected_account(contex
         c.mocks['PaymentMethod.detach'].assert_called_once_with('pm_card', stripe_account='acct_shop')
     else:
         c.mocks['Customer.modify'].assert_called_once_with('cus_existing', invoice_settings={'default_payment_method':'pm_card'}, stripe_account='acct_shop')
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('path,method', [('/setup-intent','POST'),('/methods','GET'),('/methods/config','GET'),('/methods/pm_card','DELETE'),('/methods/pm_card/default','POST')])
+@pytest.mark.parametrize('selected', ['quickbooks_payments', 'missing', 'unsupported'])
+async def test_legacy_saved_card_routes_cannot_fall_back_to_stripe(context, monkeypatch, path, method, selected):
+    c = context
+    if selected == 'missing':
+        c.db.config = None
+    else:
+        c.db.config.selected_provider = selected
+    if selected == 'quickbooks_payments':
+        c.db.config.provider_account_snapshot = c.db.config.qbo_realm_snapshot = 'realm_one'
+        c.db.connection = NS(status='connected', realm_id='realm_one', encrypted_access_token='encrypted',
+                             encrypted_refresh_token='encrypted-refresh', scopes='com.intuit.quickbooks.payment')
+        monkeypatch.setattr(customer_card_context, 'quickbooks_payments_enabled_for_tenant', lambda tid: True)
+        monkeypatch.setattr(payments.settings, 'QUICKBOOKS_PAYMENTS_ENVIRONMENT', 'sandbox')
+    response = await request(c, method, path)
+    assert response.status_code == 409
+    assert all(not mock.called for mock in c.mocks.values())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('change', ['processor', 'account'])
+async def test_legacy_setup_revalidates_selection_after_customer_recovery_commit(context, monkeypatch, change):
+    c = context
+    async def recover(db, customer, account):
+        await db.commit()
+        if change == 'processor':
+            db.config.selected_provider = 'quickbooks_payments'
+        else:
+            c.tenant.stripe_account_id = db.config.provider_account_snapshot = 'acct_changed'
+        return 'cus_recovered'
+    monkeypatch.setattr(payments, 'ensure_connected_stripe_customer', recover)
+    response = await request(c, 'POST', '/setup-intent')
+    assert response.status_code == 409
+    c.mocks['SetupIntent.create'].assert_not_called()

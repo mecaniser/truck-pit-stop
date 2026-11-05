@@ -86,3 +86,30 @@ test('browser cleanup has a fixed deadline',async()=>{
  await closeBrowser({close:async()=>{}});
  await assert.rejects(closeBrowser({close:()=>new Promise(()=>{})},{timeoutMs:20}),/browser_cleanup_failed/);
 });
+
+
+test('login diagnostics expose only fixed guards and phases, never arbitrary detail',()=>{
+ const {phase,failureDiagnostic}=require('./tasks.cjs');
+ for(const position of ['login_lookup_form_ready','login_lookup_revalidate','login_password_form_ready','login_password_revalidate']){
+  phase(position);
+  assert.deepEqual(failureDiagnostic(Object.assign(new Error('login_form_ambiguous'),{loginGuard:'credential_count',privateDetail:'PRIVATE_VALUE'})),{login_guard:'credential_count',phase:position,error_kind:'login_form_ambiguous'});
+ }
+ assert.equal(JSON.stringify(failureDiagnostic(Object.assign(new Error('login_form_ambiguous'),{loginGuard:'PRIVATE_VALUE'}))).includes('PRIVATE'),false);
+ assert.equal(Object.hasOwn(failureDiagnostic(Object.assign(new Error('PRIVATE_VALUE'),{loginGuard:'credential_count'})),'login_guard'),false);
+ phase('PRIVATE_VALUE');assert.equal(failureDiagnostic(new Error('login_form_ambiguous')).phase,'other');
+});
+
+test('VIN failure diagnostics retain the failed step through cleanup and reject arbitrary metadata',()=>{
+ const {phase,failureDiagnostic}=require('./tasks.cjs');
+ const identity=require('./vehicle_identity_diagnostics.cjs');
+ const error=Object.freeze(Object.assign(new Error('PRIVATE_SOURCE'),{name:'TimeoutError'}));
+ identity.attach(error,{step:'wait_live_link',route:'expected_summary'});
+ phase('health_identity_cleanup');
+ assert.deepEqual(failureDiagnostic(error),{identity_step:'wait_live_link',identity_route:'expected_summary',phase:'health_identity_wait_live_link',error_kind:'browser_timeout'});
+ for(const metadata of [{step:'PRIVATE_SOURCE',route:'expected_summary'},{step:'read_summary',route:'https://PRIVATE_SOURCE.invalid'},{get step(){throw new Error('PRIVATE_SOURCE');}}]) {
+  const invalid=new Error('PRIVATE_SOURCE');assert.equal(identity.attach(invalid,metadata),invalid);
+  assert.equal(identity.diagnostic(invalid),null);assert.equal(JSON.stringify(failureDiagnostic(invalid)).includes('PRIVATE'),false);
+ }
+ let observed=0;identity.observe({onStage:()=>observed++},'PRIVATE_SOURCE');assert.equal(observed,0);
+ assert.equal(identity.route({url:()=>{throw new Error('PRIVATE_SOURCE');}},'#private'),'unavailable');
+});

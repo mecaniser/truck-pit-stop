@@ -1,0 +1,13 @@
+{
+  "deniedWritesUnchanged": true,
+  "restoredEqualsBaseline": true,
+  "allRatesUnchanged": true,
+  "countsUnchanged": {
+    "counter_sale_payment_attempts": 0,
+    "customers": 3,
+    "invoice_payment_attempts": 0,
+    "invoices": 0,
+    "payments": 0,
+    "repair_orders": 1
+  }
+}

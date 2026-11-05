@@ -1,0 +1,22 @@
+{
+  "title": "codex/pr760-fleet-current-main-20261104@63780dd292f41b2a037510dc7d8dc6c76d085d35",
+  "label": "Local development runtime: codex/pr760-fleet-current-main-20261104@63780dd",
+  "url": "http://127.0.0.1:5284/dashboard/settings?section=fleet",
+  "readinessStatus": 200,
+  "readiness": {
+    "status": "ready",
+    "version": "1.0.0",
+    "environment": "test",
+    "uptime_seconds": 854,
+    "checks": {
+      "database": {
+        "status": "ok",
+        "latency_ms": 3.79
+      },
+      "redis": {
+        "status": "ok",
+        "latency_ms": 0.5
+      }
+    }
+  }
+}

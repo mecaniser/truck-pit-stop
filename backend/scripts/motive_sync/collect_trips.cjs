@@ -1,5 +1,6 @@
 const {createProof}=require('./trip_populated_proof.cjs');
 const {readReviewedIdentity,sameIdentity}=require('./vehicle_identity.cjs');
+const identityDiagnostics=require('./vehicle_identity_diagnostics.cjs');
 const {prepareLegacyLogin}=require('./login.cjs');
 const {spawnSync}=require('node:child_process');
 const {randomUUID}=require('node:crypto');
@@ -86,22 +87,32 @@ async function advanceReportViewport(page) {
   return viewport.scrollTop+viewport.clientHeight>=viewport.scrollHeight-2;
  });
 }
-async function readVehicleVinOnce(context,link) {
+async function readVehicleVinOnce(context,link,options) {
  // A hash-only navigation can leave the previous vehicle's rendered summary in place.
  // A fresh document per vehicle prevents a ready old Live/VIN node satisfying the waits.
- const page=await context.newPage();page.setDefaultTimeout(15000);
+ let page,step='new_page';
+ const at=value=>{step=value;try{identityDiagnostics.observe(options,value);}catch{}};
+ const tagged=error=>{try{return identityDiagnostics.attach(error,{step,route:identityDiagnostics.route(page,link.href)});}catch{return error;}};
+ at('new_page');
+ try{page=await context.newPage();page.setDefaultTimeout(15000);}catch(error){throw tagged(error);}
  try {
+  at('goto_summary');
   await page.goto(ORIGIN+'/en-US/'+link.href,{waitUntil:'domcontentloaded',timeout:45000});
+  at('wait_live_link');
   await page.getByRole('link',{name:'Live',exact:true}).filter({visible:true}).first().waitFor();
+  at('vin_presence_wait');
   await page.waitForFunction(()=>/\bVIN\s*[:\t ]*\s*[A-HJ-NPR-Z0-9]{17}\b/.test(document.body.innerText),null,{timeout:15000}).catch(()=>{});
+  at('route_check');
   if(new URL(page.url()).origin!==ORIGIN||!page.url().endsWith(link.href))throw new Error('vehicle_source_changed');
+  at('read_summary');
   return summaryVin(await page.locator('body').innerText());
  } catch(error) {
-  if(error?.name==='TimeoutError'&&page.url()!=='about:blank'&&new URL(page.url()).origin!==ORIGIN)throw new Error('session_lost');
-  throw error;
- } finally {await page.close();}
+  let final=error;
+  try{if(error?.name==='TimeoutError'&&page.url()!=='about:blank'&&new URL(page.url()).origin!==ORIGIN)final=new Error('session_lost');}catch(converted){final=converted;}
+  throw tagged(final);
+ } finally {at('cleanup');try{await page.close();}catch(error){throw tagged(error);}}
 }
-async function readVehicleVin(context,link) {return retry('vehicle_identity',()=>readVehicleVinOnce(context,link));}
+async function readVehicleVin(context,link,options) {return retry('vehicle_identity',()=>readVehicleVinOnce(context,link,options));}
 function dailyWindows(now=new Date()) {
  const range=recentWindow(now), windows=[];
  for(let date=new Date(range.start+'T12:00:00Z');date.toISOString().slice(0,10)<=range.end;date.setUTCDate(date.getUTCDate()+1)) {
