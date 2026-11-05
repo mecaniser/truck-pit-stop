@@ -35,3 +35,9 @@ Protected PR CI, merge and release remain pending. DB161 is Review, not Done. PR
 ## Detail-navigation regression
 
 Final runtime acceptance reproduced an additional existing bug: after opening a repair detail, Current repairs updated the URL and selected navigation while retaining the previous detail. A new regression first failed (1 failed/5 passed). The selected-detail cleanup now includes the active/history view, so changing sections returns to the requested list. The regression passes, and the same signed-in synthetic browser journey confirms the fix. This changes only local presentation state; authorization checks, requests and mutation handlers are unchanged. Focused total is61 passing tests.
+
+## Authorized underline correction and release
+
+User authorizes PR808 merge/deployment after correcting its selected underline. Reproduced in the local browser: focused selected Appointments has box-shadow none, while blur restores the inset purple shadow. Shared db-controls focus resets intentionally remove shadows. The selection indicator now uses a reserved two-pixel bottom border with aria-current coloring, independent of focus/blur; shared keyboard focus treatment is retained. Verify selected border and focus outline in the actual browser before exact-head CI and release.
+
+Local acceptance after the correction: mouse-focused, blurred and keyboard-focused selected Appointments all report a two-pixel solid purple bottom border and44px height. Keyboard focus additionally reports a visible two-pixel outline; no layout shift. At390px the selected border remains and main scroll/client widths both equal390px. Screenshots stored privately. The61 focused regressions pass. Existing local5173/PID6509 and API8020 source mounts/isolated database remain aligned and browser-verified; readiness healthy. No server configuration or data changed.

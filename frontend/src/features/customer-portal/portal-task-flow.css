@@ -905,8 +905,9 @@
 
 /* Section destinations, list filters and record actions have distinct roles. */
 .cp-repair-navigation { display:flex; flex-wrap:wrap; gap:4px; border-bottom:1px solid #2c3243; margin-bottom:24px; padding-bottom:8px; }
-.cp-repair-navigation a { display:inline-flex; align-items:center; min-height:44px; padding:0 14px; border-radius:8px; color:#a2a9bb; font-size:14px; font-weight:650; text-decoration:none; }
-.cp-repair-navigation a[aria-current='page'] { background:#28223f; color:#d0c6ff; box-shadow:inset 0 -2px #a69afa; }
+.cp-repair-navigation a { display:inline-flex; align-items:center; min-height:44px; padding:0 14px; border-bottom:2px solid transparent; border-radius:8px; color:#a2a9bb; font-size:14px; font-weight:650; text-decoration:none; }
+/* Selection survives the shared focus reset, which deliberately removes shadows. */
+.cp-repair-navigation a[aria-current='page'] { background:#28223f; color:#d0c6ff; border-bottom-color:#a69afa; }
 .cp-repair-navigation a:hover { background:#1c2030; color:#eceef4; }
 .cp-repair-navigation a:focus-visible { outline:2px solid #b8adff; outline-offset:2px; }
 .cp-filter-group { display:flex; flex-wrap:wrap; gap:8px; }
