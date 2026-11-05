@@ -73,3 +73,24 @@ Validation: focused suites50/50 pass (15 profile behavior,18 saved-card safeguar
 Actual browser checks at1366,390,320 pass for focus trap (Tab and Shift+Tab), Escape, backdrop cancellation, focus return, edit preservation, confirmed navigation and cancelled sign-out. Native dialog count0 in these internal flows. Modal panels fit the viewport. Screenshots visually inspected on desktop and phone: /tmp/account-discard-modal-1366.png and /tmp/account-discard-modal-320.png; card equivalents /tmp/account-remove-modal-1366.png and /tmp/account-remove-modal-320.png. Also verified Escape and trigger-focus restoration in the user's visible in-app browser. Layout detector and diff check pass. Only the previously confirmed baseline LoginPage.tsx:118 TypeScript mismatch remains.
 
 Synthetic preview only; real payment writes blocked. Authenticated full-stack acceptance, merge/deploy remain pending.
+
+## Production release and signed-in acceptance — November 5, 2026
+
+User explicitly authorized deployment. Main was reconciled into PR798 with both account-settings and overview delivery records preserved. There was no application conflict. The reconciled head c9a93b486dff1e9cd649bf927b201d0243d73073 passed all seven exact-head checks in Quality gates run42104117940: Migration graph, Backend tests, Backend full suite (informational), Prepare frontend dependencies, Frontend checks, Frontend full suite (informational), Playwright smoke. Backend suites were classified as unaffected by this frontend/Markdown change; their successful job state is not fresh backend execution evidence. Frontend CI used the pinned installation and passed its production build; the earlier shared-local-install LoginPage resolver mismatch did not block CI.
+
+GitHub reports PR798 merged at20:38:46UTC as88d9c98ddece697dd30356dedc9b3d8fbfc75123. The merge request returned already merged; merge state was independently re-read rather than attributing an additional merge action. Checked and merged frontend trees are identical. No branch protection bypass or direct push to main.
+
+Automatic production deployment0a5f2583-0471-40e7-b19c-97b652860eea succeeded on that exact merge SHA. Both Railway metadata and https://www.dieselbridge.com/build-version match. API readiness reports ready with database/Redis OK; the portal route returns200. The deployed CustomerPortalPage bundle contains all six inspected account/modal/capability markers. No forced or duplicate deployment, provider configuration change or worker command issued. Rollback reference: prior successful deploymentd5b0299c-f7f7-4b19-9696-ce7b2cbf7982, source230381952d3ca5519dada3fbc4efca6b168e9886.
+
+The production browser initially required sign-in; the user restored a customer session. Actual signed-in acceptance then verified:
+- Account settings heading, grouped section navigation and separate Sign out action.
+- All seven section regions render in the live customer portal.
+- An unsaved local contact edit opens the themed discard alertdialog with Keep editing initial focus. Escape preserves the local edit and returns focus; confirmed discard opens Security. Returning Profile restores the original saved value and a disabled Save changes action.
+- Security contains the password action and no embedded Sign out action.
+- An existing saved card opens the removal alertdialog with Keep card initial focus. Cancellation leaves it intact; no removal/default/save/payment request submitted.
+- At390px and320px, the document and section have no horizontal overflow. The mobile settings list includes Sign out, the discard modal fits the viewport, and cancellation followed by form Cancel restores the original saved field.
+- Browser error count0. Viewport override cleared; actual default1597x1313 restored. Page left on Profile, no open modal, saved field restored and Save changes disabled.
+
+No contact save, credential change, sign-out, shop switch, notification preference, provider, invoice, payment or saved-card mutation was submitted. Unsaved form edits were confined to browser state and cancelled. Production account identifiers, contact values and card details are omitted from this public-safe record.
+
+**DB-157 is Done:** implementation, focused tests, protected exact-head CI, merge, successful production deployment and real signed-in desktop/mobile acceptance exist. Notification delivery controls remain explicitly unavailable in the UI; implementing delivery preferences is a separate capability outside this release. The earlier full-stack verification blocker is resolved.
