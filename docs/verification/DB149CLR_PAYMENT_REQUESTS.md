@@ -39,3 +39,13 @@ Confirmation label correction: customer/guest card checkout dismissal is Keep ch
 Release authorized November5 after Keep checkout review. Incorporated current main vehicle/editor/navigation releases without changing approved invoice product files. Exact-head protected CI, merge/deployment identity and live read-only acceptance will be recorded separately. No financial action is part of release verification.
 
 Initial release CI42122641566 passed six checks but required full backend suite failed one scheduling test after4492 passes. The monotonic-version fixture used an unmocked real clock against fixed NOW+20days, which became past on Nov5 at22UTC. Production max(now, prior+1us) was correct. Scoped repair pins schedules.now_utc to NOW for that test, matching adjacent tests; no assertion or production/financial behavior changed. Fresh exact-head CI required.
+
+
+## Production release attempt — 2026-11-05
+
+- User explicitly approved deployment. Final candidate5618d5206f88942d8a3fd6a26b64c205aaaadf87 passed all seven protected checks in run42125521345. Prior exact-head64399f22 also passed all seven checks in42124201298. The isolated scheduling clock regression passed62 tests; only that test clock changed.
+- PR805 normally squash merged60df206691f073710623c85d0047b90b8a5b4b75. Whole checked-tree to merge-tree comparison is identical. No protection bypass or direct main push.
+- Automatic Web deployment8e56a61d-2d7e-4f1a-90b8-13ffd430edc8 on60df2066 built its image successfully, then failed startup: Alembic cannot locate production revision204_customer_notif_preferences. PR805/main contains203; separately approved PR809 has applied204 and staged its worker while awaiting final merge. This is an external rollout collision, not a frontend build failure.
+- Public build-version still365cbecc0cf0f1a4e4bf55f0b6a23ce0e617722e; production readiness reports database/Redis healthy. Do not downgrade or stamp production, remove preference enforcement, copy an unmerged migration into this UI release, alter worker/configuration, or retry an incompatible image.
+- Live acceptance remains pending until a schema-compatible release containing805 succeeds. Current invoice baseline:268.44 outstanding,0 received,268.44 reserved,0 available, settlement version6. No payment creation/cancellation/receipt/reconciliation, provider-status operation, financial/configuration change or guest-token creation performed during this release attempt. The customer session remains available.
+- Local private logs/metadata: /tmp/pr805-release. No secrets or guest tokens committed. Closure requires successful descendant deployment with805 product content preserved and read-only customer/guest desktop/mobile browser acceptance.
