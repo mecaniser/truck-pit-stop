@@ -156,7 +156,13 @@ healthy vitals lane; it does not prove this location/speed repair is released.
 Protected CI, PR/merge, final merged artifact/preflight, deployment and a later
 authorized scheduled source/receipt/current Fleet readback remain required.
 Root authorized the focused source
-commit and branch push after independent gates; PR creation waits for the UI
-merge to avoid base churn. No production configuration, provider login, job
+commit and branch push after independent gates. UI/API PR791 merged as
+`beae00f8a76054ee0111acff46228181ec5ba8b9`; this branch then merged that exact
+main cleanly at `5638c96d`, preserving all UI/payment/board changes. All 27
+reviewed critical hashes still match, and the diff against main remains the
+seven focused worker/test/document files. PR publication and exact-head protected
+CI are next. The post-merge local runtime dry run still reports missing approved
+backend configuration and Vite dependencies; unrelated privacy services remain
+untouched. No production configuration, provider login, job
 trigger, deployment, production data write, membership or financial change is
 performed by this implementation handoff.
