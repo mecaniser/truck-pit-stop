@@ -105,3 +105,22 @@ describe('portal reservations and unpaid requests', () => {
     expect(mocks.post).not.toHaveBeenCalled()
   })
 })
+
+
+describe('appointment page actions', () => {
+  it('keeps booking in the header and filters separately selected', async () => {
+    mount()
+    const heading = await screen.findByRole('heading', { name: 'Appointments', exact: true })
+    const header = heading.closest('header')!
+    expect(within(header).getByRole('link', { name: 'Book a service' })).toHaveAttribute('href', '/portal/services?vehicle_id=truck-a')
+    expect(screen.getAllByRole('link', { name: 'Book a service' })).toHaveLength(1)
+    expect(screen.getByRole('group', { name: 'Filter appointments' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Upcoming' })).toHaveAttribute('aria-pressed', 'true')
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+  it('offers All visits when opening a specific reservation', async () => {
+    mount('/portal/appointments?appointment_id=missing&vehicle_id=truck-a')
+    expect(await screen.findByRole('link', { name: 'All visits' })).toHaveAttribute('href', '/portal/appointments?vehicle_id=truck-a')
+    expect(screen.queryByRole('button', { name: 'Upcoming' })).not.toBeInTheDocument()
+  })
+})

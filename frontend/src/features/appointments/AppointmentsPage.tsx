@@ -66,7 +66,7 @@ export default function AppointmentsPage() {
   if(scope.invalid) return <div role="alert"><h1>Vehicle unavailable</h1><PortalVehicleScope vehicles={vehicles} requested={requestedVehicle} onChange={id=>setParams(id?{vehicle_id:id}:{})}/></div>
 
   return (
-    <div className="space-y-4">
+    <div className="cp-root space-y-4">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-extrabold tracking-[-0.01em]">Appointments</h1>
@@ -74,14 +74,16 @@ export default function AppointmentsPage() {
             {scope.vehicle ? `Visits for ${vehicleIdentity(scope.vehicle)} and your account` : 'Your reservations and visit requests'}
           </p>
         </div>
-        <div className="flex gap-2 overflow-x-auto">{requestedRequest ? <Link className="cp-secondary" data-db-control="action" to={scopedPortalPath('/portal/appointments', scope.vehicleId)}>All visits</Link> : <>
-          {(['upcoming', 'past', 'all'] as const).map(value => (
-            <Pill key={value} active={filter === value} onClick={() => setFilter(value)}>
-              {value.charAt(0).toUpperCase() + value.slice(1)}
-            </Pill>
-          ))}</>}
+        <div className="cp-title-actions cp-page-actions">
+          <PortalVehicleScope vehicles={vehicles} requested={requestedVehicle} onChange={id=>setParams(id?{vehicle_id:id}:{})}/>
+          <Link data-db-control="action" to={scopedPortalPath('/portal/services',scope.vehicleId)} className="cp-primary"><CalendarDays size={17} aria-hidden="true"/>Book a service</Link>
         </div>
       </header>
+      <div className="cp-filter-group" role="group" aria-label="Filter appointments">{requestedRequest || requestedAppointment ? <Link className="cp-secondary" data-db-control="action" to={scopedPortalPath('/portal/appointments', scope.vehicleId)}>All visits</Link> : <>
+        {(['upcoming', 'past', 'all'] as const).map(value => (
+          <Pill key={value} active={filter === value} onClick={() => setFilter(value)}>{value.charAt(0).toUpperCase() + value.slice(1)}</Pill>
+        ))}</>}
+      </div>
 
       <section aria-label="Visit requests" className="space-y-3">
         <h2 className="text-base font-bold">{requestedRequest ? 'Your visit request' : 'Visit requests'}</h2>
@@ -143,7 +145,6 @@ export default function AppointmentsPage() {
         </div>
       ))}
 
-      {!requestedRequest && <Link data-db-control="action" to={scopedPortalPath('/portal/services',scope.vehicleId)} className="cp-secondary">Book a service</Link>}
     </div>
   )
 }
