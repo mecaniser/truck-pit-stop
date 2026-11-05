@@ -795,3 +795,9 @@
 
 /* Keep recovered checkout readable on wide screens. */
 .cp-root.cp-book-checkout { max-width: 640px; margin-inline: auto; }
+
+@layer db-controls {
+  .cp-book-step .cp-field > input[data-db-control="field"] {
+    align-self: flex-start !important;
+  }
+}

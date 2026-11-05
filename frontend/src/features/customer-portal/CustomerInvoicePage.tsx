@@ -239,9 +239,9 @@ export default function CustomerInvoicePage() {
       })
     },
     onSuccess: () => {
-      toast.success('Zelle payment sent for shop confirmation')
+      toast.success('Transfer reported. The shop will verify receipt.')
       queryClient.invalidateQueries({ queryKey: ['invoice-detail', invoiceId] })
-      advanceInvoiceQueue()
+      setShowZelleDetails(false)
     },
     onError: error => toast.error(errorDetail(error, 'Unable to submit Zelle payment')),
   })
@@ -504,7 +504,7 @@ export default function CustomerInvoicePage() {
           <>
             {isPending && (
               <div className="mt-4 rounded-xl border border-amber-400/35 bg-amber-400/10 px-4 py-3 text-center text-sm font-bold text-amber-200">
-                Awaiting confirmation from the shop
+                The shop will verify your reported transfer. Check this invoice for updates. Don’t send the payment again.
               </div>
             )}
 
