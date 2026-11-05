@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, ChevronDown, Clock3, RefreshCw } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, Clock3, CreditCard, RefreshCw } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ControlButton } from '@/components/ui/Controls'
 
@@ -8,6 +8,7 @@ import PaymentAttemptResolutionControls from './PaymentAttemptResolutionControls
 import EfsReviewControls from './EfsReviewControls'
 import { EFS_STATUS_LABELS } from './efsApi'
 import { CHECKOUT_LABELS } from './attemptResolutionTypes'
+import './paymentRequestPresentation.css'
 
 const STATE_LABELS: Record<InvoiceSettlementSummary['state'], string> = {
   unpaid: 'Unpaid',
@@ -129,14 +130,18 @@ export default function SettlementSummaryCard({
     : row.state === 'pending')
   const pastAllocations = allocations.filter(row => !activeAllocations.includes(row))
   const renderAllocation = (allocation: PaymentAllocation) => (
-              <li key={allocation.id} className="px-3 py-2.5 text-sm">
+              <li key={allocation.id} className={customerCompact ? `cp-payment-request ${activeAllocations.includes(allocation) ? 'cp-payment-request--active' : 'cp-payment-request--past'} ${allocation.resolution?.checkout_status === 'checkout_started' && allocation.resolution.actions.cancel_unsent ? 'cp-payment-request--actionable' : ''}` : 'px-3 py-2.5 text-sm'}>
                 <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p id={`payment-request-${allocation.attempt_id}`} tabIndex={-1} className="font-semibold">{allocation.efs ? 'EFS' : RAIL_LABELS[allocation.rail]} · <span>{allocation.efs ? EFS_STATUS_LABELS[allocation.efs.status] : allocation.resolution ? (customerCompact && allocation.resolution.checkout_status === 'review_required' ? 'Awaiting shop review' : CHECKOUT_LABELS[allocation.resolution.checkout_status]) : allocation.state.replace(/_/g, ' ')}</span></p>
+                {customerCompact && activeAllocations.includes(allocation) && <span className="cp-payment-request__icon" aria-hidden="true">{allocation.resolution?.checkout_status === 'checkout_started' ? <CreditCard size={20} /> : <Clock3 size={20} />}</span>}
+                <div className="min-w-0 flex-1">
+                  <p id={`payment-request-${allocation.attempt_id}`} tabIndex={-1} className={customerCompact ? "cp-payment-request__title" : "font-semibold"}>{allocation.efs ? 'EFS' : RAIL_LABELS[allocation.rail]}{customerCompact ? ' ' : ' · '}<span>{allocation.efs ? EFS_STATUS_LABELS[allocation.efs.status] : allocation.resolution ? (customerCompact && allocation.resolution.checkout_status === 'review_required' ? 'Awaiting shop review' : customerCompact && allocation.resolution.checkout_status === 'checkout_started' ? 'Checkout incomplete' : CHECKOUT_LABELS[allocation.resolution.checkout_status]) : allocation.state.replace(/_/g, ' ')}</span></p>
                   <p className={`truncate text-xs ${quiet}`}>
-                    {allocation.efs ? `Code ending in ${allocation.efs.code_last4} · ` : ''}{!customerCompact && allocation.actor_name ? `${allocation.actor_name} · ` : ''}
-                    {allocation.reference_number ? `Ref ${allocation.reference_number} · ` : ''}
-                    {(!customerCompact || !activeAllocations.includes(allocation)) && new Date(allocation.confirmed_at || allocation.created_at).toLocaleString()}
+                    {[
+                      allocation.efs ? `Code ending in ${allocation.efs.code_last4}` : null,
+                      !customerCompact ? allocation.actor_name : null,
+                      allocation.reference_number ? `Ref ${allocation.reference_number}` : null,
+                      !customerCompact || !activeAllocations.includes(allocation) ? new Date(allocation.confirmed_at || allocation.created_at).toLocaleString() : null,
+                    ].filter(Boolean).join(' · ')}
                   </p>
                   {isPositiveMoney(allocation.card_fee_amount) && (
                     <p className={`mt-0.5 text-[11px] ${quiet}`}>
@@ -154,7 +159,7 @@ export default function SettlementSummaryCard({
   )
 
   return (
-    <section className={`overflow-hidden rounded-2xl border ${panel}`} aria-labelledby={customerCompact ? undefined : `settlement-${summary.invoice_id}`} aria-label={customerCompact ? "Payment details" : undefined}>
+    <section className={`${customerCompact ? 'cp-payment-requests' : 'overflow-hidden rounded-2xl border'} ${panel}`} data-tone={tone} aria-labelledby={customerCompact ? undefined : `settlement-${summary.invoice_id}`} aria-label={customerCompact ? "Payment details" : undefined}>
       {!customerCompact && <div className={`flex flex-wrap items-start justify-between gap-3 ${compact ? 'p-3' : 'p-4'}`}>
         <div>
           {!streamlined && <p className={`text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>Invoice settlement</p>}
@@ -178,9 +183,7 @@ export default function SettlementSummaryCard({
         ))}
       </dl>}
 
-      {audience === 'customer' && pending && <p className={`border-t px-3 py-3 text-sm ${divider} ${quiet}`}>
-        Don’t pay an amount in progress again.
-      </p>}
+
 
       {children}
 
@@ -215,8 +218,8 @@ export default function SettlementSummaryCard({
         customerCompact ? <>
           {closedNotice && <p role="status" className={`border-t px-3 py-3 text-sm ${divider} ${quiet}`}>{closedNotice}</p>}
           {activeAllocations.length > 0 && <div className={`border-t ${divider}`}>
-            <h2 className="px-3 pt-3 text-sm font-semibold">Payment requests</h2>
-            <ol aria-label="Active payment requests" className={`divide-y ${dark ? 'divide-[#2a3245]' : 'divide-slate-200'}`}>
+            <h2 className="cp-payment-requests__heading">Payment requests</h2>
+            <ol aria-label="Active payment requests" className={`cp-payment-requests__active divide-y ${dark ? 'divide-[#2a3245]' : 'divide-slate-200'}`}>
               {activeAllocations.map(renderAllocation)}
             </ol>
           </div>}
@@ -235,6 +238,8 @@ export default function SettlementSummaryCard({
           </ol>
         </div>
       )}
+      {audience === 'customer' && pending && <p className={`cp-payment-requests__guidance px-3 py-3 text-sm ${quiet}`}>Don’t pay an amount in progress again.</p>}
+
     </section>
   )
 }
