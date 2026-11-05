@@ -51,8 +51,11 @@ per-field speed timestamp eligibility still require runtime acceptance.
   Both copy the complete backend and include all four authentication modules;
   the isolated dependency test loads the exact chain without circular imports.
   The release plan preserves the actual cloud configuration, including the
-  five-minute cron, NEVER restart policy, one replica, `/data` and build-only
-  deployment behavior. No service configuration change is authorized here.
+  five-minute cron, NEVER restart policy, one replica and `/data`. The inspected
+  scheduled execution metadata records `buildOnly=false`; upload/build lifecycle
+  and a natural scheduled execution must be evidenced separately. Preserve the
+  existing Dockerfile/base selectors without claiming identical resolved base
+  image digests. No service configuration change is authorized here.
 
 ## Verification and corrections
 
