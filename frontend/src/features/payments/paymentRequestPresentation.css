@@ -61,3 +61,16 @@
 .cp-invoice-balance-header > p:first-child { justify-content: flex-start; color: #acb9cb; font-size: 14px; }
 .cp-invoice-balance-header > p:nth-child(2) { margin-top: 16px; color: #acb9cb; font-size: 12px; }
 .cp-invoice-balance-header h1 { margin-top: 4px; font-size: 44px; line-height: 1.1; font-weight: 750; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+
+/* Abandoning an unfinished checkout is a secondary text action, not the next step. */
+.cp-payment-requests .db-attempt-secondary.cp-payment-cancel-link {
+  border-color: transparent;
+  background: transparent;
+  color: var(--request-muted);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (hover:hover) and (pointer:fine) {
+  .cp-payment-requests .db-attempt-secondary.cp-payment-cancel-link:hover { color: var(--request-accent); background: transparent; }
+}
