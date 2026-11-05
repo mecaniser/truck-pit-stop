@@ -201,7 +201,7 @@ function ResolutionControls({ access, summary, allocation, audience, tone = 'dar
       <fieldset disabled={locked} className="mt-3 min-w-0 space-y-3 border-0 p-0">
         {zelle && <label className="db-attempt-check"><input type="checkbox" checked={notSent} onChange={event => setNotSent(event.target.checked)} /><span>{staff ? 'The customer confirmed this transfer was not sent.' : 'I have not sent this transfer.'}</span></label>}
         {staff && <label className="block text-sm font-semibold">Reason<ControlInput className={`mt-1 w-full ${fieldClass}`} maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} /></label>}
-        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end"><ControlButton type="button" className="db-attempt-secondary w-full sm:w-auto" onClick={close}>{staff ? 'Keep request' : 'Go back'}</ControlButton><ControlButton type="button" className="db-attempt-primary w-full sm:w-auto" disabled={(zelle && !notSent) || (staff && !reason.trim())} onClick={() => { void run('cancel_unsent') }}>{!staff && !zelle && !efs ? 'Cancel checkout' : 'Cancel request'}</ControlButton></div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end"><ControlButton type="button" className="db-attempt-secondary w-full sm:w-auto" onClick={close}>{!staff && !zelle && !efs ? 'Keep checkout' : 'Keep request'}</ControlButton><ControlButton type="button" className="db-attempt-primary w-full sm:w-auto" disabled={(zelle && !notSent) || (staff && !reason.trim())} onClick={() => { void run('cancel_unsent') }}>{!staff && !zelle && !efs ? 'Cancel checkout' : 'Cancel request'}</ControlButton></div>
       </fieldset>
     </div>}
 

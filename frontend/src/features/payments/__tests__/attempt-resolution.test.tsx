@@ -67,7 +67,7 @@ describe('Payment request resolution', () => {
   it('keeps a request when its confirmation is dismissed', async () => {
     show()
     await assertUnsent()
-    await userEvent.click(screen.getByRole('button', { name: 'Go back' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Keep request' }))
     expect(requests.resolve).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'Payment not sent?' })).toHaveFocus()
   })
@@ -87,7 +87,7 @@ describe('Payment request resolution', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Cancel request', exact: true }))
     expect(await screen.findByRole('button', { name: 'Check again' })).toBeEnabled()
     expect(screen.getAllByRole('alert')).toHaveLength(1)
-    expect(screen.getByRole('button', { name: 'Go back' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Keep request' })).toBeDisabled()
     await userEvent.click(screen.getByRole('button', { name: 'Check again' }))
     expect(requests.resolve).toHaveBeenCalledTimes(2)
     expect(requests.resolve.mock.calls[0]).toEqual(requests.resolve.mock.calls[1])
