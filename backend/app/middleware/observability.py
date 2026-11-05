@@ -42,8 +42,9 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Generate or use existing correlation ID
+        sensitive_payment = ('/efs' in request.url.path or ('/attempts/' in request.url.path and request.url.path.endswith(('/confirm','/fail','/resolution'))))
         correlation_id = normalize_correlation_id(
-            request.headers.get(CORRELATION_ID_HEADER)
+            None if sensitive_payment else request.headers.get(CORRELATION_ID_HEADER)
         )
         
         # Store in request state for access in endpoints
@@ -70,10 +71,10 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
             "request_started",
             query_params=(
                 redact_sensitive(dict(request.query_params))
-                if request.query_params
+                if request.query_params and not sensitive_payment
                 else None
             ),
-            user_agent=request.headers.get("user-agent"),
+            user_agent=None if sensitive_payment else request.headers.get("user-agent"),
         )
         
         try:

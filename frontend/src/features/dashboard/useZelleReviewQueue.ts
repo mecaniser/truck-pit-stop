@@ -1,11 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import api from '@/lib/api'
+import type { EfsSubmissionSummary } from '@/features/payments/efsApi'
 import type { ResolutionProjection } from '@/features/payments/attemptResolutionTypes'
 import { getAuthenticatedSessionIdentity, useAuthStore } from '@/stores/authStore'
 
 export interface ZelleReviewRow {
-  kind: 'canonical_card_attempt' | 'canonical_zelle_attempt' | 'legacy_zelle_submission'
-  rail: 'card' | 'zelle'
+  kind: 'canonical_card_attempt' | 'canonical_zelle_attempt' | 'canonical_efs_attempt' | 'legacy_zelle_submission'
+  rail: 'card' | 'zelle' | 'fleet_payment'
+  efs?: EfsSubmissionSummary | null
+  provider_label?: string | null
   resolution: ResolutionProjection | null
   invoice_id: string
   repair_order_id: string | null

@@ -88,3 +88,26 @@ describe('combined payment review board integration', () => {
   expect(project(source(), source([row])).actions[0].actionable).toBe(false)
  })
 })
+
+
+describe('EFS payment review integration', () => {
+ const efs = (): NonNullable<ZelleReviewRow['efs']> => ({ provider: 'EFS', code_last4: '5678', status: 'awaiting_verification', can_cancel: false, can_reveal: true, can_verify: true, can_reject: true, can_resolve_received_difference: false, difference_review: null })
+ const efsPayment = () => payment({ kind: 'canonical_efs_attempt', rail: 'fleet_payment', can_confirm: false, efs: efs() })
+ it('exposes the exact bound EFS request without generic confirmation', () => {
+  const result = project(source(), source([efsPayment()]))
+  expect(result.actions[0]).toMatchObject({ actionable: true, action_label: 'Review EFS payment', destination: { kind: 'payment_review', id: 'attempt-a' } })
+  expect(result.actions[0].reason).toContain('EFS code awaiting verification')
+ })
+ it('keeps received-difference review reachable', () => {
+  const row = efsPayment(); row.efs = { ...efs(), status: 'review_required', can_reveal: false, can_verify: false, can_reject: false, can_resolve_received_difference: true }
+  expect(project(source(), source([row])).actions[0].actionable).toBe(true)
+ })
+ it.each(['missing resolution', 'wrong invoice', 'wrong attempt', 'wrong rail', 'missing metadata', 'no EFS authority'] as const)('denies %s without generic fallback', invalid => {
+  const row = efsPayment(); row.can_confirm = true
+  if (invalid === 'missing resolution') row.resolution = null
+  else if (invalid === 'missing metadata') row.efs = null
+  else if (invalid === 'no EFS authority') row.efs = { ...efs(), can_reveal: false, can_verify: false, can_reject: false }
+  else if (row.resolution) row.resolution = { ...row.resolution, ...(invalid === 'wrong invoice' ? { invoice_id: 'foreign' } : invalid === 'wrong attempt' ? { attempt_id: 'other' } : { rail: 'zelle' }) }
+  expect(project(source(), source([row])).actions[0].actionable).toBe(false)
+ })
+})

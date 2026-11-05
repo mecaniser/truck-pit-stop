@@ -46,7 +46,7 @@ beforeEach(() => { mocks.get.mockReset(); mocks.post.mockReset(); mocks.settleme
 describe.each(['guest', 'portal'] as const)('%s actual invoice state presentation', audience => {
   it.each([
     ['refund', { refund_pending: '20.00' }, /\$20.00 refund pending/],
-    ['credit', { unapplied_credit: '15.00' }, /\$15.00 exceeds the invoice balance/],
+    ['credit', { unapplied_credit: '15.00' }, /\$15.00 is unapplied/],
   ] as const)('retains the %s notice on a paid split invoice', async (_, extras, notice) => {
     show(audience, { state: 'paid', confirmed_principal: '100.00', outstanding_balance: '0.00', allocatable_balance: '0.00', ...extras })
     await screen.findByText('Synthetic truck')
@@ -84,7 +84,7 @@ describe.each(['guest', 'portal'] as const)('%s actual invoice state presentatio
   it('shows both refund and credit when they coexist on a paid invoice', async () => {
     show(audience, { state: 'paid', confirmed_principal: '100.00', outstanding_balance: '0.00', allocatable_balance: '0.00', refund_pending: '20.00', unapplied_credit: '15.00' })
     expect(await screen.findByText(/\$20.00 refund pending/)).toBeInTheDocument()
-    expect(screen.getByText(/\$15.00 exceeds the invoice balance/)).toBeInTheDocument()
+    expect(screen.getByText(/\$15.00 is unapplied/)).toBeInTheDocument()
   })
   it('shows a failed fresh settlement read instead of enabling stale split controls', async () => {
     mocks.settlementError = new Error('Synthetic failed settlement read')

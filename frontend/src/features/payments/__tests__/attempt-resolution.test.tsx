@@ -132,6 +132,18 @@ describe('Payment request resolution', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('newer payment update')
     expect(onUpdated).not.toHaveBeenCalled()
   })
+  it('cancels a local EFS request without falsely asserting a Zelle transfer was not sent', async () => {
+    const efs = { provider: 'EFS' as const, code_last4: '6789', status: 'awaiting_verification' as const, can_cancel: true, can_reveal: false, can_verify: false, can_reject: false, can_resolve_received_difference: false, difference_review: null }
+    const result = cancelled()
+    requests.resolve.mockResolvedValue({ ...result, rail: 'fleet_payment', provider: 'manual', resolution: { ...result.resolution, rail: 'fleet_payment' } })
+    show({ ...allocation(projection({ rail: 'fleet_payment', checkout_status: 'verification_pending' })), efs })
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel EFS request', exact: true }))
+    expect(screen.getByText(/not the EFS code/)).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /not sent/ })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel request', exact: true }))
+    expect(requests.resolve.mock.calls[0][2]).toMatchObject({ action: 'cancel_unsent', reason: 'Customer canceled the EFS request.' })
+    expect(requests.resolve.mock.calls[0][2]).not.toHaveProperty('transfer_not_sent_confirmed')
+  })
   it('fails closed on an allocation from another invoice', () => {
     show(allocation(projection({ invoice_id: 'other-invoice' })))
     expect(screen.getByRole('alert')).toHaveTextContent('Payment details changed')

@@ -1,4 +1,5 @@
 import { AxiosError } from 'axios'
+import { normalizeEfsSummary } from './efsApi'
 
 import api from '@/lib/api'
 import { paymentStepUpHeaders } from '@/lib/paymentStepUp'
@@ -150,6 +151,7 @@ function normalizeAllocationPage(data: PaymentAllocationPage | { items?: Array<R
       return {
         id: String(raw.id ?? attemptId),
         attempt_id: attemptId,
+        efs: normalizeEfsSummary(raw.efs),
         attempt_version: typeof raw.attempt_version === 'number' ? raw.attempt_version : undefined,
         resolution: raw.resolution && typeof raw.resolution === 'object'
           ? raw.resolution as PaymentAllocationPage['items'][number]['resolution'] : null,

@@ -50,6 +50,14 @@ describe('durable staff Zelle payment review', () => {
     expect(screen.getByRole('heading', { name: 'Payment review' })).toHaveFocus()
     expect(mocks.post).not.toHaveBeenCalled()
   })
+  it('opens the exact protected EFS request without using generic manual confirmation', async () => {
+    mocks.get.mockResolvedValue({ data: { rows: [row({ kind: 'canonical_efs_attempt', rail: 'fleet_payment', provider_label: 'EFS', can_confirm: false, resolution: resolution({ rail: 'fleet_payment', checkout_status: 'verification_pending' }), efs: { provider: 'EFS', code_last4: '6789', status: 'awaiting_verification', can_cancel: true, can_reveal: true, can_verify: true, can_reject: true, can_resolve_received_difference: false, difference_review: null } })], next_cursor: null } })
+    show()
+    fireEvent.click(await screen.findByRole('button', { name: 'Review EFS request for invoice TPS-1687' }))
+    expect(mocks.dialog.mock.lastCall?.[0]).toMatchObject({ invoiceId: 'native-copy-1687', reviewAttemptId: 'attempt-1687' })
+    expect(screen.getByText('EFS code awaiting verification')).toBeInTheDocument()
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
   it('loads every cursor page read-only and deduplicates an exact repeated attempt', async () => {
     mocks.get.mockResolvedValueOnce({ data: { rows: [row()], next_cursor: 'cursor-next' } }).mockResolvedValueOnce({ data: { rows: [row(), row({ invoice_id: 'invoice-b', display_invoice_number: 'TPS-42', attempt_id: 'attempt-b', principal_amount: '20.00' })], next_cursor: null } })
     show()
@@ -231,5 +239,31 @@ describe('combined direct board payment review', () => {
   expect(await screen.findByRole('dialog', { name: 'Review invoice TPS-1687' })).toBeInTheDocument()
   expect(mocks.dialog.mock.lastCall?.[0]).toMatchObject({ invoiceId: 'native-copy-1687', reviewAttemptId: 'attempt-1687' })
   expect(mocks.post).not.toHaveBeenCalled()
+ })
+})
+
+
+describe('EFS direct board review', () => {
+ const efs = (): NonNullable<ZelleReviewRow['efs']> => ({ provider: 'EFS', code_last4: '5678', status: 'awaiting_verification', can_cancel: false, can_reveal: true, can_verify: true, can_reject: true, can_resolve_received_difference: false, difference_review: null })
+ it('opens the exact EFS attempt without generic receipt authority', async () => {
+  const { BoardPaymentReview } = await import('../ZelleReviewQueue')
+  mocks.get.mockResolvedValue({ data: { rows: [row({ kind: 'canonical_efs_attempt', rail: 'fleet_payment', can_confirm: false, efs: efs() })], next_cursor: null } })
+  function Direct() { const queue = useZelleReviewQueue(); return <BoardPaymentReview queue={queue} selectedId="attempt-1687" onClose={mocks.open}/> }
+  render(<QueryClientProvider client={new QueryClient()}><Direct/></QueryClientProvider>)
+  expect(await screen.findByRole('dialog', { name: 'Review invoice TPS-1687' })).toBeInTheDocument()
+  expect(mocks.dialog.mock.lastCall?.[0]).toMatchObject({ invoiceId: 'native-copy-1687', reviewAttemptId: 'attempt-1687' })
+  expect(mocks.post).not.toHaveBeenCalled()
+ })
+ it.each(['missing metadata', 'foreign binding', 'no EFS authority'] as const)('refuses %s even with generic confirmation', async invalid => {
+  const { BoardPaymentReview } = await import('../ZelleReviewQueue')
+  const item = row({ kind: 'canonical_efs_attempt', rail: 'fleet_payment', can_confirm: true, efs: efs() })
+  if (invalid === 'missing metadata') item.efs = null
+  else if (invalid === 'foreign binding') item.resolution = resolution({ invoice_id: 'foreign', rail: 'fleet_payment' })
+  else item.efs = { ...efs(), can_reveal: false, can_verify: false, can_reject: false }
+  mocks.get.mockResolvedValue({ data: { rows: [item], next_cursor: null } })
+  function Direct() { const queue = useZelleReviewQueue(); return <BoardPaymentReview queue={queue} selectedId="attempt-1687" onClose={mocks.open}/> }
+  render(<QueryClientProvider client={new QueryClient()}><Direct/></QueryClientProvider>)
+  expect(await screen.findByText('This request is no longer available for review.')).toBeInTheDocument()
+  expect(mocks.dialog).not.toHaveBeenCalled(); expect(mocks.post).not.toHaveBeenCalled()
  })
 })

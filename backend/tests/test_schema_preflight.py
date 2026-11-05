@@ -13,17 +13,26 @@ class FakeInspector:
         include_active_list_index: bool = True,
         include_provider_outbox: bool = True,
         include_quickbooks_webhook_deleted_at: bool = True,
+        include_efs_table: bool = True,
+        include_efs_fingerprint_key_identity: bool = True,
     ):
+        self.include_efs_table = include_efs_table
+        self.include_efs_fingerprint_key_identity = include_efs_fingerprint_key_identity
         self.include_source_line = include_source_line
         self.include_active_list_index = include_active_list_index
         self.include_provider_outbox = include_provider_outbox
         self.include_quickbooks_webhook_deleted_at = include_quickbooks_webhook_deleted_at
 
     def has_table(self, table_name):
-        return True
+        return self.include_efs_table if table_name == 'efs_instrument_submissions' else True
 
     def get_columns(self, table_name: str):
         from app.commands.worker_schema_readiness import REQUIRED_COLUMNS
+        if table_name == 'efs_instrument_submissions':
+            columns = REQUIRED_COLUMNS[table_name]
+            if not self.include_efs_fingerprint_key_identity:
+                columns = columns - {'fingerprint_key_identity'}
+            return [{'name': name} for name in columns]
         if table_name in {'visit_requests','visit_request_events','booking_repair_order_links','booking_receipts','booking_payment_events','booking_receipt_applications','booking_accounting_review_tasks','booking_accounting_review_events'}:
             return [{'name':name} for name in REQUIRED_COLUMNS[table_name]]
         if table_name == "parts_usage":
@@ -149,3 +158,13 @@ def test_main_does_not_echo_database_url_on_connection_failure(monkeypatch, caps
     assert "unable to inspect" in output
     assert secret_url not in output
     assert "private-password" not in output
+
+
+def test_collect_schema_issues_requires_efs_table_before_payment_startup():
+    issues = schema_preflight.collect_schema_issues(FakeInspector(include_efs_table=False))
+    assert 'missing required table efs_instrument_submissions' in issues
+
+
+def test_collect_schema_issues_requires_stable_efs_key_identity():
+    issues = schema_preflight.collect_schema_issues(FakeInspector(include_efs_fingerprint_key_identity=False))
+    assert 'missing required columns efs_instrument_submissions: fingerprint_key_identity' in issues

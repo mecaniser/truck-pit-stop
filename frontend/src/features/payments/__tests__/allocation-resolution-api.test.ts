@@ -20,4 +20,16 @@ describe('allocation resolution wire adapter', () => {
     requests.get.mockResolvedValue({ data: { items: [{ id: 'old-attempt', rail: 'card', state: 'pending' }] } })
     expect((await fetchAllocations({ kind: 'authenticated', invoiceId: 'fictional-invoice' })).items[0].resolution).toBeNull()
   })
+  it('keeps only safe EFS history fields and never carries a raw code into the query cache', async () => {
+    const efs = { provider: 'EFS', code_last4: '6789', status: 'awaiting_verification', can_cancel: true, can_reveal: false, can_verify: false, can_reject: false, can_resolve_received_difference: false, difference_review: null }
+    requests.get.mockResolvedValue({ data: { items: [{ id: 'efs-attempt', rail: 'fleet_payment', state: 'pending', efs: { ...efs, code: '0123456789' } }] } })
+    const result = await fetchAllocations({ kind: 'authenticated', invoiceId: 'fictional-invoice' })
+    expect(result.items[0].efs).toEqual(efs)
+    expect(JSON.stringify(result)).not.toContain('0123456789')
+  })
+  it('fails closed instead of inventing EFS permissions when the projection is malformed', async () => {
+    requests.get.mockResolvedValue({ data: { items: [{ id: 'efs-attempt', rail: 'fleet_payment', efs: { provider: 'EFS', code_last4: '6789' } }] } })
+    await expect(fetchAllocations({ kind: 'authenticated', invoiceId: 'fictional-invoice' })).rejects.toThrow('EFS details are unavailable')
+  })
+
 })

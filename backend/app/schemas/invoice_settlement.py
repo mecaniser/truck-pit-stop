@@ -5,6 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal, Optional
 from uuid import UUID
+from app.schemas.efs_submission import EfsSummary
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
@@ -21,6 +22,8 @@ class SettlementError(BaseModel):
 
 
 class SettlementAllowedActions(BaseModel):
+    submit_efs: bool = False
+    efs_unavailable_reason: Optional[str] = None
     create_attempt: bool = False
     rails: list[PaymentRail] = Field(default_factory=list)
     confirm_manual: bool = False
@@ -282,6 +285,7 @@ class GuestResolutionRead(BaseModel):
 
 
 class PaymentAttemptResponse(BaseModel):
+    efs: Optional[EfsSummary] = None
     model_config = ConfigDict(from_attributes=True)
 
     resolution: ResolutionProjection
@@ -312,6 +316,7 @@ class PaymentAttemptResponse(BaseModel):
 
 
 class PaymentAllocationItem(BaseModel):
+    efs: Optional[EfsSummary] = None
     model_config = ConfigDict(from_attributes=True)
 
     resolution: ResolutionProjection
