@@ -942,7 +942,7 @@ export default function ProfileSettingsPage() {
       <div className="grid items-start gap-6 md:grid-cols-[200px_minmax(0,1fr)] md:gap-8">
         <nav className={[(mobileSectionOpen ? 'hidden md:block' : ''), 'space-y-6'].join(' ')} aria-label="Account sections">
           {SECTION_GROUPS.map(group => <div key={group.label}>
-            <h2 className="mb-2 px-3 text-sm font-semibold text-[#a5adbf]">{group.label}</h2>
+            <h2 className="mb-3 border-b border-[#272d3d] px-3 pb-2 text-[11px] font-bold uppercase tracking-[0.1em] text-[#a5adbf]">{group.label}</h2>
             <div className="space-y-1">{group.sections.map(section => <ControlButton
               key={section.id} type="button" controlKind="content"
               aria-current={activeSection === section.id ? 'page' : undefined}
