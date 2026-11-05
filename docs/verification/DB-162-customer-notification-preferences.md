@@ -33,3 +33,24 @@ Final backend snapshot qualification: real payer address snapshots remain policy
 CI qualification on1133f43b: migration/contract, required backend/frontend, full frontend and browser smoke checks passed. Full backend had4504passed/470skipped and one pre-existing calendar-sensitive scheduling fixture failure: its `NOW +20days` future version became past on2026-11-05 at22:00UTC. The unchanged scheduling implementation correctly uses max(current time, previous version+1µs). Freeze the test clock to its existing NOW so the intended version/stale-retry checks remain deterministic; no scheduling production change. Full scheduling file62passed locally and62passed independently (`/tmp/notif-independent-schedule.log`); independent QA GO. Updated CI must pass before release.
 
 Production rollout explicitly approved by the user. Notification item renumbered162 after merging portal-navigation DB161 from main9fc64b39. Prior candidate95fd9ba6 had all seven CI checks green (run42121397961); reconciled candidate must pass before deployment.
+
+## Authorized production release — 2026-11-05
+
+User explicitly approved deploying PR809, including new preference storage and email/text worker enforcement. Item renumbered toDB-162 because DB-161 belongs to portal navigation.
+
+All seven checks passed on final linear candidate `a67111a3de95e6a2d18737b529c0e764b59a59d9`, run [42129674443](https://github.com/mecaniser/truck-pit-stop/actions/runs/42129674443). Normal protected rebase merged [PR809](https://github.com/mecaniser/truck-pit-stop/pull/809) as `56b5d7331003dd701ab3f89ef9264f86d4fe12d4` at2026-11-05T23:47:01Z. Complete checked/merged tree `2ea1889da387397842f06e8630725eee03cec52c` is identical. GitHub squash endpoints returned500; linearizing the same complete tree preserved the old branch history and allowed the repository's permitted rebase path. Required checks, linear-history protection and admin enforcement stayed enabled. No direct main push or override.
+
+Migration204 was applied before worker/UI exposure. SSH port22 timed out, so independent Security reviewed a constrained fallback: authenticate with Railway's existing production database configuration, match the API's database identity to the PostgreSQL service, require TLS and verify `pg_stat_ssl`, lock the revision row in a transaction, require203 plus absent table, execute the exact Alembic-generated204 SQL, and read back204/table/columns separately. Already204 is a no-op. No customer/invoice record rewrite, preference save, consent/provider configuration change, replay or test message.
+
+The frozen, fully checked worker94dde29d was staged first. Concurrent main releases required re-staging it; its runtime source matched the final candidate. Final automatic Git deployments both succeeded on the merge SHA:
+
+- API: `0abd2fff-2cfc-4ee6-a282-87f377c36f74`.
+- Celery worker/beat: `c33bd8f3-04b3-4765-856f-f0dc65027cab`.
+
+Public `/build-version` reports the exact merge SHA. `/health/ready` reports production ready with database and Redis healthy, including a later check more than five minutes after startup. Celeryready was observed. Checked startup/canary windows showed no schema/import exceptions. A `process_quickbooks_invoice_sync`/`QuickBooksConfigurationError` also appeared in old worker logs repeatedly before release; this existing integration configuration issue is separate and was not changed. Do not interpret service health or these checks as a provider-delivery receipt.
+
+### Remaining customer browser gate
+
+The previously authenticated production tab showed the old Notifications placeholder. After refreshing onto the released build, it redirected to sign-in. A valid customer session was requested from the user; no credentials were retrieved or authentication bypassed. The final signed-in production desktop/mobile controls check is pending that session. Local authenticated persistence, conflict/reload/modal and mobile QA remain passed, but do not substitute them for the uncompleted production browser gate. Release is live; the item is not marked Done yet.
+
+Rollback retains table204 and backend/worker suppression. Do not revert to pre-preferences senders after customers save choices; forward-fix or pause affected optional dispatch while preserving essential-notice handling. No replay/backfill.
