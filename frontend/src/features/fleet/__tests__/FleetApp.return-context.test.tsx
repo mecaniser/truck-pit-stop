@@ -175,4 +175,23 @@ describe('Fleet board return context', () => {
 
     expect(screen.getByTestId('current-location')).toHaveTextContent('/dashboard')
   })
+  it('requires a tractor before adding a new trailer to the fleet', async () => {
+    const user = userEvent.setup()
+    apiMocks.get.mockImplementation((url: string) => Promise.resolve({ data: url === '/fleet/board' ? { ...fleetBoard, trucks: [{ id: 'tractor-603', unit_number: '603', equipment_type: 'tractor', make: 'Demo', model: 'Tractor', status: 'active' }] } : url === '/fleet/companies' ? [{ id: 'customer-1', company_name: 'Demo Fleet' }] : url === '/fleet/settings' ? { default_fleet_authority_customer_id: 'customer-1' } : [] }))
+    apiMocks.post.mockResolvedValue({ data: { id: 'new-trailer' } })
+    renderFleet(['/fleet'])
+    await user.click(await screen.findByRole('button', { name: 'Add equipment', exact: true }))
+    const panel = screen.getByRole('dialog', { name: 'Add or link equipment' })
+    await user.type(within(panel).getByPlaceholderText('Freightliner'), 'Extreme')
+    await user.type(within(panel).getByPlaceholderText('Cascadia'), 'Flatbed')
+    await user.click(within(panel).getByRole('combobox', { name: 'Equipment type' }))
+    await user.click(screen.getByRole('option', { name: 'Trailer', exact: true }))
+    expect(within(panel).getByRole('button', { name: 'Add equipment', exact: true })).toBeDisabled()
+    expect(apiMocks.post).not.toHaveBeenCalled()
+    await user.click(within(panel).getByRole('combobox', { name: 'Assigned tractor' }))
+    await user.click(screen.getByRole('option', { name: '603 · Demo' }))
+    await user.click(within(panel).getByRole('button', { name: 'Add equipment', exact: true }))
+    expect(apiMocks.post).toHaveBeenCalledWith('/fleet/trucks', expect.objectContaining({ equipment_type: 'trailer', tractor_id: 'tractor-603', customer_id: 'customer-1' }))
+  })
+
 })

@@ -1157,10 +1157,12 @@ async def create_customer_vehicle(
     )
     await sync_vehicle_nhtsa_snapshot(vehicle)
     
+    from app.services.fleet_assets import lock_tenant
+    await lock_tenant(db, customer.tenant_id)
     db.add(vehicle)
     await db.flush()
     await seed_vehicle_account_relationships(db, vehicle, customer)
-    if customer.fleet_enabled:
+    if customer.fleet_enabled and vehicle.equipment_type != "trailer":
         await ensure_fleet_membership(
             db,
             tenant_id=customer.tenant_id,

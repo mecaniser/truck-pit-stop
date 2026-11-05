@@ -5,7 +5,7 @@ import { Wrench, Gauge, ClipboardList, User, Search, ChevronDown, ChevronRight, 
 import type { BoardTruck, FleetBoard as FleetBoardData, TruckStatus } from './types'
 import { STATUS_META, VISIT_STALE_AFTER_DAYS, fleetIdentity, fleetUnitLabel, fmt, pmState, pmUrgency, rank, visitAge, visitIsStale } from './helpers'
 import FleetActivity from './FleetActivity'
-import TelemetrySummary from './TelemetrySummary'
+import UnitLocationPopover from './UnitLocationPopover'
 import { truckMotion, useTelemetryClock } from './telemetry'
 import ClosedRepairOrders from './ClosedRepairOrders'
 import CurrentDriver from './CurrentDriver'
@@ -119,7 +119,7 @@ function TruckCard({ t, onOpen, onOpenRepairOrder }: { t: BoardTruck; onOpen: (t
           <span className="tcard-mm">{`${t.year || ''} ${t.make} ${t.model}`.trim()}</span>
         </div>
         <div className="tcard-mark">
-          <span className="tcard-badge"><i className={'tcard-bdot' + (truckMotion(t, now) === 'moving' ? ' is-moving' : '')} />{meta.short}</span>
+          <div className="tcard-status-tools"><span className="tcard-badge"><i className={'tcard-bdot' + (truckMotion(t, now) === 'moving' ? ' is-moving' : '')} />{meta.short}</span><UnitLocationPopover truck={t} /></div>
           <span className="tcard-unit" data-testid="tcard-unit-mark">{identity.unit}</span>
         </div>
       </div>
@@ -130,7 +130,6 @@ function TruckCard({ t, onOpen, onOpenRepairOrder }: { t: BoardTruck; onOpen: (t
           {reasons.map((reason) => <span key={reason} className="tcard-reason">{reason}</span>)}
         </div>
       )}
-      <TelemetrySummary truck={t} compact />
       <div className="tcard-row">
         <span className="tcard-row-ic"><User size={14} /></span>
         <span className="tcard-row-tx tcard-driver">

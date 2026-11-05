@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -76,7 +77,8 @@ function mockSuccessfulQueries() {
 
 describe('TruckDetail hardening', () => {
   it('refreshes speed while the detail stays open, preserves zero, and expires unchanged observations', async () => {
-    vi.useFakeTimers()
+    // Advance data clocks without replaying minutes of floating-panel animation frames.
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
     vi.setSystemTime(new Date('2026-10-16T14:00:00Z'))
     const speed = { source: 'motive_dashboard_manual' as const, observed_at: new Date().toISOString(), captured_at: new Date().toISOString(), freshness: 'fresh' as const, snapshot_id: 'initial-speed', source_age_text: null, value: 45, unit: 'mph' as const, basis: null }
     let response: TruckDetailData = { ...detail, truck: { ...truck, telemetry: { location: null, speed, odometer: null, engine_hours: null, fuel: null, fault_count: null, motion: 'moving' } } }
@@ -88,16 +90,23 @@ describe('TruckDetail hardening', () => {
     const view = renderTruck()
     try {
       await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+      fireEvent.click(screen.getByRole('button', { name: /Location and speed/ }))
       expect(screen.getByText('45 mph')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Close location and speed' }))
       response = { ...response, truck: { ...response.truck, telemetry: { ...response.truck.telemetry!, speed: { ...speed, value: 0, observed_at: '2026-10-16T14:01:00Z', captured_at: '2026-10-16T14:01:00Z', snapshot_id: 'new-speed' }, motion: 'stopped' } } }
 
       await act(async () => { await vi.advanceTimersByTimeAsync(60000) })
+      fireEvent.click(screen.getByRole('button', { name: /^Location and speed/ }))
       expect(screen.getByText('0 mph')).toBeInTheDocument()
       expect(screen.queryByText('45 mph')).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Close location and speed' }))
 
       await act(async () => { await vi.advanceTimersByTimeAsync(300000) })
+      fireEvent.click(screen.getByRole('button', { name: /^Location and speed/ }))
       expect(screen.getByText('0 mph')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Close location and speed' }))
       await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+      fireEvent.click(screen.getByRole('button', { name: /^Location and speed/ }))
       expect(screen.queryByText('0 mph')).not.toBeInTheDocument()
       expect(screen.getByLabelText('Speed unavailable')).toBeInTheDocument()
       expect(apiMocks.get.mock.calls.filter(([url]) => url === `/fleet/trucks/${truck.id}`).length).toBeGreaterThan(2)
@@ -105,6 +114,10 @@ describe('TruckDetail hardening', () => {
       expect(apiMocks.get.mock.calls.filter(([url]) => url === '/fleet/inspections')).toHaveLength(1)
     } finally {
       view.unmount()
+      // jsdom implements requestAnimationFrame with a setInterval. Drain the
+      // final unmount frames while that interval still belongs to the fake
+      // clock; switching clocks first strands jsdom's pending frame queue.
+      await act(async () => { await vi.advanceTimersByTimeAsync(32) })
       vi.useRealTimers()
     }
   })
@@ -131,15 +144,19 @@ describe('TruckDetail hardening', () => {
     expect(within(providerRow).queryByText('Example · (704) 555-0123')).not.toBeInTheDocument()
   })
 
-  it('keeps mileage comparison and speed in the header, with hours and entry in details', async () => {
+  it('keeps mileage and fuel in the header, location and speed behind the marker, and hours in details', async () => {
     const source = { source: 'motive_dashboard_manual' as const, observed_at: null, captured_at: new Date().toISOString(), freshness: 'unknown' as const, snapshot_id: 'fixture', source_age_text: '12s ago' }
     truck.telemetry = { location: { ...source, label: 'Fixture town', lat: null, lng: null }, odometer: { ...source, value: 625000, unit: 'mi', basis: 'dashboard_unspecified' }, speed: { ...source, observed_at: new Date().toISOString(), value: 0, unit: 'mph', basis: null }, fuel: { ...source, value: 38, unit: 'percent', basis: null }, engine_hours: { ...source, value: 4000, unit: 'h', basis: null }, fault_count: null, motion: 'unknown' }
     mockSuccessfulQueries(); renderTruck()
     await screen.findByText('625,000 mi')
     expect(screen.getByText('621,565')).toBeInTheDocument()
-    expect(screen.getByText('0 mph')).toBeInTheDocument()
+    expect(screen.queryByText('0 mph')).not.toBeInTheDocument()
     expect(screen.getByText('38%')).toBeInTheDocument()
+    expect(screen.queryByText('Fixture town')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /^Location and speed/ }))
+    expect(screen.getByText('0 mph')).toBeInTheDocument()
     expect(screen.getByText('Fixture town')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Close location and speed' }))
     expect(screen.queryByText('4,000 h')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Reading details' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Add reading' })).not.toBeInTheDocument()
@@ -284,4 +301,30 @@ it('allows a current shop service day ahead of UTC and leaves future-day validat
     const currentShopDay = screen.getByRole('dialog', { name: 'PM performed date' }).querySelector<HTMLButtonElement>('[data-day="2026-10-17"]')!; expect(currentShopDay).toBeEnabled(); await user.click(currentShopDay); expect(field).toHaveValue('2026-10-17'); expect(screen.getByLabelText('Odometer at service')).toHaveValue('')
     await user.clear(field); await user.type(field, '2026-10-18'); await user.type(screen.getByLabelText('Odometer at service'), '0'); await user.click(screen.getByRole('button', { name: 'Record PM completion' })); await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message)); expect(field).toHaveValue('2026-10-18'); expect(screen.getByLabelText('Odometer at service')).toHaveValue('0'); expect(screen.getByRole('dialog', { name: 'Recognize prior PM' })).toBeInTheDocument()
   } finally { vi.useRealTimers() }
+})
+
+
+it('places equipment settings inside Truck details', async () => {
+  mockSuccessfulQueries()
+  renderTruck()
+  await screen.findByRole('button', { name: 'Open truck details' })
+  expect(screen.queryByRole('region', { name: 'Equipment settings' })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'Open truck details' }))
+  const settings = await screen.findByRole('region', { name: 'Equipment settings' })
+  expect(settings.closest('[role="dialog"]')).not.toBeNull()
+  expect(within(settings).getByRole('combobox', { name: 'Equipment type' })).toBeVisible()
+  expect(within(settings).getByRole('button', { name: 'Save equipment' })).toBeVisible()
+})
+
+
+it('focuses the new asset details trigger after following its counterpart link', async () => {
+  const pairedTruck: BoardTruck = { ...truck, equipment_type: 'tractor', attached_asset: { id: 'trailer-42', unit_number: '42', equipment_type: 'trailer', attached_at: '2026-11-05T04:00:00Z' } }
+  const pairedTrailer: BoardTruck = { ...truck, id: 'trailer-42', unit_number: '42', equipment_type: 'trailer', attached_asset: { id: truck.id, unit_number: '603', equipment_type: 'tractor', attached_at: '2026-11-05T04:00:00Z' } }
+  apiMocks.get.mockImplementation((url: string) => Promise.resolve({ data: url === `/fleet/trucks/${truck.id}` ? { ...detail, truck: pairedTruck } : url === '/fleet/trucks/trailer-42' ? { ...detail, truck: pairedTrailer } : [] }))
+  function LinkedAssets() { const [id, setId] = useState(truck.id); return <TruckDetail truckId={id} trucks={[pairedTruck, pairedTrailer]} onOpen={setId} /> }
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><LinkedAssets /></QueryClientProvider>)
+  await userEvent.click(await screen.findByRole('button', { name: 'Open truck details' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Trailer 42', exact: true }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Open truck details' })).toHaveFocus())
+  expect(screen.queryByRole('region', { name: 'Equipment settings' })).not.toBeInTheDocument()
 })
