@@ -832,3 +832,9 @@
   .cp-overview .cp-activity { grid-template-columns:30px minmax(0,1fr); gap:6px 12px; }
   .cp-overview .cp-activity > .cp-text { grid-column:2; justify-self:start; margin-left:0; }
 }
+
+@layer db-controls {
+  .cp-book-step .cp-field > input[data-db-control="field"] {
+    align-self: flex-start !important;
+  }
+}

@@ -1,11 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import type { CashReceiptSummary } from '@/types'
 
-const mocks = vi.hoisted(() => ({ get: vi.fn() }))
-vi.mock('@/lib/api', () => ({ default: { get: mocks.get } }))
+const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
+vi.mock('@/lib/api', () => ({ default: { get: mocks.get, post: mocks.post } }))
 vi.mock('@/features/payments', () => ({
   useInvoiceSettlement: () => ({ data: { feature_enabled: false }, isLoading: false }),
   useInvoiceAllocations: () => ({}),
@@ -72,4 +72,28 @@ describe('customer cash receipt', () => {
     expect(screen.queryByText('Balance due')).not.toBeInTheDocument()
     expect(screen.getByText('Tax').closest('div')).toHaveTextContent('$8.00')
   })
+})
+
+function CurrentLocation() { const location = useLocation(); return <p data-testid="current-location">{location.pathname}</p> }
+it('keeps a reported transfer on its invoice instead of advancing the payment queue', async () => {
+  let reported = false
+  mocks.get.mockImplementation(async (url: string) => {
+    if (url.startsWith('/invoices/')) return { data: { id: 'invoice-1', status: 'sent', invoice_number: 'INV-1', order_number: 'RO-1', total_amount: '100.00', subtotal: '100.00', service_fee_amount: '0.00', pending_zelle_confirmation: reported } }
+    if (url.includes('zelle-info')) return { data: { zelle_email: 'synthetic@example.test' } }
+    return { data: { available: false } }
+  })
+  mocks.post.mockImplementation(async () => { reported = true; return { data: {} } })
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <MemoryRouter initialEntries={[{ pathname: '/portal/invoices/invoice-1', state: { invoiceQueue: ['invoice-1', 'invoice-2'], paymentOrigin: 'Invoices' } }]}>
+      <CurrentLocation /><Routes><Route path="/portal/invoices/:invoiceId" element={<CustomerInvoicePage />} /></Routes>
+    </MemoryRouter>
+  </QueryClientProvider>)
+  await waitFor(() => expect(screen.getByRole('button', { name: /Get Zelle details/ })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: /Get Zelle details/ }))
+  fireEvent.click(screen.getByRole('button', { name: /sent/i }))
+  await screen.findByText(/Check this invoice for updates/)
+  await waitFor(() => expect(mocks.post).toHaveBeenCalledTimes(1))
+  await new Promise(resolve => setTimeout(resolve, 500))
+  expect(screen.getByTestId('current-location')).toHaveTextContent('/portal/invoices/invoice-1')
+  expect(screen.queryByRole('button', { name: /sent/i })).not.toBeInTheDocument()
 })

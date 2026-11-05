@@ -19,3 +19,5 @@ Intended checkout: `/Users/sergio_m1_promax/GitHub/truck-portal-overview`; branc
 Existing fixture runtimes preserved. Earlier API startup attempts rejected older/mismatched fixture schemas before serving. Final database is an isolated clone of the existing synthetic task-first fixture in `portal-overview-pg`, database `portal_overview_current`, migrated only on that clone to current head and schema-preflight passed. Test environment/provider settings retained; live card rails disabled; no provider credentials introduced. The unused EFS clone could not migrate its renamed revision and was not used. No existing database was migrated/reseeded.
 
 Raw browser state is private outside the repository. Local screenshots and browser script are under `output/portal-overview/` and are not committed. Local serving is separate from PR/CI, merge and production release.
+
+Draft PR: https://github.com/mecaniser/truck-pit-stop/pull/799. Current main `21684af1` integrated; append-only CSS conflict resolved by retaining both overview refinements and the booking-field alignment rule.
