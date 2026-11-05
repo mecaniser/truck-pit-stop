@@ -211,10 +211,12 @@ async def create_vehicle(
     )
     await sync_vehicle_nhtsa_snapshot(vehicle)
     
+    from app.services.fleet_assets import lock_tenant
+    await lock_tenant(db, customer.tenant_id)
     db.add(vehicle)
     await db.flush()
     await seed_vehicle_account_relationships(db, vehicle, customer)
-    if customer.fleet_enabled:
+    if customer.fleet_enabled and vehicle.equipment_type != "trailer":
         await ensure_fleet_membership(
             db,
             tenant_id=customer.tenant_id,
@@ -309,6 +311,8 @@ async def create_vehicle_relationship(
             detail="Only shop administrators can record an ownership transfer",
         )
 
+    from app.services.fleet_assets import lock_tenant
+    await lock_tenant(db, current_user.tenant_id)
     if body.replace_primary:
         now = datetime.now(timezone.utc)
         current_rows = list((await db.execute(select(VehicleCustomerRelationship).where(

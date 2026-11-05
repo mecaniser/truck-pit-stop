@@ -21,13 +21,14 @@ import type {
 import { STATUS_META, fleetUnitLabel, fmt, money, fmtDate, pmState, initials } from './helpers'
 import DatePicker from '@/components/DatePicker'
 import FleetMap from './FleetMap'
-import { TruckTelemetryLocation, TruckTelemetryValue, TruckVitals } from './TruckTelemetry'
-import { truckLocation, truckMotion, useTelemetryClock } from './telemetry'
+import { TruckTelemetryValue, TruckVitals } from './TruckTelemetry'
+import { truckMotion, useTelemetryClock } from './telemetry'
 import { ConfirmModal, TruckEditModal, LogIncidentModal, EditIncidentModal, ResolveIncidentModal, AssignIncidentRepairOrderModal, InspectionsSection, AssignDriverModal, SchedulePMModal, Modal, SidekickPanel, invalidateFleetAndCockpit, type InspectionsSectionHandle } from './FleetModals'
 import FleetPriceBuilderPanel from './FleetPriceBuilderPanel'
 import IncidentHistory from './IncidentHistory'
 import TruckDiagnostics from './TruckDiagnostics'
 import AssetAttachment from './AssetAttachment'
+import UnitLocationPopover from './UnitLocationPopover'
 import CurrentDriver from './CurrentDriver'
 import { currentDriverName, currentDriverRecord } from './driverIdentity'
 import { useAuthStore } from '../../stores/authStore'
@@ -168,6 +169,8 @@ export default function TruckDetail({
   truckId, trucks, onOpen, onViewTrips,
 }: { truckId: string; trucks: BoardTruck[]; onOpen: (id: string) => void; onViewTrips?: (id: string) => void }) {
   const now = useTelemetryClock()
+  const detailsTrigger = useRef<HTMLButtonElement>(null)
+  const focusAssetAfterNavigation = useRef<string | null>(null)
   const qc = useQueryClient()
   const { user } = useAuthStore()
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -180,6 +183,11 @@ export default function TruckDetail({
     refetchInterval: 60000,
   })
   const { data } = truckQuery
+  useEffect(() => {
+    if (data?.truck.id === truckId && focusAssetAfterNavigation.current === truckId && detailsTrigger.current) {
+      detailsTrigger.current.focus(); focusAssetAfterNavigation.current = null
+    }
+  }, [data?.truck.id, truckId])
   const incidentsQuery = useQuery<IncidentEntry[]>({
     queryKey: ['fleet-truck-incidents', truckId],
     queryFn: async () => (await api.get(`/fleet/trucks/${truckId}/incidents`)).data,
@@ -636,6 +644,7 @@ export default function TruckDetail({
               )}
               <ControlButton
                 className="dbtn dbtn-ghost dhead-details"
+                ref={detailsTrigger}
                 onClick={() => setDetailsOpen(true)}
                 title="Truck details"
                 aria-label="Open truck details"
@@ -643,7 +652,7 @@ export default function TruckDetail({
               >
                 <Info size={14} /> <span className="dbtn-label">Truck details</span>
               </ControlButton>
-              <TruckTelemetryLocation truck={t} />
+              <UnitLocationPopover key={`location:${truckId}`} truck={t} />
               {onViewTrips && <ControlButton type="button" className="dbtn dbtn-ghost dhead-trips" onClick={() => onViewTrips(t.id)}><Route size={15} /> View trips</ControlButton>}
               <TruckDiagnostics key={truckId} truckId={truckId} telemetry={t.telemetry} equipmentType={t.equipment_type} />
             </div>
@@ -670,15 +679,12 @@ export default function TruckDetail({
               </span>
               <span className={'dhead-stat-note ' + pmDisplayClass}>{pm.label}</span>
             </div>
-            <TruckTelemetryValue truck={t} field="speed" label="Speed" className="truck-header-metric" />
             <TruckTelemetryValue truck={t} field="fuel" label="Fuel level" className="truck-header-metric" />
             <TruckTelemetryValue truck={t} field="fuel_economy" label="Efficiency" className="truck-header-metric" />
           </div>
         </div>
       </div>
 
-
-      <AssetAttachment key={t.id} asset={t} assets={trucks} onOpen={onOpen} />
 
       {t.warning_lights && t.warning_lights.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '0 0 16px', padding: '10px 14px', borderRadius: 12, background: 'rgba(230,57,70,.12)', border: '1px solid rgba(230,57,70,.35)' }}>
@@ -1144,13 +1150,6 @@ export default function TruckDetail({
             icon={<MapIcon size={17} />}
             right={
               <div className="location-head-actions">
-                <div className="loc-now">
-                  <i className={'loc-dot' + (truckMotion(t, now) === 'moving' ? ' is-moving' : '')} style={{ background: meta.dot }} />
-                  <span className="loc-label" title={truckLocation(t, now)?.label || 'Location unknown'}>
-                    {truckLocation(t, now)?.label || 'Location unknown'}
-                  </span>
-                  <span className="loc-mph"> · {truckMotion(t, now) === 'unknown' ? 'motion unknown' : truckMotion(t, now)}</span>
-                </div>
                 <ControlButton controlKind="action"
                   type="button"
                   className="map-disclosure-toggle"
@@ -1201,7 +1200,7 @@ export default function TruckDetail({
       {confirmLeaveFleet && (
         <ConfirmModal
           title={`Remove from ${t?.board_membership_company_name || t?.fleet_company_name || 'this fleet'}?`}
-          message={`${fleetUnitLabel(t)} comes off this fleet board. The truck, its service history and any open repair orders stay exactly as they are — this only ends the fleet membership. Add it back any time from Add truck.`}
+          message={`${fleetUnitLabel(t)} comes off this fleet board.${t.equipment_type === 'trailer' ? ' Its tractor is released.' : ''} Its service history and open repair orders stay with this asset. Add it back from Add truck when it is ready for the fleet.`}
           confirmLabel="Remove from fleet"
           pending={removeFromFleet.isPending}
           prompt={{
@@ -1213,6 +1212,8 @@ export default function TruckDetail({
         />
       )}
       {data && detailsOpen && <TruckDetailsModal
+        assets={trucks}
+        onOpenAsset={(id) => { focusAssetAfterNavigation.current = id; setDetailsOpen(false); onOpen(id) }}
         truck={t}
         detail={data}
         canMerge={user?.role === 'garage_owner' || user?.role === 'garage_admin'}
@@ -1534,8 +1535,8 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
   )
 }
 
-function TruckDetailsModal({ truck, detail, canMerge, canRemoveFromFleet, onChangeDriver, onEdit, onMerge, onRemoveFromFleet, onClose }: {
-  truck: BoardTruck; detail: TruckDetailData; canMerge: boolean; canRemoveFromFleet: boolean; onChangeDriver: () => void; onEdit: () => void; onMerge: () => void; onRemoveFromFleet: () => void; onClose: () => void
+function TruckDetailsModal({ truck, assets, onOpenAsset, detail, canMerge, canRemoveFromFleet, onChangeDriver, onEdit, onMerge, onRemoveFromFleet, onClose }: {
+  truck: BoardTruck; assets: BoardTruck[]; onOpenAsset: (id: string) => void; detail: TruckDetailData; canMerge: boolean; canRemoveFromFleet: boolean; onChangeDriver: () => void; onEdit: () => void; onMerge: () => void; onRemoveFromFleet: () => void; onClose: () => void
 }) {
   return (
     <SidekickPanel
@@ -1576,6 +1577,7 @@ function TruckDetailsModal({ truck, detail, canMerge, canRemoveFromFleet, onChan
         </div>
       </section>
 
+      <AssetAttachment key={truck.id} asset={truck} assets={assets} onOpen={onOpenAsset} />
       <TruckVitals truck={truck} />
       <TruckDriverSection truck={truck} detail={detail} onChangeDriver={onChangeDriver} />
       <section className="fleet-reference-section">
@@ -1601,9 +1603,9 @@ function TruckDetailsModal({ truck, detail, canMerge, canRemoveFromFleet, onChan
           <div>
             <strong>Fleet membership</strong>
             <span>
-              Removing this truck from {truck.board_membership_company_name || truck.fleet_company_name || 'this fleet'} takes it off the
-              board and leaves the truck, its history and its repair orders untouched. To delete the
-              truck itself, remove it from the customer that owns it.
+              Removing this equipment from {truck.board_membership_company_name || truck.fleet_company_name || 'this fleet'} takes it off the
+              board and keeps its history and repair orders with the asset.
+              {truck.equipment_type === 'trailer' && ' Its tractor is released when it leaves the fleet.'}
             </span>
           </div>
           {/* Danger styling, unlike Merge duplicate's ghost button beside it.

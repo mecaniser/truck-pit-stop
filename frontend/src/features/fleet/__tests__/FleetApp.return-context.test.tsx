@@ -175,4 +175,25 @@ describe('Fleet board return context', () => {
 
     expect(screen.getByTestId('current-location')).toHaveTextContent('/dashboard')
   })
+  it('requires a tractor before adding a new trailer to the fleet', async () => {
+    const user = userEvent.setup()
+    apiMocks.get.mockImplementation((url: string) => Promise.resolve({ data: url === '/fleet/board' ? { ...fleetBoard, trucks: [{ id: 'tractor-603', unit_number: '603', equipment_type: 'tractor', make: 'Demo', model: 'Tractor', status: 'active' }] } : url === '/fleet/companies' ? [{ id: 'customer-1', company_name: 'Demo Fleet' }] : url === '/fleet/settings' ? { default_fleet_authority_customer_id: 'customer-1' } : [] }))
+    apiMocks.post.mockResolvedValue({ data: { id: 'new-trailer' } })
+    renderFleet(['/fleet'])
+    await user.click(await screen.findByTitle('Add equipment'))
+    const fields = within(screen.getByLabelText('Add or link equipment'))
+    // Identity text is setup; the interaction under test is tractor admission.
+    fireEvent.change(fields.getByPlaceholderText('Freightliner'), { target: { value: 'Extreme' } })
+    fireEvent.change(fields.getByPlaceholderText('Cascadia'), { target: { value: 'Flatbed' } })
+    await user.click(fields.getByLabelText('Equipment type', { selector: 'button' }))
+    await user.click(screen.getByText('Trailer', { selector: '[role="option"] span' }))
+    const submit = fields.getByText('Add equipment', { selector: 'button' })
+    expect(submit).toBeDisabled()
+    expect(apiMocks.post).not.toHaveBeenCalled()
+    await user.click(fields.getByLabelText('Assigned tractor', { selector: 'button' }))
+    await user.click(screen.getByText('603 · Demo', { selector: '[role="option"] span' }))
+    await user.click(submit)
+    expect(apiMocks.post).toHaveBeenCalledWith('/fleet/trucks', expect.objectContaining({ equipment_type: 'trailer', tractor_id: 'tractor-603', customer_id: 'customer-1' }))
+  })
+
 })

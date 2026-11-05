@@ -106,6 +106,40 @@ async def attach(db, cards, tenant_id):
 async def change_attachment(db, actor, asset_id: UUID, attached_vehicle_id: UUID | None,
                             expected_attached_vehicle_id: UUID | None):
     await lock_tenant(db, actor.tenant_id)
+    assets = await _visible_assets(db, actor.tenant_id, [asset_id], lock=True)
+    if asset_id not in assets:
+        _fail(404, "Fleet asset not found")
+    equipment_type = assets[asset_id].equipment_type
+    await save_settings(db, actor, asset_id, equipment_type, attached_vehicle_id,
+                        equipment_type, expected_attached_vehicle_id)
+
+
+async def _current_pair(db, tenant_id, asset_id):
+    return (await db.execute(select(FleetAssetAttachment).where(
+        FleetAssetAttachment.tenant_id == tenant_id, *_active(),
+        or_(FleetAssetAttachment.tractor_id == asset_id, FleetAssetAttachment.trailer_id == asset_id),
+    ).with_for_update())).scalar_one_or_none()
+
+
+async def _close_pair(db, pair, actor_id, stamp):
+    if pair:
+        pair.detached_at = stamp
+        pair.detached_by_user_id = actor_id
+        await db.flush()
+
+
+async def _create_pair(db, actor, tractor_id, trailer_id, stamp):
+    db.add(FleetAssetAttachment(
+        tenant_id=actor.tenant_id, tractor_id=tractor_id, trailer_id=trailer_id,
+        attached_at=stamp, attached_by_user_id=actor.id,
+    ))
+    await db.flush()
+
+
+async def save_settings(db, actor, asset_id, equipment_type, attached_vehicle_id,
+                        expected_equipment_type, expected_attached_vehicle_id):
+    """One atomic details save; an active trailer always ends with a tractor."""
+    await lock_tenant(db, actor.tenant_id)
     ids = {asset_id}
     if attached_vehicle_id:
         ids.add(attached_vehicle_id)
@@ -115,41 +149,97 @@ async def change_attachment(db, actor, asset_id: UUID, attached_vehicle_id: UUID
     asset = assets[asset_id]
     if attached_vehicle_id == asset_id:
         _fail(409, "An asset cannot attach to itself")
-    current = (await db.execute(select(FleetAssetAttachment).where(
-        FleetAssetAttachment.tenant_id == actor.tenant_id, *_active(),
-        or_(FleetAssetAttachment.tractor_id == asset_id, FleetAssetAttachment.trailer_id == asset_id),
-    ).with_for_update())).scalar_one_or_none()
+    current = await _current_pair(db, actor.tenant_id, asset_id)
     current_id = _other(current, asset_id) if current else None
     # A repeated successful request is harmless. A stale request with a
     # different intended result cannot silently detach or swap a newer link.
-    if current_id == attached_vehicle_id:
+    if asset.equipment_type == equipment_type and current_id == attached_vehicle_id:
+        if equipment_type == "trailer" and not current:
+            _fail(409, "A fleet trailer requires a tractor")
         return
-    if current_id != expected_attached_vehicle_id:
-        _fail(409, "Attachment changed; refresh the asset before trying again")
+    if current_id != expected_attached_vehicle_id or asset.equipment_type != expected_equipment_type:
+        _fail(409, "Equipment settings changed; refresh the asset before trying again")
+    if current and current.tractor_id == asset_id:
+        # Replacing a tractor's current trailer would strand that trailer on
+        # the fleet. Move the trailer to a free tractor or remove it first.
+        _fail(409, "Reassign or remove the current trailer before changing this tractor's attachment or type")
+    if equipment_type == "trailer" and attached_vehicle_id is None:
+        _fail(409, "A fleet trailer requires a tractor")
     counterpart = assets.get(attached_vehicle_id)
     if counterpart:
-        if {asset.equipment_type, counterpart.equipment_type} != {"tractor", "trailer"}:
+        if {equipment_type, counterpart.equipment_type} != {"tractor", "trailer"}:
             _fail(409, "Attach a classified tractor to a classified trailer")
-        occupied = (await db.execute(select(FleetAssetAttachment.id).where(
-            FleetAssetAttachment.tenant_id == actor.tenant_id, *_active(),
-            or_(FleetAssetAttachment.tractor_id == counterpart.id,
-                FleetAssetAttachment.trailer_id == counterpart.id),
-        ))).scalar_one_or_none()
-        if occupied:
-            _fail(409, "The selected asset is already attached; detach it first")
+        occupied = await _current_pair(db, actor.tenant_id, counterpart.id)
+        if occupied and (not current or occupied.id != current.id):
+            _fail(409, "The selected asset is already attached; choose a free tractor")
     stamp = datetime.now(timezone.utc)
-    if current:
-        current.detached_at = stamp
-        current.detached_by_user_id = actor.id
-        # Release the partial unique index before adding the replacement row.
-        await db.flush()
+    await _close_pair(db, current, actor.id, stamp)
+    asset.equipment_type = equipment_type
     if counterpart:
-        tractor, trailer = (asset, counterpart) if asset.equipment_type == "tractor" else (counterpart, asset)
-        db.add(FleetAssetAttachment(
-            tenant_id=actor.tenant_id, tractor_id=tractor.id, trailer_id=trailer.id,
-            attached_at=stamp, attached_by_user_id=actor.id,
-        ))
-        await db.flush()
+        tractor, trailer = (asset, counterpart) if equipment_type == "tractor" else (counterpart, asset)
+        await _create_pair(db, actor, tractor.id, trailer.id, stamp)
+    await db.flush()
+
+
+async def has_valid_tractor(db, tenant_id, trailer_id):
+    pair = await _current_pair(db, tenant_id, trailer_id)
+    if not pair or pair.trailer_id != trailer_id:
+        return False
+    tractors = await _visible_assets(db, tenant_id, [pair.tractor_id])
+    return bool(tractors and tractors[pair.tractor_id].equipment_type == "tractor")
+
+
+async def guard_membership_entry(db, tenant_id, asset_id):
+    """Shared admission point for every canonical membership writer."""
+    await lock_tenant(db, tenant_id)
+    assets = await _visible_assets(db, tenant_id, [asset_id], lock=True, require_membership=False)
+    if asset_id not in assets:
+        _fail(404, "Fleet asset not found")
+    if assets[asset_id].equipment_type == "trailer" and not await has_valid_tractor(db, tenant_id, asset_id):
+        _fail(409, "Select a tractor when adding a trailer to the fleet")
+
+
+async def enroll_trailer(db, actor, trailer_id, fleet_customer_id, tractor_id):
+    """Pair and enroll an off-fleet trailer in one transaction."""
+    from app.services.vehicle_identity import ensure_fleet_membership
+    await lock_tenant(db, actor.tenant_id)
+    assets = await _visible_assets(db, actor.tenant_id, [trailer_id], lock=True, require_membership=False)
+    tractors = await _visible_assets(db, actor.tenant_id, [tractor_id], lock=True) if tractor_id else {}
+    if trailer_id not in assets or tractor_id not in tractors:
+        _fail(404, "Fleet asset not found")
+    if assets[trailer_id].equipment_type != "trailer" or tractors[tractor_id].equipment_type != "tractor":
+        _fail(409, "A fleet trailer requires a classified tractor")
+    current = await _current_pair(db, actor.tenant_id, trailer_id)
+    occupied = await _current_pair(db, actor.tenant_id, tractor_id)
+    if current and current.tractor_id != tractor_id:
+        _fail(409, "This trailer is already attached; reassign it from equipment settings")
+    if occupied and occupied.trailer_id != trailer_id:
+        _fail(409, "The selected tractor already has a trailer")
+    if not current:
+        await _create_pair(db, actor, tractor_id, trailer_id, datetime.now(timezone.utc))
+    return await ensure_fleet_membership(db, tenant_id=actor.tenant_id, vehicle_id=trailer_id,
+                                       fleet_customer_id=fleet_customer_id)
+
+
+async def prepare_membership_exit(db, tenant_id, membership, actor_id=None):
+    """The last trailer membership closes its pair; tractors cannot strand it."""
+    await lock_tenant(db, tenant_id)
+    stamp = datetime.now(timezone.utc)
+    remaining = (await db.execute(select(FleetMembership).where(
+        FleetMembership.tenant_id == tenant_id, FleetMembership.vehicle_id == membership.vehicle_id,
+        FleetMembership.id != membership.id, FleetMembership.effective_to.is_(None),
+        FleetMembership.deleted_at.is_(None),
+    ))).scalars().all()
+    if any((row.effective_from.replace(tzinfo=timezone.utc) if row.effective_from.tzinfo is None else row.effective_from) <= stamp for row in remaining):
+        return
+    pair = await _current_pair(db, tenant_id, membership.vehicle_id)
+    if not pair:
+        return
+    if pair.tractor_id == membership.vehicle_id:
+        _fail(409, "Reassign or remove this tractor's trailer before removing the tractor from the fleet")
+    if remaining:
+        _fail(409, "Resolve scheduled fleet memberships before removing this trailer")
+    await _close_pair(db, pair, actor_id, stamp)
 
 
 async def change_equipment_type(db, vehicle, equipment_type):
@@ -164,7 +254,14 @@ async def change_equipment_type(db, vehicle, equipment_type):
         or_(FleetAssetAttachment.tractor_id == vehicle.id, FleetAssetAttachment.trailer_id == vehicle.id),
     ))).scalar_one_or_none()
     if pair:
-        _fail(409, "Detach this asset before changing its equipment type")
+        _fail(409, "Use equipment settings to change attached equipment")
+    if equipment_type == "trailer":
+        membership = (await db.execute(select(FleetMembership.id).where(
+            FleetMembership.tenant_id == vehicle.tenant_id, FleetMembership.vehicle_id == vehicle.id,
+            FleetMembership.effective_to.is_(None), FleetMembership.deleted_at.is_(None),
+        ).limit(1))).scalar_one_or_none()
+        if membership:
+            _fail(409, "Select a tractor in equipment settings when classifying a fleet trailer")
     vehicle.equipment_type = equipment_type
 
 
@@ -183,4 +280,4 @@ async def guard_lifecycle_change(db, tenant_id, vehicle_ids):
             FleetAssetAttachment.trailer_id.in_(vehicle_ids)),
     ).limit(1))).scalar_one_or_none()
     if active:
-        _fail(409, "Detach attached equipment before removing, merging or changing its fleet relationships")
+        _fail(409, "Remove attached trailers from the fleet before archiving, merging or changing these equipment relationships")
