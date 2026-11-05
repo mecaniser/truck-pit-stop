@@ -126,8 +126,9 @@ separate test infrastructure, not a replacement product runtime.
 
 ## Verification and release status
 
-Backend owner checks: 18 focused cases passed, including 6 genuine PostgreSQL
-tests in disposable schemas: actual migration upgrade/downgrade, tenant-composite
+Backend owner checks: 55/55 focused and adjacent cases passed in 35.45 seconds,
+including 6 genuine PostgreSQL tests in disposable schemas: actual migration
+upgrade/downgrade, tenant-composite
 foreign key rejection, simultaneous competition for each role, and attachment
 serialization against membership removal, merging and classification changes.
 SQLite cases cover both endpoint perspectives, idempotent retries, swaps,
@@ -136,6 +137,26 @@ tenant/off-board/archive/future-membership denials, cached board and detail
 classification, all existing classification editors, lifecycle guards and
 unchanged separate repair/maintenance/readings histories.
 
+The combined SQLite-first/PostgreSQL run exposed an existing test fixture
+delegation bug: its UUID result processor did not forward the required
+`coltype` argument to PostgreSQL. The one-line forwarding fix is included;
+the final combined run passes in that formerly failing order. No application
+assertion or database constraint was weakened. `git diff --check` passes.
+
 Independent gates, runtime evidence, migration identity, PR and deployment are
 recorded as they become available. Owner tests do not establish release
 completion or independent approval.
+
+Independent Security GO: no unresolved findings. Reviewer reproduced and closed
+lifecycle orphan and tenant/customer lock inversion findings; 12 focused asset
+cases, 6 PostgreSQL migration/concurrency cases, 2 independent PostgreSQL
+customer lock-order probes and detach/remove/reattach probe passed. Source
+service SHA256 `008649b5ae17be93b014987b7b3b21e02d9af594350f9284b8426872e7ff6f21`;
+migration SHA256 `0d208e02f65881e38463eb5345cdf28413ae71e92daf76b9c9b39951440ddafd`.
+
+Independent QA source GO is recorded in [DB157_QA](DB157_QA.md). Root's final
+TypeScript production build and baseline-aware changed-source lint passed
+(10 TypeScript files, no new violations). No pairing is inferred or written to
+production for acceptance; actual current assignments must be selected by an
+operator. PR checks, migration/deployment and authenticated production read-only
+acceptance remain pending at source handoff.
