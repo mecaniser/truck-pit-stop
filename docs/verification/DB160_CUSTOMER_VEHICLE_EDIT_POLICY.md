@@ -34,3 +34,17 @@ Independent QA functional checks passed against real local PostgreSQL: all four 
 Independent Security and QA both GO on `64becfeaf97673bb658f141adddfc96dad31a966`. Security matched seven reviewed source hashes; QA matched eight DB160 implementation hashes to its tested version. The current-main phone-formatting merge changes no DB160 implementation bytes. Root focused frontend checks now72/72 across six files, including that main integration; changed-source lint passed. Root policy HTTP54/54 plus existing identity/NHTSA17/17 pass. Final visual gate confirms full-width inputs align with labels at1380/390/320px. All synthetic values restored; no production mutations. Protected CI and release remain required.
 
 The new54-case backend field-policy HTTP test and both frontend editor/identity test files are added to the existing critical-test manifest, retaining every prior entry. These regressions therefore execute in protected critical gates, alongside the full-suite complement.
+
+## Merge and production deployment
+
+PR806 passed all seven exact-head checks on `cadc7983b843f1598ae90afa25520ee56b37705f`, run42111727998. Critical backend3m30 and full backend6m24 actually executed; frontend critical/build and full suite plus smoke passed. Protected squash merge `215f38aa2a89296491f6b76bb7e244d2b1efe724` completed at21:28:55UTC. Checked and merged backend/frontend/critical-test-manifest trees are identical. Security/QA-reviewed application bytes remain unchanged.
+
+Automatic production deployment `a997fa2d-7bb7-4fd7-ae3d-6415f7985696` started on the exact merge SHA, after PR801 deployment was already SUCCESS and real signed-in Add vehicle smoke had passed. No protection bypass, forced deployment, migration, provider operation or production vehicle update was used. Final deployment/read-only production acceptance pending.
+
+## Production acceptance and closure
+
+Railway deployment `a997fa2d-7bb7-4fd7-ae3d-6415f7985696` is SUCCESS on `215f38aa2a89296491f6b76bb7e244d2b1efe724`. Public `/build-version` reports that exact SHA, built at2026-11-05T21:31:21.671Z. `/health/ready` returns ready with database and Redis healthy.
+
+Signed-in production customer acceptance opened Edit vehicle from its exact list row. VIN is actually readOnly; unit number, license plate, color and notes are editable; pristine Save changes is disabled. At1380/390/320px, document widths equal viewport widths and every form field spans its container. Cancel returns to the vehicle row without submitting. The Add vehicle header action remains separate from row actions. No browser console errors were captured. Private screenshots remain outside the repository; no customer vehicle values, credentials or record identifiers are published here.
+
+Production acceptance was read-only and made no customer updates. Write persistence, negative HTTP enforcement and restoration were verified using isolated synthetic PostgreSQL fixtures, with independent Security/QA gates above. No schema migration or provider operation was introduced. Rollback signals are newly failed customer saves, broken ownership isolation, or acceptance of protected fields; prefer a corrective release or safe rejection over restoring the previous VIN enforcement gap without review. No such failure was observed. DB160 is Done; Backend & Integrations remains accountable.
