@@ -166,3 +166,85 @@ backend configuration and Vite dependencies; unrelated privacy services remain
 untouched. No production configuration, provider login, job
 trigger, deployment, production data write, membership or financial change is
 performed by this implementation handoff.
+
+
+## Released November 5, 2026
+
+[PR 793](https://github.com/mecaniser/truck-pit-stop/pull/793) merged as
+`77a0d82aa633a5c08da64a6ab1922f9bdc360557` after all seven checks in
+[run 41975718235](https://github.com/mecaniser/truck-pit-stop/actions/runs/41975718235)
+passed on `8354bfc9`. Checked and merged trees are identical. The API deployment
+`6af35ae0-4b6e-43b0-855d-28bd9a22eddd` succeeded with the exact public build stamp,
+built 05:53:13.785 UTC; database/Redis readiness passed.
+
+The dedicated location service received exactly one upload from that merged
+Git archive. Archive SHA-256 is
+`d00f14229095919a82f6776ad30f2b2bd89ce069f5a614738bb9fef7ad9499c3`.
+The independently reviewed preparer/verifier matched 27 pinned files and all
+3,205 Git/archive/staging entries, with only the existing cloud configuration
+mapped into the release manifest. A first operational preflight found an older
+build in progress and performed no upload. The successful 06:02:42 UTC recheck
+confirmed terminal older executions and unchanged configuration, scope, mounts
+and aggregate environment fingerprint. Upload started 06:02:43.985 UTC and
+returned once at 06:03:08.431 UTC. No manual provider job was triggered.
+
+Deployment `13535477-e698-4ae0-97de-b1745bf5a7fc` succeeded in build-only mode,
+image `sha256:10da9531e8129367b95df3c58e305a5019d55c66b3264e5047bfb44a1863bdbb`.
+The actual sync Dockerfile, command, five-minute cron, restart NEVER, one replica,
+existing /data mount, company/tenant, saving=true and reviewed provider allowlist
+are preserved. After-release metadata and the 24-variable aggregate environment
+fingerprint match pre-upload; no credential values were printed or stored.
+
+### Natural execution and committed readback
+
+First natural execution `f9bfd00e-d600-4100-b733-7bb7bece863f` started
+06:05:52.628 UTC and exited 06:09:29.219 UTC. Its complete source started
+06:06:09.431 UTC and finished 06:09:24.255 UTC: 23 source rows, 20 located and
+three unavailable. The provider company was verified before and after capture.
+It supplied six verified speed observations, including real zero values.
+
+The committed receipt reports 19 updates, one unchanged row, three unavailable
+and two source-missing local assets. All 19 saved receipts and all 19 post-commit
+projection checks pass. Independent comparison confirms source bodies, request
+identities, tenant/vehicle/membership, saved values and the actual Fleet
+projection; evidence was stable throughout the read. All 26 backend runtime
+hashes match the reviewed archive; the 27th archive pin is the root Docker ignore
+file, which is not copied to /app.
+
+Canonical JSON SHA-256:
+
+- source: `d2fb483da02c303185d6a81254e6f42fd4af477474bb70f6e51a6aa5a656ed84`;
+- receipt: `d3aa26c0d72e5496aa25597d201e3f91cad56a4daeb93996a8c08185f0bf6f3f`.
+
+A second normal execution started automatically at 06:10:01 UTC on the same
+reviewed image. It hosted read-only attestation of the exact completed first
+source, pinned to its original execution bounds; no exited container was started
+for inspection. Later Fleet readback at 06:20:25 UTC shows location/speed captures
+advancing through 06:19:18 and six speeds eligible under the existing five-minute
+UI rule. This is a point-in-time count, not a promise that every speed remains
+current. The open signed-in 603 popup refreshed from Unavailable to 0 mph without
+a page reload as scheduled imports and query refresh continued. Its phone popup remained contained.
+Unavailable, old and location-only-timestamp speeds remain unavailable; no
+location or capture timestamp is borrowed to make speed look current.
+
+### Independent acceptance and preserved records
+
+Independent runtime QA is GO on 18 strict evidence checks, in addition to source
+QA and Security. The conservative diagnostic scanner flagged two October7
+sources because it only recognized receipt.json. Independent read-only inspection
+found their alternate commit/replay receipts: 11 verified saved/replayed rows in
+one and one verified scoped saved/replayed row in the other. Both are completed
+legacy workflows and cannot enter automatic recovery. Raw scanner flags remain
+unchanged; no legacy source, receipt, snapshot or journal was replayed or deleted.
+This does not assert that every row in those original 22-row sources was imported.
+
+Final production checks preserve 25 assets, 23 tractors/two trailers, all four
+reciprocal Elis attachment projections and 21 assets with both Motive mileage
+and engine hours. The seven UI/API source hashes remain correct. Six protected
+identity/membership/relationship groups and six service-history groups are
+byte-identical to before release. No canonical mileage, VIN, ownership, pair,
+financial record or service history was changed by the worker release.
+
+The location authentication recovery is Done. The existing hourly vitals and
+five-minute location schedules continue automatically. Source artifacts, DOM,
+images, private IDs and aggregate fingerprints remain outside Git.
