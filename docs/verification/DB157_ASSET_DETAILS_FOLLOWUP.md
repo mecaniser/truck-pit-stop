@@ -184,3 +184,23 @@ Final focused frontend acceptance passes59/59 across seven suites. A determinist
 jsdom fake-clock/RAF cleanup failure was reproduced and corrected in the test
 harness without changing product behavior, assertions or deadlines; the isolated
 open-popover expiry case still verifies automatic stale-speed removal.
+
+## PR791 CI return — PM retirement fixture
+
+November5 New York: full backend CI returned only
+`test_pm_day_load::test_ignores_deleted_trucks`. The fixture attempted to enroll
+an already archived Vehicle; the new admission guard correctly rejects that
+with404. The correction first enrolls both live fixture assets, then retires
+GONE before querying PM day load. The original count1 and units[LIVE]
+assertions remain unchanged, so the case still proves that an archived asset
+with historical fleet membership does not contribute to current PM load.
+
+The full PM module passes **14/14 in 2.08 seconds**. No product change or guard
+weakening; the frozen service hash remains `2b861dc5…`. Independent fixture
+review and fresh exact-head protected CI remain required before release.
+
+Nov5 preflight repeated at branch `codex/fleet-asset-details`, HEAD `6dbcb38c`:
+5173 absent;8000 remains Docker PID3415 with the privacy-safety backend mounted
+read-only. Runtime controller refuses the dirty target. Existing services,
+configuration and volumes remain untouched; local product serving remains
+blocked/mismatched. PM tests use isolated in-memory fixtures, not product data.
