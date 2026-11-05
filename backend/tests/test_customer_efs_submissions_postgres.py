@@ -1,4 +1,4 @@
-"""Real migration201 and tenant/key concurrency; NEW explicit disposable database only."""
+"""Real EFS migration and tenant/key concurrency; NEW explicit disposable database only."""
 import asyncio,ast,contextvars,importlib.util,json
 from pathlib import Path
 from uuid import uuid4
@@ -19,8 +19,8 @@ from app.db.models.efs_instrument import EfsInstrumentSubmission as Claim
 @pytest_asyncio.fixture
 async def pg_efs(pg_readiness):
     db=pg_readiness;assert db.bind.dialect.name=='postgresql'
-    migration_path=Path(__file__).parents[1]/'alembic/versions/202_customer_efs_submissions.py'
-    spec=importlib.util.spec_from_file_location('efs_migration202',migration_path);migration=importlib.util.module_from_spec(spec);spec.loader.exec_module(migration)
+    migration_path=Path(__file__).parents[1]/'alembic/versions/203_customer_efs_submissions.py'
+    spec=importlib.util.spec_from_file_location('efs_migration203',migration_path);migration=importlib.util.module_from_spec(spec);spec.loader.exec_module(migration)
     async with db.bind.begin() as connection:
         def install(sync):
             # Reproduce the real pre-existing146 database enforcement. ORM

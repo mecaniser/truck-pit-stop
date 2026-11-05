@@ -19,6 +19,7 @@ from app.db.models.identity import (
     WorkOSEventReceipt,
 )
 from app.db.models.vehicle import Vehicle
+from app.db.models.fleet_asset_attachment import FleetAssetAttachment
 from app.db.models.external_service import ExternalServiceRecord, ExternalServiceEvent
 from app.db.models.external_service_receipt import ExternalServiceReceipt, ExternalServiceReceiptBlob, ExternalServiceReceiptEvent
 from app.db.models.motive import (

@@ -333,6 +333,8 @@ async def merge_vehicles(
     confirm_vin: str | None = None,
     confirm_unit_number: str | None = None,
 ) -> tuple[Vehicle, VehicleMergeRecord, dict[str, int]]:
+    from app.services.fleet_assets import guard_lifecycle_change
+    await guard_lifecycle_change(db, tenant_id, [canonical_id, duplicate_id])
     canonical, duplicate = await load_merge_pair(db, tenant_id, canonical_id, duplicate_id, lock=True)
     match_basis, confirmed_identity = await validate_merge_pair(
         db,

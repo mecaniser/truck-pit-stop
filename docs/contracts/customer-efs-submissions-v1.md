@@ -113,3 +113,7 @@ Add a DEFERRABLE INITIALLY DEFERRED constraint trigger on attempt INSERT/UPDATE 
 ## Release integration amendment — November 4
 
 Main already contains201_customer_payment_profiles (saved-card release). Architecture approved renaming the new, unreleased EFS migration to202_customer_efs_submissions with down_revision201_customer_payment_profiles. Preserve the already released201 migration and all previous financial/profile rows. The new EFS migration operations and immutable claim/retained-key safeguards stay unchanged. Independent actual001→201 profiles→202 EFS migration/preservation verification is required before release. Earlier201 EFS references describe the isolated preview candidate only.
+
+### Final release migration sequence
+
+Fleet PR788 released202_fleet_asset_attachments while this PR was gated. The EFS migration is therefore203_customer_efs_submissions, down_revision202_fleet_asset_attachments. Preserve both already released201 profiles and202 fleet operations. EFS operations remain byte-identical apart from revision/parent. Independent actual001→201 profiles→202 fleet→203 EFS upgrade, old profile/financial/fleet preservation and Web/Worker startup checks are required. Earlier201/202 EFS references describe historical isolated or held candidates.

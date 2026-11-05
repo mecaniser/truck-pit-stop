@@ -27,6 +27,7 @@ import { ConfirmModal, TruckEditModal, LogIncidentModal, EditIncidentModal, Reso
 import FleetPriceBuilderPanel from './FleetPriceBuilderPanel'
 import IncidentHistory from './IncidentHistory'
 import TruckDiagnostics from './TruckDiagnostics'
+import AssetAttachment from './AssetAttachment'
 import CurrentDriver from './CurrentDriver'
 import { currentDriverName, currentDriverRecord } from './driverIdentity'
 import { useAuthStore } from '../../stores/authStore'
@@ -644,7 +645,7 @@ export default function TruckDetail({
               </ControlButton>
               <TruckTelemetryLocation truck={t} />
               {onViewTrips && <ControlButton type="button" className="dbtn dbtn-ghost dhead-trips" onClick={() => onViewTrips(t.id)}><Route size={15} /> View trips</ControlButton>}
-              <TruckDiagnostics key={truckId} truckId={truckId} telemetry={t.telemetry} />
+              <TruckDiagnostics key={truckId} truckId={truckId} telemetry={t.telemetry} equipmentType={t.equipment_type} />
             </div>
             <div className="dhead-sub">
               {`${t.year || ''} ${t.make} ${t.model}`.trim()}{t.body_type ? ` · ${t.body_type}` : ''}
@@ -676,6 +677,8 @@ export default function TruckDetail({
         </div>
       </div>
 
+
+      <AssetAttachment key={t.id} asset={t} assets={trucks} onOpen={onOpen} />
 
       {t.warning_lights && t.warning_lights.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '0 0 16px', padding: '10px 14px', borderRadius: 12, background: 'rgba(230,57,70,.12)', border: '1px solid rgba(230,57,70,.35)' }}>

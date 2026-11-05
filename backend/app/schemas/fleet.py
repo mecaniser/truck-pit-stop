@@ -246,7 +246,22 @@ class BoardWorkOrder(BaseModel):
     opened_at: Optional[datetime] = None
 
 
+class FleetAttachedAsset(BaseModel):
+    id: UUID
+    unit_number: Optional[str] = None
+    equipment_type: Literal["tractor", "trailer"]
+    attached_at: datetime
+
+
+class FleetAttachmentUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    attached_vehicle_id: Optional[UUID]
+    expected_attached_vehicle_id: Optional[UUID]
+
+
 class BoardTruck(BaseModel):
+    equipment_type: Literal["unknown", "tractor", "trailer", "other"] = "unknown"
+    attached_asset: Optional[FleetAttachedAsset] = None
     driver_record: Optional[DriverRecordSummary] = None
     telemetry: Optional[FleetTelemetry] = None
     id: UUID
@@ -459,6 +474,7 @@ class FleetBillToCustomerUpdate(BaseModel):
 
 
 class TruckUpdate(BaseModel):
+    equipment_type: Literal["unknown", "tractor", "trailer", "other"] = "unknown"
     # Identity (correctable after creation — VIN decode is sometimes wrong/generic).
     unit_number: Optional[str] = None
     vin: Optional[str] = None
