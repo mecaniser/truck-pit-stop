@@ -66,6 +66,78 @@ describe('customer EFS code submission', () => {
     expect(api.genericCreate).not.toHaveBeenCalled()
     expect(api.genericConfirm).not.toHaveBeenCalled()
   })
+  it.each(['customer', 'guest'] as const)('keeps the available amount and focus when %s switches methods', async audience => {
+    const access = audience === 'guest' ? { kind: 'guest' as const, token: 'fictional-access' } : { kind: 'authenticated' as const, invoiceId: reserved.invoice_id }
+    wrap(<><SettlementSummaryCard audience="customer" streamlined hideAvailable summary={reserved} />
+      <SettlementPaymentPanel access={access} summary={reserved} audience={audience} onUpdated={vi.fn()} /></>)
+    expect(screen.getByText('Pending confirmation')).toBeInTheDocument()
+    expect(screen.getByText('$100.00')).toBeInTheDocument()
+    expect(screen.queryByText('Available to pay')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Up to/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Pay in full', exact: true })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Partial payment' })).not.toHaveAttribute('aria-pressed')
+    const amount = screen.getByLabelText('Payment amount')
+    expect(amount).toHaveValue('168.44')
+    await userEvent.click(screen.getByRole('button', { name: 'Partial payment', exact: true }))
+    expect(amount).toHaveFocus()
+    await userEvent.type(amount, '50.00')
+    expect(screen.getByRole('button', { name: 'Use available' })).not.toHaveAttribute('aria-pressed')
+    for (const method of ['Zelle', 'EFS', 'Card']) {
+      const radio = screen.getByRole('radio', { name: method, exact: true })
+      await userEvent.click(radio)
+      expect(radio).toHaveFocus()
+      expect(radio).toHaveAttribute('aria-checked', 'true')
+      expect(amount).toHaveValue('50.00')
+    }
+    expect(api.submit).not.toHaveBeenCalled()
+    expect(api.genericCreate).not.toHaveBeenCalled()
+  })
+  it.each(['customer', 'guest'] as const)('accepts currency drafts and rejects invalid %s input or paste without changing the prior amount', async audience => {
+    const user = userEvent.setup()
+    const access = audience === 'guest' ? { kind: 'guest' as const, token: 'fictional-access' } : { kind: 'authenticated' as const, invoiceId: summary.invoice_id }
+    wrap(<SettlementPaymentPanel access={access} summary={summary} audience={audience} onUpdated={vi.fn()} />)
+    const input = screen.getByRole('textbox', { name: 'Payment amount', exact: true })
+    expect(input).toHaveAttribute('type', 'text')
+    expect(input).toHaveAttribute('inputmode', 'decimal')
+    await user.click(screen.getByRole('button', { name: 'Partial payment' }))
+    expect(input).toHaveFocus()
+    for (const valid of ['', '.', '0.', '.5', '12.', '12.3', '12.34']) {
+      fireEvent.change(input, { target: { value: valid } })
+      expect(input).toHaveValue(valid)
+    }
+    for (const invalid of ['a', '12abc34', '1e2', '1E2', '-12', '+12', '1.2.3', '12.345', '１２', ' 12', '$12']) {
+      fireEvent.change(input, { target: { value: invalid } })
+      expect(input).toHaveValue('12.34')
+    }
+    await user.click(input)
+    await user.keyboard('{Control>}a{/Control}')
+    await user.paste('12abc34')
+    expect(input).toHaveValue('12.34')
+    await user.keyboard('{Control>}a{/Control}')
+    await user.paste('50.25')
+    expect(input).toHaveValue('50.25')
+    await user.keyboard('{End}abc+-eE.9')
+    expect(input).toHaveValue('50.25')
+    await user.click(screen.getByRole('button', { name: 'Pay full balance' }))
+    expect(input).toHaveValue('268.44')
+    expect(screen.getByRole('button', { name: 'Partial payment' })).toBeInTheDocument()
+    expect(api.submit).not.toHaveBeenCalled()
+    expect(api.genericCreate).not.toHaveBeenCalled()
+  })
+  it.each(['customer', 'guest'] as const)('shows one selected-method fee note for %s without changing the principal', async audience => {
+    const access = audience === 'guest' ? { kind: 'guest' as const, token: 'fictional-access' } : { kind: 'authenticated' as const, invoiceId: summary.invoice_id }
+    wrap(<SettlementPaymentPanel access={access} summary={summary} audience={audience} onUpdated={vi.fn()} />)
+    const notes = ['Any processing fee is shown before payment.', 'No card processing fee.', 'No card fee. EFS account fees may apply.']
+    for (const [index, method] of ['Card', 'Zelle', 'EFS'].entries()) {
+      await userEvent.click(screen.getByRole('radio', { name: method, exact: true }))
+      expect(screen.getAllByText(notes[index], { exact: true })).toHaveLength(1)
+      for (const note of notes.filter((_, other) => other !== index)) expect(screen.queryByText(note, { exact: true })).not.toBeInTheDocument()
+      expect(screen.queryByText('Card fees apply to card payments.')).not.toBeInTheDocument()
+      expect(screen.getByLabelText('Payment amount')).toHaveValue('268.44')
+    }
+    expect(api.genericCreate).not.toHaveBeenCalled()
+    expect(api.submit).not.toHaveBeenCalled()
+  })
   it('returns to the local draft without submitting a code', async () => {
     submitForm(); await reviewCode()
     await userEvent.click(screen.getByRole('button', { name: 'Edit details' }))
@@ -121,7 +193,7 @@ describe('customer EFS code submission', () => {
     expect(screen.getByRole('radio', { name: 'Card', exact: true })).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: 'Zelle', exact: true })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('radio', { name: 'EFS', exact: true }))
-    await userEvent.click(screen.getByRole('button', { name: 'Pay part', exact: true }))
+    await userEvent.click(screen.getByRole('button', { name: 'Partial payment', exact: true }))
     await userEvent.type(screen.getByRole('textbox', { name: 'Payment amount', exact: true }), '100.00')
     await reviewCode()
     await userEvent.click(screen.getByRole('button', { name: 'Submit for verification' }))

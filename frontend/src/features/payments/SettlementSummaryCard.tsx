@@ -35,6 +35,7 @@ export default function SettlementSummaryCard({
   streamlined = false,
   resolutionOnly = false,
   hideConfirmed = false,
+  hideAvailable = false,
   audience = 'staff',
   children,
   resolutionControls,
@@ -47,6 +48,7 @@ export default function SettlementSummaryCard({
   streamlined?: boolean
   resolutionOnly?: boolean
   hideConfirmed?: boolean
+  hideAvailable?: boolean
   audience?: 'staff' | 'customer'
   children?: ReactNode
   resolutionControls?: { access: SettlementAccess; audience: 'customer' | 'guest' | 'staff'; onUpdated: (next: InvoiceSettlementSummary) => void }
@@ -88,7 +90,7 @@ export default function SettlementSummaryCard({
   const resolution = isPositiveMoney(summary.unapplied_credit) || isPositiveMoney(summary.refund_pending)
   const figures = resolutionOnly ? [] : streamlined ? [
     ...(!hideConfirmed && isPositiveMoney(summary.confirmed_principal) ? [['Paid toward invoice', summary.confirmed_principal]] : []),
-    ...(pending ? [[resolutionControls && allocations.some(row => row.state === 'pending' && row.resolution) ? 'Open payment requests' : 'Pending confirmation', summary.active_pending_principal], ['Available to pay', summary.allocatable_balance]] : []),
+    ...(pending ? [[resolutionControls && allocations.some(row => row.state === 'pending' && row.resolution) ? 'Open payment requests' : 'Pending confirmation', summary.active_pending_principal], ...(!hideAvailable ? [['Available to pay', summary.allocatable_balance]] : [])] : []),
   ] : [
     ['Invoice total', summary.principal_total],
     ['Confirmed', summary.confirmed_principal],
