@@ -20,3 +20,5 @@ Checkout `/Users/sergio_m1_promax/GitHub/truck-portal-overview`, branch above, b
 DB-160 records the user's editing-permissions question. Customer Account→Vehicles currently exposes a plate-only editor, despite copy promising additional fields. Source also shows different field restrictions between general and nested customer update routes. No blanket shop-only enforcement claim is made, and no broader editing or permission change is bundled into this UI refinement. Product field policy and independent sensitive-boundary review are required before remediation. No exploit, customer edit or provider mutation was performed.
 
 Local implementation verified; protected PR CI, merge and production deployment remain pending.
+
+Draft implementation PR: https://github.com/mecaniser/truck-pit-stop/pull/801.
