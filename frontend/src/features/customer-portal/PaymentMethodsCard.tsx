@@ -1,3 +1,4 @@
+import AccountConfirmationDialog from './AccountConfirmationDialog'
 import { ControlButton } from '@/components/ui/Controls'
 import { useState, useEffect } from 'react'
 import { getAuthenticatedSessionIdentity, useAuthStore } from '@/stores/authStore'
@@ -112,8 +113,9 @@ function TokenCardForm({ config, onSuccess, onCancel, onRefresh }: {
   </div>
 }
 
-function PaymentMethodsList({ scope }: { scope: string }) {
+function PaymentMethodsList({ scope, shopName }: { scope: string; shopName?: string | null }) {
   const queryClient = useQueryClient()
+  const [cardToRemove, setCardToRemove] = useState<{ method: PaymentMethod; context: string | undefined } | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
   const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null)
   const [stripeReady, setStripeReady] = useState(false)
@@ -129,7 +131,7 @@ function PaymentMethodsList({ scope }: { scope: string }) {
   const accountId = config?.stripe_account_id
   const available = config?.available === true
   const methodsKey = ['payment-methods', scope, contextKey]
-  useEffect(() => { setShowAddForm(false) }, [contextKey, available, config?.save_pending])
+  useEffect(() => { setShowAddForm(false); setCardToRemove(null) }, [contextKey, available, config?.save_pending])
   useEffect(() => {
     let active = true
     setStripePromise(null)
@@ -169,27 +171,33 @@ function PaymentMethodsList({ scope }: { scope: string }) {
     provider === 'stripe_connect' ? stripeReady : provider === 'quickbooks_payments' && Boolean(config?.token_url)
   )
 
-  if (configQuery.isLoading || methods.isLoading) return <div className="flex justify-center py-8"><Spinner size="lg" /></div>
-  if (configQuery.isError) return <div role="alert" className="space-y-2 text-sm text-red-400">
+  const heading = <div className="min-w-0">
+    <h2 className="text-lg font-semibold text-white">Payment methods</h2>
+    <p className="mt-1 break-words text-sm text-gray-400">{shopName ? 'Saved cards for ' + shopName + '.' : 'Saved cards for your current shop.'}</p>
+  </div>
+
+  if (configQuery.isLoading || methods.isLoading) return <div className="space-y-6">{heading}<div className="flex justify-center py-8"><Spinner size="lg" /></div></div>
+  if (configQuery.isError) return <div className="space-y-6">{heading}<div role="alert" className="space-y-2 text-sm text-red-400">
     <p>{cardError(configQuery.error, 'Unable to load saved cards. Please try again.')}</p>
     <ControlButton type="button" onClick={() => { void configQuery.refetch() }} disabled={configQuery.isFetching} className="underline">Retry loading cards</ControlButton>
-  </div>
-  if (!available) return <p role="status" className="text-sm text-gray-400">{config?.message && !/stripe|quickbooks|intuit|square/i.test(config.message) ? config.message : UNAVAILABLE}</p>
+  </div></div>
+  if (!available) return <div className="space-y-6">{heading}<p role="status" className="text-sm text-gray-400">{config?.message && !/stripe|quickbooks|intuit|square/i.test(config.message) ? config.message : UNAVAILABLE}</p></div>
 
-  return <div className="space-y-4">
+  return <div className="space-y-6">
+    <div className="flex flex-wrap items-start justify-between gap-4">{heading}{!showAddForm && <ControlButton type="button" onClick={() => setShowAddForm(true)} disabled={!formReady} className="shrink-0 rounded-lg bg-violet-600 px-4 font-medium text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"><span aria-hidden="true">+</span> Add Card</ControlButton>}</div>
     {methods.isError ? <div role="alert" className="space-y-2 text-sm text-red-400">
       <p>{cardError(methods.error, 'Unable to load saved cards. Please try again.')}</p>
       <ControlButton type="button" onClick={() => { void methods.refetch() }} disabled={methods.isFetching} className="underline">{methods.isFetching ? 'Retrying...' : 'Retry loading cards'}</ControlButton>
     </div> : methods.isSuccess && methods.data.length > 0 ? <div className="space-y-3">
-      {methods.data.map(method => <div key={method.id} className="flex items-center justify-between gap-3 rounded-xl border border-[#232939] bg-[#0d1118] p-3">
+      {methods.data.map(method => <div key={method.id} className="flex flex-col items-start justify-between gap-3 rounded-xl sm:flex-row sm:items-center border border-[#232939] bg-[#0d1118] p-3">
         <div>
           <p className="font-medium text-white">{CARD_BRANDS[method.brand] || 'Card'} •••• {method.last4}{method.is_default && <span className="ml-2 rounded-full border border-violet-400/30 bg-violet-500/10 px-2 py-0.5 text-xs text-violet-200">Default</span>}</p>
           <p className="text-sm text-gray-400">Expires {method.exp_month.toString().padStart(2, '0')}/{method.exp_year}</p>
         </div>
         <div className="flex items-center gap-2">
-          {!method.is_default && <ControlButton type="button" onClick={() => setDefault.mutate(method.id)} disabled={setDefault.isPending || remove.isPending} className="text-xs text-gray-400 hover:text-white">Set default</ControlButton>}
-          <ControlButton type="button" controlKind="icon" title="Remove card" disabled={remove.isPending || setDefault.isPending} onClick={() => { if (confirm('Remove this card?')) remove.mutate(method.id) }} className="text-gray-400 hover:text-red-400">
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+          {!method.is_default && <ControlButton type="button" onClick={() => setDefault.mutate(method.id)} disabled={setDefault.isPending || remove.isPending} className="text-xs text-gray-400 hover:text-white">Make default</ControlButton>}
+          <ControlButton type="button" aria-label={'Remove ' + (CARD_BRANDS[method.brand] || 'card') + ' ending in ' + method.last4} disabled={remove.isPending || setDefault.isPending} onClick={() => setCardToRemove({ method, context: contextKey })} className="text-gray-400 hover:text-red-400">
+            Remove
           </ControlButton>
         </div>
       </div>)}
@@ -201,16 +209,27 @@ function PaymentMethodsList({ scope }: { scope: string }) {
     {showAddForm && formReady && config ? <div key={contextKey}>
       {provider === 'stripe_connect' && stripePromise ? <Elements stripe={stripePromise}><StripeCardForm config={config} onSuccess={saved} onCancel={() => setShowAddForm(false)} onRefresh={refresh} /></Elements>
         : provider === 'quickbooks_payments' ? <TokenCardForm config={config} onSuccess={saved} onCancel={() => setShowAddForm(false)} onRefresh={refresh} /> : null}
-    </div> : <ControlButton type="button" onClick={() => setShowAddForm(true)} disabled={!formReady} className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#30384b] text-gray-400 hover:border-violet-400/60 hover:text-violet-300"><span aria-hidden="true">+</span> Add Card</ControlButton>}
+    </div> : null}
+    <AccountConfirmationDialog
+      open={cardToRemove !== null && cardToRemove.context === contextKey && available}
+      title="Remove saved card?"
+      description={cardToRemove ? 'Remove ' + (CARD_BRANDS[cardToRemove.method.brand] || 'card') + ' ending in ' + cardToRemove.method.last4 + ' from this shop’s saved cards?' : ''}
+      confirmLabel="Remove card"
+      cancelLabel="Keep card"
+      onCancel={() => setCardToRemove(null)}
+      onConfirm={() => {
+        if (cardToRemove && cardToRemove.context === contextKey && available) {
+          remove.mutate(cardToRemove.method.id)
+          setCardToRemove(null)
+        }
+      }}
+    />
   </div>
 }
 
 export default function PaymentMethodsCard() {
   const scope = useAuthStore(getAuthenticatedSessionIdentity)
+  const shopName = useAuthStore(state => state.user?.tenant_name)
   if (!scope) return null
-  return <div className="h-fit rounded-2xl border border-[#232939] bg-[#12161f] p-6">
-    <h2 className="mb-3 text-lg font-semibold text-white">Saved cards</h2>
-    <p className="mb-4 text-sm text-gray-400">Manage the cards saved securely for this shop.</p>
-    <PaymentMethodsList key={scope} scope={scope} />
-  </div>
+  return <PaymentMethodsList key={scope} scope={scope} shopName={shopName} />
 }
