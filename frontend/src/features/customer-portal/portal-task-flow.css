@@ -886,3 +886,12 @@
     }
   }
 }
+
+.cp-vehicle-list article.cp-vehicle-editing { display:block; }
+.cp-vehicle-editor { width:100%; max-width:640px; }
+.cp-vehicle-editor fieldset { border:0; margin:0; padding:0; min-width:0; }
+.cp-vehicle-editor input[readonly] { color:var(--portal-muted); }
+.cp-vehicle-editor .cp-field { margin:16px 0; }
+.cp-vehicle-editor .cp-field input { max-width:none; }
+.cp-vehicle-editor .cp-field [role=alert] { color:#f0ca82; }
+.cp-editor-actions { display:flex; flex-wrap:wrap; gap:12px; margin-top:20px; }
