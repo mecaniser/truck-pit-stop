@@ -35,3 +35,15 @@ Initial browser wrapper/full-page captures could scale incorrectly despite corre
 Status: preview ready for user review, not deployed. Payment behavior, amount calculations, server authorization and financial records remain unchanged.
 
 Draft [PR792](https://github.com/mecaniser/truck-pit-stop/pull/792) captures the reviewed product source `22a90a73`; subsequent documentation-only receipt changes do not change the served product. Protected PR CI remains a separate integration gate before merge/deployment.
+
+## Authorized production release, November5
+
+User approved PR792 merge/deploy and live customer/guest desktop/mobile verification without submitting payments or editing financial records. Preserved released fleet/Motive changes and the concurrent docs-only PR794. Invoice product bytes remain equal to the approved preview. Final head14f0fa51a097d8b1fc1c5d635b86538b22fc17c9 passed all7 checks in41982001863; backend suites were correctly scoped as unaffected, rather than claimed as executed. The initial ebf2de53 run also passed, but strict branch protection required incorporating concurrent main docs before merging. No protection bypass was used.
+
+PR792 squash mergec7408389e668b1c1270639ef925879e01d7b7ee6 has exact tree equality with the final checked head. Automatic Web deploymentd265b1ec-4ac8-4c8e-ad7e-f63356cf8d2d succeeded on that SHA; www build-version and production DB/Redis readiness passed. No duplicate/forced deployment or worker/configuration change was performed.
+
+Actual guest TPS1687 was verified at1440desktop and390mobile: tenant logo/name, compact utility controls, single balance hierarchy, partial/reset behavior, invalid-character rejection, preserved draft across methods, truthful fee notes, and local Zelle/EFS review/back. Both mobile confirmation actions are290x44 on separate rows; desktop Zelle actions remain inline. EFS review used an explicitly fictional transient code, then Edit details and clear; Submit for verification and transfer reporting were never clicked. Print opened the real one-page TPS1687 PDF.
+
+Fresh guest access was one unsent1hour Redis link using the existing service and exact read-only invoice/payer/settlement guards; no notification, database write or provider action. Nontruncated browser request evidence contains only read operations (guest resolve/settlement/allocations and GET resources). After verification the normal page settlement read remained principal268.44, received0, pending100, available168.44 and version5. No payment, cancellation, receipt, provider status check or financial edit was performed. Screenshot/read-only receipts are in the local pr792-live visualization directory; private access tokens are excluded from this record.
+
+Remaining gate: customer session expired on normal refresh and is at the production login page. In-app sign-in to the Elis Logistics customer account was requested. Customer desktop/mobile acceptance is blocked on that sign-in and is not claimed complete. Deployment and guest verification are complete; this item is not Done until customer acceptance is recorded.
