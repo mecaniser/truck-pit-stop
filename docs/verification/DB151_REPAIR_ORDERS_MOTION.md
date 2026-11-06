@@ -74,3 +74,5 @@ Wider suite exposed readiness/transition timing assumptions. Tests now await vis
 Independent read-only reviewer found hidden-body deep-link focus could be consumed before reveal. Corrected operation/recommendation effects and nested issue restoration using OrderSurfaceContext; deferred invoice-focus regression proves no focus until ready. Re-review: no remaining actionable findings. PR CI and production receipt pending.
 
 Final exact-source serial run:26 suites,465/465 pass in106s. Browser Back returns ledger and Forward restores exact selected invoice. Integrated main fb76fa64 (portal-only PR816); only conflict was additive board entries, both retained.
+
+Integrated main62713c90 (portal font PR817); additive delivery-board conflict resolved retaining both histories. Repair Orders source unchanged.

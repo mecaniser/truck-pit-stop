@@ -16,8 +16,8 @@ import PaymentMethodsCard, { type SavedCardConfig } from './PaymentMethodsCard'
 import VehiclesCard from './VehiclesCard'
 import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 import toast from 'react-hot-toast'
-import { User, Palette, LogOut, Check, RotateCcw, Type, Building2, ArrowRightLeft } from 'lucide-react'
-import { useTheme, ACCENT_OPTIONS, FONT_FAMILY_OPTIONS, FONT_SIZE_OPTIONS } from '../../contexts/ThemeContext'
+import { User, LogOut, RotateCcw, Building2, ArrowRightLeft } from 'lucide-react'
+import { usePortalTypography, PORTAL_FONTS, PORTAL_TEXT_SIZES, DEFAULT_PORTAL_TYPOGRAPHY } from './portalTypography'
 import { getPortalPreferences, savePortalPreferences, type CustomerPortalPreferences } from './portal-preferences'
 import { format } from 'date-fns'
 
@@ -366,155 +366,48 @@ function SecuritySection() {
 }
 
 function AppearanceSection() {
-  const { accent, setAccent, fontFamily, setFontFamily, fontSize, setFontSize, accentColors, resetToDefaults } = useTheme()
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold text-white mb-2">Appearance</h3>
-          <p className="text-sm text-gray-400">Customize your portal theme and typography.</p>
-        </div>
-        <ControlButton
-          onClick={resetToDefaults}
-          className="px-3  text-sm text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors flex items-center gap-2"
-        >
-          <RotateCcw className="w-4 h-4" />
-          Reset
-        </ControlButton>
+  const { typography, update } = usePortalTypography()
+  const [error, setError] = useState(false)
+  const change = (patch: Parameters<typeof update>[0]) => setError(!update(patch))
+  return <div className="space-y-6">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h3 className="text-lg font-semibold text-white">Appearance</h3>
+        <p className="mt-2 text-sm text-gray-400">Choose how text looks throughout your customer portal.</p>
       </div>
-
-      {/* Live Preview Card */}
-      <div 
-        className="bg-white/5 border rounded-xl p-6 transition-all"
-        style={{ borderColor: accentColors[500] + '40' }}
-      >
-        <div className="flex items-center gap-3 mb-4">
-          <div 
-            className="w-10 h-10 rounded-full flex items-center justify-center"
-            style={{ backgroundColor: accentColors[500] + '30' }}
-          >
-            <Palette className="w-5 h-5" style={{ color: accentColors[500] }} />
-          </div>
-          <div>
-            <h4 className="font-semibold text-white">Preview</h4>
-            <p className="text-sm text-gray-400">See how your theme looks</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <span aria-hidden="true"
-            className="inline-flex min-h-11 items-center px-4 rounded-lg text-white text-sm font-medium transition-colors"
-            style={{ backgroundColor: accentColors[500], color: accent === 'indigo' ? '#ffffff' : '#0d1018' }}
-          >
-            Primary button
-          </span>
-          <span aria-hidden="true"
-            className="inline-flex min-h-11 items-center px-4 rounded-lg text-sm font-medium transition-colors border"
-            style={{ borderColor: accentColors[500], color: accentColors[500] }}
-          >
-            Secondary button
-          </span>
-          <span 
-            className="px-3 py-1.5 rounded-full text-xs font-medium"
-            style={{ backgroundColor: accentColors[500] + '20', color: accentColors[400] }}
-          >
-            Badge
-          </span>
-        </div>
-      </div>
-
-      {/* Accent Color */}
-      <div className="bg-white/5 border border-white/10 rounded-xl p-6">
-        <label className="block text-sm font-medium text-gray-300 mb-4">Accent Color</label>
-        <div className="grid grid-cols-3 gap-4 sm:grid-cols-5">
-          {ACCENT_OPTIONS.map((option) => (
-            <ControlButton controlKind="content"
-              key={option.id}
-              aria-pressed={accent === option.id}
-              onClick={() => setAccent(option.id)}
-              className="group flex min-h-11 min-w-11 flex-col items-center gap-2 rounded-lg p-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-300"
-            >
-              <div
-                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
-                  accent === option.id
-                    ? 'ring-2 ring-offset-2 ring-offset-slate-900 ring-white scale-110'
-                    : 'hover:scale-105'
-                }`}
-                style={{ backgroundColor: option.colors[500] }}
-              >
-                {accent === option.id && (
-                  <Check className="w-5 h-5 text-white drop-shadow-md" />
-                )}
-              </div>
-              <span className={`text-xs font-medium transition-colors ${
-                accent === option.id ? 'text-white' : 'text-gray-400 group-hover:text-gray-300'
-              }`}>
-                {option.label}
-              </span>
-            </ControlButton>
-          ))}
-        </div>
-      </div>
-
-      {/* Font Family */}
-      <div className="bg-white/5 border border-white/10 rounded-xl p-6">
-        <label className="block text-sm font-medium text-gray-300 mb-4">
-          <Type className="w-4 h-4 inline mr-2" />
-          Font Family
-        </label>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {FONT_FAMILY_OPTIONS.map((option) => (
-            <ControlButton controlKind="content"
-              key={option.id}
-              aria-pressed={fontFamily === option.id}
-              onClick={() => setFontFamily(option.id)}
-              className={`p-4 rounded-lg border text-left transition-all ${
-                fontFamily === option.id
-                  ? 'border-white/40 bg-white/10'
-                  : 'border-white/10 hover:border-white/20 hover:bg-white/5'
-              }`}
-              style={{ fontFamily: option.stack }}
-            >
-              <span className={`block text-sm font-medium ${fontFamily === option.id ? 'text-white' : 'text-gray-300'}`}>
-                {option.label}
-              </span>
-              <span className="block text-xs text-gray-400 mt-1">Aa Bb Cc 123</span>
-            </ControlButton>
-          ))}
-        </div>
-      </div>
-
-      {/* Font Size */}
-      <div className="bg-white/5 border border-white/10 rounded-xl p-4 sm:p-6">
-        <label className="block text-sm font-medium text-gray-300 mb-4">Font Size</label>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {FONT_SIZE_OPTIONS.map((option) => (
-            <ControlButton
-              key={option.id}
-              aria-pressed={fontSize === option.id}
-              onClick={() => setFontSize(option.id)}
-              className={`  px-2 sm:px-4 rounded-lg border text-center transition-all ${
-                fontSize === option.id
-                  ? 'border-white/40 bg-white/10'
-                  : 'border-white/10 hover:border-white/20 hover:bg-white/5'
-              }`}
-            >
-              <span className={`block text-xs sm:text-sm font-medium whitespace-nowrap ${fontSize === option.id ? 'text-white' : 'text-gray-300'}`}>
-                {option.label}
-              </span>
-              <span className="hidden sm:block text-xs text-gray-400 mt-1">
-                {option.previewPx}px
-              </span>
-            </ControlButton>
-          ))}
-        </div>
-      </div>
-
-      <p className="text-xs text-gray-400">
-        Appearance changes are saved automatically on this browser.
-      </p>
+      <ControlButton type="button" onClick={() => change(DEFAULT_PORTAL_TYPOGRAPHY)} className="text-sm text-[#c9bfff] hover:bg-white/5">
+        <RotateCcw className="h-4 w-4" aria-hidden="true" />Reset text
+      </ControlButton>
     </div>
-  )
+    <fieldset className="min-w-0 border-t border-[#272d3d] pt-5">
+      <legend className="text-sm font-semibold text-white">Font family</legend>
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {PORTAL_FONTS.map(font => <ControlButton key={font.id} type="button" controlKind="content"
+          aria-pressed={typography.font === font.id} onClick={() => change({ font: font.id })}
+          className={['min-h-11 rounded-lg border p-4 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-300', typography.font === font.id ? 'border-violet-400 bg-violet-400/10' : 'border-[#343b4e] hover:bg-white/5'].join(' ')}
+          style={{ fontFamily: font.stack }}>
+          <span className="block text-sm font-semibold">{font.label}</span>
+          <span aria-hidden="true" className="mt-1 block text-sm text-[#a5adbf]">The quick brown fox · 0123</span>
+        </ControlButton>)}
+      </div>
+    </fieldset>
+    <fieldset className="min-w-0 border-t border-[#272d3d] pt-5">
+      <legend className="text-sm font-semibold text-white">Text size</legend>
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {PORTAL_TEXT_SIZES.map(size => <ControlButton key={size.id} type="button" aria-pressed={typography.size === size.id}
+          onClick={() => change({ size: size.id })}
+          className={['min-w-0 rounded-lg border font-medium', typography.size === size.id ? 'border-violet-400 bg-violet-400/10' : 'border-[#343b4e] hover:bg-white/5'].join(' ')}>
+          {size.label}
+        </ControlButton>)}
+      </div>
+    </fieldset>
+    <div className="rounded-xl border border-[#272d3d] bg-[#12161f] p-4" aria-label="Text preview">
+      <p className="text-lg font-semibold">Your next visit</p>
+      <p className="mt-2 text-sm text-[#b5bdcf]">View repair updates, invoices and vehicle details in one place.</p>
+    </div>
+    {error ? <p role="alert" className="text-sm text-red-400">Couldn’t save your text preferences in this browser. Your previous settings are still applied. Try again or allow browser storage.</p>
+      : <p className="text-sm text-gray-400">Changes apply immediately and are saved on this browser for this account.</p>}
+  </div>
 }
 
 function PaymentsSection() {
