@@ -2,7 +2,7 @@ import { ControlButton, ControlInput } from '@/components/ui/Controls'
 import { sessionEndMessage } from '../../lib/sessionRecovery'
 import { useEffect, useMemo, useState } from 'react'
 import { Spinner } from '@/components/ui'
-import { useNavigate, useSearchParams, Link } from 'react-router-dom'
+import { useNavigate, useSearchParams, useLocation, Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -64,6 +64,7 @@ interface ShopOption {
 
 export default function LoginPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const endedMessage = sessionEndMessage(searchParams.get('reason'))
   const { login, isAuthenticated, user } = useAuthStore()
@@ -314,6 +315,11 @@ export default function LoginPage() {
             </div>
           ) : (
           <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
+          {location.state?.signedOut === true && !isAuthenticated && !endedMessage && (
+            <div role="status" className="rounded-xl border border-emerald-700/50 bg-emerald-900/20 px-4 py-3 text-sm text-emerald-300">
+              You’ve been signed out.
+            </div>
+          )}
           {endedMessage && (
             <div role="alert" className="my-5 rounded-xl border border-amber-700/50 bg-amber-900/20 px-4 py-3 text-sm leading-6 text-amber-200">
               {endedMessage}
