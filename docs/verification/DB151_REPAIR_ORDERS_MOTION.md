@@ -76,3 +76,37 @@ Independent read-only reviewer found hidden-body deep-link focus could be consum
 Final exact-source serial run:26 suites,465/465 pass in106s. Browser Back returns ledger and Forward restores exact selected invoice. Integrated main fb76fa64 (portal-only PR816); only conflict was additive board entries, both retained.
 
 Integrated main62713c90 (portal font PR817); additive delivery-board conflict resolved retaining both histories. Repair Orders source unchanged.
+
+## Release receipt — 2026-11-06
+
+# Release receipt — PR #818
+
+Observed: 2026-11-06T07:11:31+00:00
+PR: https://github.com/mecaniser/truck-pit-stop/pull/818
+Head SHA: `a50a4553ee79fc5efcad17d4387419db33707f0d`
+Merge SHA: `7b9096bf91c40e83e55bfc8466fa707461046b11`
+
+## CI
+
+- PR checks: completed/success — https://github.com/mecaniser/truck-pit-stop/actions/runs/42177847501
+  - Migration graph: success
+  - Backend tests: success
+  - Backend full suite (informational): success
+  - Frontend checks: success
+  - Frontend full suite (informational): success
+  - Playwright smoke: success
+- Main checks: unknown (no run for exact SHA)
+
+## Production web
+
+- Railway deployment: `b0f530e2-2bce-4bb4-870d-881eadfd6d7f` / SUCCESS
+- Railway source SHA: `7b9096bf91c40e83e55bfc8466fa707461046b11`
+- Merge SHA matches Railway source: yes
+- Served build SHA: `7b9096bf91c40e83e55bfc8466fa707461046b11`
+- Health: alive
+- Merge SHA matches served build: yes
+
+Browser acceptance: not measured by this command.
+A successful CI run, Railway status, and HTTP response are distinct evidence.
+
+Production browser acceptance remains pending: the shared session was a customer portal session; normal sign-out reached https://www.dieselbridge.com/login. The password field exposes no saved sign-in option. Owner sign-in is the remaining human step. No production business records were changed.
