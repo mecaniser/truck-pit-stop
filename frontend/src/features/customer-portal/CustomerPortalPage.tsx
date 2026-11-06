@@ -1,8 +1,10 @@
+import { usePortalTypography, PORTAL_FONTS, PORTAL_TEXT_SIZES } from './portalTypography'
+import './portalTypography.css'
 import { formatCalendarDate } from '@/lib/calendarDate'
 import { customerInvoiceMemo, customerInvoiceLabel } from '@/lib/invoiceIdentity'
 import { ControlButton } from '@/components/ui/Controls'
 import CashReceiptBreakdown from './CashReceiptBreakdown'
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
 import { Spinner } from '@/components/ui'
 import { Routes, Route, Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
@@ -1616,6 +1618,16 @@ function CustomerRepairs() {
 export default function CustomerPortalPage() {
   const location = useLocation()
   const portalScrollRef = useRef<HTMLElement>(null)
+  const { typography } = usePortalTypography()
+  useLayoutEffect(() => {
+    const root = document.documentElement
+    root.style.setProperty('--customer-font-family', PORTAL_FONTS.find(font => font.id === typography.font)!.stack)
+    root.style.setProperty('--customer-font-size', `${PORTAL_TEXT_SIZES.find(size => size.id === typography.size)!.px}px`)
+    return () => {
+      root.style.removeProperty('--customer-font-family')
+      root.style.removeProperty('--customer-font-size')
+    }
+  }, [typography])
   const { user } = useAuthStore()
   const { data: tenantBranding } = useTenantBranding()
   const profileNameParts = [user?.first_name, user?.last_name].filter(
@@ -1665,7 +1677,7 @@ export default function CustomerPortalPage() {
   const isInvoicePage = location.pathname.startsWith('/portal/invoices/')
 
   return (
-    <div data-customer-portal data-db-touch-controls className="fixed inset-0 grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-[#0d1018] font-['Helvetica_Neue',Helvetica,Arial,sans-serif] text-[#eceef4]">
+    <div data-customer-portal data-db-touch-controls className="fixed inset-0 grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-[#0d1018] text-[#eceef4]">
       <PortalDocumentTitle portalBrandName={portalBrandName} />
       <nav
         aria-label="Customer portal navigation"
