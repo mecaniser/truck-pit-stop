@@ -21,7 +21,7 @@ export default function AccountConfirmationDialog({
   return <Dialog open={open} onClose={onCancel} initialFocus={cancelRef} role="alertdialog" className="fixed inset-0 z-[100]">
     <DialogBackdrop className="fixed inset-0 bg-black/70" />
     <div className="fixed inset-0 flex items-center justify-center overflow-y-auto p-4">
-      <DialogPanel data-db-touch-controls className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-[#30384b] bg-[#161a26] p-5 text-[#eceef4] shadow-xl sm:p-6">
+      <DialogPanel transition data-db-touch-controls className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-[#30384b] bg-[#161a26] p-5 text-[#eceef4] shadow-xl sm:p-6">
         <DialogTitle className="text-xl font-semibold">{title}</DialogTitle>
         <Description className="mt-3 text-sm leading-6 text-[#b5bdcf]">{description}</Description>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
