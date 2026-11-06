@@ -1,3 +1,4 @@
+import { useOrderSurfaceVisible } from '@/features/repair-orders/OrderSurfaceContext'
 import { ControlButton, ControlGroup } from '@/components/ui/Controls'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react'
@@ -41,6 +42,7 @@ function IssueContext({ vehicleId, customerId, contextOrderId, scope }: Props & 
   const [selected, setSelected] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const rows = useRef(new Map<string, HTMLButtonElement>())
+  const surfaceVisible = useOrderSurfaceVisible()
   const restoredFocus = useRef<string | null>(null)
   const prefix = useMemo(() => ['vehicle-issues', scope, vehicleId] as const, [scope, vehicleId])
   const context = useMemo(() => ({ customer_id: customerId, context_order_id: contextOrderId }), [customerId, contextOrderId])
@@ -52,12 +54,12 @@ function IssueContext({ vehicleId, customerId, contextOrderId, scope }: Props & 
   })
   useEffect(() => () => { void client.cancelQueries({ queryKey: prefix }) }, [client, prefix])
   useEffect(() => {
-    if (!restored || query.isError || !query.data || restoredFocus.current === location.key) return
+    if (!surfaceVisible || !restored || query.isError || !query.data || restoredFocus.current === location.key) return
     const row = rows.current.get(restored.issueId)
     if (!row) return
     const frame = requestAnimationFrame(() => { row.focus({ preventScroll: true }); revealWorkspaceContent(row); restoredFocus.current = location.key })
     return () => cancelAnimationFrame(frame)
-  }, [restored, query.data, query.isError, location.key])
+  }, [surfaceVisible, restored, query.data, query.isError, location.key])
   const refresh = async () => { await client.invalidateQueries({ queryKey: prefix }) }
   return <section className="db-truck-issues" aria-label="Truck issues">
     <header className="db-truck-issues__header"><h3>Truck issues</h3><ControlGroup className="db-truck-issues__controls">

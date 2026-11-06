@@ -1,10 +1,15 @@
+import PortalMotion from './PortalMotion'
+import { transitionPortal } from './portal-transition'
+import './portal-presentation.css'
+import { usePortalTypography, PORTAL_FONTS, PORTAL_TEXT_SIZES } from './portalTypography'
+import './portalTypography.css'
 import { formatCalendarDate } from '@/lib/calendarDate'
 import { customerInvoiceMemo, customerInvoiceLabel } from '@/lib/invoiceIdentity'
 import { ControlButton } from '@/components/ui/Controls'
 import CashReceiptBreakdown from './CashReceiptBreakdown'
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, type MouseEvent } from 'react'
 import { Spinner } from '@/components/ui'
-import { Routes, Route, Link, useLocation, useSearchParams } from 'react-router-dom'
+import { Routes, Route, Link, useLocation, useSearchParams, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
@@ -1614,8 +1619,19 @@ function CustomerRepairs() {
 }
 
 export default function CustomerPortalPage() {
+  const navigate = useNavigate()
   const location = useLocation()
   const portalScrollRef = useRef<HTMLElement>(null)
+  const { typography } = usePortalTypography()
+  useLayoutEffect(() => {
+    const root = document.documentElement
+    root.style.setProperty('--customer-font-family', PORTAL_FONTS.find(font => font.id === typography.font)!.stack)
+    root.style.setProperty('--customer-font-size', `${PORTAL_TEXT_SIZES.find(size => size.id === typography.size)!.px}px`)
+    return () => {
+      root.style.removeProperty('--customer-font-family')
+      root.style.removeProperty('--customer-font-size')
+    }
+  }, [typography])
   const { user } = useAuthStore()
   const { data: tenantBranding } = useTenantBranding()
   const profileNameParts = [user?.first_name, user?.last_name].filter(
@@ -1653,6 +1669,11 @@ export default function CustomerPortalPage() {
   }, [location.pathname, location.search])
 
   const requestedVehicle = new URLSearchParams(location.search).get('vehicle_id')
+  const navigatePortal = (event: MouseEvent<HTMLAnchorElement>, destination: string) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    transitionPortal(event, () => navigate(destination))
+  }
   const navLinks = [
     {to:'/portal',label:'Home',exact:true,icon:Home},
     {to:'/portal/repairs?view=active',label:'Repairs',icon:Wrench},
@@ -1665,7 +1686,7 @@ export default function CustomerPortalPage() {
   const isInvoicePage = location.pathname.startsWith('/portal/invoices/')
 
   return (
-    <div data-customer-portal data-db-touch-controls className="fixed inset-0 grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-[#0d1018] font-['Helvetica_Neue',Helvetica,Arial,sans-serif] text-[#eceef4]">
+    <div data-customer-portal data-db-touch-controls className="fixed inset-0 grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-[#0d1018] text-[#eceef4]">
       <PortalDocumentTitle portalBrandName={portalBrandName} />
       <nav
         aria-label="Customer portal navigation"
@@ -1695,6 +1716,7 @@ export default function CustomerPortalPage() {
                   key={link.to}
                   aria-current={isActive(link.to, link.exact) ? 'page' : undefined}
                   to={scopedPortalPath(link.to,requestedVehicle)}
+                  onClick={event => navigatePortal(event, scopedPortalPath(link.to, requestedVehicle))}
                   className={`flex h-[34px] items-center rounded-lg px-3 text-[13px] font-bold ${
                     isActive(link.to, link.exact)
                       ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
@@ -1730,6 +1752,7 @@ export default function CustomerPortalPage() {
           autoDismissMs={10000}
         />
 
+        <PortalMotion key={location.pathname}>
         <Routes>
           <Route path="" element={<PortalDashboardPage />} />
           <Route path="services" element={<ServicesPage />} />
@@ -1743,9 +1766,11 @@ export default function CustomerPortalPage() {
           <Route path="integrations" element={<MotivePortalPage />} />
           <Route path="*" element={<div className="cp-root cp-panel cp-empty"><h1>Page not found</h1><p>Choose a section in the navigation or return to your overview.</p><Link data-db-control="action" className="cp-primary" to={scopedPortalPath('/portal', requestedVehicle)}>Back to Home</Link></div>} />
         </Routes>
+        </PortalMotion>
       </main>
 
-      <nav aria-label="Customer portal mobile navigation" className="relative z-50 flex min-w-0 shrink-0 justify-around border-t border-[#232939] bg-[#0a0d14] px-1 py-2 md:hidden" style={{paddingBottom:'max(.5rem, env(safe-area-inset-bottom))'}}>{navLinks.map(link=><Link key={link.label} to={scopedPortalPath(link.to,requestedVehicle)} aria-current={isActive(link.to,link.exact)?'page':undefined} className={`flex min-h-[48px] min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-bold ${isActive(link.to,link.exact)?'bg-[#8b7cf7]/10 text-[#c9bfff]':'text-[#a2a9bb]'}`}><link.icon className="h-5 w-5"/><span>{link.label}</span></Link>)}</nav>
+      <nav aria-label="Customer portal mobile navigation" className="relative z-50 flex min-w-0 shrink-0 justify-around border-t border-[#232939] bg-[#0a0d14] px-1 py-2 md:hidden" style={{paddingBottom:'max(.5rem, env(safe-area-inset-bottom))'}}>{navLinks.map(link=><Link key={link.label} to={scopedPortalPath(link.to,requestedVehicle)}
+                  onClick={event => navigatePortal(event, scopedPortalPath(link.to, requestedVehicle))} aria-current={isActive(link.to,link.exact)?'page':undefined} className={`flex min-h-[48px] min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-bold ${isActive(link.to,link.exact)?'bg-[#8b7cf7]/10 text-[#c9bfff]':'text-[#a2a9bb]'}`}><link.icon className="h-5 w-5"/><span>{link.label}</span></Link>)}</nav>
     </div>
   )
 }

@@ -1,0 +1,66 @@
+/* Repair Order motion does not remount or retain selected records. */
+.db-repair-orders-ledger, .db-price-builder, .db-order-motion-menu {
+  --order-ease-out: cubic-bezier(.23, 1, .32, 1);
+  --order-ease-move: cubic-bezier(.65, 0, .35, 1);
+}
+.db-repair-orders-ledger button:not([data-db-control="content"]),
+.db-price-builder button:not([data-db-control="content"]) {
+  transition: scale 120ms var(--order-ease-out), background-color 160ms var(--order-ease-move), border-color 160ms var(--order-ease-move);
+}
+.db-repair-orders-ledger button:not([data-db-control="content"]):active:not(:disabled),
+.db-price-builder button:not([data-db-control="content"]):active:not(:disabled) { scale: .97; }
+.db-order-motion-menu {
+  transform-origin: top right;
+  transition: scale 200ms var(--order-ease-out), opacity 200ms var(--order-ease-out), clip-path 200ms var(--order-ease-out);
+}
+.db-order-motion-menu--start { transform-origin: top left; }
+.db-order-motion-menu[data-anchor~="top"] { transform-origin: bottom right; }
+.db-order-motion-menu--start[data-anchor~="top"] { transform-origin: bottom left; }
+.db-order-motion-menu[data-closed] { scale: .95; opacity: 0; clip-path: inset(0 0 5% 0 round 12px); }
+.db-order-motion-menu[data-leave] { transition-duration: 160ms; pointer-events: none; }
+/* Record navigation stays stationary; animate only deliberate disclosures. */
+.db-repair-orders-ledger .db-repair-orders-ledger__brief-reveal { transition-duration: 200ms; }
+.db-repair-orders-ledger .db-repair-orders-ledger__brief-reveal[data-closing] { transition-duration: 160ms; }
+@media (prefers-reduced-motion: reduce) {
+  .db-repair-orders-ledger *, .db-price-builder *, .db-order-motion-menu {
+    animation: none !important; animation-delay: 0ms !important; transition: none !important;
+  }
+  .db-repair-orders-ledger button:active, .db-price-builder button:active { scale: 1 !important; }
+}
+
+/* Anchored portals live outside the workspace theme inheritance. */
+.db-order-motion-menu.db-order-motion-menu {
+  background: var(--surface-overlay, #fff);
+  color: var(--workspace-text, #14243a);
+  border-color: var(--workspace-border, #cbd5df);
+}
+.db-order-motion-menu[data-appearance-mode="dark"] :is(.text-gray-400, .text-gray-500, .text-gray-600, .text-gray-700, .text-gray-800, .text-gray-900, .text-slate-700) { color: var(--workspace-text); }
+.db-order-motion-menu[data-appearance-mode="dark"] :is(input, textarea, select, .bg-gray-50, .bg-gray-100, .bg-slate-100) { background: var(--surface-raised); color: var(--workspace-text); border-color: var(--workspace-border); }
+
+/* A changing form must not recenter around every new field or selection. */
+@media (min-width: 640px) {
+  .db-order-entry-panel.db-order-entry-panel { height: min(900px, 90dvh); }
+}
+.db-staff-shell[data-appearance-mode='dark'] .db-price-builder .db-order-invoice,
+.db-staff-shell[data-appearance-mode='high_contrast'] .db-price-builder .db-order-invoice {
+  background: var(--surface-raised); border-color: var(--workspace-border); color: var(--workspace-text);
+}
+.db-staff-shell[data-appearance-mode='dark'] .db-order-invoice [class*='text-purple-'],
+.db-staff-shell[data-appearance-mode='high_contrast'] .db-order-invoice [class*='text-purple-'] { color: #ddd6fe; }
+.db-staff-shell[data-appearance-mode='dark'] .db-order-invoice [class*='bg-purple-'],
+.db-staff-shell[data-appearance-mode='high_contrast'] .db-order-invoice [class*='bg-purple-'] { background: #302746; }
+
+
+.db-price-builder[data-surface-ready='false'] .db-workspace-body,
+.db-price-builder[data-surface-ready='false'] .db-workspace-footer { visibility: hidden; opacity: 0; pointer-events: none; }
+.db-price-builder[data-surface-ready='true'] .db-workspace-body { animation: order-surface-reveal 180ms var(--order-ease-out) both; }
+.db-order-surface-loading { position: absolute; inset-inline: 16px; top: 160px; color: var(--workspace-muted, #94a3b8); font-size: 13px; }
+@keyframes order-surface-reveal { from { opacity: 0; clip-path: inset(0 0 6px 0); } to { opacity: 1; clip-path: inset(0); } }
+@media (prefers-reduced-motion: reduce) { .db-price-builder[data-surface-ready='true'] .db-workspace-body { animation: none; } }
+
+/* Dialog portals need the same theme surfaces as their owning workspace. */
+.db-order-entry-panel[data-appearance-mode='dark'],
+.db-order-entry-panel[data-appearance-mode='high_contrast'] { background: var(--surface-raised); color: var(--workspace-text); }
+.db-order-entry-panel:not([data-appearance-mode='light']) :is(.bg-white, input, textarea) { background: var(--surface-raised); color: var(--workspace-text); }
+.db-order-entry-panel:not([data-appearance-mode='light']) :is(.text-gray-900, .text-gray-800, .text-gray-700, .text-gray-600, .text-gray-500) { color: var(--workspace-text); }
+.db-order-entry-panel:not([data-appearance-mode='light']) :is(.border-gray-200, input, textarea) { border-color: var(--workspace-border); }
