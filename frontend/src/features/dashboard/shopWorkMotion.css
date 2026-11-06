@@ -1,0 +1,51 @@
+/* Opt-in Shop Work motion; no global layout or theme overrides. */
+.db-shop-work-new, .db-work-select-menu, .db-work-motion-panel {
+  --work-enter: 200ms;
+  --work-exit: 160ms;
+  --work-ease-out: cubic-bezier(.23, 1, .32, 1);
+  --work-ease-move: cubic-bezier(.65, 0, .35, 1);
+}
+.db-shop-work-new :is(button, a[data-db-control]):not([data-db-control="content"]) {
+  transition: scale 120ms var(--work-ease-out), background-color 160ms var(--work-ease-move), border-color 160ms var(--work-ease-move);
+}
+.db-shop-work-new :is(button, a[data-db-control]):not([data-db-control="content"]):active:not(:disabled) { scale: .97; }
+.db-work-motion-panel, .db-work-select-menu {
+  transform-origin: top right;
+  transition: opacity var(--work-enter) var(--work-ease-out), scale var(--work-enter) var(--work-ease-out), clip-path var(--work-enter) var(--work-ease-out);
+}
+.db-work-select-menu { transform-origin: top left; }
+.db-work-motion-panel[data-anchor~="top"] { transform-origin: bottom right; }
+.db-work-select-menu[data-anchor~="top"] { transform-origin: bottom left; }
+.db-work-motion-panel[data-closed], .db-work-select-menu[data-closed] {
+  opacity: 0; scale: .95; clip-path: inset(0 0 5% 0 round 10px);
+}
+.db-work-motion-panel[data-leave], .db-work-select-menu[data-leave] { transition-duration: var(--work-exit); pointer-events: none; }
+.db-work-select > svg { transition: rotate 160ms cubic-bezier(.65, 0, .35, 1); }
+.db-work-select[data-open] > svg { rotate: 180deg; }
+@keyframes work-row-enter {
+  from { opacity: .5; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.db-shop-work-new :is(.db-overview__row, .db-wip__row, .db-action-ledger__row, .db-work-activity__days li) {
+  animation: work-row-enter 200ms var(--work-ease-out) backwards;
+  animation-delay: 150ms;
+}
+.db-shop-work-new :is(.db-overview__row, .db-wip__row, .db-action-ledger__row, .db-work-activity__days li):nth-child(1) { animation-delay: 0ms; }
+.db-shop-work-new :is(.db-overview__row, .db-wip__row, .db-action-ledger__row, .db-work-activity__days li):nth-child(2) { animation-delay: 30ms; }
+.db-shop-work-new :is(.db-overview__row, .db-wip__row, .db-action-ledger__row, .db-work-activity__days li):nth-child(3) { animation-delay: 60ms; }
+.db-shop-work-new :is(.db-overview__row, .db-wip__row, .db-action-ledger__row, .db-work-activity__days li):nth-child(4) { animation-delay: 90ms; }
+.db-shop-work-new :is(.db-overview__row, .db-wip__row, .db-action-ledger__row, .db-work-activity__days li):nth-child(5) { animation-delay: 120ms; }
+@media (prefers-reduced-motion: reduce) {
+  .db-shop-work-new *, .db-work-motion-panel, .db-work-motion-panel *, .db-work-select-menu, .db-work-select > svg {
+    animation: none !important; transition: none !important;
+  }
+  .db-shop-work-new :is(button, a):active:not(:disabled), .db-work-select-menu[data-closed] { scale: 1 !important; }
+}
+
+.db-work-motion-panel { --anchor-gap: 8px; --anchor-padding: 14px; --anchor-max-height: min(480px, calc(100dvh - 28px)); z-index: 140; overflow-y: auto; max-width: calc(100vw - 28px); font-family: var(--font-body); }
+/* A calendar inside a scrollable filter panel expands in-flow, never behind
+   the panel's clipping boundary. Nested listboxes already use their own portal. */
+.db-work-motion-panel .db-work-activity__filters .db-datepicker__calendar {
+  position: relative; top: auto; bottom: auto; right: auto; left: auto;
+  width: 100%; min-width: 0;
+}

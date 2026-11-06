@@ -1,8 +1,9 @@
+import { ShopWorkPopoverPanel } from './ShopWorkPopoverPanel'
 import { arrivalDateLabel } from '@/features/appointments/visit-requests'
 import WorkspaceRecordLink from '@/components/WorkspaceRecordLink'
 import { ControlButton } from '@/components/ui/Controls'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
-import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
+import { Popover, PopoverButton } from '@headlessui/react'
 import { ArrowRight, ArrowUpRight, CalendarClock, CheckCircle2, ChevronDown, CircleAlert, ClipboardList, CloudOff, Package, Receipt, RotateCcw, Truck, Wrench, X } from 'lucide-react'
 import { shopWorkDestinationUrl, type ShopWorkDestination } from './shopWorkNavigation'
 import { WIP_REASONS } from './wipAging'
@@ -208,13 +209,13 @@ export default function ShopWorkOverview({ data, loading, failed, refreshing, on
                   {issues.length === 1 ? `${issues[0].id === 'receivables' ? 'Billing data' : SOURCE[issues[0].id].label} ${issues[0].state === 'unavailable' ? 'unavailable' : 'incomplete'}` : `${issues.length} areas need review`}
                   <ChevronDown aria-hidden="true" />
                 </PopoverButton>
-                <PopoverPanel focus className="db-overview__status-panel" role="dialog" aria-label="Areas needing review">
+                <ShopWorkPopoverPanel focus className="db-overview__status-panel" role="dialog" aria-label="Areas needing review">
                   <div className="db-overview__status-heading"><strong>Board coverage</strong><ControlButton controlKind="icon" type="button" aria-label="Close verification details" onClick={() => close()}><X aria-hidden="true" /></ControlButton></div>
                   <ul>{issues.map(source => {
                     const Icon = SOURCE[source.id].icon
                     return <li key={source.id}><div className="db-overview__status-source"><Icon aria-hidden="true" /><strong>{SOURCE[source.id].label}</strong></div><p>{sourceIssue(source)}</p>{source.id !== 'receivables' && <ControlButton className="db-overview__link" type="button" onClick={() => { close(); onWorkspace(SOURCE[source.id].path) }}>Open {SOURCE[source.id].label}<ArrowUpRight aria-hidden="true" /></ControlButton>}</li>
                   })}</ul>
-                </PopoverPanel>
+                </ShopWorkPopoverPanel>
               </>}
             </Popover>}
           </div>

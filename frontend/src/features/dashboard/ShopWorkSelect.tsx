@@ -4,6 +4,7 @@ import { Check, ChevronDown } from 'lucide-react'
 import type { CSSProperties } from 'react'
 import { useTheme, appearanceTokenRecord } from '@/contexts/ThemeContext'
 import './shopWorkSelect.css'
+import './shopWorkMotion.css'
 
 /** Existing Headless UI selection behavior with Shop Work's compact theme. */
 export default function ShopWorkSelect<T extends string>({ label, value, options, onChange }: {
@@ -20,7 +21,7 @@ export default function ShopWorkSelect<T extends string>({ label, value, options
       <span>{options.find(option => option.value === value)?.label ?? 'Choose…'}</span>
       <ChevronDown size={16} aria-hidden="true" />
     </ListboxButton>
-    <ListboxOptions style={menuStyle} data-appearance-mode={appearance.mode} anchor="bottom start" className="db-work-select-menu">
+    <ListboxOptions transition style={menuStyle} data-appearance-mode={appearance.mode} anchor="bottom start" className="db-work-select-menu">
       {options.map(option => <ListboxOption key={option.value} value={option.value} className="db-work-select-option">
         {({ selected }) => <><span>{option.label}</span>{selected && <Check size={16} aria-hidden="true" />}</>}
       </ListboxOption>)}
