@@ -5,6 +5,7 @@ import { useTheme } from '@/contexts/ThemeContext'
 import { appearanceTokenRecord } from '@/contexts/appearanceTokens'
 import { DEFAULT_APPEARANCE } from '@/types/presentation'
 import '../dashboard/shopWorkSelect.css'
+import '../dashboard/shopWorkMotion.css'
 import { REPAIR_ORDERS_QUEUE_LABEL, type RepairOrdersQueueOrigin } from './repairOrdersPresentation'
 
 export type OrderListView = 'all' | 'overdue' | RepairOrdersQueueOrigin
@@ -34,7 +35,7 @@ export function RepairOrderListFilter({ view, status, options, allowQueueViews, 
     <MenuButton className="db-work-select db-order-list-filter" data-db-control="select" aria-label={`Filter repair orders: ${label}`}>
       <span>{label}</span><ChevronDown size={14} aria-hidden="true" />
     </MenuButton>
-    <MenuItems anchor="bottom start" className="db-work-select-menu db-order-list-menu" data-appearance-mode={appearance.mode} style={appearanceTokenRecord(appearance) as CSSProperties}>
+    <MenuItems transition anchor="bottom start" className="db-work-select-menu db-order-list-menu" data-appearance-mode={appearance.mode} style={appearanceTokenRecord(appearance) as CSSProperties}>
       <MenuSection>
         <MenuHeading className="db-order-list-menu__heading">View</MenuHeading>
         {(view === 'closed_today' ? [...availableViews, view] : availableViews).map(v => choice(v, labels[v], v === view, () => onViewChange(v)))}

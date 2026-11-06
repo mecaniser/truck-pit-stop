@@ -109,7 +109,7 @@ describe('imported repair-order billing page', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     const { container } = render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/?selected=ets-order']}><RepairOrdersPage /></MemoryRouter></QueryClientProvider>)
     const user = userEvent.setup()
-    expect(await screen.findByText('Paid in full')).toBeVisible()
+    await waitFor(() => expect(screen.getByText('Paid in full')).toBeVisible())
     await user.click(await screen.findByRole('button', { name: 'Repair order history', exact: true }))
     await waitFor(() => expect(api.get).toHaveBeenCalledWith('/repair-orders/ets-order/detail', expect.anything()))
     await waitFor(() => expect(client.getQueriesData({ queryKey: ['repair-order-detail', order.id] }).some(([, value]) => (value as typeof detail | undefined)?.labor_items?.length === 1)).toBe(true))

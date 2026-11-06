@@ -119,6 +119,16 @@ const renderLedger = (overrides: Partial<React.ComponentProps<typeof RepairOrder
 }
 
 describe('DB-035 Stage 4 Repair Orders presentation', () => {
+  it('hides the selected record preview while its workspace is open', async () => {
+    const { props, rerender } = renderLedger()
+    await userEvent.click(screen.getByRole('button', { name: 'Show preview for RO-1017' }))
+    rerender(<RepairOrdersLedger {...props} selectedId={rows[0].id} />)
+    expect(screen.queryByRole('button', { name: /preview for RO-1017/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Order brief for RO-1017' })).not.toBeInTheDocument()
+    rerender(<RepairOrdersLedger {...props} selectedId={null} />)
+    expect(screen.getByRole('button', { name: /preview for RO-1017/ })).toBeVisible()
+  })
+
   it('explains every billing warning in expanded Details without opening the workspace', async () => {
     const { props } = renderLedger({ rows: [{ ...rows[0], importedBilling: {
       source: 'easy_truck_shop_import', evidence_basis: 'ets_source_snapshot', reconciliation_status: 'not_checked',
@@ -202,7 +212,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     const trigger = screen.getByRole('button', { name: 'Filter repair orders: Overdue · Assigned' })
     await user.click(trigger)
     await user.keyboard('{Escape}')
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
     await waitFor(() => expect(trigger).toHaveFocus())
     expect(props.onOpenOrder).not.toHaveBeenCalled()
   })
@@ -518,9 +528,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(screen.getByRole('article', { name: 'Repair order RO-1017' })).not.toHaveAttribute('data-inspected')
     expect(screen.getByRole('article', { name: 'Repair order RO-1018' })).toHaveAttribute('data-inspected', 'true')
 
-    // The selected row offers no brief of its own: the workspace beside the list
-    // is already that order's detail, so a second copy on the row repeated the
-    // customer, truck and work request rather than adding anything.
+    // Selection must not remove the preview control and change row height.
     expect(screen.queryByRole('button', { name: 'Show preview for RO-1017' })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Order brief for RO-1017' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Open repair order RO-1017 from details' })).not.toBeInTheDocument()

@@ -62,7 +62,7 @@ function renderPage(
 
   const renderResult = render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={initialEntries}>
+      <MemoryRouter initialEntries={initialEntries} future={{ v7_startTransition: true }}>
         <RepairOrdersPage {...props} />
         <LocationProbe />
       </MemoryRouter>
@@ -261,8 +261,20 @@ describe('RepairOrdersPage request cancellation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show preview for RO-QUEUE-2' }))
     expect(screen.getByTestId('repair-orders-location')).toHaveTextContent('?selected=queue-order&queue=needs_action')
     expect(apiMocks.get).not.toHaveBeenCalledWith('/repair-orders/sibling-order/workspace')
+    const selections: string[] = []
+    const observer = new MutationObserver(() => {
+      const selected = document.querySelector('[data-selected="true"][aria-label]')?.getAttribute('aria-label')
+      if (selected) selections.push(selected)
+    })
+    observer.observe(document.body, { subtree: true, attributes: true, childList: true })
     fireEvent.click(screen.getByRole('button', { name: 'Open repair order RO-QUEUE-2' }))
     await waitFor(() => expect(screen.getByTestId('repair-orders-location')).toHaveTextContent('?selected=sibling-order&queue=needs_action'))
+
+    await waitFor(() => expect(screen.getByRole('article', { name: 'Repair order RO-QUEUE-2' })).toHaveAttribute('data-selected', 'true'))
+    observer.disconnect()
+    const arrival = selections.indexOf('Repair order RO-QUEUE-2')
+    expect(arrival).toBeGreaterThanOrEqual(0)
+    expect(selections.slice(arrival).every(value => value === 'Repair order RO-QUEUE-2')).toBe(true)
 
     fireEvent.click(screen.getByRole('button', { name: 'Filter repair orders: Needs Action' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'All repair orders' }))
