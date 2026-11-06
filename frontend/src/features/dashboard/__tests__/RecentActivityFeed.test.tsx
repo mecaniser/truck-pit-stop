@@ -39,10 +39,10 @@ describe('Shop Work activity consistency', () => {
     expect(state.filters.date_from).toBe('2026-10-29')
     await user.click(screen.getByRole('button', { name: 'Clear filters' }))
     expect(state.filters).toEqual({ actor_id: undefined, event_type: undefined, date_from: undefined, date_to: undefined })
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Activity filters' })).toHaveFocus()
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument()); expect(screen.getByRole('button', { name: 'Activity filters' })).toHaveFocus()
     await user.click(screen.getByRole('button', { name: 'Activity filters' }))
     await user.click(screen.getByRole('button', { name: 'Close activity filters' }))
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
   it('distinguishes initial failure, loading, empty, and denied activity', () => {
     state.data = undefined; state.isError = true

@@ -145,7 +145,7 @@ html::-webkit-scrollbar-thumb:hover {
 /* DB-035 authenticated staff presentation. The selectors stay below the
    staff-shell boundary so public, customer, driver, fleet and mechanic apps
    keep their own visual systems. */
-.db-presentation-new, .db-work-select-menu, .db-workflow-info-panel {
+.db-presentation-new, .db-work-select-menu, .db-workflow-info-panel, .db-work-motion-panel {
   --shell-field: #0b1b2e;
   --shell-field-raised: #142a44;
   --shell-text: #f7f9fc;
@@ -255,7 +255,7 @@ html::-webkit-scrollbar-thumb:hover {
   color-scheme: light;
 }
 
-.db-staff-shell[data-appearance-mode='dark'], .db-work-select-menu[data-appearance-mode='dark'], .db-workflow-info-panel[data-appearance-mode='dark'] {
+.db-staff-shell[data-appearance-mode='dark'], .db-work-select-menu[data-appearance-mode='dark'], .db-workflow-info-panel[data-appearance-mode='dark'], .db-work-motion-panel[data-appearance-mode='dark'] {
   --workspace-canvas: #07101d;
   --workspace-text: #f6f8fb;
   --workspace-muted: #b8c5d5;
@@ -285,7 +285,7 @@ html::-webkit-scrollbar-thumb:hover {
   color-scheme: dark;
 }
 
-.db-staff-shell[data-appearance-mode='high_contrast'], .db-work-select-menu[data-appearance-mode='high_contrast'], .db-workflow-info-panel[data-appearance-mode='high_contrast'] {
+.db-staff-shell[data-appearance-mode='high_contrast'], .db-work-select-menu[data-appearance-mode='high_contrast'], .db-workflow-info-panel[data-appearance-mode='high_contrast'], .db-work-motion-panel[data-appearance-mode='high_contrast'] {
   --workspace-canvas: #000;
   --workspace-text: #fff;
   --workspace-muted: #e5e7eb;
@@ -7267,7 +7267,7 @@ html.customer-portal-active {
   box-shadow: inset 0 0 0 1px var(--stage-ink);
 }
 .db-job-stages .db-pipeline-step:focus-visible { outline: 2px solid var(--stage-ink); outline-offset: -2px; }
-.db-workflow-info-panel {
+.db-workflow-info-panel, .db-work-motion-panel {
   border: 1px solid var(--workspace-border);
   background: var(--surface-overlay);
   color: var(--workspace-text);

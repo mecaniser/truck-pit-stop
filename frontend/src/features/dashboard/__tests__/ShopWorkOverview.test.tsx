@@ -1,8 +1,9 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { waitFor, act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { shopWorkDestinationUrl } from '../shopWorkNavigation'
 import ShopWorkOverview, { type ShopWorkOverviewData, type ShopWorkItem, type OverviewSourceStatus } from '../ShopWorkOverview'
+vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ appearance: { mode: 'dark' } }), appearanceTokenRecord: () => ({}) }))
 const item = (overrides: Partial<ShopWorkItem> = {}): ShopWorkItem => ({ id: 'inventory:part-a', source: 'inventory', destination: { kind: 'inventory', id: 'part-a', view: null }, title: 'Brake chamber T30', reason: 'stock_preparation', action_label: 'Review stock', status: 'needs_review', created_at: null, due_at: null, due_kind: null, evidence: 'verified', quantity: 2, related_repair_order_ids: [], ...overrides })
 const source = (overrides: Partial<OverviewSourceStatus> = {}): OverviewSourceStatus => ({ id: 'inventory', state: 'ready', checked_at: '2026-11-01T15:00:00Z', reason: null, total: 1, shown: 1, has_more: false, ...overrides })
 const data = (overrides: Partial<ShopWorkOverviewData> = {}): ShopWorkOverviewData => ({ as_of: '2026-11-01T15:00:00Z', timezone: 'America/New_York', scope: 'shop', active_jobs: 0, sources: [source()], actions: [item()], upcoming: [], actions_total: 1, upcoming_total: 0, has_more_actions: false, has_more_upcoming: false, ...overrides })
@@ -78,7 +79,7 @@ describe('Shop Work overview', () => {
   act(() => trigger.focus()); await user.keyboard('{Enter}')
   expect(screen.getByRole('dialog', { name: 'Areas needing review' })).toHaveTextContent('Could not check this area.')
   await user.keyboard('{Escape}')
-  expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(trigger).toHaveFocus()
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument()); expect(trigger).toHaveFocus()
  })
  it('omits source controls and destinations for disabled or restricted areas', () => {
   setup(data({ sources: [source(), source({ id: 'receivables', state: 'restricted', has_more: true }), source({ id: 'purchasing', state: 'disabled', has_more: true })], has_more_actions: true }))
