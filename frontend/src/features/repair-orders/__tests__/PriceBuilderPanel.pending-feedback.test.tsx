@@ -40,6 +40,9 @@ vi.mock('react-hot-toast', () => ({
   },
 }))
 
+// Surface readiness has its own deferred-query lifecycle tests; these exercise panel actions.
+vi.mock('../useOrderSurfaceReady', () => ({ useOrderSurfaceReady: () => true }))
+
 import PriceBuilderPanel from '../PriceBuilderPanel'
 
 const emptySummary = {
@@ -457,6 +460,7 @@ describe('PriceBuilderPanel pending feedback', () => {
     expect(trigger).toHaveFocus()
     expect(onSaveIntake).not.toHaveBeenCalled()
     await user.click(trigger)
+    await waitFor(() => expect(document.querySelector('.db-order-motion-menu')).not.toHaveAttribute('data-leave'))
     await user.click(screen.getByRole('button', { name: 'Edit intake' }))
     expect(screen.getByRole('textbox', { name: 'PO number' })).toHaveValue('Original')
   })

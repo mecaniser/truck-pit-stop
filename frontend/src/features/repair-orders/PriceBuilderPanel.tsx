@@ -1,3 +1,10 @@
+import { OrderSurfaceContext } from './OrderSurfaceContext'
+import './repairOrderMotion.css'
+import { useOrderSurfaceReady } from './useOrderSurfaceReady'
+import { useTheme } from '@/contexts/ThemeContext'
+import { appearanceTokenRecord } from '@/contexts/appearanceTokens'
+import { DEFAULT_APPEARANCE } from '@/types/presentation'
+import type { CSSProperties } from 'react'
 import { ControlInput, ControlButton } from '@/components/ui/Controls'
 import PlatformSelect from '@/components/PlatformSelect'
 import { useAdHocPartCommand } from '@/features/parts-pricing/useAdHocPartCommand'
@@ -245,6 +252,7 @@ type Props = {
   onCreateInvoice?: (dueDate?: string | null, billToCustomerId?: string) => void
   invoice?: Invoice | null
   invoiceSettlement?: InvoiceSettlementSummary | null
+  initialInvoicePending?: boolean
   invoiceActionPending?: boolean
   onResendInvoice?: () => void
   onRecordPayment?: () => void
@@ -883,6 +891,7 @@ export default function PriceBuilderPanel({
   onCreateInvoice,
   invoice,
   invoiceSettlement = null,
+  initialInvoicePending = false,
   invoiceActionPending = false,
   onResendInvoice,
   onRecordPayment,
@@ -932,6 +941,7 @@ export default function PriceBuilderPanel({
   onUpdated,
   initialLineWarnings = [],
 }: Props) {
+  const appearance = useTheme(true)?.appearance ?? DEFAULT_APPEARANCE
   const queryClient = useQueryClient()
   const staffRole = useAuthStore(state => state.user?.role)
   const pricingScope = usePricingScope()
@@ -1093,18 +1103,7 @@ export default function PriceBuilderPanel({
     focusedLink.current = null
   }, [orderId, focusedRecommendationId, onRecommendedServicesOpenChange])
 
-  useEffect(() => {
-    if (!focusedRecommendationId || !recommendedServices?.some((item) => item.id === focusedRecommendationId)) return
-    const key = `recommendation-${focusedRecommendationId}`
-    if (focusedLink.current === key) return
-    const frame = requestAnimationFrame(() => {
-      const row = document.getElementById(key)
-      row?.focus({ preventScroll: true })
-      if (row) revealWorkspaceContent(row)
-      if (row) focusedLink.current = key
-    })
-    return () => cancelAnimationFrame(frame)
-  }, [focusedRecommendationId, recommendedServices])
+
 
   useEffect(() => {
     setStockShortages({})
@@ -1164,6 +1163,21 @@ export default function PriceBuilderPanel({
     // them), so don't fetch when deleted — the panel shows the Restore state.
     enabled: !!orderId && !isDeleted,
   })
+
+  const surfaceReady = useOrderSurfaceReady(orderId, pricingScope, (isLoading && !summary && !isDeleted) || initialInvoicePending)
+
+  useEffect(() => {
+    if (!surfaceReady || !focusedRecommendationId || !recommendedServices?.some((item) => item.id === focusedRecommendationId)) return
+    const key = `recommendation-${focusedRecommendationId}`
+    if (focusedLink.current === key) return
+    const frame = requestAnimationFrame(() => {
+      const row = document.getElementById(key)
+      row?.focus({ preventScroll: true })
+      if (row) revealWorkspaceContent(row)
+      if (row) focusedLink.current = key
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [surfaceReady, focusedRecommendationId, recommendedServices])
 
   const operationExecution = useOperationExecution(orderId, summary, !isDeleted)
 
@@ -1442,12 +1456,12 @@ export default function PriceBuilderPanel({
   const canManageHold = !!workHoldOrder && canMutate && !isDeleted && !hasInvoice && canManageWorkHold(staffRole, workHoldOrder)
   const holdAction = (beforeOpen?: () => void) => canManageHold && <ControlButton type="button" onClick={() => { beforeOpen?.(); setHoldDialogOrderId(orderId) }} className="db-stage-action inline-flex  items-center justify-center whitespace-nowrap rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">{isOnHold ? 'Release hold' : 'Put on hold'}</ControlButton>
   useEffect(() => {
-    if (!focusedOperationId || !summary?.lines.some((line) => line.id === focusedOperationId)) return
+    if (!surfaceReady || !focusedOperationId || !summary?.lines.some((line) => line.id === focusedOperationId)) return
     const key = `operation-${focusedOperationId}`
     if (focusedLink.current === key) return
     focusedLink.current = key
     openLinkedOperation(focusedOperationId)
-  }, [focusedOperationId, summary?.lines])
+  }, [surfaceReady, focusedOperationId, summary?.lines])
   // The add bar must follow the same editable-status rule as canMutate, or an
   // internal in-progress order shows "start by adding…" with no add controls.
   // Quality review is still pre-finalization: managers may discover another
@@ -2608,7 +2622,8 @@ export default function PriceBuilderPanel({
   </>
 
   return (
-    <div className="db-price-builder relative flex h-full min-h-full flex-col overflow-hidden bg-white">
+    <OrderSurfaceContext.Provider value={surfaceReady}>
+    <div data-surface-ready={surfaceReady} aria-busy={!surfaceReady} className="db-price-builder relative flex h-full min-h-full flex-col overflow-hidden bg-white">
       {pricingCommand.dialog}
       {maintenanceRemoval.dialog}
       {adHocPricing.dialog}
@@ -2631,7 +2646,7 @@ export default function PriceBuilderPanel({
                     <ChevronDown className={`h-4 w-4 shrink-0 ${open ? 'rotate-180' : ''}`} />
                   </PopoverButton>
                 </h2>
-                <PopoverPanel anchor="bottom start" focus aria-label="Truck and customer details" className="db-job-details z-[100] w-[min(560px,calc(100vw-32px))] max-h-[min(480px,calc(100dvh-100px))] overflow-y-auto rounded-xl bg-white p-4 text-gray-900 shadow-lg ring-1 ring-gray-200 [--anchor-gap:8px] [--anchor-padding:16px]">
+                <PopoverPanel data-appearance-mode={appearance.mode} style={appearanceTokenRecord(appearance) as CSSProperties} transition anchor="bottom start" focus aria-label="Truck and customer details" className="db-order-motion-menu db-order-motion-menu--start db-job-details z-[100] w-[min(560px,calc(100vw-32px))] max-h-[min(480px,calc(100dvh-100px))] overflow-y-auto rounded-xl bg-white p-4 text-gray-900 shadow-lg ring-1 ring-gray-200 [--anchor-gap:8px] [--anchor-padding:16px]">
                   <div className="mb-3 flex items-center justify-between gap-2">
                     <h3 tabIndex={0} data-autofocus className="font-semibold outline-none">Truck and customer</h3>
                     <ControlButton controlKind="icon" type="button" onClick={() => close()} aria-label="Close truck and customer details" className="flex  w-11 shrink-0 items-center justify-center rounded-lg hover:bg-gray-100"><X className="h-4 w-4" /></ControlButton>
@@ -2649,7 +2664,7 @@ export default function PriceBuilderPanel({
                       {vehicleVin && <p className="text-xs text-gray-500">VIN: {vehicleVin}</p>}
                       {vehiclePlate && <p className="text-xs text-gray-500">Plate: {vehiclePlate}</p>}
                     </div>
-                    <OrderIntakeDetails key={orderId} mileageIn={mileageIn} mileageOut={mileageOut} mileageInCarried={mileageInCarried} poNumber={poNumber} orderTypeLabel={orderTypeLabel} canEdit={canMutate && !isDeleted && !['completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus)} onSave={onSaveIntake} />
+                    {open && <OrderIntakeDetails key={orderId} mileageIn={mileageIn} mileageOut={mileageOut} mileageInCarried={mileageInCarried} poNumber={poNumber} orderTypeLabel={orderTypeLabel} canEdit={canMutate && !isDeleted && !['completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus)} onSave={onSaveIntake} />}
                   </div>
                   {onOpenVehicleHistory && !isDeleted && <ControlButton type="button" className="mt-3 inline-flex  items-center gap-2 whitespace-nowrap rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { close(); onOpenVehicleHistory() }}><History className="h-4 w-4" aria-hidden="true" />View vehicle history</ControlButton>}
                 </PopoverPanel>
@@ -2758,7 +2773,8 @@ export default function PriceBuilderPanel({
         </>
       )}
 
-      <div className="db-workspace-body min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5 pb-4">
+      {!surfaceReady && <div className="db-order-surface-loading" role="status">Loading order details…</div>}
+      <div aria-hidden={!surfaceReady || undefined} className="db-workspace-body min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5 pb-4">
       {compactWorkspace && operationExecution.isError && operationProgress}
 
       {(onSaveDescription || (description && description.trim())) && (
@@ -2827,7 +2843,7 @@ export default function PriceBuilderPanel({
           <p className="mt-2 text-sm text-slate-600">Restore the order to view its work, checklist, notes and history. All records are preserved.</p>
         </section>
       ) : <>
-      <OrderChecklist orderId={orderId} orderStatus={orderStatus} refreshToken={summary} />
+      <OrderChecklist orderId={orderId} orderStatus={orderStatus} refreshToken={summary} dark={appearance.mode !== 'light'} />
 
       {!!summary?.warnings?.filter((w) => !w.line_id).length && (
         <div className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
@@ -2850,7 +2866,7 @@ export default function PriceBuilderPanel({
       )}
 
       {hasInvoice && invoice && (
-        <div className="rounded-2xl border border-purple-200 bg-purple-50/70 p-3">
+        <div className="db-order-invoice rounded-2xl border border-purple-200 bg-purple-50/70 p-3">
           <div className="flex items-center gap-2">
             <ControlButton controlKind="content"
               type="button"
@@ -2895,7 +2911,7 @@ export default function PriceBuilderPanel({
                 <MenuButton data-db-control="icon" ref={invoiceActionsRef} type="button" aria-label="Invoice actions" title="Invoice actions" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-purple-700 hover:bg-purple-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-700">
                   <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
                 </MenuButton>
-                <MenuItems anchor="bottom end" modal={false} aria-label="Invoice actions" className="z-[100] w-56 max-w-[calc(100vw-32px)] rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-lg outline-none [--anchor-gap:6px] [--anchor-padding:16px]">
+                <MenuItems data-appearance-mode={appearance.mode} style={appearanceTokenRecord(appearance) as CSSProperties} transition anchor="bottom end" modal={false} aria-label="Invoice actions" className="db-order-motion-menu z-[100] w-56 max-w-[calc(100vw-32px)] rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-lg outline-none [--anchor-gap:6px] [--anchor-padding:16px]">
                   <MenuItem>
                     <ControlButton controlKind="content" type="button" onClick={() => {
                       // The menu item unmounts; restore dialog focus to its stable trigger.
@@ -2920,7 +2936,7 @@ export default function PriceBuilderPanel({
           {invoiceDetailsOpen && (
           <div className="mt-3 space-y-3 rounded-xl bg-white p-3 text-sm ring-1 ring-purple-100">
             {invoiceSettlement && (
-              <SettlementSummaryCard summary={invoiceSettlement} tone="light" compact />
+              <SettlementSummaryCard summary={invoiceSettlement} tone={appearance.mode === 'light' ? 'light' : 'dark'} compact />
             )}
             <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -3992,33 +4008,8 @@ export default function PriceBuilderPanel({
         )
 
         if (isLoading) {
-          // Skeleton that mirrors the Services & Parts list, so a slow fetch (prod)
-          // reads as "loading" in the open drawer rather than an empty panel.
-          return (
-            <div className="animate-pulse">
-              <div className="mb-1 flex items-center justify-between">
-                <span className="inline-flex items-center gap-2">
-                  <div className="h-3 w-24 rounded bg-gray-200" />
-                  <div className="h-4 w-12 rounded-full bg-gray-100" />
-                </span>
-              </div>
-              <div className="db-service-list divide-y divide-gray-100 border-y border-gray-100">
-                {[0, 1, 2].map((i) => (
-                  <div key={i} className="flex items-center gap-3 px-2 py-3">
-                    <div className="h-9 w-9 shrink-0 rounded-lg bg-gray-200" />
-                    <div className="min-w-0 flex-1 space-y-2">
-                      <div className="h-3.5 w-1/2 rounded bg-gray-200" />
-                      <div className="h-2.5 w-1/3 rounded bg-gray-100" />
-                    </div>
-                    <div className="space-y-2 text-right">
-                      <div className="ml-auto h-5 w-16 rounded bg-gray-200" />
-                      <div className="ml-auto h-2.5 w-20 rounded bg-gray-100" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )
+          // The coordinated surface owns initial loading feedback.
+          return null
         }
         if (summaryLoadFailed) {
           return (
@@ -4845,7 +4836,7 @@ export default function PriceBuilderPanel({
             onClick={onToggleDangerActions}
             className="absolute inset-0 bg-gray-900/40"
           />
-          <div className="animate-slide-in-bottom relative flex max-h-[80%] flex-col rounded-t-2xl border-t border-red-100 bg-white shadow-2xl">
+          <div className="db-order-danger-sheet animate-slide-in-bottom relative flex max-h-[80%] flex-col overflow-hidden rounded-t-2xl border-t border-red-100 bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-red-100 bg-red-50/60 px-5 py-3">
               <span className="inline-flex items-center gap-2 text-sm font-semibold text-red-700">
                 <AlertTriangle className="h-4 w-4" /> Danger zone
@@ -4901,6 +4892,7 @@ export default function PriceBuilderPanel({
         </div>
       )}
     </div>
+    </OrderSurfaceContext.Provider>
   )
 }
 import { laborSourceLabel, type SafeLaborPricing } from '@/features/customer-pricing/contract'

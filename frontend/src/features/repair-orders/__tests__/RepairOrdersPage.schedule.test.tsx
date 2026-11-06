@@ -157,7 +157,7 @@ it('keeps a customer-scoped archive out of tenant-wide work queues', async () =>
   mount('/dashboard/repair-orders?queue=ready_to_close&customer_id=customer-1')
   await screen.findByRole('button', { name: 'Open repair order RO-1' })
   fireEvent.click(screen.getByRole('button', { name: 'Filter repair orders: All repair orders' }))
-  expect(await screen.findByRole('menuitem', { name: 'Overdue' })).toBeVisible()
+  await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Overdue' })).toBeVisible())
   expect(screen.queryByRole('menuitem', { name: 'Ready to Close' })).toBeNull()
   expect(api.get.mock.calls.map(([url]) => url)).not.toContain('/dashboard/action-queue')
 })

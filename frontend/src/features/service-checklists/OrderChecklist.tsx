@@ -51,7 +51,7 @@ function Checklist({ tenantId, orderId, refreshToken, orderStatus, dark, actorSc
     return [...map.values()]
   }, [query.data])
   // Errors and loading must never imply that required work is cleared.
-  if (first?.total === 0 && !query.isError && !query.isFetching && !message) return null
+  if (first?.total === 0 && !query.isError && !message) return query.isFetching ? <span role="status" className="sr-only">Checking required tasks…</span> : null
   const canUpdate = Boolean(first?.can_update) && !query.isError && (!orderStatus || ['in_progress', 'pending_review'].includes(orderStatus))
   const muted = dark ? '!text-[#d4d4d8]' : '!text-[#4b5563]'
   return <section ref={section} aria-label="Work order checklist" className={`my-3 rounded-xl border p-3 ${dark ? 'border-zinc-700 !bg-[#18181b] !text-[#f4f4f5]' : 'border-gray-200 !bg-[#ffffff] !text-[#111827]'}`}>
