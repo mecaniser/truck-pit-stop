@@ -98,7 +98,7 @@ function RecommendedWorkContext({ tenantId, vehicleId, customerId, contextOrderI
       </div>
       <div role="status" aria-live="polite">
         {query.isPending && <p className="py-3 text-sm !text-gray-600">Loading recommendations…</p>}
-        {query.isFetching && !query.isPending && <p className="pt-2 text-xs !text-gray-600">Refreshing recommendations…</p>}
+        {query.isFetching && !query.isPending && <p className="sr-only">Refreshing recommendations…</p>}
       </div>
       {query.isError && <div role="alert" className="mt-3 text-sm text-red-700">
         {page ? 'Could not refresh recommendations. Showing the last loaded page.' : 'Could not load recommendations.'}

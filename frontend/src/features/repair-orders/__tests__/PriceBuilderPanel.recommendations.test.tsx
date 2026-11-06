@@ -28,11 +28,26 @@ afterAll(() => vi.unstubAllGlobals())
 beforeEach(() => { api.get.mockImplementation(async (url: string) => ({ data: url.endsWith('/price-build') ? summary : url.endsWith('/parts') ? [] : {} })) })
 
 describe('recommendation navigation in repair workspace', () => {
+  it('waits for the initial surface reveal before focusing a linked operation', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const view = (pending: boolean) => <MemoryRouter><QueryClientProvider client={client}>
+      <PriceBuilderPanel orderId="order-a" orderStatus="in_progress" canEdit focusedOperationId="line-a" initialInvoicePending={pending} />
+    </QueryClientProvider></MemoryRouter>
+    const { rerender, container } = render(view(true))
+    await screen.findByText('Renamed operation')
+    expect(container.querySelector('.db-price-builder')).toHaveAttribute('data-surface-ready', 'false')
+    expect(document.activeElement?.closest('.db-workspace-body')).toBeNull()
+    rerender(view(false))
+    const operation = await screen.findByRole('button', { name: /Renamed operation/ })
+    await waitFor(() => expect(operation).toHaveFocus())
+    expect(container.querySelector('.db-price-builder')).toHaveAttribute('data-surface-ready', 'true')
+  })
+
   it('shows the saved labor source and obeys its rate capability without disabling duration', async () => {
     api.get.mockImplementation(async (url: string) => ({ data: url.endsWith('/price-build') ? { ...summary, lines: [{ ...line, pricing: { source: 'customer', current_source: 'default', default_hourly_rate: '145.00', charged_hourly_rate: '145.00', can_override: false } }] } : url.endsWith('/parts') ? [] : {} }))
     setup({ focusedOperationId: 'line-a' })
     await screen.findByText('Account')
-    expect(screen.getByText('145.00/hr')).toBeVisible()
+    await waitFor(() => expect(screen.getByText('145.00/hr')).toBeVisible())
     expect(screen.queryByRole('textbox', { name: 'Labor hourly rate' })).not.toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'Labor duration' })).toBeEnabled()
   })
@@ -66,7 +81,7 @@ describe('recommendation navigation in repair workspace', () => {
   it('hides conversion on a deleted target even if a stale server capability is true', async () => {
     setup({ isDeleted: true, recommendedWorkPanel: (context) => <output data-testid="context">{String(context.canConvert)}</output> })
     expect(screen.queryByTestId('context')).not.toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'Deleted repair order' })).toBeVisible()
+    expect(await screen.findByRole('region', { name: 'Deleted repair order' })).toBeVisible()
     expect(screen.queryByRole('button', { name: /Renamed operation/ })).not.toBeInTheDocument()
   })
 })

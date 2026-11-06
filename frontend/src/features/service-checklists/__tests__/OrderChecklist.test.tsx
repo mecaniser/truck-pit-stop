@@ -21,6 +21,20 @@ function mount(order = 'order-a') {
 }
 beforeEach(() => { vi.clearAllMocks(); setUser(); mocks.get.mockResolvedValue({ data: page() }) })
 describe('persisted work checklists', () => {
+  it('keeps an empty checklist out of layout during refresh but reveals a failed refresh', async () => {
+    mocks.get.mockResolvedValue({ data: page([], { summary: { total: 0, completed: 0, required: 0, required_remaining: 0 } }) })
+    const { client } = mount()
+    await waitFor(() => expect(client.isFetching()).toBe(0))
+    expect(screen.queryByRole('region', { name: 'Work order checklist' })).not.toBeInTheDocument()
+    let reject!: (error: Error) => void
+    mocks.get.mockImplementation(() => new Promise((_resolve, fail) => { reject = fail }))
+    act(() => { void client.invalidateQueries() })
+    await screen.findByRole('status')
+    expect(screen.queryByRole('region', { name: 'Work order checklist' })).not.toBeInTheDocument()
+    await act(async () => reject(new Error('Offline')))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Completion status is unverified')
+  })
+
   it('waits for persistence and renders server attribution; a failed reopen keeps the saved check', async () => {
     const user = userEvent.setup()
     let resolve!: () => void

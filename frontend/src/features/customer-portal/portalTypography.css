@@ -1,0 +1,78 @@
+@import './portalFonts.css';
+
+/* Customer-only type scale, including dialogs portalled under body. Keep html at
+   16px: changing rem globally would also resize spacing and staff screens. */
+html.customer-portal-active body {
+  --font-size-body: var(--customer-font-size, 16px);
+  font-family: var(--customer-font-family, system-ui, sans-serif);
+  font-size: var(--font-size-body);
+  line-height: 1.5;
+}
+html.customer-portal-active [class~="text-xs"] { font-size: max(11px, calc(var(--font-size-body) * 0.75)); line-height: calc(var(--font-size-body) * 1); }
+html.customer-portal-active [class~="text-sm"] { font-size: max(11px, calc(var(--font-size-body) * 0.875)); line-height: calc(var(--font-size-body) * 1.25); }
+html.customer-portal-active [class~="text-base"] { font-size: calc(var(--font-size-body) * 1); line-height: calc(var(--font-size-body) * 1.5); }
+html.customer-portal-active [class~="text-lg"] { font-size: calc(var(--font-size-body) * 1.125); line-height: calc(var(--font-size-body) * 1.75); }
+html.customer-portal-active [class~="text-xl"] { font-size: calc(var(--font-size-body) * 1.25); line-height: calc(var(--font-size-body) * 1.75); }
+html.customer-portal-active [class~="text-2xl"] { font-size: calc(var(--font-size-body) * 1.5); line-height: calc(var(--font-size-body) * 2); }
+html.customer-portal-active [class~="text-3xl"] { font-size: calc(var(--font-size-body) * 1.875); line-height: calc(var(--font-size-body) * 2.25); }
+html.customer-portal-active [class~="text-4xl"] { font-size: calc(var(--font-size-body) * 2.25); line-height: calc(var(--font-size-body) * 2.5); }
+html.customer-portal-active [class~="text-[10px]"] { font-size: max(11px, calc(var(--font-size-body) * 0.625)); line-height: calc(var(--font-size-body) * 0.9375); }
+html.customer-portal-active [class~="text-[11px]"] { font-size: max(11px, calc(var(--font-size-body) * 0.6875)); line-height: calc(var(--font-size-body) * 1.03125); }
+html.customer-portal-active [class~="text-[13px]"] { font-size: max(11px, calc(var(--font-size-body) * 0.8125)); line-height: calc(var(--font-size-body) * 1.21875); }
+html.customer-portal-active [class~="text-[15px]"] { font-size: max(11px, calc(var(--font-size-body) * 0.9375)); line-height: calc(var(--font-size-body) * 1.40625); }
+html.customer-portal-active [class~="text-[38px]"] { font-size: calc(var(--font-size-body) * 2.375); line-height: calc(var(--font-size-body) * 3.5625); }
+html.customer-portal-active [class~="text-[46px]"] { font-size: calc(var(--font-size-body) * 2.875); line-height: calc(var(--font-size-body) * 4.3125); }
+@media (min-width: 640px) {
+html.customer-portal-active [class~="sm:text-xs"] { font-size: max(11px, calc(var(--font-size-body) * 0.75)); line-height: calc(var(--font-size-body) * 1); }
+html.customer-portal-active [class~="sm:text-sm"] { font-size: max(11px, calc(var(--font-size-body) * 0.875)); line-height: calc(var(--font-size-body) * 1.25); }
+html.customer-portal-active [class~="sm:text-base"] { font-size: calc(var(--font-size-body) * 1); line-height: calc(var(--font-size-body) * 1.5); }
+html.customer-portal-active [class~="sm:text-lg"] { font-size: calc(var(--font-size-body) * 1.125); line-height: calc(var(--font-size-body) * 1.75); }
+html.customer-portal-active [class~="sm:text-xl"] { font-size: calc(var(--font-size-body) * 1.25); line-height: calc(var(--font-size-body) * 1.75); }
+html.customer-portal-active [class~="sm:text-2xl"] { font-size: calc(var(--font-size-body) * 1.5); line-height: calc(var(--font-size-body) * 2); }
+html.customer-portal-active [class~="sm:text-3xl"] { font-size: calc(var(--font-size-body) * 1.875); line-height: calc(var(--font-size-body) * 2.25); }
+html.customer-portal-active [class~="sm:text-4xl"] { font-size: calc(var(--font-size-body) * 2.25); line-height: calc(var(--font-size-body) * 2.5); }
+html.customer-portal-active [class~="sm:text-[10px]"] { font-size: max(11px, calc(var(--font-size-body) * 0.625)); line-height: calc(var(--font-size-body) * 0.9375); }
+html.customer-portal-active [class~="sm:text-[11px]"] { font-size: max(11px, calc(var(--font-size-body) * 0.6875)); line-height: calc(var(--font-size-body) * 1.03125); }
+html.customer-portal-active [class~="sm:text-[13px]"] { font-size: max(11px, calc(var(--font-size-body) * 0.8125)); line-height: calc(var(--font-size-body) * 1.21875); }
+html.customer-portal-active [class~="sm:text-[15px]"] { font-size: max(11px, calc(var(--font-size-body) * 0.9375)); line-height: calc(var(--font-size-body) * 1.40625); }
+html.customer-portal-active [class~="sm:text-[38px]"] { font-size: calc(var(--font-size-body) * 2.375); line-height: calc(var(--font-size-body) * 3.5625); }
+html.customer-portal-active [class~="sm:text-[46px]"] { font-size: calc(var(--font-size-body) * 2.875); line-height: calc(var(--font-size-body) * 4.3125); }
+}
+@media (min-width: 768px) {
+html.customer-portal-active [class~="md:text-xs"] { font-size: max(11px, calc(var(--font-size-body) * 0.75)); line-height: calc(var(--font-size-body) * 1); }
+html.customer-portal-active [class~="md:text-sm"] { font-size: max(11px, calc(var(--font-size-body) * 0.875)); line-height: calc(var(--font-size-body) * 1.25); }
+html.customer-portal-active [class~="md:text-base"] { font-size: calc(var(--font-size-body) * 1); line-height: calc(var(--font-size-body) * 1.5); }
+html.customer-portal-active [class~="md:text-lg"] { font-size: calc(var(--font-size-body) * 1.125); line-height: calc(var(--font-size-body) * 1.75); }
+html.customer-portal-active [class~="md:text-xl"] { font-size: calc(var(--font-size-body) * 1.25); line-height: calc(var(--font-size-body) * 1.75); }
+html.customer-portal-active [class~="md:text-2xl"] { font-size: calc(var(--font-size-body) * 1.5); line-height: calc(var(--font-size-body) * 2); }
+html.customer-portal-active [class~="md:text-3xl"] { font-size: calc(var(--font-size-body) * 1.875); line-height: calc(var(--font-size-body) * 2.25); }
+html.customer-portal-active [class~="md:text-4xl"] { font-size: calc(var(--font-size-body) * 2.25); line-height: calc(var(--font-size-body) * 2.5); }
+html.customer-portal-active [class~="md:text-[10px]"] { font-size: max(11px, calc(var(--font-size-body) * 0.625)); line-height: calc(var(--font-size-body) * 0.9375); }
+html.customer-portal-active [class~="md:text-[11px]"] { font-size: max(11px, calc(var(--font-size-body) * 0.6875)); line-height: calc(var(--font-size-body) * 1.03125); }
+html.customer-portal-active [class~="md:text-[13px]"] { font-size: max(11px, calc(var(--font-size-body) * 0.8125)); line-height: calc(var(--font-size-body) * 1.21875); }
+html.customer-portal-active [class~="md:text-[15px]"] { font-size: max(11px, calc(var(--font-size-body) * 0.9375)); line-height: calc(var(--font-size-body) * 1.40625); }
+html.customer-portal-active [class~="md:text-[38px]"] { font-size: calc(var(--font-size-body) * 2.375); line-height: calc(var(--font-size-body) * 3.5625); }
+html.customer-portal-active [class~="md:text-[46px]"] { font-size: calc(var(--font-size-body) * 2.875); line-height: calc(var(--font-size-body) * 4.3125); }
+}
+@media (min-width: 1024px) {
+html.customer-portal-active [class~="lg:text-xs"] { font-size: max(11px, calc(var(--font-size-body) * 0.75)); line-height: calc(var(--font-size-body) * 1); }
+html.customer-portal-active [class~="lg:text-sm"] { font-size: max(11px, calc(var(--font-size-body) * 0.875)); line-height: calc(var(--font-size-body) * 1.25); }
+html.customer-portal-active [class~="lg:text-base"] { font-size: calc(var(--font-size-body) * 1); line-height: calc(var(--font-size-body) * 1.5); }
+html.customer-portal-active [class~="lg:text-lg"] { font-size: calc(var(--font-size-body) * 1.125); line-height: calc(var(--font-size-body) * 1.75); }
+html.customer-portal-active [class~="lg:text-xl"] { font-size: calc(var(--font-size-body) * 1.25); line-height: calc(var(--font-size-body) * 1.75); }
+html.customer-portal-active [class~="lg:text-2xl"] { font-size: calc(var(--font-size-body) * 1.5); line-height: calc(var(--font-size-body) * 2); }
+html.customer-portal-active [class~="lg:text-3xl"] { font-size: calc(var(--font-size-body) * 1.875); line-height: calc(var(--font-size-body) * 2.25); }
+html.customer-portal-active [class~="lg:text-4xl"] { font-size: calc(var(--font-size-body) * 2.25); line-height: calc(var(--font-size-body) * 2.5); }
+html.customer-portal-active [class~="lg:text-[10px]"] { font-size: max(11px, calc(var(--font-size-body) * 0.625)); line-height: calc(var(--font-size-body) * 0.9375); }
+html.customer-portal-active [class~="lg:text-[11px]"] { font-size: max(11px, calc(var(--font-size-body) * 0.6875)); line-height: calc(var(--font-size-body) * 1.03125); }
+html.customer-portal-active [class~="lg:text-[13px]"] { font-size: max(11px, calc(var(--font-size-body) * 0.8125)); line-height: calc(var(--font-size-body) * 1.21875); }
+html.customer-portal-active [class~="lg:text-[15px]"] { font-size: max(11px, calc(var(--font-size-body) * 0.9375)); line-height: calc(var(--font-size-body) * 1.40625); }
+html.customer-portal-active [class~="lg:text-[38px]"] { font-size: calc(var(--font-size-body) * 2.375); line-height: calc(var(--font-size-body) * 3.5625); }
+html.customer-portal-active [class~="lg:text-[46px]"] { font-size: calc(var(--font-size-body) * 2.875); line-height: calc(var(--font-size-body) * 4.3125); }
+}
+/* Keep editable fields above Safari's zoom threshold; large still grows. */
+@media (max-width: 767px), (hover: none) and (pointer: coarse) {
+  html.customer-portal-active :is(input, textarea, select, [contenteditable='true']) {
+    font-size: max(16px, var(--font-size-body)) !important;
+  }
+}

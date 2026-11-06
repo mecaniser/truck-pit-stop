@@ -44,7 +44,7 @@ it('opens from mobile More, returns focus there, and exposes release directly wi
   vi.spyOn(window, 'matchMedia').mockImplementation(query => ({ matches: query.includes('max-width'), media: query, onchange: null, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn() }))
   const view = mount(); const user = userEvent.setup()
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Put on hold' })).not.toBeInTheDocument())
-  const more = screen.getByRole('button', { name: 'Repair order actions', exact: true })
+  const more = await screen.findByRole('button', { name: 'Repair order actions', exact: true })
   await user.click(more); await user.click(await screen.findByRole('button', { name: 'Put on hold', exact: true }))
   expect(screen.getByRole('dialog', { name: 'Put order on hold' })).toBeVisible()
   await user.keyboard('{Escape}')

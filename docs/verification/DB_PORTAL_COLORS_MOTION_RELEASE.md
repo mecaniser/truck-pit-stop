@@ -38,4 +38,4 @@ Screenshots and any private browser evidence remain outside Git. This document r
 
 ## Evidence publication
 
-Release receipt is prepared on `codex/portal-colors-release-evidence`. Documentation-only publication must not be merged ahead of the active PR818 board update; the coordinator requested deferral to avoid another board-conflict/CI cycle. This does not delay or alter the already successful application deployment. No additional production code or release is bundled in this receipt.
+The sequencing hold ended after PR818 merged and deployed as `7b9096bf`. This receipt branch reconciles that current main without losing its PR817/PR818 board notes. Only the release board and this verification receipt differ from main; no product code is changed, and no browser is used for documentation publication. Fresh documentation-scope protected checks are required before merging PR819. The separate service-filter issue remains open and is not part of PR816’s completed acceptance.

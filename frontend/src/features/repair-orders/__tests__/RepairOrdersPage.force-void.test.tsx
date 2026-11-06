@@ -66,6 +66,7 @@ async function renderRevision() {
     render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/?selected=order-1']}><RepairOrdersPage /></MemoryRouter></QueryClientProvider>)
   })
   await waitFor(() => expect(client.isFetching()).toBe(0))
+  await waitFor(() => expect(document.querySelector('.db-price-builder')).toHaveAttribute('data-surface-ready', 'true'))
   return client
 }
 
@@ -133,7 +134,7 @@ describe('Void and revise work editing', () => {
     expect(screen.queryByRole('menuitem')).not.toBeInTheDocument()
     trigger.focus()
     await user.keyboard('{ArrowDown}')
-    expect(await screen.findByRole('menuitem', { name: 'Void entire order…' })).toBeVisible()
+    await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Void entire order…' })).toBeVisible())
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
     expect(trigger).toHaveFocus()
