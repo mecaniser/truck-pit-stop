@@ -2,8 +2,8 @@ import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 
 export const PORTAL_FONTS = [
-  { id: 'sans', label: 'Sans serif', stack: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
-  { id: 'serif', label: 'Serif', stack: 'Georgia, "Times New Roman", serif' },
+  { id: 'geist', label: 'Geist', stack: '"DB Portal Geist", system-ui, sans-serif' },
+  { id: 'jakarta', label: 'Jakarta', stack: '"DB Portal Jakarta", system-ui, sans-serif' },
   { id: 'mono', label: 'Monospace', stack: 'ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace' },
 ] as const
 export const PORTAL_TEXT_SIZES = [
@@ -15,7 +15,7 @@ export interface PortalTypography {
   font: typeof PORTAL_FONTS[number]['id']
   size: typeof PORTAL_TEXT_SIZES[number]['id']
 }
-export const DEFAULT_PORTAL_TYPOGRAPHY: PortalTypography = { font: 'sans', size: 'default' }
+export const DEFAULT_PORTAL_TYPOGRAPHY: PortalTypography = { font: 'geist', size: 'default' }
 const changedEvent = 'dieselbridge:customer-typography-changed'
 
 export function parsePortalTypography(raw: string | null): PortalTypography {

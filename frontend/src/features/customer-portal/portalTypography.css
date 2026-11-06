@@ -1,3 +1,5 @@
+@import './portalFonts.css';
+
 /* Customer-only type scale, including dialogs portalled under body. Keep html at
    16px: changing rem globally would also resize spacing and staff screens. */
 html.customer-portal-active body {

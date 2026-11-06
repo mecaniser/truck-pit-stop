@@ -1,0 +1,50 @@
+[
+  {
+    "file": "geist-latin-ext-wght-normal.woff2",
+    "sha256": "824f485b5d26e2f2da3c2b236132ece1bc8e4e43373452950bb0e40548b4313f",
+    "package": "@fontsource-variable/geist@5.3.0",
+    "license": "OFL-1.1"
+  },
+  {
+    "file": "geist-latin-wght-normal.woff2",
+    "sha256": "19f9c92546aa300c312235e3125af1b81394d8db9a4bc4a425cd5b641d2d54e1",
+    "package": "@fontsource-variable/geist@5.3.0",
+    "license": "OFL-1.1"
+  },
+  {
+    "file": "geist-latin-ext-wght-italic.woff2",
+    "sha256": "56dc9ac98e3fc45e7ee487d03ee205b35858c672f2e15053eabbb119c0bc1e74",
+    "package": "@fontsource-variable/geist@5.3.0",
+    "license": "OFL-1.1"
+  },
+  {
+    "file": "geist-latin-wght-italic.woff2",
+    "sha256": "9b10496762af92659f3b05d2b084b0c8f962c3ecdf637aa764e3b7fd17f5acaf",
+    "package": "@fontsource-variable/geist@5.3.0",
+    "license": "OFL-1.1"
+  },
+  {
+    "file": "plus-jakarta-sans-latin-ext-wght-normal.woff2",
+    "sha256": "38e3b8fd8045048eb311d90170a4429ed2c8f405852dc3d91b5af8452758703f",
+    "package": "@fontsource-variable/plus-jakarta-sans@5.3.0",
+    "license": "OFL-1.1"
+  },
+  {
+    "file": "plus-jakarta-sans-latin-wght-normal.woff2",
+    "sha256": "153fc85b70298beeb1d61a5f723331649e7f23bb77302a66e61cb3e2fbdb5e79",
+    "package": "@fontsource-variable/plus-jakarta-sans@5.3.0",
+    "license": "OFL-1.1"
+  },
+  {
+    "file": "plus-jakarta-sans-latin-ext-wght-italic.woff2",
+    "sha256": "7524d4b5f829201192882f775b90d78dbd9f9b3014ea729cfb7a47f5261ec7cb",
+    "package": "@fontsource-variable/plus-jakarta-sans@5.3.0",
+    "license": "OFL-1.1"
+  },
+  {
+    "file": "plus-jakarta-sans-latin-wght-italic.woff2",
+    "sha256": "bb113d8f5be89636a9a31ffa0966762126546b98be171d6fa81115abb2cd5352",
+    "package": "@fontsource-variable/plus-jakarta-sans@5.3.0",
+    "license": "OFL-1.1"
+  }
+]
