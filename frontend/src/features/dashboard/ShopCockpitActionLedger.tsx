@@ -13,6 +13,8 @@ import {
 } from 'lucide-react'
 import { elapsedSince, shortDuration } from '@/lib/elapsed'
 import './shopWorkPolish.css'
+import './shopWorkMotion.css'
+import { useShopWorkMotion } from './useShopWorkMotion'
 
 export type ActionQueueLane = 'needs_action' | 'on_floor' | 'ready_to_close' | 'closed_today'
 type ActionQueueFilter = 'all' | ActionQueueLane
@@ -224,8 +226,10 @@ export default function ShopCockpitActionLedger({
     setLaneFilter(filter)
   }
 
+  const motionRef = useShopWorkMotion(queueView === 'activity' ? 'activity' : workView || 'closeout')
+
   return (
-    <section className={`db-shop-work-new db-operating-surface${activeWork ? ' db-shop-work-new--compact' : ''}${overview ? ' db-shop-work-new--overview-enabled' : ''}`} aria-labelledby="shop-work-title">
+    <section ref={motionRef} className={`db-shop-work-new db-operating-surface${activeWork ? ' db-shop-work-new--compact' : ''}${overview ? ' db-shop-work-new--overview-enabled' : ''}`} aria-labelledby="shop-work-title">
       <header className="db-shop-work-new__header db-operating-page-header">
         <div>
           <h1 id="shop-work-title">Shop Work</h1>

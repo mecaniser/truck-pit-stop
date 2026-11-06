@@ -888,7 +888,7 @@ export default function ProfileSettingsPage() {
     if (section !== activeSection && settingsDirty) setPendingAction({ type: 'section', section, scope: accountScope })
     else selectSection(section)
   }
-  const signOut = () => { logout(); navigate('/login') }
+  const signOut = () => { logout(); navigate('/login', { replace: true, state: { signedOut: true } }) }
   const confirmAction = () => {
     const action = pendingAction
     setPendingAction(null)
@@ -919,7 +919,7 @@ export default function ProfileSettingsPage() {
             </ControlButton>)}</div>
           </div>)}
           <div className="border-t border-[#272d3d] pt-3">
-            <ControlButton type="button" onClick={() => settingsDirty ? setPendingAction({ type: 'signout', scope: accountScope }) : signOut()} className="w-full justify-start text-[#c9cdd8] hover:bg-white/5"><LogOut className="h-4 w-4" aria-hidden="true" />Sign out</ControlButton>
+            <ControlButton type="button" onClick={() => settingsDirty ? setPendingAction({ type: 'signout', scope: accountScope }) : signOut()} className="w-full justify-start text-[var(--semantic-danger-500)] hover:bg-red-500/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400"><LogOut className="h-4 w-4" aria-hidden="true" />Sign out</ControlButton>
           </div>
         </nav>
         <div className={[(mobileSectionOpen ? '' : 'hidden md:block'), 'min-w-0'].join(' ')}>

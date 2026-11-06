@@ -1,5 +1,6 @@
+import { ShopWorkPopoverPanel } from './ShopWorkPopoverPanel'
 import { ControlInput, ControlButton } from '@/components/ui/Controls'
-import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
+import { Popover, PopoverButton } from '@headlessui/react'
 import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
@@ -67,7 +68,7 @@ export default function WipAgingPanel({ filters, onFiltersChange, onOpenRecord, 
         <Popover className="db-wip__popover">
           {({ close }) => <>
           <PopoverButton data-db-control="action" className="db-wip__filter-trigger"><SlidersHorizontal aria-hidden="true" />Filters{hasFilterOptions && <span className="db-wip__filter-dot" aria-label="Filters applied" />}</PopoverButton>
-          <PopoverPanel className="db-wip__popover-panel" role="dialog" aria-label="Active work filters">
+          <ShopWorkPopoverPanel className="db-wip__popover-panel" role="dialog" aria-label="Active work filters">
             <div className="db-wip__filters">
               <ControlButton controlKind="action" type="button" aria-pressed={filters.overdue_only} onClick={() => update({ overdue_only: !filters.overdue_only })}>Promise overdue <span>{count(data?.summary.overdue_jobs)}</span></ControlButton>
               <div className="db-wip__filter-field"><span>Wait timing</span><ShopWorkSelect label="Wait timing" value={filters.timing} onChange={timing => update({ timing })} options={[
@@ -78,7 +79,7 @@ export default function WipAgingPanel({ filters, onFiltersChange, onOpenRecord, 
               ]} /></div>
               {hasFilterOptions && <ControlButton type="button" className="db-work-control" onClick={() => { update({ overdue_only: false, timing: 'all', sort: 'priority' }); close() }}><X aria-hidden="true" />Reset filters</ControlButton>}
             </div>
-          </PopoverPanel>
+          </ShopWorkPopoverPanel>
           </>}
         </Popover>
       </div>}
@@ -98,9 +99,9 @@ export default function WipAgingPanel({ filters, onFiltersChange, onOpenRecord, 
         <span role="status">{query.isLoading || searchPending ? 'Loading active work…' : query.isError ? 'Active work unavailable' : `${data?.filtered_total ?? 0} matching jobs${data?.scope === 'assigned' ? ' · assigned to you' : ''}`}</span>
         <div className="db-wip__timing-summary">
           {!query.isError && data && (data.summary.unknown_wait_jobs > 0 || filters.timing === 'unknown') && <span className="db-wip__unknown">Unknown wait: {data.summary.unknown_wait_jobs}</span>}
-          <Popover className="db-wip__popover"><PopoverButton data-db-control="icon" className="db-wip__info" aria-label="About work timing"><Info aria-hidden="true" /></PopoverButton><PopoverPanel focus className="db-wip__popover-panel db-wip__timing-help" role="dialog" aria-label="Work timing explained">
+          <Popover className="db-wip__popover"><PopoverButton data-db-control="icon" className="db-wip__info" aria-label="About work timing"><Info aria-hidden="true" /></PopoverButton><ShopWorkPopoverPanel focus className="db-wip__popover-panel db-wip__timing-help" role="dialog" aria-label="Work timing explained">
             <strong>Work timing</strong><p>Elapsed time includes nights and weekends. Order age is not time in the shop.</p><p>Unknown means a reliable wait start is missing. Counts cover {data?.filters.search ? 'all jobs matching your search' : 'all active jobs'}, before category and timing filters.</p>
-          </PopoverPanel></Popover>
+          </ShopWorkPopoverPanel></Popover>
         </div>
       </div>}
       {query.isError ? <div className="db-work-state" role="alert"><CircleAlert aria-hidden="true" /><div><strong>{statusText}</strong><ControlButton type="button" className="db-work-control" onClick={() => query.refetch()} disabled={busy}>Retry active work</ControlButton></div></div>

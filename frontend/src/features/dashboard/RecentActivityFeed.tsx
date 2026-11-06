@@ -1,6 +1,7 @@
+import { ShopWorkPopoverPanel } from './ShopWorkPopoverPanel'
 import { ControlButton } from '@/components/ui/Controls'
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Popover, PopoverButton, PopoverGroup, PopoverPanel } from '@headlessui/react'
+import { Popover, PopoverButton, PopoverGroup } from '@headlessui/react'
 import DatePicker from '@/components/DatePicker'
 import { Spinner } from '@/components/ui'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -172,16 +173,16 @@ function ScopedRecentActivityFeed({ className }: { className?: string }) {
           {!!data?.warnings.length && <Popover className="db-work-popover">
             {({ close }) => <>
               <PopoverButton data-db-control="action" className="db-work-control db-work-control--warning"><CircleAlert aria-hidden="true" />Activity incomplete</PopoverButton>
-              <PopoverPanel focus className="db-work-popover__panel" role="dialog" aria-label="Activity coverage">
+              <ShopWorkPopoverPanel focus className="db-work-popover__panel" role="dialog" aria-label="Activity coverage">
                 <div className="db-work-popover__heading"><strong>Activity coverage</strong><ControlButton controlKind="icon" type="button" className="db-work-icon-button" aria-label="Close activity coverage" onClick={() => close()}><X aria-hidden="true" /></ControlButton></div>
                 {data.warnings.map(warning => <p key={warning}>{warning}</p>)}
-              </PopoverPanel>
+              </ShopWorkPopoverPanel>
             </>}
           </Popover>}
           <Popover className="db-work-popover">
             {({ close }) => <>
               <PopoverButton data-db-control="action" className="db-work-control" aria-label={filterCount ? `Activity filters, ${filterCount} applied` : 'Activity filters'}><SlidersHorizontal aria-hidden="true" />Filters{filterCount > 0 && <span>{filterCount}</span>}</PopoverButton>
-              <PopoverPanel className="db-work-popover__panel" role="dialog" aria-label="Activity filters">
+              <ShopWorkPopoverPanel className="db-work-popover__panel" role="dialog" aria-label="Activity filters">
                 <div className="db-work-popover__heading"><strong>Filter activity</strong><ControlButton controlKind="icon" type="button" className="db-work-icon-button" aria-label="Close activity filters" onClick={() => close()}><X aria-hidden="true" /></ControlButton></div>
                 <div className="db-work-activity__filters">
                   <div><span>Staff</span><ShopWorkSelect label="Activity staff" value={actorFilter} onChange={value => setFilter('actor_id', value)} options={[
@@ -194,7 +195,7 @@ function ScopedRecentActivityFeed({ className }: { className?: string }) {
                   <DatePicker label="To date" value={dateTo} onChange={value => setFilter('date_to', value)} min={dateFrom || undefined} showDayDetails={false} />
                   {hasActiveFilters && (items.length > 0 || isError) && <ControlButton type="button" className="db-work-control" onClick={() => { clearFilters(); close() }}><X aria-hidden="true" />Clear filters</ControlButton>}
                 </div>
-              </PopoverPanel>
+              </ShopWorkPopoverPanel>
             </>}
           </Popover>
         </PopoverGroup>
