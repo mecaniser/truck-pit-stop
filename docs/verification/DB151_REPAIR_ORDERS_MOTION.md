@@ -72,3 +72,5 @@ Browser matrix:1300x900 and390x844, Day/Night shop, normal/reduced motion: invoi
 Wider suite exposed readiness/transition timing assumptions. Tests now await visible/ready UI rather than DOM presence.435 repair-order/checklist tests expanded to465 with vehicle-issue and deferred focus coverage:462 passed in full serial run, remaining3 invoice-revision tests passed after their helper awaited real readiness. Production build passes; changed-source lint passes with two existing page hook warnings.
 
 Independent read-only reviewer found hidden-body deep-link focus could be consumed before reveal. Corrected operation/recommendation effects and nested issue restoration using OrderSurfaceContext; deferred invoice-focus regression proves no focus until ready. Re-review: no remaining actionable findings. PR CI and production receipt pending.
+
+Final exact-source serial run:26 suites,465/465 pass in106s. Browser Back returns ledger and Forward restores exact selected invoice. Integrated main fb76fa64 (portal-only PR816); only conflict was additive board entries, both retained.

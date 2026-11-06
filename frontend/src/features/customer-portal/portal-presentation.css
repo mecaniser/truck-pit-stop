@@ -1,0 +1,125 @@
+html.customer-portal-active [class~="bg-[#161a26]"]{background-color:#152642}
+html.customer-portal-active [class~="text-[#161a26]"]{color:#152642}
+html.customer-portal-active [class~="border-[#161a26]"]{border-color:#152642}
+html.customer-portal-active [class~="bg-[#12161f]"]{background-color:#10203A}
+html.customer-portal-active [class~="text-[#12161f]"]{color:#10203A}
+html.customer-portal-active [class~="border-[#12161f]"]{border-color:#10203A}
+html.customer-portal-active [class~="bg-[#191d2a]"]{background-color:#1B3050}
+html.customer-portal-active [class~="text-[#191d2a]"]{color:#1B3050}
+html.customer-portal-active [class~="border-[#191d2a]"]{border-color:#1B3050}
+html.customer-portal-active [class~="bg-[#161b26]"]{background-color:#1B3050}
+html.customer-portal-active [class~="text-[#161b26]"]{color:#1B3050}
+html.customer-portal-active [class~="border-[#161b26]"]{border-color:#1B3050}
+html.customer-portal-active [class~="bg-[#232939]"]{background-color:#30415F}
+html.customer-portal-active [class~="text-[#232939]"]{color:#30415F}
+html.customer-portal-active [class~="border-[#232939]"]{border-color:#30415F}
+html.customer-portal-active [class~="bg-[#1e2432]"]{background-color:#2A3B59}
+html.customer-portal-active [class~="text-[#1e2432]"]{color:#2A3B59}
+html.customer-portal-active [class~="border-[#1e2432]"]{border-color:#2A3B59}
+html.customer-portal-active [class~="bg-[#272d3d]"]{background-color:#3A4F70}
+html.customer-portal-active [class~="text-[#272d3d]"]{color:#3A4F70}
+html.customer-portal-active [class~="border-[#272d3d]"]{border-color:#3A4F70}
+html.customer-portal-active [class~="bg-[#343b52]"]{background-color:#58769C}
+html.customer-portal-active [class~="text-[#343b52]"]{color:#58769C}
+html.customer-portal-active [class~="border-[#343b52]"]{border-color:#58769C}
+html.customer-portal-active [class~="bg-[#8b92a5]"]{background-color:#ACBED8}
+html.customer-portal-active [class~="text-[#8b92a5]"]{color:#ACBED8}
+html.customer-portal-active [class~="border-[#8b92a5]"]{border-color:#ACBED8}
+html.customer-portal-active [class~="bg-[#9aa1b3]"]{background-color:#ACBED8}
+html.customer-portal-active [class~="text-[#9aa1b3]"]{color:#ACBED8}
+html.customer-portal-active [class~="border-[#9aa1b3]"]{border-color:#ACBED8}
+html.customer-portal-active [class~="bg-[#5c6375]"]{background-color:#93AACB}
+html.customer-portal-active [class~="text-[#5c6375]"]{color:#93AACB}
+html.customer-portal-active [class~="border-[#5c6375]"]{border-color:#93AACB}
+html.customer-portal-active [class~="bg-[#d9a521]"]{background-color:#8FB4E3}
+html.customer-portal-active [class~="text-[#d9a521]"]{color:#8FB4E3}
+html.customer-portal-active [class~="border-[#d9a521]"]{border-color:#8FB4E3}
+html.customer-portal-active [class~="bg-[#c9bfff]"]{background-color:#8FB4E3}
+html.customer-portal-active [class~="text-[#c9bfff]"]{color:#8FB4E3}
+html.customer-portal-active [class~="border-[#c9bfff]"]{border-color:#8FB4E3}
+html.customer-portal-active [class~="bg-[#8b7cf7]"]{background:#C94C18;color:#FFFFFF;box-shadow:inset 0 1px 0 #FFFFFF26}html.customer-portal-active [class*="text-[#8b7cf7]"]{color:#8FB4E3}html.customer-portal-active [class*="border-[#8b7cf7]"]{border-color:#8FB4E3}html.customer-portal-active [class*="bg-[#8b7cf7]/"]{background-color:#8FB4E31a}html.customer-portal-active [class*="ring-[#8b7cf7]"]{--tw-ring-color:#8FB4E3}html.customer-portal-active [class*="text-[#a78bfa]"],html.customer-portal-active [class*="text-[#c4b1ff]"]{color:#8FB4E3}html.customer-portal-active [class~="bg-[#1a1e2b]"],html.customer-portal-active [class~="bg-[#1c2130]"]{background-color:#1B3050}
+
+html.customer-portal-active [class~="bg-[#8b7cf7]"]:hover:not(:disabled){background:#B84212;filter:none;box-shadow:inset 0 1px 0 #FFFFFF26}
+
+[data-customer-portal]{--portal-bg:#0D1A33;--portal-card:#152642;--portal-purple:#8FB4E3;--portal-muted:#ACBED8;--portal-border:#30415F;background:#0D1A33!important}
+[data-customer-portal] .cp-root{--portal-bg:#0D1A33;--portal-card:#152642;--portal-purple:#8FB4E3;--portal-unit:#8FB4E3}
+[data-customer-portal] .cp-primary{background:#C94C18;color:#fff;border-color:#C94C18}
+[data-customer-portal] .cp-primary:hover:not(:disabled){background:#B84212;border-color:#B84212}
+html.customer-portal-active [class~="bg-[#10131c]"],html.customer-portal-active [class~="bg-[#0a0d14]"]{background:#0D1A33}
+html.customer-portal-active [class~="bg-[#312d56]"],html.customer-portal-active [class~="bg-[#241f3d]"]{background:#20385A}
+[data-customer-portal] :focus-visible{outline:2px solid #8FB4E3;outline-offset:3px}
+[data-customer-portal] ::selection{background:#8FB4E3;color:#0D1A33}
+[data-customer-portal]{--portal-ease-out:cubic-bezier(.23,1,.32,1);--portal-ease-in-out:cubic-bezier(.77,0,.175,1)}
+[data-customer-portal] button,[data-customer-portal] a[data-db-control=action]{transition:transform 120ms var(--portal-ease-out),background-color 150ms ease,color 150ms ease,border-color 150ms ease}
+[data-customer-portal] button:not(:disabled):active,[data-customer-portal] a[data-db-control=action]:active{transform:scale(.97)}
+[data-customer-portal] [role=listbox],[data-customer-portal] [role=menu]{transform-origin:var(--button-width,50%) top;transition:opacity 200ms var(--portal-ease-out),transform 200ms var(--portal-ease-out),clip-path 200ms var(--portal-ease-out)}
+[data-customer-portal] [role=listbox][data-closed],[data-customer-portal] [role=menu][data-closed]{opacity:0;transform:scale(.95);clip-path:inset(0 0 10% 0)}
+[data-customer-portal] [role=listbox][data-leave],[data-customer-portal] [role=menu][data-leave]{transition-duration:160ms}
+[data-customer-portal] .portal-motion{animation:portal-surface-enter 200ms var(--portal-ease-out)}
+@keyframes portal-surface-enter{from{opacity:0;clip-path:inset(0 0 6% 0)}to{opacity:1;clip-path:inset(0)}}
+@media(prefers-reduced-motion:reduce){[data-customer-portal] *,[data-customer-portal] *::before,[data-customer-portal] *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}[data-customer-portal] button:active,[data-customer-portal] a:active{transform:none!important}}
+
+[data-customer-portal] button[class*="bg-[color-mix(in_srgb,var(--accent-600"]{background:#C94C18;color:#fff}
+[data-customer-portal] button[class*="bg-[color-mix(in_srgb,var(--accent-600"]:hover:not(:disabled){background:#B84212;filter:none}
+html.customer-portal-active [class~="bg-[#161d2b]"],html.customer-portal-active [class~="bg-[#111827]"]{background:#152642}
+html.customer-portal-active [class~="border-[#2a3245]"]{border-color:#30415F}
+html.customer-portal-active [role=listbox]{background:#152642;border-color:#30415F;color:#eceef4;transform-origin:top left;transition:opacity 200ms cubic-bezier(.23,1,.32,1),transform 200ms cubic-bezier(.23,1,.32,1)}
+html.customer-portal-active [role=listbox][data-closed]{opacity:0;transform:scale(.95)}
+[data-customer-portal] main{view-transition-name:portal-workspace}
+::view-transition-old(portal-workspace){animation:portal-route-exit 160ms cubic-bezier(.23,1,.32,1) both}
+::view-transition-new(portal-workspace){animation:portal-route-enter 200ms cubic-bezier(.23,1,.32,1) both}
+::view-transition-group(portal-workspace){animation-duration:200ms;animation-timing-function:cubic-bezier(.77,0,.175,1)}
+@keyframes portal-route-exit{to{opacity:0;clip-path:circle(0 at var(--portal-trigger-x,0px) var(--portal-trigger-y,0px))}}
+@keyframes portal-route-enter{from{opacity:0;clip-path:circle(0 at var(--portal-trigger-x,0px) var(--portal-trigger-y,0px))}to{opacity:1;clip-path:circle(160% at var(--portal-trigger-x,0px) var(--portal-trigger-y,0px))}}
+@media(prefers-reduced-motion:reduce){::view-transition-group(portal-workspace),::view-transition-old(portal-workspace),::view-transition-new(portal-workspace){animation:none!important}html.customer-portal-active [role=listbox]{transition:none}}
+
+html.customer-portal-active [class~="bg-[#111722]"]{background:#152642}
+html.customer-portal-active [class~="bg-[#182234]"]{background:#1B3050}
+html[data-portal-keyboard-navigation] [data-customer-portal] .portal-motion{animation:none}
+
+html.customer-portal-active [role=alertdialog] [data-db-touch-controls]{transition:opacity 200ms cubic-bezier(.23,1,.32,1),clip-path 200ms cubic-bezier(.23,1,.32,1)}
+html.customer-portal-active [role=alertdialog] [data-db-touch-controls][data-closed]{opacity:0;clip-path:inset(0 0 100% 0)}
+html.customer-portal-active [role=alertdialog] [data-db-touch-controls][data-leave]{transition-duration:160ms}
+@media(prefers-reduced-motion:reduce){html.customer-portal-active [role=alertdialog] [data-db-touch-controls]{transition:none}}
+
+/* Keep every legacy primary action on the portal action ramp, including hover.
+   Matching :not(:disabled) prevents the incumbent selector winning the cascade. */
+html.customer-portal-active{--portal-action:#C94C18;--portal-action-hover:#B84212}
+html.customer-portal-active .cp-primary,
+html.customer-portal-active :is(button,a)[class~="bg-violet-600"]:not(:disabled),
+html.customer-portal-active :is(button,a)[class~="bg-amber-600"]:not(:disabled),
+html.customer-portal-active :is(button,a)[class~="bg-blue-600"]:not(:disabled){background-color:var(--portal-action);border-color:var(--portal-action);color:#fff}
+@media(hover:hover) and (pointer:fine){
+ html.customer-portal-active .cp-primary:hover:not(:disabled),
+ html.customer-portal-active :is(button,a)[class~="bg-violet-600"]:hover:not(:disabled),
+ html.customer-portal-active :is(button,a)[class~="bg-amber-600"]:hover:not(:disabled),
+ html.customer-portal-active :is(button,a)[class~="bg-blue-600"]:hover:not(:disabled){background-color:var(--portal-action-hover);border-color:var(--portal-action-hover);color:#fff;filter:none}
+ html.customer-portal-active .cp-secondary:hover:not(:disabled){background-color:#243E60;border-color:#8FB4E3;color:#ECEEF4}
+ html.customer-portal-active .cp-text:hover{color:#C0D7F2}
+ html.customer-portal-active :is(button,a)[class~="bg-[#191d2a]"]:hover:not(:disabled){background-color:#243E60;border-color:#8FB4E3}
+}
+html.customer-portal-active .cp-primary:disabled{background-color:#33415A;border-color:#33415A;color:#ACBED8}
+html.customer-portal-active [class~="bg-violet-400/10"]{background-color:#8FB4E31A}
+html.customer-portal-active [class~="text-[#d4ccff]"]{color:#8FB4E3}
+
+/* Final palette coverage for shared/legacy labels, filters and focus states.
+   Scope includes Headless UI portals without changing provider brand assets. */
+html.customer-portal-active :is([class~="text-violet-200"],[class~="text-violet-300"],[class~="text-violet-400"],[class~="text-purple-200"],[class~="text-purple-300"],[class~="text-purple-400"]){color:#8FB4E3}
+html.customer-portal-active :is([class~="bg-violet-500/10"],[class~="bg-purple-500/10"],[class~="bg-purple-500/5"]){background-color:#8FB4E31A}
+html.customer-portal-active :is([class~="border-violet-400/30"],[class~="border-violet-400/35"],[class~="border-violet-400/40"],[class~="border-purple-500/30"]){border-color:#8FB4E34D}
+html.customer-portal-active [class~="bg-violet-400"]{background-color:#8FB4E3}
+html.customer-portal-active [class*="ring-violet"],html.customer-portal-active [class*="ring-purple"]{--tw-ring-color:#8FB4E3}
+html.customer-portal-active :is(input,textarea,select):focus{border-color:#8FB4E3;--tw-ring-color:#8FB4E34D;caret-color:#8FB4E3}
+html.customer-portal-active [class*="outline-violet"]:focus-visible{outline-color:#8FB4E3}
+html.customer-portal-active [class~="bg-violet-600"]:disabled{background-color:#33415A;color:#ACBED8}
+@media(hover:hover) and (pointer:fine){
+ html.customer-portal-active :is([class~="text-violet-300"],[class~="text-purple-300"],[class~="hover:text-[#c4b1ff]"]):is(a,button):hover:not(:disabled){color:#C0D7F2}
+ .cp-vehicle-choices>button:hover:not(:disabled),.cp-date-choices>button:hover:not(:disabled),.cp-category-nav>button:hover:not(:disabled){background-color:#243E60;border-color:#8FB4E3}
+}
+
+html.customer-portal-active :is([class~="text-cyan-200"],[class~="text-cyan-400"],[class~="text-cyan-500"]){color:#8FB4E3}
+@media(hover:hover) and (pointer:fine){html.customer-portal-active [class~="hover:border-cyan-500/50"]:hover:not(:disabled){border-color:#8FB4E380;color:#C0D7F2}}
+
+/* BaseSelect owns inline personal-accent colors; portal selection uses Dusk Blue. */
+html.customer-portal-active [role=listbox] [role=option][aria-selected=true]{background-color:#20385A!important;color:#8FB4E3!important}
+@media(hover:hover) and (pointer:fine){html.customer-portal-active [role=listbox] [role=option]:hover:not(:disabled):not([aria-disabled=true]){background-color:#243E60!important;color:#ECEEF4!important}}
