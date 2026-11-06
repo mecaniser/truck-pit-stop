@@ -30,9 +30,9 @@ vi.mock('../../../stores/authStore', () => ({
   }),
 }))
 
-function renderLogin(path = '/login') {
+function renderLogin(path = '/login', state?: { signedOut: boolean }) {
   return render(
-    <MemoryRouter initialEntries={[path]}>
+    <MemoryRouter initialEntries={[{pathname:path.split('?')[0],search:path.includes('?')?'?'+path.split('?')[1]:'',state}]}>
       <LoginPage />
     </MemoryRouter>
   )
@@ -137,4 +137,13 @@ describe('LoginPage', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Your session ended. Sign in again to continue.')
   })
 
+})
+
+it('announces an explicit completed sign-out on the login destination',()=>{
+  renderLogin('/login',{signedOut:true})
+  expect(screen.getByRole('status')).toHaveTextContent('You’ve been signed out.')
+})
+it('does not show signed-out feedback on an ordinary login visit',()=>{
+  renderLogin()
+  expect(screen.queryByText('You’ve been signed out.')).not.toBeInTheDocument()
 })

@@ -1,7 +1,7 @@
 import userEvent from '@testing-library/user-event'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
 import ProfileSettingsPage from '../ProfileSettingsPage'
 
@@ -17,9 +17,13 @@ vi.mock('@/stores/authStore', async original => ({
 }))
 const customer = {first_name:'Test',last_name:'Driver',email:'driver@example.com',updated_at:'2026-11-02T12:00:00Z',created_at:'2026-01-02T12:00:00Z'}
 const config = {provider:'quickbooks_payments',available:true,context_key:'context-one',save_pending:false}
+function Destination() {
+  const location = useLocation()
+  return <output aria-label="Destination">{JSON.stringify({path:location.pathname,state:location.state})}</output>
+}
 function mount(query = '') {
   const client = new QueryClient({defaultOptions:{queries:{retry:false}}})
-  const view = render(<MemoryRouter initialEntries={['/portal/settings'+query]}><QueryClientProvider client={client}><ProfileSettingsPage /></QueryClientProvider></MemoryRouter>)
+  const view = render(<MemoryRouter initialEntries={['/portal/settings'+query]}><QueryClientProvider client={client}><ProfileSettingsPage /><Destination /></QueryClientProvider></MemoryRouter>)
   return {client,...view}
 }
 const click = async (element: HTMLElement) => { await act(async () => { await userEvent.click(element) }) }
@@ -190,4 +194,23 @@ it('restores the formatted saved phone on Cancel',async()=>{
   expect(phone).toHaveValue('(202) 555-0123')
   expect(screen.getByRole('button',{name:'Save changes'})).toBeDisabled()
   expect(m.put).not.toHaveBeenCalled()
+})
+
+it('signs out directly from a pristine form with explicit login feedback state',async()=>{
+  mount(); await screen.findByLabelText('First name')
+  const button=screen.getByRole('button',{name:'Sign out',exact:true})
+  expect(button).toHaveClass('text-[var(--semantic-danger-500)]')
+  await click(button)
+  expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  expect(m.logout).toHaveBeenCalledTimes(1)
+  expect(screen.getByLabelText('Destination')).toHaveTextContent('"path":"/login","state":{"signedOut":true}')
+})
+it('keeps the draft and session when sign-out discard is cancelled',async()=>{
+  mount();const name=await screen.findByLabelText('First name')
+  fireEvent.change(name,{target:{value:'Unsaved'}})
+  await click(screen.getByRole('button',{name:'Sign out',exact:true}))
+  await click(within(await screen.findByRole('alertdialog')).getByRole('button',{name:'Keep editing'}))
+  expect(name).toHaveValue('Unsaved')
+  expect(m.logout).not.toHaveBeenCalled()
+  expect(screen.getByLabelText('Destination')).toHaveTextContent('"path":"/portal/settings"')
 })
