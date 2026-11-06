@@ -1,3 +1,4 @@
+import NotificationPreferencesSection from './NotificationPreferencesSection'
 import AccountConfirmationDialog from './AccountConfirmationDialog'
 import { CookiePrivacySettings } from '@/components/PrivacyControls'
 import { ControlButton, ControlInput } from '@/components/ui/Controls'
@@ -852,13 +853,6 @@ function ContactDetailsSection({ onDirtyChange, onManagePayments }: { onDirtyCha
   )
 }
 
-function NotificationsSection() {
-  return <div className="space-y-3">
-    <h2 className="text-lg font-semibold">Notifications</h2>
-    <p className="text-sm text-gray-400">Email and text notification preferences cannot be changed here yet.</p>
-  </div>
-}
-
 // ============ LAYOUT ============
 
 const SECTION_GROUPS = [
@@ -873,7 +867,7 @@ export default function ProfileSettingsPage() {
   const auth = useAuthStore()
   const { user, logout } = auth
   const accountScope = getAuthenticatedSessionIdentity(auth)
-  const [contactDirty, setContactDirty] = useState(false)
+  const [settingsDirty, setSettingsDirty] = useState(false)
   const [pendingAction, setPendingAction] = useState<({ type: 'section'; section: SettingsSection } | { type: 'signout' }) & { scope: string | null } | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab') as SettingsSection | null
@@ -891,7 +885,7 @@ export default function ProfileSettingsPage() {
     requestAnimationFrame(() => document.getElementById('account-section-heading')?.focus())
   }
   const requestSection = (section: SettingsSection) => {
-    if (section !== activeSection && contactDirty) setPendingAction({ type: 'section', section, scope: accountScope })
+    if (section !== activeSection && settingsDirty) setPendingAction({ type: 'section', section, scope: accountScope })
     else selectSection(section)
   }
   const signOut = () => { logout(); navigate('/login') }
@@ -925,7 +919,7 @@ export default function ProfileSettingsPage() {
             </ControlButton>)}</div>
           </div>)}
           <div className="border-t border-[#272d3d] pt-3">
-            <ControlButton type="button" onClick={() => contactDirty ? setPendingAction({ type: 'signout', scope: accountScope }) : signOut()} className="w-full justify-start text-[#c9cdd8] hover:bg-white/5"><LogOut className="h-4 w-4" aria-hidden="true" />Sign out</ControlButton>
+            <ControlButton type="button" onClick={() => settingsDirty ? setPendingAction({ type: 'signout', scope: accountScope }) : signOut()} className="w-full justify-start text-[#c9cdd8] hover:bg-white/5"><LogOut className="h-4 w-4" aria-hidden="true" />Sign out</ControlButton>
           </div>
         </nav>
         <div className={[(mobileSectionOpen ? '' : 'hidden md:block'), 'min-w-0'].join(' ')}>
@@ -935,7 +929,7 @@ export default function ProfileSettingsPage() {
           }} className="mb-4 text-[#c9bfff] md:hidden">← All settings</ControlButton>
           <div id="account-section-heading" role="region" aria-label={SECTIONS.find(section => section.id === activeSection)?.label} tabIndex={-1} className="rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-300">
             {activeSection === 'profile' ? (
-              <ContactDetailsSection onDirtyChange={setContactDirty} onManagePayments={() => requestSection('payments')} />
+              <ContactDetailsSection onDirtyChange={setSettingsDirty} onManagePayments={() => requestSection('payments')} />
             ) : (
               <div className="rounded-2xl border border-[#232939] bg-[#161a26] p-4 sm:p-6">
                 {activeSection === 'security' && <><SecuritySection /><div className="[&_.cookie-privacy-settings]:border-[#272d3d] [&_.cookie-privacy-settings_p]:text-gray-400"><CookiePrivacySettings /></div></>}
@@ -943,7 +937,7 @@ export default function ProfileSettingsPage() {
                 {activeSection === 'payments' && <PaymentsSection />}
                 {activeSection === 'vehicles' && <VehiclesSection />}
                 {activeSection === 'shops' && <ShopsSection />}
-                {activeSection === 'notifications' && <NotificationsSection />}
+                {activeSection === 'notifications' && <NotificationPreferencesSection onDirtyChange={setSettingsDirty} />}
               </div>
             )}
           </div>
@@ -952,7 +946,7 @@ export default function ProfileSettingsPage() {
       <AccountConfirmationDialog
         open={pendingAction !== null && pendingAction.scope === accountScope}
         title={pendingAction?.type === 'signout' ? 'Discard changes and sign out?' : 'Discard unsaved changes?'}
-        description={pendingAction?.type === 'signout' ? 'Your contact details have not been saved. Signing out will discard these edits.' : 'Your contact details have not been saved. Leaving this section will discard these edits.'}
+        description={pendingAction?.type === 'signout' ? 'Your changes have not been saved. Signing out will discard these edits.' : 'Your changes have not been saved. Leaving this section will discard these edits.'}
         confirmLabel={pendingAction?.type === 'signout' ? 'Discard and sign out' : 'Discard changes'}
         cancelLabel="Keep editing"
         onCancel={() => setPendingAction(null)}

@@ -225,14 +225,14 @@ async def _process_invoice_reminders(tenant_id: str = None):
                 if settings.SMS_AUTOMATION_OUTBOX_ENABLED:
                     email_notifications.append(dict(
                         tenant_id=str(invoice.tenant_id), to=customer.email,
-                        subject=subject, body=html_body, template_name="invoice_reminder_email",
+                        subject=subject, body=html_body, template_name="invoice_reminder_email", customer_id=customer.id,
                     ))
                 else:
                     try:
                         async with AsyncSessionLocal() as notification_db:
                             await send_email(
                                 notification_db, str(invoice.tenant_id), customer.email, subject, html_body,
-                                template_name="invoice_reminder_email"
+                                template_name="invoice_reminder_email", customer_id=customer.id
                             )
                     except Exception:
                         pass

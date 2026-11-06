@@ -263,6 +263,10 @@ async def eligibility(db, op, sender):
             return 'identity_changed'
         if customer.sms_opt_out:
             return 'opted_out'
+        from app.services.customer_notification_preferences import delivery_reason
+        reason = await delivery_reason(db, tenant_id=op.tenant_id, customer_id=customer.id, channel="sms", template_name=op.template_name)
+        if reason:
+            return reason
         others = (await db.execute(select(Customer.phone).where(Customer.tenant_id == op.tenant_id, Customer.id != customer.id, Customer.deleted_at.is_(None), Customer.phone.is_not(None)))).scalars().all()
         if any(_normalize_for_twilio(phone) == op.to_number for phone in others):
             return 'identity_unverified'

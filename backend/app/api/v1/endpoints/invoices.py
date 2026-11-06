@@ -1,3 +1,4 @@
+from app.services.customer_notification_preferences import invoice_customer_scope
 from app.services.invoice_identity import load_invoice_display_number, pdf_filename_for_number
 from app.services.source_debt_handoff import source_collection_for_invoice, source_history_alias_clause, effective_billing_customer, invoice_customer_access_clause, can_view_source_history
 from app.services.invoice_payment_presentation import InvoicePaymentSummary, load_payment_summary, load_payment_summaries, payment_summary_html
@@ -593,6 +594,7 @@ async def enqueue_invoice_created_email(
         subject=f"Invoice {await load_invoice_display_number(db, invoice, tenant)} – {vehicle_info}",
         body=email_html,
         template_name="invoice_created",
+        customer_id=invoice_customer_scope(invoice, customer),
         sender_name=tenant.name,
     )
     return True
@@ -689,6 +691,7 @@ async def notify_invoice_created(
         subject=f"Invoice {await load_invoice_display_number(db, invoice, tenant)} – {vehicle_info}",
         body=email_html,
         template_name="invoice_created",
+        customer_id=invoice_customer_scope(invoice, customer),
         attachments=attachments,
     )
 
