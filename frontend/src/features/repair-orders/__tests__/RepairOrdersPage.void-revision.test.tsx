@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
@@ -54,9 +54,13 @@ const invoice = { id: 'invoice-1', repair_order_id: order.id, invoice_number: 'I
 let voided = false
 const summary = () => ({ order_id: order.id, labor_total: '0', parts_total: '0', total_cost: '0', labor_discount_amount: '0', order_discount_amount: '0', lines: [], parts: [], warnings: [], pricing_locked: !voided, can_edit_work: voided })
 
-function renderRevision() {
+async function renderRevision() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } })
-  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/?selected=order-1']}><RepairOrdersPage /></MemoryRouter></QueryClientProvider>)
+  await act(async () => {
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/?selected=order-1']}><RepairOrdersPage /></MemoryRouter></QueryClientProvider>)
+  })
+  await waitFor(() => expect(client.isFetching()).toBe(0))
+  await waitFor(() => expect(document.querySelector('.db-price-builder')).toHaveAttribute('data-surface-ready', 'true'))
   return client
 }
 
@@ -92,7 +96,7 @@ describe('Void and revise work editing', () => {
   afterEach(() => { vi.clearAllMocks(); vi.unstubAllGlobals(); useAuthStore.setState({ user: null, isAuthenticated: false }) })
 
   it('refreshes the locked summary so parts, labor and operations can be added without reopening the panel', async () => {
-    const client = renderRevision()
+    const client = await renderRevision()
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Revise invoice' }))
     expect(screen.queryByRole('button', { name: 'Operation', exact: true })).not.toBeInTheDocument()
@@ -109,7 +113,7 @@ describe('Void and revise work editing', () => {
   })
   it('retains the lock and invoice actions when the server rejects voiding', async () => {
     apiMocks.post.mockRejectedValueOnce(new Error('Payment pending'))
-    const client = renderRevision()
+    const client = await renderRevision()
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Revise invoice' }))
     const reason = screen.getByPlaceholderText('Describe what needs to be corrected')
@@ -131,7 +135,7 @@ describe('Void and revise work editing', () => {
       if (voided) readAfterVoid = true
       return Promise.resolve({ data: { ...summary(), pricing_locked: false, can_edit_work: false } })
     })
-    const client = renderRevision()
+    const client = await renderRevision()
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Revise invoice' }))
     const reason = screen.getByPlaceholderText('Describe what needs to be corrected')

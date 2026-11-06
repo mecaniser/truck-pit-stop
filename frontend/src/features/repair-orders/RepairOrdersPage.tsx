@@ -1,3 +1,6 @@
+import { appearanceTokenRecord } from '@/contexts/appearanceTokens'
+import { DEFAULT_APPEARANCE } from '@/types/presentation'
+import type { CSSProperties } from 'react'
 import { readWorkspaceVisit } from '../dashboard/workspaceVisit'
 import { shopWorkReturnUrl, shopWorkQueryScope } from '@/features/dashboard/shopWorkNavigation'
 import { ControlInput, ControlButton } from '@/components/ui/Controls'
@@ -343,7 +346,7 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
   useEffect(() => { serviceFlowMounted.current = true; return () => { serviceFlowMounted.current = false } }, [])
   useEffect(() => { setServiceRecovery(null); createdForServices.current = null }, [currentUser?.tenant_id, currentUser?.id, currentUser?.role, authSessionEpoch])
   const canSelectOriginatingCall = ['garage_owner', 'garage_admin', 'receptionist', 'mechanic'].includes(currentUser?.role ?? '')
-  const { accentColors, presentationVariant } = useTheme()
+  const { accentColors, presentationVariant, appearance = DEFAULT_APPEARANCE } = useTheme()
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const location = useLocation()
@@ -744,7 +747,10 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
     if (selectedOrder?.id && selectedOrder.id !== order.id) {
       cancelOrderQueries(selectedOrder.id)
     }
-    applyDetailState(order)
+    // Publish the snapshot first; only the committed URL selects the record.
+    // Updating local selection before router navigation let the old URL effect
+    // briefly restore the outgoing order and rebuild the whole workspace.
+    queryClient.setQueryData(['repair-order-workspace', order.id, queryScope], order)
     if (options?.focusWorkspace) setWorkspaceFocusRequest((request) => request + 1)
     // Keep the active Shop Work lane while an operator moves through its
     // workset. The explicit "All orders" control is the only way to drop this
@@ -941,6 +947,7 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
     }
     if (selectedOrder?.id === selectedId) return
     const order = orders?.find(o => o.id === selectedId)
+      ?? queryClient.getQueryData<RepairOrder>(['repair-order-workspace', selectedId, queryScope])
     if (order) {
       applyDetailState(order)
       return
@@ -1171,7 +1178,7 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
   const importedEtsOrder = activeOrder?.source === 'easy_truck_shop_import'
   const importedBillingQuery = useImportedBilling(selectedOrder?.id, importedEtsOrder && isDetailOpen && !selectedOrder?.deleted_at)
   const importedBilling = importedBillingQuery.isError ? undefined : importedBillingQuery.data
-  const { data: invoiceForOrder } = useQuery<Invoice | null>({
+  const { data: invoiceForOrder, isLoading: initialInvoiceLoading } = useQuery<Invoice | null>({
     queryKey: ['invoice-for-order', selectedOrder?.id, currentUser?.tenant_id, currentUser?.id, currentUser?.role, authSessionEpoch, importedEtsOrder, queryScope],
     placeholderData: undefined,
     queryFn: async ({ signal }) => {
@@ -3751,6 +3758,8 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
             
             <DialogPanel
               data-testid="new-repair-order-panel"
+              data-appearance-mode={appearance.mode}
+              style={appearanceTokenRecord(appearance) as CSSProperties}
               className="db-order-entry-panel relative flex h-full h-[100dvh] w-full max-w-4xl flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[90vh] sm:max-h-[90dvh] sm:rounded-2xl"
             >
               <div className="z-10 shrink-0 border-b border-gray-200 bg-white px-4 py-4 sm:rounded-t-2xl sm:px-6">
@@ -5059,6 +5068,7 @@ function RepairOrdersWorkspace({ workbenchScope = 'all', queryScope }: { workben
                       dueDate: dueDate || undefined,
                       billToCustomerId,
                     })}
+                    initialInvoicePending={initialInvoiceLoading || invoiceSettlementQuery.isLoading}
                     invoice={invoiceForOrder ?? null}
                     invoiceSettlement={invoiceSettlement ?? null}
                     invoiceActionPending={
