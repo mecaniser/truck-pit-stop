@@ -946,7 +946,7 @@ export default function ProfileSettingsPage() {
       <AccountConfirmationDialog
         open={pendingAction !== null && pendingAction.scope === accountScope}
         title={pendingAction?.type === 'signout' ? 'Discard changes and sign out?' : 'Discard unsaved changes?'}
-        description={pendingAction?.type === 'signout' ? 'Your changes have not been saved. Signing out will discard these edits.' : 'Your changes have not been saved. Leaving this section will discard these edits.'}
+        description={pendingAction?.type === 'signout' ? 'Signing out will discard your unsaved changes.' : 'Leaving this section will discard your unsaved changes.'}
         confirmLabel={pendingAction?.type === 'signout' ? 'Discard and sign out' : 'Discard changes'}
         cancelLabel="Keep editing"
         onCancel={() => setPendingAction(null)}

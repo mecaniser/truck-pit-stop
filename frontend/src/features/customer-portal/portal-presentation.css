@@ -77,7 +77,7 @@ html.customer-portal-active [class~="bg-[#111722]"]{background:#152642}
 html.customer-portal-active [class~="bg-[#182234]"]{background:#1B3050}
 html[data-portal-keyboard-navigation] [data-customer-portal] .portal-motion{animation:none}
 
-html.customer-portal-active [role=alertdialog] [data-db-touch-controls]{background:#152642;border-color:#30415F;transition:opacity 200ms cubic-bezier(.23,1,.32,1),clip-path 200ms cubic-bezier(.23,1,.32,1)}
+html.customer-portal-active [role=alertdialog] [data-db-touch-controls]{transition:opacity 200ms cubic-bezier(.23,1,.32,1),clip-path 200ms cubic-bezier(.23,1,.32,1)}
 html.customer-portal-active [role=alertdialog] [data-db-touch-controls][data-closed]{opacity:0;clip-path:inset(0 0 100% 0)}
 html.customer-portal-active [role=alertdialog] [data-db-touch-controls][data-leave]{transition-duration:160ms}
 @media(prefers-reduced-motion:reduce){html.customer-portal-active [role=alertdialog] [data-db-touch-controls]{transition:none}}
