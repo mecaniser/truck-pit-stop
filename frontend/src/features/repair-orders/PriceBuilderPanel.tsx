@@ -1,3 +1,4 @@
+import { OrderSurfaceHandoff } from './OrderSurfaceHandoff'
 import { OrderSurfaceContext } from './OrderSurfaceContext'
 import './repairOrderMotion.css'
 import { useOrderSurfaceReady } from './useOrderSurfaceReady'
@@ -2623,6 +2624,7 @@ export default function PriceBuilderPanel({
 
   return (
     <OrderSurfaceContext.Provider value={surfaceReady}>
+    <OrderSurfaceHandoff key={pricingScope} orderId={orderId} ready={surfaceReady}>
     <div data-surface-ready={surfaceReady} aria-busy={!surfaceReady} className="db-price-builder relative flex h-full min-h-full flex-col overflow-hidden bg-white">
       {pricingCommand.dialog}
       {maintenanceRemoval.dialog}
@@ -4892,6 +4894,7 @@ export default function PriceBuilderPanel({
         </div>
       )}
     </div>
+    </OrderSurfaceHandoff>
     </OrderSurfaceContext.Provider>
   )
 }
