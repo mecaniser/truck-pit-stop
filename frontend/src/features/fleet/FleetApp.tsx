@@ -238,7 +238,8 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
                   className="rail-mobile-return"
                   onClick={() => {
                     setProfileMenuOpen(false)
-                    fleetReturn.returnsToSettings ? navigate(-1) : navigate('/dashboard')
+                    if (fleetReturn.returnsToSettings) navigate(-1)
+                    else navigate('/dashboard')
                   }}
                 >
                   <ArrowLeft size={17} aria-hidden="true" />
