@@ -119,3 +119,42 @@ item remains released with that explicit acceptance blocker, not Done.
 Local services were not started for this release-only/documentation work. The
 historical local backend alignment blocker remains separate from successful
 production deployment and public global-boundary acceptance.
+
+
+## Signed-in acceptance completed — November 7, 2026
+
+The user confirmed sign-in. The renewed session was in the in-app browser, not
+Chrome. Verified actual authenticated production `/dashboard` with the Shop Work
+workspace present before fault simulation and after each normal reload.
+
+Current production stamp was `0bd0b375b61a0004c60b710f8a1feabc96b71c13`, built
+2026-11-07T18:14:42.076Z. Git ancestry confirms PR829 merge12396b77 is included;
+`RouteErrorBoundary.tsx` is byte-identical between that merge and current main.
+No new application change was needed for this final acceptance.
+
+- Desktop1440x900: healthy staff workspace plus update signal retains the
+  workspace with one update banner/one reload button. Add the generic boundary
+  failure after confirmation: one update message, one reload button, zero
+  floating banners, no generic error and no horizontal overflow.
+- Activate Reload now through the normal Playwright pointer API: actual reload
+  restores `/dashboard` with the authenticated Shop Work heading and zero
+  recovery prompts. No CDP click fallback needed for signed-in checks.
+- Mobile390x844: generic boundary failure first retains the ordinary Something
+  went wrong recovery. Confirm update afterward: one update message, one reload
+  button, zero floating banners, no generic error and no horizontal overflow.
+- Normal Playwright Reload now activation again restores the authenticated
+  `/dashboard` workspace with zero recovery prompts.
+- Final console error count0. Viewport override reset and fault state cleared by
+  reload. No records, financial state, account settings or credentials modified.
+
+Browser fault method is the same client-only actual-boundary state/update-event
+simulation described above. This is actual production fallback acceptance, not
+an assertion that a physical device or an actual production asset deletion was
+tested. Safe screenshots (recovery UI only) are local/excluded:
+`output/playwright/production-staff-update-desktop.jpg` and
+`output/playwright/production-staff-update-mobile.jpg` in the implementation
+checkout. No staff/customer data is included in the screenshots.
+
+The earlier expired-session acceptance blocker is resolved. Product item **Done
+— released and signed-in verified**, Frontend & UX accountable. Prior blocked
+entries are retained as history; they are not current status.
