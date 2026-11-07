@@ -7,7 +7,9 @@ const steps=['login_navigate','login_auth_redirect','login_email','login_passwor
 for(const file of ['collect.cjs','collect_trips.cjs','collect_fuel.cjs','../motive_health/collect.cjs','../motive_drivers/collect.cjs']) {
  test(`${file}: every login operation identifies its failure without leaking browser content`,async()=>{
   const source=fs.readFileSync(path.join(__dirname,file),'utf8');
-  const delegated=file==='../motive_health/collect.cjs'||file==='collect.cjs';
+  const workerFiles={'collect_trips.cjs':'trips','collect_fuel.cjs':'fuel','../motive_drivers/collect.cjs':'drivers'};
+  const delegated=file==='../motive_health/collect.cjs'||file==='collect.cjs'||Object.hasOwn(workerFiles,file);
+  if(workerFiles[file]){assert.ok(source.includes('await prepareWorkerLogin(browser,{worker:'+JSON.stringify(workerFiles[file]).replaceAll('\"',"'")+',phase,'));}
   const checkedSteps=delegated?steps.slice(2):steps;
   const start=source.indexOf(delegated?"phase('login_email');":"phase('login_navigate');");
   const terminal="await page.waitForURL('https://app.gomotive.com/**',{timeout:45000});";
@@ -50,11 +52,13 @@ test('legacy preflight diagnostics expose static categories only',()=>{
  }
 });
 
-// Health and sync delegate only anonymous bootstrap to the bounded orchestrator.
+// Every collector delegates bootstrap to the reviewed bounded orchestrator.
 // Preserve fault injection of both navigation boundaries and the origin guard.
 const {prepareHealthLogin}=require('../motive_health/login.cjs');
 const {prepareSyncLogin}=require('./sync_login.cjs');
-for(const [kind,prepare] of [['health',prepareHealthLogin],['sync',prepareSyncLogin]])
+const {prepareWorkerLogin}=require('./worker_login.cjs');
+const wrappers=[['health',prepareHealthLogin],['sync',prepareSyncLogin],...['trips','fuel','drivers'].map(worker=>[worker,(browser,options)=>prepareWorkerLogin(browser,{worker,...options})])];
+for(const [kind,prepare] of wrappers)
 for(const target of ['login_navigate','login_auth_redirect','login_origin_check'])test(`${kind} bootstrap diagnostic ${target} stays static`,async()=>{
  const error=Object.assign(new Error('password=PRIVATE cookie=PRIVATE https://secret/?token=PRIVATE'),{name:'TimeoutError'});
  const page={setDefaultTimeout(){},async goto(){if(target==='login_navigate')throw error;},async waitForURL(){if(target==='login_auth_redirect')throw error;},url:()=>target==='login_origin_check'?'https://unexpected.invalid/':'https://auth.gomotive.com/login'};

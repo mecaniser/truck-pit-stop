@@ -29,12 +29,14 @@ def scope():
 
 def test_outage_and_holes_and_bound():
     today = date(2026, 10, 26)
-    seen = {'2026-04-02': {'status': 'verified', 'verified_at': '2026-10-25'}}
+    seen = {'2026-04-02': {'status': 'verified', 'verified_at': '2026-10-25',
+                           'source_read_at': '2026-10-25T12:00:00Z'}}
     plan = c.plan_days(scope(), today, seen, 14)
     assert len(plan['days']) == 14
     assert plan['days'][0] == '2026-04-01'
     assert '2026-04-02' not in plan['days']
-    assert plan['days'][-3:] == ['2026-10-24', '2026-10-25', '2026-10-26']
+    assert plan['days'][1:4] == ['2026-10-23', '2026-10-24', '2026-10-25']
+    assert plan['days'][4] == '2026-10-26'
     assert c.summarize(scope(), seen, today)['complete_through'] is None
 
 

@@ -1,4 +1,4 @@
-const {prepareLegacyLogin}=require('./login.cjs');
+const {prepareWorkerLogin}=require('./worker_login.cjs');
 const {readReviewedIdentity,sameIdentity}=require('./vehicle_identity.cjs');
 const {closeBrowser,phase,openTasks,failed}=require('./tasks.cjs');
 /* Rendered Motive daily fuel reports only. No private endpoints or session extraction. */
@@ -124,17 +124,14 @@ async function collect(output,planPath=null){
  const result={version:1,company_label:COMPANY,company_id:COMPANY_ID,company_verified_before:false,company_verified_after:false,complete:false,started_at:new Date().toISOString(),report_dates:requested,vehicles:[],reports:[]};save(output,result);
  const {chromium}=require('playwright'),browser=await chromium.launch({headless:true});
  try{
-  const context=await browser.newContext({timezoneId:'America/New_York',locale:'en-US'}),page=await context.newPage();page.setDefaultTimeout(15000);
-  phase('login_navigate');
-  await page.goto(ORIGIN,{waitUntil:'domcontentloaded',timeout:45000});phase('login_auth_redirect');
-  await page.waitForURL('https://auth.gomotive.com/login**',{timeout:30000});phase('login_origin_check');
-  if(new URL(page.url()).origin!=='https://auth.gomotive.com')throw Error('login_origin');
-  await prepareLegacyLogin(page,{phase});
+  const {context,page,authenticated}=await prepareWorkerLogin(browser,{worker:'fuel',phase,lookupEmail:process.env.MOTIVE_EMAIL,lookupPassword:process.env.MOTIVE_PASSWORD});
+  if(authenticated!==true){
   phase('login_email');
   await page.locator('input[name="user_profile[email]"]').fill(process.env.MOTIVE_EMAIL);phase('login_password');
   await page.locator('input[name="user_profile[password]"]').fill(process.env.MOTIVE_PASSWORD);phase('login_submit');
   await page.getByRole('button',{name:'Log in',exact:true}).click();phase('login_app_redirect');
   await page.waitForURL('https://app.gomotive.com/**',{timeout:45000});
+  }
   async function company(){const p=await context.newPage();try{await p.goto(ORIGIN+'/en-US/#/admin/company');await p.getByText(/KT8934277/).waitFor({timeout:30000});const t=await p.locator('body').innerText();if(!t.includes(COMPANY)||!t.includes(COMPANY_ID))throw Error('company_mismatch');}finally{await p.close();}}
   phase('company_before');
   await company();result.company_verified_before=true;save(output,result);

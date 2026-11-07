@@ -23,6 +23,14 @@ from scripts.motive_sync.recovery import (
 EXTRA_FLEETS = "MOTIVE_DRIVER_ADDITIONAL_FLEET_CUSTOMER_IDS"
 
 
+class FleetConfigurationError(ValueError):
+    """Invalid initial worker configuration; never expose private values."""
+
+
+class DriverCollectionError(RuntimeError):
+    """The source collector failed before a fresh batch could be prepared."""
+
+
 def fleet_environments(environment):
     """Validate every target before any child can collect or write data."""
     extras = json.loads(environment.get(EXTRA_FLEETS, "[]"))
@@ -109,20 +117,24 @@ async def database_fleets(children, *, engine=None, factory=None):
             json.dumps({"stage": "driver_source_start", "fleet_count": len(children)}),
             flush=True,
         )
-        await asyncio.to_thread(
-            read_process,
-            ["node", str(Path(__file__).with_name("collect.cjs")), str(source)],
-            env={
-                **children[0],
-                "MOTIVE_DRIVER_COLLECTION_FLEETS": json.dumps(
-                    sorted(
-                        child["MOTIVE_DRIVER_FLEET_CUSTOMER_ID"] for child in children
-                    )
-                ),
-            },
-            check=True,
-            timeout=1500,
-        )
+        try:
+            await asyncio.to_thread(
+                read_process,
+                ["node", str(Path(__file__).with_name("collect.cjs")), str(source)],
+                env={
+                    **children[0],
+                    "MOTIVE_DRIVER_COLLECTION_FLEETS": json.dumps(
+                        sorted(
+                            child["MOTIVE_DRIVER_FLEET_CUSTOMER_ID"]
+                            for child in children
+                        )
+                    ),
+                },
+                check=True,
+                timeout=1500,
+            )
+        except (subprocess.SubprocessError, OSError):
+            raise DriverCollectionError from None
         document = json.loads(source.read_text())
         validate_fresh_source(
             document, ordered[0].identity.company_label, ordered[0].identity.company_id
@@ -173,7 +185,10 @@ async def database_fleets(children, *, engine=None, factory=None):
 
 
 def main():
-    children = fleet_environments(os.environ)
+    try:
+        children = fleet_environments(os.environ)
+    except (ValueError, KeyError, TypeError, AttributeError):
+        raise FleetConfigurationError from None
     if children[0].get("MOTIVE_DRIVER_JOURNAL", "file") == "database":
         asyncio.run(database_fleets(children))
         return
@@ -208,19 +223,29 @@ def main():
     )
 
 
-if __name__ == "__main__":
+def cli():
     install_signals()
     print(json.dumps({"stage": "worker_start"}), flush=True)
     try:
         main()
-    except Exception:  # noqa: BLE001 - keep private configuration out of process logs
+    except Exception as error:  # noqa: BLE001 - never log private exception values
+        if isinstance(error, FleetConfigurationError):
+            code = "invalid_fleet_configuration"
+        elif isinstance(error, DriverCollectionError):
+            code = "driver_collection_failed"
+        else:
+            code = "fleet_execution_failed"
         print(
             json.dumps(
                 {
                     "stage": "fleet_worker_failed",
-                    "code": "invalid_fleet_configuration",
+                    "code": code,
                 }
             ),
             flush=True,
         )
         raise SystemExit(1) from None
+
+
+if __name__ == "__main__":
+    cli()

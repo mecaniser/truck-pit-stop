@@ -308,6 +308,72 @@ def test_invalid_configuration_cli_never_logs_private_values():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure",
+    [
+        subprocess.CalledProcessError(1, ["PRIVATE_COMMAND"], stderr="PRIVATE_STDERR"),
+        subprocess.TimeoutExpired(["PRIVATE_COMMAND"], 1500, output="PRIVATE_OUTPUT"),
+        OSError("PRIVATE_OS_ERROR"),
+    ],
+)
+async def test_collector_failure_stops_before_prepare_and_releases_locks(
+    batch_harness, monkeypatch, failure
+):
+    source, events, _, _, _ = batch_harness
+
+    def fail(*args, **kwargs):
+        events.append(("collect_failed", None))
+        raise failure
+
+    monkeypatch.setattr(run_fleets, "read_process", fail)
+    with pytest.raises(run_fleets.DriverCollectionError) as caught:
+        await run_fleets.database_fleets(
+            run_fleets.fleet_environments(source), engine=object(), factory=object()
+        )
+    assert str(caught.value) == ""
+    assert caught.value.__suppress_context__ is True
+    names = [event[0] for event in events]
+    assert names.count("collect_failed") == 1
+    assert names.count("unlock") == 2
+    assert not any(name in {"prepare", "project"} for name in names)
+
+
+@pytest.mark.parametrize(
+    ("failure", "code"),
+    [
+        (
+            run_fleets.DriverCollectionError("PRIVATE_COLLECTION"),
+            "driver_collection_failed",
+        ),
+        (
+            run_fleets.FleetConfigurationError("PRIVATE_CONFIG"),
+            "invalid_fleet_configuration",
+        ),
+        (ValueError("PRIVATE_RECOVERY_OR_PROJECTION"), "fleet_execution_failed"),
+        (OSError("PRIVATE_JOURNAL_ERROR"), "fleet_execution_failed"),
+    ],
+)
+def test_cli_failure_codes_are_static_and_never_leak_values(
+    monkeypatch, capsys, failure, code
+):
+    def fail():
+        raise failure
+
+    monkeypatch.setattr(run_fleets, "main", fail)
+    monkeypatch.setattr(run_fleets, "install_signals", lambda: None)
+    with pytest.raises(SystemExit) as caught:
+        run_fleets.cli()
+    assert caught.value.code == 1
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert "PRIVATE_" not in captured.out
+    assert [json.loads(line) for line in captured.out.splitlines()] == [
+        {"stage": "worker_start"},
+        {"stage": "fleet_worker_failed", "code": code},
+    ]
+
+
+@pytest.mark.asyncio
 async def test_source_age_is_checked_again_before_each_fleet_projection(
     batch_harness, monkeypatch
 ):

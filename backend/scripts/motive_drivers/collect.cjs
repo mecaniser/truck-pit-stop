@@ -1,4 +1,4 @@
-const {prepareLegacyLogin}=require('../motive_sync/login.cjs');
+const {prepareWorkerLogin}=require('../motive_sync/worker_login.cjs');
 const {closeBrowser,phase,openTasks,failed}=require('../motive_sync/tasks.cjs');
 const {allowlist,isReviewed,readReviewedIdentity,sameIdentity}=require('../motive_sync/vehicle_identity.cjs');
 const {readVehicleVinOnce:readVehicleVin}=require('../motive_sync/collect_trips.cjs');
@@ -223,20 +223,15 @@ async function collect(output) {
  phase('browser_launch');
  const browser=await chromium.launch({headless:true});
  try {
-  const context=await browser.newContext({timezoneId:'America/New_York',locale:'en-US'});
-  const page=await context.newPage();page.setDefaultTimeout(15000);
-  phase('login_navigate');
-  await page.goto(ORIGIN,{waitUntil:'domcontentloaded',timeout:45000});phase('login_auth_redirect');
-  await page.waitForURL('https://auth.gomotive.com/login**',{timeout:30000});
-  phase('login_origin_check');
-  if(new URL(page.url()).origin!=='https://auth.gomotive.com')throw new Error('login_origin');
-  await prepareLegacyLogin(page,{phase});
+  const {context,page,authenticated}=await prepareWorkerLogin(browser,{worker:'drivers',phase,lookupEmail:process.env.MOTIVE_EMAIL,lookupPassword:process.env.MOTIVE_PASSWORD});
+  if(authenticated!==true){
   phase('login_email');
   await page.locator('input[name="user_profile[email]"]').fill(process.env.MOTIVE_EMAIL);phase('login_password');
   await page.locator('input[name="user_profile[password]"]').fill(process.env.MOTIVE_PASSWORD);
   phase('login_submit');
   await page.getByRole('button',{name:'Log in',exact:true}).click();phase('login_app_redirect');
   await page.waitForURL('https://app.gomotive.com/**',{timeout:45000});
+  }
   async function company() {
    await page.goto(ORIGIN+'/en-US/#/admin/company',{waitUntil:'domcontentloaded'});await page.getByText(companyId,{exact:true}).waitFor({timeout:30000});
    const text=await page.locator('body').innerText();
