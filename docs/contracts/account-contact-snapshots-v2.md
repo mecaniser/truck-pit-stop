@@ -89,3 +89,46 @@ shop, service, imported invoice alias, complete single-invoice manifest, complet
 status and positive USD total. Missing or conflicting proof retains the original
 history context and existing holds. This does not change invoice/payment rows or
 constitute completion, consent or Google-delivery authorization.
+
+## Daily account delivery (DB-CONTACT-DAILY)
+
+The existing ETS collector already performs genuine daily contact reads. The
+Worker checks for undispatched source observations every five minutes, bounded
+to 50 accounts per transaction. One deterministic public, nondeleted invoice
+with imported invoice/order/customer provenance anchors each account. The
+configured tenant/ETS shop binding is mandatory. No financial capture runs in
+this path.
+
+Only source observations less than 20 hours old, not in the future, may enter this
+priority path. The payload retains the source observed_at unchanged. Complete,
+empty and incomplete observations all retain their original meaning. Missing
+evidence remains unavailable and is excluded, never manufactured. Existing rotating
+history capture remains unchanged for stale context and ordinary job updates.
+
+The immutable idempotency key binds account, original UTC source read time
+(including its day) and the validated semantic hash. Together these cover every
+contact observation field and use the existing exact outbox identity index. Same-read reruns produce no second event; changed
+same-day evidence gets a distinct correction identity. The tenant lock
+serializes the shared invoice observation sequence and outbox commit. These
+history events use the existing signed sender, with priority over bulk history
+only, newest source observation first (including invalidations). Bulk history
+retains FIFO and completion ordering is unchanged. Pause, allowlist, privacy
+expiry and retry budgets remain authoritative.
+Old events are neither marked delivered nor replayed by capture.
+
+Native histories keep source=dieselbridge. If the customer has a contact stream,
+they use v2 and source_customer_id, without contact_phone_snapshot. This avoids
+asserting ETS evidence on a native repair, clearing valid imported contact
+authority, or downgrading the account to v1.
+
+Release acceptance must compare exact event receipts and account/source times,
+then count current eligible phones in ELIS. A 300-phone target is conditional
+on real current source completeness; it is not inferred from account totals.
+
+An exact invalid source read receives a terminal non-deliverable diagnostic,
+containing only observation identity and a safe reason, so bad accounts cannot
+strand later accounts. A new source read is eligible for retry. Any prior
+account-wide PII redaction blocks priority reconstruction from a source read
+observed at or before redaction, including alternate invoice anchors. Because
+automatic retention uses the same redaction marker, this is conservative:
+a source reread after that barrier is needed for fresh priority capture.

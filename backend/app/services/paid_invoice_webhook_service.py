@@ -38,7 +38,7 @@ from app.services.conversion_pii_retention_service import (
     expire_conversion_event,
 )
 from app.services.provider_outbox_service import ProviderDeliveryError, enqueue_email_notification
-from app.services.shop_history_source import history_allowed_tenants
+from app.services.shop_history_source import CONTACT_HISTORY_PREFIX, history_allowed_tenants
 
 
 PAID_INVOICE_WEBHOOK_EVENT = "repair_order.paid"  # compatibility export
@@ -298,7 +298,18 @@ async def _claim(db: AsyncSession, limit: int, *, history_only: bool = False) ->
         and_(ProviderOutboxEvent.status == ProviderOutboxStatus.PENDING.value, ProviderOutboxEvent.available_at <= now),
         and_(ProviderOutboxEvent.status == ProviderOutboxStatus.PROCESSING.value, ProviderOutboxEvent.locked_until <= now),
     )
-    rows = (await db.execute(select(ProviderOutboxEvent).join(Tenant, Tenant.id == ProviderOutboxEvent.tenant_id).where(Tenant.paid_invoice_webhook_enabled.is_(True), Tenant.paid_invoice_webhook_delivery_paused.is_(False), event_filter, due).order_by(case((ProviderOutboxEvent.event_type == SHOP_HISTORY_EVENT, 1), else_=0), ProviderOutboxEvent.available_at).limit(limit).with_for_update(skip_locked=True, of=ProviderOutboxEvent))).scalars()
+    contact_priority = and_(ProviderOutboxEvent.event_type == SHOP_HISTORY_EVENT,
+                            ProviderOutboxEvent.idempotency_key.startswith(CONTACT_HISTORY_PREFIX))
+    rows = (await db.execute(select(ProviderOutboxEvent).join(Tenant, Tenant.id == ProviderOutboxEvent.tenant_id).where(
+        Tenant.paid_invoice_webhook_enabled.is_(True), Tenant.paid_invoice_webhook_delivery_paused.is_(False),
+        event_filter, due,
+    ).order_by(
+        case((ProviderOutboxEvent.event_type == SHOP_HISTORY_EVENT, 1), else_=0),
+        case((contact_priority, 0), else_=1),
+        case((contact_priority, ProviderOutboxEvent.payload["snapshot"]["customer"]["contact_phone_snapshot"]["observed_at"].as_string()),
+             else_=None).desc().nulls_last(),
+        ProviderOutboxEvent.available_at,
+    ).limit(limit).with_for_update(skip_locked=True, of=ProviderOutboxEvent))).scalars()
     claims = []
     expired = 0
     for event in rows:
