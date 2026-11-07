@@ -194,6 +194,7 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
                 aria-label="Open profile menu"
                 title="Profile"
               >
+                <span className="rail-mobile-profile" aria-hidden="true"><UserRound size={20} /><span>Profile</span></span>
                 <span className="rail-av">{initials(`${user?.first_name || ''} ${user?.last_name || ''}`)}</span>
                 <span className="rail-account-label">Profile</span>
                 <span className="rail-tip">Profile</span>
@@ -230,6 +231,18 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
                   onClick={() => { setProfileMenuOpen(false); setIntegrationsOpen(true) }}
                 >
                   <Link2 size={17} aria-hidden="true" /><span>Integrations</span>
+                </ControlButton>}
+                {canReturnToDashboard && <ControlButton controlKind="content"
+                  type="button"
+                  role="menuitem"
+                  className="rail-mobile-return"
+                  onClick={() => {
+                    setProfileMenuOpen(false)
+                    fleetReturn.returnsToSettings ? navigate(-1) : navigate('/dashboard')
+                  }}
+                >
+                  <ArrowLeft size={17} aria-hidden="true" />
+                  <span>{fleetReturn.returnsToSettings ? `Return to ${fleetReturn.label}` : 'Shop dashboard'}</span>
                 </ControlButton>}
                 <ControlButton controlKind="content"
                   type="button"

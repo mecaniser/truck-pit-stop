@@ -171,6 +171,15 @@ describe('Fleet board return context', () => {
     expect(screen.getByTestId('current-location')).toHaveTextContent('/dashboard/settings?section=fleet')
   })
 
+  it('offers the authorized shop return inside Profile for compact navigation', async () => {
+    const user = userEvent.setup()
+    renderFleet(['/fleet'])
+    await user.click(screen.getByRole('button', { name: 'Open profile menu' }))
+    await user.click(within(screen.getByRole('menu', { name: 'Profile actions' })).getByText('Shop dashboard'))
+    expect(screen.getByTestId('current-location')).toHaveTextContent('/dashboard')
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
   it('keeps the existing Shop Work fallback for a direct Fleet visit', async () => {
     const user = userEvent.setup()
     renderFleet(['/fleet'])
@@ -233,6 +242,7 @@ describe('Fleet navigation', () => {
     const settings = within(menu).getByRole('menuitem', { name: 'Settings' })
     await vi.waitFor(() => expect(settings).toHaveFocus())
     expect(within(menu).queryByRole('menuitem', { name: 'Integrations' })).not.toBeInTheDocument()
+    expect(within(menu).queryByText('Shop dashboard')).not.toBeInTheDocument()
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
     expect(trigger).toHaveFocus()
