@@ -150,7 +150,7 @@ describe('Fleet board return context', () => {
     expect(screen.getByTestId('map-focus')).toHaveTextContent('map-truck')
     await user.click(screen.getByRole('button', { name: 'Open map truck' }))
     expect(screen.getByText('Truck detail')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Fleet board', exact: true })).toHaveAttribute('aria-current', 'page')
+    expect(within(screen.getByRole('navigation', { name: 'Fleet navigation' })).getByRole('button', { name: 'Fleet board', exact: true })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('button', { name: 'Fleet map', exact: true })).not.toHaveAttribute('aria-current')
     await user.click(screen.getByRole('button', { name: /Fleet map$/ }))
     expect(screen.getByTestId('map-focus')).toHaveTextContent('map-truck')
