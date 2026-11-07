@@ -1,6 +1,6 @@
 # DB-FLEET-MOBILE-NAV
 
-Owner: Frontend & UX. Fast UI. Branch: `codex/fleet-mobile-navigation`.
+Owner: Frontend & UX. Fast UI. Branch: `codex/fleet-mobile-navigation`. [Draft PR824](https://github.com/mecaniser/truck-pit-stop/pull/824).
 
 ## Outcome and acceptance
 
