@@ -1,6 +1,8 @@
 # DB-FLEET-MOBILE-NAV
 
-Owner: Frontend & UX. Fast UI. Branch: `codex/fleet-mobile-navigation`. [Draft PR824](https://github.com/mecaniser/truck-pit-stop/pull/824).
+Current status: **Done — released and signed-in production verified (2026-11-07)**.
+
+Owner: Frontend & UX. Fast UI. Branch: `codex/fleet-mobile-navigation`. [PR824](https://github.com/mecaniser/truck-pit-stop/pull/824).
 
 ## Outcome and acceptance
 
@@ -48,3 +50,22 @@ Local browser evidence on actual source/sample preview5194 (PID46051, command/cw
 - 16 existing focused FleetProximity tests and Vite production build pass; no new JS/API behavior. No CSS-mirroring unit test added; browser interaction/scroll-container checks establish this layout behavior.
 
 This is browser-verified local sample-data UI only. Existing full-stack runtime blocker is unchanged; no backend alignment, production change, merge or deployment claimed.
+
+
+## Release and production acceptance — 2026-11-07
+
+User approved the local preview and explicitly authorized finishing verification, merging/deploying and checking production. Strict main protection required integrating the separate PR825/main change; fleet files remained identical to user-reviewed323f3fd1. All seven checks passed on6332354a1e49d1e2dba0782beca99f5ae03cdd98 in run42342694819. Focused local evidence remains10 FleetApp tests plus16 FleetProximity tests, scoped lint and production builds; protected CI provides the final integration gate.
+
+PR824 squash-merged at2026-11-07T05:33:29Z as `cfd6723675a9a348f3ea6b056b61b9d8340c41e9`. Railway auto-deployment `5b51d83f-87da-4296-a8c8-0a9477e73dee` succeeded on that exact commit. Public www/API build stamps match; readiness reports healthy database/Redis. Six-file scope: fleet shell/CSS/tests and delivery documentation only; no preview fixture/config, API, auth/tenant contract, migration or dependency changes.
+
+Reloaded the signed-in production `/fleet` on the deployed source (no browser stylesheet overrides):
+
+- 320/375/390/430px portrait and844×390 landscape: main uses full viewport width,56px bottom navigation, no horizontal overflow, exactly one overflowing vertical auto/scroll element (`.scroll`); truck panel overflow remains visible. At320px all four navigation targets measure73×48px.
+- Real25-unit overview: native scrolling over the list moves shell scrollTop0→844 while list scrollTop remains0. Header stays at top0 and navigation bottom at844. Final unit532 is reachable/selectable and shows no-coordinate fallback; located609 selects its matching pin.
+- Fleet Board/Trips/Map navigation updates both destination content/title and current-page state. Profile exposes Settings/Integrations/contextual Return to Profile Settings/Log out. Menu fits320px and390px; Escape dismisses and returns focus to trigger.
+- 1307×900 desktop retains74px collapsed and172px expanded rail plus independent `proximity-panel-content` scrolling for the real long list. Desktop-only/mobile-only controls remain correctly hidden. An expanded desktop preference still produces full-width320px content and56px bottom bar without overlay shadow.
+- Zero new console errors during verification. Cleared selection/menu and restored original desktop expansion preference and viewport. No fleet/customer records, account settings, integrations or financial state changed.
+
+Screenshot retained only locally: `frontend/output/fleet-mobile-review/production-mobile-nav390.png`; excluded from Git. Browser responsive testing, not physical-iPhone hardware acceptance. The historical full local-backend alignment limitation above is not a remaining production acceptance blocker.
+
+Product item **Done — released**, Frontend & UX accountable. No required product follow-up hidden in this receipt.
