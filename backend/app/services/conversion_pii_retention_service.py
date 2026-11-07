@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.db.models.invoice import Invoice
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
 from app.db.models.repair_order import RepairOrder
+from app.db.models.tenant import Tenant
 from app.db.session import AsyncSessionLocal
 
 
@@ -121,6 +122,9 @@ async def purge_expired_conversion_event_pii(
 
 
 async def erase_customer_conversion_event_pii(db: AsyncSession, *, tenant_id: UUID, customer_id: UUID, apply: bool = False) -> int:
+    # Serialize erasure with source capture, including observations not yet visible
+    # to this transaction. Lock order remains tenant, then outbox throughout.
+    await db.scalar(select(Tenant.id).where(Tenant.id == tenant_id).with_for_update())
     rows = (await db.execute(
         select(ProviderOutboxEvent)
         .join(Invoice, ProviderOutboxEvent.aggregate_id == Invoice.id)

@@ -84,6 +84,14 @@ def capture_shop_history() -> dict[str, int]:
     return run_async(capture_shop_history_batch())
 
 
+@celery_app.task(name="capture_account_contact_history", acks_late=True, reject_on_worker_lost=True,
+                 soft_time_limit=45, time_limit=60)
+def capture_account_contact_history() -> dict[str, int]:
+    """Prioritize each genuine daily account read without rereading financials."""
+    from app.services.account_contact_history import capture_account_contacts_batch
+    return run_async(capture_account_contacts_batch())
+
+
 @celery_app.task(name="purge_callrail_media_cache", soft_time_limit=120, time_limit=180)
 def purge_callrail_media_cache():
     async def purge():
