@@ -93,7 +93,7 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
         if(!isCluster){selectRef.current(representative.id);return}
         expandedClusters.current.set(JSON.stringify(group.map(pin=>pin.id)),map.getZoom())
         const bounds=new mb.LngLatBounds();group.forEach(pin=>bounds.extend(pin.point))
-        map.fitBounds(bounds,{padding:80,maxZoom:16,duration:0})
+        map.fitBounds(bounds,{padding: Math.min(80, map.getContainer().getBoundingClientRect().width / 5),maxZoom:16,duration:0})
         setViewportRevision(value=>value+1)
       }
 
@@ -104,6 +104,7 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
       button.classList.toggle('is-individual',!isCluster)
       button.classList.toggle('is-cluster',isCluster)
       button.classList.toggle('is-round',!isCluster&&representative.label.length===1)
+      button.classList.toggle('is-long-label', representative.label.length > 4)
       button.classList.toggle('is-selected', !!selected)
       button.classList.toggle('is-last-known', !representative.recent&&!isCluster)
       button.classList.toggle('is-dimmed', !!focus && !selected && !nearby.includes(representative.id))
@@ -178,7 +179,7 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
       const bounds = new mb.LngLatBounds()
       pins.forEach(pin => bounds.extend(pin.point))
       if (homePoint) bounds.extend(homePoint)
-      map.fitBounds(bounds, { padding: 65, maxZoom: 10, duration: 0 })
+      map.fitBounds(bounds, { padding: window.matchMedia('(max-width: 680px)').matches ? 36 : 65, maxZoom: 10, duration: 0 })
       framing.current = frameKey
     }
   }, [pinData, comparisonData, routeData, focusId, recenter, ready, viewportRevision, homePoint])

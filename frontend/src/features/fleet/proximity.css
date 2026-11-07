@@ -171,3 +171,46 @@
   .proximity-geography, .proximity--compact .proximity-geography { height: 330px; }
   .proximity-panel { contain: none; height: 480px; }
 }
+
+/* Phone overview: number circles reserve space for the map rather than branding.
+   Status stays at the GPS dot; red identifies selection, not vehicle health. */
+@media (max-width: 680px) {
+  .proximity-geography, .proximity--compact .proximity-geography {
+    height: clamp(300px, 56svh, 460px);
+    min-height: 0;
+  }
+  .proximity-canvas { min-height: 0; }
+  .proximity-map-title { gap: 0 8px; }
+  .proximity-map-title strong { font-size: 15px; }
+  .proximity-map-controls { gap: 4px; }
+  .proximity-map-controls button { padding: 0 8px; gap: 4px; }
+  .proximity-search input { --control-font-size: 16px; font-size: 16px; }
+  .proximity-legend { gap: 6px 10px; padding: 8px 10px; }
+  .proximity-pin .proximity-pin-brand,
+  .proximity-pin.is-cluster .proximity-pin-badge small { display: none; }
+  .proximity-pin.is-individual .proximity-pin-badge,
+  .proximity-pin .proximity-pin-badge,
+  .proximity-pin.is-round .proximity-pin-badge,
+  .proximity-pin.is-cluster .proximity-pin-badge {
+    box-sizing: border-box;
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0 2px;
+    gap: 0;
+    justify-content: center;
+    border: 2px solid #17202a;
+    border-radius: 50%;
+    background: #fff;
+    color: #17202a;
+    box-shadow: 0 1px 3px #17202a30;
+  }
+  .proximity-pin .proximity-pin-label { color: inherit; font-size: 11px; line-height: 1; }
+  .proximity-pin.is-long-label .proximity-pin-badge { width: max-content; min-width: 40px; padding-inline: 5px; border-radius: 16px; }
+  .proximity-pin.is-cluster .proximity-pin-badge { background: #17202a; color: #fff; border-color: #fff; }
+  .proximity-pin.is-last-known .proximity-pin-badge { border-style: dashed; }
+  .proximity-pin.is-selected .proximity-pin-badge { border-color: #c62828; outline: 1px solid #fff; outline-offset: 0; color: #a81717; }
+  .proximity-pin:focus-visible .proximity-pin-badge { outline: 2px solid #c62828; outline-offset: 2px; }
+  .proximity-pin-badge::after { inset: -6px; }
+}

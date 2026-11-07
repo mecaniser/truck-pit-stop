@@ -196,3 +196,33 @@ it('keeps cluster tap surfaces above nearby markers in overview and focus modes'
  expect(mock.fit).toHaveBeenLastCalledWith(expect.anything(),expect.objectContaining({maxZoom:16}))
  expect(select).not.toHaveBeenCalled()
 })
+
+
+it('uses compact phone framing without losing long unit labels or selection', async () => {
+  const media = vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: true } as MediaQueryList)
+  mock.width = 320; mock.height = 360
+  const select = vi.fn()
+  render(<FleetMapCanvas trucks={[truck('603', 0), truck('TRUCK-12345', 1)]} nearbyIds={[]} now={now} recenter={0} onFocus={select} />)
+  await waitFor(() => expect(mock.pins).toHaveLength(2))
+  expect(mock.fit).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ padding: 36 }))
+  const long = mock.pins[1].element
+  expect(long).toHaveClass('is-long-label')
+  expect(long.querySelector('.proximity-pin-label')).toHaveTextContent('TRUCK-12345')
+  fireEvent.click(long)
+  expect(select).toHaveBeenCalledWith('TRUCK-12345')
+  media.mockReturnValue({ matches: false } as MediaQueryList)
+  mock.width = 900
+  act(() => mock.handlers.resize())
+  expect(mock.fit).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ padding: 65 }))
+  expect(mock.pins).toHaveLength(2)
+  media.mockRestore()
+})
+
+
+it('keeps cluster expansion padding usable on narrow phone canvases', async () => {
+  mock.width = 300
+  render(<FleetMapCanvas trucks={[truck('603', 1), truck('609', 1.01)]} nearbyIds={[]} now={now} recenter={0} onFocus={vi.fn()} />)
+  await waitFor(() => expect(mock.pins).toHaveLength(1))
+  fireEvent.click(mock.pins[0].element)
+  expect(mock.fit).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ padding: 60, maxZoom: 16 }))
+})
