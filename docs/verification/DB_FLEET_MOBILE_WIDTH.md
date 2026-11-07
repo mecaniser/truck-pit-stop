@@ -1,6 +1,6 @@
 # DB-FLEET-MAP-EDGE — mobile fleet width refinement
 
-Owner: Frontend & UX. Fast UI. Branch: `codex/fleet-map-edge-to-edge`, base498ffed7.
+[Draft PR827](https://github.com/mecaniser/truck-pit-stop/pull/827). Owner: Frontend & UX. Fast UI. Branch: `codex/fleet-map-edge-to-edge`, base498ffed7.
 
 Acceptance: use the available phone width on Map and Fleet Board, retaining a visible Fleet Board scrollbar per user clarification. Preserve single-page native scrolling, readable/control/safe-area insets and desktop framing. CSS only; no API/auth/role/data/dependency change. Local review before deployment.
 
