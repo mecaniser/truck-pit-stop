@@ -202,7 +202,7 @@ def automatic_history(state, expected, stamp):
             'first_day', 'plan_sha256'
         } or type(marker['version']) is not int or marker['version'] != 1
             or marker['scope'] != expected or marker['run_id'] != path.parent.name
-            or marker['first_lane'] not in {'recent', 'backlog'}):
+            or marker['first_lane'] not in {'recent', 'backlog', 'provisional'}):
             raise ValueError('Invalid trip automatic selection scope')
         created = datetime.fromisoformat(marker['created_at'].replace('Z', '+00:00'))
         if created.tzinfo is None or created > stamp:
@@ -211,8 +211,10 @@ def automatic_history(state, expected, stamp):
         validate_plan(plan, expected, created.astimezone(ZONE).date())
         if marker['plan_sha256'] != digest(plan) or marker['first_day'] != plan['days'][0]:
             raise ValueError('Trip automatic selection plan mismatch')
-        recent_start = created.astimezone(ZONE).date() - timedelta(days=2)
-        lane = 'recent' if date.fromisoformat(marker['first_day']) >= recent_start else 'backlog'
+        local_today = created.astimezone(ZONE).date()
+        first = date.fromisoformat(marker['first_day'])
+        lane = ('provisional' if first == local_today else 'recent'
+                if first >= local_today-timedelta(days=3) else 'backlog')
         if marker['first_lane'] != lane:
             raise ValueError('Trip automatic selection lane mismatch')
         history.append(marker)
@@ -223,10 +225,12 @@ def automatic_history(state, expected, stamp):
 def selection_marker(plan, run_id, stamp):
     """Persist under the worker lock immediately before automatic collection."""
     validate_plan(plan, plan['scope'], stamp.astimezone(ZONE).date())
+    today = stamp.astimezone(ZONE).date()
+    first = date.fromisoformat(plan['days'][0])
     return dict(version=1, scope=plan['scope'], run_id=run_id,
                 created_at=stamp.isoformat(), first_day=plan['days'][0],
-                first_lane='recent' if date.fromisoformat(plan['days'][0]) >=
-                    stamp.astimezone(ZONE).date()-timedelta(days=2) else 'backlog',
+                first_lane='provisional' if first == today else
+                    'recent' if first >= today-timedelta(days=3) else 'backlog',
                 plan_sha256=digest(plan))
 
 
@@ -263,13 +267,14 @@ def plan_days(expected, today, examined, limit=14, start=None, end=None, history
                     for i in range((today-baseline).days+1)
                     if not settled_day((baseline+timedelta(days=i)).isoformat(),
                                        examined.get((baseline+timedelta(days=i)).isoformat(), {}))]
-        boundary = (today-timedelta(days=2)).isoformat()
+        boundary = (today-timedelta(days=3)).isoformat()
         def priority(day):
             return (attempts.get(day, -1), day in examined,
                     examined.get(day, {}).get('verified_at', ''), day)
-        recent = sorted((day for day in eligible if day >= boundary), key=priority)
+        recent = sorted((day for day in eligible if boundary <= day < today.isoformat()), key=priority)
         backlog = sorted((day for day in eligible if day < boundary), key=priority)
-        lane = 'recent' if history and history[-1]['first_lane'] == 'backlog' else 'backlog'
+        alternating = [item for item in history if item['first_lane'] != 'provisional']
+        lane = 'recent' if alternating and alternating[-1]['first_lane'] == 'backlog' else 'backlog'
         first, other = (backlog, recent) if lane == 'backlog' else (recent, backlog)
         days = []
         def add(day):
@@ -279,8 +284,9 @@ def plan_days(expected, today, examined, limit=14, start=None, end=None, history
             add(first[0])
         if other:
             add(other[0])
-        # Keep current observations near the front while filling bounded backlog.
-        for day in recent + backlog:
+        # Closed recent days precede today's optional, necessarily provisional
+        # observation. It consumes no minimum-capacity recent/backlog slot.
+        for day in recent + [d for d in eligible if d == today.isoformat()] + backlog:
             add(day)
     return {'version': 1, 'scope': expected, 'days': days}
 

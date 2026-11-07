@@ -38,20 +38,66 @@ def test_six_one_day_capacity_restarts_progress_both_lanes(tmp_path):
         examined[first] = {'status': 'verified' if first != '2026-11-07' else 'provisional',
                            'source_read_at': stamp.isoformat(), 'verified_at': stamp.isoformat()}
         assert len(plan['days']) <= 14
-        assert any(d < '2026-11-05' for d in plan['days'][:2])
-        assert any(d >= '2026-11-05' for d in plan['days'][:2])
-    assert selections == ['2026-10-01', '2026-11-05', '2026-10-02',
-                          '2026-11-06', '2026-10-03', '2026-11-07']
+        assert any(d < '2026-11-04' for d in plan['days'][:2])
+        assert any(d >= '2026-11-04' for d in plan['days'][:2])
+    assert selections == ['2026-10-01', '2026-11-04', '2026-10-02',
+                          '2026-11-05', '2026-10-03', '2026-11-06']
 
 
 def test_rejected_first_days_rotate_and_later_unstarted_slots_are_not_markers(tmp_path):
     stamp = datetime(2026, 11, 7, 14, tzinfo=timezone.utc)
     plans = [reserve(tmp_path, scope(), stamp + timedelta(minutes=i), limit=3) for i in range(6)]
-    assert [p['days'][0] for p in plans] == ['2026-10-01', '2026-11-05', '2026-10-02',
-                                          '2026-11-06', '2026-10-03', '2026-11-07']
+    assert [p['days'][0] for p in plans] == ['2026-10-01', '2026-11-04', '2026-10-02',
+                                          '2026-11-05', '2026-10-03', '2026-11-06']
     assert c.verified_days(tmp_path, scope()) == {}
     assert c.summarize(scope(), {}, stamp.date())['complete_through'] is None
     assert all(len(p['days']) == 3 for p in plans)
+    assert all('2026-11-07' not in p['days'] for p in plans)
+    assert all(sum('2026-11-04' <= d < '2026-11-07' for d in p['days']) == 2 for p in plans)
+
+
+def test_closed_recent_three_include_nov4_after_last_saved_nov3(tmp_path):
+    stamp = datetime(2026, 11, 7, 14, tzinfo=timezone.utc)
+    expected = scope()
+    examined = {'2026-11-03': {'status': 'verified', 'verified_at': stamp.isoformat(),
+                             'source_read_at': stamp.isoformat()}}
+    first = reserve(tmp_path, expected, stamp, examined)
+    assert first['days'][:5] == ['2026-10-01', '2026-11-04', '2026-11-05',
+                                '2026-11-06', '2026-11-07']
+    assert '2026-11-03' not in first['days']
+    second = reserve(tmp_path, expected, stamp+timedelta(minutes=1), examined)
+    assert second['days'][0] == '2026-11-04'
+
+
+@pytest.mark.parametrize('stamp,closed,today', [
+    ('2026-11-07T02:00:00+00:00', ['2026-11-03', '2026-11-04', '2026-11-05'], '2026-11-06'),
+    ('2026-11-02T04:30:00+00:00', ['2026-10-29', '2026-10-30', '2026-10-31'], '2026-11-01'),
+])
+def test_closed_lane_uses_new_york_date_across_midnight_and_dst(tmp_path, stamp, closed, today):
+    instant = datetime.fromisoformat(stamp)
+    plan = reserve(tmp_path, scope(), instant)
+    assert plan['days'][1:4] == closed and plan['days'][4] == today
+    assert reserve(tmp_path, scope(), instant+timedelta(minutes=1))['days'][0] == closed[0]
+
+
+def test_today_only_fallback_is_provisional_and_does_not_change_lane_alternation(tmp_path):
+    stamp = datetime(2026, 11, 7, 14, tzinfo=timezone.utc)
+    expected = scope()
+    reserve(tmp_path, expected, stamp)
+    start = date.fromisoformat(expected['baseline'])
+    examined = {(start+timedelta(days=i)).isoformat(): {
+        'status': 'verified', 'verified_at': stamp.isoformat(), 'source_read_at': stamp.isoformat()
+    } for i in range((stamp.date()-start).days)}
+    fallback = reserve(tmp_path, expected, stamp+timedelta(minutes=1), examined)
+    assert fallback['days'] == ['2026-11-07']
+    history = c.automatic_history(tmp_path, expected, stamp+timedelta(minutes=2))
+    assert [item['first_lane'] for item in history] == ['backlog', 'provisional']
+    assert c.verified_days(tmp_path, expected) == {}
+    # Reopening eligible dates must resume the closed recent lane, even after a
+    # provisional-only selection. No scheduling marker certified that date.
+    examined.pop('2026-10-02')
+    examined.pop('2026-11-04')
+    assert reserve(tmp_path, expected, stamp+timedelta(minutes=3), examined)['days'][0] == '2026-11-04'
 
 
 def test_unresolved_days_rotate_when_unseen_backlog_drained(tmp_path):
@@ -70,7 +116,7 @@ def test_explicit_ranges_do_not_change_automatic_first_lane_or_attempts(tmp_path
                      start='2026-10-03', end='2026-10-05')
     assert manual['days'] == ['2026-10-03', '2026-10-04', '2026-10-05']
     later = reserve(tmp_path, scope(), stamp+timedelta(minutes=2))
-    assert later['days'][0] == '2026-11-05'
+    assert later['days'][0] == '2026-11-04'
     assert len(c.automatic_history(tmp_path, scope(), stamp+timedelta(minutes=3))) == 2
 
 
@@ -176,6 +222,6 @@ def test_worker_records_first_intent_before_one_collection_and_restarts(tmp_path
         with pytest.raises(SystemExit):
             worker.main()
     assert len(calls) == 2
-    assert (calls[0] < (datetime.now(c.ZONE).date()-timedelta(days=2)).isoformat()
-            and calls[1] >= (datetime.now(c.ZONE).date()-timedelta(days=2)).isoformat())
+    assert (calls[0] < (datetime.now(c.ZONE).date()-timedelta(days=3)).isoformat()
+            and calls[1] >= (datetime.now(c.ZONE).date()-timedelta(days=3)).isoformat())
     assert c.verified_days(tmp_path, scope()) == {}
