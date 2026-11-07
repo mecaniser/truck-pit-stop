@@ -72,7 +72,7 @@ async function fuelLoginFixture({lookup=false,origin='https://auth.gomotive.com'
    async click(){events.push(name);if(role==='link')current='https://auth.gomotive.com/login?client_id=fixture';},
   };},
  };
- const browser={async newContext(){return {async newPage(){return page;}};}};
+ const browser={async newContext(){return {async newPage(){return page;},async close(){events.push('context_closed');}};}};
  const module={exports:{}};
  const mockedRequire=name=>{
   if(name==='node:fs')return {writeFileSync(){},chmodSync(){},renameSync(){}};
