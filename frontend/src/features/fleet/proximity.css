@@ -86,7 +86,7 @@
 .fleet-root .proximity-popup-row:focus-visible { background: #eff6ff; outline: 2px solid #93c5fd; outline-offset: -2px; }
 .proximity--compact .proximity-geography { min-height: 400px; }
 @media (max-width: 1000px) { .proximity { --proximity-panel-width: 280px; } .proximity-legend { gap: 6px 10px; } }
-@media (max-width: 680px) {
+@media (max-width: 680px), (max-width: 960px) and (max-height: 500px) {
   .proximity { grid-template-columns: minmax(0, 1fr); grid-template-areas: "map-toolbar" "map" "search" "panel"; }
   .proximity-geography, .proximity--compact .proximity-geography { min-height: 330px; }
   .proximity-canvas { min-height: 280px; }
@@ -167,14 +167,16 @@
 .proximity-skeleton-location { flex: 1; max-width: 110px; }
 .proximity-more-loading { height: 44px; margin-top: 8px; display: grid; place-items: center; border: 1px solid var(--line, #344453); border-radius: 7px; }
 .proximity-more-loading .proximity-skeleton { width: 70px; }
-@media (max-width: 680px) {
+@media (max-width: 680px), (max-width: 960px) and (max-height: 500px) {
   .proximity-geography, .proximity--compact .proximity-geography { height: 330px; }
-  .proximity-panel { contain: none; height: 480px; }
+  /* The Fleet shell owns phone scrolling; the list grows with its rows. */
+  .proximity-panel { contain: none; height: auto; max-height: none; overflow: visible; }
+  .proximity-panel-content { flex: 0 0 auto; overflow: visible; overscroll-behavior: auto; }
 }
 
 /* Phone overview: number circles reserve space for the map rather than branding.
    Status stays at the GPS dot; red identifies selection, not vehicle health. */
-@media (max-width: 680px) {
+@media (max-width: 680px), (max-width: 960px) and (max-height: 500px) {
   .proximity-geography, .proximity--compact .proximity-geography {
     height: clamp(300px, 56svh, 460px);
     min-height: 0;

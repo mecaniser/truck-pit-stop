@@ -33,3 +33,18 @@ User requests local review before any deployment. No merge/deployment performed.
 - Board/Map/Trips switching and current-page states work. Profile exposes Settings/Integrations/Shop dashboard/Log out for the sample owner; menu fits320px, Escape closes and returns focus. Read-only sample preview reports zero browser console errors.
 - 10 focused tests pass, including owner Shop return through Profile, manager exclusions, destination state, detail return and profile dismissal/focus. Shared-control check, TypeScript and production build pass; existing large-chunk advisory unchanged. Baseline-aware changed-source lint remains the scoped gate for pre-existing FleetApp lint findings.
 - iPhone safe-area padding included. Physical-device hardware acceptance is not claimed. Local screenshot `frontend/output/fleet-mobile-review/local-bottom-navigation390.png`; preview/config/fixtures/screenshots excluded from Git.
+
+
+## Single-scroll refinement — 2026-11-06
+
+User requests local review before deployment. The phone truck panel now grows to its full content height; remove its480px height, max-height cap, internal overflow and overscroll containment. Fleet shell `.scroll` is the sole vertical scroller for map/search/list. Apply the compact map layout to the same short-landscape breakpoint as bottom navigation. Desktop panel styles remain unchanged.
+
+Local browser evidence on actual source/sample preview5194 (PID46051, command/cwd rechecked at the intended frontend checkout; HTTP200):
+
+- 320/375/390/430px portrait and844×390 landscape each expose exactly one overflowing auto/scroll element: shell `.scroll`. Panel height599px accommodates all12 sample rows, inner list scrollTop stays0, and no horizontal overflow occurs.
+- Native scroll over the list moves shell scrollTop0→586; final unit611 becomes visible. Header top stays0 and bottom nav remains at viewport bottom844. Unit611 remains selectable and selects its matching pin; Profile opens within the screen and Escape dismisses it.
+- At1307×900, comparison panel retains `overflow-y:auto` and720px panel sizing. The short sample list fits; desktop internal scrolling style is preserved for longer lists.
+- Zero browser console errors. Local screenshot: `frontend/output/fleet-mobile-review/single-scroll390.png`. Preview remains open at390px for user inspection. No synthetic preview files or screenshot committed.
+- 16 existing focused FleetProximity tests and Vite production build pass; no new JS/API behavior. No CSS-mirroring unit test added; browser interaction/scroll-container checks establish this layout behavior.
+
+This is browser-verified local sample-data UI only. Existing full-stack runtime blocker is unchanged; no backend alignment, production change, merge or deployment claimed.
