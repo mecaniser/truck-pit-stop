@@ -188,8 +188,62 @@ def terminal_ineligible(day, coverage):
         return False
 
 
-def plan_days(expected, today, examined, limit=14, start=None, end=None):
-    if not 3 <= limit <= 31:
+def automatic_history(state, expected, stamp):
+    """Read immutable scheduling intents, never treat them as observations.
+
+    Older plans have no marker and provide no invented attempt history. A marker
+    binds only its first slot; later planned dates may never have started.
+    """
+    history = []
+    for path in Path(state).glob('*/automatic-selection.json'):
+        marker = private_read(path, state)
+        if (not isinstance(marker, dict) or set(marker) != {
+            'version', 'scope', 'run_id', 'created_at', 'first_lane',
+            'first_day', 'plan_sha256'
+        } or type(marker['version']) is not int or marker['version'] != 1
+            or marker['scope'] != expected or marker['run_id'] != path.parent.name
+            or marker['first_lane'] not in {'recent', 'backlog'}):
+            raise ValueError('Invalid trip automatic selection scope')
+        created = datetime.fromisoformat(marker['created_at'].replace('Z', '+00:00'))
+        if created.tzinfo is None or created > stamp:
+            raise ValueError('Invalid trip automatic selection timestamp')
+        plan = private_read(path.with_name('plan.json'), state)
+        validate_plan(plan, expected, created.astimezone(ZONE).date())
+        if marker['plan_sha256'] != digest(plan) or marker['first_day'] != plan['days'][0]:
+            raise ValueError('Trip automatic selection plan mismatch')
+        recent_start = created.astimezone(ZONE).date() - timedelta(days=2)
+        lane = 'recent' if date.fromisoformat(marker['first_day']) >= recent_start else 'backlog'
+        if marker['first_lane'] != lane:
+            raise ValueError('Trip automatic selection lane mismatch')
+        history.append(marker)
+    return sorted(history, key=lambda marker: (
+        datetime.fromisoformat(marker['created_at'].replace('Z', '+00:00')), marker['run_id']))
+
+
+def selection_marker(plan, run_id, stamp):
+    """Persist under the worker lock immediately before automatic collection."""
+    validate_plan(plan, plan['scope'], stamp.astimezone(ZONE).date())
+    return dict(version=1, scope=plan['scope'], run_id=run_id,
+                created_at=stamp.isoformat(), first_day=plan['days'][0],
+                first_lane='recent' if date.fromisoformat(plan['days'][0]) >=
+                    stamp.astimezone(ZONE).date()-timedelta(days=2) else 'backlog',
+                plan_sha256=digest(plan))
+
+
+def settled_day(day, coverage):
+    """Only receipt-derived closed-day proof or terminal eligibility can skip."""
+    if terminal_ineligible(day, coverage):
+        return True
+    if coverage.get('status') != 'verified':
+        return False
+    try:
+        return day_closed(day, coverage.get('source_read_at'))
+    except (ValueError, TypeError, AttributeError, KeyError, OverflowError):
+        return False
+
+
+def plan_days(expected, today, examined, limit=14, start=None, end=None, history=()):
+    if type(limit) is not int or not 3 <= limit <= 31:
         raise ValueError('Trip window limit must be 3..31')
     baseline = date.fromisoformat(expected['baseline'])
     if baseline > today:
@@ -202,18 +256,32 @@ def plan_days(expected, today, examined, limit=14, start=None, end=None):
             raise ValueError('Backfill range outside bounded plan')
         days = [(first+timedelta(days=i)).isoformat() for i in range((last-first).days+1)]
     else:
-        recent = [(today-timedelta(days=i)).isoformat() for i in (2, 1, 0)
-                  if today-timedelta(days=i) >= baseline]
-        # Examined exclusions stay visible but do not monopolize the backlog.
-        old = [(baseline+timedelta(days=i)).isoformat() for i in range((today-baseline).days)
-               if (baseline+timedelta(days=i)).isoformat() not in examined
-               and (baseline+timedelta(days=i)).isoformat() not in recent]
-        days = old[:limit-len(recent)] + recent
-        # Once unseen backlog drains, revisit oldest unresolved observations fairly.
-        retry = sorted((v['verified_at'], d) for d, v in examined.items()
-                       if v['status'] != 'verified' and not terminal_ineligible(d, v)
-                       and d not in days and d < today.isoformat())
-        days = [d for _, d in retry[:limit-len(days)]] + days
+        # Marker order is validated by automatic_history. Only first slots count;
+        # rejected days rotate even if no receipt was ever written for them.
+        attempts = {item['first_day']: ordinal for ordinal, item in enumerate(history)}
+        eligible = [(baseline+timedelta(days=i)).isoformat()
+                    for i in range((today-baseline).days+1)
+                    if not settled_day((baseline+timedelta(days=i)).isoformat(),
+                                       examined.get((baseline+timedelta(days=i)).isoformat(), {}))]
+        boundary = (today-timedelta(days=2)).isoformat()
+        def priority(day):
+            return (attempts.get(day, -1), day in examined,
+                    examined.get(day, {}).get('verified_at', ''), day)
+        recent = sorted((day for day in eligible if day >= boundary), key=priority)
+        backlog = sorted((day for day in eligible if day < boundary), key=priority)
+        lane = 'recent' if history and history[-1]['first_lane'] == 'backlog' else 'backlog'
+        first, other = (backlog, recent) if lane == 'backlog' else (recent, backlog)
+        days = []
+        def add(day):
+            if day not in days and len(days) < limit:
+                days.append(day)
+        if first:
+            add(first[0])
+        if other:
+            add(other[0])
+        # Keep current observations near the front while filling bounded backlog.
+        for day in recent + backlog:
+            add(day)
     return {'version': 1, 'scope': expected, 'days': days}
 
 

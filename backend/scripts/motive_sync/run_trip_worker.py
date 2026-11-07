@@ -10,7 +10,6 @@ import sys
 from pathlib import Path
 
 from scripts.motive_sync import trip_coverage, trip_rejection
-from scripts.motive_sync.runner import private_json
 from scripts.motive_sync.recovery import entry, read_process
 
 
@@ -71,16 +70,23 @@ def main():
         else:
             from scripts.motive_sync.trip_runner import immutable_json
             immutable_json(binding_file, expected)
-        today = datetime.now(trip_coverage.ZONE).date()
+        stamp = datetime.now(timezone.utc)
+        today = stamp.astimezone(trip_coverage.ZONE).date()
         examined = trip_coverage.verified_days(state, expected)
+        history = trip_coverage.automatic_history(state, expected, stamp)
         plan = trip_coverage.plan_days(expected, today, examined,
             limit=int(os.environ.get("MOTIVE_TRIPS_MAX_DAYS", "14")),
-            start=os.environ.get("MOTIVE_TRIPS_FROM"), end=os.environ.get("MOTIVE_TRIPS_TO"))
+            start=os.environ.get("MOTIVE_TRIPS_FROM"), end=os.environ.get("MOTIVE_TRIPS_TO"),
+            history=history)
         run = state / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + str(uuid4()))
         run.mkdir(mode=0o700)
         source, receipt = run / "source.json", run / "receipt.json"
         plan_file = run / "plan.json"
-        private_json(plan_file, plan)
+        from scripts.motive_sync.trip_runner import immutable_json
+        immutable_json(plan_file, plan)
+        if not os.environ.get("MOTIVE_TRIPS_FROM") and not os.environ.get("MOTIVE_TRIPS_TO"):
+            immutable_json(run / "automatic-selection.json",
+                trip_coverage.selection_marker(plan, run.name, stamp))
         try:
             read_process(
                 ["node", str(Path(__file__).with_name("collect_trips.cjs")), str(source)],
