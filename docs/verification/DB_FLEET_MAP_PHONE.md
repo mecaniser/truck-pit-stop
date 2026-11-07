@@ -38,4 +38,3 @@ After deployment, reloaded the signed-in production `/fleet` with **no styleshee
 - No fleet/customer records, statuses, payments or settings changed. These are responsive browser checks, not physical-iPhone hardware testing.
 
 Private production screenshot retained only locally at `frontend/output/playwright/fleet-map-phone/production-phone390.png`; excluded from Git. Product item **Done — released and browser verified**, Frontend & UX accountable. Historical local-backend configuration blocker above remains a local environment limitation, not a production acceptance blocker.
-
