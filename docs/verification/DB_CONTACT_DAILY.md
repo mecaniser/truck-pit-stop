@@ -2,6 +2,8 @@
 
 Accountable owner: Backend & Integrations. Lane: high risk. Branch:
 `codex/elis-daily-contact-snapshots`, based on `0bd0b375`.
+Review: [draft PR833](https://github.com/mecaniser/truck-pit-stop/pull/833).
+The later main integration adds documentation only; reviewed source is unchanged.
 
 ## Outcome and current state
 

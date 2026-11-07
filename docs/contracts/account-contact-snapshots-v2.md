@@ -94,12 +94,12 @@ constitute completion, consent or Google-delivery authorization.
 
 The existing ETS collector already performs genuine daily contact reads. The
 Worker checks for undispatched source observations every five minutes, bounded
-to50 accounts per transaction. One deterministic public, nondeleted invoice
+to 50 accounts per transaction. One deterministic public, nondeleted invoice
 with imported invoice/order/customer provenance anchors each account. The
 configured tenant/ETS shop binding is mandatory. No financial capture runs in
 this path.
 
-Only source observations less than20hours old, not in the future, may enter this
+Only source observations less than 20 hours old, not in the future, may enter this
 priority path. The payload retains the source observed_at unchanged. Complete,
 empty and incomplete observations all retain their original meaning. Missing
 evidence remains unavailable and is excluded, never manufactured. Existing rotating
@@ -122,7 +122,7 @@ asserting ETS evidence on a native repair, clearing valid imported contact
 authority, or downgrading the account to v1.
 
 Release acceptance must compare exact event receipts and account/source times,
-then count current eligible phones in ELIS. A300-phone target is conditional
+then count current eligible phones in ELIS. A 300-phone target is conditional
 on real current source completeness; it is not inferred from account totals.
 
 An exact invalid source read receives a terminal non-deliverable diagnostic,
