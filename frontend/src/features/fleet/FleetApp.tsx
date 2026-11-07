@@ -152,7 +152,7 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
   return (
     <div className={'fleet-root' + (railExpanded ? ' rail-expanded' : '')}>
       <div className="app" data-db-touch-controls>
-        <nav className={'rail' + (railExpanded ? ' is-expanded' : '')}>
+        <nav aria-label="Fleet navigation" className={'rail' + (railExpanded ? ' is-expanded' : '')}>
           <div className="rail-mark"><Truck /></div>
           {canReturnToDashboard && (
             <>
@@ -171,7 +171,7 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
             </>
           )}
           {railItems.map(([v, icon, tip, abbr]) => (
-            <ControlButton controlKind="content" key={v} className={'rail-btn' + (view === v || (v === 'board' && view === 'detail') ? ' is-on' : '')} onClick={() => goView(v)}>
+            <ControlButton controlKind="content" key={v} aria-label={tip} aria-current={view === v || (v === 'board' && view === 'detail') ? 'page' : undefined} className={'rail-btn' + (view === v || (v === 'board' && view === 'detail') ? ' is-on' : '')} onClick={() => goView(v)}>
               {icon}<span className="rail-abbr">{abbr}</span><span className="rail-full">{tip}</span><span className="rail-tip">{tip}</span>
             </ControlButton>
           ))}
@@ -194,6 +194,7 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
                 aria-label="Open profile menu"
                 title="Profile"
               >
+                <span className="rail-mobile-profile" aria-hidden="true"><UserRound size={20} /><span>Profile</span></span>
                 <span className="rail-av">{initials(`${user?.first_name || ''} ${user?.last_name || ''}`)}</span>
                 <span className="rail-account-label">Profile</span>
                 <span className="rail-tip">Profile</span>
@@ -230,6 +231,19 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
                   onClick={() => { setProfileMenuOpen(false); setIntegrationsOpen(true) }}
                 >
                   <Link2 size={17} aria-hidden="true" /><span>Integrations</span>
+                </ControlButton>}
+                {canReturnToDashboard && <ControlButton controlKind="content"
+                  type="button"
+                  role="menuitem"
+                  className="rail-mobile-return"
+                  onClick={() => {
+                    setProfileMenuOpen(false)
+                    if (fleetReturn.returnsToSettings) navigate(-1)
+                    else navigate('/dashboard')
+                  }}
+                >
+                  <ArrowLeft size={17} aria-hidden="true" />
+                  <span>{fleetReturn.returnsToSettings ? `Return to ${fleetReturn.label}` : 'Shop dashboard'}</span>
                 </ControlButton>}
                 <ControlButton controlKind="content"
                   type="button"

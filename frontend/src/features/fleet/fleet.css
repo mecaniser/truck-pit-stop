@@ -1723,3 +1723,61 @@
   .fleet-root .fleet-activity__truck,
   .fleet-root .fleet-activity__summary{grid-column:3 / -1;}
 }
+
+
+.fleet-root .rail-mobile-profile, .fleet-root .rail-account-menu > .rail-mobile-return { display: none; }
+
+/* Phones use the whole canvas width. Keep the same destinations and account
+   menu in a familiar bottom bar, independent of the remembered desktop rail. */
+@media (max-width: 680px), (max-width: 960px) and (max-height: 500px) {
+  .fleet-root, .fleet-root.rail-expanded { --rail: 0px; }
+  .fleet-root .app { flex-direction: column; }
+  .fleet-root .rail, .fleet-root .rail.is-expanded {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: calc(56px + env(safe-area-inset-bottom));
+    min-height: calc(56px + env(safe-area-inset-bottom));
+    order: 2;
+    flex: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    padding: 4px max(8px, env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    border-right: 0;
+    border-top: 1px solid var(--line);
+    border-bottom: 0;
+    box-shadow: none;
+    z-index: 60;
+  }
+  .fleet-root .rail .rail-btn-dashboard, .fleet-root .rail .rail-av,
+  .fleet-root .rail-mark, .fleet-root .rail-div, .fleet-root .rail-sp,
+  .fleet-root .rail-collapse-quick, .fleet-root .rail-btn .rail-abbr,
+  .fleet-root .rail .rail-tip, .fleet-root .rail.is-expanded .rail-account-label { display: none; }
+  .fleet-root .rail .rail-btn {
+    flex: 1 1 0;
+    width: auto;
+    max-width: none;
+    min-width: 44px;
+    height: 48px;
+    min-height: 44px;
+    padding: 4px 0;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    border-radius: 7px;
+  }
+  .fleet-root .rail .rail-btn .rail-full { display: block; font-size: 12px; line-height: 1.1; white-space: nowrap; }
+  .fleet-root .rail-btn.is-on::before { display: none; }
+  .fleet-root .rail-account { width: auto; min-width: 44px; flex: 1 1 0; margin-left: 0; }
+  .fleet-root .rail .rail-account-controls { width: 100%; height: 48px; border: 0; background: transparent; }
+  .fleet-root .rail .rail-user { flex: none; width: 100%; height: 48px; padding: 0; justify-content: center; }
+  .fleet-root .rail .rail-account-menu { top: auto; bottom: calc(100% + 8px); left: auto; right: 0; width: 224px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 80px); overflow-y: auto; }
+  .fleet-root .rail-account-menu > button { min-height: 44px; }
+  .fleet-root .rail-mobile-profile { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 12px; line-height: 1.1; }
+  .fleet-root .rail-account-menu > .rail-mobile-return { display: flex; }
+  .fleet-root .rail-account-menu > .is-danger { border-top: 1px solid var(--line); margin-top: 4px; }
+  .fleet-root .main { order: 1; width: 100%; height: auto; min-height: 0; }
+  .fleet-root .scroll { min-height: 0; }
+  .fleet-root .rail-btn:focus-visible, .fleet-root .rail-user:focus-visible { outline: 2px solid var(--yellow); outline-offset: -2px; }
+}
