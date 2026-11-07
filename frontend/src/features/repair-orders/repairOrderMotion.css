@@ -64,3 +64,9 @@
 .db-order-entry-panel:not([data-appearance-mode='light']) :is(.bg-white, input, textarea) { background: var(--surface-raised); color: var(--workspace-text); }
 .db-order-entry-panel:not([data-appearance-mode='light']) :is(.text-gray-900, .text-gray-800, .text-gray-700, .text-gray-600, .text-gray-500) { color: var(--workspace-text); }
 .db-order-entry-panel:not([data-appearance-mode='light']) :is(.border-gray-200, input, textarea) { border-color: var(--workspace-border); }
+
+.db-order-cover:empty + [role="status"],
+.db-order-cover:empty { display: none; }
+.db-order-cover { pointer-events: none; z-index: 1; }
+.db-order-live[hidden] { display: none; }
+.db-order-handoff .db-price-builder[data-surface-ready='true'] .db-workspace-body { animation: none; }
