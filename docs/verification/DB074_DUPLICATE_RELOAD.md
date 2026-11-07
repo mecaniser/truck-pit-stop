@@ -51,4 +51,5 @@ checkout and was preserved. Preview deliberately points its unused API proxy to
 closed localhost port1; no database, authentication, or payment rails used.
 `http://127.0.0.1:5195` was an actual-component synthetic preview, not a signed-in
 application runtime. No signed-in full-stack or production acceptance claimed.
-PR CI, merge, deployment, and production smoke remain pending. Not Done.
+[Draft PR829](https://github.com/mecaniser/truck-pit-stop/pull/829), implementation `1793166c`.
+Protected CI, merge, deployment, and production smoke remain pending. Not Done.
