@@ -76,6 +76,10 @@
     "tests/test_customer_card*.py",
     "tests/test_quickbooks_vault_client.py",
     "tests/test_saved_card_accounts.py",
-    "tests/test_customer_vehicle_edit_policy.py"
+    "tests/test_customer_vehicle_edit_policy.py",
+    "tests/test_motive_trip_fairness.py",
+    "tests/test_motive_trip_catchup.py",
+    "tests/test_motive_trip_worker.py",
+    "tests/test_motive_trip_worker_process.py"
   ]
 }
