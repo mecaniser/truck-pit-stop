@@ -159,7 +159,8 @@ def history_snapshot(*, tenant: Tenant, invoice: Invoice, order: RepairOrder,
         "grouping_uncertain": bool(uncertain),
         "customer": {"id": str(customer.id), "name": customer.company_name or " ".join(filter(None, [customer.first_name, customer.last_name])) or None,
                      "phone": customer.phone, "email": customer.email,
-                     **({"source_customer_id": source_customer_id, "contact_phone_snapshot": contact_snapshot}
+                     **({"source_customer_id": source_customer_id,
+                         **({"contact_phone_snapshot": contact_snapshot} if imported else {})}
                         if contact_snapshot is not None else {})},
         "vehicle": {"id": str(vehicle.id) if vehicle else None, "vin": vehicle.vin if vehicle else None, "unit_number": vehicle.unit_number if vehicle else None},
         "operations": [{"repair_order_uuid": str(item.id), "repair_order_number": item.order_number, "description": (item.description[:450] + " [source context truncated; review required]") if item.description and len(item.description) > 500 else item.description}
@@ -184,6 +185,55 @@ async def _operations(db: AsyncSession, order: RepairOrder) -> tuple[list[Repair
     ).order_by(RepairOrder.order_number, RepairOrder.id).limit(201))).scalars().all()
     exact = [item for item in rows if (m := ETS_NUMBER.fullmatch(item.order_number)) and m.group(1) == base]
     return exact[:200] or [order], len(rows) > 200 or not exact
+
+
+CONTACT_HISTORY_PREFIX = "job-history-contact:"
+
+
+async def enqueue_history_snapshot(db: AsyncSession, *, tenant: Tenant, invoice: Invoice,
+                                   snapshot: dict, idempotency_key: str | None = None) -> ProviderOutboxEvent | None:
+    """Caller holds tenant lock; sequence and immutable event commit together."""
+    # Fallback snapshots may predate the native/contact contract correction.
+    # Preserve their immutable originals while preventing another invalid event.
+    if snapshot.get("source") == "dieselbridge" and "contact_phone_snapshot" in snapshot["customer"]:
+        snapshot = deepcopy(snapshot)
+        snapshot["customer"].pop("contact_phone_snapshot")
+        snapshot["customer"].setdefault("source_customer_id", None)
+    if invoice.tenant_id != tenant.id or snapshot["invoice_id"] != str(invoice.id):
+        raise ValueError("History invoice must belong to the same tenant")
+    if idempotency_key:
+        existing = await db.scalar(select(ProviderOutboxEvent).where(
+            ProviderOutboxEvent.tenant_id == tenant.id,
+            ProviderOutboxEvent.event_type == SHOP_HISTORY_EVENT,
+            ProviderOutboxEvent.idempotency_key == idempotency_key))
+        if existing is not None:
+            return None
+    revision = snapshot_revision(snapshot)
+    # Tenant lock serializes observations. Cursor, observation and outbox
+    # commit together; replay after rollback retains exactly one identity.
+    observation = await db.scalar(select(ShopHistoryObservation).where(
+        ShopHistoryObservation.tenant_id == tenant.id,
+        ShopHistoryObservation.invoice_id == invoice.id))
+    if observation is not None and observation.source_revision == revision and not idempotency_key:
+        return None
+    if observation is None:
+        observation = ShopHistoryObservation(tenant_id=tenant.id, invoice_id=invoice.id,
+                                             source_revision=revision, sequence=1)
+        db.add(observation)
+    else:
+        observation.sequence += 1
+        observation.source_revision = revision
+    key = idempotency_key or f"job-history:{invoice.id}:{observation.sequence}:{revision}"
+    event_id, now = uuid4(), datetime.now(timezone.utc)
+    event = ProviderOutboxEvent(id=event_id, tenant_id=tenant.id, event_type=SHOP_HISTORY_EVENT,
+        aggregate_type="invoice", aggregate_id=invoice.id, idempotency_key=key,
+        status=ProviderOutboxStatus.PENDING.value, available_at=now, created_at=now,
+        payload={"schema_version": 2 if "source_customer_id" in snapshot["customer"] else 1,
+                 "event_type": SHOP_HISTORY_EVENT, "event_id": str(event_id),
+                 "occurred_at": now.isoformat(), "shop_id": str(tenant.id), "source_system": "dieselbridge",
+                 "source_revision": revision, "source_observation": observation.sequence, "snapshot": snapshot})
+    db.add(event)
+    return event
 
 
 async def capture_tenant_history(db: Session, tenant: Tenant, *, batch_size: int) -> dict[str, int]:
@@ -267,29 +317,7 @@ async def capture_tenant_history(db: Session, tenant: Tenant, *, batch_size: int
                 continue
             snapshot = deepcopy(prior_snapshot)
             snapshot["grouping_uncertain"] = True
-        revision = snapshot_revision(snapshot)
-        observation = await db.scalar(select(ShopHistoryObservation).where(
-            ShopHistoryObservation.tenant_id == tenant.id,
-            ShopHistoryObservation.invoice_id == invoice.id))
-        # Tenant lock serializes observations. Cursor, observation and outbox
-        # commit together; replay after rollback retains exactly one identity.
-        if observation is None or observation.source_revision != revision:
-            if observation is None:
-                observation = ShopHistoryObservation(tenant_id=tenant.id, invoice_id=invoice.id,
-                                                     source_revision=revision, sequence=1)
-                db.add(observation)
-            else:
-                observation.sequence += 1
-                observation.source_revision = revision
-            key = f"job-history:{invoice.id}:{observation.sequence}:{revision}"
-            event_id, now = uuid4(), datetime.now(timezone.utc)
-            db.add(ProviderOutboxEvent(id=event_id, tenant_id=tenant.id, event_type=SHOP_HISTORY_EVENT,
-                aggregate_type="invoice", aggregate_id=invoice.id, idempotency_key=key,
-                status=ProviderOutboxStatus.PENDING.value, available_at=now, created_at=now,
-                payload={"schema_version": 2 if "contact_phone_snapshot" in snapshot["customer"] else 1,
-                         "event_type": SHOP_HISTORY_EVENT, "event_id": str(event_id),
-                         "occurred_at": now.isoformat(), "shop_id": str(tenant.id), "source_system": "dieselbridge",
-                         "source_revision": revision, "source_observation": observation.sequence, "snapshot": snapshot}))
+        if await enqueue_history_snapshot(db, tenant=tenant, invoice=invoice, snapshot=snapshot):
             captured += 1
         if order.source == ETS:
             from app.services.ets_completed_outcome_source import capture_imported_order, ETSCompletionHold
