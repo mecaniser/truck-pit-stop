@@ -53,3 +53,108 @@ closed localhost port1; no database, authentication, or payment rails used.
 application runtime. No signed-in full-stack or production acceptance claimed.
 [Draft PR829](https://github.com/mecaniser/truck-pit-stop/pull/829), implementation `1793166c`.
 Protected CI, merge, deployment, and production smoke remain pending. Not Done.
+
+
+## Authorized release — November 7, 2026
+
+The user explicitly authorized finishing verification, merging PR829, deployment,
+and production one-prompt checks. Final diff reviewed: only the existing recovery
+presentation, focused regressions and delivery documentation; no auth, API, tenant,
+financial, migration, infrastructure or automatic-reload policy changes.
+
+- All seven checks passed on `dfeba9e3e354175575d774a2249491b1652042d8`,
+  [Quality gates run42391364396](https://github.com/mecaniser/truck-pit-stop/actions/runs/42391364396).
+- PR829 made ready and squash-merged at2026-11-07T17:09:13Z as
+  `12396b77cca1f215c645254f3242309bfbd41f35`. Strict required checks satisfied.
+- Railway API/frontend service auto-deployment
+  `f265952a-9ed5-4322-ae4b-b1792d417dcc` reached SUCCESS on that exact SHA.
+- Public `https://www.dieselbridge.com/build-version` matches the merge SHA,
+  build timestamp2026-11-07T17:10:59.583Z. `/health/ready` reports production ready,
+  database and Redis healthy.
+
+## Actual production recovery checks
+
+Isolated Chrome production `/login` tab, using the deployed bundle rather than
+injected replacement UI. Browser-only fault simulation set the real route
+boundary's error state to a generic verification Error, and dispatched the
+existing `vite:preloadError` event to confirm update availability. No requests,
+server records or shared production settings were modified by fault injection.
+This tests the actual fallback and store subscription; it is not a claim that a
+new real missing asset was deleted from production or that staff authentication
+was available.
+
+Before deployment, the same simulation on the previous live build reproduced
+the reported defect: generic error card and floating update banner each had a
+Reload now action.
+
+After loading the deployed build:
+
+1. A healthy login route plus update event keeps the route and shows one banner.
+2. Update event before generic failure produces one full-page update card.
+   Browser measurement: reloadButtons1, updateMessages1, genericError false,
+   floating status banners0. Mobile390x844 screenshot confirms readable content,
+   unsaved-work warning, one button and no second card.
+3. Activating the actual reload button's click handler caused a new
+   `Page.frameNavigated` navigation to the same login URL and restored the working
+   login form with no recovery UI. High-level pointer APIs timed out; the actual
+   rendered button's `.click()` was invoked through documented CDP, not replaced
+   with a custom reload function. Unit tests also verify the handler once.
+4. Generic failure before update at1440x900 first shows the ordinary recovery
+   message; after the update event it becomes one new-version card with one
+   Reload now action. Desktop screenshot inspected.
+5. Final recovery clears the simulated client state; working login DOM verified
+   and temporary viewport override reset.
+
+Private screenshots remain local/excluded in the implementation checkout:
+`output/playwright/production-update-mobile.jpg` and
+`output/playwright/production-update-desktop.jpg`.
+
+**Remaining external acceptance:** signed-in staff coverage is blocked by expired
+production staff sessions and no available prefilled password. The user was asked
+to sign in in the preserved verification login tab. No account password was
+changed, authentication bypassed or production token minted. Public-route global
+recovery checks are complete; signed-in acceptance is not claimed. The delivery
+item remains released with that explicit acceptance blocker, not Done.
+
+Local services were not started for this release-only/documentation work. The
+historical local backend alignment blocker remains separate from successful
+production deployment and public global-boundary acceptance.
+
+
+## Signed-in acceptance completed — November 7, 2026
+
+The user confirmed sign-in. The renewed session was in the in-app browser, not
+Chrome. Verified actual authenticated production `/dashboard` with the Shop Work
+workspace present before fault simulation and after each normal reload.
+
+Current production stamp was `0bd0b375b61a0004c60b710f8a1feabc96b71c13`, built
+2026-11-07T18:14:42.076Z. Git ancestry confirms PR829 merge12396b77 is included;
+`RouteErrorBoundary.tsx` is byte-identical between that merge and current main.
+No new application change was needed for this final acceptance.
+
+- Desktop1440x900: healthy staff workspace plus update signal retains the
+  workspace with one update banner/one reload button. Add the generic boundary
+  failure after confirmation: one update message, one reload button, zero
+  floating banners, no generic error and no horizontal overflow.
+- Activate Reload now through the normal Playwright pointer API: actual reload
+  restores `/dashboard` with the authenticated Shop Work heading and zero
+  recovery prompts. No CDP click fallback needed for signed-in checks.
+- Mobile390x844: generic boundary failure first retains the ordinary Something
+  went wrong recovery. Confirm update afterward: one update message, one reload
+  button, zero floating banners, no generic error and no horizontal overflow.
+- Normal Playwright Reload now activation again restores the authenticated
+  `/dashboard` workspace with zero recovery prompts.
+- Final console error count0. Viewport override reset and fault state cleared by
+  reload. No records, financial state, account settings or credentials modified.
+
+Browser fault method is the same client-only actual-boundary state/update-event
+simulation described above. This is actual production fallback acceptance, not
+an assertion that a physical device or an actual production asset deletion was
+tested. Safe screenshots (recovery UI only) are local/excluded:
+`output/playwright/production-staff-update-desktop.jpg` and
+`output/playwright/production-staff-update-mobile.jpg` in the implementation
+checkout. No staff/customer data is included in the screenshots.
+
+The earlier expired-session acceptance blocker is resolved. Product item **Done
+— released and signed-in verified**, Frontend & UX accountable. Prior blocked
+entries are retained as history; they are not current status.
