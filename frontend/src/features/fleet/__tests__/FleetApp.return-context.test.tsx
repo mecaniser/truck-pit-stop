@@ -55,6 +55,7 @@ describe('Fleet board return context', () => {
   beforeEach(() => {
     Element.prototype.scrollTo = vi.fn()
     window.localStorage.removeItem('tps-fleet-state')
+    window.localStorage.removeItem('tps-fleet-rail')
     apiMocks.get.mockReset()
     apiMocks.put.mockReset()
     apiMocks.post.mockReset()
@@ -80,6 +81,7 @@ describe('Fleet board return context', () => {
   afterEach(() => {
     stopSessionKeepAlive()
     window.localStorage.removeItem('tps-fleet-state')
+    window.localStorage.removeItem('tps-fleet-rail')
   })
 
   it('does not continue an earlier profile save into a password change for the next account', async () => {
@@ -135,7 +137,7 @@ describe('Fleet board return context', () => {
     expect(await screen.findByLabelText('Truck')).toHaveTextContent('101')
     await user.click(await screen.findByRole('button', { name: 'Truck 101 View truck' }))
     expect(screen.getByText('Truck detail')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /TRIPS.*Trips/ }))
+    await user.click(screen.getByRole('button', { name: 'Trips', exact: true }))
     expect(await screen.findByLabelText('Truck')).toHaveTextContent('101')
   })
 
@@ -148,6 +150,8 @@ describe('Fleet board return context', () => {
     expect(screen.getByTestId('map-focus')).toHaveTextContent('map-truck')
     await user.click(screen.getByRole('button', { name: 'Open map truck' }))
     expect(screen.getByText('Truck detail')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Fleet board', exact: true })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: 'Fleet map', exact: true })).not.toHaveAttribute('aria-current')
     await user.click(screen.getByRole('button', { name: /Fleet map$/ }))
     expect(screen.getByTestId('map-focus')).toHaveTextContent('map-truck')
   })
@@ -196,4 +200,45 @@ describe('Fleet board return context', () => {
     expect(apiMocks.post).toHaveBeenCalledWith('/fleet/trucks', expect.objectContaining({ equipment_type: 'trailer', tractor_id: 'tractor-603', customer_id: 'customer-1' }))
   })
 
+})
+
+
+describe('Fleet navigation', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    apiMocks.get.mockResolvedValue({ data: fleetBoard })
+    useAuthStore.setState({ user: { id: 'manager', first_name: 'Fleet', last_name: 'Manager', role: 'fleet_manager', tenant_id: 'tenant-1' } as NonNullable<ReturnType<typeof useAuthStore.getState>['user']> })
+  })
+  afterEach(() => { window.localStorage.clear(); stopSessionKeepAlive() })
+
+  it('keeps one named navigation with a current destination through view changes', async () => {
+    const user = userEvent.setup()
+    renderFleet(['/fleet'])
+    const nav = within(screen.getByRole('navigation', { name: 'Fleet navigation' }))
+    expect(nav.getByRole('button', { name: 'Fleet board', exact: true })).toHaveAttribute('aria-current', 'page')
+    await user.click(nav.getByRole('button', { name: 'Fleet map', exact: true }))
+    expect(nav.getByRole('button', { name: 'Fleet map', exact: true })).toHaveAttribute('aria-current', 'page')
+    expect(nav.getByRole('button', { name: 'Fleet board', exact: true })).not.toHaveAttribute('aria-current')
+    expect(nav.queryByRole('button', { name: 'Shop dashboard' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('current-location')).toHaveTextContent('/fleet')
+  })
+
+  it('keeps profile actions and Escape focus return usable with an expanded desktop preference', async () => {
+    window.localStorage.setItem('tps-fleet-rail', '1')
+    const user = userEvent.setup()
+    renderFleet(['/fleet'])
+    const trigger = screen.getByRole('button', { name: 'Open profile menu' })
+    await user.click(trigger)
+    const menu = screen.getByRole('menu', { name: 'Profile actions' })
+    const settings = within(menu).getByRole('menuitem', { name: 'Settings' })
+    await vi.waitFor(() => expect(settings).toHaveFocus())
+    expect(within(menu).queryByRole('menuitem', { name: 'Integrations' })).not.toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+    await user.click(trigger)
+    await user.click(screen.getByRole('button', { name: 'Fleet map', exact: true }))
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(window.localStorage.getItem('tps-fleet-rail')).toBe('1')
+  })
 })

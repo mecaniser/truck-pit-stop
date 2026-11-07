@@ -152,7 +152,7 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
   return (
     <div className={'fleet-root' + (railExpanded ? ' rail-expanded' : '')}>
       <div className="app" data-db-touch-controls>
-        <nav className={'rail' + (railExpanded ? ' is-expanded' : '')}>
+        <nav aria-label="Fleet navigation" className={'rail' + (railExpanded ? ' is-expanded' : '')}>
           <div className="rail-mark"><Truck /></div>
           {canReturnToDashboard && (
             <>
@@ -171,7 +171,7 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
             </>
           )}
           {railItems.map(([v, icon, tip, abbr]) => (
-            <ControlButton controlKind="content" key={v} className={'rail-btn' + (view === v || (v === 'board' && view === 'detail') ? ' is-on' : '')} onClick={() => goView(v)}>
+            <ControlButton controlKind="content" key={v} aria-label={tip} aria-current={view === v || (v === 'board' && view === 'detail') ? 'page' : undefined} className={'rail-btn' + (view === v || (v === 'board' && view === 'detail') ? ' is-on' : '')} onClick={() => goView(v)}>
               {icon}<span className="rail-abbr">{abbr}</span><span className="rail-full">{tip}</span><span className="rail-tip">{tip}</span>
             </ControlButton>
           ))}
